@@ -2,7 +2,9 @@
 // (i18n-ignore-file: the import report and its reasons are author-facing and bilingual by design, 中文 · English — as
 // shared/plugins/errors.js; never player UI)
 // docs/PLUGINS.md §16). Forge packs are untrusted: this module only reads bytes. It never import()s, eval()s or
-// require()s a file from the pack, and it never copies a script into the plugin it writes.
+// require()s a file from the pack. The one place a pack's code is written is the sandboxed script plugin of its
+// `kits/<id>.js` files (forgeKits.js): parsed and rewritten there, never run here, and run later only where the server
+// owner enabled SP_PLUGIN_SCRIPTS and a room selects that plugin.
 //
 // A pack is a directory or a zip with pack.json at the root (a single wrapping folder is stripped, the same layout
 // Forge's own importer accepts). What can be said in our manifest 2 becomes a plugin; everything else is named in
@@ -18,12 +20,26 @@
 //   * Forge form ranks are phase/level/skillLevel/equipLevel, compared as integers (a plain integer is a rank too).
 //     The lowest becomes normal, the highest elite (one rank is copied into both). [ASSUMED]
 //   * Skills are taken from the selected form (forms[rank].skills). A form with none uses the record's skills.
-//     Fields that do not fit the compact record are named and dropped. They are not executed.
+//     A skill keeps name, numbers, bb, desc / descRaw, bbStr, skillType, spType, durationType, trigger and its range
+//     when their types match; the default is `default` or `isDefault`. Other fields are named and dropped. Talents
+//     (named ones, numbers only) and the trait are copied the same way; module talents are named and dropped.
 //   * A missing range grid becomes [[0, 0]].
 //   * Shop tier follows rarity when it is 1–6.
 //   * A 6★ operator declared in operators is 自选 only (as "diy"): records.js writes no shop chess. The compact
 //     schema still requires chess.tier, so the file carries the rarity there. Below 6★ in that list is chess.
-//     A unit that is not in operators is still emitted as chess, because new chess.json records are not mapped. [ASSUMED]
+//     A unit that is not in operators is still emitted as chess, unless a chess.json pair of the pack is its shop
+//     piece (then that pair is the record). [ASSUMED]
+//   * chess.json: a new _a/_b pair (normal/elite) is one compact record: a shop piece, or 自选 when isDiy and 6★. Its
+//     unit is its charId when that is an official operator or a unit of the pack, else an official operator its
+//     `assets` name (used for art only). A pair with neither is not imported. One record alone is copied into both
+//     forms. A pair with no bond at all gets the fallback bond (协防干员, economy.fallbackBondId), as the studio's
+//     operator template does; a pair whose bonds are all unknown here is not imported. Status, merge count, the
+//     PRESET chess type and the shop flags come from our economy; a different value in the pack is named. Price and
+//     garrisons keep their normal/golden values; sellPrice is kept when both are equal. Modules, potentials,
+//     statsBase / traitBase / talentsBase, immunities and summons are named and dropped. [ASSUMED]
+//   * Official kits: when every skill id of a record is an official skill of one operator, the record keeps those
+//     ids and names that operator's kit (kit.ref): its chess kit for a shop piece (the same default skill, the same
+//     tier first), its 自选 kit for a 自选 record. A partial or ambiguous match keeps "generic" and is named. [ASSUMED]
 //   * An override array replaces the official array in one set. talents and talentsBase are merged by index in Forge;
 //     this version names them and does not replace them.
 //   * Record ids use the content plugin id (--out's basename when that product is primary, otherwise the pack id).
@@ -34,9 +50,15 @@
 //   * A zip larger than pluginBytes + 64 KiB is refused before it is read. [ASSUMED] The 64 KiB is header room.
 //   * A directory file with nlink > 1 is refused. The read uses O_NOFOLLOW and checks fstat against lstat. Empty
 //     directories count toward the file cap. [ASSUMED] That does not see a file the process is not allowed to stat.
-//   * A skill script (.js) is never read as code. The operator gets kit "generic" and the report names the file.
-//     A JSON object that passes validateSkillSpec is kept as kit.spec. No DSL part is written: declaring one makes
-//     this version skip the plugin (PLUGIN_DSL_UNAVAILABLE).
+//   * A skill script (.js) is never run by the importer. A `kits/<id>.js` (or the file a record's `kit` names) whose
+//     id is a record of the pack, or an official id the pack declares in overrides, is carried into one script
+//     plugin `kits-<id>` (forgeKits.js: one self-contained sim entry, imports mapped to sp:sdk@1, the registry's own
+//     script check). A `<id>-…` name would share the content plugin's record namespace, which a room refuses. It
+//     requires the content plugin at its exact version, registers each kit for the record's new charId (an official
+//     override for that official kit id, listed in `overrides`), and runs only with SP_PLUGIN_SCRIPTS and a room
+//     that selects it. The record itself keeps "generic" (or its official kit) in the content plugin. --no-scripts
+//     leaves the script plugin out. A JSON object that passes validateSkillSpec is kept as kit.spec. No DSL part is
+//     written: declaring one makes this version skip the plugin (PLUGIN_DSL_UNAVAILABLE).
 //   * A flat { msgid: string } translation becomes a lang plugin. A { version: 1, files } document is content i18n
 //     only when every leaf replaces an existing string. zh is the source language and is not a lang plugin.
 //   * art.audio is not a documented Forge table. Tracks whose shape matches are still written: bgm lobby|prep|combat|
@@ -61,9 +83,11 @@ import { buildContentSet } from './contentSet.js';
 import { createVisualSets } from './visualSet.js';
 import { PLUGIN_LIMITS, PLUGIN_MANIFEST, UI_SLOT_IDS, extOf, isPackPath, isPluginId, checkJsonLimits } from '../../shared/plugins/manifest.js';
 import { ASSET_CONTAINERS, getPath, isAssetKey, readAssetOverlay } from '../../shared/plugins/visual.js';
-import { namespace } from '../../shared/plugins/dataUtils.js';
+import { namespace, namespaceCollides } from '../../shared/plugins/dataUtils.js';
 import { validateSkillSpec } from '../../shared/plugins/skillSpec.js';
 import { canonicalLang, languageName, SOURCE_LANG } from '../../shared/i18nPacks.js';
+import { KITS, OPERATOR_KITS, TIER_KITS } from '../sim/content/kits/index.js';
+import { bundleForgeKits } from './forgeKits.js';
 
 const APP_RANGE = '>=0.3.0 <0.4.0';
 const DANGER_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -71,7 +95,22 @@ const DANGER_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const ZIP_RAW_MAX = PLUGIN_LIMITS.pluginBytes + 64 * 1024;
 const OPEN_NOFOLLOW = fs.constants.O_NOFOLLOW || 0;
 const INDEX_MERGE_ARRAYS = new Set(['talents', 'talentsBase']);
-const SKILL_KEEP = new Set(['name', 'duration', 'spCost', 'initSp', 'bb', 'desc', 'default', 'skillId', 'id']);
+const SKILL_KEEP = new Set(['name', 'duration', 'spCost', 'initSp', 'bb', 'desc', 'default', 'isDefault', 'skillId', 'id',
+  'descRaw', 'bbStr', 'skillType', 'spType', 'durationType', 'maxChargeTime', 'increment', 'trigger', 'rangeGrid']);
+/** The values our data and validate.js accept for these skill fields (data/chess.json, data/backups.json). */
+const SKILL_TYPES = new Set(['MANUAL', 'AUTO', 'PASSIVE']);
+const SP_TYPES = new Set(['INCREASE_WITH_TIME', 'INCREASE_WHEN_ATTACK', 'INCREASE_WHEN_TAKEN_DAMAGE', 'ON_DEPLOY']);
+const DURATION_TYPES = new Set(['NONE', 'AMMO']);
+/** Record fields the compact operator can say, with the values official records use. */
+const RECORD_ENUMS = { dmgType: new Set(['phys', 'arts', 'heal']), attackKind: new Set(['ranged', 'melee', 'heal', 'none']),
+  projectile: new Set(['arrow', 'none', 'bolt', 'orb']), targetPriority: new Set(['fly', 'lowestDef']) };
+/** The chess.json fields a pair maps (the rest are named in the report). */
+const CHESS_KEEP = new Set(['chessId', 'baseId', 'goldenId', 'isGolden', 'tier', 'identifier', 'isHidden', 'isDiy', 'visible', 'chessType',
+  'shopSortId', 'charId', 'name', 'appellation', 'rarity', 'profession', 'subProfessionId', 'subProfessionName', 'position', 'nationId',
+  'bonds', 'garrisonIds', 'price', 'sellPrice', 'upgradeNum', 'upgradeChessId', 'status', 'stats', 'rangeGrid', 'trait', 'skill', 'skills',
+  'talents', 'dmgType', 'attackKind', 'projectile', 'canHitFly', 'targetPriority', 'assets', 'backup', 'workshop']);
+/** The chess kits (the tier groups, keyed by the chess `_a` id). The 自选 kits an import may name are OPERATOR_KITS (charId). */
+const CHESS_KIT_KEYS = new Set(TIER_KITS.flatMap((group) => Object.keys(group)));
 const SCRIPT_EXT = new Set(['.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx']);
 const IMAGE_EXT = new Set(['.png', '.jpg', '.webp']);
 const AUDIO_EXT = new Set(['.mp3', '.ogg']);
@@ -150,6 +189,11 @@ function fit(base, suffix) {
   return isPluginId(id) ? id : null;
 }
 
+function fitPrefix(prefix, base) {
+  const id = `${prefix}${base}`.slice(0, 32).replace(/-+$/g, '');
+  return id.length > prefix.length && isPluginId(id) ? id : null;
+}
+
 /** @param {string} base @param {string[]} roles @param {string | null} primaryName */
 function allocateIds(base, roles, primaryName) {
   const primary = roles.includes('content') ? 'content' : roles.includes('cosmetic') ? 'cosmetic' : roles[0];
@@ -172,6 +216,17 @@ function allocateIds(base, roles, primaryName) {
   ids[primary] = take(primaryName || base);
   for (const role of roles) {
     if (ids[role]) continue;
+    if (role === 'script') {
+      // [ASSUMED] kits-<id>: a room composes it with the content plugin, and a `<id>-…` name shares that plugin's record
+      // namespace (data-utils namespaceCollides → PLUGIN_RECORD_ID). The prefix keeps the two apart.
+      const stem = primaryName || base;
+      const id = ['kits-', 'forge-kits-', 'kits2-'].map((prefix) => fitPrefix(prefix, stem) || fitPrefix(prefix, base))
+        .find((want) => want && !used.has(want) && !Object.values(ids).some((other) => namespaceCollides(other, want)));
+      if (!id) return { error: `no plugin id left for ${role}` };
+      used.add(id);
+      ids[role] = id;
+      continue;
+    }
     let suffix = '-x';
     if (role === 'cosmetic') suffix = '-look';
     else if (role.startsWith('ui:')) suffix = `-${role.slice(3).replace(/\./g, '-')}`;
@@ -242,11 +297,13 @@ function assertNameSet(fileNames, dirNames = []) {
  * would not be one atomic commit. [ASSUMED]
  * @returns {{ code: string, detail: string } | null}
  */
-function commitProducts(stage, parent, products, primaryId, markdown) {
+function commitProducts(stage, parent, products, primaryId, markdown, repack = null) {
   /** @type {string[]} */
   const created = [];
   try {
     fs.writeFileSync(path.join(stage, primaryId, 'IMPORT-REPORT.md'), markdown);
+    // A script plugin runs only with a lock that lists every file, the report included (registry readScripts).
+    if (repack) repack(path.join(stage, primaryId));
     for (const p of products) {
       const dest = path.join(parent, p.id);
       if (fs.existsSync(dest)) {
@@ -707,10 +764,11 @@ function formOrder(keys) {
 /**
  * Read a pack already in memory and describe the plugins it would become. Does not write.
  * @param {Map<string, Buffer>} files
- * @param {{ id?: string, contentId?: string, dataDir?: string, vanilla?: { manifest?: any } | null }} [opts]
+ * @param {{ id?: string, contentId?: string, dataDir?: string, vanilla?: { manifest?: any } | null, scripts?: boolean, parse?: Function | null }} [opts]
  *   contentId: the primary content plugin id when it is already known (--out's basename). Record namespaces use it.
+ *   scripts: false leaves the script plugin of kits/ out (--no-scripts). parse: acorn's parse, for kits/ (never runs a file).
  */
-export function planForgeImport(files, { id: idOverride, contentId, dataDir, vanilla } = {}) {
+export function planForgeImport(files, { id: idOverride, contentId, dataDir, vanilla, scripts = true, parse = null } = {}) {
   if (!files.has('pack.json')) fail('PLUGIN_FORGE_INPUT', 'no pack.json');
   const pack = readJsonBuf(files.get('pack.json'), 'pack.json');
   if (!isObj(pack)) fail('PLUGIN_FORGE_INPUT', 'pack.json is not an object');
@@ -1083,15 +1141,267 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
   const enemyIds = new Map();
   /** @type {Map<string, string>} */
   const skillIds = new Map();
+  /** A Forge record id (unit key, unit charId, chess id and its stem) → our new charId: the kits' targets. */
+  /** @type {Map<string, { charId: string, label: string }>} */
+  const recordTargets = new Map();
+  /** A kit file a record's `kit` field names → that record. */
+  /** @type {Map<string, { charId: string, label: string }>} */
+  const explicitKits = new Map();
+  /** A unit of the pack whose shop piece is a chess.json pair → that pair (the unit is not emitted again as chess). */
+  /** @type {Map<string, string>} */
+  const chessCovered = new Map();
+  /** @type {Set<string>} */
+  const packTokenIds = new Set();
+  const officialUnits = () => table('units') || {};
+  // The pack's own new units, read before chess.json so a pair can name one (the main loop reads the file again).
+  /** @type {Map<string, string>} forge charId or key → unit key */
+  const packUnitIds = new Map();
+  {
+    let doc = null;
+    try { doc = loadTableFile(files, used, 'units'); } catch (e) { if (e instanceof ForgeImportError) throw e; }
+    for (const [key, rec] of Object.entries(asMap(doc, 'charId'))) {
+      if (DANGER_KEYS.has(key) || has(officialUnits(), key)) continue;
+      packUnitIds.set(key, key);
+      if (isObj(rec) && typeof rec.charId === 'string' && rec.charId) packUnitIds.set(rec.charId, key);
+    }
+  }
 
-  const mapOperator = (rawId, rec) => {
-    if (!isObj(rec)) { skip(`units:${rawId}`, '干员记录不是对象，没有导入。', 'The operator record is not an object, so it was not imported.'); return; }
-    const name = typeof rec.name === 'string' ? rec.name.trim().slice(0, 60) : '';
-    let profession = typeof rec.profession === 'string' ? rec.profession.trim().toUpperCase() : '';
+  /** @type {{ skills: Map<string, Set<string>>, chars: Map<string, { chess: { key: string, tier: number, def: string | null, skills: Set<string> }[], op: boolean }> } | null} */
+  let officialSkills = null;
+  /** Official skill id → the operators that have it, and each operator's kits (our data and our kit registry). */
+  const officialIndex = () => {
+    if (officialSkills) return officialSkills;
+    const skills = new Map();
+    const chars = new Map();
+    const note = (skillId, charId) => { if (!skills.has(skillId)) skills.set(skillId, new Set()); skills.get(skillId).add(charId); };
+    const entry = (charId) => {
+      if (!chars.has(charId)) chars.set(charId, { chess: [], op: has(OPERATOR_KITS, charId) });
+      return chars.get(charId);
+    };
+    const chess = table('chess') || {};
+    for (const r of Object.values(chess)) {
+      if (!isObj(r) || r.isDiy || r.isGolden || typeof r.charId !== 'string' || !r.charId) continue;
+      const golden = isObj(chess[r.goldenId]) ? chess[r.goldenId] : null;
+      const ids = new Set([...(Array.isArray(r.skills) ? r.skills : []), ...(Array.isArray(golden?.skills) ? golden.skills : [])]
+        .map((s) => s?.skillId).filter((x) => typeof x === 'string' && x));
+      const key = typeof r.baseId === 'string' ? r.baseId : r.chessId;
+      const e = entry(r.charId);
+      if (CHESS_KIT_KEYS.has(key)) e.chess.push({ key, tier: r.tier, def: r.skill?.skillId ?? null, skills: ids });
+      for (const id of ids) note(id, r.charId);
+    }
+    for (const [charId, u] of Object.entries(officialUnits())) {
+      if (!isObj(u) || !isObj(u.forms)) continue;
+      entry(charId);
+      for (const f of Object.values(u.forms)) for (const s of Array.isArray(f?.skills) ? f.skills : []) {
+        if (typeof s?.skillId === 'string' && s.skillId) note(s.skillId, charId);
+      }
+    }
+    officialSkills = { skills, chars };
+    return officialSkills;
+  };
+  const officialChar = (id) => typeof id === 'string' && !!id && (officialIndex().chars.has(id) || !!(manifestArt?.chars && has(manifestArt.chars, id)));
+
+  /**
+   * The official kit a record's skill ids name, or why not; null when none of them is official (a new operator).
+   * @returns {{ ref: string, charId: string } | { ref: null, zh: string, en: string } | null}
+   */
+  const bindOfficial = (skillList, defaultId, as, tier) => {
+    const ids = [...new Set(skillList.filter((x) => typeof x === 'string' && x))];
+    if (!ids.length) return null;
+    const { skills, chars } = officialIndex();
+    const unmatched = ids.filter((id) => !skills.has(id));
+    if (unmatched.length === ids.length) return null;
+    if (unmatched.length) return { ref: null, zh: `技能 ${unmatched.slice(0, 6).join('、')} 不是官方技能 id。只对上一部分，保留通用 kit。`, en: `The skills ${unmatched.slice(0, 6).join(', ')} are not official skill ids. A partial match keeps the generic kit.` };
+    /** @type {Set<string> | null} */
+    let owners = null;
+    for (const id of ids) owners = owners ? new Set([...owners].filter((c) => skills.get(id).has(c))) : new Set(skills.get(id));
+    if (!owners || owners.size !== 1) {
+      const list = [...(owners || [])].slice(0, 4);
+      return list.length
+        ? { ref: null, zh: `这些官方技能同属几名干员（${list.join('、')}），对不上唯一一名，保留通用 kit。`, en: `These official skills belong to several operators (${list.join(', ')}), not to one, so the kit stays generic.` }
+        : { ref: null, zh: '这些官方技能分属不同干员，对不上唯一一名，保留通用 kit。', en: 'These official skills belong to different operators, not to one, so the kit stays generic.' };
+    }
+    const charId = [...owners][0];
+    const info = chars.get(charId) || { chess: [], op: false };
+    if (as === 'diy') {
+      return info.op ? { ref: charId, charId }
+        : { ref: null, zh: `官方干员 ${charId} 在本模拟器里没有自选 kit，保留通用 kit。`, en: `The official operator ${charId} has no 自选 kit in this simulator, so the kit stays generic.` };
+    }
+    const fits = info.chess.filter((c) => ids.every((id) => c.skills.has(id)));
+    const same = fits.filter((c) => c.def === defaultId);
+    const byTier = same.filter((c) => c.tier === tier);
+    const pick = same.length > 1 && byTier.length === 1 ? byTier : same;
+    if (pick.length === 1) return { ref: pick[0].key, charId };
+    if (info.op) return { ref: charId, charId };
+    if (pick.length > 1) return { ref: null, zh: `官方干员 ${charId} 有几份棋子 kit（${pick.map((c) => c.key).join('、')}），对不上唯一一份，保留通用 kit。`, en: `The official operator ${charId} has several chess kits (${pick.map((c) => c.key).join(', ')}), not one, so the kit stays generic.` };
+    if (fits.length) return { ref: null, zh: `默认技能 ${defaultId} 和官方棋子 ${fits[0].key} 的默认技能 ${fits[0].def} 不同：那份 kit 的默认规格会落在别的技能上，保留通用 kit。`, en: `The default skill ${defaultId} differs from ${fits[0].def}, the default of the official piece ${fits[0].key}: that kit's default spec would land on another skill, so the kit stays generic.` };
+    return { ref: null, zh: `官方干员 ${charId} 在本模拟器里没有自己的 kit，保留通用 kit。`, en: `The official operator ${charId} has no kit of its own in this simulator, so the kit stays generic.` };
+  };
+
+  const numericBb = (bb, dropped, label) => {
+    if (!isObj(bb)) return null;
+    const out = {};
+    for (const [k, v] of Object.entries(bb)) {
+      if (DANGER_KEYS.has(k)) continue;
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+      else dropped.add(`${label}bb.${k}`);
+    }
+    return Object.keys(out).length ? out : null;
+  };
+  const stringMap = (m) => {
+    if (!isObj(m)) return null;
+    const out = {};
+    for (const [k, v] of Object.entries(m).slice(0, 32)) if (!DANGER_KEYS.has(k) && typeof v === 'string') out[k] = v.slice(0, 200);
+    return Object.keys(out).length ? out : null;
+  };
+  const RULE = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+  const cleanTrigger = (t) => {
+    if (!isObj(t) || typeof t.rule !== 'string' || !RULE.test(t.rule)) return null;
+    const out = { rule: t.rule, rawRule: typeof t.rawRule === 'string' && RULE.test(t.rawRule) ? t.rawRule : t.rule, customRangeGrid: gridOf(t.customRangeGrid) };
+    if (t.allies === true) out.allies = true;
+    return out;
+  };
+  /** One compact skill: the fields the expander and the sim read, each only when its type matches. */
+  const cleanSkill = (s, skillId, isDefault, dropped) => {
+    const skill = { skillId, name: typeof s.name === 'string' ? s.name.slice(0, 40) : '技能', default: isDefault };
+    for (const [k, v] of Object.entries(s)) {
+      if (!SKILL_KEEP.has(k)) {
+        // index and level are derived by the expander (order, chess status); an icon equal to the id is the default
+        if (v != null && k !== 'index' && k !== 'level' && !(k === 'iconId' && v === (s.skillId ?? s.id))) dropped.add(k);
+        continue;
+      }
+      if (['duration', 'spCost', 'initSp', 'maxChargeTime', 'increment'].includes(k)) {
+        if (typeof v === 'number' && Number.isFinite(v)) skill[k] = v;
+        else if (v != null) dropped.add(k);
+      } else if (k === 'desc' && typeof v === 'string') skill.desc = v.slice(0, 200);
+      else if (k === 'descRaw' && typeof v === 'string') skill.descRaw = v.slice(0, 400);
+      else if (k === 'skillType' || k === 'spType' || k === 'durationType') {
+        const allowed = k === 'skillType' ? SKILL_TYPES : k === 'spType' ? SP_TYPES : DURATION_TYPES;
+        if (allowed.has(v)) skill[k] = v;
+        else if (v != null) dropped.add(k);
+      } else if (k === 'bb') {
+        const bb = numericBb(v, dropped, '');
+        if (bb) skill.bb = bb;
+      } else if (k === 'bbStr') {
+        const m = stringMap(v);
+        if (m) skill.bbStr = m;
+      } else if (k === 'trigger') {
+        const t = cleanTrigger(v);
+        if (t) skill.trigger = t;
+        else if (v != null) dropped.add(k);
+      } else if (k === 'rangeGrid') {
+        const g = gridOf(v);
+        if (g) skill.rangeGrid = g;
+        else if (v != null) dropped.add(k);
+      }
+    }
+    return skill;
+  };
+  /**
+   * The compact skills of one list. keepIds: the record names an official kit, so the official skill ids stay (the
+   * expander allows them with kit.ref). defaultId: the record's default when its skills mark none (a chess `skill`).
+   */
+  const compileSkillList = (list, { owner, tag, label, keepIds, defaultId, dropped }) => {
+    if (!list.length) return null;
+    let defaultAt = list.findIndex((s) => s.default === true || s.isDefault === true);
+    if (defaultAt < 0 && defaultId) defaultAt = list.findIndex((s) => (s.skillId ?? s.id) === defaultId);
+    if (defaultAt < 0) { defaultAt = 0; assume('skill-default', `「${label}」没有标默认技能，把第一条当成默认。`, `"${label}" marks no default skill, so the first one was used.`); }
+    return list.map((s, i) => {
+      const explicit = (typeof s.skillId === 'string' && s.skillId) || (typeof s.id === 'string' && s.id) || '';
+      let skillId = keepIds && explicit ? explicit : '';
+      if (!skillId) {
+        const old = explicit || (tag ? `${owner}_${tag}_${i + 1}` : `${owner}_${i + 1}`);
+        skillId = skillIds.get(old) || '';
+        if (!skillId) {
+          skillId = namespaced('skx', recordNs, old, seenIds);
+          skillIds.set(old, skillId);
+        }
+      }
+      return cleanSkill(s, skillId, i === defaultAt, dropped);
+    });
+  };
+  const defaultOf = (list, fallback = null) => {
+    const s = list.find((x) => x.default === true || x.isDefault === true) || (fallback ? list.find((x) => (x.skillId ?? x.id) === fallback) : null) || list[0];
+    return s ? (s.skillId ?? s.id ?? null) : null;
+  };
+  /** A trait object (or a string): its text, numbers and range. Other fields are named. */
+  const cleanTrait = (t, dropped) => {
+    if (typeof t === 'string') return t.trim() ? { desc: t.slice(0, 200) } : null;
+    if (!isObj(t)) return null;
+    const out = {};
+    for (const [k, v] of Object.entries(t)) {
+      if (k === 'desc' && typeof v === 'string') out.desc = v.slice(0, 200);
+      else if (k === 'descRaw' && typeof v === 'string') out.descRaw = v.slice(0, 400);
+      else if (k === 'bb') { const bb = numericBb(v, dropped, 'trait.'); if (bb) out.bb = bb; }
+      else if (k === 'bbStr') { const m = stringMap(v); if (m) out.bbStr = m; }
+      else if (k === 'rangeGrid') { const g = gridOf(v); if (g) out.rangeGrid = g; else if (v != null) dropped.add('trait.rangeGrid'); }
+      else if (v != null && v !== '') dropped.add(`trait.${k}`);
+    }
+    return Object.keys(out).length ? out : null;
+  };
+  /** Named talents in order (the expander numbers them; kits read them by that order). Module talents are named. */
+  const cleanTalents = (list, dropped) => {
+    if (!Array.isArray(list)) return null;
+    const out = [];
+    for (const t of list) {
+      if (!isObj(t)) continue;
+      if (t.fromModule === true || (Number.isInteger(t.index) && t.index < 0)) { dropped.add('talents(module)'); continue; }
+      const one = {};
+      for (const [k, v] of Object.entries(t)) {
+        if (k === 'name' && typeof v === 'string') one.name = v.slice(0, 40);
+        else if (k === 'desc' && typeof v === 'string') one.desc = v.slice(0, 200);
+        else if (k === 'descRaw' && typeof v === 'string') one.descRaw = v.slice(0, 400);
+        else if (k === 'bb') { const bb = numericBb(v, dropped, 'talents.'); if (bb) one.bb = bb; }
+        else if (k === 'bbStr') { const m = stringMap(v); if (m) one.bbStr = m; }
+        else if (k === 'rangeGrid') { const g = gridOf(v); if (g) one.rangeGrid = g; else if (v != null) dropped.add('talents.rangeGrid'); }
+        else if (k === 'hidden' && typeof v === 'boolean') one.hidden = v;
+        else if (k === 'index' || k === 'fromModule') continue;
+        else if (v != null && v !== '') dropped.add(`talents.${k}`);
+      }
+      out.push(one);
+    }
+    return out;
+  };
+  /** Identity and attack fields the compact operator can say, from the record or its first form. */
+  const recordExtras = (rec, form, op) => {
+    for (const k of ['appellation', 'subProfessionName']) if (typeof rec[k] === 'string' && rec[k].trim()) op[k] = rec[k].trim().slice(0, 60);
+    if (typeof rec.nationId === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(rec.nationId)) op.nationId = rec.nationId;
+    for (const k of ['dmgType', 'attackKind', 'projectile', 'targetPriority']) {
+      const v = rec[k] ?? form?.[k];
+      if (RECORD_ENUMS[k].has(v)) op[k] = v;
+    }
+    const fly = rec.canHitFly ?? form?.canHitFly;
+    if (typeof fly === 'boolean') op.canHitFly = fly;
+  };
+  const emptyish = (v) => v == null || v === false || v === '' || (Array.isArray(v) && !v.length) || (isObj(v) && Object.values(v).every(emptyish));
+  const professionOf = (raw) => {
+    let profession = typeof raw === 'string' ? raw.trim().toUpperCase() : '';
     if (PROFESSION_ALIAS[profession]) {
       assume(`prof-${profession}`, `职业 ${profession} 写成 ${PROFESSION_ALIAS[profession]}。`, `Profession ${profession} was written as ${PROFESSION_ALIAS[profession]}.`);
       profession = PROFESSION_ALIAS[profession];
     }
+    return profession;
+  };
+  const positionOf = (raw, profession) => {
+    if (raw === 'MELEE' || raw === 'RANGED') return raw;
+    const position = MELEE.has(profession) ? 'MELEE' : 'RANGED';
+    assume('position', `没有 position，按职业写成 ${position}。`, `No position was set, so it was written as ${position} from the profession.`);
+    return position;
+  };
+  /** Records left on the generic kit; their report line waits for the kits section (a script plugin may take over). */
+  /** @type {{ label: string, name: string, kitPath: string | null, reason: { zh: string, en: string } | null, charId: string }[]} */
+  const genericKits = [];
+  const kitLine = (label, name, kitPath, reason) => {
+    const zh = kitPath || '没有 kit 文件';
+    const en = kitPath || 'no kit file';
+    if (reason) skip(`${label}#kit`, `${reason.zh}「${name}」在数据插件里用通用 kit（${zh}）。`, `${reason.en} "${name}" uses the generic kit in the content plugin (${en}).`);
+    else skip(`${label}#kit`, `技能逻辑映射不成 kitRef、JSON SkillSpec 或 DSL，「${name}」在数据插件里用通用 kit（${zh}）。脚本不在导入时运行。`, `The skill logic does not map to a kitRef, a JSON SkillSpec or DSL, so "${name}" uses the generic kit in the content plugin (${en}). No script runs during the import.`, 'PLUGIN_FORGE_SCRIPT');
+  };
+
+  const mapOperator = (rawId, rec) => {
+    if (!isObj(rec)) { skip(`units:${rawId}`, '干员记录不是对象，没有导入。', 'The operator record is not an object, so it was not imported.'); return; }
+    const name = typeof rec.name === 'string' ? rec.name.trim().slice(0, 60) : '';
+    const profession = professionOf(rec.profession);
     if (!name || !PROFESSIONS.has(profession) || typeof rec.subProfessionId !== 'string' || !rec.subProfessionId.trim()) {
       skip(`units:${rawId}`, '干员缺名字、职业或分支，没有导入。', 'The operator lacks a name, profession or branch, so it was not imported.');
       return;
@@ -1103,11 +1413,7 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
     const picked = keys.map((k) => formsIn[k]).filter((f) => isObj(f) && finiteStats(f.stats || f));
     if (!picked.length) { skip(`units:${rawId}`, '形态里没有能用的数值，没有导入。', 'No form has usable stats, so it was not imported.'); return; }
     assume('forms', 'Forge 的形态阶（phase/level/skillLevel/equipLevel，或一个整数）按数字比较：最低一阶是 normal，最高一阶是 elite。', 'Forge form ranks (phase/level/skillLevel/equipLevel, or one integer) are compared as numbers: the lowest is normal, the highest is elite.');
-    let position = rec.position === 'MELEE' || rec.position === 'RANGED' ? rec.position : '';
-    if (!position) {
-      position = MELEE.has(profession) ? 'MELEE' : 'RANGED';
-      assume('position', `没有 position，按职业写成 ${position}。`, `No position was set, so it was written as ${position} from the profession.`);
-    }
+    const position = positionOf(rec.position, profession);
     const pool = isObj(pack.operators) ? pack.operators : {};
     const declared = has(pool, rawId) || (typeof rec.charId === 'string' && has(pool, rec.charId));
     const poolRec = (has(pool, rawId) ? pool[rawId] : null) || (typeof rec.charId === 'string' && has(pool, rec.charId) ? pool[rec.charId] : null) || {};
@@ -1118,6 +1424,10 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
     } else if (declared && rec.rarity !== 6) {
       as = 'chess';
       assume('diy-rarity', `「${name}」进了自选声明但不是六星。自选池只要六星，所以写成棋子（chess）。`, `"${name}" is declared for the recruit pool but is not 6★. The pool is 6★ only, so it was written as chess.`);
+    }
+    if (as === 'chess' && chessCovered.has(String(rawId))) {
+      skip(`units:${rawId}`, `它的棋子来自 chess.json 的 ${chessCovered.get(String(rawId))}，没有再写一份棋子。`, `Its shop piece is the chess.json pair ${chessCovered.get(String(rawId))}, so it was not written a second time.`);
+      return;
     }
     const bonds = [...new Set([...(Array.isArray(poolRec.bonds) ? poolRec.bonds : []), ...(Array.isArray(rec.bonds) ? rec.bonds : [])].filter((b) => typeof b === 'string'))];
     const bondTable = table('bonds');
@@ -1130,73 +1440,68 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
     const charId = namespaced('char_x', recordNs, rawId, seenIds);
     charIds.set(String(rawId), charId);
     if (typeof rec.charId === 'string' && rec.charId !== rawId) charIds.set(rec.charId, charId);
-    const formSkills = (f) => (Array.isArray(f.skills) ? f.skills.filter(isObj) : []);
+    const target = { charId, label: name };
+    recordTargets.set(String(rawId), target);
+    if (typeof rec.charId === 'string' && rec.charId) recordTargets.set(rec.charId, target);
+    const formSkills = picked.map((f) => (Array.isArray(f.skills) ? f.skills.filter(isObj) : []));
     const topSkills = Array.isArray(rec.skills) ? rec.skills.filter(isObj) : [];
+    const spec = isObj(rec.skillSpec) ? rec.skillSpec : isObj(rec.kit?.spec) ? rec.kit.spec : isObj(rec.spec) ? rec.spec : null;
+    const specOk = !!spec && !validateSkillSpec(spec).length;
+    const baseList = topSkills.length ? topSkills : formSkills.find((l) => l.length) || [];
+    const binding = specOk ? null : bindOfficial([...formSkills.flat(), ...topSkills].map((s) => s.skillId ?? s.id), defaultOf(baseList), as, rec.rarity);
+    const keepIds = !!binding?.ref;
     /** @type {Set<string>} */
     const dropped = new Set();
-    const compileSkills = (list, tag) => {
-      if (!list.length) return null;
-      let defaultAt = list.findIndex((s) => s.default === true);
-      if (defaultAt < 0) { defaultAt = 0; assume('skill-default', `「${name}」没有标默认技能，把第一条当成默认。`, `"${name}" marks no default skill, so the first one was used.`); }
-      return list.map((s, i) => {
-        for (const k of Object.keys(s)) if (!SKILL_KEEP.has(k)) dropped.add(k);
-        const explicit = (typeof s.skillId === 'string' && s.skillId) || (typeof s.id === 'string' && s.id) || '';
-        const old = explicit || (tag ? `${rawId}_${tag}_${i + 1}` : `${rawId}_${i + 1}`);
-        let skillId = skillIds.get(old);
-        if (!skillId) {
-          skillId = namespaced('skx', recordNs, old, seenIds);
-          skillIds.set(old, skillId);
-        }
-        const skill = { skillId, name: typeof s.name === 'string' ? s.name.slice(0, 40) : '技能', default: i === defaultAt };
-        for (const k of ['duration', 'spCost', 'initSp']) if (typeof s[k] === 'number' && Number.isFinite(s[k])) skill[k] = s[k];
-        if (typeof s.desc === 'string') skill.desc = s.desc.slice(0, 200);
-        if (isObj(s.bb)) {
-          const bb = {};
-          for (const [k, v] of Object.entries(s.bb)) {
-            if (DANGER_KEYS.has(k)) continue;
-            if (typeof v === 'number' && Number.isFinite(v)) bb[k] = v;
-            else dropped.add(`bb.${k}`);
-          }
-          if (Object.keys(bb).length) skill.bb = bb;
-        }
-        return skill;
-      });
-    };
-    const compiledForms = picked.map((f, idx) => compileSkills(formSkills(f), `f${idx}`));
-    const compiledTop = compileSkills(topSkills, '');
+    const compiledForms = formSkills.map((list, idx) => compileSkillList(list, { owner: rawId, tag: `f${idx}`, label: name, keepIds, defaultId: null, dropped }));
+    const compiledTop = compileSkillList(topSkills, { owner: rawId, tag: '', label: name, keepIds, defaultId: null, dropped });
     const fallback = compiledForms.find(Boolean) || compiledTop;
     if (!fallback) { skip(`units:${rawId}`, '没有技能，不能做成干员，没有导入。', 'There is no skill, so this cannot become an operator and was not imported.'); return; }
-    if (dropped.size) skip(`units:${rawId}#skill-fields`, `技能字段 ${[...dropped].slice(0, 8).join('、')} 写不进紧凑记录，没有照抄。`, `Skill fields ${[...dropped].slice(0, 8).join(', ')} do not fit the compact record, so they were not copied.`);
+    /** @type {Set<string>} */
+    const fieldsDropped = new Set();
     const oneForm = (f, idx) => {
       const stats = finiteStats(f.stats || f);
       const grid = gridOf(f.rangeGrid || rec.rangeGrid);
       if (!grid) assume('range', '缺攻击范围，写成 [[0, 0]]。请作者改成真实范围。', 'No attack range was found, so it was written as [[0, 0]]. The author should replace it.');
-      return { stats, rangeGrid: grid || [[0, 0]], skills: compiledForms[idx] || compiledTop || fallback };
+      const out = { stats, rangeGrid: grid || [[0, 0]], skills: compiledForms[idx] || compiledTop || fallback };
+      const trait = isObj(f.trait) ? cleanTrait(f.trait, fieldsDropped) : null;
+      if (trait) out.trait = trait;
+      const talents = cleanTalents(f.talents, fieldsDropped);
+      if (talents?.length) out.talents = talents;
+      return out;
     };
     const skills = compiledTop || fallback;
     let kit = 'generic';
-    const spec = isObj(rec.skillSpec) ? rec.skillSpec : isObj(rec.kit?.spec) ? rec.kit.spec : isObj(rec.spec) ? rec.spec : null;
-    if (spec && !validateSkillSpec(spec).length) kit = { spec };
+    if (specOk) kit = { spec };
     else if (spec) skip(`units:${rawId}#spec`, 'JSON 技能规格没通过校验，改成通用 kit。', 'The JSON skill spec did not validate, so the kit is generic.');
     const kitPath = typeof rec.kit === 'string' ? rec.kit : typeof rec.kit?.script === 'string' ? rec.kit.script : typeof rec.kitFile === 'string' ? rec.kitFile : null;
-    if (kit === 'generic') {
-      const shown = kitPath || '(no kit file)';
-      if (kitPath) {
-        const found = lookup(files, kitPath);
-        if (found) used.add(found);
-      }
-      skip(`units:${rawId}#kit`, `技能脚本映射不成 kitRef、JSON SkillSpec 或 DSL，「${name}」用通用 kit（${shown}）。`, `The skill script does not map to a kitRef, a JSON SkillSpec or DSL, so "${name}" uses the generic kit (${shown}).`, 'PLUGIN_FORGE_SCRIPT');
+    if (kitPath) {
+      const found = lookup(files, kitPath);
+      if (found) used.add(found);
+      // a Forge kit is a .js module; another file named here stays what it was (named in the #kit line)
+      if (found && extOf(found) === '.js') explicitKits.set(found, target);
+    }
+    if (binding?.ref) {
+      kit = { ref: binding.ref };
+      importedData.push(`units:${rawId} kit → ${binding.ref}（官方 ${binding.charId} · official）`);
+      rewrittenData.push(`${rawId} kit → ref ${binding.ref}`);
+    } else if (kit === 'generic') {
+      const namedKit = [rawId, rec.charId].map((k) => `kits/${k}.js`).find((f) => files.has(f)) || null;
+      genericKits.push({ label: `units:${rawId}`, name, kitPath: kitPath || namedKit, reason: binding, charId });
       rewrittenData.push(`${rawId} kit → generic`);
     }
+    const normalForm = oneForm(picked[0], 0);
     const op = {
       op: 1, charId, name, profession, subProfessionId: rec.subProfessionId.trim().slice(0, 40), position, rarity: rec.rarity, as,
-      forms: { normal: oneForm(picked[0], 0), elite: oneForm(picked[picked.length - 1], picked.length - 1) }, skills, kit,
+      forms: { normal: normalForm, elite: oneForm(picked[picked.length - 1], picked.length - 1) }, skills, kit,
     };
     // The compact schema requires chess.tier whenever chess is present. as "diy" is what keeps the piece out of the
     // shop (records.js writes a shop chess only when as !== "diy"). The tier is the rarity and is not a shop listing.
     if (knownBonds.length) op.chess = { tier: rec.rarity, bonds: knownBonds };
     if (typeof rec.trait === 'string') op.trait = { desc: rec.trait.slice(0, 120) };
     else if (isObj(rec.trait) && typeof rec.trait.desc === 'string') op.trait = { desc: rec.trait.desc.slice(0, 120) };
+    recordExtras(rec, picked[0], op);
+    if (dropped.size) skip(`units:${rawId}#skill-fields`, `技能字段 ${[...dropped].slice(0, 8).join('、')} 写不进紧凑记录，没有照抄。`, `Skill fields ${[...dropped].slice(0, 8).join(', ')} do not fit the compact record, so they were not copied.`);
+    if (fieldsDropped.size) skip(`units:${rawId}#fields`, `字段 ${[...fieldsDropped].slice(0, 8).join('、')} 写不进紧凑记录，没有照抄。`, `Fields ${[...fieldsDropped].slice(0, 8).join(', ')} do not fit the compact record, so they were not copied.`);
     const artRef = typeof rec.artRef === 'string' ? rec.artRef : typeof rec.art === 'string' ? rec.art : null;
     if (artRef && manifestArt?.chars && has(manifestArt.chars, artRef)) op.art = { ref: artRef };
     if (Array.isArray(poolRec.powers) && poolRec.powers.every((p) => typeof p === 'string') && as !== 'chess') op.powers = poolRec.powers.slice(0, 8);
@@ -1204,6 +1509,171 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
     importedData.push(`units:${rawId} → ${charId}`);
     rewrittenData.push(`${rawId} → ${charId}`);
     return charId;
+  };
+
+  /** The character a chess pair is: an official operator, a unit of the pack, or (charId null) official art. */
+  const chessUnit = (rec) => {
+    if (typeof rec.charId === 'string' && rec.charId) {
+      if (packUnitIds.has(rec.charId)) return { kind: 'pack', charId: rec.charId, key: packUnitIds.get(rec.charId) };
+      return officialChar(rec.charId) ? { kind: 'official', charId: rec.charId } : null;
+    }
+    const a = isObj(rec.assets) ? rec.assets : {};
+    for (const k of ['spine', 'avatar', 'portrait']) {
+      const v = typeof a[k] === 'string' ? a[k].replace(/_\d+$/, '') : '';
+      if (officialChar(v)) return { kind: 'art', charId: v };
+    }
+    return null;
+  };
+
+  /** One chess.json _a/_b pair → one compact record (Addition 1, round 43). */
+  const mapChessPair = (baseId, normal, elite) => {
+    const label = `chess:${baseId}`;
+    const name = typeof normal.name === 'string' ? normal.name.trim().slice(0, 60) : '';
+    const profession = professionOf(normal.profession);
+    const sub = typeof normal.subProfessionId === 'string' ? normal.subProfessionId.trim().slice(0, 40) : '';
+    if (!name || !PROFESSIONS.has(profession) || !sub) { skip(label, '棋子缺名字、职业或分支，没有导入。', 'The chess record lacks a name, profession or branch, so it was not imported.'); return; }
+    const tier = Number.isInteger(normal.tier) && normal.tier >= 1 && normal.tier <= 6 ? normal.tier : 0;
+    if (!tier) { skip(label, '阶级（tier）不在 1–6，没有导入。', 'The tier is not from 1 to 6, so it was not imported.'); return; }
+    let rarity = Number.isInteger(normal.rarity) && normal.rarity >= 1 && normal.rarity <= 6 ? normal.rarity : 0;
+    if (!rarity) {
+      rarity = tier;
+      assume('chess-rarity', '棋子没有 1–6 的星级时，星级写成它的阶级。', 'A chess record without a rarity from 1 to 6 takes its tier as the rarity.');
+    }
+    const unit = chessUnit(normal);
+    if (!unit) {
+      skip(label, `棋子的 charId（${String(normal.charId ?? 'null').slice(0, 40)}）既不是官方干员，也不是本包 units.json 里的干员，assets 里也没有官方干员的美术，没有导入。`, `The chess record's charId (${String(normal.charId ?? 'null').slice(0, 40)}) is neither an official operator nor a unit of this pack's units.json, and its assets name no official art, so it was not imported.`);
+      return;
+    }
+    if (unit.kind === 'art') assume('chess-art-unit', `「${name}」没有 charId，按 assets 里的官方干员 ${unit.charId} 取美术（只用美术）。`, `"${name}" has no charId, so it takes the art of the official operator ${unit.charId} named in its assets (art only).`);
+    const position = positionOf(normal.position, profession);
+    let as = 'chess';
+    if (normal.isDiy === true && rarity === 6) {
+      as = 'diy';
+      assume('chess-diy', `「${name}」是 isDiy 的六星棋子，写成自选（diy），不放进商店。`, `"${name}" is a 6★ isDiy chess record, so it was written as a recruit-pool operator (diy), not as a shop piece.`);
+    } else if (normal.isDiy === true) assume('diy-rarity', `「${name}」进了自选声明但不是六星。自选池只要六星，所以写成棋子（chess）。`, `"${name}" is declared for the recruit pool but is not 6★. The pool is 6★ only, so it was written as chess.`);
+    const bondTable = table('bonds');
+    const listed = [...new Set((Array.isArray(normal.bonds) ? normal.bonds : []).filter((b) => typeof b === 'string'))];
+    let bonds = listed.filter((b) => bondTable && has(bondTable, b));
+    if (listed.length && bonds.length !== listed.length) skip(`${label}#bonds`, '有的盟约在本安装里不存在，那些盟约没有写上。', 'Some bonds do not exist in this installation, so those bonds were not written.');
+    if (!listed.length) {
+      const fallbackBond = table('config')?.economy?.fallbackBondId;
+      if (typeof fallbackBond === 'string' && bondTable && has(bondTable, fallbackBond)) {
+        bonds = [fallbackBond];
+        assume('chess-fallback-bond', `没有盟约的棋子写上兜底盟约 ${fallbackBond}（协防干员），和工作台的干员模板一样。`, `A chess record with no bond gets the fallback bond ${fallbackBond} (协防干员), as the studio's operator template does.`);
+      }
+    }
+    if (!bonds.length) { skip(label, '棋子需要至少一个本安装里存在的盟约，没有导入这个棋子。', 'A chess piece needs a bond that exists in this installation, so this piece was not imported.'); return; }
+    const nList = Array.isArray(normal.skills) && normal.skills.some(isObj) ? normal.skills.filter(isObj) : isObj(normal.skill) ? [normal.skill] : [];
+    const eList = Array.isArray(elite.skills) && elite.skills.some(isObj) ? elite.skills.filter(isObj) : isObj(elite.skill) ? [elite.skill] : [];
+    const defN = typeof normal.skill?.skillId === 'string' ? normal.skill.skillId : null;
+    const defE = typeof elite.skill?.skillId === 'string' ? elite.skill.skillId : defN;
+    if (!nList.length && !eList.length) { skip(label, '没有技能，不能做成棋子，没有导入。', 'There is no skill, so this cannot become a piece and was not imported.'); return; }
+    if (!finiteStats(normal.stats) || !finiteStats(elite.stats)) { skip(label, '没有能用的数值（stats），没有导入。', 'There are no usable stats, so it was not imported.'); return; }
+    const declared6 = unit.kind === 'pack' && rarity === 6 && isObj(pack.operators) && (has(pack.operators, unit.key) || has(pack.operators, unit.charId));
+    if (unit.kind === 'pack' && declared6) assume('chess-and-diy', `「${name}」既有 chess.json 的棋子，又在 operators 里声明为自选：写成两条记录，棋子一条，自选一条。`, `"${name}" has a chess.json piece and a recruit-pool declaration: two records were written, the piece and the 自选 operator.`);
+    const stem = baseId.replace(/^chess_/, '').replace(/_a$/, '');
+    const charId = namespaced('char_x', recordNs, stem, seenIds);
+    const target = { charId, label: name };
+    for (const k of new Set([baseId, baseId.replace(/_a$/, '_b'), normal.chessId, elite.chessId, baseId.replace(/_a$/, '')])) {
+      if (typeof k === 'string' && k) recordTargets.set(k, target);
+    }
+    if (unit.kind === 'pack' && !declared6) {
+      chessCovered.set(unit.key, baseId);
+      charIds.set(unit.charId, charId);
+      if (unit.key !== unit.charId) charIds.set(unit.key, charId);
+    }
+    const binding = bindOfficial([...nList, ...eList].map((s) => s.skillId ?? s.id), defaultOf(nList, defN), as, tier);
+    const keepIds = !!binding?.ref;
+    /** @type {Set<string>} */
+    const dropped = new Set();
+    const nSkills = compileSkillList(nList.length ? nList : eList, { owner: stem, tag: '', label: name, keepIds, defaultId: defN, dropped });
+    const eSkills = (eList.length ? compileSkillList(eList, { owner: stem, tag: '', label: name, keepIds, defaultId: defE, dropped }) : null) || nSkills;
+    /** @type {Set<string>} */
+    const fieldsDropped = new Set();
+    const form = (r, skills) => {
+      const grid = gridOf(r.rangeGrid);
+      if (!grid) assume('range', '缺攻击范围，写成 [[0, 0]]。请作者改成真实范围。', 'No attack range was found, so it was written as [[0, 0]]. The author should replace it.');
+      const out = { stats: finiteStats(r.stats), rangeGrid: grid || [[0, 0]], skills };
+      const trait = cleanTrait(r.trait, fieldsDropped);
+      if (trait) out.trait = trait;
+      const talents = cleanTalents(r.talents, fieldsDropped);
+      if (talents?.length) out.talents = talents;
+      return out;
+    };
+    const chess = { tier, bonds };
+    const priceN = typeof normal.price === 'number' && Number.isFinite(normal.price) ? normal.price : null;
+    const priceE = typeof elite.price === 'number' && Number.isFinite(elite.price) ? elite.price : priceN;
+    if (priceN != null) chess.price = priceN === priceE ? priceN : { normal: priceN, golden: priceE };
+    const sellN = typeof normal.sellPrice === 'number' && Number.isFinite(normal.sellPrice) ? normal.sellPrice : null;
+    const sellE = typeof elite.sellPrice === 'number' && Number.isFinite(elite.sellPrice) ? elite.sellPrice : sellN;
+    if (sellN != null && sellN === sellE) chess.sellPrice = sellN;
+    else if (sellN != null) skip(`${label}#sellPrice`, '普通和精锐的卖价不同，紧凑记录只有一个卖价，用本安装的经济表。', 'The normal and elite sell prices differ, and the compact record has one sell price, so the economy table applies.');
+    const garrisons = table('garrisons') || {};
+    const garrisonList = (r) => (Array.isArray(r.garrisonIds) ? r.garrisonIds.filter((g) => typeof g === 'string') : []);
+    const gN = garrisonList(normal);
+    const gE = elite === normal ? gN : garrisonList(elite);
+    const knownN = gN.filter((g) => has(garrisons, g));
+    const knownE = gE.filter((g) => has(garrisons, g));
+    if (knownN.length !== gN.length || knownE.length !== gE.length) skip(`${label}#garrisonIds`, '有的驻守效果在本安装里不存在，那些没有写上。', 'Some garrison effects do not exist in this installation, so those were not written.');
+    if (knownN.length || knownE.length) chess.garrisonIds = sameJson(knownN, knownE) ? knownN : { normal: knownN, golden: knownE };
+    for (const k of ['identifier', 'shopSortId']) if (Number.isInteger(normal[k]) && normal[k] >= 0 && normal[k] <= 1e6) chess[k] = normal[k];
+    // what our economy decides, and the pack says otherwise
+    const econ = table('config')?.economy;
+    const statusKeys = ['phase', 'level', 'skillLevel', 'equipLevel'];
+    const statusDiffers = (r, quality) => isObj(r.status) && isObj(econ?.chessStatus?.[tier]?.[quality]) && statusKeys.some((k) => r.status[k] !== econ.chessStatus[tier][quality][k]);
+    if (statusDiffers(normal, 'normal') || statusDiffers(elite, 'golden')) skip(`${label}#status`, `练度（status）由本安装第 ${tier} 阶的经济表决定，包里写的不一样，没有照抄。`, `The level (status) comes from this installation's tier-${tier} economy; the pack's differs and was not copied.`);
+    if (Number.isInteger(normal.upgradeNum) && Number.isInteger(econ?.mergeCount) && normal.upgradeNum !== econ.mergeCount) skip(`${label}#upgradeNum`, `合成数由经济表决定（${econ.mergeCount}），包里写的是 ${normal.upgradeNum}，没有照抄。`, `The merge count comes from the economy (${econ.mergeCount}); the pack says ${normal.upgradeNum}, which was not copied.`);
+    if (typeof normal.chessType === 'string' && normal.chessType !== 'PRESET') assume('chess-preset', `Forge 的 ${normal.chessType} 棋子写成 PRESET：新棋子自己就是自己的补位，紧凑记录没有别的类型。`, `A Forge ${normal.chessType} piece was written as PRESET: a new piece is its own stand-in, and the compact record has no other type.`);
+    if (normal.isHidden === true || normal.visible === false) skip(`${label}#visible`, '隐藏或不可见的标记没有导入：紧凑记录写出的棋子总在商店里可见。', 'The hidden / invisible flags were not imported: a compact piece is always listed in the shop.');
+    const forms = { normal: form(normal, nSkills), elite: form(elite, eSkills) };
+    const named = new Set();
+    for (const r of normal === elite ? [normal] : [normal, elite]) {
+      for (const [k, v] of Object.entries(r)) if (!CHESS_KEEP.has(k) && !emptyish(v)) named.add(k);
+      if (!emptyish(r.backup) && r.backup?.charId && r.backup.charId !== r.charId) named.add('backup');
+      if (!emptyish(r.workshop)) named.add('workshop');
+    }
+    for (const k of dropped) named.add(`skills.${k}`);
+    for (const k of fieldsDropped) named.add(k);
+    if (named.size) skip(`${label}#fields`, `字段 ${[...named].slice(0, 10).join('、')} 写不进紧凑记录，没有照抄。`, `Fields ${[...named].slice(0, 10).join(', ')} do not fit the compact record, so they were not copied.`);
+    let kit = 'generic';
+    if (binding?.ref) {
+      kit = { ref: binding.ref };
+      importedData.push(`${label} kit → ${binding.ref}（官方 ${binding.charId} · official）`);
+      rewrittenData.push(`${baseId} kit → ref ${binding.ref}`);
+    } else {
+      genericKits.push({ label, name, kitPath: [baseId, baseId.replace(/_a$/, '_b')].map((k) => `kits/${k}.js`).find((f) => files.has(f)) || null, reason: binding, charId });
+      rewrittenData.push(`${baseId} kit → generic`);
+    }
+    const op = {
+      op: 1, charId, name, profession, subProfessionId: sub, position, rarity, as,
+      forms, skills: nSkills, kit, chess,
+    };
+    recordExtras(normal, null, op);
+    if ((unit.kind === 'official' || unit.kind === 'art') && manifestArt?.chars && has(manifestArt.chars, unit.charId)) op.art = { ref: unit.charId };
+    operators.push(op);
+    importedData.push(`${label} → ${charId}（${as === 'diy' ? '自选 · recruit pool' : `第 ${tier} 阶棋子 · tier-${tier} piece`}）`);
+    rewrittenData.push(`${baseId} → ${charId}`);
+  };
+
+  /** New chess.json records grouped into _a/_b pairs (Forge's chessId must equal its key). */
+  const mapChessRecords = (records) => {
+    /** @type {Map<string, { normal: any[], elite: any[] }>} */
+    const groups = new Map();
+    for (const [id, rec] of records) {
+      if (!isObj(rec)) { skip(`chess:${id}`, '棋子记录不是对象，没有导入。', 'The chess record is not an object, so it was not imported.'); continue; }
+      if (rec.chessId != null && rec.chessId !== id) { skip(`chess:${id}`, 'chessId 和键不一致（Forge 也拒这一条），没有导入。', 'chessId differs from its key (Forge refuses it too), so it was not imported.'); continue; }
+      const base = typeof rec.baseId === 'string' && rec.baseId ? rec.baseId : id.replace(/_b$/, '_a');
+      const golden = rec.isGolden === true || (rec.isGolden == null && id.endsWith('_b'));
+      if (!groups.has(base)) groups.set(base, { normal: [], elite: [] });
+      groups.get(base)[golden ? 'elite' : 'normal'].push(rec);
+    }
+    for (const [base, g] of groups) {
+      if (g.normal.length > 1 || g.elite.length > 1) { skip(`chess:${base}`, '同一对棋子里有两条普通或两条精锐记录，没有导入。', 'The pair has two normal or two elite records, so it was not imported.'); continue; }
+      const normal = g.normal[0] || g.elite[0];
+      const elite = g.elite[0] || g.normal[0];
+      if (!g.normal.length || !g.elite.length) assume('chess-one', '一对棋子只有一条记录时，这一条写进普通和精锐两档。', 'A pair with one record uses it for both the normal and the elite form.');
+      mapChessPair(base, normal, elite);
+    }
   };
 
   for (const name of CONTENT_NAMES) {
@@ -1217,8 +1687,10 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
       if (declaredContent.includes(name)) skip(`content:${name}`, 'content 声明了这个文件，但包里没有对应的 JSON，没有导入。', 'content names this file, but the pack has no such JSON, so it was not imported.');
       continue;
     }
-    const idField = name === 'units' ? 'charId' : name === 'enemies' ? 'key' : 'id';
+    const idField = name === 'units' ? 'charId' : name === 'enemies' ? 'key' : name === 'chess' ? 'chessId' : 'id';
     const map = asMap(doc, idField);
+    /** @type {Map<string, any>} */
+    const newChess = new Map();
     for (const [id, rec] of Object.entries(map)) {
       if (id === '__proto__' || id === 'constructor' || id === 'prototype') continue;
       const exists = name === 'units' ? !!(table('units') && has(table('units'), id)) : !!(table(name) && has(table(name), id));
@@ -1229,7 +1701,9 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
         patchRecord(name, id, rec);
         continue;
       }
+      if (name === 'chess') { newChess.set(id, rec); continue; }
       if (name === 'units') { mapOperator(id, isObj(rec) ? { ...rec, charId: rec.charId || id } : rec); continue; }
+      if (name === 'tokens') packTokenIds.add(id);
       if (name === 'enemies' && isObj(rec)) {
         const baseId = typeof rec.base === 'string' ? rec.base : typeof rec.special === 'string' ? rec.special : '';
         const enemies = table('enemies');
@@ -1248,7 +1722,90 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
         rewrittenData.push(`${id} → ${eid}`);
         continue;
       }
-      skip(`${name}:${id}`, '新记录没有安全的紧凑映射（模式不是 Forge 的表；其他表只自动导入带官方 base 的敌人和干员，以及已有记录上类型不变的补丁）。', 'A new record has no safe compact mapping (Forge has no mode table; other tables only auto-import enemies with an official base, operators, and type-preserving patches of existing records).');
+      skip(`${name}:${id}`, '新记录没有安全的紧凑映射（模式不是 Forge 的表；其他表只自动导入带官方 base 的敌人、干员和成对的棋子，以及已有记录上类型不变的补丁）。', 'A new record has no safe compact mapping (Forge has no mode table; other tables only auto-import enemies with an official base, operators, chess pairs, and type-preserving patches of existing records).');
+    }
+    if (newChess.size) mapChessRecords(newChess);
+  }
+
+  // ---- kits/<id>.js → one sandboxed script plugin (Addition 3, round 43; forgeKits.js) --------------------------------
+  /** @type {{ source: string, registered: { file: string, register: string, carried: string[], kind: string, label: string }[], mapped: string[], overrides: string[] } | null} */
+  let scriptPlan = null;
+  {
+    // file names go into the entry as comments, so only plain names are carried (helpers are checked by forgeKits.js)
+    const SAFE_KIT = /^[A-Za-z0-9_][A-Za-z0-9_./-]*\.js$/;
+    const named = [...files.keys()].filter((rel) => /^kits\/[^/]+\.js$/.test(rel) && !rel.slice(5).startsWith('_'));
+    const officialTarget = (stem) => {
+      const chessId = stem.replace(/_b$/, '_a');
+      if ((overrideKeys.has(`chess:${stem}`) || overrideKeys.has(`chess:${chessId}`)) && has(table('chess') || {}, chessId)) {
+        return { charId: chessId, label: chessId, kind: 'official', override: has(KITS, chessId) ? chessId : null };
+      }
+      if (overrideKeys.has(`units:${stem}`) && has(officialUnits(), stem)) return { charId: stem, label: stem, kind: 'official', override: has(KITS, stem) ? stem : null };
+      return null;
+    };
+    /** @type {{ file: string, register: string, kind: string, label: string, override: string | null }[]} */
+    const jobs = [];
+    const taken = new Map();
+    for (const file of [...new Set([...explicitKits.keys(), ...named])].sort()) {
+      used.add(file);
+      const stem = file.split('/').pop().replace(/\.js$/, '');
+      if (!SAFE_KIT.test(file)) {
+        skip(file, '文件名里有字母、数字和 . _ - 以外的字符，转不成脚本插件；导入时不执行它。', 'The file name has characters other than letters, digits and . _ -, so it was not converted; the importer does not run it.', 'PLUGIN_FORGE_SCRIPT');
+        continue;
+      }
+      const owner = explicitKits.get(file);
+      const target = owner ? { ...owner, kind: 'record', override: null } : recordTargets.has(stem) ? { ...recordTargets.get(stem), kind: 'record', override: null } : officialTarget(stem);
+      if (!target) {
+        const why = packTokenIds.has(stem)
+          ? ['这是召唤物（tokens）的 kit，召唤物记录没有导入，所以没有转成脚本插件；导入时不执行它。', 'This is a summon (tokens) kit. Summon records are not imported, so it was not converted; the importer does not run it.']
+          : [`文件名「${stem}」不是本包导入的棋子或干员，也不是 overrides 里声明的官方 id，转不成脚本插件；导入时不执行它。`, `The file name "${stem}" is not an imported chess or operator record of this pack, nor an official id the pack declares in overrides, so it was not converted; the importer does not run it.`];
+        skip(file, why[0], why[1], 'PLUGIN_FORGE_SCRIPT');
+        continue;
+      }
+      if (taken.has(target.charId)) {
+        skip(file, `「${target.label}」已经有 ${taken.get(target.charId)} 这份 kit，这一份没有转换；导入时不执行它。`, `"${target.label}" already has the kit ${taken.get(target.charId)}, so this one was not converted; the importer does not run it.`, 'PLUGIN_FORGE_SCRIPT');
+        continue;
+      }
+      if (!scripts) {
+        skip(file, `--no-scripts：没有生成脚本插件，「${target.label}」在数据插件里用它自己的 kit；导入时不执行这个文件。`, `--no-scripts: no script plugin was written, so "${target.label}" keeps its own kit in the content plugin; the importer does not run this file.`, 'PLUGIN_FORGE_SCRIPT');
+        continue;
+      }
+      taken.set(target.charId, file);
+      jobs.push({ file, register: target.charId, kind: target.kind, label: target.label, override: target.override });
+    }
+    if (jobs.length) {
+      const got = bundleForgeKits({
+        files, parse, kits: jobs.map(({ file, register }) => ({ file, register })),
+        header: [
+          `sim/index.js — written by \`node tools/plugin.mjs import-forge\` from the Forge pack ${base} ${version}.`,
+          'Nothing in this file ran during the import. Each Forge file below keeps a scope of its own; only its import and',
+          'export lines were rewritten: @kit/tier1.js → kit, @sim/constants.js → constants, @sim/detmath.js → math of sp:sdk@1.',
+          'It runs only where the server owner set SP_PLUGIN_SCRIPTS=sandbox (or a trusted mode) and a room selects this plugin.',
+        ],
+      });
+      for (const r of got.refused) skip(r.path, `${r.zh} 没有写进脚本插件；导入时不执行它。`, `${r.en} It was not written into the script plugin; the importer does not run it.`, 'PLUGIN_FORGE_SCRIPT');
+      if (got.source) {
+        const registered = got.registered.map((r) => {
+          const job = jobs.find((j) => j.file === r.file);
+          for (const p of r.carried) used.add(p);
+          return { ...r, kind: job.kind, label: job.label, override: job.override };
+        });
+        scriptPlan = {
+          source: got.source, registered, mapped: got.mapped,
+          overrides: [...new Set(registered.map((r) => r.override).filter(Boolean))].sort(),
+        };
+        assume('kits-script', '包的 kits/ 合成一个脚本插件 kits-<id>：一个自包含的 sim 入口，每个 Forge 文件一个作用域，import 改成 sp:sdk@1；它要求数据插件的同一版本，为新记录的 charId 注册 kit。', 'The pack\'s kits/ became one script plugin kits-<id>: one self-contained sim entry, a scope per Forge file, imports rewritten to sp:sdk@1; it requires the content plugin at the same version and registers each kit for the new record\'s charId.');
+        for (const n of got.notes) assume(`kits-alive:${n.path}`, n.zh, n.en);
+        assume('kits-sdk', 'sp:sdk@1 的 kit 里同名的 helper 当成 Forge tier1 的同一个；SDK 的记录类 helper 返回冻结的副本，往里写的 kit 运行时才会出错。', 'A helper of the SDK\'s kit with a Forge tier1 name is taken as the same helper; the SDK\'s record helpers return frozen copies, so a kit that writes into one fails when it runs.');
+      }
+    }
+  }
+  {
+    const scripted = new Map((scriptPlan?.registered || []).map((r) => [r.register, r.file]));
+    for (const k of genericKits) {
+      const file = scripted.get(k.charId);
+      if (!file) { kitLine(k.label, k.name, k.kitPath, k.reason); continue; }
+      skip(`${k.label}#kit`, `${k.reason ? k.reason.zh : ''}「${k.name}」在数据插件里用通用 kit；${file} 写进了脚本插件，在选中脚本插件的房间里由它接管。`,
+        `${k.reason ? `${k.reason.en} ` : ''}"${k.name}" uses the generic kit in the content plugin; ${file} was written into the script plugin, which takes over in rooms that select it.`);
     }
   }
 
@@ -1397,10 +1954,11 @@ export function planForgeImport(files, { id: idOverride, contentId, dataDir, van
   const hasContent = patches.length || operators.length || enemyRecords.length || contentI18n.length;
   if (hasContent) roles.push('content');
   if (Object.keys(assets).length && media.size) roles.push('cosmetic');
+  if (scriptPlan) roles.push('script');
   for (const panel of panels) roles.push(`ui:${panel.slot}`);
   for (const t of translations.filter((x) => x.kind === 'ui')) roles.push(`lang:${t.lang}`);
 
-  const meta = { base, packName, version, description, credits, authors, license, requires, conflicts, assets, media, assetNeed, patches, operators, enemyRecords, contentI18n, panels, translations: translations.filter((t) => t.kind === 'ui'), importedAssets, rewrittenAssets, importedData, rewrittenData, skipped, assumed, packId: typeof pack.id === 'string' ? pack.id : base };
+  const meta = { base, packName, version, description, credits, authors, license, requires, conflicts, assets, media, assetNeed, patches, operators, enemyRecords, contentI18n, panels, translations: translations.filter((t) => t.kind === 'ui'), importedAssets, rewrittenAssets, importedData, rewrittenData, skipped, assumed, script: scriptPlan, packId: typeof pack.id === 'string' ? pack.id : base };
   return { meta, roles };
 }
 
@@ -1533,6 +2091,21 @@ function buildProducts(meta, ids, primaryRole) {
     files.set('README.md', readme(ids.cosmetic, 'cosmetic', ['- 素材在 assets.json 指向的文件里。', '- Spine 的剪辑由 pack 写入 plugin.lock.json，不要手写 anims。']));
     products.push({ id: ids.cosmetic, class: 'cosmetic', role: 'cosmetic', files, imported: meta.importedAssets, rewritten: meta.rewrittenAssets, manifest: man });
   }
+  if (ids.script && meta.script) {
+    const man = manifestCommon(ids.script, meta, { class: 'script', scope: ['room'], permissions: ['sim.code'], entry: { sim: 'sim/index.js' } });
+    // [ASSUMED] The kits register record ids of that exact content plugin, so the requirement is its version.
+    if (ids.content && meta.script.registered.some((r) => r.kind === 'record')) man.requires = { ...(man.requires || {}), [ids.content]: meta.version };
+    if (meta.script.overrides.length) man.overrides = [...meta.script.overrides];
+    const files = new Map();
+    files.set('sim/index.js', meta.script.source);
+    files.set('README.md', readme(ids.script, 'script', [
+      '- sim/index.js 是包里 kits/ 的行为脚本合成的一个入口：每个 Forge 文件一个作用域，import 改成 sp:sdk@1。导入时没有执行它。',
+      '- 它只在服主设置 SP_PLUGIN_SCRIPTS=sandbox（或 trusted / trusted-force，并在 plugins/config.json 写锁文件哈希、每位玩家同意）并且房间选中它时运行。',
+      '- 改了任何文件都要重新 pack：沙箱只运行锁文件和文件一致的脚本插件。',
+    ]));
+    const imported = meta.script.registered.map((r) => `${r.file} → sim/index.js · sp.kits.register("${r.register}")（${r.label}）${r.carried.length ? ` + ${r.carried.join(', ')}` : ''}`);
+    products.push({ id: ids.script, class: 'script', role: 'script', files, imported, rewritten: [...meta.script.mapped], manifest: man });
+  }
   for (const panel of meta.panels) {
     const role = `ui:${panel.slot}`;
     const id = ids[role];
@@ -1565,6 +2138,13 @@ function buildProducts(meta, ids, primaryRole) {
   return { products, primaryRole };
 }
 
+/** The script plugin's run condition, in the report header (empty without one). */
+function scriptNote(products) {
+  const ids = products.filter((p) => p.class === 'script').map((p) => `\`${p.id}\``);
+  if (!ids.length) return '';
+  return `\n脚本插件 ${ids.join('、')} 只在服主设置 SP_PLUGIN_SCRIPTS=sandbox（或 trusted / trusted-force，见 PLUGINS.md §13）并且房间选中它时运行；导入时没有执行它。沙箱模式下它的锁文件有效，写入后房间就能选它。 (The script plugin ${ids.join(', ')} runs only where the server owner set SP_PLUGIN_SCRIPTS=sandbox (or trusted / trusted-force, PLUGINS.md §13) and a room selects it; it was not run during the import. In sandbox mode its lock is valid, so rooms can select it once it is written.)\n`;
+}
+
 function reportMarkdown(report) {
   const line = (s) => s || '（无）';
   const bullets = (rows, fmt) => (rows.length ? rows.map(fmt).join('\n') : '- （无）');
@@ -1574,7 +2154,7 @@ function reportMarkdown(report) {
 写入：${report.wrote ? '是' : '否'}${report.dryRun ? '（dry-run，没有写文件）' : ''}
 
 导入器只读文件，不执行包里的任何脚本，也不拦截官方素材（和打包工具一样，作者自己对素材负责）。
-
+${scriptNote(report.products)}
 ## 导入了什么
 
 ${bullets(report.products, (p) => `### ${p.class} \`${p.id}\`\n\n${p.imported.length ? p.imported.map((x) => `- ${x}`).join('\n') : '- （这一类没有条目）'}`)}
@@ -1626,8 +2206,9 @@ function writeTree(dir, files, manifest) {
 /**
  * Import a Forge pack.
  * @param {string | { zip?: Buffer, files?: Map<string, Buffer> }} source a directory, a .zip path, or bytes already read
- * @param {{ out?: string, id?: string, dryRun?: boolean, pluginsDir?: string, dataDir?: string, root?: string, vanilla?: { manifest?: any } | null }} [opts]
+ * @param {{ out?: string, id?: string, dryRun?: boolean, pluginsDir?: string, dataDir?: string, root?: string, vanilla?: { manifest?: any } | null, scripts?: boolean }} [opts]
  *   out: the primary plugin folder. Other products are siblings. dryRun writes nothing there.
+ *   scripts: false writes no script plugin for the pack's kits/ (--no-scripts, the studio's box).
  */
 export async function importForge(source, opts = {}) {
   const root = opts.root || process.cwd();
@@ -1660,7 +2241,13 @@ export async function importForge(source, opts = {}) {
     const vanilla = opts.vanilla || null;
     const primaryName = opts.out ? path.basename(path.resolve(opts.out)) : null;
     if (primaryName && !isPluginId(primaryName)) fail('PLUGIN_FORGE_ID', `"${primaryName}" is not a plugin id`);
-    const planned = planForgeImport(files, { id: opts.id, contentId: primaryName || undefined, dataDir, vanilla });
+    const scripts = opts.scripts !== false;
+    // acorn parses kits/ (forgeKits.js); it never evaluates them. Loaded only for a pack that has a script to read.
+    let parse = null;
+    if (scripts && [...files.keys()].some((rel) => SCRIPT_EXT.has(extOf(rel)))) {
+      try { ({ parse } = await import('acorn')); } catch { parse = null; }
+    }
+    const planned = planForgeImport(files, { id: opts.id, contentId: primaryName || undefined, dataDir, vanilla, scripts, parse });
     if (!planned.roles.length) {
       const report = publicReport({ meta: planned.meta, products: [], primaryId: null, wrote: false, dryRun, check: '没有可导入的内容。', issues: [] });
       return { ok: true, wrote: false, dryRun, issues: [], report: stableJson(report), markdown: report.markdown };
@@ -1728,7 +2315,11 @@ export async function importForge(source, opts = {}) {
       const report = publicReport({ meta: planned.meta, products: built.products, primaryId: primary.id, wrote: !dryRun, dryRun, check: 'check --strict 与 pack 通过；外观走 visual set，数据走 content set。', issues: [] });
       const md = report.markdown;
       if (!dryRun) {
-        const committed = commitProducts(stage, parent, built.products, primary.id, md);
+        const repack = primary.class === 'script' ? (dir) => {
+          const again = packPlugin(dir, { vanilla: vanilla || undefined, where: `plugins/${primary.id}/` });
+          if (!again.wrote) throw new ForgeImportError('PLUGIN_FORGE_ZIP', `${primary.id}: the lock could not be written again`);
+        } : null;
+        const committed = commitProducts(stage, parent, built.products, primary.id, md, repack);
         if (committed) {
           issues.push(committed);
           const failed = publicReport({

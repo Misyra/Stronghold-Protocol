@@ -86,7 +86,10 @@ DSL and prep templates must pass the entire strict-check → pack → content-se
 ## Import, install and API reference
 
 Use `import-forge <dir|zip> --dry-run --json` to inspect a Forge conversion before writing it. The importer never runs
-or copies pack scripts; inspect `IMPORT-REPORT.md` and implement unsupported effects with the documented DSL/SDK.
+pack scripts. Kits whose imports map to `sp:sdk@1` are carried into one script plugin `kits-<id>` (`--no-scripts`
+leaves it out), which runs only with `SP_PLUGIN_SCRIPTS` and a room that selects it; records whose skills are one
+official operator's name that operator's kit. Inspect `IMPORT-REPORT.md` and implement unsupported effects with the
+documented DSL/SDK.
 `install <zip|https URL>` checks an archive before installing; HTTPS needs `--sha256`. `--force` moves the old plugin
 to `_replaced/`. `catalog <file|https URL> --json` inspects a community list; the studio has the same catalogue install.
 Neither importing nor installing authorizes script execution.

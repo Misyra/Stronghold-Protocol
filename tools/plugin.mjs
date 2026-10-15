@@ -56,10 +56,12 @@
 //                                                        the frozen plugin API table (docs/PLUGIN-API.md). --write puts
 //                                                        it between the markers in that file
 //   node tools/plugin.mjs import-forge <dir|zip>         read a Forge workshop pack (pack.json and the files it names)
-//          [--out plugins/<id>] [--id <id>]             and write one or more plugin folders (cosmetic, content, ui, lang).
-//          [--dry-run] [--json]                         Scripts in the pack are never run. --dry-run writes nothing.
-//                                                        --json prints one stable report. IMPORT-REPORT.md lands in the
-//                                                        primary folder. See docs/PLUGINS.md §16.
+//          [--out plugins/<id>] [--id <id>]             and write one or more plugin folders (cosmetic, content, script,
+//          [--dry-run] [--json] [--no-scripts]          ui, lang). Scripts in the pack are never run; kits/ whose imports
+//                                                        map become one sandboxed script plugin (kits-<id>), which
+//                                                        --no-scripts leaves out. --dry-run writes nothing. --json prints
+//                                                        one stable report. IMPORT-REPORT.md lands in the primary folder.
+//                                                        See docs/PLUGINS.md §16.
 //   --root <dir>   another checkout or an unpacked release (default: this checkout)
 //
 // A language pack's strings are checked by node tools/i18n.mjs check <code> (docs/I18N.md); tools/packs.mjs keeps the
@@ -92,7 +94,7 @@ import { importForge } from '../server/plugins/forgeImport.js';
 export { checkPluginFolder, buildPluginLock };
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const USAGE = 'usage: node tools/plugin.mjs list [--json] | check [<dir|id> …] [--strict] [--json] [--lang zh|en] | pack <dir|id> … [--zip] [--out <path>] | new [<template> <id>] [--name … --target … --author … --license … --dir … --options <json-file>] | import-forge <dir|zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json] | test <id> | errors [--markdown] [--lang zh|en] [--write] | install <zip|https> [--sha256 <hex>] [--force] | catalog <file|https> [--json] | surface [--write]   [--root <dir>]';
+const USAGE = 'usage: node tools/plugin.mjs list [--json] | check [<dir|id> …] [--strict] [--json] [--lang zh|en] | pack <dir|id> … [--zip] [--out <path>] | new [<template> <id>] [--name … --target … --author … --license … --dir … --options <json-file>] | import-forge <dir|zip> [--out plugins/<id>] [--id <id>] [--dry-run] [--json] [--no-scripts] | test <id> | errors [--markdown] [--lang zh|en] [--write] | install <zip|https> [--sha256 <hex>] [--force] | catalog <file|https> [--json] | surface [--write]   [--root <dir>]';
 /** The documents whose symptom table `errors --write` keeps: path, language. */
 export const TABLE_DOCS = Object.freeze([['docs/PLUGINS.md', 'en'], ['docs/PLUGIN-GUIDE.md', 'zh']]);
 
@@ -411,7 +413,7 @@ export async function main(argv) {
     const result = await importForge(path.resolve(targets[0]), {
       out: values.out ? path.resolve(values.out) : undefined,
       id: values.id, dryRun: flags.has('dry-run'), root, pluginsDir: dirs.pluginsDir, dataDir: dirs.dataDir,
-      vanilla: readVanillaAssets(dirs.dataDir),
+      vanilla: readVanillaAssets(dirs.dataDir), scripts: !flags.has('no-scripts'),
     });
     if (flags.has('json')) console.log(JSON.stringify(result.report));
     else console.log(result.markdown);

@@ -1702,6 +1702,8 @@
   "包太大，超过 {max}。": "The pack is larger than {max}.",
   "正在读取 Forge 包…": "Reading the Forge pack…",
   "已写入 {n} 个插件": "Wrote {n} plugins",
+  "不生成脚本插件（kits/ 里的行为脚本）": "Don't write a script plugin (the kits/ behaviour scripts)",
+  "脚本插件只在服主开启 SP_PLUGIN_SCRIPTS=sandbox（或受信任模式）并且房间选中它时运行；导入时没有执行它。": "The script plugin runs only where the server owner set SP_PLUGIN_SCRIPTS=sandbox (or a trusted mode) and a room selects it. It was not run during the import.",
   "插件卡死，本场由服务器接管": "A plugin stopped responding. The server will take over this battle.",
   "脚本（沙箱）": "Script (sandbox)",
   "被动：攻击力提升 50%": "Passive: ATK +50%",

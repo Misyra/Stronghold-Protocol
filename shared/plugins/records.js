@@ -104,7 +104,9 @@ function operator(data, r, pluginId, validateDsl) {
       const identity = { chessId: id, baseId, goldenId, isGolden: golden, tier, identifier: c.identifier ?? 10000,
         shopSortId: c.shopSortId ?? 10000, isHidden: false, isDiy: false, visible: true, chessType: 'PRESET',
         backup: { charId: r.charId, tmplId: null, skillIndex, uniEquipId: null, potRank: 0 },
-        bonds: c.bonds, garrisonIds: c.garrisonIds ?? [], price: object(c.price) ? c.price[quality] : c.price ?? econ.chessPrice?.[tier]?.[quality],
+        // garrisonIds, like price, is one value for both pieces or { normal, golden } (official pairs: garrison_N_a / _b)
+        bonds: c.bonds, garrisonIds: object(c.garrisonIds) ? c.garrisonIds[quality] ?? [] : c.garrisonIds ?? [],
+        price: object(c.price) ? c.price[quality] : c.price ?? econ.chessPrice?.[tier]?.[quality],
         sellPrice: c.sellPrice ?? econ.chessSell?.[tier]?.[quality] ?? 1, upgradeNum: golden ? 0 : econ.mergeCount ?? 3,
         upgradeChessId: golden ? null : goldenId, status };
       data.chess[id] = composeUnitRecord(identity, unit, f, { skillIndex });

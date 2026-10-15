@@ -13,6 +13,7 @@
 //   POST /studio/api/plugins            a new plugin from a template { template, id, name, target, authors, license, credits }
 //   POST /studio/api/forge/preview      a Forge pack as { zip: base64 } or { files: [{ name, data: base64 }] } — the report,
 //                                       nothing written (server/plugins/forgeImport.js). No path on this machine.
+//                                       noScripts: true leaves the sandboxed script plugin of kits/ out (--no-scripts).
 //   POST /studio/api/forge/import       the same body; writes plugins/<id>/ after the report's products pass check and pack
 //   GET  /studio/api/plugins/<id>       its manifest, files, sections, findings (coded: shared/plugins/errors.js), lock
 //   PUT  /studio/api/plugins/<id>/manifest     plugin.json as a whole (the advanced editor)
@@ -815,7 +816,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       const result = await importForge(forgeUpload(body), {
         id: typeof body.id === 'string' && body.id ? body.id.slice(0, 64) : undefined,
         dryRun: route === 'forge/preview', pluginsDir, dataDir, root: path.dirname(path.resolve(publicDir)),
-        vanilla: registry.vanillaAssets(),
+        vanilla: registry.vanillaAssets(), scripts: body.noScripts !== true,
       });
       const safety = result.issues.find((i) => FORGE_SAFETY.has(i.code));
       if (safety) throw new StudioError(safety.code, 400, { detail: safety.detail }, safety.detail);

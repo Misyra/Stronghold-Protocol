@@ -15,7 +15,7 @@ import { listResourceFiles, collectHashes } from '../../tools/asset-hashes.mjs';
 import { createStaticHandler } from '../../server/index.js';
 import {
   pathKey, RESOURCE_MANIFEST_FILE, RESOURCES_FORMAT, TIER_ESSENTIAL, TIER_REST, buildResourceManifest, collectResourceFiles,
-  createResourceIndex, isResourcePath, localPathFor, resourceType, tierForPath, validateResourceUrl,
+  createResourceIndex, isResourcePath, localPathFor, resourceType, skinKeyForPath, tierForPath, validateResourceUrl,
 } from '../../server/resources.js';
 
 const rewriteAssetPaths = (v, base) => {
@@ -149,8 +149,41 @@ describe('resource manifest building', () => {
     assert.equal(tierForPath('somethingNew.a/b.png'), TIER_REST, 'unknown sections stay out of the fast path');
   });
 
-  test('collect: every resource file, deduplicated, essential first, ids/aliases skipped', () => {
-    const files = collectResourceFiles(manifest(), local());
+  test('干员皮肤: optional by design and marked with the key the client scopes by', () => {
+    // A full install is ~328 MiB (docs/SKINS.md) — never part of the required set the panel starts with.
+    assert.equal(tierForPath('chars.char_003_kalts.skins.char_003_kalts@boc#6.spine.front.skel'), TIER_REST);
+    assert.equal(tierForPath('chars.char_003_kalts.skins.char_003_kalts@boc#6.avatar'), TIER_REST);
+    assert.equal(skinKeyForPath('chars.char_003_kalts.skins.char_003_kalts@boc#6.spine.front.textures.0'), 'char_003_kalts/char_003_kalts@boc#6');
+    assert.equal(skinKeyForPath('chars.char_003_kalts.skins.char_003_kalts@boc#6'), 'char_003_kalts/char_003_kalts@boc#6');
+    assert.equal(skinKeyForPath('chars.char_003_kalts.spine.front.skel'), null, 'the default model is not a skin');
+    assert.equal(skinKeyForPath('local.groups.spine/enemy/enemy_1.path'), null);
+    assert.equal(skinKeyForPath(''), null);
+    const files = collectResourceFiles({ chars: { char_003_kalts: {
+      avatar: '/assets/char/avatar/char_003_kalts_1.png',
+      spine: { front: { skel: '/assets/spine/op/char_003_kalts/front/char_003_kalts.skel' } },
+      skins: {
+        'char_003_kalts@boc#6': {
+          spine: { front: { skel: '/assets/spine/op/char_003_kalts/char_003_kalts_boc_6/front/char_003_kalts_boc_6.skel', textures: ['/assets/spine/op/char_003_kalts/char_003_kalts_boc_6/front/char_003_kalts_boc_6.png'] } },
+          avatar: '/assets/char/avatar/skin/char_003_kalts_boc_6.png',
+          name: '珊瑚海岸',
+        },
+      },
+    } } }, null);
+    const own = files.find((f) => f.url === '/assets/char/avatar/char_003_kalts_1.png');
+    assert.equal(own.tier, TIER_ESSENTIAL);
+    assert.equal(own.skin, undefined);
+    const model = files.find((f) => f.url.endsWith('char_003_kalts_boc_6.skel'));
+    assert.equal(model.tier, TIER_REST);
+    assert.equal(model.skin, 'char_003_kalts/char_003_kalts@boc#6');
+    assert.equal(files.find((f) => f.url === '/assets/char/avatar/skin/char_003_kalts_boc_6.png').skin, 'char_003_kalts/char_003_kalts@boc#6');
+    // The built manifest carries it, which is what the client groups and scopes by.
+    const built = buildResourceManifest({ files, version: 'v' });
+    assert.equal(built.files.find((f) => f.url.endsWith('char_003_kalts_boc_6.skel')).skin, 'char_003_kalts/char_003_kalts@boc#6');
+    assert.equal(built.files.find((f) => f.url.endsWith('/front/char_003_kalts.skel')).skin, undefined);
+    assert.equal(built.tier1, 2, 'only the operator’s own avatar and model stay required');
+  });
+
+  test('collect: every resource file, deduplicated, essential first, ids/aliases skipped', () => {    const files = collectResourceFiles(manifest(), local());
     const urls = files.map((f) => f.url);
     assert.equal(new Set(urls).size, urls.length, 'no duplicates');
     assert.deepEqual([...files].sort((a, b) => a.tier - b.tier), files, 'sorted essential first');

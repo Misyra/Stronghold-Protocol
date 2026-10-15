@@ -12,12 +12,12 @@
 //
 // The zips hold one folder, Stronghold-Protocol/, with only what a player runs — an allowlist over `git ls-files`, so
 // untracked work, caches, logs and per-machine config never get in: server/, shared/, data/, public/ (not public/dev/),
-// packs/ (the content packs that ship with the repository, docs/guides/PACKS.md; a pack installed on this machine and not
+// packs/ (the content packs that ship with the repository, docs/PACKS.md; a pack installed on this machine and not
 // committed stays out),
 // the start scripts, the tools a player runs (setup, vendor = the postinstall, fetch-assets + tools/assets, doctor, and
 // what setup starts: tools/local-extract, crop-board-atlas), the research tables the Node server (server/sim/
 // nodeData.js fallback) and fetch-assets read, package.json / package-lock.json, LICENSE / NOTICE.md /
-// THIRD-PARTY-NOTICES.md, README.md, CHANGELOG.md, docs/guides/PLAYING.md and the runtime operations guides (PLAYER_DOCS). `npm ci --omit=dev` in the
+// THIRD-PARTY-NOTICES.md, README.md, CHANGELOG.md, docs/PLAYING.md and the runtime operations guides (PLAYER_DOCS). `npm ci --omit=dev` in the
 // stage adds the production node_modules and (postinstall) public/vendor. The full zip adds the git-ignored art: the
 // files data/assets.json lists, public/fonts, and the local-client extraction (public/assets/local/,
 // data/local-assets.json) when present, including the 0.2.5 battlefield scenes under public/assets/local/scene/
@@ -84,12 +84,12 @@ export const FOLDER = 'Stronghold-Protocol';
 /** Root files a player gets. */
 export const ROOT_FILES = ['package.json', 'package-lock.json', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'CHANGELOG.md'];
 /** The player docs. */
-export const PLAYER_DOCS = ['docs/guides/PLAYING.md', 'docs/SKINS.md', ...['DEPLOY', 'HOME_SERVER', 'ANNOUNCEMENTS', 'CDN', 'PERSISTENCE', 'MONITORING'].map(name => `docs/operations/${name}.md`)];
+export const PLAYER_DOCS = ['docs/PLAYING.md', 'docs/SKINS.md', ...['DEPLOY', 'HOME_SERVER', 'ANNOUNCEMENTS', 'CDN', 'PERSISTENCE', 'MONITORING'].map(name => `docs/operations/${name}.md`)];
 /** Research tables read at run time: server/sim/nodeData.js (the Node sim's fallback), tools/fetch-assets.mjs and
  * tools/install-skins.mjs (干员皮肤: the skin catalogue the installer validates against, docs/SKINS.md). */
 export const RUNTIME_RESEARCH = ['docs/research/03-operators.json', 'docs/research/05-enemies.json', 'docs/research/05-maps.json', 'docs/research/07-assets.json',
   'docs/research/08-skins.json'];
-/** The start scripts (scripts/make-windows-bundle.mjs is the maintainer's Windows pack, docs/operations/WINDOWS.md). */
+/** The start scripts (scripts/make-windows-bundle.mjs is the maintainer's Windows pack, docs/WINDOWS.md). */
 export const PLAYER_SCRIPTS = ['scripts/install-service-windows.ps1', 'scripts/launch.mjs', 'scripts/open-browser.mjs',
   'scripts/run-server.cmd', 'scripts/start-windows.bat', 'scripts/start-windows.ps1', 'scripts/start.sh'];
 /** The tools a player runs (npm run setup / doctor / assets, the postinstall), the ones setup starts, and the ones

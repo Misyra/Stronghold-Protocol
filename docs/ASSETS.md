@@ -336,7 +336,7 @@ All paths are URL paths relative to the site root, for example `/assets/char/ava
 
 The enemies' attack clip lengths are also a data input: `tools/build-data.mjs` copies each enemy model's
 `anims.attack.loop` length and first `hits` time into data/enemies.json `attackAnim` (the sim stands an unblocked
-ranged enemy for that clip, GitHub #58, and strikes every enemy attack at that frame, 0.2.0; docs/development/DATA.md §9) — rebuild the data after a manifest change that touches them.
+ranged enemy for that clip, GitHub #58, and strikes every enemy attack at that frame, 0.2.0; docs/DATA.md §9) — rebuild the data after a manifest change that touches them.
 
 ### The `Roles` object
 
@@ -410,7 +410,7 @@ is not known) keep their manifest clips.
 Other renderer rules from research 07 §5.4–5.5:
 - **Choosing the model:** Front when the unit faces right or down; Front mirrored when facing left; Back when facing up — while it stands: a dead or knocked-out operator falls and lies with the Front model unless its Back skeleton has a Die clip of its own (131 of the 135 have none; DESIGN §22.1, GitHub issue #25).
 - **Attack speed:** set the attack `timeScale` to `duration / attackInterval`.
-- **Model size:** every skeleton is drawn at one `UNIT.modelScale` (render/style.js, 320 skeleton units per tile), which stands for the official standard. The official client also scales each enemy model in its battle prefab: the Graphic / FaceSwitcher / Spine transforms multiply to 0.27 for most enemies and for the operators' battle skins, but not for all of them. For example, 威龙 is 0.16, 妖怪 0.20 and 青铜镜 0.6. The skeletons themselves carry no such scale, because every enemy SkeletonDataAsset uses 0.01. So an enemy is drawn × data/enemies.json `modelScale` (its prefab's product ÷ 0.27, see docs/development/DATA.md; user playtest #6: 威龙 used to be drawn 1.35× a 妖怪 instead of 1.08×), and its HP bar sits on that model: at its setup-pose bounds' height × the same factors, or, for a skeleton without bounds, at the chibi headroom × `modelScale` (bosses 2.2 tiles). `tools/local-extract/enemy_scales.py` reads the products from a local client, and `tools/build-data.mjs MODEL_SCALES` keeps them. Two prefab quirks on top (PR #211 by @xcdoge; the owner's decision of 2026-10-06; docs/research/12 §3.1): the two 帝国炮火先兆者 are stretched vertically (`modelScaleY` 1.263: their Graphic scale is (0.19, 0.24, 0.24)) and 木制瑞印 is mirrored (`mirrorX`: a negative Graphic X scale) — `tools/local-extract/enemy_model_offsets.py` reads them, `tools/build-data.mjs MODEL_STRETCH_Y` / `MIRRORED_PREFABS` keep them.
+- **Model size:** every skeleton is drawn at one `UNIT.modelScale` (render/style.js, 320 skeleton units per tile), which stands for the official standard. The official client also scales each enemy model in its battle prefab: the Graphic / FaceSwitcher / Spine transforms multiply to 0.27 for most enemies and for the operators' battle skins, but not for all of them. For example, 威龙 is 0.16, 妖怪 0.20 and 青铜镜 0.6. The skeletons themselves carry no such scale, because every enemy SkeletonDataAsset uses 0.01. So an enemy is drawn × data/enemies.json `modelScale` (its prefab's product ÷ 0.27, see docs/DATA.md; user playtest #6: 威龙 used to be drawn 1.35× a 妖怪 instead of 1.08×), and its HP bar sits on that model: at its setup-pose bounds' height × the same factors, or, for a skeleton without bounds, at the chibi headroom × `modelScale` (bosses 2.2 tiles). `tools/local-extract/enemy_scales.py` reads the products from a local client, and `tools/build-data.mjs MODEL_SCALES` keeps them. Two prefab quirks on top (PR #211 by @xcdoge; the owner's decision of 2026-10-06; docs/research/12 §3.1): the two 帝国炮火先兆者 are stretched vertically (`modelScaleY` 1.263: their Graphic scale is (0.19, 0.24, 0.24)) and 木制瑞印 is mirrored (`mirrorX`: a negative Graphic X scale) — `tools/local-extract/enemy_model_offsets.py` reads them, `tools/build-data.mjs MODEL_STRETCH_Y` / `MIRRORED_PREFABS` keep them.
 - **Flying units** hover `FLY_HOVER` = 1.3 tiles up (render/units.js; the client's single fly offset 0.35 in its character space, whose unit is the standard prefab scale 0.27 — docs/research/12) — an enemy flyer above the road whatever tile it crosses (a high-ground or forbidden block under it is no step, GitHub #277), an operator or summon above its tile: the body, its HP bar, damage numbers and hits ride the lift, the shadow stays on the ground tile (the block top under an enemy flyer crossing one), on the 2D and the 3D board alike (one camera drives both).
 - **Enemy aliases:** `enemies[id].spineAliasOf` means the model belongs to another enemy. Two cases:
   - `_2` variants whose official prefab is the base one (鸭爵, 高普尼克, 流泪小子, 圆仔, 假想敌：胄, 假想敌：铳): the base model, as in the game.
@@ -482,7 +482,7 @@ Other renderer rules from research 07 §5.4–5.5:
 
 ### Looking up `data/chess.json` asset ids
 
-`data/chess.json` stores asset **ids** in `chess[*].assets` (docs/development/DATA.md). They map onto this manifest as follows (checked for all 258 chess):
+`data/chess.json` stores asset **ids** in `chess[*].assets` (docs/DATA.md). They map onto this manifest as follows (checked for all 258 chess):
 
 | `assets` field | Example id | Manifest URL |
 |---|---|---|
@@ -590,7 +590,7 @@ ZIP and CRC code are loaded on demand from the locally vendored zip.js library, 
 The implementation is adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later, resource manager commit
 `234dc52b`, v2 ZIP optimization `5d8e91e`, and subsequent resource updates). This fork retains streaming download limits, strict content verification,
 versioned CDN cache reuse and pause/resume hardening. Resources alone do not provide offline gameplay.
-See [CDN.md](../operations/CDN.md) for deployment and cache behavior.
+See [CDN.md](operations/CDN.md) for deployment and cache behavior.
 ## Manifest URLs and cache busting (this fork)
 
 `data/assets.json` in git (and as `tools/fetch-assets.mjs` writes it) and `data/local-assets.json` (as
@@ -602,7 +602,7 @@ See [CDN.md](../operations/CDN.md) for deployment and cache behavior.
   start over the same trees the asset tools rewrite in place). A restart, a re-extraction or a Docker rebuild with
   unchanged bytes keeps the tag, so the browser reuses its year-long cache; changing any art file moves the tag and the
   art is fetched again. The two manifests themselves are served `no-cache`.
-- **CDN install** (`SP_ASSETS_CDN`, [CDN.md](../operations/CDN.md)). The client takes each file's own hash from
+- **CDN install** (`SP_ASSETS_CDN`, [CDN.md](operations/CDN.md)). The client takes each file's own hash from
   `/assets-manifest.json?v=<tag>` (the committed `.assets-manifest.json`, written by `tools/r2-sync.mjs`) and asks the
   CDN for `<base>/assets/…?v=<file hash>` (`shared/assetCdn.js`), so a release re-busts only the files it changed.
 - A Spine model keeps its `{ skel, atlas, textures }` folder together (hash of the model's files, `tools/r2-sync.mjs`
@@ -610,7 +610,7 @@ See [CDN.md](../operations/CDN.md) for deployment and cache behavior.
   page's URL must stay in its atlas's folder.
 - Upstream 0.2.6's **content-hash path segment** (`/assets/~<hash>/…`, a background index in `server/http/assetIndex.js`
   and `assetViews.js`) is deliberately **not** served here: `?v=<file hash>` (CDN) and `/_v/<tag>/` (local) are this
-  fork's two forms. See [MERGE_0.2.6.md](MERGE_0.2.6.md) for the reason and for what a future per-file improvement for
+  fork's two forms. See [MERGE_0.2.6.md](development/MERGE_0.2.6.md) for the reason and for what a future per-file improvement for
   local installs would have to do (strip `/_v/` first, then the segment; gate the manifest views on `!cdn.base`).
 - The 19 extracted guide pages get a WebP copy beside each PNG (`tools/local-extract/extract.py --webp`,
   `GUIDE_WEBP_MODE`; lossy quality 90 by default, 25.6 MB → 4.2 MB), the manifest lists the copy, and the viewer

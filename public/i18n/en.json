@@ -13,7 +13,7 @@
     "credits": "Game texts (data/i18n/en.json): the official EN client data (© Hypergryph / Yostar) via ArknightsAssets/ArknightsGamedata.",
     "complete": true
   },
-  "_about": "English UI strings: Chinese msgid → English (shared/i18n.js t(); docs/development/I18N.md). Placeholders {name} and {n|one|other} as in the msgid; a 'context::msgid' key is a tc() variant. Seeded from GitHub PR #70 (branch en-translation) by @YuriRestia, reused with credit (NOTICE.md). Game texts are not here: data/i18n/en.json (tools/build-i18n.mjs).",
+  "_about": "English UI strings: Chinese msgid → English (shared/i18n.js t(); docs/I18N.md). Placeholders {name} and {n|one|other} as in the msgid; a 'context::msgid' key is a tc() variant. Seeded from GitHub PR #70 (branch en-translation) by @YuriRestia, reused with credit (NOTICE.md). Game texts are not here: data/i18n/en.json (tools/build-i18n.mjs).",
   "点击「前往下载」查看资源包链接。lite 仅含基础画面资源，full 还包含中日语音、音效、音乐等；也可导出已缓存资源分享。": "Select Download for package links. lite contains essential visual resources; full also includes Chinese and Japanese voices, sound effects, music, and more. You can also export cached resources to share.",
   "导入时会校验文件，并跳过不适用的资源；开启预载后可补齐缺少部分。若提示校验失败或 ZIP 损坏，请重新下载完整资源包。": "Imports verify files and skip resources that do not match this site. Enable preloading to download missing files. If verification fails or the ZIP is damaged, download the complete package again.",
   "跨站导入说明：本站资源包包含额外的地图与模型配置，导入 xinhai（linxia）站点时可能提示「资源路径无效」并中止。请使用目标站点提供的资源包。": "Importing across sites: this site's packages include additional map and model configurations. Importing them into xinhai (linxia) may stop with an Invalid resource path error. Use packages provided by the destination site.",

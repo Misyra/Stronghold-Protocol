@@ -2,7 +2,7 @@
 // 提示) and, in the same place, stage devices (阻隔工事 / “双眼皮” / 射击台 / 气流: GitHub #228, PR #229 by @rickylxw —
 // deviceInfo / deviceTipAt below). Re-exported from ../gameLogic.js.
 //
-// The words go through t() (docs/development/I18N.md: the Chinese text is the msgid, public/i18n/en.json the English): the name /
+// The words go through t() (docs/I18N.md: the Chinese text is the msgid, public/i18n/en.json the English): the name /
 // tag / fact tables are marked N_() and translated where terrainInfo hands them out, the mechanism lines are built
 // with their numbers as params. A device's NAME is a data text (data/stages.json `devices[].name`, localized by the
 // data overlay: "Barricade", "'Double Lids'" …), not a msgid.
@@ -15,7 +15,7 @@ import { t, N_ } from '../../../../shared/i18n.js';
 /**
  * What tapping a special tile says. `lines` are functions of the stage's own terrain parameters (`stage.special[<terrain>]`
  * and the tile's `bb`, the very numbers the sim runs on — server/sim/content/devices.js), so a tip can never disagree with
- * the battle; the prose is ours (docs/guides/PLAYING.md wording, PRTS 特殊地形 / 沼泽控制 / 深水区 地形信息).
+ * the battle; the prose is ours (docs/PLAYING.md wording, PRTS 特殊地形 / 沼泽控制 / 深水区 地形信息).
  * `tag` is the chip above the name; `fact` needs the tile's own legend entry (see terrainInfo).
  */
 const TERRAIN_TIPS = Object.freeze({

@@ -1,8 +1,8 @@
-// The newcomer docs name only paths that exist: every repository path in docs/development/ARCHITECTURE.md and CONTRIBUTING.md
+// The newcomer docs name only paths that exist: every repository path in docs/ARCHITECTURE.md and CONTRIBUTING.md
 // (inline code, the diagrams and commands in fenced blocks) and every relative Markdown link. A path with a
 // placeholder (`<codename>`, `{a,b}`) or a glob (`*`) is checked up to its last fixed directory; a path ending in `/`
 // must be a directory. Outputs that a fresh checkout does not have (downloaded art, vendored libraries) are exempt.
-// The design document (0.2.0 split): docs/development/DESIGN.md is the index, every `## N.` section sits exactly once in
+// The design document (0.2.0 split): docs/DESIGN.md is the index, every `## N.` section sits exactly once in
 // docs/design/ (the current rules) or docs/history/ (the per-release revisions), the index names each file with its
 // sections, and every "DESIGN §N" / "DESIGN §N.M" cited anywhere in the repository is a heading of it.
 import { test } from 'node:test';
@@ -16,7 +16,7 @@ import { PLAYER_MARKDOWN, rewritePlayerDoc, selectTracked, trackedFiles } from '
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 /** Each document with the least number of paths it names (a guard against an extraction that finds nothing). */
-const DOCS = [['docs/development/ARCHITECTURE.md', 100], ['CONTRIBUTING.md', 15], ['docs/README.md', 0]];
+const DOCS = [['docs/ARCHITECTURE.md', 100], ['CONTRIBUTING.md', 15], ['docs/README.md', 0]];
 /** A repository path starts with one of these top-level directories … */
 const TOP = /^(?:server|shared|public|data|tools|test|docs|types|scripts|\.github)\//;
 /** … or is one of these root files (README.md is left out: a bare `README.md` often means a folder's own). */
@@ -95,7 +95,7 @@ test('the path extraction: placeholders, globs, directories and the exemptions',
 const sectionsOf = (md) => [...md.matchAll(/^## (\d+)\./gm)].map((m) => Number(m[1]));
 
 test('DESIGN: every section is a `## N.` heading exactly once in docs/design/ or docs/history/, and the index names its file', () => {
-  const indexPath = 'docs/development/DESIGN.md';
+  const indexPath = 'docs/DESIGN.md';
   const index = readFileSync(join(ROOT, indexPath), 'utf8');
   const where = new Map();                                    // § → the file that holds it
   for (const dir of DESIGN_DIRS) {

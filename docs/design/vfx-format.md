@@ -607,7 +607,10 @@ Semantics below are read from the field names, the data and the client's type, f
   `rotation_y`).
 * `_delayToPlay` (s before the systems start), `_delayToFinish` (s the effect lingers after it is finished, then it is
   recycled), `_maxLifetime` (s, −1 none), `_randomPlayDelay`, `_isLoop`, `_inactiveOnFinish` (`[{node}]` hidden when it
-  finishes), `_subFXDelayConfigs`, `_holdByOwner`, `_overwriteHeight` / `_heightOffset` (place at this height),
+  finishes: when the game stops it or its content has ended, through the linger), `_subFXDelayConfigs`, `_holdByOwner`
+  (its owner holds it: the effect moves with the unit — §33.16 Placement; **assumed** from the client's names
+  `ParticleEffect.holdByOwner`, `Entity.m_holdEffects`, `CreateEffectHoldBySource(…, setAsParent)`: 1 on the attack
+  starts, buffs and statuses, 0 on the hits and ground ranges), `_overwriteHeight` / `_heightOffset` (place at this height),
   `_usePlaybackSpeed` / `_limitedPlaybackSpeed` (follow the owner's attack speed, capped), `_preloadCnt` (pool size
   hint), `_allowAutoReuse`, `_disableBattleEffectShrink`, `_ignoredByParticleEffectManager`, `_toggleMeshRendererWhenPause`.
 * An effect is finished when every non-looping system has ended and has no live particle (and its clips have ended);
@@ -615,7 +618,11 @@ Semantics below are read from the field names, the data and the client's type, f
 
 **`ProjectileEffect`** (the flying part of a projectile, §33.12): `_mainDir`, `_resetMainDir`, `_rotate180Y`,
 `_randomAngle`, `_flipIfLeft`, `_delayToFinish`, `_inactiveOnFinish`, `_inactiveOnHit` (`[{node}]` hidden on arrival
-while the rest — trails — fades), `_preloadCnt`, `_allowAutoReuse`. **`EmptyEffect`**: an effect with no own logic.
+while the rest — trails — fades), `_preloadCnt`, `_allowAutoReuse`. The 172 with an `_inactiveOnFinish` list name their
+body there (崖心's hook and 灰毫's shell `gonggaoban`, 空弦's arrow `gongjian`) with a `_delayToFinish` of 0.5 s for the
+trail: the flight's end finishes the effect (a projectile clears its main effect when it is reached), so the body goes
+as the shot lands (DESIGN §32.14.40; it used to stay on the target until the trail had faded).
+**`EmptyEffect`**: an effect with no own logic.
 
 **`FxDelay`**: `_delayTime` — the node becomes active that many seconds after the effect starts (its nodes start
 inactive or the behaviour hides them first).
@@ -659,7 +666,11 @@ follow the owner / the height of the tile under it.
 4 OWNER_SPINE_FACE_TO_MATCH, `_motionMode` (0 WALK, 1 FLY), `_buffKey`, `_playWhenFaceToBack`), **`OnFinishEmitter`**
 (`_effects` started when this one finishes, e.g. `amgoat_skill_03_buff` → `amgoat_skill_03_buff_end`),
 **`OnFinishAnime`** / **`TriggerAnimatorWhenFinish`** (set an Animator trigger at the end), **`PauseAnotherEffect`**
-(`_effect`).
+(`_effect`). The runtime starts an OnPlayEmitter's effects with their parent's placement and owner (`system.js
+FxHandle._start`); on a unit a chained effect keeps to its own FollowMountPoint's point, else moves with the unit when
+its parent or its own `_holdByOwner` says so (§32.14.40: before, they all kept their parent's placement, and a parent
+without a FollowMountPoint left them where they started — 能天使 S2's `angle_skill_02_buff_02` and 纯烬艾雅法拉 S3's five
+weapon effects, each on its own Special point in the client, at her feet).
 
 **`PauseEffectIf`**: pause (hide) the effect while a condition on its owner holds — `_checkAbnormalFlag` +
 `_pauseWhenAbnormalFlag(s)`, `_checkAbnormalImmune` + `_pauseWhenAbnormalImmune`, `_checkNotInAbnormalFlag` +
@@ -1195,7 +1206,12 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   rotation is not exported, and at least 洛洛's SpecialPoint1 and 令's SpecialPoint2 keep a fixed one their BoneFollower
   does not take from the bone (30° about X, cancelling the Graphic's tilt; the only X / Y turns among the 1,365 point
   transforms of the index's operator skins) — turned by the bone's angle, 洛洛's drone stands upright at home. A shot
-  flies along the client's arc (§33.12 Projectile; `render/vfx/flight.js`; its parts below).
+  flies along the client's arc (§33.12 Projectile; `render/vfx/flight.js`; its parts below). Since DESIGN §32.14.40:
+  an effect its unit holds — a held one (`playOn` `follow`: a status loop, an aura, a skill's or a talent's loop) or a
+  `_holdByOwner` prefab — without a FollowMountPoint moves with the unit, its offset from the feet as it started (a
+  ground spawn on the ground); a hit or a ground range not held stays where it started, a FollowOwner one keeps to the
+  feet only when held, as before [ASSUMED: §33.11 `_holdByOwner`; a status loop whose prefab says 0 —
+  `common_stealth`, `buff_ fragile_01`, `common_invincible_01` — follows its unit all the same].
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
   where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`).
 * **A projectile's parts** (2026-10-15, history §32.14.36 and §32.14.38; `flight.js projectileParts`, `wiring.js

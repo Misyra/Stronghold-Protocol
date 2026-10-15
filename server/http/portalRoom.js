@@ -1,6 +1,6 @@
 // 房间分享的浏览器入口：GET 报告功能状态，POST 提交当前房间，GET /status 查登记结果。
 //
-// 这个文件有两种显式模式（docs/design/portal-agent-wss.md §43.1、§44.3、§45.3）：
+// 这个文件有两种显式模式（docs/design/portal-agent-wss.md §45.1、§46.3、§47.3）：
 //
 //   off          —— 没配就是不开放：浏览器拿 enabled:false，界面隐藏分享。
 //   legacy-http  —— 游戏自己带 HMAC 签名直连中央的老路（第三方站继续用它）。旧配置（完整的 HMAC 三项）
@@ -18,20 +18,20 @@ import { readJsonBody } from './readJson.js';
 import { sendJson } from './common.js';
 import { N_ } from '../../shared/i18n.js';
 
-/** 分享模式（§45.3）。 */
+/** 分享模式（§47.3）。 */
 export const PORTAL_ROOM_MODES = Object.freeze(['off', 'legacy-http', 'agent']);
 
 /** Agent 桥接路径（lib/game-bridge.mjs 的 BRIDGE_BASE_PATH，相对 Agent 的根路径）。 */
 export const PORTAL_ROOM_BRIDGE_PATH = 'internal/game/v1/publications';
 
-/** 全链路预算，与桥那边的 shareMs 一致：浏览器等 10 秒，这里 8 秒必须放弃（§37.4）。 */
+/** 全链路预算，与桥那边的 shareMs 一致：浏览器等 10 秒，这里 8 秒必须放弃（§39.4）。 */
 export const PORTAL_ROOM_SHARE_MS = 8000;
 /** 结果查询的预算。比提交短：它只是问一句「上次那次成了吗」。 */
 export const PORTAL_ROOM_QUERY_MS = 5000;
 /** 登记的有效期（中央十分钟），用于判断还记得的那个 opId 是否还值得复用。 */
 export const PORTAL_ROOM_TTL_MS = 600_000;
 
-// 「分享现在能不能用」的本机短期缓存（§43.5）：每个浏览器探测都去打一次 Agent 是不能接受的，而 Agent
+// 「分享现在能不能用」的本机短期缓存（§45.5）：每个浏览器探测都去打一次 Agent 是不能接受的，而 Agent
 // 的可用性本来也不该按浏览器的刷新频率去问。
 const AVAILABILITY_TTL_MS = 15_000;
 const AVAILABILITY_TIMEOUT_MS = 1_000;
@@ -40,7 +40,7 @@ const AVAILABILITY_TIMEOUT_MS = 1_000;
 export const PORTAL_ROOM_PATH = '/api/portal-room';
 export const PORTAL_ROOM_STATUS_PATH = '/api/portal-room/status';
 
-// 桥接回执（业务状态，§43.1）→ 浏览器看到的 HTTP 处置。**不能**把「结果未知」和「被拒」混起来：前者要留
+// 桥接回执（业务状态，§45.1）→ 浏览器看到的 HTTP 处置。**不能**把「结果未知」和「被拒」混起来：前者要留
 // opId 去查，后者可以直接当失败显示。没有列进来的码一律 502 + 连接失败，绝不猜一个「大概算成功」。
 // 表里的文案是模块级字面量，按 i18n 的约定包 N_() 标记（它们在这里就被定下，之后由浏览器按语言渲染）。
 const SHARE_FAILURES = Object.freeze({
@@ -85,7 +85,7 @@ function parseTarget(req) {
 export function createPortalRoomHandler({ registry, lobby, trustProxy = 'auto',
   mode = null, url = null, siteId = null, key = null, agentUrl = null, bridgeToken = null,
   now = Date.now, fetchImpl = fetch, log = { warn() {} } } = {}) {
-  // 没写模式的旧配置按完整的 HMAC 三项判定（§45.3）：三项齐全就是 legacy-http，什么都没有就是 off。
+  // 没写模式的旧配置按完整的 HMAC 三项判定（§47.3）：三项齐全就是 legacy-http，什么都没有就是 off。
   const resolved = mode ?? (url || siteId || key ? 'legacy-http' : 'off');
   if (!PORTAL_ROOM_MODES.includes(resolved))
     throw new RangeError('SP_PORTAL_ROOM_MODE must be off, legacy-http or agent');
@@ -164,7 +164,7 @@ export function createPortalRoomHandler({ registry, lobby, trustProxy = 'auto',
     const target = parseTarget(req);
     if (!target) return reply(400, { error: N_('请求无效') });
 
-    // ─── 登记结果查询（§43.1）─────────────────────────────────────────────────────────────────────
+    // ─── 登记结果查询（§45.1）─────────────────────────────────────────────────────────────────────
     if (target.pathname === PORTAL_ROOM_STATUS_PATH) {
       if (!['GET', 'HEAD'].includes(req.method)) {
         res.setHeader('Allow', 'GET, HEAD');
@@ -251,7 +251,7 @@ export function createPortalRoomHandler({ registry, lobby, trustProxy = 'auto',
       if (data?.code !== room.code || lobby.roomOf(session) !== room || room.hostId !== session.playerId ||
         !session.connected || !lobby.getRoomStatus(room.code)?.joinable)
         return reply(409, { error: N_('房间状态已变化，请刷新后重试') });
-      // 房间实例在**动手之前**绑定：晚回执要用它判断「这间房还是刚才那间吗」（§43.1）。
+      // 房间实例在**动手之前**绑定：晚回执要用它判断「这间房还是刚才那间吗」（§45.1）。
       const roomId = room.roomId;
 
       if (resolved === 'legacy-http') {
@@ -288,7 +288,7 @@ export function createPortalRoomHandler({ registry, lobby, trustProxy = 'auto',
         mark(false);
         attempts.delete(room);
         const expiresAt = Number.isSafeInteger(payload.expiresAt) ? payload.expiresAt : null;
-        // 晚回执（§43.1）：这中间房间可能已经换了一间、或者房主已经不在了。中央那边登记的是**旧实例**，
+        // 晚回执（§45.1）：这中间房间可能已经换了一间、或者房主已经不在了。中央那边登记的是**旧实例**，
         // 所以不能把「A 房已收录」回给一个正在看 B 房的页面 —— 那会让它显示一个不属于当前房间的结果。
         if (lobby.roomOf(session) !== room || room.disposed || room.roomId !== roomId || !session.connected)
           return reply(409, { ok: false, status: 'stale', registered: false, opId, code: 'ROOM_CHANGED',

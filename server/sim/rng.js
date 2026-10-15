@@ -5,7 +5,10 @@
  * @param {number} seed uint32 (any number is coerced)
  */
 export function createRng(seed = 1) {
-  let s = (Number(seed) >>> 0) || 0x9e3779b9;
+  return rngFromState((Number(seed) >>> 0) || 0x9e3779b9);
+}
+
+function rngFromState(s) {
   const next = () => {
     s = (s + 0x6d2b79f5) >>> 0;
     let t = s;
@@ -43,6 +46,8 @@ export function createRng(seed = 1) {
   rng.state = () => s;
   /** Restore an internal position (zero is a valid state, unlike the public zero seed). */
   rng.setState = (state) => { s = Number(state) >>> 0; return rng; };
+  /** Independent stream at the same position, including internal state zero. */
+  rng.clone = () => rngFromState(s);
   return rng;
 }
 

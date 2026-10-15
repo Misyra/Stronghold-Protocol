@@ -232,6 +232,7 @@
 .title-login .btn--xl { letter-spacing: .6em; padding-left: calc(.48rem + .3em); }
 .title-name-feedback { margin: -.04rem 0 0; font-size: calc(.13 * var(--utility-text, var(--t))); line-height: 1.6; color: var(--text-dim); }
 .title-name-feedback a { color: var(--mint-500); text-decoration: underline; text-underline-offset: .02rem; }
+
 .title-invite {
   display: flex;
   align-items: center;
@@ -335,3 +336,10 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
 .res-pill__text.is-warn { color: var(--amber); }
 .res-pill__hint { margin: .06rem 0 0; font-size: calc(.13 * var(--utility-text, var(--t))); line-height: 1.6; color: var(--text-dim); }
 .res-pill:hover .res-pill__hint { color: var(--text-md); }
+
+/* the server's plugins (DESIGN §32 P1a): 「本服务器安装了 N 个插件」, a button listing them (ui/pluginPanel.js InstalledPlugins) */
+.title-plugins {
+  display: inline-flex; align-items: center; gap: .06rem; padding: .03rem .1rem;
+  border: 1px solid rgba(255, 159, 67, .5); color: #ffb066; background: rgba(255, 159, 67, .08); font-size: inherit;
+}
+.title-plugins .icon { width: .15rem; height: .15rem; }

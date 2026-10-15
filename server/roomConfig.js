@@ -1,4 +1,4 @@
-// 房间运行配置的落盘与版本（docs/design/portal-agent-wss.md §41.2）。
+// 房间运行配置的落盘与版本（docs/design/portal-agent-wss.md §43.2）。
 //
 // 文件从 v1（`{schemaVersion:1, maxRooms, …}`，只有「当前值」）变成 v2：
 //
@@ -37,7 +37,7 @@ export const ROOM_PROTECTION_DEFAULTS = Object.freeze({
   maxForeignBots: ROOM_LIMIT_OPTIONS.maxForeignBots[1],
 });
 
-// 首版开放的五个运行配置字段（§41.1）。中央的 config.patch 白名单、v2 文档的 values、这里的校验共用同一
+// 首版开放的五个运行配置字段（§43.1）。中央的 config.patch 白名单、v2 文档的 values、这里的校验共用同一
 // 份数组：分成两份维护，迟早会变成「能写进去但读不出来」这种只有线上才会发现的错位。
 export const ROOM_CONFIG_FIELDS = Object.freeze(['maxRooms', 'allowBots', 'limitForeignSessions',
   'allowForeignConnections', 'maxForeignSessionsPerIp']);
@@ -110,7 +110,7 @@ export async function loadRoomConfigDocument(file) {
       const { schemaVersion: _version, ...values } = state;
       const error = validateRoomConfig(values);
       if (error) throw new Error(error);
-      // v1 记成第 1 版：它确实是「这份配置的第一个版本」。迁移落盘也按第 1 版写（§41.2「首次迁移写入 v2 时
+      // v1 记成第 1 版：它确实是「这份配置的第一个版本」。迁移落盘也按第 1 版写（§43.2「首次迁移写入 v2 时
       // 从 revision=1 开始」），于是第一次真正的改动会是第 2 版，而中央手里的 revision 从头到尾都 ≥ 1。
       return { values, revision: 1, lastMutation: null, migrated: true };
     }
@@ -127,7 +127,7 @@ export async function loadRoomConfig(file) {
 }
 
 /**
- * 原子写整份 v2 文档。至少覆盖临时文件 fsync、rename（§41.2）：只做 rename 的话内容可能还停在页缓存里，
+ * 原子写整份 v2 文档。至少覆盖临时文件 fsync、rename（§43.2）：只做 rename 的话内容可能还停在页缓存里，
  * 断电后拿到的是一个空文件或半截 JSON —— 那正是「重启之后房间上限悄悄变回默认值」的成因。
  * @param {string} file
  * @param {{ values: Record<string, unknown>, revision: number, lastMutation?: object | null }} document
@@ -159,7 +159,7 @@ export async function saveRoomConfigDocument(file, { values, revision, lastMutat
 }
 
 /**
- * 串行队列里的那一次判定（§41.2）：进队列后先看截止时间，再看最近一次同 opId 的指纹，然后比较
+ * 串行队列里的那一次判定（§43.2）：进队列后先看截止时间，再看最近一次同 opId 的指纹，然后比较
  * expectedRevision，最后校验补丁并合并。**纯函数** —— 不碰磁盘、不改内存，只回答「这次写该不该落盘、
  * 落成什么」，于是每条分支都能被单独断言，而不用去构造一个坏磁盘。
  *
@@ -190,7 +190,7 @@ export function roomConfigMutation(current, { patch, expectedRevision = null, op
 }
 
 /**
- * 对外的配置文档（§41.2）。白名单字段**平铺**在顶层是为了过渡期兼容旧面板/旧脚本；元数据跟在后面。
+ * 对外的配置文档（§43.2）。白名单字段**平铺**在顶层是为了过渡期兼容旧面板/旧脚本；元数据跟在后面。
  * @param {{ values: Record<string, unknown>, revision: number, lastMutation: object | null }} document
  */
 export function roomConfigDocument(document, { persisted = false, applied = false, extra = {} } = {}) {

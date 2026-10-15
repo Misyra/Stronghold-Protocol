@@ -1,4 +1,4 @@
-// 房间分享的本机状态（docs/design/portal-agent-wss.md §43.1、§43.5）。
+// 房间分享的本机状态（docs/design/portal-agent-wss.md §45.1、§45.5）。
 //
 // 这里只有**纯数据与纯函数**：房间页把那六个反馈（隐藏 / 暂不可用 / 提交中 / 待确认 / 已登记 / 冷却）
 // 渲染出来，而「什么时候该显示哪一个」全部在这里判定，于是它可以被单独断言，不用去跑一个浏览器。
@@ -10,7 +10,7 @@
 
 /** 同一房间两次提交之间的最短间隔。 */
 export const SHARE_COOLDOWN_MS = 60_000;
-/** 中央登记的默认长度（§43.2 第 4 步）。legacy 路径拿不到 expiresAt 时用它显示剩余时间。 */
+/** 中央登记的默认长度（§45.2 第 4 步）。legacy 路径拿不到 expiresAt 时用它显示剩余时间。 */
 export const SHARE_TTL_MS = 600_000;
 /** 结果待确认时的查询节奏与次数上限（约 48 秒）。之后交给房主手动查询。 */
 export const SHARE_POLL_MS = 6_000;
@@ -30,7 +30,7 @@ function expiryFrom(data, serverNow) {
   return serverNow + remaining;
 }
 
-/** 提交后的状态迁移。**只有 registered:true 才算收录**（§43.1）；202/待确认保留 opId 去查询。 */
+/** 提交后的状态迁移。**只有 registered:true 才算收录**（§45.1）；202/待确认保留 opId 去查询。 */
 export function shareAfterSubmit({ data, previous, serverNow }) {
   // 成功、被拒、未知都消耗冷却：冷却约束的是「点按」，不是「结果」。
   const cooldownUntil = serverNow + SHARE_COOLDOWN_MS;

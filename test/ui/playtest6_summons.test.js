@@ -63,8 +63,8 @@ test('one switch for the start-of-battle deploy: the sim and the hint read share
 });
 
 test('the guide and SIM.md state the start-of-battle rule the switch selects (flip it ⇒ update both)', () => {
-  const playing = readFileSync(path.join(ROOT, 'docs', 'guides', 'PLAYING.md'), 'utf8');
-  const sim = readFileSync(path.join(ROOT, 'docs', 'development', 'SIM.md'), 'utf8');
+  const playing = readFileSync(path.join(ROOT, 'docs', 'PLAYING.md'), 'utf8');
+  const sim = readFileSync(path.join(ROOT, 'docs', 'SIM.md'), 'utf8');
   if (SKILL_SUMMON_START_DEPLOY) {
     assert.match(playing, /医疗探机、诅咒娃娃[^\n]*开战时[^\n]*部署一次/, 'PLAYING.md §4: the drone / doll also deploy once at the start');
     assert.match(sim, /deploys once at the battle start/, 'SIM.md token pieces: the PRTS start deploy');

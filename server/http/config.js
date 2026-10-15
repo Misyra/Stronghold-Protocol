@@ -4,8 +4,9 @@
 //   * TRUST_PROXY ('auto' default: honour CF-Connecting-IP / X-Real-IP / X-Forwarded-For only from loopback/private
 //     peers such as a local cloudflared; '1' always; '0' never) → net.js trustProxy;
 //   * DEBUG → the console logger's debug level;
-//   * the served directories (public/, data/, shared/ and the content packs' packs/ of this repository unless the
-//     options name others), and which startServer() options are handed on to net.js Network and lobby.js Lobby.
+//   * the served directories (public/, data/, shared/, the content packs packs/ and the plugins plugins/ of this
+//     repository unless the options name others), and which startServer() options are handed on to net.js Network
+//     and lobby.js Lobby.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,7 +35,7 @@ export const DEFAULT_AGENT_ANNOUNCEMENT_FILE = process.platform === 'win32'
   ? path.join(ROOT, '.state', 'announcement.json') : '/var/lib/stronghold-announcement/announcement.json';
 
 /**
- * 站点 ID（§45.3）。统一的 `SP_SITE_ID` 是唯一的站点身份：公告（panel 源）与房间分享都从它取站点，
+ * 站点 ID（§47.3）。统一的 `SP_SITE_ID` 是唯一的站点身份：公告（panel 源）与房间分享都从它取站点，
  * 用两个不同的 ID 意味着「公告写到 A 站、房间登记到 B 站」，而两边都不会报错 —— 只会安静地各干各的。
  * 所以旧的 `SP_PORTAL_SITE_ID` 只当兼容别名，**同时出现且不同就拒绝启动**。
  * 显式的 startServer() 选项优先（它就是程序配置），这里不跟它对账。
@@ -113,15 +114,19 @@ export function bindCandidates(host) {
 }
 
 /**
- * The directories the static server reads (packsDir: the pack folders, server/packs.js).
- * @param {{ publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string }} opts
+ * The directories the static server reads (packsDir: the pack folders, pluginsDir: the plugin folders —
+ * server/plugins/registry.js; default: the plugins/ folder beside packsDir, so a server given its own packs folder —
+ * a test — never reads this checkout's plugins).
+ * @param {{ publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string, pluginsDir?: string }} opts
  */
 export function serveDirs(opts) {
+  const packsDir = opts.packsDir || path.join(ROOT, 'packs');
   return {
     publicDir: opts.publicDir || path.join(ROOT, 'public'),
     dataDir: opts.dataDir || path.join(ROOT, 'data'),
     sharedDir: opts.sharedDir || path.join(ROOT, 'shared'),
-    packsDir: opts.packsDir || path.join(ROOT, 'packs'),
+    packsDir,
+    pluginsDir: opts.pluginsDir || path.join(path.dirname(path.resolve(packsDir)), 'plugins'),
   };
 }
 
@@ -165,12 +170,12 @@ export function roomAdminTokenFrom(opts = {}, env = process.env) {
   return token;
 }
 
-/** 本机 Agent 地址允许的主机名。Docker 里分开部署时 127.0.0.1 并不互通（§45.3），首版只支持同宿主机回环。 */
+/** 本机 Agent 地址允许的主机名。Docker 里分开部署时 127.0.0.1 并不互通（§47.3），首版只支持同宿主机回环。 */
 const LOOPBACK_HOSTS = Object.freeze(['127.0.0.1', 'localhost', '[::1]', '::1']);
 
 /**
- * 游戏 → Agent 的本机地址（§45.3）。只允许回环上的 HTTP 根路径，且不得带用户名/密码/query/hash：
- * 这个地址是**启动配置**，浏览器永远不能指定它（§43.1），所以配置错了必须在启动时就说出来，而不是等到
+ * 游戏 → Agent 的本机地址（§47.3）。只允许回环上的 HTTP 根路径，且不得带用户名/密码/query/hash：
+ * 这个地址是**启动配置**，浏览器永远不能指定它（§45.1），所以配置错了必须在启动时就说出来，而不是等到
  * 某个玩家点分享时才发现「原来填的是另一个站的域名」。
  * @param {string} value
  */
@@ -179,7 +184,7 @@ export function localAgentUrlFrom(value) {
   try { url = new URL(String(value)); } catch { throw new RangeError('SP_PORTAL_AGENT_URL must be an absolute URL'); }
   if (url.protocol !== 'http:') throw new RangeError('SP_PORTAL_AGENT_URL must use http on loopback: the Agent is a local process');
   if (!LOOPBACK_HOSTS.includes(url.hostname))
-    throw new RangeError('SP_PORTAL_AGENT_URL must point at a loopback address; game and Agent share the host (see §45.3 for containers)');
+    throw new RangeError('SP_PORTAL_AGENT_URL must point at a loopback address; game and Agent share the host (see §47.3 for containers)');
   if (url.username || url.password || url.search || url.hash)
     throw new RangeError('SP_PORTAL_AGENT_URL must not carry credentials, a query or a fragment');
   if (url.pathname !== '/') throw new RangeError('SP_PORTAL_AGENT_URL must be the root path: the bridge path is fixed');
@@ -187,14 +192,14 @@ export function localAgentUrlFrom(value) {
 }
 
 /**
- * 房间分享的三种模式（§43.1 / §44.3 / §45.3），解析成 createPortalRoomHandler 的那组选项。
+ * 房间分享的三种模式（§45.1 / §46.3 / §47.3），解析成 createPortalRoomHandler 的那组选项。
  *
  *   off          —— 显式关掉。**不看**其它变量：一个曾经配好的站点把模式改成 off 之后，不该因为它还留着
  *                   旧的密钥而报「配置无效」。
  *   legacy-http  —— 游戏自己带 HMAC 签名直连中央的老路。不写模式时按「HMAC 三项齐不齐」判定，于是旧部署
  *                   升级这个版本以后行为完全不变。
  *   agent        —— 走本机 Agent 的桥接口。这种模式**不需要**中央 URL，也不需要旧 HMAC key：游戏不再
- *                   持有任何能代表本站改写公告/配置/关房的东西（§36.2 凭据分离）。
+ *                   持有任何能代表本站改写公告/配置/关房的东西（§38.2 凭据分离）。
  *
  * @param {{ portalRoomMode?: string, portalUrl?: string, portalSiteId?: string, portalRoomKey?: string,
  *   portalAgentUrl?: string, portalBridgeToken?: string, siteId?: string, announcementSiteId?: string,
@@ -230,13 +235,13 @@ export function portalRoomOptionsFrom(opts = {}, env = process.env) {
   }
   if (!agentUrl || !bridgeToken)
     throw new RangeError('agent share mode requires SP_PORTAL_AGENT_URL and SP_PORTAL_BRIDGE_TOKEN');
-  // 桥接凭据是一把独立凭据（§36.2）：它只能读写在 Agent 手里的分享入口。与游戏自己的管理令牌相同意味着
+  // 桥接凭据是一把独立凭据（§38.2）：它只能读写在 Agent 手里的分享入口。与游戏自己的管理令牌相同意味着
   // 「拿到分享凭据就等于拿到关房/改配置的资格」，而那正是 agent 模式要避免的事。
   if (!/^[!-~]{32,256}$/.test(bridgeToken))
     throw new RangeError('SP_PORTAL_BRIDGE_TOKEN must be 32..256 non-space ASCII characters');
   const adminToken = opts.roomAdminToken ?? env.SP_ROOM_ADMIN_TOKEN;
   if (adminToken && adminToken === bridgeToken)
-    throw new RangeError('SP_PORTAL_BRIDGE_TOKEN must differ from SP_ROOM_ADMIN_TOKEN: separate credentials (see §36.2)');
+    throw new RangeError('SP_PORTAL_BRIDGE_TOKEN must differ from SP_ROOM_ADMIN_TOKEN: separate credentials (see §38.2)');
   return { mode, url: null, siteId, key: null, agentUrl: localAgentUrlFrom(agentUrl), bridgeToken };
 }
 

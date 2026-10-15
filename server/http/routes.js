@@ -2,12 +2,16 @@
 // (i18n-ignore-file: the error pages are bilingual by design, 中文 · English — docs/I18N.md)
 //
 //   * a URL longer than 4096 characters → 414; one that does not parse → 400;
+//   * /studio and /studio/… → the plugin studio (server/studio/index.js: for this machine and the local network only — any
+//     other client gets the 404 page; its API also takes POST / PUT / DELETE), when the server has one;
 //   * POST /api/nickname/validate → server-only nickname preflight, bounded and rate-limited;
 //   * other routes reject methods but GET / HEAD with 405;
 //   * GET /healthz → the PUBLIC status (protocol `version`, release `app`, uptime, the served `build`, the asset
 //     identity fields, sockets/sessions/rooms/matches/humans/bots/spectators and this fork's public counters
 //     roomProtection/botPopulation/foreignSessions), HTTP no-store with a one-second internal snapshot. This fork's
 //     process diagnostics are NOT part of it — they describe this host, not the players, and live on /metrics below.
+//     `content.vanilla`, `content.sets` and, when there are some, `content.plugins` (the unofficial plugin count the
+//     title screen reads before any hello, DESIGN 32) ride along with the upstream 0.3.0 content block;
 //     `?build=1` answers the release tag alone; `?traffic=1` adds the traffic counters (traffic.js: bytes by category
 //     since the start, WebSocket wire and payload bytes) for a loopback or private-network client only — the
 //     maintainer's decision of 2026-10-12: the figures are the host's, so any other client, also one a tunnel or
@@ -44,15 +48,28 @@ import { setSecurityHeaders, sendError, sendJson, sendJsonBody, splitUrl } from 
 
 const MAX_URL_LENGTH = 4096;
 
+/** `{ plugins: n }` when the server has n > 0 unofficial plugins (the lobby's visual sets count them), else nothing. */
+function pluginCount(lobby) {
+  let n;
+  try { n = Number(lobby?.plugins?.unofficial?.()) || 0; } catch { n = 0; }
+  return n > 0 ? { plugins: n } : {};
+}
+
+/** The content sets with gameplay plugins rooms hold now (DESIGN §32.6; 0 without any). */
+function contentSets(lobby) {
+  try { return Number(lobby?.plugins?.contentInUse?.()) || 0; } catch { return 0; }
+}
+
 /**
  * The public GET /healthz body: protocol and asset identity plus the counters a player, the middle station or a
  * third-party site may see. Deliberately free of process diagnostics — healthReport below adds those, and only
  * /metrics (loopback/private-network) ever serves them.
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
  *           lobby: import('../lobby.js').Lobby, serveStatic?: object, cdn?: { base: string, version: string },
- *           assetsManifest?: object | null }} health
+ *           assetsManifest?: object | null, content?: { cs: string } | null }} health
+ *   content: the server content the report carries (server/plugins/identity.js), or none
  */
-export function publicHealthReport({ startedAt, network, registry, lobby, serveStatic = null, cdn = null, assetsManifest = null }) {
+export function publicHealthReport({ startedAt, network, registry, lobby, serveStatic = null, cdn = null, assetsManifest = null, content = null }) {
   return {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the release the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
@@ -62,9 +79,15 @@ export function publicHealthReport({ startedAt, network, registry, lobby, serveS
     assetsCdn: cdn?.base || null,
     assetsCdnVersion: cdn?.version || null,
     assetsManifest: assetsManifest?.tag || null,
+    // what its rooms play (DESIGN §32): the vanilla content hash, and how many content sets with gameplay plugins rooms
+    // hold now (P1c, §32.6 — a room's cosmetic plugins leave its cs the vanilla one, §32.3); how many unofficial plugins
+    // it has, when it has some (a page's title screen says so; P1a)
+    ...(content ? { content: { vanilla: content.cs, sets: contentSets(lobby), ...pluginCount(lobby) } } : {}),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
-    roomProtection: lobby.roomActions.stats(),
-    botPopulation: lobby.botPopulation.stats(),
+    // The fork own limits (server/roomProtection.js, server/botPopulation.js). A handler built without them (a test
+    // fixture, a tool) reports null instead of failing the whole public body with a 500.
+    roomProtection: lobby.roomActions?.stats() || null,
+    botPopulation: lobby.botPopulation?.stats() || null,
     foreignSessions: network.foreignSessions?.stats() || null,
   };
 }
@@ -74,14 +97,14 @@ export function publicHealthReport({ startedAt, network, registry, lobby, serveS
  * or private-network client only (`withTraffic`: plus the traffic counters, the loopback-only `?traffic=1`).
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
  *           lobby: import('../lobby.js').Lobby, workerPool: object | null, persister: object | null, store: object | null,
- *           serveStatic: object, cdn: { base: string, version: string }, assetsManifest: object | null,
+ *           serveStatic: object, cdn: { base: string, version: string }, assetsManifest: object | null, content?: { cs: string } | null, trusted?: object | null,
  *           traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter>,
  *           chatLog?: import('../chatLog.js').ChatLog }} health
  * @param {boolean} [withTraffic] plus the traffic counters (the loopback/private-network-only `?traffic=1`)
  */
-export function healthReport({ startedAt, network, registry, lobby, workerPool = null, persister = null, store = null, serveStatic = null, cdn = null, assetsManifest = null, traffic = null, chatLog = null }, withTraffic = false) {
+export function healthReport({ startedAt, network, registry, lobby, content = null, trusted = null, workerPool = null, persister = null, store = null, serveStatic = null, cdn = null, assetsManifest = null, traffic = null, chatLog = null }, withTraffic = false) {
   const report = {
-    ...publicHealthReport({ startedAt, network, registry, lobby, serveStatic, cdn, assetsManifest }),
+    ...publicHealthReport({ startedAt, network, registry, lobby, serveStatic, cdn, assetsManifest, content }),
     ...(serveStatic ? { staticCache: serveStatic.cacheStats() } : {}),
     rehearsalPressure: network.diagnostics?.rehearsalPressure?.stats() || null,
     workers: workerPool?.stats() || null,
@@ -110,6 +133,7 @@ export function healthReport({ startedAt, network, registry, lobby, workerPool =
   };
   // The traffic counters are the host's own figures (upstream 0.2.6): the caller gates them on isLocalIp, and they
   // never come from the one-second snapshot createHealthBody caches.
+  if (trusted && Object.keys(trusted).length) report.plugins = trusted;
   if (withTraffic && traffic) report.traffic = traffic.snapshot();
   return report;
 }
@@ -123,7 +147,9 @@ export function createHealthBody(health, { now = () => performance.now(), maxAge
   let snapshot = null, body = null, expiresAt = -Infinity;
   let rooms = -1, queued = -1, sockets = -1, sessions = -1, uptimeSec = -1;
   return () => {
-    const at = now(), currentRooms = health.lobby.rooms.size;
+    // A handler built without the lobby topology (a test fixture, a tool) has nothing to invalidate on: the room
+    // and queue counts stay 0 and only the one-second maxAge applies.
+    const at = now(), currentRooms = health.lobby.rooms?.size ?? 0;
     const currentQueued = health.lobby.matchmaking?.entries.size ?? 0;
     const refresh = !snapshot || at >= expiresAt || currentRooms !== rooms || currentQueued !== queued;
     const currentSockets = health.network.connectionCount, currentSessions = health.registry.size;
@@ -154,13 +180,17 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  *           allowNickname?: (req: import('node:http').IncomingMessage) => boolean,
  *           allowStatus?: (req: import('node:http').IncomingMessage) => boolean,
  *           readAnnouncement?: () => Promise<object | null>, announcementSource?: { mode: string, siteId: string | null },
- *           portalRoom?: object, trustProxy?: 'auto' | boolean }} deps
+ *           portalRoom?: object, trustProxy?: 'auto' | boolean,
+ *           csp?: string | null,
+ *           studio?: { handles: (rawPath: string) => boolean, handle: (req: any, res: any, rawPath: string, query: string) => Promise<void> } | null }} deps
  *   trustProxy: whose forwarding headers name the client (net.js clientAddress; the server's TRUST_PROXY) — the gate
  *   on the `?traffic=1` figures
  *   portalRoom: the share mode and its local credentials (http/config.js portalRoomOptionsFrom); absent → off
+ *   csp: the Content-Security-Policy header every response gets (http/config.js), or none; studio: the plugin studio
+ *   (server/studio/index.js), or none
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, allowNickname = null, allowStatus = null, readAnnouncement = null, announcementSource = null, portalRoom = null, trustProxy = 'auto' }) {
+export function createRequestHandler({ serveStatic, health, log, allowNickname = null, allowStatus = null, readAnnouncement = null, announcementSource = null, portalRoom = null, trustProxy = 'auto', studio = null, csp = null, trustedRuntime = null }) {
   const healthBody = createHealthBody(health);
   const portalRoomHandler = createPortalRoomHandler({ ...(portalRoom ?? {}),
     registry: health.registry, lobby: health.lobby, log,
@@ -250,7 +280,7 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
         sendJson(req, res, 405, { error: 'METHOD_NOT_ALLOWED' });
         return;
       }
-      // 公告的三层状态里，「游戏读到了哪一版」只有这里能回答（§44.3）：Agent 把它随 sync.report 报给中央，
+      // 公告的三层状态里，「游戏读到了哪一版」只有这里能回答（§46.3）：Agent 把它随 sync.report 报给中央，
       // 中央据此区分「文件写好了但游戏还没读到」与「根本没写进去」。它只是版本号与时间，玩家看到的公告
       // 内容与展示策略（announcement.id）一个字都没变。顺序重要：先真的读一次，再取「读到的是哪一版」。
       const announcement = await readAnnouncement();
@@ -263,6 +293,8 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
       await serveStatic(req, res, parts.rawPath, parts.query);
       return;
     }
+    if (trustedRuntime && parts.rawPath.startsWith('/x/') && await trustedRuntime.route(req,res,parts.rawPath)) return;
+    if (studio && studio.handles(parts.rawPath)) { await studio.handle(req, res, parts.rawPath, parts.query); return; }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.setHeader('Allow', 'GET, HEAD');
       sendError(req, res, 405, '不支持的请求方法 · Method not allowed');
@@ -272,7 +304,7 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
     let entryPath = parts.rawPath;
     try { entryPath = decodeURIComponent(entryPath); } catch { /* static handler validates malformed paths */ }
     if ((entryPath.endsWith('/') || /\.html$/i.test(entryPath)) &&
-      health.network.foreignConnectionDenied(clientAddress(req, trustProxy))) {
+      health.network?.foreignConnectionDenied?.(clientAddress(req, trustProxy))) {
       sendJson(req, res, 403, { code: ERR.FOREIGN_CONNECTIONS_DISABLED, msg: ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED });
       return;
     }
@@ -282,6 +314,7 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
   return (req, res) => {
     setSecurityHeaders(res);
     // Every response's body bytes count in the traffic counters, the synchronous /healthz fast path included.
+    if (csp) res.setHeader('Content-Security-Policy', csp);
     if (health.traffic) health.traffic.meter(res, splitUrl(req.url || '/')?.rawPath || '/');
     const url = req.url || '/';
     if (url.length <= MAX_URL_LENGTH && (url === '/healthz' || url.startsWith('/healthz?') || url.startsWith('/healthz#'))) {

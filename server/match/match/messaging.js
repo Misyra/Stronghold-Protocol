@@ -150,7 +150,8 @@ export class MatchMessaging {
     const json = publicStateJson(view);
     if (!force && json === this._lastPubJson) return;
     this._lastPubJson = json;
-    this._lastPubAt = now;
+    // Snapshot building / serialization can take time; throttle from the actual broadcast, not its start.
+    this._lastPubAt = this.sched.now();
     // one stringify per frame: the wire form is the dedup string with serverNow spliced back in
     // (publicWireFrame); null (layout drift) falls back to a full stringify inside encode
     const wire = publicWireFrame(json, serverNow);

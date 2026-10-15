@@ -11,11 +11,11 @@ const hashSecret = (value) => createHash('sha256').update(value).digest();
 
 const configView = (lobby) => ({ ...lobby.getRoomConfig(), foreignSessionGeoipAvailable: !!lobby.botPopulation.countryLookup });
 
-// 联机站（Agent）一批最多问二十个房间（docs/design/portal-agent-wss.md §43.4）。上限写在这里而不是让调用方
+// 联机站（Agent）一批最多问二十个房间（docs/design/portal-agent-wss.md §45.4）。上限写在这里而不是让调用方
 // 自觉：一条请求就能让游戏把整张大厅表算一遍，而那正是这个端点要避免的事。
 export const MAX_STATUS_BATCH = 20;
 
-// 版本化配置写（POST/PUT /api/room-config）允许的请求键（§41.2）。多一个键就说明两边对「这次写是什么」
+// 版本化配置写（POST/PUT /api/room-config）允许的请求键（§43.2）。多一个键就说明两边对「这次写是什么」
 // 的理解已经不一致：猜着办比直接说不认识这个字段危险得多，所以这里整份拒掉。
 const ROOM_CONFIG_WRITE_FIELDS = Object.freeze(['expectedRevision', 'patch', 'opId', 'expiresAt']);
 
@@ -69,7 +69,7 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
   roomConfig = null, log = console }) {
   if (!token) return null;
   const expected = hashSecret(token);
-  // 配置文档的当前版本（§41.2）。调用方（index.js）已经把它读出来了，因为启动时要用它覆盖环境默认值 ——
+  // 配置文档的当前版本（§43.2）。调用方（index.js）已经把它读出来了，因为启动时要用它覆盖环境默认值 ——
   // 再读一次就会读到两个可能不同的版本号。没有文件时就是「第 1 版」，值与进程当前生效的一致。
   let configState = roomConfig ?? { values: lobby.getRoomConfig(), revision: 1, lastMutation: null };
   let limitWrites = Promise.resolve();
@@ -82,7 +82,7 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
     let url;
     try { url = new URL(req.url, 'http://127.0.0.1'); }
     catch { return sendJson(req, res, 400, { error: 'INVALID_URL' }); }
-    // 路由白名单。`/api/portal/rooms*` 是联机站 Agent 的私有入口（§44.3）：少了这一行，新端点会被顶层
+    // 路由白名单。`/api/portal/rooms*` 是联机站 Agent 的私有入口（§46.3）：少了这一行，新端点会被顶层
     // 404 截掉，而症状是「Agent 说游戏不支持这个功能」——排查方向整个错。
     if (!url.pathname.startsWith('/api/rooms') && url.pathname !== '/api/room-config'
       && !url.pathname.startsWith('/api/portal/rooms')) return sendJson(req, res, 404, { error: 'NOT_FOUND' });
@@ -106,11 +106,11 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
     if (url.pathname === '/api/room-config') {
       if (req.method === 'GET' || req.method === 'HEAD') return sendJson(req, res, 200, {
         ...configView(lobby), roomCount: lobby.rooms.size, maxAllowed: 10000,
-        // 配置版本（§41.2）。页面拿它去当下一次写的 expectedRevision，中央靠它判「过时页面」；values 是
+        // 配置版本（§43.2）。页面拿它去当下一次写的 expectedRevision，中央靠它判「过时页面」；values 是
         // **已落盘**的那一份，平铺在顶层只是为了过渡期兼容旧面板/旧脚本。读取不给 persisted/applied：
         // 那两个字段描述的是「这一次写有没有落地」，读响应上没有它们的含义。
         ...roomConfigReadDocument(configState),
-        // 游戏启动号（§44.3）：Agent 把它随 sync.report / 房间观测一路报给中央，中央据此判「这台游戏进程
+        // 游戏启动号（§46.3）：Agent 把它随 sync.report / 房间观测一路报给中央，中央据此判「这台游戏进程
         // 重启过，它上一次说过的一切都不再成立」。放在同一个响应里是因为探针就是从这里读配置版本的。
         gameBootId,
       });
@@ -127,7 +127,7 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
         if (!body || typeof body !== 'object' || Array.isArray(body))
           return sendJson(req, res, 400, { error: 'INVALID_ROOM_CONFIG' });
         // 两种形状：中央来的版本化写（expectedRevision + patch）与迁移期保留的旧写（直接给字段）。旧写也要
-        // 走同一个串行入口并递增 revision（§41.2），否则它会成为绕过版本控制的那条暗路。
+        // 走同一个串行入口并递增 revision（§43.2），否则它会成为绕过版本控制的那条暗路。
         const versioned = Object.hasOwn(body, 'expectedRevision') || Object.hasOwn(body, 'patch');
         let patch = body;
         if (versioned) {
@@ -153,7 +153,7 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
             expectedRevision: versioned ? body.expectedRevision : null,
             opId: versioned && body.opId ? body.opId : null, expiresAt, now: Date.now() });
           if (decision.error === 'CONFIG_CONFLICT')
-            // 冲突时把**实际值**一起回去：过时的页面要能直接显示「现在是什么」，再由管理员决定重不重发（§41.3）。
+            // 冲突时把**实际值**一起回去：过时的页面要能直接显示「现在是什么」，再由管理员决定重不重发（§43.3）。
             throw conflict('CONFIG_CONFLICT', { revision: configState.revision,
               values: { ...configState.values }, lastMutation: configState.lastMutation });
           if (decision.error === 'OP_ID_CONFLICT') throw conflict('OP_ID_CONFLICT', { revision: configState.revision });
@@ -248,7 +248,7 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
       lobby.disposeRoom(room, 'admin');
       lobby.checkpoint(roomCode, null);
       lobby.audit('room.adminClosed', null, room);
-      // closed 只在这一个条件下是 true —— 中央拿它当「明确说成了」的依据（§41.3），其余一律转读回自证。
+      // closed 只在这一个条件下是 true —— 中央拿它当「明确说成了」的依据（§43.3），其余一律转读回自证。
       return sendJson(req, res, 200, { closed: true, roomCode, roomId, createdAt });
     }
 

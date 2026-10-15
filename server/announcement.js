@@ -49,7 +49,7 @@ export function parseAnnouncement(value) {
 
 /**
  * Cache file reads across players, coalesce concurrent reads, and check expiration on every request.
- * 返回的读函数带一个 `delivery()`：这份进程**实际读到**的那个版本（docs/design/portal-agent-wss.md §40.2 的第三层），供 /api/announcement
+ * 返回的读函数带一个 `delivery()`：这份进程**实际读到**的那个版本（docs/design/portal-agent-wss.md §42.2 的第三层），供 /api/announcement
  * 投影给本机 Agent。它只前进不回退，读失败也保留上一次的值 —— 「读不到文件了」不代表「没读到过那一版」。
  */
 export function createAnnouncementReader({ filePath, announcementUrl, pollMs = POLL_MS, log, now = Date.now, cacheMs = CACHE_MS }) {

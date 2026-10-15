@@ -18,6 +18,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { aimedDrag, groundAnchor, anchorPoint, cameraSettled } from '../e2e/client.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = path.join(ROOT, 'test/e2e/out');
@@ -400,18 +401,14 @@ describe('in-match UI (mock harness, headless Chrome)', { skip: !ENABLED && 'set
     const { page, problems } = await open('phase=PREP');
     await sleep(1500); // spine models
     const rect = (uid) => page.evaluate((u) => { const r = globalThis.__SP_VIEW__?.pieceScreenRect(u); return r && { x: r.left + r.width / 2, y: r.top + r.height * 0.65 }; }, uid);
-    const drag = async (from, to) => {
-      await page.mouse.move(from.x, from.y);
-      await page.mouse.down();
-      for (let i = 1; i <= 12; i++) { await page.mouse.move(from.x + ((to.x - from.x) * i) / 12, from.y + ((to.y - from.y) * i) / 12); await sleep(16); }
-      await sleep(100);
-      await page.mouse.up();
-      await sleep(600);
-    };
+    // (aimed after the pickup: the deploy fold zooms the board as a piece is picked up — GitHub #602, e2e/client.mjs)
+    const drag = async (from, to, o = {}) => { await aimedDrag(page, from, to, { steps: 12, pause: 16, settle: 100, ...o }); await sleep(600); };
+    const centre = (sel) => page.$eval(sel, (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }).catch(() => null);
     let s = await mockState(page);
     const unit = s.board.find((x) => x.kind === 'chess' && !x.golden && !(x.items || []).length);
-    const bar = await page.$eval('.shopbar__cards', (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
-    await drag(await rect(unit.uid), bar);
+    const bar = await centre('.shopbar__cards');
+    // the shop bar folds away while a piece is carried (GitHub #602): released over its tab — DOM UI — the piece goes back
+    await drag(await rect(unit.uid), bar, { retarget: () => centre('.shopbar-tab') });
     assert.equal((await mockState(page)).board.length, s.board.length, 'no drag-to-sell');
     const pt = await rect(unit.uid);
     await page.mouse.click(pt.x, pt.y);
@@ -432,10 +429,13 @@ describe('in-match UI (mock harness, headless Chrome)', { skip: !ENABLED && 'set
     assert.equal(s.hand.find((x) => x && x.uid === target.uid).dir, undefined, 'bench pieces carry no direction');
     // re-orient in place: drop the unit on its own tile → wheel → UP (no duplicate piece)
     const here = await rect(hc.uid);
+    const home = await groundAnchor(page, here);
     await page.mouse.move(here.x, here.y);
     await page.mouse.down();
     for (let i = 1; i <= 8; i++) { await page.mouse.move(here.x + i * 12, here.y - i * 6); await sleep(16); } // off the tile…
-    for (let i = 7; i >= 0; i--) { await page.mouse.move(here.x + i * 12, here.y - i * 6); await sleep(16); } // …and back onto it
+    await cameraSettled(page); // (the deploy fold's zoom, GitHub #602)
+    const back = (await anchorPoint(page, home)) || here;
+    for (let i = 1; i <= 8; i++) { await page.mouse.move(here.x + 96 + ((back.x - here.x - 96) * i) / 8, here.y - 48 + ((back.y - here.y + 48) * i) / 8); await sleep(16); } // …and back onto it
     await sleep(100);
     await page.mouse.up();
     await sleep(600);
@@ -1077,14 +1077,8 @@ describe('in-match UI (mock harness, headless Chrome)', { skip: !ENABLED && 'set
     await sleep(1500); // spine models
     const at = (uid, fy) => page.evaluate((u, f) => { const r = globalThis.__SP_VIEW__?.pieceScreenRect(u); return r && { x: r.left + r.width / 2, y: r.top + r.height * f }; }, uid, fy);
     const tileAt = (row, col) => page.evaluate((r, c) => { const x = globalThis.__SP_VIEW__?.raw?.tileScreen?.(r, c); return x && { x: x.x, y: x.y }; }, row, col);
-    const drag = async (from, to) => {
-      await page.mouse.move(from.x, from.y);
-      await page.mouse.down();
-      for (let i = 1; i <= 12; i++) { await page.mouse.move(from.x + ((to.x - from.x) * i) / 12, from.y + ((to.y - from.y) * i) / 12); await sleep(16); }
-      await sleep(120);
-      await page.mouse.up();
-      await sleep(600);
-    };
+    // (aimed after the pickup: the deploy fold zooms the board as a piece is picked up — GitHub #602, e2e/client.mjs)
+    const drag = async (from, to) => { await aimedDrag(page, from, to, { steps: 12, pause: 16, settle: 120 }); await sleep(600); };
     let s = await mockState(page);
     const targets = s.board.filter((x) => x.kind === 'chess' && !(x.items || []).length).sort((a, b) => a.row - b.row);
     const items = s.hand.filter((x) => x && x.kind === 'item');
@@ -1130,11 +1124,8 @@ describe('in-match UI (mock harness, headless Chrome)', { skip: !ENABLED && 'set
         }
         assert.ok(to, 'found an empty board tile on screen');
       }
-      await page.mouse.move(from.x, from.y);
-      await page.mouse.down();
-      for (let i = 1; i <= 12; i++) { await page.mouse.move(from.x + ((to.x - from.x) * i) / 12, from.y + ((to.y - from.y) * i) / 12); await sleep(16); }
-      await sleep(120);
-      await page.mouse.up();
+      // (aimed after the pickup on the engine: the deploy fold zooms the board — GitHub #602, e2e/client.mjs)
+      await aimedDrag(page, from, to, { steps: 12, pause: 16, settle: 120 });
       await sleep(500);
       const toastText = await page.$eval('.toast', (el) => el.textContent).catch(() => null);
       assert.match(String(toastText), /已达到部署上限|无法部署在该位置|近战单位只能部署在地面/, `${render}: toast explains the refusal`);

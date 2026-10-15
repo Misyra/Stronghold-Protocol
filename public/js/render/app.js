@@ -69,7 +69,8 @@
 //                                                mysticEnergy: 设置「秘术师能量」, a 秘术师's stored/cap — PR #636;
 //                                                officialFx: 设置「官方特效」 'auto'|'off'|'lite'|'full', the official battle
 //                                                effects on the 3D board — render/vfx, DESIGN §9 "Official battle effects")
-//   view.stats() → { fps, frameMs, cpuMs, renderMs, units, particles, impostor, impostorAtlas, boardArt, … } (dev / perf)
+//   view.stats() → { fps, frameMs, cpuMs, renderMs, units, particles, impostor, impostorAtlas, boardArt, pen, penHidden, … }
+//                                               (dev / perf; pen = the pen's figures, penHidden = the camera hides them)
 //
 // Enemy preview pen (research 09 §2.2 / 08 §4.2, render/pen.js): in prep the next round's enemies idle in the pen
 // (rows 14–18 × cols 7–13; upper-gate enemies rows 17–18, lower-gate rows 14–15; spawn-time order, ≤ 3 per tile,
@@ -79,10 +80,16 @@
 // pen enemy emits pieceClick { enemyKey, preview: true, unit: { side: 'enemy', defId, enemyKey, preview: true } }.
 //   view.setCamera('pen') pans to the pen in 0.25 s (configBlackBoard move_time); `view.setCamera(kind, opts)` goes
 //   back (the same kind without options returns to the exact camera used before the pen).
-//   The pen is shown ONLY by the pen camera (user playtest #2 item 6: the battlefield with the waiting enemies above it
-//   looked wrong — after 返回战场 and in every battle): the prep, battle, 联防 and boss cameras neither build its 3D
-//   area nor draw its 2D rows (`boardArea` / `bandFor`), and its figures hide (`penShown`, kept for the way back); a
-//   flight to / from the pen shows both while it lasts.
+//   The prep camera shows the pen too, as the official 休整期 does: the next round's enemies stand in its front rows and
+//   its two red gates show at the top right of the prep view, beyond the board behind the upper gate (research 09 §2.1;
+//   the maintainer's recording of the official game and decision of 2026-10-15, which supersedes user playtest #2 item 6
+//   "the pen only with the pen camera"), so 🔍▶▶ pans to what is already in view. The prep camera — the own board, its
+//   shop-folded framing, a scouted teammate's board (their pen), back from the pen view (返回战场) — and the pen camera
+//   build its 3D block, draw its 2D rows (`boardArea` / `bandFor` / `fieldRows`) and show its figures (`showsPen` /
+//   `penShown`); the battle, 联防, boss and hidden cameras do not, nor does the Final Assault / Hidden Core prep, whose
+//   frame ends far below the pen. A camera flight shows it when either end does (`flightView`) — except a flight from
+//   the prep camera into a battle camera: the pen goes with the battle start (a real battle also empties its figures,
+//   enterBattle), and the next prep's flight brings it back at once.
 // The round's leader (community report #12, owner's decision 2026-10-04; research 09 §2.2: in the official Final Assault
 // prep image the boss stands on the boss field with its HP bar): a nextEnemies entry with its spawn tile `start`
 // (render/prepfield.js leaderStand) stands there — idle, with its (full) HP bar, facing the player's half, a tap shows its
@@ -147,7 +154,6 @@ import { ImpostorAtlas } from './impostor.js';
 import { stepClipBounds } from './spine.js';
 import { loadThree, loadBoardPack, loadScenePack, webgl2Available, boardArtListed } from './board3d/load.js';
 import { BoardScene } from './board3d/scene.js';
-import { unionAreas } from './board3d/layout.js';
 import { layoutPen, penSignature } from './pen.js';
 import { IDENTITY, bossPrepField, tilesToDisp, leaderStand } from './prepfield.js';
 import { pickOnTile, pickBattle, hitTiles } from './pick.js';
@@ -155,7 +161,7 @@ import { promotionsOf } from './promote.js';
 import { ensurePixi } from './app/pixi.js';
 import { pieceDirOf, pickUnitOf } from './app/pick.js';
 import { CAMERA_MS, BOARD3D_STABLE_MS, BOARD3D_RETRY_MS, PEN_CAMERA_MS, RANGE_GROUPS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, CHAIN_KINDS, DROP_PENDING_MS, DEPLOY_REPLAY_MS } from './app/tune.js';
-import { boardPreference, switchableBox, bandFor, fieldRows, boardArea, viewKind, penShown, leaderShown } from './app/view.js';
+import { boardPreference, switchableBox, bandFor, fieldRows, boardArea, viewKind, restView, flightView } from './app/view.js';
 import { renderInfo, FORCED_EXIT, showsDeathFx } from './app/info.js';
 import { resolveAssets, makeData, withTimeout, QUALITY_RES, BOARD_RES, releaseGl } from './app/host.js';
 import { t } from '../../../shared/i18n.js';
@@ -165,7 +171,7 @@ export { ensurePixi } from './app/pixi.js';
 /** fx.damage / fx.heal option: the official effect drew the hit (no procedural spark, slash or glow; numbers stay). */
 const NO_SPARK = Object.freeze({ noSpark: true });
 export { PEN_CAMERA_MS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, DEPLOY_REPLAY_MS } from './app/tune.js';
-export { viewKind, boardArea, bandFor, fieldRows, penShown, leaderShown, boardPreference, switchableBox } from './app/view.js';
+export { viewKind, boardArea, bandFor, fieldRows, penShown, showsPen, leaderShown, restView, flightView, boardPreference, switchableBox } from './app/view.js';
 export { FORCED_EXIT, showsDeathFx, renderInfo } from './app/info.js';
 export { releaseGl } from './app/host.js';
 
@@ -333,7 +339,7 @@ export async function createFieldView(host, options = {}) {
   // enemy preview pen (render/pen.js): figure key → UnitView (own map: never touched by the battle sync)
   const penViews = new Map();
   let penSig = null;
-  let penHidden = true;       // the pen's figures are shown only by the pen camera (setPenHidden)
+  let penHidden = true;       // the pen's figures show with the prep and pen cameras (setPenHidden, view.js penShown)
   let penList = null;
   let ownPen = null;          // the own m.private.nextEnemies (fallback composition of a scouted teammate's pen)
   let standInList = [];       // the own m.private.standIns (0.2.0 补位): pieces of these chess draw the stand-in
@@ -598,13 +604,13 @@ export async function createFieldView(host, options = {}) {
     });
   }
 
-  // rows drawn per camera kind: module `bandFor`; the active field rows: module `fieldRows`
+  // what a camera shows and builds (the 3D area, the drawn 2D rows, the active field rows, the pen's figures, the boss-prep
+  // leader): module `restView` at rest, `flightView` while it flies — the pen with the prep and pen cameras (`showsPen`)
 
   function setCamera(kind, options) {
     if (destroyed) return false;
     let o = options && typeof options === 'object' ? options : {};
     const prevView = viewKind(camKind, camOpts);
-    const prevBand = bandFor(prevView), prevField = fieldRows(prevView);
     const nextKind = typeof kind === 'string' ? kind : 'normal';
     // the enemy pen is a detour of the prep camera: remember where it came from; the same kind asked again without
     // framing options goes back to exactly that camera (Final Assault half, shop state…)
@@ -621,28 +627,29 @@ export async function createFieldView(host, options = {}) {
     if (vk === 'prep') setPrepField(IDENTITY);
     else if (vk === 'bossPrep') setPrepField(bossPrepField(camOpts.side === 'R' ? 'R' : 'L'));
     const target = targetCamera(camKind, camOpts);
-    const band = bandFor(vk);
-    const field = fieldRows(vk);
+    const rest = restView(vk);
     const focus = camRect();
     board3d?.setFocus(focus);
     camMs = Number.isFinite(o.ms) && o.ms >= 0 ? o.ms : (vk === 'pen' || prevView === 'pen' ? PEN_CAMERA_MS : CAMERA_MS);
     if (o.instant || camMs === 0 || mode === 'idle' && !camTo) {
-      board3d?.setArea(boardArea(vk));
+      board3d?.setArea(rest.area);
       cam = target; camFrom = camTo = null;
-      tiles.setView(band, focus, field);
-      setPenHidden(!penShown(vk));
-      setLeaderHidden(!leaderShown(vk));
+      tiles.setView(rest.band, focus, rest.field);
+      setPenHidden(!rest.pen);
+      setLeaderHidden(!rest.leader);
       pendingView = null;
     } else {
       camFrom = cam.clone();
       camTo = target;
       camT0 = performance.now();
-      // keep both fields drawn (and lit) while the camera flies between them
-      tiles.setView([Math.min(prevBand[0], band[0]), Math.max(prevBand[1], band[1])], focus, [Math.min(prevField[0], field[0]), Math.max(prevField[1], field[1])]);
-      board3d?.setArea(unionAreas(boardArea(prevView), boardArea(vk)));
-      setPenHidden(!penShown(vk, prevView));
-      setLeaderHidden(!leaderShown(vk, prevView));
-      pendingView = { band, focus, field, area: boardArea(vk), pen: penShown(vk), leader: leaderShown(vk) };
+      // keep both fields drawn (and lit) while the camera flies between them; the pen as flightView says (a flight from
+      // the prep camera into a battle drops it at once)
+      const fly = flightView(prevView, vk);
+      tiles.setView(fly.band, focus, fly.field);
+      board3d?.setArea(fly.area);
+      setPenHidden(!fly.pen);
+      setLeaderHidden(!fly.leader);
+      pendingView = { ...rest, focus };
     }
     return true;
   }
@@ -1055,7 +1062,7 @@ export async function createFieldView(host, options = {}) {
     }
   }
 
-  /** Hide (or show again) the pen's figures: only the pen camera shows them (see the header). */
+  /** Hide (or show again) the pen's figures: the prep and pen cameras show them, the battle cameras do not (see the header). */
   function setPenHidden(hidden) {
     penHidden = !!hidden;
     for (const v of penViews.values()) hidePenView(v, penHidden);
@@ -1889,7 +1896,11 @@ export async function createFieldView(host, options = {}) {
     clock += dt;
     if ((globalThis.devicePixelRatio || 1) !== lastDpr) { lastDpr = globalThis.devicePixelRatio || 1; resize(); }
     try {
+      const flying = !!camTo;
       stepCamera(now);
+      // a drag under a still pointer follows a camera flight — the shop-collapsed zoom of a deploy (GitHub #602) starts
+      // as the piece is picked up: the target tile and the dragged piece are judged again at the pointer
+      if (flying && mode === 'prep' && drag.dragging) drag.refresh();
       if (board3d) {
         if (board3d.lost) onBoard3dLost();
         else board3d.render(cam, clock);
@@ -2168,7 +2179,7 @@ export async function createFieldView(host, options = {}) {
       return {
         fps: Math.round(fps * 10) / 10, frameMs: Math.round(frameMs * 100) / 100, cpuMs: Math.round(cpuMs * 100) / 100, renderMs: Math.round(renderMs * 100) / 100, mode, units: views.size, impostor: impInterval, impostorAtlas: { ...impostors.stats }, boardArt: !!tiles.atlas.art,
         board3d: board3d ? { on: true, ...board3d.stats(), losses: recover.count } : { on: false, error: board3dError, recovering: !!recover.timer, losses: recover.count },
-        pen: penViews.size, prepField: prepXf.kind === 'bossPrep' ? prepXf.side : null, lod: loadLevel, culled: culledCount,
+        pen: penViews.size, penHidden, prepField: prepXf.kind === 'bossPrep' ? prepXf.side : null, lod: loadLevel, culled: culledCount,
         ...fx.counts, officialFx: ofx.stats(), spine: assets.spine?.stats ? assets.spine.stats() : null, renderT: interp.renderT, rate: interp.rate,
         buffered: interp.size, camera: cam.params(),
       };

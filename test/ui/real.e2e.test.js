@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { aimedDrag } from '../e2e/client.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = path.join(ROOT, 'test/e2e/out');
@@ -176,13 +177,9 @@ class Client {
     }, row, col);
   }
 
+  /** Press, move in steps, release — re-aimed after the pickup: the deploy fold zooms the board (GitHub #602, e2e/client.mjs aimedDrag). */
   async drag(from, to, steps = 14) {
-    const m = this.page.mouse;
-    await m.move(from.x, from.y);
-    await m.down();
-    for (let i = 1; i <= steps; i++) { await m.move(from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps); await sleep(14); }
-    await sleep(120);
-    await m.up();
+    await aimedDrag(this.page, from, to, { steps, settle: 120 });
   }
 
   /** An empty legal tile for a hand piece (mirrors the deploy rules: melee on melee tiles, ranged anywhere). */

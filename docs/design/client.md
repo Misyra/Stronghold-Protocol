@@ -115,7 +115,9 @@ history and the open points: DESIGN §32.14.25.
   / deploy effect or the generic one. A drawn official hit replaces the procedural spark and slash (the numbers stay);
   what index.json does not drive — a unit it does not list, chain bounces, an enemy skill no signal opens (Skills,
   below), a talent no signal binds (Talents) — stays procedural. `mounts.js` reads the skin's points (HitPoint, Muzzle,
-  HeadPoint, Special points; front / back skeleton, mirrored for a unit facing left) at the unit's feet.
+  HeadPoint, Special points; front / back skeleton, mirrored for a unit facing left) at the unit's feet. An effect played
+  before its prefab loaded spawns at index.json's summary (`prefabs[key].spawn`, its `follow` point) and takes its
+  direction and pause behaviours once loaded (round 46).
 - **Skills** (0.3.0 Phase 3b – 3d, `skillfx.js SkillFx`, owned by the wiring; the plans of `skills.js`, DESIGN §33.12
   and §33.16). A battle unit resolves once to its official skill and plan (its data record: `ctx.lookupDef`) and its
   秘术师 charge plan. ['skill', id, 1] plays the plan's `start` and `range` and starts its `loop` (held for the skill:
@@ -164,6 +166,17 @@ history and the open points: DESIGN §32.14.25.
   deploy); a talent attack on the kit's 'extraAttack'; an arts barrier's talent until 'shieldBreak'. One effect plays
   once per spot whichever binding wants it. When the official rows draw a kit fx's or a form fx's moment, its procedural
   fx is skipped.
+- **Floating units** (0.3.0 round 46, `funnelfx.js FunnelFx`, owned by the wiring; the plans of `funnels.js`, DESIGN
+  §33.18). The 驭械术士's units are effect prefabs the official attack abilities show at the operator's Special points: at
+  home their loops (a mode attack's FunnelEffectEmitter idle — its back and overload variants —, or a funnel shot's
+  passive look, which TalentFx leaves to FunnelFx) follow the point and its skeleton bone (`bones.js`: the bone's offset
+  from its Idle place); with the owner's 'atk' the attached units (荒芜拉普兰德) leave home and each lands with its 'dmg' after
+  the body hit (the wolf's lunge), then comes back; a funnel shot flies from its mount (洛洛, 至简, 耶拉, 澄闪, 至简 S2's own);
+  the kit's 'drone' fx are the remote units' hits (洛洛 S2, 耶拉 S2, 澄闪's skills: the unit beside the enemy, its groups in
+  turn, the overload look; it returns after 2 s without a hit or at the skill's end); 荒芜拉普兰德 S3's 'drones' /
+  'droneLock' / 'drone' drive her dispersed wolves (spread, chase, latch, hits, the trace and latched marks). Those kit
+  fx (the light pillar, the reticle, the overload chevrons) are not drawn procedurally while the units' effects are
+  there; without them the procedural look stays.
 - **Budget.** Tier 完整 (`full`: up to 220 effects and 6,000 particles, full-size textures) and 精简 (`lite`: 90 and
   2,500, half-size textures, half the emission, the prefabs' FxLODSetting nodes off, no rim or distortion lookups).
   Past the caps a new one-shot is dropped (loops and projectiles always start), and so is a one-shot whose prefab

@@ -96,7 +96,8 @@ decoding of compressed data (animation clips, textures, meshes).
 §33.13, is a subset) and, since Phase 1c (§33.15), every emitter of the units' attacks, the charge groups and the
 enemies' and summons' skills; since Phase 1d (§33.17) the units' talents, common and general abilities, which ability
 fires which projectile, the buffs' lives and the groups' choice; the runtime and the skill mapping read them (Phases 2
-and 3; what the runtime does not read yet: §33.17's list). Where the client's own
+and 3; what the runtime does not read yet: §33.17's list), and the 驭械术士's floating units from the funnel attacks, their
+FunnelEffectEmitters and their projectiles (§33.18). Where the client's own
 behaviour cannot be read from its data, the text says **assumed** (Unity behaviour the data cannot confirm);
 **resolved** marks what Phase 1b checked against the client (its shader source, il2cpp metadata, prefab data). Enum and
 field names marked *metadata* come from the client's il2cpp metadata
@@ -1100,7 +1101,10 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   others, `spineEffects`).
 * **Placement (v2)**: `prefabs[key].spawn` / `follow` give a plan entry its `point` / `follow` without loading the
   descriptor (a charge slot without a `mountPointForProjectiles` point leaves from its loop's `follow`; a descriptor
-  read with `opts.describe` still wins, and at play time the loaded descriptor places the effect as before);
+  read with `opts.describe` still wins, and at play time the loaded descriptor places the effect as before; an effect
+  played before its descriptor arrived — a loop started in the battle's first frames — spawns at its summary's
+  `spawn`, keeps to its summary's `follow` point and takes its direction and pause behaviours once loaded, round 46:
+  it used to sit at the HitPoint for good);
   `mounts.js skinShift` — version 1's guess at a skin exported without its root transform — is off for a version 2
   index.
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
@@ -1278,3 +1282,107 @@ buff's blackboard (`next_projectile_key`, `projectile`) or a template's EmitProj
 in `projectiles`, not tied to an ability; the 5 unreferenced `Combat` nodes; template-created buffs' lives (their
 CreateBuff data is not read for `life`); talents and abilities whose nodes name no effect (stat buffs, card plugins:
 nothing to draw).
+
+### 33.18 The 驭械术士's floating units (0.3.0, round 46)
+
+The floating units (浮游单元) of the 驭械术士 branch (subProfessionId `funnel`: 荒芜拉普兰德, 洛洛, 至简, 耶拉 and the 自选 澄闪 in
+the mode's pool) are no unit of their own — no token, and no image of the operator's Spine model draws them (洛洛's
+skeleton has her drone only in its `Skill_Begin` clip, as she launches it). Each is an effect prefab that an ability of
+the operator's prefab (`charpack/<id>.ab`) shows at a Special point of her skin, and what it does to an enemy is a
+projectile of `[uc]projectiles.ab` (round 46: the four operators' prefabs, their skills and projectiles dumped with
+UnityPy). index.json version 3 carries all of it; nothing was added to the format, and the full set (§33.14) holds every
+prefab (98 keys for the four, 5.4 MB of their textures).
+
+* **Mode attacks with units.** A mode attack of class MultiFunnelsNormalAttack or MultiFunnelRemoteAttack lists its
+  units in `attack.abilities` (its `_funnelActions`, v2; `_useExtraActiveCntAbility`: a talent or a skill's passive adds
+  active units). Each unit's node carries a FunnelEffectEmitter (`emitters[]`, v3): `idleEffect` — the loop while the
+  unit is home —, `idleBackEffect` with `useIdleBackEffect` (the owner facing back), `overloadIdleEffect` with
+  `useOverloadEffect` (洛洛 S2's overload), `appearEffect` / `disappearEffect` (as it comes back / leaves),
+  `setActiveFalseWhenPause`. The unit's `projectileKey` is its attack: AttachToTarget (the target's HitPoint;
+  `_delayTime` s after reaching it with `_delayAfterReached` — 荒芜拉普兰德's normal attack 0.5 s —; `_immediatelyReach`,
+  `_followTarget`) playing an EffectBehaviour hit (`onHit`) or a SequenceEffectBehaviour's `_effectGroups` (one group
+  per hit, in turn; `_overloadGroups` with `_enableOverloadEffect`). The hit prefabs carry the unit itself: a wolf that
+  lunges through the target in 0.17 s and fades by 0.83 s (`whitw2_token_hit_0X`), a drone or token that appears beside
+  the target, fires and is gone after 0.5–0.6 s (`rockr_token_skill_02_hit_L_01` / `_R_01`, `kjera_token_skill_02_hit_F_L_01`;
+  their FunnelHitEffect moves them by up to ±0.2 × ±0.05).
+* **The funnel shot.** A general ability of class MultiFunnelNormalAttack (`abilities[]`, kind `general`, its `modes`;
+  a buff template triggers it at the owner's ON_ABILITY_CAST_ON_TARGET) is the unit's shot with the operator's own
+  normal attack: its sub-ability's `projectileKey` flies from its `mount` (the unit's Special point), with its cast rows
+  (`uses` from `_castEffects`: 耶拉's `kjera_token_attack_start_01` on her token). The unit's look in those modes is the
+  PassiveBuffAbility general ability of the same modes (`Effect`), a prefab that follows a mount point
+  (`prefabs[key].follow`). A skill's own MultiFunnelNormalAttack (`skills[id].abilities[]`) replaces it for the skill's
+  attacks (至简 S2's `Funnel_s2` at SPECIAL_2).
+* **Dispersed units.** 荒芜拉普兰德 S3's general ability `WolvesDispersed` (Whitw2Skill3FunnelRangedAttack; its sub-abilities fire
+  nothing of their own) lists the units in `projectiles`: the flights `projectile_chr_whitw2_funnel_s3_1…4` — `main` the
+  flying wolf (`whitw2_skill_03_token_trail_01`), a GroupedMovement of HoveringInPlaceMovement (radius 1.25, speed 1),
+  AttachToTarget (`_followTarget`), an AdvancedMovement chase (2 → 4 at 1 per s) and an AdvancedMovement spread (away
+  from the source, 0.1 → 2 at 1.9 per s) switched by MovementSwitchControllerForWhitw2 (its trace-target buff's override
+  effect `whitw2_skill_03_mark_01` over the chased enemy; the reappearance square ±0.75) — and their `_attach`
+  projectiles (the hits while latched, SequenceEffect `whitw2_token_hit_0X`; the extra buff's override effect
+  `whitw2_skill_03_mark_02` on the latched enemy); its BuffToOwner use `whitw2_skill_03_buff_start` (LIMITED, 3 s).
+* **Where they float.** The idle prefabs follow SPECIAL_0 / _1 / _2 (their FollowMountPoint, `prefabs[key].follow`), and
+  the skin's point names its bone (`skins[…].points.SpecialPointN.front` / `.back` `.bone`): 荒芜拉普兰德
+  F_Funnel_Muzzle_1–3, 洛洛 F_UVA_01, 至简 F_Fly, 耶拉 F_Rock_1 / F_Rock_2, 澄闪 F_DroneA. A skin's point is its bone in the
+  model's Idle pose: x = the bone's x × 0.0027, the height in the Graphic plane the same scale about the skeleton's
+  origin (0.157 under the root), the plane turned −30° about x (§33.12 Skin; the four chess operators' skins against
+  their Spine models).
+  The client's BoneFollower moves the point with the clips: 洛洛's, 至简's and 耶拉's units bob with the Idle clip, 荒芜拉普兰德's
+  wolves stay put in Idle and move in `Skill_1_Loop`.
+
+| operator | at home | with her normal attack | skills |
+|---|---|---|---|
+| 荒芜拉普兰德 `char_1038_whitw2` | Default / S1: `whitw2_token_01`–`_03` (1, + S1's passive 浮游单元+1, + the 头狼 talent's third stage) at SPECIAL_0 / _1 / _2 | her shot `projectile_chr_whitw2`; each unit: `whitw2_token_end_0X`, the lunge `whitw2_token_hit_0X` on the target, back with `whitw2_token_end_0X` | S1 (toggle): the same units, AttachToTarget at once and following the target; S2: `S2Funnel1`–`6` with no emitter (nothing at home), one per lock, `whitw2_token_hit_0X` every attack; S3: the dispersed wolves |
+| 洛洛 `char_4040_rockr` | Default: `rockr_token_01` at SPECIAL_1 | her shot; the drone's `projectile_chr_rockr_funnel` (`rockr_token_trail_01`, hit `rockr_token_hit_01`) from SPECIAL_1 | S2: one unit (idle `rockr_token_01`, `rockr_token_show_01` / `hide_01`, overload `rockr_token_overload_01`) beside the target, left then right (`rockr_token_skill_02_hit_L_01` / `_R_01`; overload `_L_overload_01` / `_R_overload_02`) |
+| 至简 `char_4054_malist` | Default: `malist_drone` at SPECIAL_0 | her shot; `projectile_chr_malist_funnel` (`malist_drone_trail`) from SPECIAL_0 | S2 (a ReplacementSkillFixed, no mode switch): `projectile_chr_malist_funnel_2` from SPECIAL_2 |
+| 耶拉 `char_4013_kjera` | Default: `kjera_token_default` (back `kjera_token_B_01`) at SPECIAL_0 | her shot; `kjera_token_attack_start_01` on the token and `projectile_chr_kjera_funnel` (`kjera_token_attack_trail_01`, hit `kjera_token_hit_01`) from SPECIAL_0 | S2: two units (idle `kjera_token_F_01` / `_F_02` at SPECIAL_0 / _1, back `_B_01` / `_B_02`, `show_01` / `_02`, `hide_01` / `_02`): `kjera_token_skill_02_hit_F_L_01` / `_02` and `_F_R_01` / `_02` |
+| 澄闪 `char_377_gdglow` (自选) | Default: `gdglow_token_01` at SPECIAL_1 | `projectile_chr_gdglow_funnel` (`gdglow_token_attack_trail_01`) from SPECIAL_1 | S1 / S2: two units, S3 three (idle `gdglow_token_skill_0X`, `gdglow_token_hide_0X` both ways): `gdglow_token_hit_L_01` / `_L_02` / `_R_01` / `_R_02` in turn |
+
+**The runtime** (`render/vfx/funnels.js` plans a unit, `render/vfx/funnelfx.js` plays it — owned by the wiring like
+SkillFx and TalentFx —, `render/vfx/bones.js` follows the bone; DESIGN §9 "Official battle effects"; client only):
+
+* **Home.** The loops of the units that are home follow their prefab's point and the bone: the bone's offset from its
+  place in the model's Idle clip (a scratch skeleton of the same runtime) × 0.0027, through the −30° plane, mirrored for
+  a unit facing left (no model, bone or Idle clip: the skin's point). In a mode whose attack holds units, the first n
+  with an idle loop: with the skill on, the units it releases (the kit's 'drones' count, else 1 + the skill record's
+  blackboard `attack@cnt`); else the units one attack showed (the hits after the body hit), before any attack 1 + a
+  passive "浮游单元+N" of the equipped skill's text; the back loop for a unit facing back (the snapshot's Back model), the
+  overload loop after the kit's 'overload'. In the modes of a funnel shot, the passive ability's loop — TalentFx leaves
+  those bindings to FunnelFx (`funnelfx.js owns`). One key on one point plays once, so a mode switch to the same loop
+  (洛洛's Default → S2, 荒芜拉普兰德's Default → S1) keeps it running; a unit shown where none of its own floated (a skill's
+  added unit, the units back from a hunt) plays its `appearEffect`.
+* **Attached units (the owner's 'atk').** 荒芜拉普兰德's Default, S1 and S2 (the sim deals the units' hits with her attack):
+  the k-th HP 'dmg' on the target after the body hit is unit k's (a 'dmg' names no source: those of her damage type in
+  the tick of the first — the sim deals them in one call; and so is the count from then on); several targets of
+  one attack (S2's locks; one enemy can hold several) are one unit each; each plays its hit group on its target and is
+  home again 0.85 s later (`appearEffect`). A normal attack's units (MultiFunnelsNormalAttack) leave home with the attack
+  (`disappearEffect`, the loop gone at once — `setActiveFalseWhenPause`), a skill mode's with their own hit. The body
+  shot flies at the attack's first target only. A mode whose units a kit's 'drone' fx shows to hit on their own (洛洛 S2,
+  耶拉 S2) takes the owner's attacks for her own shot only.
+* **The funnel shot** flies its projectile from its mount in the sim's flight time with its hit on arrival; its
+  ON_CAST_START casts start with the owner's wind-up (`castStart`), at the strike without one.
+* **Remote units (the kit's 'drone').** 洛洛 S2, 耶拉 S2 and 澄闪's skills (the sim's drones hit on their own clock, one
+  'drone' fx per hit at the lock): the k-th of the owner's fx in a frame is unit k; it leaves home at its first hit and
+  plays its hit groups in turn on the enemy there (the nearest within 0.6 tiles; the prefab follows its HitPoint and
+  the FunnelHitEffect offset), the previous hit stopping; units in step with the same groups (澄闪's) start one group
+  apart; it comes back 2 s after its last hit or at the skill's end (`appearEffect` where the mode then shows a unit on
+  that point).
+* **Dispersed units.** 'drones' releases n flights from her, evenly spread with one along her facing — the kit's speeds
+  (the client's spread and chase above) for `attack@times` s —; 'droneLock' sends the free flight nearest to the named
+  enemy after it (the trace mark over it); it latches on reaching it (the latched mark) and lunges at each 'drone' at
+  that enemy (a chasing flight there latches at once); a lost target puts it at a seeded point of the ±0.75 square
+  around the spot until its next lock, circling after 0.25 s (the kit's 0.9 radius, 1 tile per s); a 'drone' elsewhere
+  (a free unit's place, once a second) pulls the nearest free flight halfway there; the skill's end stops them and the
+  home units come back. A view that saw no 'drones' (built mid-skill, a late fx dropped) releases 1 + `attack@cnt` after
+  0.4 s; her `whitw2_skill_03_buff_start` plays with the release.
+* **The kit fx they stand for** are not drawn procedurally: 'drone' / 'drones' (the light pillar), 'droneLock' (the
+  reticle) and 'overload' (the chevrons) of a funnel unit return true from `FxWiring.simFx` when its effects are there.
+  Without the layer (设置「官方特效」 关, the 2D board, no extracted effects — a lite install) or without the unit's
+  prefabs, the field view keeps its procedural look, the pillar included.
+
+**Assumed** (the client's choices are engine code): the hits at the sim's damage moment (AttachToTarget's delay not
+added), 0.85 s before an attached unit is home again and 2 s before a remote one comes back, the appear / disappear
+moments at a skill's start and end, the initial count from the skill's text, the flights' height (0.3 over the ground),
+the S3 pulse correction, the hover radius (the sim kit's 0.9; the client's HoveringInPlaceMovement says 1.25), the
+groups one apart, the bone scale 0.0027 for every model. Not drawn: 澄闪's self-destruct (`projectile_chr_gdglow_funnel_s12_3`
+… — the kit's 'explode' keeps the procedural blast), a unit hidden while its owner is stunned
+(`setActiveFalseWhenPause`: no signal ties a unit's pause to a status).

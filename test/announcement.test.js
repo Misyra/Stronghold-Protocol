@@ -204,6 +204,43 @@ test('default server hot-reads the managed file and ignores a manual local notic
   assert.ok(!JSON.stringify(second).includes('_delivery'));
 });
 
+test('读到的公告 revision 会投影出去（三层状态里的第三层），id 与展示策略不变', async (t) => {
+  const managed = await fixture(t);
+  await writeFile(managed, JSON.stringify({ ...config, _delivery: { revision: 7 } }));
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementSource: 'agent', announcementAgentFile: managed });
+  t.after(() => srv.close());
+  const body = await (await fetch(srv.url + '/api/announcement')).json();
+  assert.equal(body.observedRevision, 7, 'Agent 靠它知道「游戏真的读到第 7 版了」');
+  assert.ok(Number.isFinite(body.observedAt));
+  assert.deepEqual(body.announcement, parseAnnouncement(config), '公告本身与展示策略一个字都没变');
+  assert.ok(!JSON.stringify(body).includes('_delivery'), '交付记录不进公开投影');
+
+  // 手工写的文件（没有 _delivery）→ null，而不是 0：说「不知道」比说「读到第 0 版」安全。
+  const plain = await fixture(t);
+  await writeFile(plain, JSON.stringify(config));
+  const other = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementSource: 'agent', announcementAgentFile: plain });
+  t.after(() => other.close());
+  const answer = await (await fetch(other.url + '/api/announcement')).json();
+  assert.equal(answer.observedRevision, null);
+  assert.ok(Number.isFinite(answer.observedAt), '读到了文件，只是文件没说自己是哪一版');
+  // enabled:false（撤下公告）也要留下「读到过哪一版」：撤下也是它读到的一份文件。
+  await writeFile(plain, JSON.stringify({ enabled: false, _delivery: { revision: 9 } }));
+  await new Promise(resolve => setTimeout(resolve, 1050));
+  const cleared = await (await fetch(other.url + '/api/announcement')).json();
+  assert.equal(cleared.announcement, null);
+  assert.equal(cleared.observedRevision, 9);
+});
+
+test('panel 源也投影读到的 revision（来源不同，语义相同）', async (t) => {
+  const source = await upstream(t, (req, res) => { res.end(JSON.stringify({ ...config, _delivery: { revision: 4 } })); });
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true,
+    announcementSource: 'panel', announcementPortalUrl: source.url, announcementSiteId: 'hongkong' });
+  t.after(() => srv.close());
+  const body = await (await fetch(srv.url + '/api/announcement')).json();
+  assert.equal(body.observedRevision, 4);
+  assert.ok(!JSON.stringify(body).includes('_delivery'));
+});
+
 test('site ID and portal URL compose the feed for newly deployed sites', async (t) => {
   let requested;
   const source = await upstream(t, (req, res) => { requested = req.url; res.end(JSON.stringify(config)); });

@@ -702,12 +702,12 @@
 /* 商店立绘 tiles: narrow columns (the user asked for a slim frame so the art can be bigger). The art keeps the shop
    card's own 1:2 portrait shape, so nothing is cropped; the series line moves into the tile's tooltip. */
 .lo-skins--tall .lo-skin--tall {
-  flex: 0 0 auto; width: .78rem; min-width: 0; max-width: none; flex-direction: column; align-items: stretch; gap: .04rem; padding: .05rem;
+  flex: 0 0 auto; width: .98rem; min-width: 0; max-width: none; flex-direction: column; align-items: stretch; gap: .05rem; padding: .06rem;
 }
-.lo-skins--tall .lo-skin--tall .lo-skin__art--tall { width: 100%; height: 1.36rem; }
+.lo-skins--tall .lo-skin--tall .lo-skin__art--tall { width: 100%; aspect-ratio: 1 / 2; height: auto; }
 .lo-skins--tall .lo-skin--tall .lo-skin__text { align-items: center; width: 100%; min-width: 0; }
 .lo-skins--tall .lo-skin--tall .lo-skin__name {
-  max-width: 100%; font-size: max(calc(.13 * var(--t)), 10px); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%; font-size: max(calc(.16 * var(--t)), 11px); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .lo-skins--tall .lo-skin--tall .lo-skin__group { display: none; }
 /* the live preview's canvas fills the frame (render/spinePreview.js appends it there) */

@@ -862,3 +862,29 @@ describe('death timing (PR #380): a dying flyer drops inside the fade, a long Di
     assert.ok(!v.remove && v.alpha > 0.5, 'still on screen 5 s in');
   });
 });
+
+describe('GitHub #648: the Hidden Core 假想敌：管 (enemy_9021_acduml_2)', () => {
+  const boss = (defId) => view({ side: 'enemy', kind: 'enemy', defId, boss: true, x: 9, y: 3, maxHp: 600000 });
+
+  test('faces right as authored whatever turn it is given; the Final Assault 管 still turns', () => {
+    const h = boss('enemy_9021_acduml_2');
+    assert.equal(h.visFacing, 1, 'right from the start');
+    h.visFacing = -1; // an attack, a walk or the prep leader's faceLeader
+    assert.equal(h.visFacing, 1, 'still right');
+    const b = boss('enemy_9021_acduml');
+    assert.equal(b.visFacing, -1, 'an enemy starts facing left');
+    b.visFacing = 1;
+    assert.equal(b.visFacing, 1, 'and turns');
+  });
+
+  test('its boss HUD sits 1.4 tiles right of the model (the prefab _bossHudOffset); the model stays on its tile', () => {
+    const h = boss('enemy_9021_acduml_2');
+    const b = boss('enemy_9021_acduml');
+    for (const v of [h, b]) v.update(1 / 60, cam(), 0);
+    assert.equal(h.screen.x, b.screen.x, 'the model is drawn at the unit position');
+    const c = cam();
+    const dx = c.project(10.4, 3, 0).x - c.project(9, 3, 0).x;
+    assert.ok(dx > 0);
+    assert.ok(Math.abs((h.hpFill.position.x - b.hpFill.position.x) - dx) < 1, `HP bar moved by ${h.hpFill.position.x - b.hpFill.position.x} px (1.4 tiles ≈ ${dx})`);
+  });
+});

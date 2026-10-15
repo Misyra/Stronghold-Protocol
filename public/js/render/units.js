@@ -540,6 +540,20 @@ export function groundZ(ctx, x, y) {
 /** Enemy Spine models face right by default like operators (verified by eye on Ark-Models skeletons). */
 export const ENEMY_MODEL_FACES_LEFT = false;
 
+/**
+ * Leaders the official draws one way only (1 = right, the authored way), by enemy key. GitHub #648, the Hidden Core's
+ * 假想敌：管: its prefab enemy_9021_acduml_2 differs from the Final Assault's enemy_9021_acduml only in the BoxCollider2D
+ * offset (+1, +1 — data/enemies.json hitArea dx 1) and the boss HUD offset `_bossHudOffset` (+1.4, 0) (local client,
+ * 2026-10-15). Both lie right of its spawn tile (row 3, col 9), where its body lies when the model faces right as
+ * authored; mirrored to the left it reached 2½ tiles onto the left half (the report's screenshot), while the
+ * maintainer's official recording shows it over the boss block. [ASSUMED] it never turns: its prefab's FaceSwitcher
+ * `_defaultLOrR` is 1 (regular enemies 3), read as "right"; every leader of the mode shares that 1, so the Final
+ * Assault's 管 may face right too, which nothing has shown yet.
+ */
+const FIXED_FACING = Object.freeze({ enemy_9021_acduml_2: 1 });
+/** The official boss HUD's sideways offset from the unit position, tiles (the prefab's `_bossHudOffset.x`), by key. */
+const BOSS_HUD_DX = Object.freeze({ enemy_9021_acduml_2: 1.4 });
+
 let _whiteTex = null;
 const white = () => (_whiteTex || (_whiteTex = globalThis.PIXI.Texture.WHITE));
 
@@ -582,6 +596,9 @@ export class UnitView {
     this._far = false;            // small on screen (adaptive LOD, with hysteresis)
     this.isEnemy = info.side === 'enemy';
     this.isBoss = !!info.boss;
+    // a leader drawn one way only, and its boss HUD beside the model (FIXED_FACING / BOSS_HUD_DX, GitHub #648)
+    this.fixedFacing = (this.isEnemy && FIXED_FACING[info.defId]) || 0;
+    this.hudDx = (this.isEnemy && BOSS_HUD_DX[info.defId]) || 0;
     // enemies: the official prefab's size factor (1 for operators, summons and enemies at the standard size)
     const def = this.isEnemy && ctx.lookupDef ? ctx.lookupDef(info) : null;
     this.modelK = this.isEnemy ? enemyModelScale(def) : 1;
@@ -1068,6 +1085,10 @@ export class UnitView {
     if (this.anim === ANIM.DIE && this.alive) this.die();
     if (this.actor && this.alive) this.actor.setBase(this._baseFromAnim());
   }
+
+  /** The way the model looks (−1 left, 1 right); a FIXED_FACING leader keeps its own way whatever turn it is given. */
+  get visFacing() { return this.fixedFacing || this._visFacing; }
+  set visFacing(v) { this._visFacing = v; }
 
   setWorld(x, y, z = 0) { this.x = x; this.y = y; this.z = z; }
 
@@ -1563,7 +1584,9 @@ export class UnitView {
       modelK: this.modelK, modelKY: this.modelKY,
     });
     this.screen.top = by - headTiles * s;
-    this._updateHud(dt, s, bx, by - headTiles * s, alpha, t);
+    // the boss HUD `hudDx` tiles beside the model, where the official prefab puts it (BOSS_HUD_DX)
+    const hx = this.hudDx ? cam.project(this.x + this.hudDx, this.y, this.z + this.hover + this.lift, HUD_P).x : bx;
+    this._updateHud(dt, s, hx, by - headTiles * s, alpha, t);
   }
 
   /**
@@ -2215,6 +2238,7 @@ const SH_P = { x: 0, y: 0, s: 0, depth: 0 };
 const FA_P = { x: 0, y: 0, s: 0, depth: 0 };
 const FA_C = { x: 0, y: 0, s: 0, depth: 0 };
 const LG_P = { x: 0, y: 0, s: 0, depth: 0 };
+const HUD_P = { x: 0, y: 0, s: 0, depth: 0 };
 const ICON_TMP = [];
 
 /**

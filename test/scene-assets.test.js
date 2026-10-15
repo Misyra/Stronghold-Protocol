@@ -84,7 +84,7 @@ test('official scene bundles and extracted scenes are not git files; the extract
   assert.equal(isPlayerFile('tools/local-extract/fetch_scenes.py'), true);
 });
 
-test('the official effects (public/assets/local/fx + data/local-fx.json) stay out of the full zip unless fx (FULL_ZIP_FX)', () => {
+test('the official effects (public/assets/local/fx + data/local-fx.json) ship in the full zip with fx (FULL_ZIP_FX), held back without', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-fxzip-'));
   try {
     const put = (rel, s) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), s); };
@@ -94,8 +94,9 @@ test('the official effects (public/assets/local/fx + data/local-fx.json) stay ou
     put('data/local-fx.json', JSON.stringify({ version: 1, format: 'fx-manifest', groups: { 'fx/prefabs': { p: { path: '/assets/local/fx/prefabs/p.json' } } } }));
     put('public/assets/local/fx/prefabs/p.json', '{}');
     put('public/assets/local/fx/tex/t.webp', 'webp');
-    assert.equal(FULL_ZIP_FX, false, '0.3.0 ships no effects until the maintainer decides');
-    const off = artPlan(dir);
+    assert.equal(FULL_ZIP_FX, true, '0.3.0 ships the extracted effects (the maintainer\'s decision of 2026-10-15)');
+    assert.ok(artPlan(dir).files.includes('data/local-fx.json'), 'the default plan follows FULL_ZIP_FX');
+    const off = artPlan(dir, { fx: false });
     assert.deepEqual(off.files, ['data/local-assets.json', 'public/assets/local/ui/battle/b.png']);
     assert.deepEqual(off.fxHeld, ['public/assets/local/fx/prefabs/p.json', 'public/assets/local/fx/tex/t.webp']);
     assert.deepEqual(off.orphans, [], 'held back on purpose, not "nothing lists them"');

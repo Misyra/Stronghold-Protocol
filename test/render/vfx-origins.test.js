@@ -2,7 +2,7 @@
 // a BoneFollower keeps on a Spine bone is the bone where the model draws it (render/vfx/mounts.js, UnitView.boneOffset) —
 // for a shot as the attack clip poses it at its strike frame —; the mount point's rotation (the Graphic tilt, the facing
 // turn, the bone's angle) for MUZZLE_POINT / Special-point spawns and FollowMountPoint without `_keepOriginRotation`;
-// FollowMountPoint for every effect that has one; the client's ParacurveMovement arc and AmiyaS2Movement wobble
+// FollowMountPoint for every effect that has one (FollowOwner as before); the client's ParacurveMovement arc and AmiyaS2Movement wobble
 // (render/vfx/flight.js); the projectile behaviour's own flying effect (a chain line or a harpoon rope is none; the rope
 // runs from the mount point to the head); 号角's Blocked sub-ability only while she blocks; the facing variants of modes
 // (灰毫's S2(U) / S2(D) / S2(LR)); and, with the local client's skeletons and extraction, the static Muzzle against the
@@ -200,6 +200,7 @@ const DEFS = {
   staff_glow: { spawn: 0, follow: { mount: 5, keepRot: false } },     // aglina_skill_02_start: SPECIAL_0, the point's rotation
   stun_loop: { spawn: 4, follow: { mount: 3, keepRot: true } },        // buff_stun: HEAD, its own (pre-tilted) rotation
   muzzle_norot: { spawn: 6 }, flip_follow: { spawn: 0, rotateType: 1, rotY: -1, follow: { mount: 2, keepRot: false } },
+  owner_flash: { spawn: 3, follow: { mount: 0, keepRot: true, owner: true } }, // amgoat_attack_01_start: FollowOwner, MUZZLE_POINT
 };
 
 function fakeOfx(index) {
@@ -292,6 +293,12 @@ describe('the wiring places shots and weapon effects on the drawn model', () => 
     assert.equal(s.place.mountRot, null);
     assert.ok(typeof s.opts.track === 'function', 'it follows the unit');
     assert.equal(w.playOn('muzzle_norot', v).place.mountRot, null);
+    // FollowOwner (not a FollowMountPoint): at its spawn location — the muzzle, turned with it —, followed only as a held loop
+    const o = w.playOn('owner_flash', v);
+    nearV(o.place.pos, [-6 + 0.35, 2 + 1.32 * C30, -1.32 * S30], 1e-9, 'at the muzzle, not the feet');
+    assert.ok(quatRotate(o.place.mountRot, [1, 0, 0])[1] > 0.86, 'MUZZLE_POINT turns it along the barrel');
+    assert.equal(o.opts.track, null, 'a one-shot stays where it spawned');
+    assert.equal(typeof w.playOn('owner_flash', v, { follow: true, loop: true }).opts.track, 'function', 'a held loop follows the unit');
     // FLIP_TWO_SIDE on a turning mount: the facing comes with the mount's rotation, no mirror on top
     const left = view(6, 'char_lob', 4, 11, { visFacing: -1, boneOffset: boneView({ F_Muzzle: { x: 0.6, up: 1, angle: 0 } }, -1).boneOffset });
     const f = w.playOn('flip_follow', left);

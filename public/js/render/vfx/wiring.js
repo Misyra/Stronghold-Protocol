@@ -444,12 +444,15 @@ export class FxWiring {
     const spawn = def ? def.spawn : 2;
     const pose = this.pose(v);
     pose.strike = !!o.strike;
-    const follow = def?.follow || null;
-    const pos = follow ? mountPoint(skin, follow.mount, pose) : spawnPoint(skin, spawn, pose);
+    // a FollowMountPoint: its point from the first frame on, every effect that has one; FollowOwner / FollowTileHeight
+    // (`follow.owner`): at the spawn location, kept on the unit's feet for a held loop (o.follow) as before
+    const fmp = def?.follow && !def.follow.owner ? def.follow : null;
+    const follow = fmp || (o.follow && def?.follow) || null;
+    const pos = fmp ? mountPoint(skin, fmp.mount, pose) : spawnPoint(skin, spawn, pose);
     const ground = (v.z || 0);
-    const onGround = !!def && GROUND_SPAWNS.has(spawn) && (!follow || !!follow.owner);
+    const onGround = !!def && GROUND_SPAWNS.has(spawn) && !fmp;
     if (onGround) pos[2] = -ground;
-    const rotKind = follow ? (follow.keepRot ? null : mountKind(follow.mount)) : def ? spawnRotationKind(spawn) : null;
+    const rotKind = fmp ? (fmp.keepRot ? null : mountKind(fmp.mount)) : def ? spawnRotationKind(spawn) : null;
     const place = { pos, groundZ: -ground, yaw: 0, mirror: false, flipY: false, mountRot: rotKind ? mountRotation(skin, rotKind, pose) : null };
     this._orient(def, place, pose, o, v);
     const opts = { track: o.track || null, data: o.data ?? null, loop: !!o.loop, important: !!o.important, skip: o.skip > 0 ? o.skip : 0 };
@@ -464,7 +467,7 @@ export class FxWiring {
           mountPoint(skin, follow.mount, p, fx.anchor);
           if (onGround) fx.anchor[2] = -(v.z || 0);
           fx.groundZ = -(v.z || 0);
-          if (rotKind) fx.mountRot = mountRotation(skin, rotKind, p, fx.mountRot || [0, 0, 0, 1]);
+          if (fmp && rotKind) fx.mountRot = mountRotation(skin, rotKind, p, fx.mountRot || [0, 0, 0, 1]);
         }
         if (turn) {
           const pl = { yaw: fx.yaw, mirror: fx.mirror, flipY: fx.flipY, mountRot: fx.mountRot };

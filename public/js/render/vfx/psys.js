@@ -204,7 +204,7 @@ const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
 export function noise3(x, y, z) {
   const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
   const xf = x - xi, yf = y - yi, zf = z - zi;
-  const cx = xi & 255, cy = yi & 255, cz = zi & 255;   // lattice cell (lower case: the hotkey scan forbids PERM[X])
+  const cx = xi & 255, cy = yi & 255, cz = zi & 255;   // the lattice cell (lower-case names: the hotkey scan of public/js reads a capital X index as a key)
   const u = fade(xf), v = fade(yf), w = fade(zf);
   const a = PERM[cx] + cy, aa = PERM[a] + cz, ab = PERM[a + 1] + cz, b = PERM[cx + 1] + cy, ba = PERM[b] + cz, bb = PERM[b + 1] + cz;
   const l = (p, q, t) => p + (q - p) * t;

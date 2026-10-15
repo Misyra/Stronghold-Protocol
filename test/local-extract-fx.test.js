@@ -1,6 +1,7 @@
 // tools/local-extract/fx.py (DESIGN §33, docs/design/vfx-format.md): the encodings of the official battle effects'
 // descriptors — curves, gradients, render states, decoded animation clips, mount-point matrices, the file names of
-// effect keys —, the units' emitters, charge groups and skills of index.json, and extract.py's opt-in fx run. The
+// effect keys —, the units' emitters, charge groups and skills of index.json, its v3 talents, common / general
+// abilities, abilities' projectiles, buff lives and group choice (§33.17), and extract.py's opt-in fx run. The
 // Python helpers run without UnityPy (pure functions; plain python3). When the effects were extracted on this machine
 // (data/local-fx.json, the list of the fx files, exists), the output is checked for consistency: every listed file
 // exists, the index and the list agree, every key the index names has a descriptor, and data/local-assets.json holds
@@ -181,7 +182,8 @@ print(json.dumps({k: fx.emitter_export(c, f) for k, (c, f) in {'plain': ('UberEf
     assert.deepEqual(animRows.cast.map((r) => [r.effects[0], r.group, r.anim]), [['s_start_01', 0, 'Attack_1'], ['s_start_02', 1, 'Attack_2']]);
     assert.deepEqual(animRows.hit.map((r) => [r.effects[0], r.group ?? null, r.anim ?? null]), [['s_hit', null, null], ['s_hit_02', 1, 'Attack_2']],
       'hitEffectOptions are hit rows; the base hit row has no group');
-    assert.deepEqual(animSet, { class: 'UberAnimationEffectEmitter', sourceAnimKey: 'Attack_1', loopType: 1, replaceAnims: ['Attack_1', 'Attack_2'], groups: { replaceGroup: 2 } });
+    assert.deepEqual(animSet, { class: 'UberAnimationEffectEmitter', sourceAnimKey: 'Attack_1', loopType: 1, loopTypeName: 'RANDOM',
+      replaceAnims: ['Attack_1', 'Attack_2'], groups: { replaceGroup: 2 } }, 'v3: LoopType 1 is RANDOM (metadata), 0 LOOP');
     assert.deepEqual(out.wolf[0].cast, [{ directionType: 0, effects: ['w_sub_1'], oneshot: 1, startEvent: 2, endEvent: 3, buffKey: 'b1', field: '_vigilWolfCastEffects' }]);
     assert.deepEqual(out.wolf[1], { class: 'VigilWolfEffectEmitter' }, 'PPtrs are dropped');
     assert.deepEqual(out.mode[1], { class: 'UberEffectEmitterInCertainMode', activeMode: 0 });
@@ -243,7 +245,7 @@ print(json.dumps([fx.token_skill_ids(rec), fx.mount_names([6, 8, 9, 5, 10, 29, 3
     assert.deepEqual(out[1], ['SPECIAL_1', 'SPECIAL_2', 'SPECIAL_3', 'SPECIAL_0', 'SPECIAL_4', 'SPECIAL_23', null, null]);
     assert.deepEqual(out[2], [8, 6], 'the first enabled ParticleEffect / FollowMountPoint');
     assert.deepEqual(out[3], [null, null]);
-    assert.deepEqual(out.slice(4, 7), [2, 1, 2], 'index.json and the meshes are version 2; the descriptors stay 1');
+    assert.deepEqual(out.slice(4, 7), [3, 1, 2], 'index.json is version 3 (Phase 1d), the meshes 2; the descriptors stay 1');
     const [unorm8, snorm8, unorm16, float, unknown] = out[7];
     assert.deepEqual(unorm8.map((x) => Math.round(x * 1e4) / 1e4), [1, 0.502, 0, 0.2], 'a UNorm8 colour channel (raw bytes) → 0…1');
     assert.deepEqual(snorm8, [1, -1], 'SNorm8 → −1…1, clamped');
@@ -325,6 +327,152 @@ print(json.dumps({'u1': u1, 'u2': u2, 'u3': u3, 'u4': u4, 'roles': fx.roles_of(u
   });
 });
 
+describe('fx.py Phase 1d (index.json v3, DESIGN §33.17): buff lives, ability links, talents, group choice', { skip: !PY && 'no python3' }, () => {
+  test('buff_life: Torappu.LifeType names (numbers in prefabs, names in templates), time, the duration key of a timed buff, DB, tick', () => {
+    const out = py(`
+B = lambda **kw: {'buffKey': 'b', 'overrideEffectKey': '', **kw}
+print(json.dumps([fx.buff_life(B(lifeTimeType=1, durationKey='duration', lifeTime=0.0, loadFromDB=0, triggerInterval=-1.0)),
+  fx.buff_life(B(lifeTimeType=2, durationKey='duration', lifeTime=0.0, triggerInterval=0.03)),
+  fx.buff_life(B(lifeTimeType=0, durationKey='', lifeTime=0.5, loadFromDB=1)),
+  fx.buff_life(B(lifeTimeType=1, durationKey='none', lifeTime=6.0)),
+  fx.buff_life(B(lifeTimeType='INFINITY', durationKey=None)), fx.buff_life(B(lifeTimeType=7)), fx.buff_life(B()), list(fx.LIFE_TYPES)]))`);
+    assert.deepEqual(out[0], { type: 'LIMITED', key: 'duration' }, 'a LIMITED buff reads its time from the blackboard key');
+    assert.deepEqual(out[1], { type: 'INFINITY', tick: 0.03 }, 'the key of a buff that does not end by time is left out');
+    assert.deepEqual(out[2], { type: 'IMMEDIATELY', time: 0.5, db: true });
+    assert.deepEqual(out[3], { type: 'LIMITED', time: 6 }, "'none' is no key");
+    assert.deepEqual(out[4], { type: 'INFINITY' }, "the templates' Odin data write the names");
+    assert.deepEqual(out[5], { type: '7' });
+    assert.equal(out[6], null);
+    assert.deepEqual(out[7], ['IMMEDIATELY', 'LIMITED', 'INFINITY', 'CUSTOM']);
+  });
+
+  test('behaviour_uses: a buff\'s uses carry its life; the attachments\' / blockers\' / tile listeners\' buffs sit on targets', () => {
+    const out = py(`
+KEYS = {'x_buff', 'x_tick', 'x_debuff'}
+ek = lambda s: s.lower() if isinstance(s, str) and s.lower() in KEYS else None
+tpl = {'t': {'effect': None, 'graph': [['ON_BUFF_TRIGGER', 'CreateEffect', '_effectKey', 'x_tick']]}}
+own = {'_buffs': [{'buffKey': 'b1', 'templateKey': 't', 'overrideEffectKey': 'x_buff', 'blackboard': [], 'lifeTimeType': 1, 'durationKey': 'duration', 'lifeTime': 0.0, 'triggerInterval': 1.0}]}
+att = {'_additiveActiveBuffs': [{'buffKey': 'b2', 'templateKey': 'empty', 'overrideEffectKey': 'x_debuff', 'blackboard': [], 'lifeTimeType': 1, 'durationKey': '', 'lifeTime': 0.0}]}
+print(json.dumps({'own': fx.behaviour_uses('PassiveBuffAbility', own, ek, tpl), 'att': fx.behaviour_uses('PassiveAttachmentAbility', att, ek, tpl),
+  'on': [fx.buff_target('BlockedToggleChecker', '_buffsToBlockee', {}), fx.buff_target('BuffToEnemyTileListener', '_buffsWhenEnemyEnter', {}),
+         fx.buff_target('BuffToCharacterTileListener', '_buffs', {}), fx.buff_target('SpawnTokenOnTileByIDAbility', '_buffsToExistToken', {}),
+         fx.buff_target('LockTargetAbility', '_buff', {}), fx.buff_target('PassiveBuffAbility', '_buffs', {})]}))`);
+    assert.deepEqual(out.own.map((u) => [u.role, u.keys[0], u.life]), [['loop', 'x_buff', { type: 'LIMITED', key: 'duration', tick: 1 }],
+      ['trigger', 'x_tick', { type: 'LIMITED', key: 'duration', tick: 1 }]], 'the template\'s periodic action carries the buff\'s tick');
+    assert.deepEqual([out.att[0].on, out.att[0].life], ['targets', { type: 'LIMITED' }], '_additiveActiveBuffs: added to the owner\'s attacks');
+    assert.deepEqual(out.on, ['targets', 'targets', 'targets', 'token', 'targets', 'owner']);
+  });
+
+  test('graph_links / bb_ability_names: the abilities a template casts or stops (an unnamed one: its buff\'s blackboard ability_name), mode switches, created buffs', () => {
+    const out = py(`
+N = lambda t, **kw: {'$type': 'Torappu.Battle.Action.Nodes+' + t, **kw}
+state = json.dumps([N('TriggerAbility', _abilityName='kazema[switch2stand]'), N('TriggerAbility', _abilityName=''),
+  N('InterruptAbility', _abilityName='Aura'), N('SwitchMode', _modeIndex=1, _loadModeFromBlackboard=True, _restoreDefault=False),
+  N('SwitchMode', _modeIndex=0, _loadModeFromBlackboard=False, _restoreDefault=True),
+  N('CheckUnitCurrentMode', _succeedNodes=[N('CreateBuff', _buff={'buffKey': 'k', 'templateKey': 'kazema_switchend', 'overrideEffectKey': None})]),
+  N('FilterAbilityName', _abilityName='Skill')])
+buff = {'buffKey': 'gnosis_t_2', 'templateKey': 'triggerability_tick_trigger', 'overrideEffectKey': '', 'blackboard': [{'key': 'ability_name', 'value': 0.0, 'valueStr': 'gnosis_t_2_buff'}]}
+print(json.dumps([fx.graph_links(state), fx.graph_links('not json'), fx.bb_ability_names({'_buffs': [buff, {**buff, 'blackboard': []}]}),
+                  [t for t, _ in fx.graph_nodes(state)]]))`);
+    const [links, none, named, types] = out;
+    assert.deepEqual(links[0], [['TriggerAbility', 'kazema[switch2stand]', 'cast'], ['TriggerAbility', null, 'cast'], ['InterruptAbility', 'Aura', 'stop']],
+      'FilterAbilityName names an ability but neither casts nor stops it');
+    assert.deepEqual(links[1], [['bb', false], [0, true]]);
+    assert.deepEqual(links[2], ['kazema_switchend']);
+    assert.deepEqual(none, [[], [], []]);
+    assert.deepEqual(named, [['gnosis_t_2', 'triggerability_tick_trigger', 'gnosis_t_2_buff']]);
+    assert.ok(types.includes('CreateBuff'), 'nested nodes are walked');
+  });
+
+  test('group_select / attack_extras / config_ability: how a group picks its sub-abilities, mount points, multi-shot fields', () => {
+    const out = py(`
+P = lambda i: {'m_FileID': 0, 'm_PathID': i}
+print(json.dumps([
+  fx.group_select('AbilityRandomGroup', {'_abilities': [P(1)], '_selectMethod': 0, '_isConfigurableProb': 1, '_probKeyList': ['p1', 'p2'], '_diffFromLastOneIfNotFirst': 1, '_selectAllAtLeastOnce': 0}),
+  fx.group_select('AbilityRandomGroup', {'_abilities': [], '_selectMethod': 1, '_isConfigurableProb': 0, '_probKeyList': ['p']}),
+  fx.group_select('AbilitySelectableGroup', {'_abilityConfigs': [], '_selectAbilitySequentially': 0}),
+  fx.group_select('BurstAttackGroup', {'_abilityConfigs': [], '_selectAbilitySequentially': 1}),
+  fx.group_select('AbilityParallelGroup', {'_abilities': []}), fx.group_select('AbilitySequenceGroup', {'_abilities': [], '_enableLoop': 1}),
+  fx.group_select('AbilityFirstSucceedGroup', {'_abilities': []}), fx.group_select('MeleeAttack', {'_animKey': 'Attack'}),
+  fx.attack_extras({'_mountPointType': 2, '_useMountGroup': 1, '_mountGroup': {'loopType': 1, 'mountPoints': [5, 6]}, '_additionalTimes': 14,
+                    '_triggerDelta': 0.029999999329447746, '_additionalProjectile': 'projectile_x', '_useMultiAdditionalProjectiles': 0, '_additionalProjectiles': ['y']}),
+  fx.attack_extras({'_mountPointType': 0, '_useMountGroup': 0, '_mountGroup': {'loopType': 0, 'mountPoints': [1]}}), fx.attack_extras({}),
+  fx.config_ability({'_ability': P(9), '_trigger': P(3)}), fx.config_ability(P(4))]))`);
+    assert.deepEqual(out[0], { method: 'random', probKeys: ['p1', 'p2'], diffFromLast: true });
+    assert.deepEqual(out[1], { method: 'loop' }, 'SelectMethod 1 is Loop; the weights only with _isConfigurableProb');
+    assert.deepEqual(out.slice(2, 8), [{ method: 'trigger' }, { method: 'sequential' }, { method: 'parallel' }, { method: 'sequence', loop: true },
+      { method: 'firstSucceed' }, null]);
+    assert.deepEqual(out[8], { mount: 'MUZZLE', mountGroup: { loop: 'LOOP', mounts: ['SPECIAL_0', 'SPECIAL_1'] }, additionalTimes: 14, triggerDelta: 0.03,
+      additionalProjectile: 'projectile_x' });
+    assert.deepEqual(out[9], { mount: 'FOOT' }, 'a mount group only when used');
+    assert.deepEqual(out[10], {});
+    assert.deepEqual(out.slice(11), [{ m_FileID: 0, m_PathID: 9 }, { m_FileID: 0, m_PathID: 4 }]);
+  });
+
+  test('talent_when / ability_when: deploy, reborn, attack by the Talent class; toggle / passive by the ability; else null', () => {
+    const out = py(`print(json.dumps([fx.talent_when('AppearTalent', 'MeleeAttack', []), fx.talent_when('AppearSyncedTalent', 'AuraAbility', []),
+  fx.talent_when('RebornTalent', 'EmptyAbility', []), fx.talent_when('ManualTriggerRebornTalent', 'EmptyAbility', []),
+  fx.talent_when('ProbReplaceNextAtkTalent', 'MultiMeleeAttack', []), fx.talent_when('Talent', 'ToggleablePassiveBuffAbility', ['Talent', 'ToggleablePassiveBuffAbility', 'HpRatioToggleChecker']),
+  fx.talent_when('Talent', 'PassiveBuffAbility', []), fx.talent_when('Talent', 'GlobalAuraAbility', []), fx.talent_when('Talent', 'ActiveAbilityWrapper', []),
+  fx.talent_when('Talent', None, []), fx.ability_when('PassiveAttachmentAbility', []), fx.ability_when('AbilitySequenceGroup', [])]))`);
+    assert.deepEqual(out, ['deploy', 'deploy', 'reborn', 'reborn', 'attack', 'toggle', 'passive', 'passive', null, null, 'passive', null]);
+  });
+
+  test('talent_keys / enemy_talent_prefixes: our data\'s talent ids → the prefab\'s Talents/<key> nodes', () => {
+    const out = py(`
+ct = {'char_1_x': {'talents': [{'candidates': [{'prefabKey': '1'}, {'prefabKey': '1+'}]}, {'candidates': [{'prefabKey': '2'}]}, {'candidates': []}],
+                   'trait': {'candidates': [{'prefabKey': '-1'}]}},
+      'token_9_y': {'talents': [{'candidates': [{'prefabKey': '1'}]}], 'trait': None}, 'char_2_z': {'talents': [], 'trait': {'candidates': []}}}
+be = {'uniequip_002_x': {'phases': [{'parts': [{'isToken': False, 'addOrOverrideTalentDataBundle': {'candidates': [{'talentIndex': -1, 'prefabKey': '10'}, {'talentIndex': 0, 'prefabKey': '1'}]}},
+                                              {'isToken': True, 'addOrOverrideTalentDataBundle': {'candidates': [{'talentIndex': 0, 'prefabKey': '99'}]}}]},
+                                   {'parts': [{'isToken': False, 'addOrOverrideTalentDataBundle': {'candidates': [{'talentIndex': -1, 'prefabKey': '10'}]}}]}]}}
+ue = {'equipDict': {'uniequip_002_x': {'charId': 'char_1_x'}, 'uniequip_001_x': {'charId': 'char_1_x'}}}
+print(json.dumps([fx.talent_keys(['char_1_x', 'token_9_y', 'char_2_z', 'char_404'], ct, be, ue), fx.talent_keys(['char_1_x'], {}, {}, {}),
+  fx.enemy_talent_prefixes({'talents': {'bb': {'Reborn.duration': 5, 'Reborn.invincible': 10, 'ClearSp.hp_ratio': 0.25, 'plain': 1}, 'bbStr': {'Fx.key': 'a'}}})]))`);
+    assert.deepEqual(out[0], {
+      char_1_x: { base: { 0: ['1', '1+'], 1: ['2'] }, trait: ['-1'], modules: { uniequip_002_x: { '-1': ['10'], 0: ['1'] } } },
+      token_9_y: { base: { 0: ['1'] } },
+    }, 'a module\'s token parts are its summons\'; a unit without talents is left out');
+    assert.deepEqual(out[1], {}, 'no tables, no links');
+    assert.deepEqual(out[2], ['Reborn', 'ClearSp', 'Fx']);
+  });
+
+  test('ability_info / projectile_emitters / row_keys, the funnel and reborn effect fields, the preload list', () => {
+    const out = py(`
+pk = lambda s: s.lower() if isinstance(s, str) and s.lower().startswith('projectile_') else None
+KEYS = {'f_idle', 'f_back', 'f_show', 'f_hide', 'r_start', 'pre'}
+ek = lambda s: s.lower() if isinstance(s, str) and s.lower() in KEYS else None
+ranged = [('RangedAttack', {'_animKey': 'Attack', '_attackType': 1, '_damageType': 2, '_projectileKey': 'Projectile_A', '_extraProjectileKeys': ['projectile_B', ''], '_projectileDestination': 0, '_mountPointType': 3}),
+          ('UberEffectEmitter', {'_castEffects': []}), ('SimpleProjectileEmitter', {'_projectileKey': 'projectile_c'})]
+group = [('AbilityRandomGroup', {'_abilities': [], '_selectMethod': 1})]
+buffs = [('ActiveBuffAbility', {'_buffs': []})]
+print(json.dumps([fx.ability_info(ranged, pk), fx.projectile_emitters(ranged, pk, skip='RangedAttack'), fx.ability_info(group, pk), fx.ability_info(buffs, pk),
+  fx.row_keys({'effects': ['a'], 'slots': [None, 'b'], 'hookEffectAfterFirstAttack': 'c'}), fx.row_keys({'effects': [], 'hookEffectAfterFirstAttack': ''}),
+  [(u['role'], u['keys'][0]) for u in fx.behaviour_uses('FunnelEffectEmitter', {'_idleEffect': ['f_idle'], '_idleBackEffect': ['f_back'], '_appearEffect': ['f_show'], '_disappearEffect': ['f_hide']}, ek, {})],
+  [(u['role'], u['keys'][0]) for u in fx.behaviour_uses('RebornTalent', {'_effects': ['r_start']}, ek, {})], fx.behaviour_uses('ExtraAbilityPreloads', {'_effects': ['pre']}, ek, {})]))`);
+    assert.deepEqual(out[0], { class: 'RangedAttack', animKey: 'Attack', attackType: 1, damageType: 2, projectileKey: 'projectile_a', extraProjectileKeys: ['projectile_b'],
+      projectileDestination: 0, mount: 'HEAD' });
+    assert.deepEqual(out[1], [{ class: 'SimpleProjectileEmitter', projectileKey: 'projectile_c' }]);
+    assert.deepEqual(out[2], { class: 'AbilityRandomGroup', select: { method: 'loop' } });
+    assert.equal(out[3], null, 'an ability without attack fields or sub-abilities is no abilities entry');
+    assert.deepEqual(out[4], ['a', 'b', 'c']);
+    assert.deepEqual(out[5], []);
+    assert.deepEqual(out[6], [['loop', 'f_idle'], ['loop', 'f_back'], ['start', 'f_show'], ['end', 'f_hide']]);
+    assert.deepEqual(out[7], [['start', 'r_start']]);
+    assert.deepEqual(out[8], [], 'ExtraAbilityPreloads only preloads');
+  });
+
+  test('behaviour_uses: a replace group\'s uses name its LoopType (LOOP / RANDOM)', () => {
+    const out = py(`
+ek = lambda s: s if s in ('a_start', 'b_start') else None
+row = lambda k: {'_directionType': 0, '_effects': [k], '_oneshot': 1, '_startEvent': 2, '_endEvent': 3}
+f = {'_sourceAnimKey': 'Attack', '_loopType': 0, '_replaceGroup': [{'anim': 'Attack_A', 'effectOptions': [row('a_start')], 'hitEffectOptions': []},
+                                                                  {'anim': 'Attack_B', 'effectOptions': [row('b_start')], 'hitEffectOptions': []}]}
+print(json.dumps([[u['keys'][0], u['anim'], u['group'], u['loopType']] for u in fx.behaviour_uses('UberAnimationEffectEmitter', f, ek, {}, node='n', ability='MeleeAttack')]))`);
+    assert.deepEqual(out, [['a_start', 'Attack_A', 0, 'LOOP'], ['b_start', 'Attack_B', 1, 'LOOP']]);
+  });
+});
+
 describe('extract.py: the fx run is opt-in', { skip: !PY && 'no python3' }, () => {
   test('fx_selected: only an --only prefix naming fx runs it (a plain run leaves the effects out)', () => {
     const src = `import sys, json\nsys.path.insert(0, ${JSON.stringify(TOOL)})\nimport extract as e\n`
@@ -355,7 +503,7 @@ describe('extract.py: the fx run is opt-in', { skip: !PY && 'no python3' }, () =
     const { fx, jobs } = JSON.parse(r.stdout);
     assert.equal(fx.sub, 'fx');
     assert.equal(fx.version, 1);
-    assert.equal(fx.indexVersion, 2);
+    assert.equal(fx.indexVersion, 3);
     assert.equal(fx.meshVersion, 2);
     assert.equal(fx.optIn, true);
     for (const k of ['common_hit_01', 'buff_stun', 'buff_autochess_frozen', 'inside_attack_01_trail_front', 'ifrit_skill_03_buff', 'enemy_tidmag_attack_01_hit']) {
@@ -414,10 +562,16 @@ describe('extracted effects (when fx was extracted on this machine)', { skip: !f
       for (const k of u.refs) named.add(k);
       for (const m of u.modes) for (const e of [...attackRows(m.attack), ...attackRows(m.combat)]) for (const k of rowKeys(e)) named.add(k);
       for (const e of chargeRows(u)) for (const k of rowKeys(e)) named.add(k);
+      for (const e of u.spineEffects || []) for (const k of rowKeys(e)) named.add(k);
     }
-    // the skills: index.skills (operators', tokens') and every unit's own (an enemy's are not in index.skills)
+    // the skills: index.skills (operators', tokens') and every unit's own (an enemy's are not in index.skills); the
+    // units' talents and abilities (v3) have the same uses / roles / unclassified
     const allSkills = Object.entries(index.skills);
     for (const [id, u] of Object.entries(index.units)) for (const [sid, s] of Object.entries(u.skills || {})) if (!index.skills[sid]) allSkills.push([`${id} ${sid}`, s]);
+    for (const [id, u] of Object.entries(index.units)) {
+      for (const [k, t] of Object.entries(u.talents || {})) allSkills.push([`${id} talent ${k}`, { ...t, mode: null }]);
+      for (const a of u.abilities || []) allSkills.push([`${id} ${a.kind} ${a.node}`, { ...a, mode: null }]);
+    }
     for (const [sid, s] of allSkills) {
       assert.ok(Array.isArray(s.uses) && Array.isArray(s.unclassified) && s.roles && typeof s.roles === 'object', `${sid}: uses / roles / unclassified`);
       for (const use of s.uses) {
@@ -507,6 +661,90 @@ describe('extracted effects (when fx was extracted on this machine)', { skip: !f
         const [x, y, z] = p.pos;
         assert.ok(Math.abs(x) < 0.9 && y > -0.6 && y < 1.6 && z > -1.5 && z < 0.01, `${id} HitPoint (${face}) over the feet: ${p.pos}`);
       }
+    }
+  });
+
+  test('index.json v3 (Phase 1d): talents, common / general abilities, the abilities\' projectiles, buff lives, group choice', { skip: !(index?.version >= 3) && 'no v3 index here' }, () => {
+    const WHEN = new Set(['deploy', 'reborn', 'attack', 'toggle', 'passive', null]);
+    const LIFE = new Set(['IMMEDIATELY', 'LIMITED', 'INFINITY', 'CUSTOM']);
+    const METHODS = new Set(['random', 'loop', 'trigger', 'sequential', 'firstSucceed', 'parallel', 'sequence']);
+    let talents = 0, abilities = 0, lives = 0;
+    const checkNode = (id, n, modes) => {
+      assert.ok(typeof n.node === 'string' && n.node, `${id}: node path`);
+      assert.ok(WHEN.has(n.when ?? null), `${id} ${n.node}: when ${n.when}`);
+      for (const m of [n.mode, ...(n.modes || []), n.reborn?.mode, ...(n.switchMode || []).map((x) => x.mode)]) {
+        if (m != null) assert.ok(modes.includes(m), `${id} ${n.node}: mode ${m} is one of the unit's`);
+      }
+      for (const t of [...(n.triggers || []), ...(n.stops || [])]) assert.ok(t.template && t.event && t.action && t.name, `${id} ${n.node}: trigger fields`);
+      for (const c of n.toggle || []) assert.match(c.class, /ToggleChecker$/);
+    };
+    const checkAbilities = (id, list) => {
+      for (const a of list || []) {
+        assert.ok(a.node && a.class, `${id}: abilities entry`);
+        if (a.projectileKey) assert.ok(index.projectiles[a.projectileKey], `${id} ${a.node}: projectile ${a.projectileKey} exported`);
+        if (a.select) assert.ok(METHODS.has(a.select.method), `${id} ${a.node}: select ${a.select.method}`);
+      }
+    };
+    for (const [id, u] of Object.entries(index.units)) {
+      const modes = u.modes.map((m) => m.name);
+      for (const [k, t] of Object.entries(u.talents || {})) {
+        talents++;
+        assert.ok(t.nodes.length && (t.effects.length || t.projectiles.length), `${id} talent ${k}: nodes and effects`);
+        t.nodes.forEach((n, i) => {
+          checkNode(`${id} talent ${k}`, n, modes);
+          if (n.same != null) assert.ok(n.same < i && !t.nodes[n.same].mode, `${id} talent ${k}: same points at an earlier node outside the modes`);
+        });
+        checkAbilities(`${id} talent ${k}`, t.abilities);
+      }
+      for (const a of u.abilities || []) {
+        abilities++;
+        assert.ok(['common', 'general', 'trait'].includes(a.kind), `${id} ${a.node}: kind ${a.kind}`);
+        if (a.kind === 'general') assert.ok(a.modes?.length, `${id} ${a.node}: a general ability names its modes`);
+        checkNode(id, a, modes);
+        checkAbilities(`${id} ${a.node}`, a.abilities);
+      }
+      const walk = (a) => {
+        if (!a) return;
+        if (a.select) assert.ok(METHODS.has(a.select.method), `${id}: attack select ${a.select.method}`);
+        for (const e of a.emitters || []) if (e.class === 'UberAnimationEffectEmitter') assert.ok(['LOOP', 'RANDOM'].includes(e.loopTypeName), `${id}: loopTypeName`);
+        (a.abilities || []).forEach(walk);
+      };
+      for (const m of u.modes) { walk(m.attack); walk(m.combat); }
+      if (u.talentKeys) assert.ok(u.talentKeys.base && typeof u.talentKeys.base === 'object', `${id}: talentKeys.base`);
+    }
+    const allUses = [...Object.values(index.skills), ...Object.values(index.units).flatMap((u) => [...Object.values(u.talents || {}), ...(u.abilities || [])])]
+      .flatMap((s) => s.uses);
+    for (const x of allUses) if (x.life) { lives++; assert.ok(LIFE.has(x.life.type), `life ${x.life.type}`); }
+    for (const s of Object.values(index.skills)) checkAbilities('skill', s.abilities);
+    assert.ok(talents > 0 && abilities > 0 && lives > 0, `talents ${talents}, abilities ${abilities}, buff lives ${lives}`);
+    // known units (client 26-09-13): a leader's 重生, a stand switch, a talent cast by a generic template, a deploy cast,
+    // a trait talent's key, a funnel attack's funnels, a skill's projectile
+    const reid = index.units.enemy_1539_reid?.talents?.Reborn;
+    if (reid) {
+      const r = reid.nodes.find((n) => n.reborn)?.reborn;
+      assert.deepEqual([r.mode, r.handler, r.maxCount], ['Reborn', 'Revive', 1]);
+      assert.ok(reid.nodes.find((n) => n.node === r.handlerNode)?.when === 'reborn');
+      assert.deepEqual(reid.uses.filter((x) => x.ability === 'EmptyAnimatedAbility').map((x) => [x.keys[0], x.role, x.startEvent]),
+        [['enemy_reid_revive_01', 'loop', 'ON_CAST_START'], ['enemy_reid_revive_02', 'end', 'ON_CAST_END']]);
+      assert.equal(reid.bb, 'Reborn', 'data/enemies.json talents.bb Reborn.*');
+    }
+    const kazema = index.units.char_4016_kazema;
+    if (kazema) {
+      const sw = kazema.abilities.find((a) => a.name === 'kazema[switch2stand]');
+      assert.ok(sw.triggers.some((t) => t.template === 'kazema_tr' && t.event === 'ON_BEFORE_TRY_SET_HP_ZERO'), JSON.stringify(sw.triggers));
+      assert.ok(sw.switchMode.some((x) => x.mode === 'Stand'));
+      assert.deepEqual(kazema.talentKeys.trait, ['-1']);
+    }
+    const gnosis = index.units.char_206_gnosis?.talents?.['2'];
+    if (gnosis) assert.ok(gnosis.nodes.some((n) => (n.triggers || []).some((t) => t.name === 'gnosis_t_2_buff' && t.buff === 'gnosis_t_2')));
+    const nearl2 = index.units.char_1014_nearl2?.talents?.['1'];
+    if (nearl2) assert.ok(nearl2.nodes.some((n) => n.when === 'deploy' && n.class === 'AppearTalent'));
+    const kjera = index.units.char_4013_kjera?.modes.find((m) => m.name === 'S2')?.attack;
+    if (kjera) assert.deepEqual(kjera.abilities.map((a) => [a.node, a.emitters?.[0]?.class]), [['Modes/S2/Body/Funnel_0', 'FunnelEffectEmitter'], ['Modes/S2/Body/Funnel_1', 'FunnelEffectEmitter']]);
+    const amgoat = index.skills.skchr_amgoat_2;
+    if (amgoat) {
+      assert.deepEqual(amgoat.abilities.map((a) => [a.class, a.projectileKey]), [['RangedAttack', 'projectile_amgoat_s2']]);
+      assert.ok(amgoat.uses.some((x) => x.projectileKey === 'projectile_amgoat_s2'));
     }
   });
 

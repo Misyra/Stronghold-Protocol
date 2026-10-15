@@ -16,14 +16,19 @@ What is read (paths relative to the AB root, see extract.py CANDIDATES):
   battle/prefabs/[uc]projectiles.ab, [uc]skills.ab           projectile flight + effects, the skills' effects
   config/buff_template_holder.ab                             the buff templates (a buff's default effect, its actions)
   battle/enm_pfb_*.ab, pkgrps/btl_pfb_tokens_*.ab            enemies and tokens
+and from the repository: data/chess.json, backups.json, enemies.json, tokens.json (the unit list, the skills, the
+enemies' talent keys) and, when setup fetched them, .cache/gamedata/excel/character_table.json, battle_equip_table.json
+and uniequip_table.json (our data's talent indexes → the prefabs' Talents/<key> nodes, index.json units[id].talentKeys).
 
 What is written under <out>/fx (every file is listed in data/local-fx.json, next to the --manifest — its own file: ~8,800
 entries kept out of data/local-assets.json, which has no fx group — and the server hands that list out with each URL
 carrying its file's content hash):
-  index.json           per unit (charId / enemy key / token id): attack modes (cast / hit / projectile), mount points;
-                       per skill its effects with their roles (start / loop / range / hit / end …, from the skill
-                       prefab and the buff templates) and the mode it switches to; the projectiles; the generic keys
-                       (hits, deaths, deploy, status loops)
+  index.json           per unit (charId / enemy key / token id): attack modes (cast / hit / projectile), mount points,
+                       its talents and common / general abilities (their effects' roles, when they act, the buff
+                       template actions that cast them, our data's talent ids); per skill its effects with their
+                       roles (start / loop / range / hit / end …, from the skill prefab and the buff templates, with
+                       the buffs' lives), its abilities' projectiles and the mode it switches to; the projectiles; the
+                       generic keys (hits, deaths, deploy, status loops)
   textures.json        texture key → size, wrap, filter, alpha, the WebP files
   prefabs/<file>.json  one descriptor per effect prefab: nodes (Unity-native transforms), ParticleSystems (every
                        enabled module), renderers, materials (shader name + resolved render state), decoded clips,
@@ -47,7 +52,7 @@ from pathlib import Path
 FX_SUB = 'fx'
 FORMAT_VERSION = 1      # the descriptors and textures.json (§33.4–§33.8)
 MESH_VERSION = 2        # the meshes (§33.9): 2 since Phase 1c — vertex colours 0…1 (version 1 wrote the bytes, 0…255)
-INDEX_VERSION = 2       # index.json (§33.12): 2 since Phase 1c (2026-10-15) — vfx-format.md's changelog lists the fields
+INDEX_VERSION = 3       # index.json (§33.12): 2 since Phase 1c, 3 since Phase 1d (2026-10-15) — vfx-format.md's changelog
 FX_MANIFEST = 'local-fx.json'                           # data/local-fx.json: every fx file, served as a hashed view
 FX_GROUPS = ('fx', 'fx/prefabs', 'fx/tex', 'fx/mesh')   # its groups (§33.1; none of them in data/local-assets.json)
 
@@ -220,11 +225,17 @@ EFFECT_FIELDS = {'_beginEffect': 'start', '_endEffect': 'end', '_overrideStartEf
                  '_mainChantEffects': 'loop', '_extraChantEffects': 'loop', '_chantSuccessEffects': 'start',
                  '_beforeEndEffects': 'end', '_hitEffect': 'hit', '_hitEffectKey': 'hit', '_tileEffectKey': 'range',
                  '_edgeLineRendererEffectKey': 'range', '_effectOnEliminatePos': 'hit', '_lineEffectKey': 'loop',
-                 '_startPointEffectKey': 'loop', '_waypointEffectKey': 'loop', '_endPointEffectKey': 'loop'}
-# `_effects` / `_effect` / `_effectKey` by class (others: role other)
+                 '_startPointEffectKey': 'loop', '_waypointEffectKey': 'loop', '_endPointEffectKey': 'loop',
+                 # v3: a funnel's (FunnelEffectEmitter: its idle loops facing front / back, its appearing and leaving)
+                 '_idleEffect': 'loop', '_idleBackEffect': 'loop', '_overloadIdleEffect': 'loop', '_appearEffect': 'start',
+                 '_disappearEffect': 'end'}
+# `_effects` / `_effect` / `_effectKey` by class (others: role other; None: not played — PauseEffectDuringCasting pauses
+# them, ExtraAbilityPreloads only preloads; a reborn talent's `_effects` play when the 重生 starts)
 CLASS_EFFECTS = {'ReadySkillEffect': 'ready', 'TrapEddSkillReadyEffect': 'ready', 'ReadyEnemySkillEffect': 'ready', 'AuraAbility': 'loop',
                  'GlobalAuraAbility': 'loop', 'ProjectileAuraAbility': 'loop', 'AuraWithHostAsSourceAbility': 'loop',
-                 'ChannelingEffectEmitter': 'loop', 'ChannelingEffectGroupEmitter': 'loop', 'PauseEffectDuringCasting': None}
+                 'ChannelingEffectEmitter': 'loop', 'ChannelingEffectGroupEmitter': 'loop', 'PauseEffectDuringCasting': None,
+                 'ExtraAbilityPreloads': None, 'RebornTalent': 'start', 'ManualTriggerRebornTalent': 'start',
+                 'RallyPointRebornTalent': 'start'}
 # ability events of the emitters that are not UberEffectEmitters: class → (start field, end field, oneshot field)
 CLASS_EVENTS = {'ChannelingEffectEmitter': ('_playOnEvent', '_stopOnEvent', None),
                 'ChannelingEffectGroupEmitter': ('_playOnEvent', '_stopOnEvent', None),
@@ -269,6 +280,33 @@ MOUNT_POINT_TYPES = ('FOOT', 'HIT', 'MUZZLE', 'HEAD', 'UI', 'SPECIAL_0', 'SPECIA
 # AppearSkill, ReplacementSkill, …; helpers such as BuffDuringSkill do not); an enemy's skill is an `…EnemySkill` node
 SKILL_BASE_FIELDS = ('_canSilenced', '_attachSignalIds')
 ENEMY_SKILL_CLASS = re.compile(r'EnemySkill$')
+
+# ---- Phase 1d (index.json v3, DESIGN §33.17): talents, common / general abilities, abilities' projectiles, buff lives -
+# Torappu.LifeType (il2cpp metadata): a BuffData's lifeTimeType / triggerLifeType — the buff templates' Odin data spell
+# the same fields out by name ("lifeTimeType": "INFINITY"), the prefabs write the numbers
+LIFE_TYPES = ('IMMEDIATELY', 'LIMITED', 'INFINITY', 'CUSTOM')
+# Torappu.Battle.Abilities.UberAnimationEffectEmitter/LoopType: how the replace groups' animations take turns
+ANIM_LOOP_TYPES = ('LOOP', 'RANDOM')
+# Torappu.Battle.Abilities.AbilityRandomGroup/SelectMethod
+RANDOM_SELECT = ('Random', 'Loop')
+# Torappu.Battle.Entity/MountPointGroup/LoopType: an ability's _mountGroup (the mount points its shots take in turn)
+MOUNT_GROUP_LOOP = ('RANDOM', 'LOOP')
+# a Talent behaviour (Torappu.Battle.Talent and its subclasses: AppearTalent, RebornTalent, ProbReplaceNextAtkTalent, …)
+TALENT_BASE_FIELDS = ('_overwriteTalentKey', '_checkValidBySkillIndex')
+# when a talent node's abilities act, by its Talent class (the rest: by its ability, talent_when)
+TALENT_WHEN = (('deploy', re.compile(r'^Appear(Synced)?Talent$')), ('reborn', re.compile(r'RebornTalent$')),
+               ('attack', re.compile(r'^Prob\w*NextAtkTalent$')))
+# abilities attached for as long as their owner (the talent, the mode of a general ability, the unit) holds them
+PASSIVE_ABILITY = re.compile(r'^(Passive|Toggleable|ExtraPassive)|Aura|^StealAttributeAbility$')
+TOGGLE_CHECKER = re.compile(r'ToggleChecker$')
+# buff template actions that cast / stop an ability by its name (`_abilityName`: a GameObject name or a namedAsAlias)
+TRIGGER_ACTION = re.compile(r'^Trigger\w*Abilit')
+STOP_ACTION = re.compile(r'^(Interrupt\w*Abilit|PauseAbility$)')
+# the group abilities' choice of a sub-ability (ability_entry `select`)
+GROUP_SELECT = {'AbilityRandomGroup': 'random', 'AbilitySelectableGroup': 'trigger', 'BurstAttackGroup': 'trigger',
+                'AbilityFirstSucceedGroup': 'firstSucceed', 'AbilityParallelGroup': 'parallel', 'AbilitySequenceGroup': 'sequence'}
+# common-ability containers (the unit head's _commonAbilities sit under them)
+COMMON_NODE = re.compile(r'^CommonAbilit(y|ies)$')
 
 
 # ---- pure helpers (no UnityPy; test/local-extract-fx.test.js) ---------------------------------------------------------
@@ -1433,6 +1471,12 @@ def emit_row(e):
     return row if row['effects'] or row.get('hookEffectAfterFirstAttack') else None
 
 
+def row_keys(row):
+    """Every key an Emit row names: its effects, its slots and its hookEffectAfterFirstAttack."""
+    return [k for k in list(row.get('effects') or []) + list(row.get('slots') or []) + [row.get('hookEffectAfterFirstAttack')]
+            if isinstance(k, str) and k]
+
+
 def emitter_lists(fields):
     """The effect lists of an UberEffectEmitter, keyed cast / hit / attach / inputTarget / castTarget (emit_row rows)."""
     out = {}
@@ -1502,6 +1546,8 @@ def emitter_export(cls, fields):
             settings[f.lstrip('_')] = enc_value(v, lambda p: None)
     if groups:
         settings['groups'] = groups
+    if isinstance(settings.get('loopType'), int) and not isinstance(settings['loopType'], bool) and '_replaceGroup' in fields:
+        settings['loopTypeName'] = event_name(ANIM_LOOP_TYPES, settings['loopType']) or str(settings['loopType'])  # v3
     plain = cls == 'UberEffectEmitter' and len(settings) == 1
     return rows, (None if plain else settings)
 
@@ -1560,6 +1606,85 @@ def mount_names(values):
     """MountPointType names (MOUNT_POINT_TYPES) of a list of values; None for an unknown one."""
     return [MOUNT_POINT_TYPES[v] if isinstance(v, int) and not isinstance(v, bool) and 0 <= v < len(MOUNT_POINT_TYPES)
             else None for v in values or []]
+
+
+def config_ability(v):
+    """The ability PPtr of a group's field: the PPtr itself, or an ability config's `_ability` (a BurstAttackGroup's
+    `_burstAttack` is a config like its `_abilityConfigs` entries)."""
+    return v.get('_ability') if isinstance(v, dict) and '_ability' in v else v
+
+
+def group_select(cls, d):
+    """How a group ability picks the sub-abilities of a cast (v3; its class and fields — *metadata* names): {method:
+    'random' / 'loop' (an AbilityRandomGroup's SelectMethod: a random one / each in turn), 'trigger' (an
+    AbilitySelectableGroup's or BurstAttackGroup's configs: the first, in config order, whose own trigger finds its
+    target), 'sequential' (the same with _selectAbilitySequentially: each in turn), 'firstSucceed' (the first whose cast
+    succeeds), 'parallel' (all), 'sequence' (one after the other); probKeys? (the blackboard keys of the random weights,
+    _isConfigurableProb), diffFromLast? / allAtLeastOnce? (random: never the same twice in a row / each once before
+    repeating), loop? (a sequence that starts over)}; None for a class that is no group."""
+    if '_selectMethod' in d and isinstance(d.get('_abilities'), list):
+        out = {'method': (event_name(RANDOM_SELECT, d['_selectMethod']) or str(d['_selectMethod'])).lower()}
+        if d.get('_isConfigurableProb') and d.get('_probKeyList'):
+            out['probKeys'] = list(d['_probKeyList'])
+        if d.get('_diffFromLastOneIfNotFirst'):
+            out['diffFromLast'] = True
+        if d.get('_selectAllAtLeastOnce'):
+            out['allAtLeastOnce'] = True
+        return out
+    if isinstance(d.get('_abilityConfigs'), list):
+        return {'method': 'sequential' if d.get('_selectAbilitySequentially') else 'trigger'}
+    method = GROUP_SELECT.get(cls)
+    if method is None:
+        return None
+    out = {'method': method}
+    if method == 'sequence' and d.get('_enableLoop'):
+        out['loop'] = True
+    return out
+
+
+def attack_extras(d):
+    """The v3 fields of an ability beyond ABILITY_FIELDS: `mount` (the MountPointType name of `_mountPointType`: where
+    its projectile leaves — MUZZLE for most), `mountGroup` ({loop: MOUNT_GROUP_LOOP name, mounts: [names]} when the
+    shots take turns over several points: `_useMountGroup` / MultiRangedAttack's `_enableMountPointGroup`), and a multi
+    attack's `additionalTimes` (the hits / shots after the first) and `triggerDelta` (s between them)."""
+    out = {}
+    if isinstance(d.get('_mountPointType'), int) and not isinstance(d['_mountPointType'], bool):
+        out['mount'] = mount_names([d['_mountPointType']])[0]
+    for use, key in (('_useMountGroup', '_mountGroup'), ('_enableMountPointGroup', '_mountPointGroup')):
+        g = d.get(key)
+        if d.get(use) and isinstance(g, dict) and g.get('mountPoints'):
+            out['mountGroup'] = {'loop': event_name(MOUNT_GROUP_LOOP, g.get('loopType')) or str(g.get('loopType')),
+                                 'mounts': mount_names(g.get('mountPoints'))}
+    for k in ('_additionalTimes', '_triggerDelta'):
+        if isinstance(d.get(k), (int, float)) and not isinstance(d[k], bool):
+            out[k.lstrip('_')] = f6(d[k])
+    if isinstance(d.get('_additionalProjectile'), str) and d['_additionalProjectile']:   # the shots after the first
+        out['additionalProjectile'] = d['_additionalProjectile']
+    if d.get('_useMultiAdditionalProjectiles') and isinstance(d.get('_additionalProjectiles'), list):
+        ks = [x for x in d['_additionalProjectiles'] if isinstance(x, str) and x]
+        if ks:
+            out['additionalProjectiles'] = ks
+    return out
+
+
+def talent_when(talent_cls, ability_cls, classes):
+    """When a talent node's abilities act (v3; from its classes — *metadata* names): 'deploy' (AppearTalent,
+    AppearSyncedTalent: cast as the unit appears), 'reborn' (RebornTalent and its kin: its 重生), 'attack'
+    (ProbReplaceNextAtkTalent / ProbAdditionNextAtkTalent: on an attack, with a blackboard probability), 'toggle' (a
+    ToggleablePassive* ability with a toggle checker — HpRatioToggleChecker, BlockedToggleChecker, …: on while its
+    condition holds), 'passive' (a passive / aura ability: for as long as the talent holds, i.e. from the deploy), else
+    None (cast by something else: a buff template's action — the entry's `triggers` —, a reborn talent's handler)."""
+    for when, rx in TALENT_WHEN:
+        if talent_cls and rx.search(talent_cls):
+            return when
+    return ability_when(ability_cls, classes)
+
+
+def ability_when(ability_cls, classes):
+    """'toggle' / 'passive' for an ability attached for as long as its holder holds it (talent_when), else None."""
+    if ability_cls and PASSIVE_ABILITY.search(ability_cls):
+        return 'toggle' if any(TOGGLE_CHECKER.search(c) for c in classes) else 'passive'
+    return None
 
 
 def prefab_anchor(nodes):
@@ -1638,11 +1763,15 @@ def name_role(key, event=None):
 
 
 def buff_target(cls, field, fields):
-    """Who carries the buffs of field `field` of a behaviour `cls`: 'owner', 'targets', 'token' or None (not known)."""
-    if field == '_buffsToToken':
+    """Who carries the buffs of field `field` of a behaviour `cls`: 'owner', 'targets', 'token' or None (not known).
+    Since index v3 the attachments' `_additiveActiveBuffs` (added to the owner's attacks, so on their targets), a
+    blocker's `_buffsToBlockee`, `_projectileBuffs`, the tile listeners' and LockTargetAbility's buffs are the targets'
+    (they were the owner's or unknown), `_buffsToExistToken` a summon's."""
+    if field in ('_buffsToToken', '_buffsToExistToken'):
         return 'token'
-    if field == '_activeBuffs' or cls in ('BuffToCastTargets', 'GlobalUniqueBuffToTargetsBySelectorAbility',
-                                          'GloballUniqueBuffAbility', 'Headb2S3HighlandAOE'):
+    if field in ('_activeBuffs', '_additiveActiveBuffs', '_buffsToBlockee', '_projectileBuffs', '_buffsWhenEnemyEnter') \
+            or cls in ('BuffToCastTargets', 'GlobalUniqueBuffToTargetsBySelectorAbility', 'GloballUniqueBuffAbility',
+                       'Headb2S3HighlandAOE', 'BuffToCharacterTileListener', 'BuffToEnemyTileListener', 'LockTargetAbility'):
         return 'targets'
     if 'Aura' in cls:
         return 'owner' if field == '_passiveBuffs' else 'targets'
@@ -1665,6 +1794,43 @@ def buffs_in(v):
     elif isinstance(v, list):
         for x in v:
             out += buffs_in(x)
+    return out
+
+
+def buff_life(b):
+    """The life of a BuffData (§33.17): {type (LIFE_TYPES: IMMEDIATELY — applied and gone at once, LIMITED — for a time,
+    INFINITY — until removed: its ability ends, the target leaves an aura, …; CUSTOM), time? (`lifeTime` s, when set),
+    key? (`durationKey`, a LIMITED / CUSTOM buff's: the blackboard key its time is read from — our data records'
+    blackboards carry the values), db? (`loadFromDB`: the client's buff table may override these), tick?
+    (`triggerInterval` s: the period of its ON_BUFF_TRIGGER actions)}; None when `b` has no lifeTimeType."""
+    t = b.get('lifeTimeType') if isinstance(b, dict) else None
+    if isinstance(t, str) and t in LIFE_TYPES:            # the templates' Odin data: the enum's names
+        name = t
+    elif isinstance(t, int) and not isinstance(t, bool):
+        name = event_name(LIFE_TYPES, t) or str(t)
+    else:
+        return None
+    life = {'type': name}
+    if isinstance(b.get('lifeTime'), (int, float)) and b['lifeTime'] > 0:
+        life['time'] = f6(b['lifeTime'])
+    key = b.get('durationKey')
+    if name in ('LIMITED', 'CUSTOM') and isinstance(key, str) and key and key != 'none':
+        life['key'] = key
+    if b.get('loadFromDB') in (1, True):
+        life['db'] = True
+    if isinstance(b.get('triggerInterval'), (int, float)) and b['triggerInterval'] > 0:
+        life['tick'] = f6(b['triggerInterval'])
+    return life
+
+
+def bb_ability_names(v):
+    """The abilities the buffs inside a value name in their blackboard (`ability_name`: what a template's TriggerAbility
+    without a name of its own casts, graph_links): [(buffKey, templateKey, ability name)…] (v3)."""
+    out = []
+    for b in buffs_in(v):
+        for x in b.get('blackboard') or []:
+            if isinstance(x, dict) and x.get('key') == 'ability_name' and isinstance(x.get('valueStr'), str) and x['valueStr']:
+                out.append((b.get('buffKey') or None, b.get('templateKey') or None, x['valueStr']))
     return out
 
 
@@ -1692,6 +1858,53 @@ def graph_effects(state, ek):
                 walk(x, typ)
     walk(nodes, '')
     return out
+
+
+def graph_nodes(state):
+    """Every action node of an Odin-serialized action graph (a SerializedState JSON string), nested ones included (a
+    condition's `_succeedNodes`, …): [(node type without its namespace, node dict)…]."""
+    try:
+        nodes = json.loads(state) if isinstance(state, str) and state[:1] in '[{' else None
+    except ValueError:
+        return []
+    out = []
+
+    def walk(v):
+        if isinstance(v, dict):
+            if isinstance(v.get('$type'), str):
+                out.append((v['$type'].split('+')[-1].split(',')[0], v))
+            for x in v.values():
+                if isinstance(x, (dict, list)):
+                    walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+    walk(nodes)
+    return out
+
+
+def graph_links(state):
+    """What an action graph does to abilities, modes and buffs (v3): (abilities: [[action type, ability name | None (the
+    buff's blackboard `ability_name`), 'cast' | 'stop']…] — TRIGGER_ACTION / STOP_ACTION nodes, switches: [[mode index |
+    'bb' (the buff's blackboard `mode`), restoreDefault]…] — SwitchMode nodes, creates: [template keys of the buffs it
+    creates]); a node's own fields only, not the abilities its buffs' templates trigger."""
+    abilities, switches, creates = [], [], []
+    for typ, n in graph_nodes(state):
+        if '_abilityName' in n:
+            # an empty name: the ability the buff's blackboard `ability_name` names (generic templates such as
+            # triggerability_tick_trigger, trigger_ability[onstart] — assumed from the data: their buffs carry that key)
+            name = n['_abilityName'] if isinstance(n['_abilityName'], str) and n['_abilityName'] else None
+            if TRIGGER_ACTION.search(typ):
+                abilities.append([typ, name, 'cast'])
+            elif STOP_ACTION.search(typ):
+                abilities.append([typ, name, 'stop'])
+        if typ == 'SwitchMode':
+            idx = 'bb' if n.get('_loadModeFromBlackboard') else n.get('_modeIndex')
+            switches.append([idx, bool(n.get('_restoreDefault'))])
+        for b in buffs_in({k: v for k, v in n.items() if k != '$type'}):
+            if isinstance(b.get('templateKey'), str) and b['templateKey'] and b['templateKey'] not in creates:
+                creates.append(b['templateKey'])
+    return abilities, switches, creates
 
 
 def template_uses(tkey, template, on, buff):
@@ -1761,8 +1974,11 @@ def behaviour_uses(cls, fields, ek, templates=None, node=None, ability=None):
                 row(EMIT_LISTS[f], r, f)
         elif f in EMIT_GROUPS and isinstance(v, list):
             # a group's rows: `group` (its index; `groups` the list's length, empty groups included), a replace group's
-            # `anim`, and the MultiHitUberEffectEmitter's choice of group per hit (MULTI_HIT_FLAGS, when set)
+            # `anim` and `loopType` (v3: ANIM_LOOP_TYPES — LOOP, the animations in turn; RANDOM), and the
+            # MultiHitUberEffectEmitter's choice of group per hit (MULTI_HIT_FLAGS, when set)
             flags = {k.lstrip('_'): True for k in MULTI_HIT_FLAGS if fields.get(k)}
+            if f == '_replaceGroup' and isinstance(fields.get('_loopType'), int):
+                flags['loopType'] = event_name(ANIM_LOOP_TYPES, fields['_loopType']) or str(fields['_loopType'])
             for gi, g in enumerate(v):
                 anim = g.get('anim') if isinstance(g, dict) and isinstance(g.get('anim'), str) and g.get('anim') else None
                 for inner, x in (g.items() if isinstance(g, dict) else []):
@@ -1787,16 +2003,19 @@ def behaviour_uses(cls, fields, ek, templates=None, node=None, ability=None):
                 on, tkey = buff_target(cls, f, fields), b.get('templateKey') or None
                 t = templates.get(tkey) or {}
                 effect = b.get('overrideEffectKey') or t.get('effect')
-                add([effect], 'loop', f, on=on, buff=b.get('buffKey') or None, template=tkey)
+                life = buff_life(b)                             # the buff's life: every use it carries has it (v3)
+                add([effect], 'loop', f, on=on, buff=b.get('buffKey') or None, template=tkey, life=life)
                 for u in template_uses(tkey, t, on, b.get('buffKey') or None) if t else []:
                     u['from'] = f'{cls}.{f} → {u["from"]}'
                     if node:
                         u['node'] = node
+                    if life:
+                        u['life'] = life
                     uses.append(u)
                 for bb in b.get('blackboard') or []:            # an effect the template's actions read by name
                     if isinstance(bb, dict) and isinstance(bb.get('valueStr'), str) and ek(bb['valueStr']):
                         add([bb['valueStr']], name_role(ek(bb['valueStr'])), f'{f}.blackboard', on=on,
-                            buff=b.get('buffKey') or None, bb=bb.get('key'), by='name')
+                            buff=b.get('buffKey') or None, bb=bb.get('key'), by='name', life=life)
             if isinstance(v, dict) and isinstance(v.get('SerializedState'), str):
                 for typ, field, key in graph_effects(v['SerializedState'], ek):
                     role = 'loop' if field == 'overrideEffectKey' or typ.startswith('CreateBuff') else 'start'
@@ -1829,9 +2048,11 @@ def roles_of(uses):
 
 def parse_unit(env, rel, name, kind):
     """A unit prefab (charpack / enemy / token) → its index.json unit (§33.12) before the keys are checked: the modes
-    (attack, combat: ability_entry), start / dead effects, the Graphic transform, the chargeable groups (`charge`), and
-    `_enemySkills` (its EnemySkill nodes: name, GameObject, path, mode name) and `_strings` (every string of its
-    behaviours) for crawl_units; None when the bundle has no prefab `name`."""
+    (attack, combat: ability_entry), start / dead effects, the Graphic transform, the chargeable groups (`charge`), the
+    Spine-event effects (`spineEffects`, v3), and for crawl_units `_enemySkills` (its EnemySkill nodes: name, GameObject,
+    path, mode name), `_strings` (every string of its behaviours), `_paths` (GameObject → path), `_roots` (unit_roots:
+    its talents, common / general abilities and trait, v3), `_templates` (the buff templates its buffs use) and `_named`
+    (the abilities its buffs name in their blackboards); None when the bundle has no prefab `name`."""
     root = env.prefabs(rel).get(name)
     if root is None:
         return None
@@ -1906,20 +2127,28 @@ def parse_unit(env, rel, name, kind):
             charge_at[gkey(o)] = (len(charge), None)
             charge.append(g)
 
+    claimed = set()                     # GameObjects the modes' attacks, the charge groups, the enemy skills export
+
     def ability_entry(ao, mode_name, depth=0):
         """A mode's attack / combat (or a sub-ability of one): its class and ABILITY_FIELDS, its node, the rows of every
         emitter on its node (attack.emitters + `emitter` on each row when that is not one plain UberEffectEmitter), its
-        sub-abilities (a group's `_abilities`, else the child nodes that carry an ability: MultiFunnelRemoteAttack's
-        funnels), the charge ability it releases (`charge`: [group, ability] indexes into unit.charge)."""
+        sub-abilities (a group's `_abilities` — an AbilitySelectableGroup's `_abilityConfigs` in config order and a
+        BurstAttackGroup's `_burstAttack`, v3 —, else the child nodes that carry an ability: MultiFunnelRemoteAttack's
+        funnels), the charge ability it releases (`charge`: [group, ability] indexes into unit.charge); v3: the group's
+        `select` (group_select; `main` / `burst`: the index of its _mainAbility / _burstAttack among `abilities`) and
+        attack_extras (mount, mountGroup, additionalTimes, triggerDelta)."""
         ad = env.tt(ao)
         a = {'class': env.script(ao)[1]}
         for k in ABILITY_FIELDS:
             if k in ad:
                 a[k.lstrip('_')] = ad[k]
+        a.update(attack_extras(ad))
+        sel = group_select(a['class'], ad)
         ago = go_of(ao)
         if ago is None:
             return a
         a['node'] = path_of[gkey(ago)]
+        claimed.add(gkey(ago))
         ems = node_emitters(ago)
         if len(ems) == 1 and ems[0][2] is None:
             a.update(ems[0][1])
@@ -1941,17 +2170,38 @@ def parse_unit(env, rel, name, kind):
         if depth < 4 and not CHARGE_GROUP.search(a['class']):
             if isinstance(ad.get('_abilities'), list):
                 subs = [s for s in (deref(ao, x) for x in ad['_abilities']) if s is not None]
+            elif isinstance(ad.get('_abilityConfigs'), list):          # v3: the configs' abilities, in their order
+                subs = [s for s in (deref(ao, c.get('_ability')) for c in ad['_abilityConfigs'] if isinstance(c, dict)) if s is not None]
+                burst = deref(ao, config_ability(ad.get('_burstAttack')))
+                if burst is not None and all(gkey(s) != gkey(burst) for s in subs):
+                    subs.append(burst)
             else:
                 subs = []
                 for ch in go_children(env, ago):
                     subs += [o for cls, o, d in mbs_of.get(gkey(ch), []) if is_ability(cls)][:1]
-            subs = [ability_entry(s, mode_name, depth + 1) for s in subs if gkey(s) != gkey(ao)]
+                if not subs and depth == 0 and 'Funnel' in a['class']:
+                    # v3: a funnel attack whose funnels sit next to it (耶拉 S2's Funnel_0 / Funnel_1 beside Attack): the
+                    # sibling abilities with a FunnelEffectEmitter
+                    for go2, p2 in sorted(gos, key=lambda x: x[1]):
+                        if p2.rsplit('/', 1)[0] == a['node'].rsplit('/', 1)[0] and p2 != a['node'] \
+                                and any(cls == 'FunnelEffectEmitter' for cls, o, d in mbs_of.get(gkey(go2), [])):
+                            subs += [o for cls, o, d in mbs_of.get(gkey(go2), []) if is_ability(cls)][:1]
+            subs = [s for s in subs if gkey(s) != gkey(ao)]
+            if sel:
+                for field, label in (('_mainAbility', 'main'), ('_burstAttack', 'burst')):
+                    x = deref(ao, config_ability(ad.get(field)))
+                    at = next((i for i, s in enumerate(subs) if x is not None and gkey(s) == gkey(x)), None)
+                    if at is not None:
+                        sel[label] = at
+            subs = [ability_entry(s, mode_name, depth + 1) for s in subs]
             if subs:
                 a['abilities'] = subs
+        if sel:
+            a['select'] = sel
         return a
 
     head = next(((o, d) for cls, o, d in mbs_of.get(gkey(root), []) if '_modes' in d), None)
-    mode_paths = []
+    mode_paths, general_of = [], {}
     if head:
         ho, hd = head
         unit['rootClass'] = env.script(ho)[1]
@@ -1973,18 +2223,108 @@ def parse_unit(env, rel, name, kind):
                 mode['attack'] = ability_entry(ao, mode['name'])
             if co is not None and (ao is None or gkey(co) != gkey(ao)):   # the blocked units' attack, when another one
                 mode['combat'] = ability_entry(co, mode['name'])
+            for gp in md.get('_generalAbilities') or []:                 # v3: the mode's general abilities
+                ga = deref(mo, gp)
+                go_ = go_of(ga) if ga is not None else None
+                if go_ is not None:
+                    names = general_of.setdefault(gkey(go_), [])
+                    if mode['name'] not in names:
+                        names.append(mode['name'])
             unit['modes'].append(mode)
     if charge:
         unit['charge'] = charge
+        for g in charge:
+            claimed.update(gkey(go) for go, p in gos if p == g['node'] or any(p == ab['node'] for ab in g['abilities']))
+
+    def mode_of(p):
+        return next((n for mp_, n in sorted(mode_paths, key=lambda x: -len(x[0])) if mp_ and p.startswith(mp_ + '/')), None)
+
     # an enemy's skills: the nodes with an EnemySkill (data/enemies.json skills[].prefabKey names them), with the mode
     # whose node holds them (a skill a boss has per mode: one copy per mode)
     unit['_enemySkills'] = []
     for go, p in gos:
         if any(ENEMY_SKILL_CLASS.search(cls) for cls, o, d in mbs_of.get(gkey(go), [])):
-            mname = next((n for mp_, n in sorted(mode_paths, key=lambda x: -len(x[0])) if mp_ and p.startswith(mp_ + '/')), None)
-            unit['_enemySkills'].append((env.tt(go).get('m_Name') or '', go, p, mname))
+            unit['_enemySkills'].append((env.tt(go).get('m_Name') or '', go, p, mode_of(p)))
+            claimed.add(gkey(go))
     unit['_strings'] = strings
+    unit['_paths'] = path_of
+    unit['_roots'] = unit_roots(env, root, gos, mbs_of, gkey, go_of, deref, head, general_of, claimed, mode_of)
+    unit['_templates'] = {b.get('templateKey') for ms in mbs_of.values() for cls, o, d in ms for b in buffs_in(d)
+                          if isinstance(b.get('templateKey'), str) and b.get('templateKey')}
+    unit['_named'] = [x for ms in mbs_of.values() for cls, o, d in ms for x in bb_ability_names(d)]
+    spine = []
+    for go, p in gos:                                   # v3: effects a Spine clip's events play (SpineEffectEmitter)
+        for cls, o, d in mbs_of.get(gkey(go), []):
+            if cls == 'SpineEffectEmitter' and isinstance(d.get('_spineEffectPresets'), list):
+                for i, pr in enumerate(d['_spineEffectPresets']):
+                    row = emit_row(pr) if isinstance(pr, dict) else None
+                    if row:
+                        spine.append({'node': p, 'preset': i, 'effects': row['effects'], 'directionType': row.get('directionType', 0),
+                                      **({'slots': row['slots']} if 'slots' in row else {}),
+                                      'createAtWorldPos': row.get('createAtWorldPos', 0)})
+    if spine:
+        unit['spineEffects'] = spine
     return unit
+
+
+def unit_roots(env, root, gos, mbs_of, gkey, go_of, deref, head, general_of, claimed, mode_of):
+    """The roots of a unit's v3 entries (§33.17), for crawl_units' node_entry walks: [{kind ('talent' | 'trait' |
+    'common' | 'general'), go, path, name (the GameObject's name: a talent's prefab key, an ability's name), alias (the
+    ability's namedAsAlias), classes, talent (its Talent class), ability (main_ability), mode (the mode holding the
+    node) or modes (a general ability: the modes listing it), fields (the Talent's and the toggle checkers' typetrees),
+    stop (gkeys of every root and claimed node: the walks do not enter them)}…]. A GameObject is one root: talent before
+    trait, common, general. Common abilities: the head's `_commonAbilities` and the abilities right under a
+    CommonAbilities node; general abilities: the modes' `_generalAbilities`; the trait: the head's `_traitAbility`."""
+    by_key = {gkey(go): (go, p) for go, p in gos}
+    kinds = {}
+
+    def add(go, kind):
+        if go is not None and gkey(go) in by_key and gkey(go) not in kinds and gkey(go) not in claimed and go is not root:
+            kinds[gkey(go)] = kind
+    for go, p in gos:
+        if any(all(k in d for k in TALENT_BASE_FIELDS) for cls, o, d in mbs_of.get(gkey(go), [])):
+            add(go, 'talent')
+    if head:
+        ho, hd = head
+        t = deref(ho, hd.get('_traitAbility'))
+        add(go_of(t) if t is not None else None, 'trait')
+        for cp in hd.get('_commonAbilities') or []:
+            c = deref(ho, cp)
+            add(go_of(c) if c is not None else None, 'common')
+    for go, p in gos:
+        if COMMON_NODE.match(env.tt(go).get('m_Name') or ''):
+            for ch in go_children(env, go):
+                if any(is_ability(cls) for cls, o, d in mbs_of.get(gkey(ch), [])):
+                    add(ch, 'common')
+    for k in general_of:
+        add(by_key[k][0] if k in by_key else None, 'general')
+    # a root inside another root of the same kind belongs to that one (a common group's sub-abilities)
+    paths = {k: by_key[k][1] for k in kinds}
+    for k in list(kinds):
+        if kinds[k] != 'talent' and any(k2 != k and kinds[k2] == kinds[k] and paths[k].startswith(paths[k2] + '/') for k2 in kinds):
+            del kinds[k]
+    stop = set(kinds) | claimed
+    out = []
+    for go, p in gos:
+        k = gkey(go)
+        if k not in kinds:
+            continue
+        ms = mbs_of.get(k, [])
+        classes = [cls for cls, o, d in ms]
+        talent = next(((cls, d) for cls, o, d in ms if all(f in d for f in TALENT_BASE_FIELDS)), None)
+        ability = main_ability([c for c in classes if not (talent and c == talent[0])])
+        ab_d = next((d for cls, o, d in ms if cls == ability), {}) if ability else {}
+        alias = ((ab_d.get('_metadata') or {}).get('namedAsAlias') or None) if isinstance(ab_d, dict) else None
+        r = {'kind': kinds[k], 'go': go, 'path': p, 'name': env.tt(go).get('m_Name') or '', 'alias': alias,
+             'classes': classes, 'ability': ability, 'talent': talent[0] if talent else None,
+             'talentFields': talent[1] if talent else None,
+             'toggles': [(cls, d) for cls, o, d in ms if TOGGLE_CHECKER.search(cls)], 'stop': stop}
+        if kinds[k] == 'general':
+            r['modes'] = general_of.get(k, [])
+        else:
+            r['mode'] = mode_of(p)
+        out.append(r)
+    return out
 
 
 def skin_points(env, rel, prefab, graphic, container=None):
@@ -2038,9 +2378,13 @@ def strings_of(v, out):
 
 
 def buff_templates(env, ek):
-    """templateKey → {effect: key | None, graph: [[buff event, action node type, field, key]…]} for every buff template
-    (BUFF_TEMPLATES, Torappu BuffTemplateHolder._templates) that names an effect: a buff whose overrideEffectKey is
-    empty loops its template's effectKey; the graph's CreateEffect / CreateBuff nodes play at their buff event."""
+    """templateKey → {effect: key | None, graph: [[buff event, action node type, field, key]…], abilities?: [[buff
+    event, action node type, ability name, 'cast' | 'stop']…], switches?: [[buff event, mode index | 'bb',
+    restoreDefault]…], creates?: [template keys]} for every buff template (BUFF_TEMPLATES, Torappu
+    BuffTemplateHolder._templates) that names an effect, an ability, a mode switch or another template: a buff whose
+    overrideEffectKey is empty loops its template's effectKey; the graph's CreateEffect / CreateBuff nodes play at
+    their buff event; the abilities (v3, graph_links) are the ones its TriggerAbility* / Interrupt* actions cast and
+    stop — how the client ties a common ability or a talent's ability to an event."""
     try:
         files = env.load_rel(BUFF_TEMPLATES)
     except Exception:  # noqa: BLE001 — an older client without the holder: buffs keep their override keys only
@@ -2053,26 +2397,83 @@ def buff_templates(env, ek):
             for t in (env.tt(o).get('_templates') or []):
                 if not isinstance(t, dict) or not t.get('templateKey'):
                     continue
-                graph = []
+                graph, abilities, switches, creates = [], [], [], []
                 for it in ((t.get('eventToActions') or {}).get('_items') or []):
-                    ev = it.get('key')
-                    for typ, field, key in graph_effects((it.get('value') or {}).get('SerializedState'), ek):
-                        graph.append([event_name(BUFF_EVENTS, ev) or ev, typ, field, key])
+                    ev = event_name(BUFF_EVENTS, it.get('key')) or it.get('key')
+                    state = (it.get('value') or {}).get('SerializedState')
+                    for typ, field, key in graph_effects(state, ek):
+                        graph.append([ev, typ, field, key])
+                    ab, sw, cr = graph_links(state)
+                    abilities += [[ev] + x for x in ab]
+                    switches += [[ev] + x for x in sw]
+                    creates += [x for x in cr if x not in creates]
                 effect = ek(t.get('effectKey')) if t.get('effectKey') else None
-                if effect or graph:
-                    out[t['templateKey']] = {'effect': effect, 'graph': graph}
+                if effect or graph or abilities or switches or creates:
+                    out[t['templateKey']] = {'effect': effect, 'graph': graph, **({'abilities': abilities} if abilities else {}),
+                                             **({'switches': switches} if switches else {}),
+                                             **({'creates': creates} if creates else {})}
     return out
 
 
-def skill_entry(env, root, ek, pk, effect_refs, templates):
-    """index.json skills[id] of a skill prefab ([uc]skills.ab) or of an enemy's skill node: rootClass / rootAbility (the
-    root's skill class and ability, skill_root), effects (every effect key it names, its templates' included),
-    projectiles, mode (the unit mode it switches to, or null), uses (behaviour_uses of every behaviour), roles
-    (roles_of), unclassified (keys found in the prefab that no use places)."""
-    strings, uses, mode, stack, root_mbs = set(), [], None, [root], []
+def ability_info(mbs, pk):
+    """The attack ability of one GameObject's behaviours [(class, typetree)…] (v3: the skills' and the talents'
+    `abilities`): {class, …ABILITY_FIELDS without the underscore (projectileKey lower case), …attack_extras, select?
+    (group_select)} for the GameObject's ability (main_ability) when it has attack fields or is a group; else None."""
+    cls = main_ability([c for c, _ in mbs])
+    d = next((d for c, d in mbs if c == cls), None) if cls else None
+    if d is None or not is_ability(cls):
+        return None
+    return ability_fields(cls, d, pk)
+
+
+def projectile_emitters(mbs, pk, skip=None):
+    """The other behaviours of a GameObject that fire a projectile of their own (`_projectileKey`: SimpleProjectileEmitter,
+    ChantWithProjectileBeforeSkill, …), as abilities entries {class, projectileKey} (v3); `skip`: the main ability's class."""
+    out = []
+    for c, d in mbs:
+        if c != skip and isinstance(d.get('_projectileKey'), str) and d['_projectileKey'] and pk(d['_projectileKey']):
+            out.append({'class': c, 'projectileKey': pk(d['_projectileKey'])})
+    return out
+
+
+def ability_fields(cls, d, pk):
+    """ability_info's fields of an ability behaviour `cls` (typetree `d`); None when it has neither attack fields nor
+    a group's sub-abilities."""
+    sel = group_select(cls, d)
+    if not sel and not any(k in d for k in ABILITY_FIELDS):
+        return None
+    a = {'class': cls}
+    for k in ABILITY_FIELDS:
+        if k in d:
+            a[k.lstrip('_')] = d[k]
+    if a.get('projectileKey'):
+        a['projectileKey'] = pk(a['projectileKey']) or a['projectileKey']
+    if isinstance(a.get('extraProjectileKeys'), list):
+        a['extraProjectileKeys'] = [pk(x) or x for x in a['extraProjectileKeys'] if isinstance(x, str) and x]
+    a.update(attack_extras(d))
+    for k in ('additionalProjectile',):
+        if a.get(k):
+            a[k] = pk(a[k]) or a[k]
+    if a.get('additionalProjectiles'):
+        a['additionalProjectiles'] = [pk(x) or x for x in a['additionalProjectiles']]
+    if sel:
+        a['select'] = sel
+    return a
+
+
+def node_entry(env, root, ek, pk, effect_refs, templates, node_name=None, stop=None):
+    """An index.json entry of a GameObject subtree — a skill prefab ([uc]skills.ab), an enemy's skill node, a unit's
+    talent / common / general / trait ability (v3): rootClass / rootAbility (the root's skill class and ability,
+    skill_root), effects (every effect key it names, its templates' included), projectiles, mode (the unit mode a skill
+    switches to, or null), uses (behaviour_uses of every behaviour; an emitter use of an ability that fires a projectile
+    carries its `projectileKey`, v3), roles (roles_of), unclassified (keys found in the subtree that no use places),
+    abilities (v3: ability_info of every GameObject, with `node`). `node_name(go, name)` gives a use's `node` (default:
+    the GameObject's name); `stop(go)` skips a child subtree that another entry exports."""
+    strings, uses, mode, stack, root_mbs, abilities, switches, named = set(), [], None, [root], [], [], [], []
     while stack:
         go = stack.pop()
         gd = env.tt(go)
+        name = node_name(go, gd.get('m_Name')) if node_name else gd.get('m_Name')
         mbs = []
         for c in gd.get('m_Component', []):
             f, o = env.resolve(go.assets_file, c.get('component'))
@@ -2081,20 +2482,45 @@ def skill_entry(env, root, ek, pk, effect_refs, templates):
         if go is root:
             root_mbs = mbs
         ability = main_ability([c for c, _ in mbs])
+        info = ability_info(mbs, pk)
+        if info:
+            abilities.append({'node': name, **info})
+        abilities += [{'node': name, **x} for x in projectile_emitters(mbs, pk, skip=ability)]
         for cls, d in mbs:
             fields = {k: v for k, v in d.items() if k not in SKIP_FIELDS}
             strings_of(fields, strings)
-            uses += behaviour_uses(cls, fields, ek, templates, node=gd.get('m_Name'), ability=ability if 'Emitter' in cls else None)
+            named += bb_ability_names(fields)            # the abilities its buffs' generic templates cast (v3)
+            for b in buffs_in(fields):                  # the mode switches its buffs' templates make (crawl_units, v3)
+                for ev, idx, restore in (templates.get(b.get('templateKey')) or {}).get('switches') or []:
+                    if idx == 'bb':
+                        idx = next((int(x['value']) for x in b.get('blackboard') or [] if isinstance(x, dict)
+                                    and x.get('key') == 'mode' and isinstance(x.get('value'), (int, float))), None)
+                    switches.append({'event': ev, 'mode': idx, 'restore': restore, 'buff': b.get('buffKey') or None, 'node': name})
+            found_uses = behaviour_uses(cls, fields, ek, templates, node=name, ability=ability if 'Emitter' in cls else None)
+            if info and info.get('projectileKey') and 'Emitter' in cls:
+                for u in found_uses:
+                    u['projectileKey'] = info['projectileKey']
+                    if info.get('extraProjectileKeys'):
+                        u['extraProjectileKeys'] = info['extraProjectileKeys']
+            uses += found_uses
             if mode is None:
                 mode = skill_mode(fields)
-        stack.extend(go_children(env, go))
+        stack.extend(k for k in go_children(env, go) if not (stop and stop(k)))
     found = set(effect_refs(strings))
     placed = {k for u in uses for k in list(u['keys']) + [x for x in u.get('slots') or [] if x]}
     root_class, root_ability = skill_root(root_mbs)
     return {'rootClass': root_class, 'rootAbility': root_ability,
             'effects': sorted(found | placed), 'projectiles': sorted({pk(x) for x in strings if pk(x)}), 'mode': mode,
             **({'modeBy': 'data'} if mode is not None else {}), 'uses': uses, 'roles': roles_of(uses),
-            'unclassified': sorted(found - placed)}
+            'unclassified': sorted(found - placed), 'abilities': abilities, '_switches': switches, '_named': named}
+
+
+def skill_entry(env, root, ek, pk, effect_refs, templates):
+    """index.json skills[id] of a skill prefab ([uc]skills.ab) or of an enemy's skill node (node_entry)."""
+    e = node_entry(env, root, ek, pk, effect_refs, templates)
+    e.pop('_switches', None)
+    e.pop('_named', None)
+    return e
 
 
 def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
@@ -2156,11 +2582,15 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                 return k
         return None
 
+    skill_named = {}                    # skill id → the abilities its buffs name in their blackboards (v3)
+
     def skill(sid):
         sid = skill_key(sid)
         if sid is None or sid in skills:
             return sid
-        entry = skill_entry(shared, skill_roots[sid], ekn, pk, effect_refs, templates)
+        entry = node_entry(shared, skill_roots[sid], ekn, pk, effect_refs, templates)
+        entry.pop('_switches', None)
+        skill_named[sid] = entry.pop('_named', [])
         for p in entry['projectiles']:
             projectile(p)
         skills[sid] = entry
@@ -2205,8 +2635,11 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
         return em
 
     def fix_attack(a, where):
-        if a.get('projectileKey'):
-            a['projectileKey'] = pk(a['projectileKey']) or a['projectileKey']
+        for k in ('projectileKey', 'additionalProjectile'):
+            if a.get(k):
+                a[k] = pk(a[k]) or a[k]
+        if a.get('additionalProjectiles'):
+            a['additionalProjectiles'] = [pk(x) or x for x in a['additionalProjectiles']]
         for lst in ROW_KINDS:
             if lst in a:
                 a[lst] = fix_rows(a[lst], f'{where} {lst}')
@@ -2242,6 +2675,140 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                 projectile(p)
             out[key] = e0
         return out
+
+    # v3 (§33.17): the buff template actions that cast / stop an ability, by the ability's name
+    by_ability = {}
+    for tkey, t in templates.items():
+        for ev, typ, name, kind in t.get('abilities') or []:
+            if name:
+                by_ability.setdefault(name, []).append((tkey, ev, typ, kind, None))
+
+    def reach(start):
+        """Template keys reachable from `start` through the templates' CreateBuff… actions."""
+        seen, todo = set(), [k for k in start if isinstance(k, str) and k]
+        while todo:
+            k = todo.pop()
+            if k not in seen:
+                seen.add(k)
+                todo.extend((templates.get(k) or {}).get('creates') or [])
+        return seen
+
+    def scalars(d):
+        """A behaviour's scalar fields without the underscore (a toggle checker's settings)."""
+        return {k.lstrip('_'): f6(v) if isinstance(v, float) else v for k, v in d.items()
+                if k not in SKIP_FIELDS and not k.startswith('m_') and isinstance(v, (int, float, str)) and not isinstance(v, bool)}
+
+    def own_entries(uid, u, env, roots, paths, own_tpls, own_named):
+        """units[uid].talents and .abilities (v3, §33.17) from parse_unit's roots: one node_entry per root (its subtree
+        without the other roots and the claimed nodes); the triggers are the actions of the buff templates related to
+        the unit (reached from its prefab's and its skills' buffs, or named after its code) that name the root's
+        GameObject or alias."""
+        code = uid.split('_', 2)[2].lower() if uid.count('_') >= 2 else uid.lower()
+        prefixes = (code, f'enemy_{code}')
+        skill_tpls = {x.get('template') for s in u['skills'].values() for x in s.get('uses') or [] if x.get('template')}
+        reachable = reach(set(own_tpls) | skill_tpls)
+
+        def related(tkey):
+            k = tkey.lower()
+            return tkey in reachable or any(k == p or k.startswith((p + '_', p + '[')) for p in prefixes)
+        by_bb = {}                      # generic templates' unnamed TriggerAbility: the name in the buff's blackboard
+        for buff, tkey, name in list(own_named) + [x for sid in u['skills'] for x in skill_named.get(sid, [])]:
+            for ev, typ, nm, kind in (templates.get(tkey) or {}).get('abilities') or []:
+                if nm is None:
+                    by_bb.setdefault(name, []).append((tkey, ev, typ, kind, buff))
+        gk = lambda o: (id(o.assets_file), o.path_id)  # noqa: E731
+        mode_names = [m.get('name') for m in u['modes']]
+        mode_name = lambda i: mode_names[i] if isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(mode_names) else None  # noqa: E731
+        built = []
+        for r in roots:
+            e = node_entry(env, r['go'], ekn, pk, effect_refs, templates, node_name=lambda go, nm: paths.get(gk(go), nm),
+                           stop=lambda go, s=r['stop']: gk(go) in s)
+            sw = e.pop('_switches')
+            for p in e['projectiles']:
+                projectile(p)
+            talent = r['kind'] == 'talent'
+            node = {'node': r['path'], 'class': r['talent'] if talent else r['ability']}
+            if talent:
+                node['ability'] = r['ability']
+            if r.get('modes'):
+                node['modes'] = r['modes']
+            elif r.get('mode'):
+                node['mode'] = r['mode']
+            when = talent_when(r['talent'], r['ability'], r['classes']) if talent else ability_when(r['ability'], r['classes'])
+            node['when'] = when
+            tf = r.get('talentFields') or {}
+            if tf.get('_overwriteTalentKey'):
+                node['overwriteKey'] = tf['_overwriteTalentKey']
+            if isinstance(tf.get('_checkValidBySkillIndex'), list) and tf['_checkValidBySkillIndex']:
+                node['skills'] = list(tf['_checkValidBySkillIndex'])
+            if when == 'reborn' and talent:
+                node['reborn'] = {k: v for k, v in (
+                    ('mode', mode_name(tf.get('_modeIndex'))), ('maxCount', tf.get('_maxRespawnCnt')),
+                    ('hpRatio', f6(tf['_hpRechargeRatio']) if isinstance(tf.get('_hpRechargeRatio'), (int, float)) else None),
+                    ('handler', tf.get('_abilityName') if tf.get('_useAbilityToHandle') and tf.get('_abilityName') else None)) if v is not None}
+            if r['toggles']:
+                node['toggle'] = [{'class': c, **scalars(d)} for c, d in r['toggles']]
+            names = list(dict.fromkeys(x for x in (r['name'], r['alias']) if x))
+            for kind, field in (('cast', 'triggers'), ('stop', 'stops')):
+                acts = [{'template': t, 'event': ev, 'action': typ, 'name': name, **({'buff': buff} if buff else {})}
+                        for name in names for t, ev, typ, k, buff in by_ability.get(name, []) + by_bb.get(name, [])
+                        if k == kind and (buff or related(t))]
+                if acts:
+                    node[field] = list({json.dumps(a, sort_keys=True): a for a in acts}.values())
+            if any(x['mode'] is not None for x in sw):
+                node['switchMode'] = [{'mode': mode_name(x['mode']), 'restore': x['restore'], 'event': x['event'], 'buff': x['buff']}
+                                      for x in sw if x['mode'] is not None]
+            if r['alias'] and not talent and r['alias'] != r['name']:
+                node['alias'] = r['alias']
+            built.append((r, e, node))
+        # a reborn talent's handler (its _abilityName: an ability's alias or name) acts on the 重生 too
+        for r, e, node in built:
+            h = (node.get('reborn') or {}).get('handler')
+            for r2, e2, node2 in (built if h else []):
+                if h in (r2['alias'], r2['name']):
+                    node2['when'] = 'reborn'
+                    node['reborn'].setdefault('handlerNode', r2['path'])
+        talents = {}
+        for r, e, node in sorted(built, key=lambda x: bool(x[0].get('mode'))):     # nodes outside the modes first
+            if r['kind'] != 'talent':
+                continue
+            t = talents.setdefault(r['name'], {'nodes': [], 'uses': [], 'effects': set(), 'projectiles': set(),
+                                               'unclassified': set(), 'abilities': [], '_sigs': {}})
+            sig = json.dumps([{k: v for k, v in x.items() if k != 'node'} for x in e['uses']], sort_keys=True)
+            same = t['_sigs'].get(sig) if r.get('mode') and e['uses'] else None
+            if same is not None:              # a mode's copy of a talent that also sits outside the modes: listed once
+                node['same'] = same
+            else:
+                if not r.get('mode'):
+                    t['_sigs'].setdefault(sig, len(t['nodes']))
+                t['uses'] += [{**x, **({'mode': r['mode']} if r.get('mode') else {})} for x in e['uses']]
+                t['abilities'] += e['abilities']
+            t['nodes'].append(node)
+            t['effects'] |= set(e['effects'])
+            t['projectiles'] |= set(e['projectiles'])
+            t['unclassified'] |= set(e['unclassified'])
+        out_t = {}
+        enemy_keys = (gd.get('enemyTalentKeys') or {}).get(uid) or []
+        for key, t in talents.items():
+            if not (t['effects'] or t['projectiles']):
+                continue
+            placed = {k for x in t['uses'] for k in list(x['keys']) + [y for y in x.get('slots') or [] if y]}
+            entry = {'nodes': t['nodes']}
+            over = {n.get('overwriteKey', '').lower() for n in t['nodes']} - {''}
+            bb = next((p for p in enemy_keys if p.lower() == key.lower() or p.lower() in over), None)
+            if bb:
+                entry['bb'] = bb
+            entry.update({'effects': sorted(t['effects']), 'projectiles': sorted(t['projectiles']), 'uses': t['uses'],
+                          'roles': roles_of(t['uses']), 'unclassified': sorted(t['unclassified'] - placed),
+                          'abilities': t['abilities']})
+            out_t[key] = entry
+        out_a = []
+        for r, e, node in built:
+            if r['kind'] == 'talent' or not (e['effects'] or e['projectiles']):
+                continue
+            out_a.append({'kind': r['kind'], 'name': r['name'], **node,
+                          **{k: e[k] for k in ('effects', 'projectiles', 'uses', 'roles', 'unclassified', 'abilities')}})
+        return out_t, out_a
 
     # an enemy variant without a prefab of its own (the elite `_2` keys of six enemies) is drawn with its base prefab:
     # index.json gets a copy of the base unit with `aliasOf`
@@ -2307,14 +2874,29 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
             # an enemy's own skills (their nodes in its prefab; keys like `1` repeat across enemies: not in index.skills)
             for key, entry in sorted(enemy_skills(env, found_skills).items()):
                 u['skills'].setdefault(key, entry)
+            # v3: its talents, common / general abilities and trait, our data's talent ids, its Spine-event effects
+            roots, paths, own_tpls, own_named = u.pop('_roots'), u.pop('_paths'), u.pop('_templates'), u.pop('_named')
+            tal, abl = own_entries(uid, u, env, roots, paths, own_tpls, own_named)
+            if tal:
+                u['talents'] = tal
+            if abl:
+                u['abilities'] = abl
+            if (gd.get('talentKeys') or {}).get(uid):
+                u['talentKeys'] = gd['talentKeys'][uid]
+            if u.get('spineEffects'):
+                u['spineEffects'] = fix_rows(u['spineEffects'], f'{uid} spineEffects')
+                if not u['spineEffects']:
+                    del u['spineEffects']
             u['projectiles'] = sorted({pk(x) for x in strings if pk(x) in projectiles})
             refs = set(effect_refs(strings))
             for p in u['projectiles']:
                 refs.update(projectiles[p]['effects'])
-            for s in u['skills'].values():
+            for s in list(u['skills'].values()) + list((u.get('talents') or {}).values()) + list(u.get('abilities') or []):
                 refs.update(s['effects'])
                 for p in s['projectiles']:
                     refs.update(projectiles.get(p, {}).get('effects', []))
+            for e in u.get('spineEffects') or []:
+                refs.update(row_keys(e))
             u['refs'] = sorted(refs)
             referenced |= refs
             if uid.startswith('char_'):
@@ -2344,9 +2926,22 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
         open_keys = {s: e['unclassified'] for s, e in skills.items() if e['unclassified']}
         log(f'fx: {len(skills)} skills: {len(with_roles)} with effect roles, {len(mode_only)} drawn by the mode they switch '
             f'to only, {len(none)} without effects; {len(open_keys)} name keys no role places; {len(by_name)} modes found by '
-            f'name ({len(templates)} buff templates with effects)')
+            f'name ({sum(1 for t in templates.values() if t["effect"] or t["graph"])} buff templates with effects)')
         for s, ks in sorted(open_keys.items()):
             log(f'  skill {s}: unclassified {", ".join(ks)}')
+    own = [x for x in units.values() if not x.get('aliasOf')]
+    for kind in ('char', 'enemy', 'token'):
+        us = [x for x in own if x['kind'] == kind]
+        tk = [t for x in us for t in (x.get('talents') or {}).values()]
+        ab = [a for x in us for a in x.get('abilities') or []]
+        whens = {}
+        for n in [n for t in tk for n in t['nodes']] + ab:
+            whens[n.get('when')] = whens.get(n.get('when'), 0) + 1
+        log(f'fx: {kind}: talents of {sum(1 for x in us if x.get("talents"))} units ({len(tk)} keys, '
+            f'{sum(len(t["nodes"]) for t in tk)} nodes), abilities of {sum(1 for x in us if x.get("abilities"))} units '
+            f'({", ".join(f"{k} {sum(1 for a in ab if a["kind"] == k)}" for k in ("common", "general", "trait"))}); '
+            f'when: {", ".join(f"{k} {v}" for k, v in sorted(whens.items(), key=lambda kv: str(kv[0])))}; '
+            f'{sum(1 for n in [n for t in tk for n in t["nodes"]] + ab if n.get("triggers"))} with template triggers')
     for p in projectiles.values():
         referenced.update(p['effects'])
     return units, projectiles, skills, skins, referenced
@@ -2415,8 +3010,69 @@ def game_data(root):
             ids = token_skill_ids(rec)
             if ids:
                 token_skills[tid] = sorted(set(token_skills.get(tid, [])) | set(ids))
+    excel = Path(root) / '.cache' / 'gamedata' / 'excel'
+    def load_excel(n):
+        try:
+            return json.loads((excel / n).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return {}
     return {'chars': chars, 'skills': {k: sorted(v) for k, v in skills.items()}, 'enemies': sorted(enemies), 'tokens': toks,
-            'tokenSkills': token_skills}
+            'tokenSkills': token_skills,
+            'talentKeys': talent_keys(chars + toks, load_excel('character_table.json'),
+                                      load_excel('battle_equip_table.json'), load_excel('uniequip_table.json')),
+            'enemyTalentKeys': {k: enemy_talent_prefixes(v) for k, v in enemies.items() if isinstance(v, dict)}}
+
+
+def talent_keys(ids, char_table, equip_table, uniequip_table):
+    """Our data's talent ids → the units' talent prefab keys (v3, §33.17; operators and tokens): {id: {base: {talent
+    index: [prefab keys]} (data/chess.json / data/tokens.json `talents[].index` — the official character_table's
+    talents, whose candidates name their Talents/<prefabKey> node), trait?: [prefab keys] (the trait's: always on),
+    modules?: {uniEquipId: {talent index: [prefab keys]}} (a module's talents — our data's `fromModule` talents, index
+    −1 for a talent it adds)}} from the official tables (.cache/gamedata/excel; empty without them)."""
+    owner = {}
+    for eid, e in ((uniequip_table or {}).get('equipDict') or {}).items():
+        if isinstance(e, dict) and e.get('charId'):
+            owner.setdefault(e['charId'], []).append(eid)
+
+    def keys_of(cands):
+        return list(dict.fromkeys(str(x['prefabKey']) for x in cands or [] if isinstance(x, dict) and x.get('prefabKey') not in (None, '')))
+    out = {}
+    for uid in ids:
+        c = (char_table or {}).get(uid)
+        if not isinstance(c, dict):
+            continue
+        entry = {'base': {str(i): ks for i, t in enumerate(c.get('talents') or []) for ks in [keys_of((t or {}).get('candidates'))] if ks}}
+        trait = keys_of(((c.get('trait') or {}).get('candidates')))
+        if trait:
+            entry['trait'] = trait
+        mods = {}
+        for eid in sorted(owner.get(uid, [])):
+            for ph in ((equip_table or {}).get(eid) or {}).get('phases') or []:
+                for part in ph.get('parts') or []:
+                    if part.get('isToken'):
+                        continue
+                    for x in ((part.get('addOrOverrideTalentDataBundle') or {}).get('candidates') or []):
+                        if x.get('prefabKey') in (None, ''):
+                            continue
+                        lst = mods.setdefault(eid, {}).setdefault(str(x.get('talentIndex')), [])
+                        if str(x['prefabKey']) not in lst:
+                            lst.append(str(x['prefabKey']))
+        if mods:
+            entry['modules'] = mods
+        if entry['base'] or len(entry) > 1:
+            out[uid] = entry
+    return out
+
+
+def enemy_talent_prefixes(rec):
+    """The talent keys of an enemy record (data/enemies.json `talents.bb` / `bbStr`: "<talent key>.<blackboard key>"),
+    as written, in first-seen order — the prefab's Talents/<key> node names, case aside (v3)."""
+    out = []
+    for src in ((rec.get('talents') or {}).get('bb') or {}, (rec.get('talents') or {}).get('bbStr') or {}):
+        for k in src:
+            if isinstance(k, str) and '.' in k and k.split('.', 1)[0] not in out:
+                out.append(k.split('.', 1)[0])
+    return out
 
 
 def client_version(ab_root):

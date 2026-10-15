@@ -43,6 +43,7 @@
 import { within } from './pathSafety.js';
 import { initializeModeration } from './moderation/nickname.js';
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
 import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom, roomAdminTokenFrom, lobbyOptionsFrom } from './http/config.js';
@@ -238,6 +239,10 @@ export async function startServer(opts = {}) {
   const readAnnouncement = createAnnouncementReader({ ...announcementOptions, log });
   log.info(`[announcement] ${announcementOptions.source.mode} ${announcementOptions.announcementUrl || announcementOptions.filePath}`);
   const startedAt = Date.now();
+  // Game boot id (lobby share / 联机站, docs/design/portal-agent-wss.md §13.3): a fresh value on every process start.
+  // The room instance id survives a restart, so "the same roomId" alone cannot tell a probe whether an observation it
+  // still holds predates the restart — this can, and the Agent reports it with every room observation.
+  const gameBootId = randomUUID();
   // createStaticHandler already computes the authoritative 16-character release
   // tag. The legacy buildTag exports remain compatibility helpers only.
 
@@ -246,7 +251,7 @@ export async function startServer(opts = {}) {
   const traffic = createTrafficCounter();
   const server = http.createServer(createRequestHandler({
     serveStatic,
-    health: { startedAt, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic },
+    health: { startedAt, gameBootId, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic },
     log, allowStatus, allowNickname, readAnnouncement, announcementSource: announcementOptions.source,
     trustProxy: network.opts.trustProxy,
   }));
@@ -283,7 +288,7 @@ export async function startServer(opts = {}) {
     if (bound === null) throw lastError;
     boundHost = bound;
     try {
-      roomAdmin = await listenRoomAdmin({ lobby, registry, token: roomAdminToken,
+      roomAdmin = await listenRoomAdmin({ lobby, registry, token: roomAdminToken, gameBootId,
         port: opts.roomAdminPort ?? (process.env.SP_ROOM_ADMIN_PORT ? Number(process.env.SP_ROOM_ADMIN_PORT) : 3001),
         stateFile: roomAdminStateFile, log });
     } catch (error) { log.error('[room-admin] loopback API unavailable; game service remains online', error); }

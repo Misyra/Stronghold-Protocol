@@ -234,7 +234,8 @@
    a label too long for its half (a larger 文字大小) wraps inside its button instead of spilling over the other one */
 .title-assets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .12rem; width: 4.9rem; margin-top: .12rem; text-align: center; }
 .title-assets__item { min-width: 0; }
-.title-assets .btn { height: auto; min-height: .36rem; padding-top: .04rem; padding-bottom: .04rem; white-space: normal; line-height: 1.15; }
+/* (`>`: the dialogs render inside the items — their buttons keep the shared sizes) */
+.title-assets__item > .btn { height: auto; min-height: .36rem; padding-top: .04rem; padding-bottom: .04rem; white-space: normal; line-height: 1.15; }
 .title-assets__item > small { display: block; margin-top: .06rem; color: var(--text-lo); font-size: calc(.12 * var(--t)); line-height: 1.35; }
 .asset-download, .asset-import-dialog { text-align: left; }
 .asset-download p, .asset-import-dialog p { margin: .12rem 0; line-height: 1.6; }

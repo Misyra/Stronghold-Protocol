@@ -230,14 +230,18 @@
   background: linear-gradient(90deg, var(--mint-500), transparent 60%);
 }
 .title-login .btn--xl { letter-spacing: .6em; padding-left: calc(.48rem + .3em); }
-.title-download { width: 4.9rem; margin-top: .12rem; text-align: center; }
-.title-download > small { display: block; margin-top: .06rem; color: var(--text-lo); font-size: calc(.12 * var(--t)); }
-.asset-download { text-align: left; }
-.asset-download p { margin: .12rem 0; line-height: 1.6; }
+/* 下载完整素材 and 导入素材包 side by side under the login box (ui/assetDownload.js, ui/assetImport.js), each with its hint line;
+   a label too long for its half (a larger 文字大小) wraps inside its button instead of spilling over the other one */
+.title-assets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .12rem; width: 4.9rem; margin-top: .12rem; text-align: center; }
+.title-assets__item { min-width: 0; }
+.title-assets .btn { height: auto; min-height: .36rem; padding-top: .04rem; padding-bottom: .04rem; white-space: normal; line-height: 1.15; }
+.title-assets__item > small { display: block; margin-top: .06rem; color: var(--text-lo); font-size: calc(.12 * var(--t)); line-height: 1.35; }
+.asset-download, .asset-import-dialog { text-align: left; }
+.asset-download p, .asset-import-dialog p { margin: .12rem 0; line-height: 1.6; }
+.asset-import-dialog .asset-import__status:empty { margin: 0; }
 .asset-download__errors { color: var(--amber); }
 .asset-download__errors ul { max-height: 1.8rem; overflow: auto; padding-left: .24rem; }
 .asset-download__errors code { overflow-wrap: anywhere; font-size: calc(.13 * var(--t)); }
-.asset-import { margin-top: .16rem; padding-top: .12rem; border-top: 1px solid var(--line); text-align: left; }
 .asset-import__row { display: flex; flex-wrap: wrap; gap: .08rem; margin: .08rem 0; }
 .asset-import__drop {
   margin: .08rem 0;

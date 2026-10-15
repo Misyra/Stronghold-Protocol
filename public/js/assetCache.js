@@ -6,7 +6,8 @@
 //
 // The worker serves only same-origin GET of a content-hashed /assets/, /fonts/ or /media/ URL. A hit comes from
 // this cache. A miss goes to the network and is not written here. HTML, scripts, /data/, /sim/ and /ws are never
-// matched. A Range request is left to the network so audio seeking still reaches the server.
+// matched. A Range request is left to the network so audio seeking still reaches the server. What an import stored is
+// also listed in one index entry of the cache (IMPORTED_INDEX_URL): Chrome cannot list a cache that large.
 
 /** Cache Storage name. Bump the suffix to drop previously imported bytes on the next activation. */
 export const IMPORTED_ASSET_CACHE = 'sp-imported-assets-v1';
@@ -93,21 +94,64 @@ function pathnameOf(url) {
   try { return new URL(url, 'http://localhost').pathname; } catch { return ''; }
 }
 
-/** Pathnames currently stored for imported art (assets, fonts and the audio /media/ alias). */
+/**
+ * The import's own list of the pathnames it stored: a JSON array kept in the import cache at this same-origin path,
+ * which the worker never answers (not a hashed /assets/, /fonts/ or /media/ URL). Chrome refuses Cache.keys() for a
+ * cache of more than about 15,000 entries ("Operation too large"); a whole pack stores some 43,000 (the audio twice).
+ */
+export const IMPORTED_INDEX_URL = '/sp-imported-index.json';
+
+/** The index as a Set, or null without a readable one. */
+async function readImportIndex(cache) {
+  try {
+    const hit = await cache.match(IMPORTED_INDEX_URL);
+    if (!hit) return null;
+    const list = await hit.json();
+    return Array.isArray(list) ? new Set(list.filter((p) => typeof p === 'string' && p !== IMPORTED_INDEX_URL)) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Pathnames of Cache.keys() (throws for a cache too large to list). */
+async function keyPaths(cache) {
+  const out = new Set();
+  for (const req of await cache.keys()) {
+    const path = pathnameOf(typeof req === 'string' ? req : req.url);
+    if (path && path !== IMPORTED_INDEX_URL) out.add(path);
+  }
+  return out;
+}
+
+/**
+ * Pathnames currently stored for imported art (assets, fonts and the audio /media/ alias): the import's index, else
+ * the cache's keys (a cache written without an index); an empty set when neither can be read.
+ */
 export async function listImportedPaths(cachesApi = globalThis.caches) {
   if (!cachesApi?.open) return new Set();
   try {
     const cache = await cachesApi.open(IMPORTED_ASSET_CACHE);
-    const keys = await cache.keys();
-    const out = new Set();
-    for (const req of keys) {
-      const path = pathnameOf(typeof req === 'string' ? req : req.url);
-      if (path) out.add(path);
-    }
-    return out;
+    return (await readImportIndex(cache)) ?? await keyPaths(cache);
   } catch {
     return new Set();
   }
+}
+
+/**
+ * Add the pathnames an import stored to the index (assetPack.js, as an import ends — finished, cancelled or failed).
+ * Without an index yet, the cache's keys seed it when Cache.keys() still answers.
+ * @param {Cache} cache the open import cache
+ * @param {Iterable<string>} paths
+ */
+export async function addImportedPaths(cache, paths) {
+  let all = await readImportIndex(cache);
+  if (!all) {
+    try { all = await keyPaths(cache); } catch { all = new Set(); }
+  }
+  for (const p of paths) if (typeof p === 'string' && p && p !== IMPORTED_INDEX_URL) all.add(p);
+  await cache.put(IMPORTED_INDEX_URL, new Response(JSON.stringify([...all].sort()), {
+    status: 200, headers: { 'Content-Type': 'application/json' },
+  }));
 }
 
 /** How many imported files are stored, counting /assets/ and /fonts/ only (not the /media/ alias). */

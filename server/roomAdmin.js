@@ -4,8 +4,8 @@ import { ROOM_CODE_LEN } from '../shared/constants.js';
 import { roomStatus } from './roomStatus.js';
 import { sendJson } from './http/common.js';
 import { readJsonBody } from './http/readJson.js';
-import { saveRoomConfig, validateRoomConfig } from './roomConfig.js';
-export { loadRoomConfig } from './roomConfig.js';
+import { roomConfigDocument, roomConfigMutation, saveRoomConfigDocument, validateRoomConfig } from './roomConfig.js';
+export { loadRoomConfig, loadRoomConfigDocument } from './roomConfig.js';
 
 const hashSecret = (value) => createHash('sha256').update(value).digest();
 
@@ -14,6 +14,10 @@ const configView = (lobby) => ({ ...lobby.getRoomConfig(), foreignSessionGeoipAv
 // 联机站（Agent）一批最多问二十个房间（docs/design/portal-agent-wss.md §12.4）。上限写在这里而不是让调用方
 // 自觉：一条请求就能让游戏把整张大厅表算一遍，而那正是这个端点要避免的事。
 export const MAX_STATUS_BATCH = 20;
+
+// 版本化配置写（POST/PUT /api/room-config）允许的请求键（§10.2）。多一个键就说明两边对「这次写是什么」
+// 的理解已经不一致：猜着办比直接说不认识这个字段危险得多，所以这里整份拒掉。
+const ROOM_CONFIG_WRITE_FIELDS = Object.freeze(['expectedRevision', 'patch', 'opId', 'expiresAt']);
 
 const CODE_RE = new RegExp(`^[A-Z]{${ROOM_CODE_LEN}}$`);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,9 +65,13 @@ function roomView(room, lobby, registry) {
   };
 }
 
-export async function listenRoomAdmin({ lobby, registry, token, port = 3001, stateFile, gameBootId = randomUUID(), log = console }) {
+export async function listenRoomAdmin({ lobby, registry, token, port = 3001, stateFile, gameBootId = randomUUID(),
+  roomConfig = null, log = console }) {
   if (!token) return null;
   const expected = hashSecret(token);
+  // 配置文档的当前版本（§10.2）。调用方（index.js）已经把它读出来了，因为启动时要用它覆盖环境默认值 ——
+  // 再读一次就会读到两个可能不同的版本号。没有文件时就是「第 1 版」，值与进程当前生效的一致。
+  let configState = roomConfig ?? { values: lobby.getRoomConfig(), revision: 1, lastMutation: null };
   let limitWrites = Promise.resolve();
   let draining = false;
   const server = http.createServer((req, res) => {
@@ -98,6 +106,10 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
     if (url.pathname === '/api/room-config') {
       if (req.method === 'GET' || req.method === 'HEAD') return sendJson(req, res, 200, {
         ...configView(lobby), roomCount: lobby.rooms.size, maxAllowed: 10000,
+        // 配置版本（§10.2）。页面拿它去当下一次写的 expectedRevision，中央靠它判「过时页面」；values 是
+        // **已落盘**的那一份，平铺在顶层只是为了过渡期兼容旧面板/旧脚本。读取不给 persisted/applied：
+        // 那两个字段描述的是「这一次写有没有落地」，读响应上没有它们的含义。
+        ...roomConfigDocument(configState),
         // 游戏启动号（§13.3）：Agent 把它随 sync.report / 房间观测一路报给中央，中央据此判「这台游戏进程
         // 重启过，它上一次说过的一切都不再成立」。放在同一个响应里是因为探针就是从这里读配置版本的。
         gameBootId,
@@ -110,16 +122,67 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
           return sendJson(req, res, error.status || 400, { error: error.code });
         }
         if (draining || lobby.draining) return sendJson(req, res, 503, { error: 'SERVER_DRAINING' });
-        const error = validateRoomConfig(body, { partial: true });
+        // `null` / 数组 / 非对象都是「参数错」（400），不是「服务内部错误」（500）：把形状收口放在这里，
+        // 下面就可以放心 `Object.hasOwn` 了。
+        if (!body || typeof body !== 'object' || Array.isArray(body))
+          return sendJson(req, res, 400, { error: 'INVALID_ROOM_CONFIG' });
+        // 两种形状：中央来的版本化写（expectedRevision + patch）与迁移期保留的旧写（直接给字段）。旧写也要
+        // 走同一个串行入口并递增 revision（§10.2），否则它会成为绕过版本控制的那条暗路。
+        const versioned = Object.hasOwn(body, 'expectedRevision') || Object.hasOwn(body, 'patch');
+        let patch = body;
+        if (versioned) {
+          const unknown = Object.keys(body).filter((key) => !ROOM_CONFIG_WRITE_FIELDS.includes(key));
+          if (unknown.length || !Number.isSafeInteger(body.expectedRevision) ||
+            !body.patch || typeof body.patch !== 'object' || Array.isArray(body.patch))
+            return sendJson(req, res, 400, { error: 'INVALID_ROOM_CONFIG' });
+          if (body.opId != null && !UUID_RE.test(String(body.opId)))
+            return sendJson(req, res, 400, { error: 'INVALID_OP_ID' });
+          patch = body.patch;
+        }
+        const error = validateRoomConfig(patch, { partial: true });
         if (error) return sendJson(req, res, 400, { error, ...(error === 'INVALID_MAX_ROOMS' ? { maxAllowed: 10000 } : {}) });
+        // 写响应的公共尾巴：房间数（旧面板在显示）与 GeoIP 可用性（决定那条策略能不能真的生效）。
+        const written = (options = {}) => roomConfigDocument(configState, { ...options,
+          extra: { roomCount: lobby.rooms.size, foreignSessionGeoipAvailable: !!lobby.botPopulation.countryLookup, ...options.extra } });
+        const conflict = (code, extra) => Object.assign(new Error(code), { status: 409, payload: { error: code, ...extra } });
+        // 版本判定必须发生在队列**内部**：入队前比一次 revision，两个同时到达的写就都会看到同一个旧版本，
+        // 两个都通过 —— 那正是「两个人同时改配置，后写的那份悄悄盖掉前一份」。
         const update = limitWrites.then(async () => {
-          const next = { ...lobby.getRoomConfig(), ...body };
-          await saveRoomConfig(stateFile, next);
-          return { ...lobby.applyRoomConfig(next), foreignSessionGeoipAvailable: !!lobby.botPopulation.countryLookup, persisted: true };
+          const expiresAt = Number.isSafeInteger(body.expiresAt) ? body.expiresAt : null;
+          const decision = roomConfigMutation(configState, { patch,
+            expectedRevision: versioned ? body.expectedRevision : null,
+            opId: versioned && body.opId ? body.opId : null, expiresAt, now: Date.now() });
+          if (decision.error === 'CONFIG_CONFLICT')
+            // 冲突时把**实际值**一起回去：过时的页面要能直接显示「现在是什么」，再由管理员决定重不重发（§10.3）。
+            throw conflict('CONFIG_CONFLICT', { revision: configState.revision,
+              values: { ...configState.values }, lastMutation: configState.lastMutation });
+          if (decision.error === 'OP_ID_CONFLICT') throw conflict('OP_ID_CONFLICT', { revision: configState.revision });
+          if (decision.error === 'DEADLINE_EXCEEDED')
+            return written({ extra: { expired: true } });
+          if (decision.error) throw conflict(decision.error);
+          // 重放（回执丢了、中央重发）：不落盘、不递增 revision，回报原来那个版本号。
+          if (decision.replayed)
+            return written({ persisted: true, applied: true,
+              extra: { replayed: true, originalResultRevision: decision.originalResultRevision } });
+          // 先落盘，再改内存。顺序反了的话，一次写失败会让运行值已经变了而磁盘上没有，重启后「悄悄变回去」。
+          await saveRoomConfigDocument(stateFile, decision);
+          configState = { values: decision.values, revision: decision.revision, lastMutation: decision.lastMutation };
+          let applied = true;
+          try { lobby.applyRoomConfig(decision.values); } catch (error) {
+            // 落盘成功但应用失败：如实分开报（persisted=true / applied=false），让操作者知道磁盘已经变了 ——
+            // 报「整体失败」会让他以为磁盘也没改，于是再改一次，反而把两次改动叠加起来。
+            applied = false;
+            log.error('[room-admin] saved room config could not be applied; restart will load it', error);
+          }
+          return written({ persisted: true, applied });
         });
         limitWrites = update.catch(() => {});
         try { return sendJson(req, res, 200, await update); }
-        catch (error) { log.error('[room-admin] failed to save room limit', error); return sendJson(req, res, 503, { error: 'ROOM_LIMIT_SAVE_FAILED' }); }
+        catch (error) {
+          if (error.status) return sendJson(req, res, error.status, error.payload);
+          log.error('[room-admin] failed to save room limit', error);
+          return sendJson(req, res, 503, { error: 'ROOM_LIMIT_SAVE_FAILED' });
+        }
       }
     }
 
@@ -170,13 +233,23 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
       if (draining || lobby.draining) return sendJson(req, res, 503, { error: 'SERVER_DRAINING' });
       const room = lobby.getRoom(closeMatch[1]);
       if (!room || room.disposed) return sendJson(req, res, 404, { error: 'ROOM_NOT_FOUND' });
-      if (!Number.isSafeInteger(body?.createdAt) || room.createdAt !== body.createdAt)
+      // 过期命令不执行（§11）：中央那边可能已经放弃、已经超时，再关掉一个「它以为早就关了」的房间只会
+      // 让现场与它的记录对不上。回 200 + closed:false 而不是错误码 —— 这是「确定没执行」，不是故障。
+      if (Number.isSafeInteger(body?.expiresAt) && body.expiresAt > 0 && Date.now() > body.expiresAt)
+        return sendJson(req, res, 200, { closed: false, code: 'DEADLINE_EXCEEDED',
+          roomCode: room.code, roomId: room.roomId, createdAt: room.createdAt });
+      // 实例校验（§11）：房间码会被复用，光凭码关房等于「关掉同码的下一间房」。roomId 是主判据（跨机那条路
+      // 带的就是它），createdAt 保留给旧调用方；两个都得对，而且至少要有一个 —— 什么凭据都不给就不执行。
+      if (body?.roomId != null && body.roomId !== room.roomId) return sendJson(req, res, 409, { error: 'ROOM_CHANGED' });
+      const hasInstance = body?.roomId != null || Number.isSafeInteger(body?.createdAt);
+      if (!hasInstance || (Number.isSafeInteger(body?.createdAt) && room.createdAt !== body.createdAt))
         return sendJson(req, res, 409, { error: 'ROOM_CHANGED' });
-      const roomCode = room.code, createdAt = room.createdAt;
+      const roomCode = room.code, createdAt = room.createdAt, roomId = room.roomId;
       lobby.disposeRoom(room, 'admin');
       lobby.checkpoint(roomCode, null);
       lobby.audit('room.adminClosed', null, room);
-      return sendJson(req, res, 200, { ok: true, roomCode, createdAt });
+      // closed 只在这一个条件下是 true —— 中央拿它当「明确说成了」的依据（§10.3），其余一律转读回自证。
+      return sendJson(req, res, 200, { closed: true, roomCode, roomId, createdAt });
     }
 
     if (url.pathname === '/api/rooms' || url.pathname === '/api/room-config' || closeMatch || portalStatusMatch)

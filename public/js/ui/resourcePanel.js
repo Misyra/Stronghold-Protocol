@@ -123,31 +123,39 @@ function ResourceTier({ st, tier, optional, onOptional, disabled }) {
 }
 
 /**
- * 干员皮肤 — one switch, no list (docs/SKINS.md). A full install is ~328 MiB, so it is off by default and never rides
- * 「同时预载可选资源」; when it is on, the preload follows the outfits equipped in 干员调配 (ui/skins.js), and picking one
- * there is what starts its download. The counters come from the manifest (`st.skins`), so a deployment without skins
- * installed simply shows nothing.
+ * 干员皮肤 — two switches, no list (docs/SKINS.md). A full install is ~328 MiB, so the master switch is off by default
+ * and never rides 「同时预载可选资源」; with it on, the preload follows the outfits equipped in 干员调配 (ui/skins.js), and
+ * picking one there is what starts its download. 「全部皮肤」 widens that scope to every outfit the manifest offers: the
+ * explicit choice for a player who would rather take the whole 328 MiB once than repeat the pick. The counters come from
+ * the manifest (`st.skins`), so a deployment without skins installed simply shows nothing.
  */
-function ResourceSkins({ st, enabled, on, disabled, onToggle }) {
+function ResourceSkins({ st, enabled, on, all, disabled, onToggle, onAll }) {
   const skins = st.skins || [];
   if (!skins.length) return null;
   const equipped = (st.skinScope?.keys || []).length;
+  const everyOutfit = !!(on && all);
   const files = skins.reduce((n, s) => n + s.files, 0);
   const cachedFiles = skins.reduce((n, s) => n + s.present, 0);
   const totalBytes = skins.reduce((n, s) => n + s.totalBytes, 0);
   const cachedBytes = skins.reduce((n, s) => n + s.bytes, 0);
   const cachedOutfits = skins.filter((s) => s.files > 0 && s.present >= s.files).length;
   const hint = !enabled ? t('预载资源总开关没打开，先开它。')
-    : on && !equipped ? t('还没选过皮肤：在干员调配里挑一套，这里会跟着缓存。') : '';
+    : everyOutfit ? t('全部皮肤：{total} 套都会缓存，不再跟随干员调配里的选择。', { total: skins.length })
+      : on && !equipped ? t('还没选过皮肤：在干员调配里挑一套，这里会跟着缓存。') : '';
   return html`<section class="resource-skins" aria-label=${t('干员皮肤')}>
     <header class="resource-skins__head">
       <div><h3>${t('干员皮肤')}</h3>
         <p>${t('在干员调配里选中的皮肤会自动缓存到本机：一套约 1.2 MiB，{total} 套共 {size}。', { total: skins.length, size: formatBytes(totalBytes) })}</p></div>
       <label class="resource-choice"><input type="checkbox" data-testid="skin-preload" checked=${on} disabled=${disabled || !enabled}
-        onChange=${(e) => onToggle(e.currentTarget.checked)} />${t('预载我选的皮肤')}</label>
+        onChange=${(e) => onToggle(e.currentTarget.checked)} />${t('预载干员皮肤')}</label>
+      <label class="resource-choice"><input type="checkbox" data-testid="skin-preload-all" checked=${everyOutfit}
+        disabled=${disabled || !enabled || !on}
+        onChange=${(e) => onAll(e.currentTarget.checked)} />${t('全部皮肤（{total} 套）', { total: skins.length })}</label>
     </header>
     <div class="resource-tier__summary">
-      <span class="num">${t('本机已选 {n} 套 · 已缓存 {done} 套', { n: equipped, done: cachedOutfits })}</span>
+      <span class="num">${everyOutfit
+        ? t('全部 {n} 套 · 已缓存 {done} 套', { n: skins.length, done: cachedOutfits })
+        : t('本机已选 {n} 套 · 已缓存 {done} 套', { n: equipped, done: cachedOutfits })}</span>
       <span class="num">${formatBytes(cachedBytes)} / ${formatBytes(totalBytes)}</span>
     </div>
     <${ProgressBar} value=${cachedFiles} max=${Math.max(1, files)} size="sm" tone="amber" />
@@ -156,7 +164,8 @@ function ResourceSkins({ st, enabled, on, disabled, onToggle }) {
 }
 
 /** Mounted once in main.js, above all screens including the settings modal. */
-export function ResourceHost({ enabled, optional, allVoices, voiceLang = 'cn', skinPreload, onVoiceLang, onChange, onOptional, onAllVoices, onSkinPreload }) {
+export function ResourceHost({ enabled, optional, allVoices, voiceLang = 'cn', skinPreload, skinPreloadAll,
+  onVoiceLang, onChange, onOptional, onAllVoices, onSkinPreload, onSkinPreloadAll }) {
   const { open } = useStore((s) => s, Object.is, resourceUi);
   const st = useResources();
   const fileInput = useRef(null);
@@ -207,8 +216,8 @@ export function ResourceHost({ enabled, optional, allVoices, voiceLang = 'cn', s
         <${ResourceTier} st=${st} tier=${1} />
         <${ResourceTier} st=${st} tier=${2} optional=${optional} onOptional=${onOptional} disabled=${archiveBusy} />
       </div>
-      <${ResourceSkins} st=${st} enabled=${enabled} on=${!!skinPreload} disabled=${archiveBusy}
-        onToggle=${onSkinPreload || (() => {})} />
+      <${ResourceSkins} st=${st} enabled=${enabled} on=${!!skinPreload} all=${!!skinPreloadAll} disabled=${archiveBusy}
+        onToggle=${onSkinPreload || (() => {})} onAll=${onSkinPreloadAll || (() => {})} />
       ${st.combat && enabled ? html`<p class="resource-manager__intro">${t('作战中：画面资源低速预载，语音等可选资源将在作战结束后继续。')}</p>` : null}
       <p class=${`resource-manager__status${st.error ? ' is-error' : ''}`} role="status" aria-live="polite">
         ${st.message || (enabled ? t('预载已开启') : t('选择下载范围，然后开始预载；也可以直接导入资源包。'))}</p>

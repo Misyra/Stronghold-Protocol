@@ -44,7 +44,7 @@ test('real WebSockets recover coalesced slow states across delta/legacy clients 
       srv.lobby.broadcastRoom(room, view(n));
       srv.lobby.sendToPlayer(room, modern.id, { t: 'm.private', playerId: modern.id, n, [STATE_COALESCE]: scope });
     }
-    assert.deepEqual(sockets.map(ws => srv.network._blockedOutbound.get(ws).size), [2, 1, 1]);
+    assert.deepEqual(sockets.map(ws => srv.network.outbound._blockedOutbound.get(ws).size), [2, 1, 1]);
     srv.lobby.broadcastRoom(room, { t: 'b.start', battleId: 'barrier' });
     srv.lobby.broadcastRoom(room, view(200));
     srv.lobby.broadcastRoom(room, { t: 'm.result' });
@@ -85,7 +85,7 @@ test('real room broadcast burst: sliced mixed-client sends preserve state/privat
   }
   srv.lobby.broadcastRoom(room, { t: 'm.result' });
   srv.lobby.broadcastRoom(room, { t: 'm.public', n: 160 });
-  assert.ok(srv.network._outbound.size > 0, 'the production room path actually defers writes');
+  assert.ok(srv.network.outbound._outbound.size > 0, 'the production room path actually defers writes');
   for (const c of [modern, spectator]) {
     const receiver = new StateReceiver();
     for (let n = 0; n < 160; n++) {

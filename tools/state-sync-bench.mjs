@@ -310,8 +310,8 @@ async function runServer() {
   const pendingFrames = () => {
     let n = 0;
     const net = srv.network;
-    for (const q of net._outbound.values()) n += q.size;
-    for (const q of net._blockedOutbound.values()) n += q.size;
+    for (const q of net.outbound._outbound.values()) n += q.size;
+    for (const q of net.outbound._blockedOutbound.values()) n += q.size;
     for (const conn of net.conns.values()) if ((conn.ws?.bufferedAmount || 0) > 0) n++;
     return n;
   };

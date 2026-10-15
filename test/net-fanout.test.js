@@ -28,9 +28,9 @@ function socket(network) {
 
 /** Yield through real setImmediates until every queued fanout job has drained. */
 async function drain(network) {
-  for (let n = 0; (network._fanout.length || network._outbound.size) && n < 1000; n++) await nextTurn();
-  assert.equal(network._fanout.length, 0);
-  assert.equal(network._outbound.size, 0);
+  for (let n = 0; (network.outbound._fanout.length || network.outbound._outbound.size) && n < 1000; n++) await nextTurn();
+  assert.equal(network.outbound._fanout.length, 0);
+  assert.equal(network.outbound._outbound.size, 0);
 }
 
 test('2500-socket broadcastAll yields to requests, preserves per-socket order, and skips closed sockets', async (t) => {
@@ -79,10 +79,10 @@ test('closing flushes reliable queued frames and releases deferred recipients', 
   network.close();
   await nextTurn();
   assert.deepEqual(sockets.at(-1).frames, [{ t: 'notice' }]);
-  assert.equal(network._fanout.length, 0);
-  assert.equal(network._fanoutImmediate, null);
-  assert.equal(network._outbound.size, 0);
-  assert.equal(network._outboundImmediate, null);
+  assert.equal(network.outbound._fanout.length, 0);
+  assert.equal(network.outbound._fanoutImmediate, null);
+  assert.equal(network.outbound._outbound.size, 0);
+  assert.equal(network.outbound._outboundImmediate, null);
 });
 
 test('many six-member rooms share a send budget; states, private views and results remain FIFO and isolated', async (t) => {
@@ -119,7 +119,7 @@ test('many six-member rooms share a send budget; states, private views and resul
   }
   assert.ok(rooms.flatMap((r) => r.members).reduce((n, m) => n + m.ws.frames.length, 0) <= 128,
     'small broadcasts across different rooms must not reset the per-turn budget');
-  assert.ok(network._outbound.size > 0);
+  assert.ok(network.outbound._outbound.size > 0);
   const last = rooms.at(-1).members.at(-1).ws;
   last.emit('message', Buffer.from('{"t":"ping","c":123,"rid":1}'), false);
   assert.equal(last.frames[0].t, 'pong', 'transport probes remain responsive during room broadcasts');
@@ -148,7 +148,7 @@ test('a deferred send captures its socket and encoding; close/rebind cannot leak
   const old = sockets.at(-1), session = { connected: true, ws: old };
   sendSession(session, { t: 'm.private', secret: 'old' });
   old.close();
-  assert.equal(network._outbound.has(old), false);
+  assert.equal(network.outbound._outbound.has(old), false);
   session.ws = socket(network);
   const msg = { t: 'm.public', n: 1 };
   sendSession(session, msg);
@@ -231,7 +231,7 @@ test('application queued bytes participate in snapshot drops, hard disconnects a
   assert.equal(sendRaw(ws, 'x'.repeat(NET_DEFAULTS.hardBufferBytes)), false, 'reject the frame before it exceeds the hard queue budget');
   assert.equal(send(ws, { t: 'ok' }), false);
   assert.equal(ws.readyState, 3);
-  assert.equal(network._outbound.has(ws), false);
+  assert.equal(network.outbound._outbound.has(ws), false);
   assert.equal(network.diagnostics.droppedSnapshots, 1);
   assert.equal(network.diagnostics.slowDisconnects, 1);
   await drain(network);

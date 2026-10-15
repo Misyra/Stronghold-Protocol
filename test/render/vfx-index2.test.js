@@ -18,7 +18,7 @@ const SKILL_ANIM = 3, BLOCKED = 1;
 const row = (k, o = {}) => ({ effects: [k], directionType: 0, oneshot: 1, startEvent: 2, endEvent: 3, ...o });
 const LOOPING = new Set(['roar_loop', 'tok_loop', 'ind_02', 'ind_03', 'ind_04', 'ind_05']);
 const KEYS = ['mh_cast', 'mh_hit_1', 'mh_hit_3', 'mh_plain', 'lp_1', 'lp_2', 'rd_1', 'rd_2', 'rd_3', 'once_1', 'once_2', 'an_1', 'an_2', 'b0_a', 'b0_b',
-  'gra_cast', 'grb_cast', 'par_m', 'par_r', 'par_trail', 'sel_r', 'sel_trail', 'sel_m', 'en_shot', 'en_trail', 'en_combat_cast', 'en_combat_hit',
+  'b0_c', 'gra_cast', 'grb_cast', 'par_m', 'par_r', 'par_trail', 'sel_r', 'sel_trail', 'sel_m', 'en_shot', 'en_trail', 'en_combat_cast', 'en_combat_hit',
   'en_reborn_hit', 'roar_start', 'roar_loop', 'roar_end', 'bash_cast', 'bash_reborn', 'two_a', 'two_b', 'icm_hit', 'wolf_plain', 'wolf_buff',
   'tok_loop', 'ind_start', 'ind_02', 'ind_03', 'ind_04', 'ind_05', 'ind_trail', 'med_cast', 'med_hit', 'kb_1', 'kb_2', 'kb_base', 'skb_1', 'skb_base', 'g_hit', 'g_enemy', 'g_heal', 'g_die'];
 
@@ -40,12 +40,12 @@ function makeIndex() {
         { emitters: [mhEm({ useRandomHitEffect: 1, groups: { hitGroups: 3 } })] }) }]),
       char_505_once: unit('char', [{ name: 'Default', attack: melee([], [row('once_1', { group: 0, emitter: 0 }), row('once_2', { group: 1, emitter: 0 })],
         { emitters: [mhEm({ oncePerTarget: 1, groups: { hitGroups: 2 } })] }) }]),
-      // UberAnimation: loopType 1 alternates, loopType 0 follows the model's animation
+      // UberAnimation (index v3 resolved the LoopType): 0 LOOP plays the groups in turn, 1 RANDOM a seeded pick
       char_503_anim: unit('char', [{ name: 'Default', attack: melee([
         row('an_1', { group: 0, anim: 'Attack_1', emitter: 0 }), row('an_2', { group: 1, anim: 'Attack_2', emitter: 0 }),
-        row('b0_a', { group: 0, anim: 'A', emitter: 1 }), row('b0_b', { group: 1, anim: 'B', emitter: 1 })], [],
-      { emitters: [{ class: 'UberAnimationEffectEmitter', sourceAnimKey: 'Attack_1', loopType: 1, replaceAnims: ['Attack_1', 'Attack_2'] },
-        { class: 'UberAnimationEffectEmitter', sourceAnimKey: 'A', loopType: 0, replaceAnims: ['A', 'B'] }] }) }]),
+        row('b0_a', { group: 0, anim: 'A', emitter: 1 }), row('b0_b', { group: 1, anim: 'B', emitter: 1 }), row('b0_c', { group: 2, anim: 'C', emitter: 1 })], [],
+      { emitters: [{ class: 'UberAnimationEffectEmitter', sourceAnimKey: 'Attack', loopType: 0, loopTypeName: 'LOOP', replaceAnims: ['Attack_1', 'Attack_2'] },
+        { class: 'UberAnimationEffectEmitter', sourceAnimKey: 'Attack', loopType: 1, loopTypeName: 'RANDOM', replaceAnims: ['A', 'B', 'C'] }] }) }]),
       // a MultiHit emitter's own rows without a group: given way to its groups, kept with keepBaseHitEffect
       char_508_kb0: unit('char', [{ name: 'Default', attack: melee([], [row('kb_1', { group: 0, emitter: 0 }), row('kb_2', { group: 1, emitter: 0 }), row('kb_base', { emitter: 0 })],
         { emitters: [mhEm({ groups: { hitGroups: 2 } })] }) }]),
@@ -192,15 +192,19 @@ describe('mode attacks of index v2', () => {
     assert.equal(seedOf(7, 3), seedOf(7, 3));
   });
 
-  test('UberAnimation: loopType 1 plays its groups in turn by attack, loopType 0 the model\'s animation (else the source animation)', async () => {
-    const { w, spawned, view, frame } = await setup();
-    const a = view(1, 'char_503_anim', 5), t = view(2, 'enemy_601_two', 6);
-    for (let i = 0; i < 3; i++) { frame(); w.attack(a, t, 'none', i); }
-    assert.deepEqual(spawned.filter((k) => /^an_/.test(k)), ['an_1', 'an_2', 'an_1']);
-    assert.deepEqual(spawned.filter((k) => /^b0_/.test(k)), ['b0_a', 'b0_a', 'b0_a'], 'no model: the source animation');
-    a.actor = { attackAnim: () => 'B' };
-    frame(); w.attack(a, t, 'none', 4);
-    assert.equal(spawned.filter((k) => /^b0_/.test(k)).at(-1), 'b0_b', 'the animation the model plays');
+  test('UberAnimation: loopType 0 (LOOP) plays its groups in turn by attack, 1 (RANDOM) a seeded pick — the same at every replay', async () => {
+    const run = async () => {
+      const { w, spawned, view, frame } = await setup();
+      const a = view(1, 'char_503_anim', 5), t = view(2, 'enemy_601_two', 6);
+      for (let i = 0; i < 6; i++) { frame(); w.attack(a, t, 'none', i); }
+      return spawned;
+    };
+    const s1 = await run();
+    assert.deepEqual(s1.filter((k) => /^an_/.test(k)), ['an_1', 'an_2', 'an_1', 'an_2', 'an_1', 'an_2']);
+    const r = s1.filter((k) => /^b0_/.test(k));
+    assert.equal(r.length, 6, 'one group a attack');
+    assert.ok(new Set(r).size > 1, `random over six attacks: ${r}`);
+    assert.deepEqual((await run()).filter((k) => /^b0_/.test(k)), r, 'deterministic');
   });
 
   test('sub-abilities: a Random group a seeded pick, a Parallel group all (the shot flies its ranged one\'s projectile), a Selectable group by the attack\'s kind', async () => {

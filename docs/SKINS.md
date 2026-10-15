@@ -167,7 +167,8 @@ its own preference (`sp.pref.skinPortraits`, `ui/skins.js`) and never reaches th
 - **One pick sets both rows** (this fork): choosing an outfit as the battle model also puts its 立绘 on the card, and
   choosing an outfit's 立绘 also makes it the battle model — otherwise the same outfit would have to be chosen twice.
   They can still be deliberately different: the model row's 默认 clears the model and leaves the art, and the two
-  art-only tiles (原始立绘 / 精英二立绘) never touch the model. A *bulk* write (`setSkins` / `setPortraits`, i.e. the
+  original-art tiles (原始立绘 / 精英二立绘) restore the default battle model, whose normal/elite form follows the piece
+  in battle. This also works while the model preview is folded. A *bulk* write (`setSkins` / `setPortraits`, i.e. the
   `room.skins` roster sync and imports) owns one map each, so a restore or a teammate's data can never overwrite the
   local art.
 - The file is the tall 立绘 of the same source repo, derived from the avatar URL rather than stored in the research
@@ -182,8 +183,10 @@ its own preference (`sp.pref.skinPortraits`, `ui/skins.js`) and never reaches th
 
 ### 小人预览：实时播放 (render/spinePreview.js)
 
-The section lists **商店立绘 first, then 战斗模型, then the preview frame**. The 战斗模型 tiles are **text only**, and
-the model itself is **played live** in the frame below them, with one button per animation the model actually ships.
+The skin section comes first in the operator detail body. It lists **商店立绘 first**, followed by a **战斗模型** disclosure
+that is closed by default. Opening it reveals the text-only model choices and the live preview with one button per
+animation. The preview snapshot and live renderer start only after opening; closing disposes the live renderer.
+Selecting another operator closes the model disclosure again, while changing skins inside an open disclosure keeps it open.
 
 - **Live, not a GIF.** `mountPreview()` puts the skeleton in the shared PIXI renderer and steps it with
   `requestAnimationFrame` — the same `ensurePixi()` + `assets.spine` + `SpineActor`-style path the battlefield draws,

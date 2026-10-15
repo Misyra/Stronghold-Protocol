@@ -5,9 +5,10 @@
 // detail body, so upstream rewriting that screen (it is one of the two files most likely to change) costs one
 // line here rather than a merge conflict over the whole panel.
 //
-// Two independent choices, in two radio groups, 商店立绘 first:
+// Two stored choices, in two radio groups, 商店立绘 first. Picking art also selects its matching battle model;
+// 原始立绘 / 精英二立绘 restore the default model. The preview may stay folded while the choice changes.
 //   * 商店立绘 — which 180×360 立绘 the shop card and the operator detail card draw. **Local to this browser** (the
-//     shop is private) and independent of the battle model on purpose. The options are 原始立绘 / 精英二立绘 /
+//     shop is private). The options are 原始立绘 / 精英二立绘 /
 //     each skin's 立绘, every one of them shown as its own art so the choice is a comparison, not a guess.
 //   * 战斗模型 — which model this operator fights with in battle. A plain `{ [chessId]: skinId }` map mirrored to
 //     the server through `room.skins` (PUBLIC: a teammate sees your model, ui/skins.js). Its tiles are TEXT ONLY —
@@ -153,6 +154,10 @@ export function SkinSection({ chess, net = appNet }) {
   // the server validates and the renderer reads), while the catalogue and the asset manifest are per operator.
   const chessId = chess && chess.chessId;
   const charId = chess && chess.charId;
+  // Each operator starts folded. Selecting another skin keeps an already opened preview visible.
+  const previewKey = `${chessId || ''}:${charId || ''}`;
+  const [openedModel, setOpenedModel] = useState(null);
+  const previewOpen = openedModel === previewKey;
   const chosen = s.entries[chessId] || null;
   const chosenPortrait = s.portraits[chessId] || '';
   const previewSkin = chosen || '';
@@ -194,8 +199,8 @@ export function SkinSection({ chess, net = appNet }) {
 
   // the static snapshot for the frame (the instant paint, and the fallback if the live canvas cannot start)
   useEffect(() => {
-    if (charId) requestPreview(charId, previewSkin);
-  }, [charId, previewSkin]);
+    if (previewOpen && charId) requestPreview(charId, previewSkin);
+  }, [previewOpen, charId, previewSkin]);
 
   // a new model starts on 待机 (its first animation when it has no idle)
   useEffect(() => {
@@ -213,7 +218,7 @@ export function SkinSection({ chess, net = appNet }) {
   // LIVE playback: mount the model in the frame and step it every frame, exactly like a battlefield view. Mounted
   // once per (operator, skin); the clip buttons only re-play on the existing instance.
   useEffect(() => {
-    if (!boxNode || !renderable || !charId) return undefined;
+    if (!previewOpen || !boxNode || !renderable || !charId) return undefined;
     let dead = false;
     let handle = null;
     (async () => {
@@ -232,7 +237,7 @@ export function SkinSection({ chess, net = appNet }) {
       handle?.dispose();
       setLive(false);
     };
-  }, [boxNode, charId, previewSkin, renderable]);
+  }, [previewOpen, boxNode, charId, previewSkin, renderable]);
 
   // play the chosen animation (and the default one as soon as the model is mounted)
   useEffect(() => {
@@ -298,12 +303,17 @@ export function SkinSection({ chess, net = appNet }) {
       leading=${leading}
       chosenId=${chosenPortrait} art=${(x) => skinPortrait(charId, x.id)}
       onPick=${(id) => (id ? setPortrait(chessId, id) : clearPortrait(chessId))} />
-    <h4 class="lo-skin__title">${t('战斗模型')}<${MicroLabel}>BATTLE MODEL<//></h4>
+    <details key=${previewKey} class="lo-model-fold lo-sec--fold" data-testid="model-fold"
+      onToggle=${(event) => setOpenedModel(event.currentTarget.open ? previewKey : null)}>
+    <summary class="lo-sec__head">
+      <h4 class="lo-skin__title">${t('战斗模型')}<${MicroLabel}>BATTLE MODEL<//></h4>
+      <span class="lo-sec__note">${previewName}</span>
+    </summary>
     <${SkinGroup} ...${shared} name="model" ariaLabel=${t('选择战斗模型')} thumbnails=${false}
       leading=${[{ id: '', name: t('默认'), note: 'DEFAULT' }]}
       chosenId=${chosen} art=${() => null}
       onPick=${(id) => (id ? setSkin(chessId, id) : clearSkin(chessId))} />
-    <div class="lo-model" data-testid="model-preview">
+    ${previewOpen ? html`<div class="lo-model" data-testid="model-preview">
       <div class="lo-model__box" data-live=${live ? '1' : null}>
         <img class="lo-model__art" crossorigin="anonymous" src=${artBad ? TRANSPARENT_PX : (previewUrl || TRANSPARENT_PX)} alt="" draggable=${false}
           onError=${(event) => recoverImageError(event, () => setArtBad(true))} />
@@ -319,7 +329,8 @@ export function SkinSection({ chess, net = appNet }) {
             class=${cx('lo-clipbtn', 'lo-clipbtn--more', extraOpen && 'is-on')}
             onClick=${() => setExtraOpen((v) => !v)}>${extraOpen ? t('收起') : t('更多动画')} <b class="num">${extraClips.length}</b></button>` : null}
       </div>
-    </div>
-    <p class="lo-skin__hint">${t('战斗模型决定局内小人的样子（队友也看得见）；商店立绘只影响你自己看到的商店卡，两者互不影响。')}</p>
+    </div>` : null}
+    </details>
+    <p class="lo-skin__hint">${t('选择立绘会切换至对应战斗模型（队友也看得见）；立绘样式只影响你自己看到的商店卡。')}</p>
   </section>`;
 }

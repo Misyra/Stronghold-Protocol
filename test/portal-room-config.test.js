@@ -1,4 +1,4 @@
-// 游戏环境的分享配置（docs/design/portal-agent-wss.md §14.3）。
+// 游戏环境的分享配置（docs/design/portal-agent-wss.md §45.3）。
 //
 // 这些校验的价值全在「启动时就说出来」：填错的模式、指向别的机器的本机地址、或者两个不一样的站点 ID，
 // 如果拖到玩家点分享那一刻才炸，症状会变成「分享功能坏了」，而真相是配置里少了一个字符。
@@ -73,7 +73,7 @@ test('agent 模式：不需要中央地址，只需要本机地址与一把独�
   const options = portalRoomOptionsFrom({}, env);
   assert.deepEqual(options, { mode: 'agent', url: null, siteId: 'hongkong', key: null,
     agentUrl: 'http://127.0.0.1:3900/', bridgeToken: BRIDGE });
-  // agent 模式不要求也不使用旧的 HMAC 密钥：游戏不再持有能代表本站改写公告/配置的东西（§5.2）。
+  // agent 模式不要求也不使用旧的 HMAC 密钥：游戏不再持有能代表本站改写公告/配置的东西（§36.2）。
   assert.equal(portalRoomOptionsFrom({}, { ...env, SP_PORTAL_ROOM_KEY: 'not-even-hex' }).mode, 'agent');
   assert.throws(() => portalRoomOptionsFrom({}, { SP_PORTAL_ROOM_MODE: 'agent', SP_SITE_ID: 'hongkong' }), /requires SP_PORTAL_AGENT_URL/);
   assert.throws(() => portalRoomOptionsFrom({}, { ...env, SP_PORTAL_BRIDGE_TOKEN: 'short' }), /32\.\.256/);

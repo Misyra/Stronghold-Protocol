@@ -47,12 +47,15 @@ test('a duplicate draft card becomes unavailable when the preceding player exhau
   assert.equal(cardPickable({ turnPid: 'p_1', pickOf: new Map() }, card, { myId: 'p_1', solo: false }), false);
   assert.ok(m.pickCard(b, 2).ok); m.dispose();
 });
-test('measured operator capacities and exceptions: co-op doubles shared stock, never private DIY stock', () => {
+test('measured operator capacities and exceptions: co-op doubles shared stock and each player\'s private 自选 stock (#650)', () => {
   const solo = new GameData(DATA, 'mode_single_normal'), coop = new GameData(DATA, 'mode_multi_normal');
   for (const [name, n] of [['普罗旺斯', 10], ['跃跃', 10], ['风丸', 8], ['蒂比', 12], ['哈洛德', 14], ['缪尔赛思', 5]]) {
     assert.equal(solo.poolCopies(byName(name)), n, name); assert.equal(coop.poolCopies(byName(name)), 2 * n, name);
   }
-  assert.equal(coop.poolCopies('chess_char_6_diy1_a'), solo.poolCopies('chess_char_6_diy1_a'));
+  // the maintainer's decision of 2026-10-15 (GitHub #650): the 自选 stock doubles too, or a 自选 operator is diluted
+  for (const [slot, n] of [['chess_char_5_diy1_a', 8], ['chess_char_5_diy2_a', 8], ['chess_char_6_diy1_a', 5], ['chess_char_6_diy2_a', 5]]) {
+    assert.equal(solo.poolCopies(slot), n, slot); assert.equal(coop.poolCopies(slot), 2 * n, slot);
+  }
   assert.equal(solo.itemPoolCopies(PACK), 2); assert.equal(coop.itemPoolCopies(PACK), 2);
 });
 

@@ -95,9 +95,10 @@
 //     player's data view: the slotted slots' ids (normal and elite) are the composed 自选 records, so the player's piece
 //     of a slot is the operator for every rule (name, class, position, bonds from its factions, no 特质, the pick's skill
 //     and module; tier, price, sell price and the 3 → elite merge are the slot's). Each slotted piece has its own stock
-//     (8 at tier 5, 5 at tier 6 [ASSUMED]; none when every bond of it is banned this match) and joins this player's shop
-//     rolls once the 调度中心 reaches the slot's level; it never enters the shared pool. battleInput carries `diy` (the
-//     pick), m.private exposes `diy` (and `diyBanned`), the scouting views draw the operator with its pick.
+//     (8 at tier 5, 5 at tier 6 [ASSUMED]; twice that in co-op, like the shared pool — GitHub #650; none when every bond
+//     of it is banned this match) and joins this player's shop rolls once the 调度中心 reaches the slot's level; it never
+//     enters the shared pool. battleInput carries `diy` (the pick), m.private exposes `diy` (and `diyBanned`), the
+//     scouting views draw the operator with its pick.
 //
 // Code layout: this file keeps the constructor (the per-player state fields); the methods live in
 // server/match/player/, one module per concern, and are installed on PlayerState.prototype below in a fixed order,

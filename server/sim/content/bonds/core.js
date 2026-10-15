@@ -688,8 +688,10 @@ export function install(battle) {
 /**
  * 维多利亚 hammer milestones: every `layer` layers pay `count` item(s) of `pool` once (counter = milestones paid).
  * A bond effect, so it pays only while 维多利亚 is active (official tip "叠加的盟约…只有在盟约被激活时才会发挥作用");
- * milestones crossed while it was inactive ("无需激活" sources such as 烛煌) are paid the next time a hook sees it active
- * (research 02 §3.3 / §8 Q7: the payout counts layers added while inactive) — same rule as 远见 / 奇迹 (addon/meta.js).
+ * milestones crossed while it was inactive ("无需激活" sources such as 烛煌) are paid as soon as it lights up — the
+ * onActiveBonds hook of the recompute that activated it, e.g. placing the third member in prep (the maintainer's report
+ * of the official game, 2026-10-15; research 02 §3.3 / §8 Q7: the payout counts layers added while inactive) — and
+ * the hooks below catch up anything a capped nested dispatch skipped; same rule as 远见 / 奇迹 (addon/meta.js).
  */
 export function payHammers(ctx) {
   if (!ctx.bondActive('victoriaShip')) return 0;
@@ -717,8 +719,12 @@ export function payHammers(ctx) {
   return granted;
 }
 
-/** Hooks on which owed hammers are (caught up and) paid; onLayers only for 维多利亚's own gains. */
-const HAMMER_HOOKS = Object.freeze(['onLayers', 'onRoundStart', 'onPrepStart', 'onPrepEnd', 'onBuy', 'onGain', 'onSold', 'onMerge']);
+/**
+ * Hooks on which owed hammers are (caught up and) paid; onLayers only for 维多利亚's own gains; onActiveBonds when the
+ * active set changes (the bond lighting up — payHammers reads the counter, so the hammer of a milestone comes once
+ * however often the bond goes off and on again).
+ */
+const HAMMER_HOOKS = Object.freeze(['onLayers', 'onActiveBonds', 'onRoundStart', 'onPrepStart', 'onPrepEnd', 'onBuy', 'onGain', 'onSold', 'onMerge']);
 
 export function registerMeta(registry) {
   const prev = typeof registry.get === 'function' ? registry.get('bond:victoriaShip') : null;

@@ -504,7 +504,7 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
 /** Content that may pay out or refund around a purchase (then exact price checks are skipped). */
 function hasSpendEffects(m, ps) {
   const reg = m.registry;
-  const keys = ['onBuy', 'onSpend', 'onSold', 'onRefresh', 'onLevelUp', 'onGain', 'onLayers'];
+  const keys = ['onBuy', 'onSpend', 'onSold', 'onRefresh', 'onLevelUp', 'onGain', 'onLayers', 'onActiveBonds'];
   const any = (h) => h && keys.some((k) => typeof h[k] === 'function');
   if (reg.globals().some(([, h]) => any(h))) return true;
   if (ps.bandId && any(reg.get(`band:${ps.bandId}`))) return true;

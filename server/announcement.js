@@ -8,6 +8,17 @@ const MAX_REMOTE_BYTES = 64 * 1024;
 const CACHE_MS = 1000;
 const POLL_MS = 10000;
 
+/**
+ * 这份文档自述的交付版本（Agent 写入公告文件时留下的 `_delivery.revision`）。它**不进**公开投影：玩家看到的
+ * 只有公告本身，而「游戏读到了哪一版」是三层状态里的第三层（写入 / 读到 / 收敛），只有探针与中央需要。
+ * 没有这个字段（旧部署、手工写的文件）时给 null —— 不猜 0：说「读到了第 0 版」比说「不知道」更容易把人
+ * 引到错误的方向。
+ */
+function deliveryRevision(value) {
+  const revision = value && typeof value === 'object' ? value._delivery?.revision : null;
+  return Number.isSafeInteger(revision) && revision >= 1 ? revision : null;
+}
+
 /** Validate configuration and derive a revision so edits reappear after a player dismissed an older notice. */
 export function parseAnnouncement(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('expected an object');
@@ -36,10 +47,15 @@ export function parseAnnouncement(value) {
   return { id, ...notice };
 }
 
-/** Cache file reads across players, coalesce concurrent reads, and check expiration on every request. */
+/**
+ * Cache file reads across players, coalesce concurrent reads, and check expiration on every request.
+ * 返回的读函数带一个 `delivery()`：这份进程**实际读到**的那个版本（§6.3 的第三层），供 /api/announcement
+ * 投影给本机 Agent。它只前进不回退，读失败也保留上一次的值 —— 「读不到文件了」不代表「没读到过那一版」。
+ */
 export function createAnnouncementReader({ filePath, announcementUrl, pollMs = POLL_MS, log, now = Date.now, cacheMs = CACHE_MS }) {
   if (announcementUrl != null && announcementUrl !== '') return createRemoteReader({ announcementUrl, pollMs, log, now });
   let notice = null;
+  let delivery = { revision: null, observedAt: null };
   let nextRead = -Infinity;
   let pending = null;
   let lastError = null;
@@ -55,7 +71,9 @@ export function createAnnouncementReader({ filePath, announcementUrl, pollMs = P
         total += bytesRead;
       }
       if (total > MAX_FILE_BYTES) throw new Error('configuration exceeds 16 KiB');
-      notice = parseAnnouncement(JSON.parse(buffer.subarray(0, total).toString('utf8').replace(/^\uFEFF/, '')));
+      const parsed = JSON.parse(buffer.subarray(0, total).toString('utf8').replace(/^\uFEFF/, ''));
+      notice = parseAnnouncement(parsed);
+      delivery = { revision: deliveryRevision(parsed), observedAt: now() };
       lastError = null;
     } catch (error) {
       notice = null;
@@ -66,7 +84,7 @@ export function createAnnouncementReader({ filePath, announcementUrl, pollMs = P
       await file?.close();
     }
   }
-  return async () => {
+  const read = async () => {
     if (pending) await pending;
     else if (now() >= nextRead) {
       nextRead = now() + cacheMs;
@@ -75,6 +93,8 @@ export function createAnnouncementReader({ filePath, announcementUrl, pollMs = P
     }
     return notice && now() < notice.expiresAt ? notice : null;
   };
+  read.delivery = () => ({ ...delivery });
+  return read;
 }
 
 // Central-source mode (the ops panel is the editing surface): poll the announcement URL and keep the
@@ -83,6 +103,7 @@ export function createAnnouncementReader({ filePath, announcementUrl, pollMs = P
 function createRemoteReader({ announcementUrl, pollMs, log, now }) {
   const interval = Math.max(3000, Math.min(600000, Number(pollMs) === pollMs ? pollMs : POLL_MS));
   let notice = null;
+  let delivery = { revision: null, observedAt: null };
   let disabled = false;
   let nextPoll = -Infinity;
   let pending = null;
@@ -103,7 +124,9 @@ function createRemoteReader({ announcementUrl, pollMs, log, now }) {
         if (total > MAX_REMOTE_BYTES) { await reader.cancel(); throw new Error('response exceeds 64 KiB'); }
         chunks.push(value);
       }
-      notice = parseAnnouncement(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      notice = parseAnnouncement(parsed);
+      delivery = { revision: deliveryRevision(parsed), observedAt: now() };
       disabled = notice === null;
       lastError = null;
     } catch (error) {
@@ -113,7 +136,7 @@ function createRemoteReader({ announcementUrl, pollMs, log, now }) {
       lastError = reason;
     }
   }
-  return async () => {
+  const read = async () => {
     if (pending) await pending;
     else if (now() >= nextPoll) {
       nextPoll = now() + interval;
@@ -122,4 +145,6 @@ function createRemoteReader({ announcementUrl, pollMs, log, now }) {
     }
     return disabled || !notice || now() >= notice.expiresAt ? null : notice;
   };
+  read.delivery = () => ({ ...delivery });
+  return read;
 }

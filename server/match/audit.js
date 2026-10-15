@@ -9,9 +9,9 @@
 //                 the next prep to end; a piece that got into temp by other means counts as due at the prep in
 //                 progress when it is first seen at a prep end. No temp piece may outlive its due prep.
 //   prep end      leftover funds lost (carry bands excepted), temp resolved (only pieces due at a later prep stay),
-//                 reward offers expired
+//                 queued reward offers kept until picked (2026-10-15)
 //   round start   income = config income(r) (= min(3 + r, 12)) + pending funds, upgrade price −1 (floor 0) from R2,
-//                 temp not wiped (nothing overdue), offers earned after the last prep kept, frozen slots kept in
+//                 temp not wiped (nothing overdue), every queued offer kept, frozen slots kept in
 //                 place (same id; chess slots keep their index, the item slot(s) follow the chess slots, so a
 //                 level-up moves them right), everything else rerolled with tier ≤ shop level from the unbanned pool,
 //                 freeze toggle released
@@ -163,8 +163,8 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
         if (ps.pendingFunds !== 0) fail(`${id}: pending funds not cleared`);
         // temp is not wiped here: what overflowed after the last prep's deadline is shown in this prep
         overdue(ps, 'the round start');
-        // offers of the last prep expired at its end; the ones queued after it (SETTLE merges) wait for this prep
-        if (offers0.some((o) => !ps.offers.includes(o))) fail(`${id}: a reward offer earned after the prep was dropped at the round start`);
+        // queued reward offers last until picked: none is dropped at the round start (the maintainer's decision of 2026-10-15)
+        if (offers0.some((o) => !ps.offers.includes(o))) fail(`${id}: a queued reward offer was dropped at the round start`);
         if (ps.shop.frozen) fail(`${id}: freeze toggle still on after the round start`);
         const { chess, item } = gd.shopSlots(ps.shop.level);
         if (ps.shop.slots.length !== chess + item) fail(`${id}: ${ps.shop.slots.length} shop slots at level ${ps.shop.level}, expected ${chess}+${item}`);
@@ -279,7 +279,6 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
         // leftover funds are lost at prep end (carry bands excepted); gains after this (SETTLE effects) are kept
         if (ps.funds !== 0 && !carries(ps)) fail(`${ps.playerId}: kept ${ps.funds} funds past the prep end without a carry band`);
         overdue(ps, 'its prep end');
-        if (ps.offers.length) fail(`${ps.playerId}: reward offer survived the prep end`);
       });
       return res;
     });
@@ -377,7 +376,6 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
         overdue(ps, 'into combat');
         if (!ps.ready) fail(`${id}: not ready at combat start`);
         if (ps.funds !== 0 && !carries(ps)) fail(`${id}: kept ${ps.funds} funds into combat`);
-        if (ps.offers.length) fail(`${id}: reward offer survived the prep`);
         for (const s of ps.shop.slots) if (s && (!s.frozen || s.sold)) fail(`${id}: unfrozen/sold slot ${s.id} survived into combat`);
       }
     });

@@ -22,8 +22,9 @@ export class PlayerRound {
     this.addFunds(nonNeg(ev.income) + nonNeg(ev.pending), { reason: 'income' });
     // temp is NOT wiped here: the last prep's deadline resolved what the player could act on (endPrep); what overflowed
     // after it (battle-result grants, SETTLE merges, returned equipment) is shown and usable in this prep (tempDue).
-    // Likewise reward offers of the last prep already expired at its end; what is still queued was earned after it —
-    // a merge completed during SETTLE / the Final Assault (突变细胞, battle-result grants) — and is shown in this prep
+    // Queued reward offers (a promotion's pick, a strategy's special refresh, an item offer) are kept until picked —
+    // they do not lapse at the prep deadline (PRTS 卫戍协议/帮助: the temporary shop leaves its state when one is bought;
+    // community report relayed by the maintainer on 2026-10-15) — so an offer left with 稍后 is shown again in this prep
     this.ready = false;
     // summon stacks removed from temp at the last prep deadline come back (PRTS 卫戍协议/帮助 §手牌区); full hand ⇒ temp
     for (const p of [...this.board.values()]) if (p.kind === 'chess') this.grantTokensFor(p);
@@ -41,7 +42,7 @@ export class PlayerRound {
     this.resolveTemp();
     this.prepsEnded++;
     for (const uid of [...this._tempDue.keys()]) if (!this.temp.some((p) => p && p.uid === uid)) this._tempDue.delete(uid);
-    this.offers = [];
+    // (queued reward offers stay: they last until picked, startRound)
     this.clearUnfrozenShop();
     if (!this.gd.leftoverKeptBands.includes(this.bandId)) this.funds = 0;
     this.ready = true;

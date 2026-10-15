@@ -1388,7 +1388,7 @@ function sellJunk(m, ps) {
   for (const { p } of junk.slice(0, 4)) if (m.round >= 5 && ps.find(p.uid)) tryDo(() => ps.sell(p.uid));
 }
 
-/** Take the queued pick-one offers (merge rewards, special refreshes — free; they expire at prep end). */
+/** Take the queued pick-one offers (merge rewards, special refreshes — free; they last until picked, the bot takes them at once). */
 function takeOffers(m, ps) {
   const gd = ps?.gd || m.gd;
   for (let guard = 0; guard < 4 && ps.offers.length; guard++) {
@@ -1433,7 +1433,7 @@ export function* botPrepBeginSteps(m, ps, { delegate = false } = {}) {
   takeOffers(m, ps);
   yield;
   // 2. economy: dead bench weight back to funds, units toward a full board, the level curve, then everything else;
-  //    merges completed while buying queue reward offers that expire at prep end — take them right away
+  //    merges completed while buying queue reward offers — take them right away
   sellJunk(m, ps);
   yield;
   yield* buyLoopSteps(m, ps, { fillOnly: true, maxRefreshes: 0 });

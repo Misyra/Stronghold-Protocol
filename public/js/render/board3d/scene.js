@@ -35,8 +35,13 @@ import { mergeSceneChunks, sceneMaterialKey } from './load.js';
 
 /** Lighting rig (tuned against the official screenshots: bright even tops, darker sides, soft shadows). */
 export const LIGHTING = Object.freeze({
-  key: { color: 0xfff1df, intensity: 2.6, dir: [-5.2, -3.4, 10] },
-  hemi: { sky: 0xe4ecf4, ground: 0x4a5058, intensity: 0.6 },
+  // The official scene lights its board with one directional light, m_Intensity = 1.1 (scene bundle "Mainlight (1)").
+  // 2.6 was hand-tuned from screenshots and blows light-albedo tiles out to pure white (#549).
+  key: { color: 0xfff1df, intensity: 1.1, dir: [-5.2, -3.4, 10] },
+  // The official pixel shader has no per-pixel ambient diffuse term (its ambient lives in the baked lightmap;
+  // unity_AmbientSky only feeds the specular reflection). This hemisphere light propped up the shading while the baked
+  // light was scaled down; kept as a small [ASSUMED] floor for meshes without a lightmap page (#549).
+  hemi: { sky: 0xe4ecf4, ground: 0x4a5058, intensity: 0.05 },
   env: 1.0,
   emissive: 0.25,
   roughness: 0.78,

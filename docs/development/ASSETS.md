@@ -521,6 +521,18 @@ disabling preload persists as well, so later page visits stay paused until it is
 enabled, the next page visit resumes automatically and reuses verified files. Cache clearing waits
 for active downloads and archive transfers, and uses the same cross-tab Web Lock as downloads.
 
+干员皮肤 (`docs/SKINS.md`) is the one optional group picked item by item rather than by tier. A full install is
+~328 MiB across ~2 000 files, so the resource manifest marks those entries `skin: '<charId>/<skinId>'`
+(`server/resources.js` `skinKeyForPath`, tier 2) and the client keeps only the chosen skins in its selection
+(`public/js/resources/store.js` `setScope` / `skinWanted`). The manager offers three modes — off (the default),
+the picked ones, every skin the server offers — and never ties that choice to `preloadOptional`: a player who wants
+twelve outfits should not have to take every voice and soundtrack, and one who wants the soundtrack should not get
+328 MiB of skins. `preloadSkins` + `preloadSkinIds` persist the mode and the picks (bounded and validated by
+`sanitizeSettings`). Unpicked skins are out of scope for download and for status counting, but stay importable and
+retained: a ZIP import or a cached copy still counts, and 「清理可选资源」 removes them like any other optional file.
+A deployment with no skins installed (a fresh clone — `data/skins-installed.json` ships empty) has no such entries
+and the manager shows no section at all.
+
 Each preload fetch has a 30-second deadline covering both headers and the complete response body, with at most two
 retries for network failures, timeouts, HTTP 408/429 and 5xx. Backoff starts at 500 ms and doubles; Retry-After is
 honored up to 30 seconds. Pausing interrupts downloads/backoff; 404, integrity and storage errors are not retried blindly.

@@ -127,6 +127,54 @@ export function clearPortrait(chessId) {
 /** The skin whose 立绘 this browser shows for an operator's shop card, or null (its own portrait). */
 export const portraitFor = (chessId) => skinsStore.get().portraits[chessId] || null;
 
+// ---- 自选编队 slots -----------------------------------------------------------------------------------------------
+
+/**
+ * A skin selection's structural clean (for imports): `{ [chessId]: skinId }` with string values, junk dropped. The
+ * same lightness as the server's freezeSkins — an id this build does not know resolves to nothing in spineEntry(),
+ * so the shape is all that is worth checking before the values reach the store.
+ * @param {any} raw
+ * @returns {Record<string, string>}
+ */
+export function cleanSkinsMap(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [chessId, skinId] of Object.entries(raw)) {
+    if (typeof skinId === 'string' && skinId) out[chessId] = skinId;
+  }
+  return out;
+}
+
+/**
+ * Keep the 皮肤 / 商店立绘 choices of the 自选 slots honest when the picks change: a slot's entry names a skin of the
+ * OPERATOR picked for it, so a re-pick to a different operator (or clearing the slot) must drop both choices — a
+ * stale id would silently fall back to the default model (spineEntry) and, worse, keep looking "chosen" in the UI.
+ * Same-operator re-picks keep theirs.
+ * @param {Record<string, any>} oldPicks @param {Record<string, any>} newPicks `{ [slotId]: { charId } }`
+ */
+export function syncDiySkins(oldPicks, newPicks) {
+  const oldEntries = skinsStore.get().entries;
+  const oldPortraits = skinsStore.get().portraits;
+  const slots = new Set([...Object.keys(oldPicks || {}), ...Object.keys(newPicks || {})]);
+  let nextSkins = null;
+  let nextPortraits = null;
+  for (const slotId of slots) {
+    const oldChar = oldPicks?.[slotId]?.charId ?? null;
+    const newChar = newPicks?.[slotId]?.charId ?? null;
+    if (oldChar === newChar) continue;
+    if (oldEntries[slotId]) {
+      nextSkins = nextSkins || { ...oldEntries };
+      delete nextSkins[slotId];
+    }
+    if (oldPortraits[slotId]) {
+      nextPortraits = nextPortraits || { ...oldPortraits };
+      delete nextPortraits[slotId];
+    }
+  }
+  if (nextSkins) setSkins(nextSkins);
+  if (nextPortraits) setPortraits(nextPortraits);
+}
+
 /**
  * Every skin of an operator, whether or not this install has it.
  *

@@ -48,7 +48,8 @@ import { OwnershipPanel, useOwnershipRoster } from './ownership.js';
 import { DiyPanel, diyData } from './diy.js';
 import { LoadoutStats } from '../ui/loadoutStats.js';
 export { LoadoutStats, statsPreview } from '../ui/loadoutStats.js';
-import { diyCount, sanitizeDiyPicks, setPick, serializeDiy, parseDiyImport, DIY_IMPORT_MAX_BYTES } from '../ui/diyModel.js';
+import { diyCount, sanitizeDiyPicks, setPick, serializeDiy, parseDiyImport, DIY_IMPORT_MAX_BYTES, diySlotList } from '../ui/diyModel.js';
+import { skinsStore, setSkins, setPortraits, syncDiySkins, cleanSkinsMap } from '../ui/skins.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 import { copyText } from '../ui/clipboard.js';
 import { toast } from '../ui/toasts.js';
@@ -515,11 +516,18 @@ function LoadoutScreen({ st }) {
   // 自选编队 (0.2.0 DIY): the stored picks, those the server would keep (the kit list of the last welcome)
   const nDiy = diyCount(st.diy);
   const diyLegal = ready ? sanitizeDiyPicks(st.diy, diyData(), st.diyKitted || []) : {};
-  const setDiySlot = (slotId, pick) => setDiyPicks(setPick(loadoutStore.get().diy, slotId, pick));
+  // A re-pick to a different operator (or clearing the slot) drops that slot's 皮肤 / 商店立绘 choices: they name a
+  // skin of the operator that was picked, and a stale id would quietly fall back to the default model.
+  const setDiySlot = (slotId, pick) => {
+    const old = loadoutStore.get().diy;
+    const next = setPick(old, slotId, pick);
+    syncDiySkins(old, next);
+    setDiyPicks(next);
+  };
   const clearDiy = async () => {
     if (!nDiy) return;
     const ok = await confirmDialog({ title: t('全部清空'), text: t('清空全部 {n} 个自选名额？', { n: nDiy }), okText: t('全部清空') });
-    if (ok) setDiyPicks({});
+    if (ok) { syncDiySkins(loadoutStore.get().diy, {}); setDiyPicks({}); }
   };
   const setTab = (t) => loadoutStore.set({ tab: t });
   const toggleOwned = (id, owned) => setNotOwned(setOwned(loadoutStore.get().notOwned, id, owned));
@@ -556,14 +564,30 @@ function LoadoutScreen({ st }) {
   };
 
   // 导出 / 导入 the loadout (or, on the 干员持有 tab, the not-owned list) as the versioned payload (a downloaded file,
-  // the clipboard, or the textarea); `io.kind` says which
+  // the clipboard, or the textarea); `io.kind` says which. The 皮肤 / 商店立绘 choices ride along (docs/SKINS.md):
+  // a 调配 export carries the ROSTER chess keys and a 自选 export the SLOT ids — the two files describe different
+  // pieces, so neither ever claims the other's keys (an import then leaves the other half alone).
+  const diySlotIds = new Set(diySlotList(diyData()).map((s) => s.slotId));
+  const rosterSkinMap = (m) => Object.fromEntries(Object.entries(m || {}).filter(([id]) => !diySlotIds.has(id)));
+  const slotSkinMap = (m) => Object.fromEntries(Object.entries(m || {}).filter(([id]) => diySlotIds.has(id)));
   const ioText = io?.text ?? '';
   const ioOwn = io?.kind === 'ownership';
   const ioDiy = io?.kind === 'diy';
   const openExport = () => setIo(tab === 'ownership'
     ? { mode: 'export', kind: 'ownership', text: serializeOwnership(loadoutStore.get().notOwned) }
-    : tab === 'diy' ? { mode: 'export', kind: 'diy', text: serializeDiy(loadoutStore.get().diy) }
-      : { mode: 'export', kind: 'loadout', text: serializeExport(loadoutStore.get().entries, { ops: loadoutStore.get().ops }) });
+    : tab === 'diy' ? {
+      mode: 'export', kind: 'diy',
+      text: serializeDiy(loadoutStore.get().diy, {
+        skins: slotSkinMap(skinsStore.get().entries), portraits: slotSkinMap(skinsStore.get().portraits),
+      }),
+    }
+      : {
+        mode: 'export', kind: 'loadout',
+        text: serializeExport(loadoutStore.get().entries, {
+          ops: loadoutStore.get().ops,
+          skins: rosterSkinMap(skinsStore.get().entries), portraits: rosterSkinMap(skinsStore.get().portraits),
+        }),
+      });
   const openImport = () => setIo({ mode: 'import', kind: tab, text: '' });
   const ioCopy = async () => {
     const ok = await copyText(ioText);
@@ -588,7 +612,25 @@ function LoadoutScreen({ st }) {
     if (ioDiy) {
       const r = parseDiyImport(ioText);
       if (!r.ok) { toast(t('导入失败：{error}', { error: t(r.error, r.params) }), 'error'); return; }
+      const oldPicks = loadoutStore.get().diy;
       const { applied, dropped } = applyDiyImport(r.picks, diyData(), loadoutStore.get().diyKitted || []);
+      const nowPicks = loadoutStore.get().diy;
+      // a re-pick (or a dropped one) drops the slot's 皮肤 / 商店立绘 choice: it names a skin of the OLD operator
+      syncDiySkins(oldPicks, nowPicks);
+      // and the file's own choices apply to the slots whose pick survived — the file's state for those slots, other
+      // keys (the roster's, the other slots') untouched
+      if (r.skins || r.portraits) {
+        const keepIds = new Set(Object.keys(nowPicks));
+        const replace = (map, next) => {
+          const merged = { ...map };
+          const inFile = {};
+          for (const [slotId, v] of Object.entries(next)) if (keepIds.has(slotId)) inFile[slotId] = v;
+          for (const slotId of keepIds) delete merged[slotId];
+          return { ...merged, ...inFile };
+        };
+        setSkins(replace(skinsStore.get().entries, cleanSkinsMap(r.skins)));
+        setPortraits(replace(skinsStore.get().portraits, cleanSkinsMap(r.portraits)));
+      }
       setIo(null);
       toast(applied ? t('已导入 {n} 个自选名额', { n: applied }) + (dropped ? t('（另有 {n} 项不可用，未导入）', { n: dropped }) : '') : t('已导入：全部名额为空'), dropped ? 'warn' : 'success');
       return;
@@ -616,6 +658,14 @@ function LoadoutScreen({ st }) {
     // nothing survived sanitising (unknown chess, or every choice already the default): keep the current loadout
     if (!applied && !nOps) { toast(t('导入失败：这份数据在当前版本没有可用的调配，未做任何改动'), 'error'); return; }
     setIo(null);
+    // the file's 皮肤 / 商店立绘 for the ROSTER chess replace the current ones (absent = an older export, untouched);
+    // the 自选 slots' choices belong to the 自选编队 file, so they stay whatever this import says about operators
+    if (res.skins || res.portraits) {
+      const current = skinsStore.get().entries;
+      const currentP = skinsStore.get().portraits;
+      setSkins({ ...rosterSkinMap(current), ...cleanSkinsMap(res.skins) });
+      setPortraits({ ...rosterSkinMap(currentP), ...cleanSkinsMap(res.portraits) });
+    }
     toast(!applied ? t('已导入 {n} 名干员的潜能与练度', { n: nOps })
       : dropped ? t('已导入 {applied} 名干员（另有 {dropped} 项未导入）', { applied, dropped })
         : t('已导入 {applied} 名干员的调配', { applied }), dropped ? 'warn' : 'success');

@@ -127,8 +127,15 @@ export class PlayerBasics {
         if (typeof skinId !== 'string' || !skinId) continue;
         // Same gate the loadout uses (checkLoadout): a base, visible chess record. The key is the CHESS id
         // (`chess_char_1_01_a`), which is what board pieces and the prep view carry — not the operator id.
+        // A 自选 slot's base record passes too — the slot IS the chess the player fields through their picks, and
+        // pieceView / battleInput look the skin up by the piece's baseId, which for a 自选 piece is the slot id, so
+        // the entry reaches the unit without any extra plumbing. Its `visible` is false by design (a slot is never
+        // sold as itself), so it is gated on isDiy + baseId instead of the visibility flags; a stale id after the
+        // pick changed just falls back to the default model (spineEntry) — the client clears it on re-pick.
         const rec = this.gd.chess(id);
-        if (!rec || rec.isGolden || rec.visible === false || rec.isHidden || rec.isDiy || (rec.baseId && rec.baseId !== id)) continue;
+        const base = rec && !rec.isGolden && (!rec.baseId || rec.baseId === id)
+          && (rec.isDiy || (rec.visible !== false && !rec.isHidden));
+        if (!base) continue;
         out[id] = skinId;
       }
     }

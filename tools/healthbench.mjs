@@ -4,7 +4,8 @@
 import { performance } from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import { Lobby } from '../server/lobby.js';
-import { Network } from '../server/net.js';
+import { Network, NET_DEFAULTS } from '../server/net.js';
+import { OutboundPump } from '../server/outboundPump.js';
 import { healthReport, publicHealthReport, createHealthBody } from '../server/http/routes.js';
 const args=process.argv.slice(2);
 const option=(name,fallback,max)=>{
@@ -20,9 +21,14 @@ const lobby=Object.assign(Object.create(Lobby.prototype),{
 const originalStats=lobby.stats.bind(lobby);lobby.stats=()=>{scans++;return originalStats();};
 // Lobby.stats() and the public report read these collaborators; Object.create skips the constructor.
 lobby.roomReclamation={stats:()=>({})};lobby.roomActions={stats:()=>({})};lobby.botPopulation={stats:()=>({})};
+const benchConns=new Map(Array.from({length:rooms*4},(_,i)=>[i,{ws:{bufferedAmount:0}}]));
 const network=Object.assign(Object.create(Network.prototype),{
-  conns:new Map(Array.from({length:rooms*4},(_,i)=>[i,{ws:{bufferedAmount:0}}])),
-  _outbound:new Map(),_blockedOutbound:new Map(),
+  conns:benchConns,
+  // The scheduler owns the per-socket queues now (server/outboundPump.js). No peer is blocked in this
+  // bench, so the application-queued bytes it would add are zero by construction.
+  outbound:new OutboundPump({ conns:benchConns, opts:NET_DEFAULTS, defaults:NET_DEFAULTS,
+    diagnostics:{slowDisconnects:0,droppedSnapshots:0,coalescedStates:0}, isClosed:()=>false,
+    writeFrame:()=>true, writeMessage:()=>true }),
 });
 const originalBuffers=network.bufferedBytes.bind(network);network.bufferedBytes=()=>{bufferScans++;return originalBuffers();};
 const health={startedAt:Date.now(),lobby,network,registry:{size:rooms*4}};

@@ -29,9 +29,9 @@ const state = (scope, n, kind = 'm.public', owner = 'p1') => ({ t: kind, n,
 
 async function recover(network, ws) {
   ws.bufferedAmount = 0;
-  for (let i = 0; i < 100 && (network._blockedOutbound.size || network._outbound.size); i++) await delay(5);
-  assert.equal(network._blockedOutbound.size, 0);
-  assert.equal(network._outbound.size, 0);
+  for (let i = 0; i < 100 && (network.outbound._blockedOutbound.size || network.outbound._outbound.size); i++) await delay(5);
+  assert.equal(network.outbound._blockedOutbound.size, 0);
+  assert.equal(network.outbound._outbound.size, 0);
 }
 
 function decode(ws) {
@@ -54,12 +54,12 @@ for (const modern of [true, false]) test(`slow ${modern ? 'delta' : 'legacy'} pe
     assert.equal(send(ws, state(scope, n, 'm.private')), true);
   }
   assert.equal(ws.frames.length, 1, 'no further gameplay writes while TCP/compression is congested');
-  const queued = network._blockedOutbound.get(ws);
+  const queued = network.outbound._blockedOutbound.get(ws);
   assert.equal(queued.size, 2);
   assert.equal(network.bufferedBytes().total, ws.bufferedAmount + queued.bytes);
   assert.equal(network.diagnostics.stats().coalescedStates, 1998);
   await nextTurn(); await nextTurn();
-  assert.equal(network._outboundImmediate, null, 'blocked peers use a timer, not a busy immediate loop');
+  assert.equal(network.outbound._outboundImmediate, null, 'blocked peers use a timer, not a busy immediate loop');
   await recover(network, ws);
   assert.deepEqual(decode(ws).map(m => [m.t, m.n]), [['m.public', -1], ['m.public', 999], ['m.private', 999]]);
   if (modern) assert.ok(ws.frames[1].patch, 'new delta is based on the last actually written state');
@@ -99,13 +99,13 @@ test('healthy peers keep every state; slow peers cannot delay probes or other pe
     send(healthy, state(scope, n));
   }
   slow.emit('message', Buffer.from('{"t":"ping","c":123}'), false);
-  for (let i = 0; i < 100 && network._outbound.size; i++) await nextTurn();
+  for (let i = 0; i < 100 && network.outbound._outbound.size; i++) await nextTurn();
   assert.deepEqual(decode(healthy).map(m => m.n), Array.from({ length: 200 }, (_, i) => i));
   assert.deepEqual(slow.frames.map(m => m.t), ['pong']);
-  assert.equal(network._blockedOutbound.get(slow).size, 1);
+  assert.equal(network.outbound._blockedOutbound.get(slow).size, 1);
   slow.close();
-  assert.equal(network._blockedOutbound.size, 0);
-  assert.equal(network._backpressureTimer, null);
+  assert.equal(network.outbound._blockedOutbound.size, 0);
+  assert.equal(network.outbound._backpressureTimer, null);
 });
 
 test('unmarked states and different private owners are never silently replaced', async t => {
@@ -122,8 +122,8 @@ test('pending immutable frames are shared across recipients; mutation cannot cha
   const { network, socket } = fixture(t), sockets = Array.from({ length: 20 }, () => socket()), msg = state({}, 0);
   for (const ws of sockets) ws.bufferedAmount = NET_DEFAULTS.snapDropBytes + 1;
   network.broadcastAll(msg);
-  const frame = network._blockedOutbound.get(sockets[0]).head.frame;
-  assert.ok(sockets.every(ws => network._blockedOutbound.get(ws).head.frame === frame));
+  const frame = network.outbound._blockedOutbound.get(sockets[0]).head.frame;
+  assert.ok(sockets.every(ws => network.outbound._blockedOutbound.get(ws).head.frame === frame));
   msg.n = 999;
   for (const ws of sockets) ws.bufferedAmount = 0;
   await recover(network, sockets[0]);
@@ -136,7 +136,7 @@ test('reliable barriers are bounded by frame count even when their byte count is
   for (let n = 0; n < 8; n++) assert.equal(send(ws, { t: 'ok', rid: n }), true);
   assert.equal(send(ws, { t: 'ok', rid: 9 }), false);
   assert.equal(ws.readyState, 3);
-  assert.equal(network._blockedOutbound.size, 0);
+  assert.equal(network.outbound._blockedOutbound.size, 0);
   assert.equal(network.diagnostics.slowDisconnects, 1);
 });
 

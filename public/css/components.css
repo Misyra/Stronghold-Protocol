@@ -1206,37 +1206,15 @@
 .resource-archive__result.is-error, .resource-manager__failures { color: var(--amber); }
 .resource-manager__failures ul { margin: .08rem 0; padding-left: .2rem; overflow-wrap: anywhere; }
 
-/* 干员皮肤 — the item-by-item optional group of the resource manager (docs/SKINS.md). Same box as a tier, but the list
-   is a scrollable picker: ~273 rows, each three numbers wide, so the columns are pinned instead of wrapped. */
+/* 干员皮肤 — one switch and two numbers next to the tiers (docs/SKINS.md). Same box as a tier: the choice itself lives
+   in 干员调配, so there is no list here to size. */
 .resource-skins { padding: .14rem .16rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .18); }
 .resource-skins h3 { margin: 0; color: var(--text-hi); font-size: calc(.18 * var(--utility-text, var(--t))); }
 .resource-skins__head { display: flex; gap: .1rem; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
 .resource-skins__head p { margin-top: .04rem; font-size: calc(.13 * var(--utility-text, var(--t))); color: var(--text-dim); }
-.resource-skin--modes { display: flex; flex-shrink: 0; border: 1px solid var(--line-2); }
-.resource-skin--modes button { padding: .04rem .14rem; border: 0; background: transparent; color: var(--text-md); font: inherit; font-size: calc(.14 * var(--utility-text, var(--t))); cursor: pointer; }
-.resource-skin--modes button[aria-pressed="true"] { background: rgba(255, 190, 90, .12); color: var(--amber); }
-.resource-skin--modes button:disabled { opacity: .5; cursor: default; }
-.resource-skin--modes button:focus-visible { outline: 2px solid var(--mint-400); outline-offset: -2px; }
-.resource-skins__tools { display: flex; flex-wrap: wrap; align-items: center; gap: .08rem; margin: .1rem 0; }
-.resource-skins__tools input { flex: 1 1 12rem; min-width: 0; padding: .05rem .1rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .25); color: var(--text-hi); font: inherit; font-size: calc(.14 * var(--utility-text, var(--t))); }
-.resource-skins__rows { list-style: none; margin: .06rem 0 0; padding: 0; max-height: 12rem; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
-.resource-skins__rows li { border-bottom: 1px solid var(--line); font-size: calc(.13 * var(--utility-text, var(--t))); }
-.resource-skins__rows li:last-child { border-bottom: 0; }
-.resource-skins__rows label { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: .08rem; align-items: center; padding: .05rem 0; cursor: pointer; }
-.resource-skins__rows input { accent-color: var(--amber); }
-.resource-skins__rows .num { color: var(--text-md); white-space: nowrap; }
-.resource-skins__name { overflow-wrap: anywhere; color: var(--text-hi); }
-.resource-skins__name small { display: block; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
-.resource-skins__op { color: var(--text-md); white-space: nowrap; }
-.resource-skins__rows li.is-cached .resource-skins__name { color: var(--mint-400); }
-@media (max-width: 680px) {
-  .resource-skins__rows label { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .resource-skins__op, .resource-skins__rows .num { display: none; }
-  .resource-skins__rows li.is-cached .resource-skins__name::after { content: ' ✓'; }
-}
-@media (pointer: coarse) {
-  .resource-skin--modes button, .resource-skins__rows label { min-height: 44px; }
-}
+.resource-skins .resource-choice { color: var(--amber); }
+.resource-skins .resource-choice input { accent-color: var(--amber); }
+.resource-skins__hint { margin-top: .06rem; font-size: calc(.13 * var(--utility-text, var(--t))); color: var(--text-dim); }
 
 /* Single-line announcement ticker and its shared full-text viewer. */
 .announcement__content { flex: 1; min-width: 0; display: block; overflow: hidden; padding: .04rem 0; border: 0; background: none; color: var(--text-hi); text-align: left; cursor: pointer; font: inherit; }

@@ -71,23 +71,23 @@ test('干员皮肤: the saved selection decides which outfits are fetched, on it
   t.after(env.restore);
   const mod = await import('../../public/js/resources/index.js?skin-selection');
   // 「同时预载可选资源」 off + one picked outfit: that outfit only — never a voice, never another outfit.
-  await mod.syncResources(true, false, 'cn', false, { mode: 'picked', keys: ['char_003_kalts/char_003_kalts@boc#6'] });
+  await mod.syncResources(true, false, 'cn', false, ['char_003_kalts/char_003_kalts@boc#6']);
   assert.deepEqual(env.calls.fetch.slice(1).sort(), [
     ORIGIN + '/assets/ui/panel.png',
     ORIGIN + '/assets/char/avatar/skin/kalts_boc.png',
     ORIGIN + '/assets/spine/op/kalts/boc/boc.skel',
   ].sort());
   assert.ok(!env.calls.fetch.some((url) => url.includes('/voice/')), 'a skin pick never drags the voices in');
-  assert.equal(mod.resourceState().skinScope.mode, 'picked');
+  assert.deepEqual(mod.resourceState().skinScope.keys, ['char_003_kalts/char_003_kalts@boc#6']);
   assert.equal(mod.resourceState().selectionComplete, true, 'the picked outfit is what this selection asked for');
-  // 全部: the rest of the installed outfits follow.
+  // Equipping a second outfit in 干员调配 is the auto-download path: only that outfit's files are fetched.
   const count = env.calls.fetch.length;
-  await mod.syncResources(true, false, 'cn', false, 'all');
+  await mod.syncResources(true, false, 'cn', false, ['char_003_kalts/char_003_kalts@boc#6', 'char_002_amiya/char_002_amiya_winter_1']);
   assert.deepEqual(env.calls.fetch.slice(count), [ORIGIN + '/assets/spine/op/amiya/winter/winter.skel']);
-  // 关闭皮肤: nothing new is fetched, and what is cached stays (the panel's cache cleaning owns that decision).
-  await mod.syncResources(true, false, 'cn', false, 'off');
+  // Taking it back off: nothing new is fetched, and what is cached stays (cleaning owns that decision).
+  await mod.syncResources(true, false, 'cn', false, []);
   assert.equal(env.calls.fetch.length, count + 1);
-  assert.equal(mod.resourceState().skinScope.mode, 'off');
+  assert.deepEqual(mod.resourceState().skinScope.keys, []);
   await mod.syncResources(false);
 });
 

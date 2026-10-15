@@ -87,38 +87,35 @@ describe('where the preload is reachable', () => {
 });
 
 /**
- * 干员皮肤 in the manager (docs/SKINS.md): its own three-way scope next to the required/optional tiers, off by
- * default, and the picked list rendered from the manifest's counters — never as just another optional group.
+ * 干员皮肤 in the manager (docs/SKINS.md): one switch next to the required/optional tiers — the outfit choice itself
+ * lives in 干员调配, and equipping one there is what starts its download.
  */
 describe('the 干员皮肤 scope', () => {
   const panel = read('public/js/ui/resourcePanel.js');
 
-  test('the tier list leaves skins to their own section', () => {
+  test('one switch, no list', () => {
     assert.ok(panel.includes("g.tier === tier && g.id !== 'skin'"), 'the 可选资源 list skips the skin group');
     assert.match(panel, /<\$\{ResourceSkins\} st=\$\{st\}/, 'the section is rendered by the manager');
     assert.match(panel, /if \(!skins\.length\) return null;/, 'a deployment without skins installed shows nothing');
+    assert.ok(panel.includes('data-testid="skin-preload"'));
+    assert.ok(panel.includes("t('预载我选的皮肤')"));
+    assert.ok(panel.includes('本机已选 {n} 套 · 已缓存 {done} 套'));
+    assert.ok(panel.includes("t('还没选过皮肤：在干员调配里挑一套，这里会跟着缓存。')"));
+    assert.equal(/resource-skins__rows|SkinList|跟随我的皮肤选择|全选/.test(panel), false, 'no per-outfit list here');
   });
 
-  test('three modes, no reference to the 可选资源 switch', () => {
-    assert.ok(panel.includes("['off', t('不预载')], ['picked', t('挑选')], ['all', t('全部')]"));
-    assert.ok(panel.includes('data-testid="skin-modes"'));
-    assert.match(panel, /onScope\(\{ mode: next, keys: picked \}\)/, 'the picks survive a mode switch');
-    assert.ok(panel.includes("t('跟随我的皮肤选择')"), 'the equipped outfits are one click away');
-    assert.ok(panel.includes('data-testid="skin-list"'));
-    // Names are read into state and refreshed when the tables settle, not read during the render: reading them in the
-    // render races the load and the first paint after it shows ids instead of names.
-    assert.match(panel, /data\.loadAll\('assets', 'chess'\)/, 'names load only when the list is opened');
-    assert.match(panel, /data\.subscribe\(refresh\)/);
-    assert.match(panel, /useState\(labelTables\)/);
-    assert.equal(/resource-tier__list[\s\S]{0,400}skin/.test(panel), false, 'skins are not a tier row');
-  });
-
-  test('main.js persists the selection as its own setting pair', () => {
+  test('the switch is a settings flag, and the keys come from the equipped outfits', () => {
     const main = read('public/js/main.js');
-    assert.match(main, /onSkins=\$\{\(scope\) => updateSettings\(\{ preloadSkins: scope\.mode, preloadSkinIds: scope\.keys \}\)\}/);
-    assert.ok(main.includes('{ mode: s.preloadSkins, keys: s.preloadSkinIds }'), 'the saved selection reaches syncResources');
+    assert.match(main, /skinPreload=\$\{settings\.preloadSkins\}/);
+    assert.match(main, /onSkinPreload=\$\{\(v\) => updateSettings\(\{ preloadSkins: v \}\)\}/);
+    // Equipping a skin in 干员调配 must re-apply the scope: nothing else announces that change.
+    assert.match(main, /const keys = s\.preloadSkins \? equippedSkinKeys\(\) : \[\];/);
+    assert.match(main, /skinsStore\.subscribe\(\(\) => apply\(settingsStore\.get\(\)\)\)/);
+    const skins = read('public/js/ui/skins.js');
+    assert.match(skins, /export function equippedSkinKeys\(\)/);
+    assert.match(skins, /charId = data\.lookup\('chess', chessId\)\?\.charId/);
     const settings = read('public/js/ui/gameLogic/settings.js');
-    assert.ok(settings.includes("preloadSkins: 'off', preloadSkinIds: Object.freeze([])"));
-    assert.match(settings, /preloadSkins: PRELOAD_SKIN_MODES\.includes\(r\.preloadSkins\)/);
+    assert.ok(settings.includes('preloadSkins: false,'));
+    assert.equal(/preloadSkinIds/.test(settings), false, 'a boolean switch needs no id list');
   });
 });

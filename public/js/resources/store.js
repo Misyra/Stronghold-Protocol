@@ -31,30 +31,23 @@ const SMALL_IMPORT_BYTES = 256 * 1024;
 const IMPORT_BUFFER_BYTES = 4 * SMALL_IMPORT_BYTES;
 
 /**
- * The 干员皮肤 selection in its one canonical shape: `{ mode, keys }`.
- * - `off` — no skin is preloaded (the default: a full install is ~328 MiB, docs/SKINS.md);
- * - `all` — every skin the server offers;
- * - `picked` — only `keys` (may be empty: the player has not chosen any yet).
- * Accepts what the settings store round-trips (`'off'` / `'all'` / `{ mode, keys }`) and a bare id list; unknown keys
- * or junk never reach the selection.
- * @param {'off'|'all'|'picked'|string[]|{ mode?: string, keys?: Iterable<string> }|null} [raw]
+ * The 干员皮肤 selection: the `charId/skinId` keys the player has equipped in this browser. An empty set means no skin
+ * is preloaded, which is the default (a full install is ~328 MiB, docs/SKINS.md). Accepts a list, a Set, `{ keys }` or
+ * `'off'`/null; anything that is not a skin key is dropped, so a hand-edited settings blob cannot widen the selection.
+ * @param {Iterable<string>|{ keys?: Iterable<string> }|'off'|null} [raw]
+ * @returns {Set<string>}
  */
-export function normalizeSkinScope(raw = null) {
-  let mode = 'off';
-  let keys = [];
-  if (raw === 'all' || raw === 'off' || raw === 'picked') mode = raw;
-  else if (Array.isArray(raw)) { mode = 'picked'; keys = raw; }
-  else if (raw && typeof raw === 'object') {
-    mode = raw.mode === 'all' ? 'all' : raw.mode === 'picked' ? 'picked' : 'off';
-    keys = raw.keys ? [...raw.keys] : [];
-  }
-  return { mode, keys: new Set(keys.filter(isSkinKey)) };
+export function normalizeSkinKeys(raw = null) {
+  if (raw === 'off' || raw == null) return new Set();
+  // A Set advertises `keys` as a *method*, so it has to be taken apart before the `{ keys }` shape is read.
+  const list = raw instanceof Set ? [...raw] : Array.isArray(raw) ? raw : (typeof raw === 'object' && raw.keys != null ? [...raw.keys] : []);
+  return new Set(list.filter(isSkinKey));
 }
 
-/** Whether two canonical skin selections ask for the same thing (`setScope` uses it to skip a no-op rebuild). */
-function sameSkinScope(a, b) {
-  if (a.mode !== b.mode || a.keys.size !== b.keys.size) return false;
-  for (const key of a.keys) if (!b.keys.has(key)) return false;
+/** Whether two skin selections ask for the same thing (`setScope` uses it to skip a no-op rebuild). */
+function sameSkinKeys(a, b) {
+  if (a.size !== b.size) return false;
+  for (const key of a) if (!b.has(key)) return false;
   return true;
 }
 
@@ -102,27 +95,26 @@ export class ResourceStore {
     this.voiceScope = null;
     /** @type {boolean} whether the optional (tier 2) set is part of the selection at all. */
     this.optional = true;
-    /** @type {{ mode: 'off'|'all'|'picked', keys: Set<string> }} 干员皮肤 (docs/SKINS.md). */
-    this.skins = normalizeSkinScope('off');
-    // The default selection is already scoped (skins off), not just an alias for "everything".
+    /** @type {Set<string>} the 干员皮肤 (`charId/skinId`) this browser has equipped (docs/SKINS.md). */
+    this.skins = normalizeSkinKeys('off');
+    // The default selection is already scoped (no skins), not just an alias for "everything".
     this.scopedFiles = this.files.filter((file) => this.inScope(file));
   }
 
   /**
    * The preload selection — which optional files are wanted (`optional`), which voice language (`voiceLang` /
-   * `allVoices`) and which 干员皮肤 (`skins`). It narrows download and status only: every manifest entry stays
-   * importable and retained, so a ZIP import or an older cache still counts.
+   * `allVoices`) and which 干员皮肤 (`skins`, the equipped ones). It narrows download and status only: every manifest
+   * entry stays importable and retained, so a ZIP import or an older cache still counts.
    *
-   * 干员皮肤 follow their own switch rather than the 「同时预载」 one: a player who wants twelve skins should not have to
-   * take every voice and soundtrack as well, and one who wants the soundtrack should not get 328 MiB of skins
-   * (`skinScope` in public/js/ui/resourcePanel.js).
+   * 干员皮肤 ride their own switch rather than the 「同时预载」 one: a player who wants a handful of outfits should not
+   * have to take every voice and soundtrack as well, and one who wants the soundtrack should not get 328 MiB of skins.
    * @param {{ optional?: boolean, voiceLang?: string, allVoices?: boolean,
-   *           skins?: 'off'|'all'|'picked'|string[]|{ mode?: string, keys?: Iterable<string> }|null }} [scope]
+   *           skins?: Iterable<string>|{ keys?: Iterable<string> }|'off'|null }} [scope]
    */
   setScope({ optional = this.optional, voiceLang = 'cn', allVoices = false, skins = null } = {}) {
     const voice = allVoices ? null : (voiceLang === 'jp' ? 'jp' : 'cn');
-    const next = normalizeSkinScope(skins);
-    if (voice === this.voiceScope && !!optional === this.optional && sameSkinScope(next, this.skins)) return;
+    const next = normalizeSkinKeys(skins);
+    if (voice === this.voiceScope && !!optional === this.optional && sameSkinKeys(next, this.skins)) return;
     this.voiceScope = voice;
     this.optional = !!optional;
     this.skins = next;
@@ -146,16 +138,14 @@ export class ResourceStore {
     return true;
   }
 
-  /** Whether the player's 干员皮肤 selection contains this file's skin. */
+  /** Whether the equipped skins contain this file's skin. */
   skinWanted(file) {
-    if (!isSkinKey(file?.skin)) return false;
-    if (this.skins.mode === 'all') return true;
-    return this.skins.mode === 'picked' && this.skins.keys.has(file.skin);
+    return isSkinKey(file?.skin) && this.skins.has(file.skin);
   }
 
-  /** The serializable form of the skin selection (`mode:'picked'` keeps its key list — the settings store it). */
-  skinScope() {
-    return { mode: this.skins.mode, keys: [...this.skins.keys].sort() };
+  /** The equipped skin keys this store is scoping by (sorted, for the status payload and for tests). */
+  skinKeys() {
+    return [...this.skins].sort();
   }
 
   get selectedFiles() { return this.scopedFiles; }
@@ -364,7 +354,7 @@ export class ResourceStore {
     const status = await this.statusPromise;
     // Coalesce only in-flight reads. Each caller gets its own counters/set; later calls check real cache eviction.
     return { ...status, groups: status.groups.map((group) => ({ ...group })),
-      skins: (status.skins || []).map((skin) => ({ ...skin })), skinScope: { mode: status.skinScope?.mode || 'off', keys: [...(status.skinScope?.keys || [])] },
+      skins: (status.skins || []).map((skin) => ({ ...skin })), skinScope: { keys: [...(status.skinScope?.keys || [])] },
       present: new Set(status.present) };
   }
 
@@ -529,7 +519,7 @@ export class ResourceStore {
       groups: Object.values(groups).filter((g) => g.total > 0),
       // Sorted by key so the panel's list is stable; the UI joins the ids with the skin catalogue for names.
       skins: [...skins.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
-      skinScope: { mode: this.skins.mode, keys: [...this.skins.keys].sort() },
+      skinScope: { keys: this.skinKeys() },
       complete: wanted > 0 && count >= wanted,
     };
   }

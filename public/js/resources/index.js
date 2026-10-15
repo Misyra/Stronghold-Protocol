@@ -11,7 +11,7 @@
 // persisted setting at boot and on every settings change.
 
 import { CACHE_PREFIX, MANIFEST_URL, resourceWorkerUrl, isResourceWorker, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest } from './common.js';
-import { ResourceStore, normalizeSkinScope } from './store.js';
+import { ResourceStore, normalizeSkinKeys } from './store.js';
 import { createWorkerCache } from './workerCache.js';
 import { ResourceSchedule } from './schedule.js';
 import { missingStorage, storageEstimate } from './storage.js';
@@ -57,7 +57,7 @@ const stateStore = createResourceState({
   allVoices: false,
   // 干员皮肤: the per-item selection and the counters the panel's skin list renders (docs/SKINS.md).
   skins: [],
-  skinScope: { mode: 'off', keys: [] },
+  skinScope: { keys: [] },
   requiredComplete: false,
   clearing: false,
   combat: false,
@@ -72,8 +72,8 @@ let wantRun = false;
 let workerPromise = null;
 let voiceLang = 'cn';
 let allVoices = false;
-/** @type {{ mode: 'off'|'all'|'picked', keys: string[] }} 干员皮肤 selection, as the settings store keeps it. */
-let skins = { mode: 'off', keys: [] };
+/** @type {string[]} the equipped 干员皮肤 (`charId/skinId`) the preload follows — empty when the switch is off. */
+let skinKeys = [];
 
 const schedule = new ResourceSchedule();
 
@@ -152,23 +152,19 @@ const counters = (s) => ({
   downloaded: s.downloaded ?? 0,
   groups: s.groups ?? [],
   skins: s.skins ?? [],
-  skinScope: s.skinScope ?? { mode: 'off', keys: [] },
+  skinScope: s.skinScope ?? { keys: [] },
 });
 
 /** Required (tier 1) files of the selection are cached — the store's counters already exclude everything out of scope. */
 const requiredComplete = (s) => s.tier1 === 0 || s.tier1Present >= (s.tier1Wanted ?? s.tier1);
 
-/** The serializable 干员皮肤 selection both the settings store and the store's scope speak (`{ mode, keys }`). */
-const skinScopeOf = (raw) => {
-  const { mode, keys } = normalizeSkinScope(raw);
-  return { mode, keys: [...keys].sort() };
-};
+/** The equipped 干员皮肤 keys, sorted: what the store scopes by and what the manager reports the toggle state from. */
+const skinKeysOf = (raw) => [...normalizeSkinKeys(raw)].sort();
 
-const sameSkinScope = (a, b) => a.mode === b.mode && a.keys.length === b.keys.length
-  && a.keys.every((key, i) => key === b.keys[i]);
+const sameSkinKeys = (a, b) => a.length === b.length && a.every((key, i) => key === b[i]);
 
 /** The current selection as the store wants it, whichever axis changed last. */
-const storeScope = () => ({ optional, voiceLang, allVoices, skins });
+const storeScope = () => ({ optional, voiceLang, allVoices, skins: skinKeys });
 
 /** Why this browser cannot keep the resources (empty ⇒ it can). */
 export function unsupportedReason() {
@@ -239,15 +235,15 @@ async function dropWorker() {
  * @param {boolean} [includeOptional] the optional (tier 2) set — voices, sound effects, music, tutorial art
  * @param {string} [language] voice language kept in the selection
  * @param {boolean} [includeAllVoices]
- * @param {'off'|'all'|'picked'|string[]|{ mode?: string, keys?: Iterable<string> }} [skinSelection]
- *   干员皮肤: off / every skin the server offers / only the listed `charId/skinId` keys (docs/SKINS.md)
+ * @param {Iterable<string>|{ keys?: Iterable<string> }|'off'|null} [skinSelection]
+ *   干员皮肤: the equipped `charId/skinId` keys to follow, or nothing at all (docs/SKINS.md)
  */
-export async function syncResources(enabled, includeOptional = optional, language = voiceLang, includeAllVoices = allVoices, skinSelection = skins) {
+export async function syncResources(enabled, includeOptional = optional, language = voiceLang, includeAllVoices = allVoices, skinSelection = skinKeys) {
   enabled = !!enabled;
   language = language === 'jp' ? 'jp' : 'cn';
-  const nextSkins = skinScopeOf(skinSelection);
+  const nextSkins = skinKeysOf(skinSelection);
   const changed = optional !== !!includeOptional || voiceLang !== language || allVoices !== !!includeAllVoices
-    || !sameSkinScope(skins, nextSkins);
+    || !sameSkinKeys(skinKeys, nextSkins);
   if (enabled === current && !changed) { set({ enabled }); return; }
   tasks.invalidate();
   current = enabled;
@@ -255,8 +251,8 @@ export async function syncResources(enabled, includeOptional = optional, languag
   optional = !!includeOptional;
   voiceLang = language;
   allVoices = !!includeAllVoices;
-  skins = nextSkins;
-  set({ enabled, optional, voiceLang, allVoices, skinScope: nextSkins, error: false, message: '' });
+  skinKeys = nextSkins;
+  set({ enabled, optional, voiceLang, allVoices, skinScope: { keys: nextSkins }, error: false, message: '' });
   if (!enabled) {
     tasks.cancel('download', 'archive');
     set({ phase: state.complete ? 'ready' : 'paused', message: state.complete ? t('预载已停止；已保存的资源保留，可继续下载或清理缓存。') : t('已停止预载。') });

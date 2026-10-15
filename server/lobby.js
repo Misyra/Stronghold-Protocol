@@ -166,8 +166,17 @@ function freezeSkins(skins, getChess) {
     // Keyed by chess id and gated exactly like the loadout (checkLoadout, shared/protocol.js): a base, visible chess
     // record. NOT `rec.charId === id` — a chess id is `chess_char_1_01_a` while its operator is `char_498_inside`, so
     // that test would drop every entry.
+    // A 自选 slot's base record (`chess_char_6_diy1_a`) passes the same way: the slot IS the chess the player fields
+    // (its golden `_b` form is dropped by isGolden / baseId, like every elite), and `pieceView` / `battleInput` look
+    // the skin up by the piece's baseId, which for a 自选 piece is the slot id — so the whole pipeline already hits.
+    // A slot's `visible` is false by design (never sold as itself), so it is gated on isDiy + baseId instead. The
+    // skin BELONGS to the slot's current pick: a stale id after a re-pick simply fails to resolve in spineEntry()
+    // and the unit draws its default model; the client clears the entry when the pick changes (ui/skins.js
+    // syncDiySkins), and a skinId a client made up can do no more here than anywhere else.
     const rec = getChess(id);
-    if (!rec || rec.isGolden || rec.visible === false || rec.isHidden || rec.isDiy || (rec.baseId && rec.baseId !== id)) continue;
+    const base = rec && !rec.isGolden && (!rec.baseId || rec.baseId === id)
+      && (rec.isDiy || (rec.visible !== false && !rec.isHidden));
+    if (!base) continue;
     out[id] = String(skinId);
   }
   return Object.freeze(out);

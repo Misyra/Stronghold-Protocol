@@ -162,15 +162,27 @@ export function setPick(picks, slotId, pick) {
 
 // ---- export / import -------------------------------------------------------------------------------------------------
 
-/** Portable payload of a roster, as downloaded / copied by 导出. */
-export function exportDiy(picks, { now = Date.now() } = {}) {
+/**
+ * Portable payload of a roster, as downloaded / copied by 导出. The 皮肤 / 商店立绘 choices of the slots it carries
+ * (`skins` / `portraits`, keyed by slot id — a slot's choice names a skin of the operator PICKED for it, so the picks
+ * and their choices travel together) ride along like `ops` does in the 干员调配 export; an older build ignores them.
+ * @param {Record<string, any>} picks @param {{ now?: number, skins?: Record<string, string>, portraits?: Record<string, string> }} [o]
+ */
+export function exportDiy(picks, { now = Date.now(), skins = {}, portraits = {} } = {}) {
   const clean = cleanPicks(picks);
+  const slotMap = (m) => {
+    const out = {};
+    for (const slotId of Object.keys(clean)) if (typeof m?.[slotId] === 'string' && m[slotId]) out[slotId] = m[slotId];
+    return out;
+  };
   return {
     kind: DIY_EXPORT_KIND,
     v: DIY_VERSION,
     exportedAt: new Date(Number.isFinite(now) ? now : Date.now()).toISOString(),
     count: Object.keys(clean).length,
     picks: clean,
+    skins: slotMap(skins),
+    portraits: slotMap(portraits),
   };
 }
 
@@ -198,5 +210,19 @@ export function parseDiyImport(input) {
   const kind = typeof raw.kind === 'string' ? raw.kind : null;
   if (kind && kind !== DIY_EXPORT_KIND) return { ok: false, error: N_('这不是自选编队的数据') };
   if (!isObj(raw.picks)) return { ok: false, error: N_('里面没有自选编队的数据') };
-  return { ok: true, picks: cleanPicks(raw.picks) };
+  // the slot 皮肤 / 商店立绘 choices (docs/SKINS.md), when the file carries them; structural only — the caller
+  // applies them for the slots whose pick survived its own sanitising
+  const slotMap = (m) => {
+    const out = {};
+    if (!isObj(m)) return null;
+    for (const [slotId, v] of Object.entries(m)) if (isId(slotId) && typeof v === 'string' && v) out[slotId] = v;
+    return out;
+  };
+  const skins = slotMap(raw.skins);
+  const portraits = slotMap(raw.portraits);
+  return {
+    ok: true, picks: cleanPicks(raw.picks),
+    ...(skins ? { skins } : {}),
+    ...(portraits ? { portraits } : {}),
+  };
 }

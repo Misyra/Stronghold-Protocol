@@ -145,6 +145,30 @@ describe('skins lifecycle: PlayerState and Match', () => {
     const pv = h.m.publicView();
     assert.equal(pv.players[0].skins?.[INSIDE], SKIN_ID, 'publicView carries updated skins');
   });
+
+  test('a 自选 slot carries its skin: the base slot id is kept, the golden form is not, and the piece shows it', () => {
+    // The slot's `visible` is false by design (a 自选 slot is never sold as itself), so the gate takes isDiy +
+    // baseId instead of the visibility flags — this is the whole fix that lets a 自选 pick wear a skin.
+    const SLOT = 'chess_char_6_diy1_a';
+    const SLOT_GOLDEN = 'chess_char_6_diy1_b';
+    const h = makeMatch({
+      mode: 'solo',
+      seats: [{
+        seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true,
+        diy: { [SLOT]: { charId: 'char_608_acpion' } },
+        skins: { [SLOT]: 'char_608_acpion@sharp#1', [SLOT_GOLDEN]: 'x', chess_nope: 'y' },
+      }],
+    });
+    const ps = h.ps('p_0');
+    assert.deepEqual(ps.skins, { [SLOT]: 'char_608_acpion@sharp#1' }, 'the base slot id survives, the golden form and junk do not');
+
+    const piece = ps.newPiece('chess', SLOT);
+    assert.ok(piece, 'the slot composes into a piece');
+    ps.board.set('0,0', piece);
+    assert.equal(ps.pieceView(piece, [0, 0]).skin, 'char_608_acpion@sharp#1', 'prep view carries the slot skin');
+    const u = ps.battleInput({ side: 'ally' }).units.find((x) => x.chessId === SLOT);
+    assert.equal(u?.skin, 'char_608_acpion@sharp#1', 'battleInput carries it (the sim unit then forwards it to unitInfo)');
+  });
 });
 
 describe('skins lifecycle: client assets and avatars', () => {

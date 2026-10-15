@@ -49,6 +49,18 @@ function changed(img, cx, cy, r) {
   return n;
 }
 
+/** Pixels of a box that differ from the flat background. */
+function changedBox(img, x0, y0, x1, y1) {
+  let n = 0;
+  for (let y = Math.max(0, Math.round(Math.min(y0, y1))); y < Math.min(img.h, Math.round(Math.max(y0, y1))); y++) {
+    for (let x = Math.max(0, Math.round(Math.min(x0, x1))); x < Math.min(img.w, Math.round(Math.max(x0, x1))); x++) {
+      const o = (y * img.w + x) * 4;
+      if (Math.abs(img.rgba[o] - BG[0]) + Math.abs(img.rgba[o + 1] - BG[1]) + Math.abs(img.rgba[o + 2] - BG[2]) > 12) n++;
+    }
+  }
+  return n;
+}
+
 describe('official skill effects in headless Chrome', { skip }, () => {
   let srv, browser, page;
   const problems = [];
@@ -235,6 +247,53 @@ describe('official skill effects in headless Chrome', { skip }, () => {
     const r = await shot('nearl2-deploy', 'char_1014_nearl2', { s: 0 }, [['deploy'], 14]);
     assert.ok(r.keys.includes('nearl2_birth_01_start'), String(r.keys));
     assert.ok(changed(r.img, r.src.x, r.src.y, 120) > 300);
+  });
+
+  // round 46 (history §32.14.38): the maintainer's reports of 2026-10-15
+  test('溯光星源 S3 (char_1047_halo2): her lightning falls on the target from the upper left, the range lies on her range', async () => {
+    const r = await shot('halo2-s3', 'char_1047_halo2', { s: 2, kind: 'bolt', dist: 2 }, [['on'], 20, ['attack'], 12]);
+    for (const k of ['halo2_skill_03_trail_01', 'halo2_skill_03_range_01', 'halo2_skill_03_buff_03']) assert.ok(r.keys.includes(k), `${k} in ${r.keys}`);
+    // the bolt's way down (toTargetOnStart of index.json projectile_chr_halo2_s3: its node runs from (−2.82, 7.13) to the
+    // dummy) lies up and to the left of the dummy, not to its right
+    const tile = Math.abs(r.tgt.x - r.src.x) / 2;
+    const left = changedBox(r.img, r.tgt.x - 1.4 * tile, r.tgt.y - 4 * tile, r.tgt.x - 0.15 * tile, r.tgt.y - 0.9 * tile);
+    const right = changedBox(r.img, r.tgt.x + 0.15 * tile, r.tgt.y - 4 * tile, r.tgt.x + 1.4 * tile, r.tgt.y - 0.9 * tile);
+    assert.ok(left > 300 && left > 3 * right, `the bolt comes down from the upper left: ${left} px left, ${right} px right`);
+    const h = await page.evaluate(() => { window.__fx.step(12, 1 / 60); return window.__fx.liveKeys(); });
+    assert.ok(h.includes('halo2_skill_03_hit_01'), `its hit once it lands: ${h}`);
+  });
+
+  test('铃兰 S3 (char_358_lisa): the fox tails sit around her; no strip across the board', async () => {
+    const r = await shot('lisa-s3', 'char_358_lisa', { s: 2, kind: 'none', dist: 2 }, [['on'], 40]);
+    assert.ok(r.keys.includes('lisa_skill_03_buff_02'), String(r.keys));
+    const tile = Math.abs(r.tgt.x - r.src.x) / 2;
+    assert.ok(changed(r.img, r.src.x, r.src.y - 0.3 * tile, 0.7 * tile) > 400, 'the tails around her');
+    // her range reaches one tile behind her: nothing is drawn three tiles behind (the skinned strip ran to the edge)
+    let far = 0;
+    for (const dy of [-2, -1, 0, 1]) far += changed(r.img, r.src.x - 3.2 * tile, r.src.y + dy * tile, 0.5 * tile);
+    assert.ok(far < 40, `no strip behind her: ${far} px`);
+  });
+
+  test('野鬃 S2 (char_496_wildmn): the ring of lances (order −3) draws in the ground pass, behind the units', async () => {
+    await shot('wildmn-s2', 'char_496_wildmn', { s: 1, kind: 'none', dist: 1 }, [['on'], 20]);
+    const where = await page.evaluate(() => {
+      const it = window.__fx.ofx.items;
+      const name = (e) => `${e.effect.def.key}/${e.effect.def.nodes[e.node]?.name}`;
+      return { ground: it.ground.map(name), over: it.over.map(name) };
+    });
+    assert.ok(where.ground.includes('wildmn_skill_02_buff/huan'), `ground: ${where.ground}`);
+    assert.ok(!where.over.includes('wildmn_skill_02_buff/huan'));
+    assert.ok(where.over.some((n) => n.startsWith('wildmn_skill_02_buff/suduxian')), 'its speed lines (order 2) stay over the units');
+  });
+
+  test('异客 (char_472_pasngr): the shot flies its own trail and the chain runs from the muzzle to it', async () => {
+    const r = await shot('pasngr-chain', 'char_472_pasngr', { s: 0, kind: 'bolt', dist: 3 }, [['attack'], 6]);
+    for (const k of ['pasngr_attack_trail', 'pasngr_attack_line']) assert.ok(r.keys.includes(k), `${k} in ${r.keys}`);
+    const pts = await page.evaluate(() => {
+      const fx = window.__fx.ofx.effects.find((e) => e.def?.key === 'pasngr_attack_line');
+      return fx ? [...fx.linePts.values()].map((p) => p.map((q) => q.slice())) : null;
+    });
+    assert.ok(pts && pts.length && pts.every((p) => p.length === 2 && p[1][0] > p[0][0]), `the chain's end points are set: ${JSON.stringify(pts)}`);
   });
 
   test('the console stays clean', () => {

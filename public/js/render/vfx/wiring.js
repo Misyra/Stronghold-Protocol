@@ -1,8 +1,11 @@
 // render/vfx/wiring.js — the battle's events → official effects, generated from index.json (DESIGN §33.12): every
 // unit's normal attack (its mode `Default`, or the mode its skill switches to while the skill is on — the skill plan's
 // `modeName`, else `S<n>` for skill n) casts its `cast` effects at its muzzle (`_spawnLocation`), flies its projectile's
-// `main` effect along the sim's flight (the sim's speed: the visual lands with the sim's damage) and plays the
-// projectile's `onHit` at the target's HitPoint on arrival (`onReached` where it lands); a melee attack's `hit` effects
+// flying effect along the sim's flight (the sim's speed: the visual lands with the sim's damage; projectileParts: the
+// projectile class's own `_mainEffect`, its chain / rope line `link` stretched from the muzzle to the shot), plays what
+// the projectile puts on its target and the target's tile as it starts (`toTargetOnStart` / `toTileOnStart`: 溯光星源
+// S3's lightning) and the projectile's `onHit` at the target's HitPoint on arrival (`onReached` where it lands; a timer
+// projectile's at the end of its life); a melee attack's `hit` effects
 // play when its damage lands; status loops (generic.status by the sim's status names) follow the unit's mount point while
 // the status lasts; deaths and deploys play the unit's own dead / start effect or the generic one. Index version 2
 // (DESIGN §33.16): a blocked (or blocking) unit's melee blow plays its mode's `combat`, a group attack the sub-abilities
@@ -43,6 +46,11 @@ export const CAST_LOOP_S = 0.6;
 const MELEE_WINDOW = 0.4;
 /** Battle seconds a projectile's arrival covers the damage event it stands for. */
 const ARRIVAL_WINDOW = 0.35;
+/**
+ * Battle seconds at most a projectile without a flying effect (a timer: SimpleProjectile with a LIMITED life — 溯光星源
+ * S3, 迷迭香, 德克萨斯 S1's swords) holds its hit for the effect it put on its target to land (its `lifeTime`).
+ */
+export const TIMER_HIT_MAX = 1.5;
 /** 'dmg' types of HP damage (shared/protocol.js; an element gauge fill names its element instead). */
 const HP_TYPES = new Set(['phys', 'arts', 'true']);
 
@@ -120,6 +128,32 @@ export function pickAttacks(a, kind, seed = 0, depth = 0, nth = 0, mem = null) {
   return [a, ...next(pool[i])];
 }
 
+/** Behaviours whose `_mainEffect` is a projectile's link line (from the shooter to the shot), not its flying effect. */
+const LINK_CLASSES = /^(ChainLightningEffectBehaviour|HarpoonRenderer)$/;
+
+/**
+ * A projectile's own effects (index.json Projectile, DESIGN §33.12): `main` — the flying effect, the `_mainEffect` of its
+ * projectile class (SimpleProjectile, HarpoonProjectile, LassoProjectile …); `link` — the line a ChainLightningEffect-
+ * Behaviour or a HarpoonRenderer stretches from the shooter to the shot (index `link`); `life` — the projectile class's
+ * LIMITED life (s). An index written before 2026-10-15 took `main` (and `lifeTime`) from the projectile's last behaviour
+ * with a `_mainEffect`: 30 projectiles' `main` named their link line — a world-space LineRenderer flown as the shot,
+ * drawn at its authored spot — and lost the flying effect; the behaviours they list give both.
+ */
+export function projectileParts(proj) {
+  if (!proj || typeof proj !== 'object') return { main: null, link: null, life: null };
+  if (proj.__parts) return proj.__parts;
+  const bs = Array.isArray(proj.behaviours) ? proj.behaviours : [];
+  const own = bs.find((b) => /Projectile$/.test(b?.class || '') && b.fields && typeof b.fields === 'object' && '_mainEffect' in b.fields);
+  const linkB = bs.find((b) => LINK_CLASSES.test(b?.class || '') && typeof b.fields?._mainEffect === 'string' && b.fields._mainEffect);
+  const main = own ? lc(own.fields._mainEffect) : lc(proj.main);
+  const link = lc(proj.link) || (linkB ? lc(linkB.fields._mainEffect) : null);
+  const ownLife = own && Number(own.fields._lifeTimeType) === 1 ? Number(own.fields._lifeTime) : NaN;
+  const life = Number.isFinite(ownLife) ? ownLife : (Number.isFinite(Number(proj.lifeTime)) && proj.lifeTime != null ? Number(proj.lifeTime) : null);
+  const parts = Object.freeze({ main, link: link && link !== main ? link : null, life });
+  try { Object.defineProperty(proj, '__parts', { value: parts, enumerable: false }); } catch { /* frozen index */ }
+  return parts;
+}
+
 export class FxWiring {
   /**
    * @param {import('./system.js').OfficialFx} ofx
@@ -139,6 +173,7 @@ export class FxWiring {
     this.lastTargets = new Map(); // attacker id → the view its last attack named (a talent's added attack: TalentFx.fx)
     this.picks = new Map();       // unit id → Map(group ability → its last random pick: select.diffFromLast)
     this.arrived = new Map();     // target id → battle time of an official projectile hit
+    this.pendingHit = new Map();  // target id → battle time until which an official hit still to come covers its damage
     this.healed = new Map();      // target id → battle time of an official heal projectile hit
     this.keyCache = new Map();    // unit id → index unit key | null
     this.attackN = new Map();     // unit id → attacks so far (onlyOnce / hookEffectAfterFirstAttack rows)
@@ -364,7 +399,10 @@ export class FxWiring {
     return pz.all ? all && pz.conds.length > 0 : any;
   }
 
-  /** Spawn an effect key on a view at its spawn location; o: { toward (view|point), flipFrom (view), track }. */
+  /**
+   * Spawn an effect key on a view at its spawn location; o: { toward (view|point), flipFrom (view), track, follow,
+   * stick (keep the effect on the view's spawn point while it lives: what a projectile places on its target) }.
+   */
   playOn(key, v, o = {}) {
     let k = lc(key);
     if (!k || !this.ofx.lib.has(k)) return null;
@@ -386,12 +424,17 @@ export class FxWiring {
     const opts = { track: o.track || null, data: o.data ?? null, loop: !!o.loop, important: !!o.important, skip: o.skip > 0 ? o.skip : 0 };
     // the owner each frame: FollowMountPoint keeps the effect on the unit's point (status loops: o.follow), FollowDirection
     // turns it with the unit, PauseEffectIf hides it while the unit shows a condition
-    const follow = o.follow && def?.follow, turn = !!def?.direction, pause = def?.pause;
-    if (!o.track && (follow || turn || pause)) {
+    const follow = o.follow && def?.follow, turn = !!def?.direction, pause = def?.pause, stick = !!o.stick && !follow;
+    if (!o.track && (follow || turn || pause || stick)) {
       opts.track = (fx) => {
         if (!v || v.destroyed) return;
         const p = this.pose(v);
         if (follow) { mountPoint(skin, def.follow.mount, p, fx.anchor); fx.groundZ = -(v.z || 0); }
+        else if (stick && v.alive !== false) {
+          const sp = spawnPoint(skin, spawn, p);
+          fx.anchor[0] = sp[0]; fx.anchor[1] = sp[1]; fx.anchor[2] = GROUND_SPAWNS.has(spawn) ? -(v.z || 0) : sp[2];
+          fx.groundZ = -(v.z || 0);
+        }
         if (turn) {
           const pl = { yaw: fx.yaw, mirror: fx.mirror, flipY: fx.flipY };
           this._orient(def, pl, p, {}, v);
@@ -670,7 +713,13 @@ export class FxWiring {
 
   /**
    * A projectile's flight: `main` from the attacker's muzzle (o.mount: a MountPointType instead — a 秘术师's stored
-   * energy leaves its slot) to the target's HitPoint in the sim's flight time.
+   * energy leaves its slot) to the target's HitPoint in the sim's flight time. As it starts, the effects the projectile
+   * puts on its target and on the target's tile (index.json `toTargetOnStart` / `toTileOnStart`: EffectBehaviour
+   * _effectsToTargetWhenStart / _effectsToTileWhenStart — 溯光星源 S3's lightning falling on the target, 迷迭香's blades)
+   * play there, turned by the shot's side and kept on the target. A projectile with no flying effect of its own is a
+   * timer whose hit lands at the end of its life (_alwaysHitTraceTargetInTheEnd): its hit waits for its `lifeTime` when
+   * that is longer than the sim's flight (up to TIMER_HIT_MAX), the target's damage meanwhile covered (no procedural
+   * spark) [ASSUMED: the sim keeps its own flight time for the damage].
    */
   _fly(proj, src, tgt, kind, time, o = {}) {
     const su = this.unitOf(src), tu = this.unitOf(tgt);
@@ -683,31 +732,44 @@ export class FxWiring {
     const mv = proj.movement || {};
     const lob = mv.class === 'ParacurveMovement';
     const rise = lob ? Math.max(0, Number(mv.raiseHeight) || 0) * Math.max(1, dist) * 2 : 0;
-    const mainKey = lc(proj.main);
+    const parts = projectileParts(proj);
+    const mainKey = parts.main;
     for (const k of proj.onStart || []) this.playOn(k, src, { toward: tgt });
-    if (!mainKey || !this.ofx.lib.has(mainKey)) { this._arrive(proj, tgt, to0, time + dur); return; }
-    const def = this.ofx.lib.def(mainKey);
+    const placed = this._startOnTarget(proj, src, tgt);
     const flight = { t: 0, dur, from, to: to0.slice(), done: false };
+    // home on the target's current HitPoint while it lives; the shot's point at k (0 → 1) of the flight
+    const home = () => { if (tgt && !tgt.destroyed && tgt.alive !== false) unitPoint(this.skinOf(tu), 'hit', this.pose(tgt), flight.to); };
+    const at = (k, out) => {
+      out[0] = from[0] + (flight.to[0] - from[0]) * k; out[1] = from[1] + (flight.to[1] - from[1]) * k;
+      out[2] = from[2] + (flight.to[2] - from[2]) * k - (rise > 0 ? rise * 4 * k * (1 - k) : 0);
+      return out;
+    };
+    this._link(parts.link, src, flight, home, at);
+    if (!mainKey || !this.ofx.lib.has(mainKey)) {
+      const life = Number(parts.life);
+      const hitAt = placed && life > dur && life <= TIMER_HIT_MAX ? life : dur;
+      if (hitAt > dur && tgt) this.pendingHit.set(tgt.id ?? tgt.info?.id, this.ofx.time + hitAt);
+      this._arrive(proj, tgt, to0, time + hitAt);
+      return;
+    }
+    const def = this.ofx.lib.def(mainKey);
     const flipIfLeft = def ? def.flipIfLeft : false;
+    const a = [0, 0, 0], b = [0, 0, 0];
     const handle = this.ofx.spawn(mainKey, { pos: from.slice(), groundZ: -(src.z || 0) }, {
       important: true,
       track: (fx) => {
         if (flight.done) return;
-        // home on the target's current HitPoint while it lives
-        if (tgt && !tgt.destroyed && tgt.alive !== false) unitPoint(this.skinOf(tu), 'hit', this.pose(tgt), flight.to);
+        home();
         flight.t = Math.min(flight.dur, fx.time);
         const k = flight.t / flight.dur;
-        const ax = from[0] + (flight.to[0] - from[0]) * k, ay = from[1] + (flight.to[1] - from[1]) * k;
-        let az = from[2] + (flight.to[2] - from[2]) * k;
-        if (rise > 0) az -= rise * 4 * k * (1 - k);
+        at(k, a);
         // direction of travel (Unity frame): yaw in the board plane, pitch with the climb
-        const k2 = Math.min(1, k + 0.02);
-        const bx = from[0] + (flight.to[0] - from[0]) * k2, by = from[1] + (flight.to[1] - from[1]) * k2;
-        let bz = from[2] + (flight.to[2] - from[2]) * k2;
-        if (rise > 0) bz -= rise * 4 * k2 * (1 - k2);
-        const dx = bx - ax, dy = by - ay, dz = bz - az;
+        at(Math.min(1, k + 0.02), b);
+        const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
         const horiz = Math.hypot(dx, dy);
-        fx.anchor[0] = ax; fx.anchor[1] = ay; fx.anchor[2] = az;
+        fx.anchor[0] = a[0]; fx.anchor[1] = a[1]; fx.anchor[2] = a[2];
+        // (a flying effect that is itself made of LineRenderers — an index whose `main` names the link: _link)
+        if (fx.hasLines) fx.linkLines(from, fx.anchor);
         if (flipIfLeft && dx < 0) { fx.mirror = true; fx.yaw = Math.atan2(dy, -dx); } // mirrored art: +x after the mirror
         else { fx.mirror = false; fx.yaw = Math.atan2(dy, dx); }
         fx.pitch = horiz > 1e-5 || Math.abs(dz) > 1e-5 ? Math.atan2(-dz, horiz) : 0;
@@ -721,6 +783,44 @@ export class FxWiring {
     });
     if (handle) this.flights.add(flight);
     else this._arrive(proj, tgt, to0, time + dur);
+  }
+
+  /**
+   * A projectile's link line (projectileParts `link`: a ChainLightningEffectBehaviour's chain, a HarpoonRenderer's rope
+   * — 异客's and 惊蛰's chains, Mon3tr's heal link, 溯光星源 S1, 歌蕾蒂娅's harpoons): its LineRenderers run from the
+   * muzzle to the shot while it flies, then it fades from the muzzle to the target. [ASSUMED: the client's behaviours
+   * set the end points the same way; a chain's hops are the sim's own attacks.]
+   */
+  _link(key, src, flight, home, at) {
+    if (!key || !this.ofx.lib.has(key)) return null;
+    const head = [0, 0, 0];
+    return this.ofx.spawn(key, { pos: flight.from.slice(), groundZ: -(src.z || 0) }, {
+      important: true,
+      track: (fx) => {
+        if (fx.state !== 'play') return;
+        home();
+        const k = Math.min(1, fx.time / flight.dur);
+        fx.linkLines(flight.from, at(k, head));
+        if (k >= 1) fx.stop();
+      },
+    });
+  }
+
+  /**
+   * A projectile's start on its target: `toTargetOnStart` on the target (FLIP_TWO_SIDE by the side the shot comes from,
+   * a directional effect along it; it stays on the target while it lives: `_holdByOwner`), `toTileOnStart` on the
+   * target's tile. Returns whether anything played.
+   */
+  _startOnTarget(proj, src, tgt) {
+    if (!tgt || (!proj.toTargetOnStart?.length && !proj.toTileOnStart?.length)) return false;
+    let n = 0;
+    const toward = src ? beyond(src, tgt) : undefined;
+    for (const k of proj.toTargetOnStart || []) if (this.playOn(k, tgt, { toward, flipFrom: src, stick: true })) n++;
+    if (proj.toTileOnStart?.length) {
+      const tile = { x: Math.round(tgt.x), y: Math.round(tgt.y), z: tgt.z || 0, visFacing: tgt.visFacing ?? 1 };
+      for (const k of proj.toTileOnStart) if (this.playOn(k, tile, { toward, flipFrom: src })) n++;
+    }
+    return n > 0;
   }
 
   /** A projectile reached its target: onHit at the target's HitPoint, onReached where it landed. */
@@ -769,6 +869,8 @@ export class FxWiring {
     const drawn = m && hpHit ? this._landed(m, v, time, type) : false;
     const arr = this.arrived.get(id);
     if (arr != null && this.ofx.time - arr < ARRIVAL_WINDOW) return true;
+    const ph = this.pendingHit.get(id);
+    if (ph != null && this.ofx.time <= ph) return true;
     return drawn;
   }
 
@@ -911,6 +1013,7 @@ export class FxWiring {
     this.loops.clear();
     this.melee.clear();
     this.arrived.clear();
+    this.pendingHit.clear();
     this.healed.clear();
     this.keyCache.clear();
     this.attackN.clear();

@@ -512,14 +512,29 @@ export function buildParticleTrails(ps, cam, fd, tint) {
 let _trailPts = new Float32Array(75);
 
 /**
+ * The bone influences per vertex of a skinned mesh file (§33.9 writes four; an extraction made before the fix of
+ * 2026-10-15 wrote the client's own count — 2 for 铃兰 S3's fox tails, 琴柳's flags —, which read as four put every
+ * vertex on the wrong bones and weights: a long strip across the board). 0 when the file has no usable skin.
+ */
+export function skinStride(meshData) {
+  const P = meshData?.positions, BI = meshData?.boneIndices, BP = meshData?.bindPoses;
+  const nv = P ? (P.length / 3) | 0 : 0;
+  if (!nv || !Array.isArray(BI) || !Array.isArray(BP) || !BP.length) return 0;
+  const k = BI.length / nv;
+  return Number.isInteger(k) && k >= 1 && k <= 4 ? k : 0;
+}
+
+/**
  * Skinned mesh (CPU skinning): vertex = Σ w · (bone world · bind pose) · v, written as indexed triangles.
- * bones: Float32Array(16) world matrices (or null for a missing bone → identity), bind poses row-major.
+ * bones: Float32Array(16) world matrices (or null for a missing bone → identity), bind poses row-major. The influences
+ * per vertex come from the file (skinStride); without weights each vertex follows its one bone (weight 1).
  */
 export function buildSkinned(meshData, bones, submesh, fd, tint) {
   const P = meshData.positions, N = meshData.normals, UV = meshData.uv0, C = meshData.colors;
   const BW = meshData.boneWeights, BI = meshData.boneIndices, BP = meshData.bindPoses;
   const nv = (P.length / 3) | 0;
-  if (!nv || !BW || !BI || !BP) return null;
+  const K = skinStride(meshData);
+  if (!K || (BW && BW.length !== BI.length)) return null;
   // skin matrices = bone world · bind pose (bind poses are row-major)
   const skin = _skin.length >= bones.length * 16 ? _skin : (_skin = new Float32Array(bones.length * 16 + 16));
   for (let b = 0; b < bones.length; b++) {
@@ -535,10 +550,12 @@ export function buildSkinned(meshData, bones, submesh, fd, tint) {
   for (let v = 0; v < nv; v++) {
     let x = 0, y = 0, z = 0, nx = 0, ny = 0, nz = 0;
     const px = P[v * 3], py = P[v * 3 + 1], pz = P[v * 3 + 2];
-    for (let k = 0; k < 4; k++) {
-      const w = BW[v * 4 + k];
+    for (let k = 0; k < K; k++) {
+      const w = BW ? BW[v * K + k] : (k === 0 ? 1 : 0);
       if (!(w > 0)) continue;
-      const o = (BI[v * 4 + k] | 0) * 16;
+      const bi = BI[v * K + k] | 0;
+      if (bi < 0 || bi >= bones.length) continue;
+      const o = bi * 16;
       x += w * (skin[o] * px + skin[o + 4] * py + skin[o + 8] * pz + skin[o + 12]);
       y += w * (skin[o + 1] * px + skin[o + 5] * py + skin[o + 9] * pz + skin[o + 13]);
       z += w * (skin[o + 2] * px + skin[o + 6] * py + skin[o + 10] * pz + skin[o + 14]);

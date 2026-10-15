@@ -70,7 +70,9 @@
 //         else — with `opts.describe` — the descriptor's (anchorOf; it wins when given).
 // `mode` / `modeName`: the owner's attack mode the skill switches to (index.json skills[id].mode — from the skill's data
 // or `S<n>` by name); the normal attacks then use that mode's cast / hit / projectile (FxWiring.attack): Phase 3b should
-// take it from here instead of `S<skillIndex + 1>` (204 of 210 skills agree; the plan is right for the other 6).
+// take it from here instead of `S<skillIndex + 1>` (204 of 210 skills agree; the plan is right for the other 6). That
+// mode's attach rows (AttachEffectOptions: attached with the mode, i.e. for the skill — attachUses) join the plan as
+// skill-held `range` / `loop` entries (溯光星源 S3's area, 薄绿 S1's range, 普罗旺斯 S2's buff).
 // `kind` (with `opts.rec`, our skill record): 'passive' (skillType PASSIVE — the sim starts it at deploy and sends no
 // skill window for one with a duration: its loops run while the unit is deployed [ASSUMED]), 'ammo', 'lasting'
 // (duration > 0), 'instant' (else: 'skill' on and off in one tick, around the skill's attack if it has one). Index v2's
@@ -457,9 +459,11 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
   const skill = (id && isObj(unit?.skills) && unit.skills[id]) || (id && isObj(idx?.skills) && idx.skills[id]) || null;
   if (!skill) return plan;
   plan.kind = kindOf(opts.rec, skill.rootClass);
+  let attach = [];
   if (Number.isInteger(skill.mode)) {
     plan.mode = skill.mode;
     plan.modeName = unit?.modes?.[skill.mode]?.name ?? null;
+    attach = attachUses(unit?.modes?.[skill.mode]);
   }
   if (typeof skill.rootClass === 'string' && skill.rootClass) plan.rootClass = skill.rootClass;
   const projs = isObj(idx.projectiles) ? idx.projectiles : {};
@@ -467,7 +471,28 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
     const kk = lc(k);
     if (kk && projs[kk] && !plan.projectiles.includes(kk)) plan.projectiles.push(kk);
   }
-  return planUses(idx, plan, Array.isArray(skill.uses) ? skill.uses : [], { ...opts, abilities: skill.abilities });
+  return planUses(idx, plan, [...(Array.isArray(skill.uses) ? skill.uses : []), ...attach], { ...opts, abilities: skill.abilities });
+}
+
+/**
+ * The attach rows of the mode a skill switches to (index.json Attack `attach`: AttachEffectOptions, from the ability's
+ * attach to its detach — the mode's attack is attached while the mode is on, i.e. while the skill lasts): uses of the
+ * plan, held for the skill — `range` for a `*_range*` effect (溯光星源 S3's area, 薄绿 S1's), else `loop` (普罗旺斯 S2,
+ * 百炼嘉维尔's chainsaw glow). Rows `onlyAttachOnDummy` are the client's preview dummy's. Sub-abilities' rows join.
+ */
+export function attachUses(mode) {
+  const out = [];
+  const walk = (a, depth = 0) => {
+    if (!isObj(a) || depth > 4) return;
+    for (const r of Array.isArray(a.attach) ? a.attach : []) {
+      if (!isObj(r) || r.onlyAttachOnDummy === 1 || r.onlyAttachOnDummy === true) continue;
+      const keys = (Array.isArray(r.effects) ? r.effects : []).map(lc).filter(Boolean).slice(0, 1);
+      for (const k of keys) out.push({ role: /_range/.test(k) ? 'range' : 'loop', keys: [k], from: 'Attack.attach', node: a.node ?? null });
+    }
+    for (const sub of Array.isArray(a.abilities) ? a.abilities : []) walk(sub, depth + 1);
+  };
+  if (isObj(mode)) { walk(mode.attack); if (mode.combat !== mode.attack) walk(mode.combat); }
+  return out;
 }
 
 /** A MountPointType number of its name (mountPointName's inverse: 'MUZZLE' → 2, 'SPECIAL_6' → 12), or null. */

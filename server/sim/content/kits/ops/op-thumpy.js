@@ -18,7 +18,7 @@
 //   every element fill she deals ×ep_damage_scale while she blocks — an `elementHit` multiplier (the kits' convention: 菲莱 /
 //   余 PRP-X).
 // - T1 探险理论: "珊比受到的元素损伤降低15%" (full potential: 20%; ep_damage_scale 0.8): an `elementHit` multiplier on her at
-//   priority 20 (the operators' 受到的元素损伤 convention, docs/development/SIM.md §7.2). "珊比造成物理伤害时，附带攻击力10%的侵蚀损伤，
+//   priority 20 (the operators' 受到的元素损伤 convention, docs/SIM.md §7.2). "珊比造成物理伤害时，附带攻击力10%的侵蚀损伤，
 //   并使目标的侵蚀损伤冷却减少1秒" (full potential: 12%, 1.2秒; ep_damage_ratio[trigger] / duration_dec): after each physical damage
 //   instance of hers that removes HP — attacks, the glue and conveyor ticks too ("每次珊比成功造成伤害后") — ep_damage_ratio[trigger]
 //   × ATK 侵蚀损伤 on the target, or, while its 侵蚀 burst (爆发冷却) runs, that cooldown −duration_dec s instead. The skills' own

@@ -109,7 +109,7 @@ export async function startRealServer(opts = {}) {
     if (Date.now() - t0 > 20000) { child.kill('SIGKILL'); throw new Error(`server did not start:\n${logs.join('\n')}`); }
     await sleep(150);
   }
-  // No content-hash index to wait for: this fork serves the manifests' /_v/<tag>/… URLs (docs/development/ASSETS.md
+  // No content-hash index to wait for: this fork serves the manifests' /_v/<tag>/… URLs (docs/ASSETS.md
   // "Manifest URLs and cache busting") and upstream 0.2.6's server-side index is deliberately not part of it.
   return {
     base, port, logs,

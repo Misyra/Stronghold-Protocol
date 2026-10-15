@@ -11,7 +11,7 @@
 | 素材 R2 发布、预载和清理缓存 | [CDN.md](CDN.md) |
 | 对局检查点与备份恢复 | [PERSISTENCE.md](PERSISTENCE.md) |
 | 监控探针与管理面板的分工 | [MONITORING.md](MONITORING.md) |
-| 制作发行包 / Windows 便携包 | [PACKAGING.md](PACKAGING.md) / [WINDOWS.md](WINDOWS.md) |
+| 制作发行包 / Windows 便携包 | [PACKAGING.md](PACKAGING.md) / [WINDOWS.md](../WINDOWS.md) |
 
 ## 安装
 
@@ -43,7 +43,7 @@ npm run build
 - 本机提供素材：运行 `node tools/setup.mjs`，下载失败可重跑续传；缺失明细和环境诊断用 `node tools/doctor.mjs`。
 - 使用已发布的本站 CDN：配置 `SP_ASSETS_CDN=https://assets.misyra.com`，保留随代码发布的 `.assets-manifest.json`，无需在服务器下载整套素材。新建自己的 CDN 先按 [CDN.md](CDN.md) 配置和发布。
 
-本分支跟踪的 `public/assets/local/` 随 Git 下载；资源来源、客户端提取和清单见[素材说明](../development/ASSETS.md)。源码部署不要混用上游发行包中的程序文件。
+本分支跟踪的 `public/assets/local/` 随 Git 下载；资源来源、客户端提取和清单见[素材说明](../ASSETS.md)。源码部署不要混用上游发行包中的程序文件。
 
 ## 配置
 
@@ -295,7 +295,7 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 <a id="2-让不在同一网络的朋友加入"></a>
 家用网络接入移至 [HOME_SERVER.md](HOME_SERVER.md#2-家用网络接入)。
 <a id="6-本地客户端素材可选"></a>
-本地客户端素材见 [ASSETS.md](../development/ASSETS.md)。0.2.5 的官方战场场景同样不随 Git 仓库提供（提取结果是官方文件，`public/assets/local/scene/` 不提交）：需要时在有客户端的机器上运行 `node tools/setup.mjs --scenes`（或先 `python3 tools/local-extract/fetch_scenes.py` 再用提取环境的 Python 运行 `tools/local-extract/extract.py --only scene`）；没有场景时 3D 棋盘用程序生成的金属地块。
+本地客户端素材见 [ASSETS.md](../ASSETS.md)。0.2.5 的官方战场场景同样不随 Git 仓库提供（提取结果是官方文件，`public/assets/local/scene/` 不提交）：需要时在有客户端的机器上运行 `node tools/setup.mjs --scenes`（或先 `python3 tools/local-extract/fetch_scenes.py` 再用提取环境的 Python 运行 `tools/local-extract/extract.py --only scene`）；没有场景时 3D 棋盘用程序生成的金属地块。
 <a id="7-打包发布维护者"></a>
 发行包制作移至 [PACKAGING.md](PACKAGING.md)。
 

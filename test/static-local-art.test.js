@@ -82,9 +82,9 @@ test('docs and messages say what falls back without the local art and how a serv
   assert.match(LOCAL_ART_COPY_HINT, /同一版本的整合包/);
   // setup's row is printed on every start (scripts/launch.mjs): it names the fallbacks and points to ASSETS.md; doctor adds the hint
   const noClientRow = read('tools/setup.mjs').split('\n').find((l) => l.includes("'未检测到本机明日方舟客户端'"));
-  assert.ok(noClientRow && noClientRow.includes('LOCAL_ART_FALLBACK') && noClientRow.includes('docs/development/ASSETS.md') && !noClientRow.includes('LOCAL_ART_COPY_HINT'), noClientRow);
+  assert.ok(noClientRow && noClientRow.includes('LOCAL_ART_FALLBACK') && noClientRow.includes('docs/ASSETS.md') && !noClientRow.includes('LOCAL_ART_COPY_HINT'), noClientRow);
   assert.match(read('tools/doctor.mjs'), /未提取：\$\{LOCAL_ART_FALLBACK\}（\$\{LOCAL_ART_COPY_HINT\}）/);
-  const assets = read('docs/development/ASSETS.md');
+  const assets = read('docs/ASSETS.md');
   const s6 = assets.slice(assets.indexOf('## Local client art'));
   assert.ok(assets.includes('## Local client art') && s6.length > 200, 'local art documentation');
   for (const re of [/同一版本/, /public\/assets\/local\//, /data\/local-assets\.json/, /3D 棋盘/, /源石虫/, /表情/, /玩法说明/]) assert.match(s6, re);
@@ -102,5 +102,5 @@ test('docs and messages say what falls back without the local art and how a serv
   assert.match(readme, /召唤物/);
   assert.match(readme, /表情和「玩法说明」的教程图随上面的素材一起从公开镜像下载/);
   assert.match(readme, /\*\*同一版本\*\*的整合包/);
-  assert.ok(!/需本地提取/.test(read('docs/guides/PLAYING.md')), 'PLAYING: the 玩法说明 pages come with the download');
+  assert.ok(!/需本地提取/.test(read('docs/PLAYING.md')), 'PLAYING: the 玩法说明 pages come with the download');
 });

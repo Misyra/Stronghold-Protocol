@@ -42,11 +42,11 @@ test('selection: runtime files in; tests, maintainer tools, other docs, dev page
     'tools/crop-board-atlas.mjs', 'tools/assets/plan.mjs', 'tools/assets/local-enemy-spines.json', 'tools/assets/local-token-spines.json',
     'tools/local-extract/extract.py',
     'tools/local-extract/LICENSE-Ark-Unpacker.txt', 'scripts/start.sh', 'scripts/start-windows.bat', 'scripts/launch.mjs',
-    'scripts/install-service-windows.ps1', 'docs/guides/PLAYING.md', 'docs/operations/DEPLOY.md', ...RUNTIME_RESEARCH, 'package.json',
+    'scripts/install-service-windows.ps1', 'docs/PLAYING.md', 'docs/operations/DEPLOY.md', ...RUNTIME_RESEARCH, 'package.json',
     'package-lock.json', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'CHANGELOG.md',
     // out
     'test/version.test.js', 'tools/golden.mjs', 'tools/build-data.mjs', 'tools/check-imports.mjs', 'tools/package.mjs',
-    'tools/i18n/fallback-remake.json', 'scripts/make-windows-bundle.mjs', 'docs/development/DESIGN.md', 'docs/operations/WINDOWS.md', 'docs/development/ASSETS.md',
+    'tools/i18n/fallback-remake.json', 'scripts/make-windows-bundle.mjs', 'docs/DESIGN.md', 'docs/WINDOWS.md', 'docs/ASSETS.md',
     'docs/img/combat.jpg', 'docs/research/00-INDEX.md', 'docs/research/01-core-data.json', 'docs/research/03-operators.md',
     'docs/research/10-networking-hosting.md', 'public/dev/game-mock.html', 'public/assets/x.png', 'public/fonts/fonts.css',
     'public/vendor/pixi.min.js', 'data/local-assets.json', 'handoff/HANDOFF.md', '.github/workflows/ci.yml', 'types/core.js',
@@ -81,12 +81,12 @@ test('the real tracked tree: runtime in, the rest out; every shipped import, npm
   const p = plan(ROOT, { lite: true, allowDirty: true, scan: false, measure: false });
   assert.deepEqual(p.problems, []);
   const got = new Set(p.files);
-  for (const f of ['server/index.js', 'tools/setup.mjs', 'tools/fetch-assets.mjs', 'scripts/start.sh', 'docs/guides/PLAYING.md', 'docs/operations/DEPLOY.md',
+  for (const f of ['server/index.js', 'tools/setup.mjs', 'tools/fetch-assets.mjs', 'scripts/start.sh', 'docs/PLAYING.md', 'docs/operations/DEPLOY.md',
     'package-lock.json', 'NOTICE.md', ...RUNTIME_RESEARCH]) assert.ok(got.has(f), f);
-  for (const f of ['tools/golden.mjs', 'tools/package.mjs', 'scripts/make-windows-bundle.mjs', 'docs/development/DESIGN.md', 'eslint.config.js', 'Dockerfile']) {
+  for (const f of ['tools/golden.mjs', 'tools/package.mjs', 'scripts/make-windows-bundle.mjs', 'docs/DESIGN.md', 'eslint.config.js', 'Dockerfile']) {
     assert.ok(!got.has(f), f);
   }
-  // the design document (the index docs/development/DESIGN.md and its parts in docs/design/, docs/history/) stays out too
+  // the design document (the index docs/DESIGN.md and its parts in docs/design/, docs/history/) stays out too
   for (const f of got) assert.ok(!/^(?:test|handoff|\.github|types|public\/dev|docs\/img|docs\/design|docs\/history)\//.test(f), f);
   const code = [...got].filter((f) => /\.(?:m?js|py)$/.test(f));
   for (const f of code) {
@@ -152,10 +152,10 @@ function fakeCheckout() {
   for (const f of ['tools/assets/network.mjs', 'tools/vendor.mjs', 'tools/fetch-assets.mjs', 'tools/doctor.mjs', 'tools/crop-board-atlas.mjs',
     'tools/local-extract/extract.py', 'tools/golden.mjs', 'tools/build-data.mjs', 'tools/package.mjs', 'scripts/launch.mjs',
     'scripts/make-windows-bundle.mjs', 'test/a.test.js', 'handoff/HANDOFF.md', '.github/workflows/ci.yml', 'types/core.js', 'eslint.config.js',
-    'Dockerfile', 'AGENTS.md', 'review/notes.md', 'docs/development/DESIGN.md', 'docs/research/00-INDEX.md', 'docs/research/10-networking-hosting.md']) put(f);
+    'Dockerfile', 'AGENTS.md', 'review/notes.md', 'docs/DESIGN.md', 'docs/research/00-INDEX.md', 'docs/research/10-networking-hosting.md']) put(f);
   put('scripts/start.sh', '#!/usr/bin/env bash\nexec node scripts/launch.mjs\n');
   fs.chmodSync(path.join(dir, 'scripts/start.sh'), 0o755);
-  for (const f of ['README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'docs/guides/PLAYING.md', 'docs/operations/DEPLOY.md']) put(f, `# ${f}\n`);
+  for (const f of ['README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'docs/PLAYING.md', 'docs/operations/DEPLOY.md']) put(f, `# ${f}\n`);
   for (const f of [...RUNTIME_RESEARCH, 'docs/research/01-core-data.json']) put(f, '{}\n');
   put('docs/img/x.jpg', PNG);
   put('.gitignore', 'public/assets/\npublic/fonts/\npublic/vendor/\ndata/local-assets.json\n.cache/\npv/\n');
@@ -183,7 +183,7 @@ const runTool = (args) => spawnSync(process.execPath, [TOOL, ...args], { encodin
 const listed = (stdout) => stdout.split('\n').filter((l) => l.startsWith('file ')).map((l) => l.slice(5));
 
 const SHIPPED_TRACKED = ['CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'README.md', 'THIRD-PARTY-NOTICES.md', 'data/assets.json', 'data/chess.json',
-  'docs/operations/DEPLOY.md', 'docs/guides/PLAYING.md', ...RUNTIME_RESEARCH, 'package-lock.json', 'package.json', 'public/index.html', 'public/js/main.js',
+  'docs/operations/DEPLOY.md', 'docs/PLAYING.md', ...RUNTIME_RESEARCH, 'package-lock.json', 'package.json', 'public/index.html', 'public/js/main.js',
   'public/js/util.js', 'scripts/launch.mjs', 'scripts/start.sh', 'server/index.js', 'server/sim/rng.js', 'shared/constants.js',
   'tools/assets/network.mjs', 'tools/crop-board-atlas.mjs', 'tools/doctor.mjs', 'tools/fetch-assets.mjs', 'tools/local-extract/extract.py',
   'tools/setup.mjs', 'tools/vendor.mjs'].sort();
@@ -316,11 +316,11 @@ test('content packs ship: every committed pack of both layouts, never one only o
 test('the stage drops dishonest npm scripts and rewrites unshipped doc links', { skip: !hasZipTool && 'no zip / tar' }, () => {
   const { dir, put } = fakeCheckout();
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-package-out-'));
-  const readme = '# r\n\n[design](docs/DESIGN.md)\n[play](docs/guides/PLAYING.md)\n[rel](../../releases/latest)\n![shot](docs/img/x.jpg)\n';
+  const readme = '# r\n\n[design](docs/DESIGN.md)\n[play](docs/PLAYING.md)\n[rel](../../releases/latest)\n![shot](docs/img/x.jpg)\n';
   try {
     put('README.md', readme);
-    // The docs this fork ships live under docs/guides/ and docs/operations/ (upstream: docs/PLAYING.md, docs/DEPLOY.md).
-    put('docs/guides/PLAYING.md', '# p\n\n[idx](research/00-INDEX.md)\n[home](../../README.md#操作)\n');
+    // The docs this fork ships sit at the mainline paths (docs/PLAYING.md, docs/operations/DEPLOY.md) so the layout matches upstream.
+    put('docs/PLAYING.md', '# p\n\n[idx](research/00-INDEX.md)\n[home](../README.md#操作)\n');
     put('docs/operations/DEPLOY.md', '# d\n\n[packs](PACKS.md)\n[win](WINDOWS.md)\n[notice](../../NOTICE.md)\n');
     const r = runTool(['--root', dir, '--out', out, '--no-install', '--allow-dirty', '--lite', '--keep-stage']);
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -330,11 +330,11 @@ test('the stage drops dishonest npm scripts and rewrites unshipped doc links', {
     assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).scripts.test, 'node --test');
     const host = 'https://github.com/sganggs/Stronghold-Protocol';
     const got = fs.readFileSync(path.join(stage, 'README.md'), 'utf8');
-    assert.equal(got, `# r\n\n[design](${host}/blob/v9.9.9/docs/DESIGN.md)\n[play](docs/guides/PLAYING.md)\n[rel](${host}/releases/latest)\n![shot](${host}/raw/v9.9.9/docs/img/x.jpg)\n`);
+    assert.equal(got, `# r\n\n[design](${host}/blob/v9.9.9/docs/DESIGN.md)\n[play](docs/PLAYING.md)\n[rel](${host}/releases/latest)\n![shot](${host}/raw/v9.9.9/docs/img/x.jpg)\n`);
     assert.equal(fs.readFileSync(path.join(dir, 'README.md'), 'utf8'), readme, 'the git checkout keeps its relative links');
-    const playing = fs.readFileSync(path.join(stage, 'docs/guides/PLAYING.md'), 'utf8');
-    assert.match(playing, new RegExp(`\\(${host}/blob/v9.9.9/docs/guides/research/00-INDEX.md\\)`));
-    assert.match(playing, /\(\.\.\/\.\.\/README\.md#操作\)/);
+    const playing = fs.readFileSync(path.join(stage, 'docs/PLAYING.md'), 'utf8');
+    assert.match(playing, new RegExp(`\\(${host}/blob/v9.9.9/docs/research/00-INDEX.md\\)`));
+    assert.match(playing, /\(\.\.\/README\.md#操作\)/);
     const deploy = fs.readFileSync(path.join(stage, 'docs/operations/DEPLOY.md'), 'utf8');
     assert.match(deploy, new RegExp(`\\(${host}/blob/v9.9.9/docs/operations/PACKS.md\\)`));
     assert.match(deploy, new RegExp(`\\(${host}/blob/v9.9.9/docs/operations/WINDOWS.md\\)`));

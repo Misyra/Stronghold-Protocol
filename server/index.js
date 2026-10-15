@@ -190,7 +190,7 @@ export async function startServer(opts = {}) {
     : null) : opts.workerPool;
   const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, countryLookup, workerPool }, { data, log, chatLog });
   const release = (extra = {}) => cleanupRuntime({ lobby, network, chatLog, workerPool, ownsWorkerPool, log, ...extra });
-  // content packs (docs/guides/PACKS.md): scanned now — the start log names them — and again whenever their folders change
+  // content packs (docs/PACKS.md): scanned now — the start log names them — and again whenever their folders change
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
   packs.refresh(true);
 

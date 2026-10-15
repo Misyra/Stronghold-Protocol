@@ -6,8 +6,8 @@
 
 | 文档 | 内容 |
 |---|---|
-| [玩法指南](guides/PLAYING.md) | 游戏流程、规则、操作与快捷键 |
-| [内容包](guides/PACKS.md) | 安装和制作干员、语言等扩展内容 |
+| [玩法指南](PLAYING.md) | 游戏流程、规则、操作与快捷键 |
+| [内容包](PACKS.md) | 安装和制作干员、语言等扩展内容 |
 | [对局记录](guides/MATCH_HISTORY.md) | 战绩存储、导出与展示 |
 | [匹配机制](guides/MATCHMAKING.md) | 四人匹配和组队流程 |
 
@@ -21,7 +21,7 @@
 | [监控接入](operations/MONITORING.md) | 游戏、探针、中央面板的分工与接入 |
 | [房间审计与保护](operations/ROOM_PROTECTION.md) | 网络额度、无人暂停、计算降级和私有查询 |
 | [发行包制作](operations/PACKAGING.md) | 维护者制作完整、精简与更新包 |
-| [Windows 便携包](operations/WINDOWS.md) | 制作与使用便携包 |
+| [Windows 便携包](WINDOWS.md) | 制作与使用便携包 |
 | [CDN 与资源更新](operations/CDN.md) | 静态资源分发、预载与缓存 |
 | [对局持久化](operations/PERSISTENCE.md) | 检查点、索引、运行时钟与恢复 |
 
@@ -29,22 +29,22 @@
 
 | 文档 | 内容 |
 |---|---|
-| [架构与代码地图](development/ARCHITECTURE.md) | 目录分工、数据流与常见修改入口 |
-| [设计与契约索引](development/DESIGN.md) | 按章节号查找设计规则 |
-| [战斗模拟](development/SIM.md) | 模拟引擎、钩子与技能格式 |
-| [对局与经济](development/META.md) | 回合、商店、联防与最终攻势 |
-| [游戏数据](development/DATA.md) | 数据构建与来源 |
-| [素材](development/ASSETS.md) | 素材来源、清单与目录 |
-| [国际化](development/I18N.md) | 翻译、语言文件与覆盖范围 |
+| [架构与代码地图](ARCHITECTURE.md) | 目录分工、数据流与常见修改入口 |
+| [设计与契约索引](DESIGN.md) | 按章节号查找设计规则 |
+| [战斗模拟](SIM.md) | 模拟引擎、钩子与技能格式 |
+| [对局与经济](META.md) | 回合、商店、联防与最终攻势 |
+| [游戏数据](DATA.md) | 数据构建与来源 |
+| [素材](ASSETS.md) | 素材来源、清单与目录 |
+| [国际化](I18N.md) | 翻译、语言文件与覆盖范围 |
 | [性能](development/PERFORMANCE.md) | Worker 池、预载与性能优化 |
 | [状态同步链路基线](development/STATE_SYNC_BENCHMARK.md) | 视图构建/差分/检查点的分段成本与端到端对照,以及计划三条优先级的实测判定(配套[增量传输](development/STATE_DELTA.md)、[增量压测](development/STATE_DELTA_BENCHMARK.md)) |
-| [难度与平衡](development/BALANCE.md) | 难度模型和测量 |
+| [难度与平衡](BALANCE.md) | 难度模型和测量 |
 | [管理界面移动端密度](development/MOBILE_UI.md) | 非战场管理界面的紧凑层、变量契约与真机验证边界 |
 | [本分支 API](development/CUSTOM_API.md) | 房间查询、匹配与扩展接口 |
 
 ## 设计章节、历史与调研
 
-- `design/`：现行设计章节，由[设计索引](development/DESIGN.md)导航。
+- `design/`：现行设计章节，由[设计索引](DESIGN.md)导航。
 - `history/`：各版本的设计修订；[本分支站点更新记录](history/site/CHANGELOG.md)单独放在 `history/site/`。
 - [项目版本更新记录](../CHANGELOG.md)：根目录保留的正式更新记录。
 - [调研索引](research/00-INDEX.md)：`research/` 中的规则调研和研究数据。

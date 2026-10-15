@@ -580,12 +580,16 @@ export class Effect {
     const mode = s.def.scalingMode;
     if (mode === 0) { f.m.set(w); mat4Scale(w, f.scale); return f; }
     // Local: the node's own scale on the world basis; Shape: no scale (the shape takes the world scale at birth). A
-    // mirrored world keeps its reflection: the basis columns are only normalised.
+    // mirrored world keeps its reflection: the basis columns are only normalised. A parent's zero scale (野鬃 S2's fan,
+    // 835 nodes of the used set: slashes flattened in z) leaves a column empty: it is rebuilt from the other two (their
+    // cross product, turned by the mirror), as Unity's Local mode takes the world rotation without the parents' scale —
+    // an empty column made the frame singular and a world-space system's limit-velocity round trip blew up.
     const o = i * 10, L = this.loc;
     const sx = mode === 1 ? L[o + 7] : 1, sy = mode === 1 ? L[o + 8] : 1, sz = mode === 1 ? L[o + 9] : 1;
-    const k0 = Math.hypot(w[0], w[1], w[2]) || 1, k1 = Math.hypot(w[4], w[5], w[6]) || 1, k2 = Math.hypot(w[8], w[9], w[10]) || 1;
+    const B = this.__basis || (this.__basis = new Float64Array(9));
+    basisOf(w, this.mirror ? -1 : 1, B);
     const m = f.m;
-    for (let r = 0; r < 3; r++) { m[r] = w[r] / k0 * sx; m[4 + r] = w[4 + r] / k1 * sy; m[8 + r] = w[8 + r] / k2 * sz; }
+    for (let r = 0; r < 3; r++) { m[r] = B[r] * sx; m[4 + r] = B[3 + r] * sy; m[8 + r] = B[6 + r] * sz; }
     m[3] = 0; m[7] = 0; m[11] = 0; m[12] = w[12]; m[13] = w[13]; m[14] = w[14]; m[15] = 1;
     if (mode === 1) { f.scale[0] = sx; f.scale[1] = sy; f.scale[2] = sz; } else mat4Scale(w, f.scale);
     return f;
@@ -804,6 +808,34 @@ function dirQuat(yaw, pitch, roll, out) {
   if (pitch) quatMul(out, quatAxis(0, 1, 0, pitch, _qa), out);
   if (roll) quatMul(out, quatAxis(1, 0, 0, roll, _qa), out);
   return quatNormalize(out);
+}
+
+/**
+ * The orthonormal basis of a world matrix's columns into out (x, y, z axes, 9 numbers): each column normalised; an empty
+ * one (a zero scale on the way: shorter than 1e-5 of the longest) rebuilt as the cross product of the other two (× hand:
+ * −1 in a mirrored world), and two empty ones from the world axes.
+ */
+export function basisOf(w, hand, out) {
+  const k = [Math.hypot(w[0], w[1], w[2]), Math.hypot(w[4], w[5], w[6]), Math.hypot(w[8], w[9], w[10])];
+  // (relative: a zero scale leaves float noise of a parent's rotation — 1e-8 against 1 — that would normalise to a
+  // direction in the other columns' plane)
+  const eps = 1e-5 * Math.max(1e-6, k[0], k[1], k[2]);
+  for (let c = 0; c < 3; c++) for (let r = 0; r < 3; r++) out[c * 3 + r] = k[c] > eps ? w[c * 4 + r] / k[c] : 0;
+  const empty = k.map((v) => !(v > eps));
+  const nEmpty = empty.filter(Boolean).length;
+  if (nEmpty >= 2) {
+    for (let c = 0; c < 3; c++) if (empty[c]) { out[c * 3] = c === 0 ? 1 : 0; out[c * 3 + 1] = c === 1 ? 1 : 0; out[c * 3 + 2] = c === 2 ? 1 : 0; }
+    return out;
+  }
+  if (nEmpty === 1) {
+    const c = empty.indexOf(true), a = (c + 1) % 3, b = (c + 2) % 3;
+    const ax = out[a * 3], ay = out[a * 3 + 1], az = out[a * 3 + 2], bx = out[b * 3], by = out[b * 3 + 1], bz = out[b * 3 + 2];
+    let x = ay * bz - az * by, y = az * bx - ax * bz, z = ax * by - ay * bx;
+    const l = Math.hypot(x, y, z) || 1;
+    x *= hand / l; y *= hand / l; z *= hand / l;
+    out[c * 3] = x; out[c * 3 + 1] = y; out[c * 3 + 2] = z;
+  }
+  return out;
 }
 
 /** The world yaw of the client's direction enum (Torappu.SharedConsts.Direction: UP 0, RIGHT 1, DOWN 2, LEFT 3). */

@@ -8,7 +8,8 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileEffect, Effect, behindUnits } from '../../public/js/render/vfx/effect.js';
+import { compileEffect, Effect, behindUnits, basisOf } from '../../public/js/render/vfx/effect.js';
+import { completeAxes } from '../../public/js/render/vfx/psys.js';
 import { FrameData, cameraBasis, buildSkinned, skinStride, STRIP_STRIDE } from '../../public/js/render/vfx/geom.js';
 import { FxWiring, projectileParts, TIMER_HIT_MAX } from '../../public/js/render/vfx/wiring.js';
 import { skillPlan, attachUses } from '../../public/js/render/vfx/skills.js';
@@ -222,5 +223,39 @@ describe('the attach rows of a skill\'s mode (溯光星源 S3\'s range)', () => 
     assert.deepEqual(plan.range.map((e) => [e.key, e.hold, e.point]), [['halo_range', 'skill', 'GROUND_CENTER_WITH_ZERO_HEIGHT']]);
     assert.deepEqual(plan.loop.map((e) => e.key), ['halo_buff']);
     assert.deepEqual(plan.unmapped, []);
+  });
+});
+
+describe('a zero scale on the way: the scaling mode\'s frame and its inverse stay usable (the audit\'s geometry scan)', () => {
+  test('basisOf rebuilds an empty column from the other two (turned by the mirror), float noise of a zeroed axis included', () => {
+    const B = new Float64Array(9);
+    // x along +y, y along −x (a 90° turn about z), z zeroed by a parent's scale
+    basisOf([0, 1.16, 0, 0, -1.16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 1, B);
+    assert.deepEqual(Array.from(B).map((v) => Math.round(v * 1e6) / 1e6 + 0), [0, 1, 0, -1, 0, 0, 0, 0, 1]);
+    basisOf([0, 1.16, 0, 0, -1.16, 0, 0, 0, 1e-8, 2e-8, 0, 0, 0, 0, 0, 1], -1, B);
+    assert.deepEqual(Array.from(B.slice(6)).map((v) => Math.round(v * 1e6) / 1e6 + 0), [0, 0, -1], 'noise is no axis; mirrored: the other hand');
+    const full = completeAxes(new Float32Array([2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 5, 6, 7, 1]), new Float32Array(16));
+    assert.deepEqual(Array.from(full.slice(8, 11)), [0, 0, 1], 'an invertible stand-in for PSys._inverse');
+    assert.deepEqual(Array.from(full.slice(12, 15)), [5, 6, 7]);
+  });
+
+  test('a world-space system with limit velocity under a zero-scaled parent stays put (珊比\'s attack: 24,000 tiles in a second before)', () => {
+    const ps = { lengthInSec: 0.3, looping: false, prewarm: false, startDelay: 0, playOnAwake: true, simulationSpeed: 1, moveWithTransform: 1, scalingMode: 1,
+      InitialModule: { startLifetime: 1, startSpeed: { min: 0.5, max: 1 }, startSize: 0.1, startColor: [1, 1, 1, 1], maxNumParticles: 50 },
+      EmissionModule: { rateOverTime: 20, m_Bursts: [] },
+      VelocityModule: { x: { min: -0.15, max: 0.15 }, y: { min: 0.3, max: 0.1 }, z: 0, speedModifier: 1, inWorldSpace: false },
+      ClampVelocityModule: { magnitude: { scalar: 0.1, curve: [[0, 1, 0, 0], [1, 0, 0, 0]] }, separateAxis: false, inWorldSpace: false, dampen: 0.15, drag: 0 } };
+    const nodes = [root(),
+      node(1, 0, { rot: [0.908078, -0.417445, 0.0140705, 0.030608], scale: [1.16, 1.16, 0] }),
+      node(2, 1, { rot: [-9.31323e-9, -2.79397e-9, -0.236397, 0.971657], extra: { particleSystem: ps, particleSystemRenderer: { m_Enabled: true, renderMode: 'billboard', renderAlignment: 'view', materials: [0] } } })];
+    const fx = new Effect(compileEffect(desc(nodes)), { seed: 3 });
+    const w = [0, 0, 0];
+    let far = 0;
+    for (let f = 0; f < 36; f++) {
+      fx.update(1 / 30);
+      const s = fx.sys[2];
+      for (let i = 0; i < s.count; i++) { s.worldPos(i, w); far = Math.max(far, Math.hypot(w[0], w[1], w[2])); }
+    }
+    assert.ok(far > 0 && far < 3, `the sparks stay near the slash: ${far}`);
   });
 });

@@ -1,5 +1,5 @@
 // server/http/routes.js — the node:http request listener. Every response gets the security headers (common.js), then:
-// (i18n-ignore-file: the error pages are bilingual by design, 中文 · English — docs/development/I18N.md)
+// (i18n-ignore-file: the error pages are bilingual by design, 中文 · English — docs/I18N.md)
 //
 //   * a URL longer than 4096 characters → 414; one that does not parse → 400;
 //   * POST /api/nickname/validate → server-only nickname preflight, bounded and rate-limited;

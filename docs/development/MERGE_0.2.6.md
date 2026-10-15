@@ -109,7 +109,7 @@ git merge --no-commit --no-ff v0.2.6
 |---|---|
 | `server/sim/content/kits/ops/op-wisdel.js` | 收 #557（`battle.onFieldBoard`）；`test/content/op_wisdel.test.js` 同批 |
 | `docs/history/0.2.6.md` | 收（五个测试引用 §31.8/§31.9，`test/docs-paths.test.js` 会管） |
-| `docs/DESIGN.md` 的 §31 索引行 | 搬进 `docs/development/DESIGN.md`，href 用 `../history/0.2.6.md` |
+| `docs/DESIGN.md` 的 §31 索引行 | 搬进 `docs/DESIGN.md`，href 用 `../history/0.2.6.md` |
 | `docs/DEPLOY.md` | 保持删除；六段内容搬进 `docs/operations/*`（§9） |
 | 其余平铺文档 | 按 §9 搬进我们的目录结构 |
 | 版本号四方 | `package.json` + `package-lock.json` 两处 + `shared/constants.js` 的 `APP_VERSION` 同批改成 `0.2.6` |
@@ -159,7 +159,7 @@ i18n ×4（只合 2 个键的增量）、`package.json`（我们的 + 版本）�
 | `CHANGELOG.md` | 自动合并 |
 | `README.md` **（冲突）** | 用我们的 `**Run:**` 那行，把上游的 `~560 MB / ~790 MB` 并进去；`已同步至 v0.2.5` 改成 `v0.2.6`；**不收 `SP_ASSET_INDEX` 那一行**（本次不接索引层，不要给不存在的功能写文档） |
 | `docs/DEPLOY.md` **（modify/delete）** | 保持删除，六段内容搬进 `docs/operations/*` |
-| `docs/design/client.md` **（冲突）** | 两个 bullet 拼接；收 §31.8/§31.9 与素材地址段；`SCENE_LIGHT` 改成 1/1；`docs/ASSETS.md` → `docs/development/ASSETS.md`；补一句我们的 CDN 形态，免得读成"只有 `~<hash>`" |
+| `docs/design/client.md` **（冲突）** | 两个 bullet 拼接；收 §31.8/§31.9 与素材地址段；`SCENE_LIGHT` 改成 1/1；`docs/ASSETS.md` → `docs/ASSETS.md`；补一句我们的 CDN 形态，免得读成"只有 `~<hash>`" |
 | `docs/design/geometry-time.md` | 自动合并 |
 | `docs/design/network.md` | 自动合并，但 WS 参数要跟实际代码对齐（我们保留开关/level/并发/双向无上下文接管 + window 11） |
 | `docs/design/overview.md` | 自动合并，补 `server/assetVersion.js` 与 `shared/assetCdn.js` 两行，标明实际部署走哪条 |
@@ -273,14 +273,14 @@ SP_E2E=1       CHROME_PATH=<chrome> node --test test/ui/deploy-replay.e2e.test.j
 2. 「固定访问地址能省很多流量」整段 → `docs/operations/HOME_SERVER.md` 隧道小节旁。
 3. 压缩（brotli）与 Cloudflare 缓存规则两段 → `docs/operations/DEPLOY.md` 反向代理节 + `docs/operations/CDN.md`。
 4. 两条排查行（哈希段、`/healthz?traffic=1`）→ `docs/operations/DEPLOY.md` 排错表 + `docs/operations/MONITORING.md`。
-5. 教程图 WebP 说明 → `docs/development/ASSETS.md` + `docs/operations/PACKAGING.md`。
+5. 教程图 WebP 说明 → `docs/ASSETS.md` + `docs/operations/PACKAGING.md`。
 6. 平铺文档并入：`ARCHITECTURE/ASSETS/DESIGN/META/SIM → docs/development/`、`PLAYING → docs/guides/`、`history/0.2.6.md → docs/history/`。
 
 搬迁时用**我们实际的 URL 形态**写（CDN `<base>/assets/…?v=<hash>`、本机 `/_v/<artTag>/…`），不要照抄"`~<hash>` 是唯一形态"。
 
 ## 10. 教程图 WebP：独立一轮
 
-代码、测试、文档与源码合并同批落（`tools/local-extract/extract.py` 的 `jobs.guideWebp`、`GUIDE_WEBP_MODE`、`test/local-extract.test.js`、`docs/development/ASSETS.md`）。**素材转换与发布另起一轮**：
+代码、测试、文档与源码合并同批落（`tools/local-extract/extract.py` 的 `jobs.guideWebp`、`GUIDE_WEBP_MODE`、`test/local-extract.test.js`、`docs/ASSETS.md`）。**素材转换与发布另起一轮**：
 
 ```bash
 python3 tools/local-extract/extract.py --webp   # 由现有 PNG 生成 WebP 副本
@@ -338,7 +338,7 @@ node tools/r2-sync.mjs                          # 重写 .assets-manifest.json �
 
 **教程图 WebP（§10）**
 
-- 已收：`tools/local-extract/extract.py` 的 `jobs.guideWebp` / `GUIDE_WEBP_MODE`、`test/local-extract.test.js`、`ui/guide.js` 的单页预载、文档（`docs/development/ASSETS.md`、`docs/design/client.md`）。
+- 已收：`tools/local-extract/extract.py` 的 `jobs.guideWebp` / `GUIDE_WEBP_MODE`、`test/local-extract.test.js`、`ui/guide.js` 的单页预载、文档（`docs/ASSETS.md`、`docs/design/client.md`）。
 - 已生成：`tools/local-extract/extract.py --webp`（需要 Pillow；本机在 `.venv-extract` 里装了 Pillow 12.3.0）产出 31 个 WebP 副本 —— 19 页教程图 **24.5 MB → 4.0 MB**，另有 12 张棋盘贴图。质量核对：19 页与 PNG 的平均像素差 MAE 1.29–1.74 / 255、p99 ≤ 10 / 255，肉眼无差。
 - 已更新：`data/local-assets.json`（guide 各页指向 `.webp` 并带 `webp: "lossy"`），`data/asset-hashes.json` 已重建（该文件在 `.gitignore` 里，不入库）。
 - **未完成（待执行）**：R2 发布与 CDN 验证。`public/assets/local/**` 不入库，CDN 装机要靠 bucket 里有这些文件；本机没有 Wrangler 凭据，且发布是外部写操作，需要确认后执行：

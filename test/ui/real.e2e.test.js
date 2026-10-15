@@ -52,7 +52,7 @@ class Client {
     page.on('requestfailed', (r) => { if (!/fonts\.(googleapis|gstatic)/.test(r.url())) this.problems.push(`requestfailed: ${r.url()} ${r.failure()?.errorText}`); });
     page.on('response', (r) => {
       if (r.status() >= 400) this.problems.push(`http ${r.status()}: ${r.url()}`);
-      // this fork's release-versioned URLs (docs/development/ASSETS.md): Spine files, audio through /_v/<tag>/media/…, the rest
+      // this fork's release-versioned URLs (docs/ASSETS.md): Spine files, audio through /_v/<tag>/media/…, the rest
       const p = new URL(r.url()).pathname;
       if (r.status() === 200 && /^\/_v\/[0-9a-f]{16}\/(?:assets|media)\//.test(p)) {
         this.hashed[/\.(?:skel|atlas)$|\/spine\//.test(p) ? 'spine' : p.startsWith('/media/') ? 'media' : 'other']++;
@@ -460,7 +460,7 @@ describe('real server + real browsers', { skip: !ENABLED && 'set SP_REAL_E2E=1 (
     const { startServer } = await import('../../server/index.js');
     puppeteer = (await import('puppeteer-core')).default;
     srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
-    // this fork serves the manifests' /_v/<tag>/… URLs (docs/development/ASSETS.md "Manifest URLs and cache busting")
+    // this fork serves the manifests' /_v/<tag>/… URLs (docs/ASSETS.md "Manifest URLs and cache busting")
     base = `http://127.0.0.1:${srv.port}`;
     mkdirSync(OUT, { recursive: true });
   });

@@ -1,7 +1,7 @@
 # Windows 便携包（零安装方案）
 
 本文说明怎么打一份「目标机器什么都不用装」的 Windows 便携包，包里放了什么、没放什么，以及发出去之前要确认的授权。
-普通 Windows 安装、自启和更新见 [HOME_SERVER.md](HOME_SERVER.md)；本文专讲制作自带 Node 的便携包。
+普通 Windows 安装、自启和更新见 [HOME_SERVER.md](operations/HOME_SERVER.md)；本文专讲制作自带 Node 的便携包。
 
 相关代码：`scripts/make-windows-bundle.mjs`（打包）、`scripts/launch.mjs`（准备 + 起服务器 + 打开浏览器）。
 
@@ -94,11 +94,11 @@ Linux 上是这一档）→ Windows 自带的 `Expand-Archive`。
 > - 本项目是玩家自制的**非官方同人作品**，与上海鹰角网络科技有限公司（Hypergryph）、Yostar 及其关联方**没有任何关系**，未获其授权或认可。
 > - 《明日方舟》及「卫戍协议」相关的名称、角色、美术、音乐、音效、文本与数据等素材，版权归原权利人所有。这些素材**不适用**本项目的 GPL-3.0 许可证；GPL 只覆盖本项目自己编写的代码。
 > - 仅供学习交流与个人非商业使用。**严禁任何形式的盈利**，包括但不限于：售卖本项目或整合包、付费下载或付费分发、收费服务器或收费代开、广告 / 打赏 / 会员等变现方式，以及其他任何商业用途。
-> - 本包为了方便玩家附带了游戏的美术与音频素材，下载即视为同意本声明。请勿将素材用于本项目以外的用途或**单独再分发**。完整条款见 [NOTICE.md](../../NOTICE.md)。
+> - 本包为了方便玩家附带了游戏的美术与音频素材，下载即视为同意本声明。请勿将素材用于本项目以外的用途或**单独再分发**。完整条款见 [NOTICE.md](../NOTICE.md)。
 > - 权利人如认为本项目侵犯其权益，请通过 Issue 联系，我们会**立即删除**相关内容。
 > - 本项目按「现状」提供，**不提供任何担保**，使用风险自负。
 
-内置 Node.js（MIT）与其它第三方组件的许可见 [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md) 与
+内置 Node.js（MIT）与其它第三方组件的许可见 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) 与
 `node\LICENSE-node.txt`（`node.exe` 自己的许可证，从同一个官方归档里取出来一起发）。
 
 ## 5. 常见问题
@@ -109,7 +109,7 @@ Linux 上是这一档）→ Windows 自带的 `Expand-Archive`。
 | 提示找不到 node | 便携包应含 `node\node.exe`；没有就用 `--no-node` 的包，并自行安装 Node 22/24 LTS |
 | 端口被占用 | 关掉占用 3000 的程序（`node tools/doctor.mjs` 会指出是谁），或在启动命令后加 `--port 3001` |
 | 浏览器没自动打开 | 手动访问 `http://127.0.0.1:<端口>`；`--no-open` / `SP_NO_BROWSER=1` 会禁用自动打开 |
-| 朋友连不上 | 防火墙专用网络未放行、或不在同一网段；用 `node tools/doctor.mjs` 诊断（源仓库里见 [DEPLOY.md](DEPLOY.md) 的防火墙一节） |
+| 朋友连不上 | 防火墙专用网络未放行、或不在同一网段；用 `node tools/doctor.mjs` 诊断（源仓库里见 [DEPLOY.md](operations/DEPLOY.md) 的防火墙一节） |
 | 进游戏时弹出「下载文件信息」 | 那是 IDM / 迅雷这类下载管理器在嗅探音频地址，不是游戏在下载。新版本已经改走不带扩展名的 `/media/…` 路由（见 [PR #28](https://github.com/sganggs/Stronghold-Protocol/pull/28)），**应该不会再弹**；如果还弹，把弹出的地址贴到 Issue，或在下载器里加例外（如 `http://127.0.0.1:3000/*`）、玩游戏时先退出它 |
 | 首次进游戏很慢 | 每位玩家要下载几十 MB 素材（本机开服时是本机读盘），之后走浏览器缓存 |
 | 在 Linux 上打包报解压失败 | GNU tar 不认 zip：装一个 `unzip`（或在文档允许的范围内改用 macOS / Windows 打包） |
@@ -122,4 +122,4 @@ Linux 上是这一档）→ Windows 自带的 `Expand-Archive`。
   （`.env`、`.claude/`、`scripts/service.env.cmd` 等）不会进包。
 * 游戏不写注册表、不装服务；`启动游戏.bat` 内容只有几行（切到 UTF-8 代码页 → 找 `node\node.exe` →
   跑 `app\scripts\launch.mjs --no-setup`）。
-* 想做成随开机启动的 Windows 服务，用仓库自带的 `scripts/install-service-windows.ps1`（面向整合包/源码部署，见 [DEPLOY.md](DEPLOY.md)）。
+* 想做成随开机启动的 Windows 服务，用仓库自带的 `scripts/install-service-windows.ps1`（面向整合包/源码部署，见 [DEPLOY.md](operations/DEPLOY.md)）。

@@ -3,7 +3,7 @@
 // fires; 凯瑟琳's 支援装置 with the board — and shows what it does (the device's talent 定向支援信号, the doll's token
 // skill), with the numbers of the owner's own variant (a golden owner's summon is stronger: resolveDetail finds the
 // owner by `ownerUid`). One switch, shared/constants.js SKILL_SUMMON_START_DEPLOY (the PRTS start-of-battle deploy,
-// settled by the user after playtest #6), drives the sim and the hint; the guide (docs/guides/PLAYING.md §4) and docs/development/SIM.md
+// settled by the user after playtest #6), drives the sim and the hint; the guide (docs/PLAYING.md §4) and docs/SIM.md
 // must say the same. The rules themselves:
 // test/match/playtest6_summons.test.js (prep) and test/content/playtest6_summons.test.js (battle).
 import { test } from 'node:test';

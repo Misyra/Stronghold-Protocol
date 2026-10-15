@@ -1,6 +1,6 @@
 # DESIGN §32, §33, §34, §35, §36, §37, §38, §39, §40, §41, §42, §43, §44, §45, §46, §47, §48, §49, §50, §51 — 游戏站 Agent 与 sp-portal 双向通信实施方案
 
-Part of [DESIGN.md](../development/DESIGN.md) (the index; section numbers are global).
+Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
 
 日期：2026-10-14。状态：待实施设计，不代表当前代码已经支持。
 

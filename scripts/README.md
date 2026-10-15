@@ -8,7 +8,7 @@
 | `start.sh` | macOS / Linux 启动入口 |
 | `launch.mjs`、`open-browser.mjs` | 启动检查和打开浏览器 |
 | `install-service-windows.ps1`、`run-server.cmd` | Windows 开机自启和服务启动；本机生成的 `service.env.cmd` 不入库 |
-| `make-windows-bundle.mjs` | 制作 Windows 便携包；见[Windows 说明](../docs/operations/WINDOWS.md) |
+| `make-windows-bundle.mjs` | 制作 Windows 便携包；见[Windows 说明](../docs/WINDOWS.md) |
 | `network-probe.ps1` | 本地网络与 WebSocket 诊断 |
 | `nginx-log-format.conf.example`、`nginx-game-cache.conf.example` | `nginx.conf.example` 引用的两个配置片段；分别安装为 `/etc/nginx/conf.d/sp-log-format.conf` 与 `/etc/nginx/snippets/stronghold-game-cache.conf` |
 | `nginx.conf.example` | Nginx 反向代理配置示例 |

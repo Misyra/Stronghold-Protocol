@@ -42,14 +42,18 @@ export function LoadoutStats({ base, golden, entries, level, onLevel, getChess =
   const pv = statsPreview(base, golden, entries, level, getChess, ops);
   if (!pv) return null;
   // (the caption names 潜能 / 练度 when the numbers carry both — the 练度 multiplier needs effects.json)
-  return html`<section class="lo-sec lo-sec--stats" aria-label=${t('局内数值')} data-variant=${pv.elite ? 'elite' : 'normal'}>
-    <header class="lo-sec__head">
+  return html`<details key=${base?.charId || base?.chessId} class="lo-sec lo-sec--stats lo-sec--fold" aria-label=${t('局内数值')} data-variant=${pv.elite ? 'elite' : 'normal'}>
+    <summary class="lo-sec__head">
       <h3>${t('局内数值')}<${MicroLabel}>STATS<//></h3>
+      <span class="lo-sec__note">${pv.elite ? t('精锐') : t('普通')}</span>
+    </summary>
+    <div class="lo-sec__body">
+    <div class="lo-sec__controls">
       <div class="lo-seg" role="tablist" aria-label=${t('数值版本')}>
         <button type="button" role="tab" aria-selected=${pv.elite ? 'false' : 'true'} class=${cx(!pv.elite && 'is-on')} data-variant="normal" onClick=${() => onLevel('normal')}>${t('普通')}</button>
         <button type="button" role="tab" aria-selected=${pv.elite ? 'true' : 'false'} class=${cx(pv.elite && 'is-on')} data-variant="elite" disabled=${!golden} onClick=${() => onLevel('elite')}>${t('精锐')}</button>
       </div>
-    </header>
+    </div>
     ${chessStatsBlock({ rec: pv.record, chess: pv.chess })}
     ${pv.trait || pv.talents.length ? html`<div class="lo-minfo lo-minfo--kit">
       ${pv.trait ? html`<div class="lo-minfo__row"><span class="lo-minfo__k">${t('特性')}</span><${RichText} class="lo-minfo__v" text=${pv.trait} /></div>` : null}
@@ -57,5 +61,6 @@ export function LoadoutStats({ base, golden, entries, level, onLevel, getChess =
         <span class="lo-minfo__v"><b class="lo-minfo__tname">${tal.name}</b><${RichText} text=${tal.descRaw || tal.desc || ''} /></span></div>`)}
     </div>` : null}
     <p class="lo-stats__cap">${pv.elite ? t('数值含所选模组；') : golden ? t('普通干员没有模组，所选模组在「精锐」中生效；') : ''}${pv.lo?.cultivation && data.get('effects') ? t('含潜能与练度；') : ''}${t('不含技能发动、装备、盟约等局内加成')}</p>
-  </section>`;
+    </div>
+  </details>`;
 }

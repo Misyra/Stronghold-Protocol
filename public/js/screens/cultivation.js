@@ -67,11 +67,12 @@ export function CultivationSection({ charId, ops, onSet, standIn = false }) {
   if (!charId) return null;
   const cur = opsOf(ops, charId);
   const set = (patch) => onSet(charId, patch);
-  return html`<section class=${cx('lo-sec', 'lo-sec--cult', standIn && 'is-moot')} aria-label=${t('潜能与练度')} data-char=${charId}>
-    <header class="lo-sec__head">
+  return html`<details key=${charId} class=${cx('lo-sec', 'lo-sec--cult', 'lo-sec--fold', standIn && 'is-moot')} aria-label=${t('潜能与练度')} data-char=${charId}>
+    <summary class="lo-sec__head">
       <h3>${t('潜能与练度')}<${MicroLabel}>POTENTIAL<//></h3>
       ${cur.changed ? html`<span class="lo-badge lo-badge--changed">${t('已调整')}</span>` : html`<span class="lo-badge lo-badge--plain">${t('满潜能 · 精英2 Lv.60')}</span>`}
-    </header>
+    </summary>
+    <div class="lo-sec__body">
     <div class="lo-cult__row">
       <span class="lo-cult__k">${t('潜能')}</span>
       <div class="lo-seg lo-seg--pot" role="radiogroup" aria-label=${t('潜能')}>
@@ -90,5 +91,6 @@ export function CultivationSection({ charId, ops, onSet, standIn = false }) {
     <p class="lo-cult__note">${standIn
       ? t('干员持有中标记为未持有：替补干员没有潜能与练度；这里的设置在改回「持有」后生效')
       : t('默认满潜能、精英2 Lv.60（满加成）。官方的潜能取你自己的潜能，练度是自持有加成（已持有的同名干员的养成，攻击 / 防御 / 生命单独乘算）；未持有的特许干员在官方按潜能1、没有加成，要照官方打请手动设为潜能1、未精英化。')}</p>
-  </section>`;
+    </div>
+  </details>`;
 }

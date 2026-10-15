@@ -290,6 +290,15 @@
 .lo-sec__head h3::before { content: ''; align-self: center; width: .05rem; height: .2rem; background: var(--mint-500); }
 .lo-sec__note { margin-left: auto; font-size: max(.13rem, 9px); color: var(--text-dim); }
 .lo-sec__note b { color: var(--text-md); }
+.lo-sec--fold { display: block; }
+.lo-sec--fold > summary { min-height: max(.44rem, 30px); list-style: none; cursor: pointer; }
+.lo-sec--fold > summary::-webkit-details-marker { display: none; }
+.lo-sec--fold > summary::after { content: '›'; flex: none; color: var(--mint-400); font-size: 1.2em; line-height: 1; }
+.lo-sec--fold[open] > summary::after { transform: rotate(90deg); }
+.lo-sec--fold > summary:hover { color: var(--mint-400); }
+.lo-sec--fold > summary:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
+.lo-sec__body { display: flex; flex-direction: column; gap: .08rem; margin-top: .08rem; }
+.lo-sec__controls { display: flex; justify-content: flex-end; }
 
 .lo-seg { margin-left: auto; display: inline-flex; border: 1px solid var(--line-2); }
 .lo-seg button {

@@ -948,34 +948,76 @@ Still outside the index: the effect emitters of talents (deploy effects, the bos
 (stand switches, revives) and a few modes' general abilities (funnels, an aura) — 33 units, about 50 nodes — whose
 moments no client signal gives yet.
 
-### 33.16 The runtime's skill wiring (0.3.0 Phase 3b)
+### 33.16 The runtime's skill wiring (0.3.0 Phase 3b, 3c)
 
 The field view plays a skill's effects from its `uses` (`render/vfx/skills.js skillPlan`: each use placed by its
 role, its ability, its events and its carrier — the module header; `render/vfx/skillfx.js` plays the plan, DESIGN §9
-"Official battle effects", Skills). What it reads, and what it does with the fields a later extractor adds:
+"Official battle effects", Skills) and a unit's attacks from its modes (`render/vfx/wiring.js`). What it reads of
+index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) — and what it does with them:
 
 * **A unit's skill**: the unit by FxWiring's candidates (a stand-in's or a 自选 pick's operator, the chess' operator,
   the spine, the def id), its skill from our data record's `skills[]` by the loadout's index (`prefabId`, else
-  `skillId`), looked up in the unit's `skills`, then in `skills`; without a record, `skchr_<code>_<index + 1>`.
+  `skillId`), looked up in the unit's `skills`, then in `skills`; without a record, `skchr_<code>_<index + 1>`; a summon
+  without a record of its skill, the only one its unit has [ASSUMED] (version 2 lists the summons' skills).
 * **Modes**: `skills[id].mode` names the attack mode while the skill is on (`modes[mode].name`; a mode whose name ends in
-  `[Down]` / `[D]` is a facing variant and not chosen). A unit without a resolved skill keeps `S<n>`.
+  `[Down]` / `[D]` is a facing variant and not chosen). A unit without a resolved skill keeps `S<n>`. An enemy in a form
+  whose name is one of its modes' (case aside; `form2` → `Reborn`) attacks in that mode, and its skills play that
+  mode's copies.
 * **Events**: a use's `startEvent` / `endEvent` are AbilityStandard/Event names (`ON_CAST_START` …), a unit's Emit row's
   numbers; ON_ATTACHED / ON_CAST_START rows start with the cast (the attack's wind-up), the others at the strike.
-* **Attack abilities** (`ability` matching /Attack|Heal/, not Channeling*): their rows replace the attack mode's while
-  the skill is on; a ranged one flies one of the skill's `projectiles` — the only one, else the shortest named
-  `_s<n>` / `_sk<n>` after the skill's number, else the first (index.json does not say which ability fires which
-  projectile: an ability's `projectileKey` on its uses would settle it).
-* **Hit groups**: `MultiHitUberEffectEmitter._hitGroups` rows arrive flattened; a use's integer `group` (a later
-  extractor) is taken as the group index when present, else the `_range` rule of §33.12's skills.js reading.
+* **Mode attacks (v2)**: an 'atk' plays the mode's `combat` for a melee blow of a unit that is blocked or blocks
+  (UF.BLOCKED) and when `attack` is null, else `attack`. A group ability fires its `abilities` as §33.12 says: a
+  Parallel group all of them, a Random group one picked by a seed of the unit's id and attack count (the same in a
+  replay), the other groups the first that fits the attack (a heal: /Heal/, a shot: /Ranged/, a blow: neither), else
+  the first; a funnel attack is one attack. The attack flies the first fired ability's `projectileKey`. A row plays as
+  its `emitter` allows: an UberAnimation replace group's row (`anim`) when the attack plays that animation — for
+  `loopType` 1 the group animations in turn by the unit's attack count [ASSUMED], else the animation the model plays
+  (SpineActor.attackAnim), else `sourceAnimKey`; an InCertainMode emitter's rows only in the mode of index
+  `activeMode`; a VigilWolf row bound to a buff of its owner (`buffKey`) never (no view shows that buff). Version 1's
+  attacks carry none of these fields and play as before.
+* **Hit groups**: a MultiHit emitter's grouped rows are the hit groups — every group kept, an empty one too (that hit
+  plays nothing); hit k of a blow (its k-th HP 'dmg' or 'heal' on the target in the blow's frame) plays group min(k,
+  last), k mod n with `useLoopHitEffect`, a seeded group with `useRandomHitEffect`, only the first with `oncePerTarget`;
+  the attack's rows without a group play on every hit (a MultiHit emitter's own only with `keepBaseHitEffect`, as §33.12
+  says; no emitter of this client has both). A skill's uses carry `group` / `groups` and the emitter's flags the same
+  way (`skills.js hitGroups`, `hitOptsOf`); a version 1 index's flattened rows keep the `_range` rule of §33.12's
+  skills.js reading.
+* **Attack abilities of a skill** (`ability` matching /Attack|Heal/, not Channeling*): their rows replace the attack
+  mode's while the skill is on; a ranged one flies one of the skill's `projectiles` — the only one, else the shortest
+  named `_s<n>` / `_sk<n>` after the skill's number, else the first (the skill's uses do not say which ability fires
+  which projectile: an ability's `projectileKey` on its uses would settle it).
 * **Buffs on targets** (`on: 'targets'`) from an attack ability's `_activeBuffs` loop on that attack's targets for our
   record's blackboard duration (`duration`, `…_duration`, `….duration`) — the template's own life time is not exported.
-* **Charges**: a unit's `charge` ({ cap, slots: [{ spell: [key…], cast: [key…], mount: MountPointType }], projectiles: {
-  mode: key }, … } — CHARGE_EMITTERS' shape) replaces the transcribed table when present (`skills.js chargeSource`).
-* **Root class**: a skill's `rootClass` (ReplacementSkill, CastSkill, …) is kept on the plan (`plan.rootClass`); the
-  runtime's one-cast rule does not need it (a skill turned on and off in one frame without an attack).
-* **Enemy and token skills**: none in this index (`reason: 'enemy-skill'` / `'token-skill'`); a token's skill found in its
-  unit's `skills` by our record's id plays like an operator's. An enemy's skill slot (the sim's ['cast', id, slot]) has
-  no reader yet.
+* **Charges**: a unit's `charge` (v2: the chargeable groups) makes the charge plan (`skills.js chargeFromIndex`): the
+  reference store ability is the one whose `modes` hold `Default`; its slots are the group node's emitters' and the
+  reference's non-ex emitters' groups (`chargeEffectGroups` at ON_SPELL_ON: the stored energy's loops; the others: the
+  one-shots of the store), each at the reference's `mountPointForProjectiles` point (else its effects' `follow`); the
+  elite slots are the ex emitters' (`isExEffectEmitter`) at `exMounts`, a `forceExCharge` ability's for its modes; the
+  merged slots `mergeSize`'s; the cap `maxChargeTimes`; the projectiles each ability's (`projectileKey`,
+  `exProjectileKey`, `mergeProjectileKey`) for its `modes`. For 深靛, 黑键 and 维伊 this gives the transcribed table
+  (`CHARGE_EMITTERS`), which stays for a version 1 index.
+* **Root class**: a skill's `rootClass` is kept on the plan (`plan.rootClass`); a ReplacementSkill* is one cast (the
+  plan's kind `instant`: its single attack is the skill), a PassiveSkill without our record a passive.
+* **Enemy skills (v2)**: `units[enemy].skills` by the lower-case `prefabKey` of the enemy's data record's `skills[]`
+  (the slot order). A skill's window opens on ['cast', id, slot] (PR #275's event; the sim on this line sends none)
+  or, for an enemy whose record has a single skill, when the snapshot's anim turns SKILL (the sim holds it 0.5 s after
+  an ability fires) [ASSUMED]; it plays the plan's start, range and loops, the enemy's attacks in it play the skill's
+  attack rows, and it ends — its loops stop, its end plays — 0.3 s after the anim leaves SKILL [ASSUMED], or on the
+  enemy's death or leak. A use's `mode` picks the copy of the enemy's current mode; `inModes` is not needed. Not drawn:
+  a skill of an enemy with several (no 'cast' event), a skill that fires on the enemy's Nth attack (no signal), the
+  skill's effects on others (`on: 'targets'`: no event names them).
+* **Summons' skills** (v2) play like an operator's.
+* **Placement (v2)**: `prefabs[key].spawn` / `follow` give a plan entry its `point` / `follow` without loading the
+  descriptor (a charge slot without a `mountPointForProjectiles` point leaves from its loop's `follow`; a descriptor
+  read with `opts.describe` still wins, and at play time the loaded descriptor places the effect as before);
+  `mounts.js skinShift` — version 1's guess at a skin exported without its root transform — is off for a version 2
+  index.
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
   where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`).
 
+Coverage of the roster (`tools/vfx-skill-coverage.mjs`, version 1 → version 2): operator (unit, skill) pairs 547 → 548
+of 549 in the index, 501 → 502 with a plan the battle view drives (91.4 %); summons 2 → 71 of 78, 2 → 23 drivable;
+enemies 0 → 123 of 126, 0 → 86 drivable (68.3 %); units with attack rows: operators 189 → 202 of 210, enemies 75 of 243
+→ 201 of 249 (version 2 lists the 6 aliases as units), summons 19 → 21 of 57. Of the 58 roster enemies with a skill
+plan, 23 show the snapshot's SKILL window in a battle (a survey through the sim) and 11 of those have a single skill —
+their windows open on this line; the others wait for the 'cast' event.

@@ -1095,7 +1095,10 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
 * **Events**: a use's `startEvent` / `endEvent` are AbilityStandard/Event names (`ON_CAST_START` …), a unit's Emit row's
   numbers; ON_ATTACHED / ON_CAST_START rows start with the cast (the attack's wind-up), the others at the strike.
 * **Mode attacks (v2)**: an 'atk' plays the mode's `combat` for a melee blow of a unit that is blocked or blocks
-  (UF.BLOCKED) and when `attack` is null, else `attack`. A group ability fires its `abilities` as §33.12 says: a
+  (UF.BLOCKED) and when `attack` is null, else `attack`; a ranged-kind 'atk' of an operator on an enemy while both show
+  UF.BLOCKED and the enemy stands within the sim's block radius of its centre (0.75 / 0.95 tiles, ground / air) is such
+  a blow when its mode has both (the 领主s and 伊内丝: the sim names their every attack by the ranged kind; round 46, history
+  §32.14.41) [ASSUMED: the snapshot does not say who blocks whom]. A group ability fires its `abilities` as §33.12 says: a
   Parallel group all of them, a Random group one picked by a seed of the unit's id and attack count (the same in a
   replay), the other groups the first that fits the attack (a heal: /Heal/, a shot: /Ranged/, a blow: neither; a
   `Blocked…` node — 号角's BlockedRangedAttack — only while the unit blocks, and then first [ASSUMED: the configs'
@@ -1205,11 +1208,27 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   `_mainEffect`) runs from the shooter's point as it is drawn to the head while it flies — its LineRenderers' end
   points set by the runtime (`effect.js linkLines`; a world-space line without them draws nothing) — and fades once the
   head arrives; a chain's lightning (a ChainLightningEffectBehaviour's) is not flown — the client plays it between the
-  chain's targets as the shot reaches them (§33.12 Projectile), and the sim's 'chain' bounces stay procedural. As the
+  chain's targets as the shot reaches them (§33.12 Projectile): the sim's 'chain' / 'chainHeal' bounces after an official
+  shot of such a projectile draw the line from the previous target's HitPoint to the next one's and the projectile's
+  `onHit` on the next, when the shot reaches its first target (`wiring.js chain`, round 46) [ASSUMED: every bounce at
+  once — `_interval` 0 —, between HitPoints, the looping line shown 0.2 s, `CHAIN_LINE_S`]; a bounce of any other chain
+  stays procedural. As the
   shot starts, `toTargetOnStart` plays on the target (FLIP_TWO_SIDE by the side the shot comes from, kept on the target
   while it lives) and `toTileOnStart` on the target's tile; a projectile without a flying effect holds its `onHit` for
   its life when that is longer than the sim's flight (up to 1.5 s, `TIMER_HIT_MAX`), the target's damage meanwhile
   drawing no procedural spark [ASSUMED: the sim's damage keeps its own time].
+* **Hits against the sim's timing** (round 46, history §32.14.41; `wiring.js`): the sim moves a shot in its firing tick
+  and lands it about a tick before the drawn flight (distance ÷ speed) ends, and heals at the 'atk': the HP 'dmg' or
+  'heal' on a target with an official hit on its way is that hit's — in the attack's frame, or from 0.2 s before the
+  drawn hit (`CLAIM_LEAD`) until 0.35 s after; one entry per target and frame, taken by the first frame's events
+  (`_expect`) — so neither the procedural spark nor the generic heal hit plays ahead of the projectile's own hit; a
+  damage earlier in the flight (a 灼燃 tick) stays procedural. A projectile attack's own hit rows play with its
+  projectile's hit (none of the index's projectiles has both: 能天使 S2/S3, 录武官, 烛煌 S3, 2 more have only rows); a direct
+  ranged attack — no projectile of its own: 能天使's normal attack, 协律, a 阵法术师's beam — is drawn by its official rows
+  when it has any (no procedural tracer, orb or beam over them; its hit rows wait for its damage for the sim's flight plus
+  0.35 s), else — or when its ability names a projectile the index lacks — by the procedural shot. An attack the sim makes melee whose official ability is a ranged one with a
+  projectile (蒂比: RangedAttack, the sim's 天空行者 melee) flies that projectile for show at its own `movement.speed`, its
+  damage covered until the hit [ASSUMED: display only; the enemies' attacks keep the melee path].
 * **A skill's mode attach rows** (`skills.js attachUses`): the `attach` rows of the mode a skill switches to
   (AttachEffectOptions: attached with the mode) join the plan, held for the skill — `range` for a `*_range*` key, else
   `loop`; a row `onlyAttachOnDummy` (the client's preview dummy) is left out. The enemies' rows in their Default /

@@ -104,10 +104,13 @@ history and the open points: DESIGN §32.14.25.
   arc and AmiyaS2 wobble) with `onHit` on arrival — a harpoon's rope stretched from the shooter's point to the head
   (its LineRenderers' end points: `effect.js linkLines`), its `toTargetOnStart` / `toTileOnStart` on the target and
   its tile as it starts, a timer projectile's hit at the end of its life (§33.16) —, its hit rows when a melee or
-  direct blow's damage lands (else the generic hit by damage type). One attack on several targets — the sim sends an
+  direct blow's damage lands (else the generic hit by damage type) — a projectile attack's with its projectile's hit, the
+  damage or heal the sim lands for a shot before its drawn hit covered by it (round 46, §33.16 "Hits against the sim's
+  timing") —; a direct ranged attack with official rows draws no procedural shot; a chain's bounces after an official
+  shot of a chain projectile draw its line and hit (`wiring.chain`). One attack on several targets — the sim sends an
   'atk' per target in one tick — casts once (its target rows play on each). Index version 2 (0.3.0 Phase 3c, §33.16): a
   melee blow of a unit that is blocked or blocks (UF.BLOCKED), and every attack of a mode without `attack`, plays the
-  mode's `combat`; a group ability plays the sub-abilities that fire (a Parallel group all, a Random group one picked by
+  mode's `combat` (so does a 领主's ranged-kind 'atk' on the enemy it blocks, round 46); a group ability plays the sub-abilities that fire (a Parallel group all, a Random group one picked by
   a seed of the unit's id and attack count, the others the one that fits the attack's kind) and flies the first one's
   projectile; a MultiHit emitter's hit groups play by the hit's order in the blow's frame (group min(k, last); in turn
   with `useLoopHitEffect`, seeded with `useRandomHitEffect`, the first only with `oncePerTarget`) and its rows without a
@@ -119,7 +122,7 @@ history and the open points: DESIGN §32.14.25.
   multi attack flies its `additionalTimes` follow-up shots every `triggerDelta` s. Also the generic heal hit, the status
   loops (`generic.status` by the sim's status names) on the unit's mount point while they last, and the unit's own death
   / deploy effect or the generic one. A drawn official hit replaces the procedural spark and slash (the numbers stay);
-  what index.json does not drive — a unit it does not list, chain bounces, an enemy skill no signal opens (Skills,
+  what index.json does not drive — a unit it does not list, a chain no official shot opened, an enemy skill no signal opens (Skills,
   below), a talent no signal binds (Talents) — stays procedural. `mounts.js` reads the skin's points (HitPoint, Muzzle,
   HeadPoint, Special points; front / back skeleton, mirrored for a unit facing left) at the unit's feet — a point a
   BoneFollower keeps on a Spine bone where the model draws that bone (`UnitView.boneOffset`) —; an effect with a

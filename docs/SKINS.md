@@ -105,7 +105,7 @@ Three properties are load-bearing:
 Not part of upstream's PR: a full install is ~328 MiB, and the preload manifest is built by walking `data/assets.json`
 — so every skin file landed in the **required** tier of `/data/resource-manifest.json` and 「必备资源」 quietly meant
 one third of a gigabyte. Skins are now their own optional scope with **one switch**: 「预载我选的皮肤」. When it is on,
-the preload follows the outfits equipped in 干员调配 — picking one there downloads its files into Cache Storage, which
+the preload follows the outfits equipped in 干员调配 (either row — they are one choice now) — picking one there downloads its files into Cache Storage, which
 is what a player actually wants (the choice list is where you make the choice). Nothing is downloaded by default.
 
 | File | Where | What |
@@ -113,7 +113,7 @@ is what a player actually wants (the choice list is where you make the choice). 
 | `server/resources.js` | `skinKeyForPath()` + `tierForPath()` | a key path through `chars.<charId>.skins.<skinId>…` is tier 2 (`TIER_REST`) and carries `skin: '<charId>/<skinId>'` into the manifest entry — the one field the client groups and scopes by |
 | `public/js/resources/common.js` | `RESOURCE_GROUPS` / `resourceGroup()` | `skin: { name: N_('干员皮肤'), tier: TIER_REST }`; `resourceGroup()` returns `'skin'` for a marked entry; `SKIN_KEY_RE` / `isSkinKey` validate the key |
 | `public/js/resources/store.js` | `setScope()` / `skinWanted()` / `#tally()` | the voice language and the equipped skins are one selection: unequipped skins leave `selectedFiles`, so they are neither downloaded nor counted (but stay importable/retained); `status()` also reports per-outfit counters (`skins: [{ id, files, wanted, present, bytes, totalBytes }]`) |
-| `public/js/ui/skins.js` | `equippedSkinKeys()` / `loadEquippedSkinKeys()` | the equipped outfits as `charId/skinId` keys — chessId → charId through the chess table, which is why the helper waits for it |
+| `public/js/ui/skins.js` | `equippedSkinKeys()` / `loadEquippedSkinKeys()` | the equipped outfits as `charId/skinId` keys — **both rows** of the picker (battle model and 商店立绘; the art-only 原始/精英二 values name no outfit), chessId → charId through the chess table, which is why the helper waits for it |
 | `public/js/main.js` | `installResourcePreload()` | the switch is `settings.preloadSkins`; the scope is recomputed from the equipped keys and re-applied whenever `skinsStore` or the settings change — that is the auto-download |
 | `public/js/resources/index.js` | `syncResources(…, skins)` | the controller applies the scope; the optional pass runs whenever the selection contains tier-2 files (「同时预载」 **or** equipped skins), so a skin choice never drags the voices in and vice versa. `requiredComplete` / `selectionComplete` split what the panel words 「必备已保存」 / 「全部已保存」 |
 | `public/js/ui/resourcePanel.js` | `ResourceSkins()` | the compact row: 干员皮肤 + the switch + `本机已选 N 套 · 已缓存 M 套` + bytes. Outside the 可选资源 list (`g.id !== 'skin'`), and the whole row disappears when the deployment has no skins |
@@ -162,8 +162,12 @@ its own preference (`sp.pref.skinPortraits`, `ui/skins.js`) and never reaches th
   1★/2★ operator that has none), and every **skin's 立绘**. `shopPortraitUrl()` (`ui/assetUrls.js`) resolves them,
   with the sentinel `PORTRAIT_E2` (`'e2'`) for the E2 tile — every real skinId starts with `char_`, so the two cannot
   collide, and anything unknown falls back to the operator's own portrait rather than leaving a card blank.
-- Independent of the battle model on purpose: fight with the operator's default model and still show a skin on the
-  card, or the other way round.
+- **One pick sets both rows** (this fork): choosing an outfit as the battle model also puts its 立绘 on the card, and
+  choosing an outfit's 立绘 also makes it the battle model — otherwise the same outfit would have to be chosen twice.
+  They can still be deliberately different: the model row's 默认 clears the model and leaves the art, and the two
+  art-only tiles (原始立绘 / 精英二立绘) never touch the model. A *bulk* write (`setSkins` / `setPortraits`, i.e. the
+  `room.skins` roster sync and imports) owns one map each, so a restore or a teammate's data can never overwrite the
+  local art.
 - The file is the tall 立绘 of the same source repo, derived from the avatar URL rather than stored in the research
   table: `…/avatar/char_x_kitchen#2.png` → `…/portrait/char_x_kitchen#2.png`
   (`tools/assets/plan.mjs` `skinPortraitUrl()`, shared with the installer). ~90 KB per skin, downloaded together with

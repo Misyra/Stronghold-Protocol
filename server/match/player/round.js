@@ -1,8 +1,8 @@
 // server/match/player/round.js — PlayerState methods: the round lifecycle the match calls — startRound (income, pending
 // coins, the shop, summon stacks topped up), endPrep, eliminate (every copy back to the pool), recompute (legality,
-// out-of-range summons, temp pieces into free hand slots, bonds), the bond views — and battleInput (the player's
-// PlayerBattleInput: board units with their loadout, their 补位 mark or their 自选 pick, carried 联防 state, the reached
-// layers).
+// out-of-range summons, temp pieces into free hand slots, bonds; onActiveBonds when the set of active bonds changed),
+// the bond views — and battleInput (the player's PlayerBattleInput: board units with their loadout, their 补位 mark or
+// their 自选 pick, carried 联防 state, the reached layers).
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
@@ -82,8 +82,34 @@ export class PlayerRound {
     this._liftOutOfRange();
     // a free regular hand slot pulls a temp piece in (PRTS 卫戍协议/帮助 §手牌区 "常规手牌区出现空位时自动移入")
     this._fillHandFromTemp();
+    // the states the last recompute stored: the change since then is reported once (_reportActiveBonds)
+    const before = this.bonds;
     this.bonds = computeBonds(this.gd, this);
     this.dirty();
+    this._reportActiveBonds(before, this.bonds);
+  }
+
+  /**
+   * onActiveBonds (docs/META.md §2.2): the set of active bonds differs between `before` and `after` — every path that
+   * changes what the bonds count ends in recompute (a board edit in prep: place, move, swap, withdraw; buys, sells,
+   * merges, transformations, temp moves, equipment, effects, an eviction). Bonds that light up pay their owed layer
+   * milestones at once (维多利亚's hammers, 远见 / 奇迹's funds — the maintainer's report of 2026-10-15). Each recompute
+   * reports the difference to the previous computed state, so a handler's own recompute (a hammer's onGain) reports
+   * only what changed after it, and nothing twice. Never for an eliminated player (eliminate clears the board) nor a
+   * detached copy (preview.js previewPlayer).
+   */
+  _reportActiveBonds(before, after) {
+    if (!this.alive || typeof this.m.dispatch !== 'function') return;
+    if (this.m.players && this.m.players.get(this.playerId) !== this) return;
+    const activated = [];
+    const deactivated = [];
+    for (const id of this.gd.bondIds) {
+      const was = !!(before && before[id] && before[id].active);
+      const is = !!(after && after[id] && after[id].active);
+      if (is && !was) activated.push(id);
+      else if (was && !is) deactivated.push(id);
+    }
+    if (activated.length || deactivated.length) this.m.dispatch(this, 'onActiveBonds', { activated, deactivated });
   }
 
   activatedLayers() { return activatedLayers(this.bonds); }

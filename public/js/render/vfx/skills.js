@@ -50,6 +50,7 @@
 //     attacks: [{ node, ability, cast, range, aim, hit }],  the skill prefab's own attack abilities (each attack while on)
 //     each: { cast, hit },                 any attack of the owner while on (buff template actions)
 //     trigger,                             reactive: the owner taking damage while on
+//     cond,                                `[eff_cond]` state loops on the owner (COND_BUFFS, condState)
 //     targets,                             on other units (the skill's buffs on targets / aura members): no client signal
 //     unmapped: [{ key, role, reason, from }] }
 // `hit` lists are hit groups: [[entry…]…] — the k-th hit of one attack plays group min(k, last) (a plain attack has one
@@ -99,8 +100,9 @@
 //     DISABLE / ON_SKILL_FINISH → `end` (a buff created there outlives the skill: unmapped 'after-end'); at
 //     ON_TAKE_DAMAGE on the owner → `trigger`; at an output event (ON_OUTPUT_DAMAGE, ON_AFTER_ATTACK, …) → `each.hit`;
 //     at an ability event (ON_ABILITY_START / SPELL_ON, ON_BEFORE_ATTACK) → `each.cast`; an effect or damage action at
-//     ON_BUFF_TRIGGER is the buff's periodic tick (unmapped 'tick': no tick reaches the client); a buff created there —
-//     the `[eff_cond]` condition checks such as billro_s_3[eff_cond], whose condition is not in the data — and any
+//     ON_BUFF_TRIGGER is the buff's periodic tick (unmapped 'tick': no tick reaches the client); a buff created there is
+//     a condition's visual state — `cond` (hold 'cond') for the `[eff_cond]` templates whose client graph COND_BUFFS
+//     transcribes (卡涅利安's sand armour; skillfx.js plays the state's loops), else unmapped 'conditional' — like any
 //     other event (ON_APPLYING_MODIFIER, ON_BEFORE_TRY_SET_HP_ZERO, ON_OWNER_KILLED, ON_OWNER_LOCATE,
 //     ON_CALCULATE_DAMAGE, …) → unmapped 'conditional'. Actions on targets follow `on: 'targets'` (a target's buff start
 //     is its hit → `each.hit`).
@@ -437,8 +439,43 @@ function kindOf(srec, rootClass = null) {
 export const emptyPlan = (unitKey, skillId) => ({
   unitKey, skillId, mode: null, modeName: null, kind: null, rootClass: null, projectiles: [],
   start: [], loop: [], end: [], ready: [], range: [], attacks: [], each: { cast: [], hit: [[]] }, trigger: [], targets: [],
-  pulse: [], unmapped: [],
+  pulse: [], unmapped: [], cond: [],
 });
+
+/**
+ * The client's condition graphs of `[eff_cond]` buffs (config/buff_template_holder.ab, the template's ON_BUFF_TRIGGER —
+ * every 0.1 s, index v3 life.tick —; read from the client of 2026-10-15): the buffs each state keeps on the owner, by
+ * the template (a use's `buff`). index.json lists their keys only, not the branches. States, in the graph's order:
+ * `charged` — the skill runs, cast with every charge stored (CheckCharSkillAffecting + billro_talent_enhance_mark);
+ * `on` — it runs; `full` — it waits with 2 charges stored (CompareCharSkillAvailableCnt ≥ 2); `ready` — with 1 (≥ 1);
+ * none below (FinishDerivedBuff). render/vfx/skillfx.js plays the state's loops (plan.cond).
+ */
+export const COND_BUFFS = Object.freeze({
+  'billro_s_1[eff_cond]': Object.freeze({
+    charged: ['billro_skill_01_buff_02', 'billro_skill_01_buff_01_02'], on: ['billro_skill_01_buff_01_02'],
+    full: ['billro_skill_01_buff_02', 'billro_skill_01_buff_01_02'], ready: ['billro_skill_01_buff_01'],
+  }),
+  'billro_s_2[eff_cond]': Object.freeze({
+    charged: ['billro_skill_02_buff_02', 'billro_skill_02_buff_01_02'], on: ['billro_skill_02_buff_01_02'],
+    full: ['billro_skill_02_buff_02', 'billro_skill_02_buff_01_02'], ready: ['billro_skill_02_buff_01'],
+  }),
+  'billro_s_3[eff_cond]': Object.freeze({
+    charged: ['billro_skill_03_buff_01_02', 'billro_skill_03_buff_01_01_02', 'billro_skill_03_buff_02_02', 'billro_skill_03_buff_02_01'],
+    on: ['billro_skill_03_buff_02_01', 'billro_skill_03_buff_01_01_02'],
+    full: ['billro_skill_03_buff_01_02', 'billro_skill_03_buff_01_01_02'], ready: ['billro_skill_03_buff_01_01'],
+  }),
+});
+
+/**
+ * The `[eff_cond]` state of a charge skill now (COND_BUFFS): `on` — the skill runs; `charged` — its cast took every
+ * charge; `charges` — [stored, maximum] (b.snap `charges`), null when unknown. Returns 'charged' | 'on' | 'full' |
+ * 'ready' | null.
+ */
+export function condState({ on = false, charged = false, charges = null } = {}) {
+  if (on) return charged ? 'charged' : 'on';
+  const n = Array.isArray(charges) ? Number(charges[0]) || 0 : 0;
+  return n >= 2 ? 'full' : n >= 1 ? 'ready' : null;
+}
 
 /** Unmapped reasons whose entries a kit's own 'fx' of the skill may stand for (plan.pulse). */
 const PULSE = new Set(['tick', 'channel-hit', 'hit-no-attack']);
@@ -698,8 +735,10 @@ function place(plan, e, u, { attackOf, eachHit }) {
     }
     if (HIT_EVENTS.has(ev) && role === 'hit') { e.at = 'target'; e.hold = oneShotHold(e); eachHit.push(e); return null; }
     if (CAST_EVENTS.has(ev) && role !== 'loop') { e.hold = oneShotHold(e); plan.each.cast.push(e); return null; }
-    // a periodic tick of the buff (an effect / damage action; a buff created there is a condition's visual state)
+    // a periodic tick of the buff (an effect / damage action; a buff created there is a condition's visual state —
+    // played by state where the client's condition graph is known: COND_BUFFS, 卡涅利安's sand armour)
     if (ev === 'ON_BUFF_TRIGGER' && !/^CreateBuff/.test(u.action || '')) return 'tick';
+    if (ev === 'ON_BUFF_TRIGGER' && role === 'loop' && COND_BUFFS[u.buff]) { e.hold = 'cond'; plan.cond.push(e); return null; }
     return 'conditional';
   }
   // at the skill (or its buff's) start, or no event
@@ -887,6 +926,7 @@ export function planKeys(plan) {
   for (const e of plan?.each?.cast || []) add(e);
   for (const g of plan?.each?.hit || []) for (const e of g) add(e);
   for (const e of plan?.pulse || []) add(e);
+  for (const e of plan?.cond || []) add(e);
   return [...out];
 }
 
@@ -1104,7 +1144,9 @@ export function chargeKeys(plan) {
  * procedural fx. A binding:
  *   owner       the extra field naming the skill's owner ('id' | 'src')
  *   projectile  the skill projectile whose reached effects (onReached, else onHit) play where the fx happens
- *   at          'point': the fx's (x, y) on the ground (the unit `extra.id` names stands there: its feet)
+ *   keys        else these effect keys (a one-shot of the skill's own: its `at` 'target')
+ *   at          'point': the fx's (x, y) on the ground (the unit `extra.id` names stands there: its feet); 'target': once
+ *               on the unit `extra.target` names (else at the fx's point), turned by the owner's side (FLIP_TWO_SIDE)
  *   hold        how long a looping reached effect stays: a blackboard key of our skill record (seconds), else `holdS`
  *   cover       fx kinds of the same owner at that tile that the reached effect draws (skipped while it plays)
  */
@@ -1117,10 +1159,18 @@ export const FX_BINDINGS = Object.freeze({
   skchr_clemnt_3: Object.freeze({
     lock: Object.freeze({ owner: 'src', projectile: 'projectile_chr_clemnt_s3', at: 'point', hold: 'projectile_life_time', holdS: 5, cover: Object.freeze(['blast']) }),
   }),
+  // 泡泡 S2 (chess_char_2_08-bubble.js): she makes no attack; every damage instance she takes strikes back at its source
+  // ('counter': id = her, target = the attacker). The client's bubble_s_2 does it at ON_TAKE_DAMAGE — DamageViaAttr and
+  // CreateEffect on MODIFIER_SOURCE with the blackboard's `effect` bubble_skill_02_hit (index.json's use 'hit' by name,
+  // planned as each.hit, which no attack of hers ever plays)
+  skchr_bubble_2: Object.freeze({
+    counter: Object.freeze({ owner: 'id', keys: Object.freeze(['bubble_skill_02_hit']), at: 'target' }),
+  }),
 });
 
-/** The reached effects of a binding's projectile (onReached, else onHit), lower case; [] without them. */
+/** A binding's `keys`, else the reached effects of its projectile (onReached, else onHit), lower case; [] without them. */
 export function bindingEffects(idx, bind) {
+  if (Array.isArray(bind?.keys)) return bind.keys.map(lc).filter(Boolean);
   const p = bind?.projectile ? idx?.projectiles?.[lc(bind.projectile)] : null;
   if (!p) return [];
   const list = Array.isArray(p.onReached) && p.onReached.length ? p.onReached : Array.isArray(p.onHit) ? p.onHit : [];

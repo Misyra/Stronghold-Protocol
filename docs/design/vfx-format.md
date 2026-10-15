@@ -666,11 +666,19 @@ follow the owner / the height of the tile under it.
 4 OWNER_SPINE_FACE_TO_MATCH, `_motionMode` (0 WALK, 1 FLY), `_buffKey`, `_playWhenFaceToBack`), **`OnFinishEmitter`**
 (`_effects` started when this one finishes, e.g. `amgoat_skill_03_buff` → `amgoat_skill_03_buff_end`),
 **`OnFinishAnime`** / **`TriggerAnimatorWhenFinish`** (set an Animator trigger at the end), **`PauseAnotherEffect`**
-(`_effect`). The runtime starts an OnPlayEmitter's effects with their parent's placement and owner (`system.js
-FxHandle._start`); on a unit a chained effect keeps to its own FollowMountPoint's point, else moves with the unit when
-its parent or its own `_holdByOwner` says so (§32.14.40: before, they all kept their parent's placement, and a parent
-without a FollowMountPoint left them where they started — 能天使 S2's `angle_skill_02_buff_02` and 纯烬艾雅法拉 S3's five
-weapon effects, each on its own Special point in the client, at her feet).
+(`_effect`, `_preDelay`, `_checkUpdate`; 21 prefabs). The runtime starts an OnPlayEmitter's effects with their parent's
+placement and owner (`system.js FxHandle._start`); on a unit a chained effect keeps to its own FollowMountPoint's point,
+else moves with the unit when its parent or its own `_holdByOwner` says so (§32.14.40: before, they all kept their
+parent's placement, and a parent without a FollowMountPoint left them where they started — 能天使 S2's
+`angle_skill_02_buff_02` and 纯烬艾雅法拉 S3's five weapon effects, each on its own Special point in the client, at her
+feet). PauseAnotherEffect is **run** since round 46 (history §32.14.42; `effect.js` `def.pauses`, `system.js
+_pauseOthers`): while the effect plays (after `_preDelay`) the effects of the key `_effect` on the same unit (the
+`owner` FxWiring.playOn gives each effect) are not drawn — they keep running and show again once it stops. It shows one
+variant of a stack — 泥岩's and 鼠王's shield layers (`mudrok_buff_01_start` pauses `_02` and `_03`, `_02` pauses `_03`),
+the 泥岩 boss's `enemy_mdrock_skill_buff_01/02/03` — and puts a skill's range in place of a talent's aura (塑心 S3's
+`cello_skill_03_buff_range` over `cello_buff_01`, 调香师 S2's `flower_skill_02_range` over `flower_buff_01_range`, 帕拉斯
+S3, 琳琅诗怀雅's trait). [ASSUMED]: the client's pause hides the effect (Unity's would freeze its particles);
+`_checkUpdate` 0 (pause what plays at the start only) is treated like 1.
 
 **`PauseEffectIf`**: pause (hide) the effect while a condition on its owner holds — `_checkAbnormalFlag` +
 `_pauseWhenAbnormalFlag(s)`, `_checkAbnormalImmune` + `_pauseWhenAbnormalImmune`, `_checkNotInAbnormalFlag` +
@@ -1185,7 +1193,16 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   nothing (8 roster nodes). The forms' modes come from the data (`talents.js formModes`: a RebornTalent's 'form2' →
   `reborn.mode`, a husk's modes, a 傀儡师's 'doll' → the mode its fatal-blow node switches to — 风丸 → Stand, whose attack
   rows then play), else a form named like a mode. An arts barrier's talent (its key names a shield) plays while the
-  barrier holds: the sim's 'shieldBreak' ends it, its 'artsBarrier' phase raises it again [ASSUMED]. One effect key on
+  barrier holds: the sim's 'shieldBreak' ends it, its 'artsBarrier' phase raises it again [ASSUMED]. **Per-layer loops**
+  (round 46, history §32.14.42): a binding's loops that its buffs create with CreateBuff(s) at a buff event and whose
+  prefabs pause one another (PauseAnotherEffect, §33.11) are a stack, bottom (pausing none) to top. An ally plays the
+  lowest n for the n hit-negating layers the sim reports (b.snap `layers`, sim `snapshot.js layerView`: the sum of its
+  buffs' `shieldHits`) — 泥岩's talent (client `mudrok_t_1`: the first layer's buff carries `mudrok_buff_03_start`, the
+  middle ones `_02`, the last `_01`) shows `_03` / `_02` / `_01` for 1 / 2 / 3 layers and nothing at 0 — and each layer
+  gained plays the binding's start one-shots again (`mudrok_buff_01_begin`, the `[recharge]` template's CreateEffect);
+  an enemy keeps the whole stack while its barrier holds — 鼠王's and the 泥岩 boss's top variant until 'shieldBreak'
+  [ASSUMED: our barrier is one amount, the client's three parts of `dynamic` each, `mousek_shield[a]`–`[c]` /
+  `enemy_mdrock_s_2[shield_a]`–`[c]`, which switch the variant as each part breaks]. One effect key on
   one spot plays once whichever binding wants it (a mode switch from one copy to another keeps it running); a prefab
   that does not loop plays once while its binding is in force — so does a skill's held row of such a prefab (SkillFx:
   at the skill start, for its own life; a tier switch or a view built mid-battle does not replay it). Not drawn: what no
@@ -1216,7 +1233,18 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   feet only when held, as before [ASSUMED: §33.11 `_holdByOwner`; a status loop whose prefab says 0 —
   `common_stealth`, `buff_ fragile_01`, `common_invincible_01` — follows its unit all the same].
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
-  where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`).
+  where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`). A binding may name its own
+  `keys` instead, played once `at: 'target'` on the unit the fx names (round 46: 泡泡 S2's 'counter' →
+  `bubble_skill_02_hit` on the attacker, the client's `bubble_s_2` CreateEffect on MODIFIER_SOURCE at ON_TAKE_DAMAGE;
+  the kit's fx carries `target`).
+* **`[eff_cond]` state loops** (round 46, history §32.14.42; `skills.js COND_BUFFS`, `condState`, plan `cond`;
+  `skillfx.js _cond`): the buffs a skill's `[eff_cond]` template creates at its ON_BUFF_TRIGGER (every 0.1 s) show a
+  condition's state, and index.json lists only their keys. For the templates whose client graph COND_BUFFS transcribes
+  (卡涅利安's `billro_s_1/2/3[eff_cond]`, read from config/buff_template_holder.ab) the state's buffs loop on the owner:
+  the skill on and cast with every charge stored (the kit's start fx says `charged`) → full + half sand armour; on →
+  the half one (S3: its two halves); off with 2 charges stored → full + half; with 1 → the idle half (`_buff_01`); none
+  below. The stored charges come from b.snap `charges` (sim `snapshot.js chargeView`, display only). Other
+  `[eff_cond]` templates stay unmapped 'conditional'.
 * **A projectile's parts** (2026-10-15, history §32.14.36 and §32.14.38; `flight.js projectileParts`, `wiring.js
   _fly`): the flying effect is the projectile class's own `_mainEffect` and its life that class's LIMITED `_lifeTime`,
   read from `behaviours` (an index written before the correction named a chain's or a rope's line `main` for 30

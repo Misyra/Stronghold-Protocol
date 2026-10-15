@@ -96,7 +96,7 @@ export function compileEffect(desc, lib = {}) {
     trail: new Array(n).fill(null), line: new Array(n).fill(null), subNodes: new Set(), hasPsAncestor: new Uint8Array(n),
     clips: (Array.isArray(desc?.clips) ? desc.clips : []).map(compileClip), animators: [],
     pe: null, proj: null, fxDelay: new Map(), tweeners: [], uvRot: [], lod: null, follow: null, direction: null,
-    onPlay: [], onFinish: [], switchable: null, colorMod: null, pause: null, materials: [], lite: [],
+    onPlay: [], onFinish: [], switchable: null, colorMod: null, pause: null, pauses: [], materials: [], lite: [],
     textures: Array.isArray(desc?.textures) ? desc.textures : [], meshes: Array.isArray(desc?.meshes) ? desc.meshes : [],
     stats: desc?.stats || {}, refs: Array.isArray(desc?.refs) ? desc.refs : [],
   };
@@ -165,6 +165,9 @@ export function compileEffect(desc, lib = {}) {
         case 'SwitchableRightEffect': def.switchable = { ...(def.switchable || {}), right: f._rightEffect ? String(f._rightEffect).toLowerCase() : null, reverse: on(f._reverseLeftRight) }; break;
         case 'SwitchableEffectByFaceDirection': def.switchable = { ...(def.switchable || {}), up: f._upEffect ? String(f._upEffect).toLowerCase() : null, down: f._downEffect ? String(f._downEffect).toLowerCase() : null, left: f._leftEffect ? String(f._leftEffect).toLowerCase() : null }; break;
         case 'ColorModifier': if (Array.isArray(f._color)) def.colorMod = f._color.map((x) => num(x, 1)); break;
+        // PauseAnotherEffect (§33.11): while this effect plays it pauses its owner's effects of the key `_effect` (after
+        // `_preDelay`): 泥岩's shield layers (mudrok_buff_01_start pauses _02 and _03), 塑心 S3's range over her talent's aura
+        case 'PauseAnotherEffect': if (f._effect) def.pauses.push({ key: String(f._effect).toLowerCase(), delay: Math.max(0, num(f._preDelay, 0)) }); break;
         case 'PauseEffectIf': {
           // each _check… is a PauseEffectIf.CheckType (§33.11): 0 NOT_CHECK, 1 CHECK_YES (pause while the condition
           // holds), 2 CHECK_NO (pause while it does not); the value a check tests counts only when it is 1 or 2. Kept:
@@ -264,7 +267,8 @@ export class Effect {
     this.started = false;
     this.track = null;
     this.hidden = false;                               // PauseEffectIf (owner facing)
-    this.owner = null;
+    this.pausedBy = false;                             // PauseAnotherEffect of another effect on its owner (system.js)
+    this.owner = null;                                 // the unit it plays on (FxWiring.playOn; system.js pauses by it)
     this.tint = def.colorMod || null;
     this.speed = 1;                                    // playback speed (1 = the battle clock)
     this.ttl = Infinity;                               // battle s after which a still-playing effect is stopped (a cap)
@@ -303,7 +307,7 @@ export class Effect {
     this.yaw = 0; this.pitch = 0; this.roll = 0; this.mirror = false; this.flipY = false; this.groundZ = 0; this.mountRot = null;
     this.time = 0;
     this.delay = def.delayToPlay + (def.randomDelay > 0 ? Math.random() * def.randomDelay : 0);
-    this.state = 'play'; this.linger = 0; this.started = false; this.track = null; this.hidden = false; this.owner = null;
+    this.state = 'play'; this.linger = 0; this.started = false; this.track = null; this.hidden = false; this.pausedBy = false; this.owner = null;
     this.tint = def.colorMod || null; this.speed = 1; this.ttl = Infinity; this.onFinish = null; this.data = null;
     this.handle = null; this.fade = 1; this.stopT = 0;
     const seed0 = (num(seed, 0) >>> 0) || ((Math.random() * 4294967296) >>> 0);
@@ -673,7 +677,7 @@ export class Effect {
    * neighbours of one material share a draw.
    */
   gather(cam, sink) {
-    if (this.state === 'done' || this.ctime < 0 || this.hidden) return;
+    if (this.state === 'done' || this.ctime < 0 || this.hidden || this.pausedBy) return;
     const def = this.def, n = def.n, lite = this.lite;
     const camPos = cam.pos;
     for (let i = 0; i < n; i++) {

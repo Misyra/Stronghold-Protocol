@@ -172,7 +172,8 @@ export class OfficialFx {
 
   /**
    * Start an effect. place: { pos (Unity), yaw, pitch, mirror, groundZ }; opts: { loop?: boolean (keep pending until
-   * it loads), important?: boolean, seed?: number, track?: fn, onFinish?: fn, data?: any, skip?: s to start it in }.
+   * it loads), important?: boolean, seed?: number, track?: fn, onFinish?: fn, data?: any, skip?: s to start it in,
+   * owner?: the unit it plays on (PauseAnotherEffect pauses by it) }.
    * Returns a handle (its `effect` is null until the prefab is loaded) or null when off / absent / over the caps.
    */
   spawn(key, place, opts = {}) {
@@ -225,6 +226,29 @@ export class OfficialFx {
     }
     this.effects.length = w;
     this.particles = parts;
+    this._pauseOthers();
+  }
+
+  /**
+   * PauseAnotherEffect (effect.js `def.pauses`, DESIGN §33.11): an effect playing on a unit (`owner`, FxWiring.playOn)
+   * pauses that unit's effects of the keys it names once its `_preDelay` has passed, until it stops — the client's way to
+   * show one variant of a stack (泥岩's and 鼠王's shield layers: the top layer's effect pauses the lower ones) or to put
+   * a skill's range in place of a talent's aura (塑心 S3, 调香师 S2). A paused effect keeps running but is not drawn
+   * [ASSUMED: the client's pause hides it; `_checkUpdate` 0 — check at the start only — is treated as 1].
+   */
+  _pauseOthers() {
+    let pausers = null;
+    for (const fx of this.effects) {
+      fx.pausedBy = false;
+      if (fx.def.pauses?.length && fx.owner != null && fx.state === 'play') (pausers || (pausers = [])).push(fx);
+    }
+    if (!pausers) return;
+    for (const p of pausers) {
+      for (const q of p.def.pauses) {
+        if (p.time < q.delay) continue;
+        for (const fx of this.effects) if (fx !== p && fx.owner === p.owner && fx.def.key === q.key) fx.pausedBy = true;
+      }
+    }
   }
 
   /**
@@ -411,6 +435,7 @@ export class FxHandle {
     const fx = s._take(def, seed) || new Effect(def, { lite: s.lite, lib: s.lib, seed });
     fx.place(this.placeArgs);
     fx.track = this.opts.track || null;
+    fx.owner = this.opts.owner ?? null;
     fx.handle = this;
     // a one-shot nobody stops is capped: its authored duration (plus its linger), else ONE_SHOT_TTL; a looping prefab
     // nobody owns (the wiring stops it at its end event) ends after LOOP_TTL at the latest
@@ -423,13 +448,13 @@ export class FxHandle {
     // a chained effect of the prefab itself (OnPlayEmitter) starts with the same placement and owner; a looping one
     // stops with it (OnFinishEmitter's start where it finished)
     this.children = [];
-    const own = { track: this.opts.track, data: this.opts.data, loop: this.opts.loop, important: this.opts.important };
+    const own = { track: this.opts.track, data: this.opts.data, loop: this.opts.loop, important: this.opts.important, owner: this.opts.owner };
     for (const e of def.onPlay) for (const k of e.keys) if (k !== def.key) { const c = s.spawn(k, this.placeArgs, own); if (c) this.children.push(c); }
     const prev = fx.onFinish;
     fx.onFinish = (f) => {
       prev?.(f);
       this._stopChildren();
-      for (const k of def.onFinish) if (k !== def.key) s.spawn(k, { pos: f.anchor.slice(), yaw: f.yaw, mirror: f.mirror, groundZ: f.groundZ }, { track: this.opts.track });
+      for (const k of def.onFinish) if (k !== def.key) s.spawn(k, { pos: f.anchor.slice(), yaw: f.yaw, mirror: f.mirror, groundZ: f.groundZ }, { track: this.opts.track, owner: this.opts.owner });
     };
     this.effect = fx;
     // started late (a cast whose wind-up began past the clip's start): advanced to where it would be

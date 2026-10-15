@@ -38,6 +38,8 @@ export const TRIGGER_HOLD_S = 3;
 const KO_FORMS = new Set(['reborn', 'stone']);
 const UP_FORMS = new Set(['form2', 'fly']);
 const DIRS = ['UP', 'RIGHT', 'DOWN', 'LEFT'];
+/** Buff events at which a template creates a per-layer buff (talentfx _layerOrder). */
+const LAYER_EVENTS = new Set(['ON_BUFF_START', 'ON_BUFF_TRIGGER']);
 
 const idOf = (v) => v?.info?.id ?? v?.id;
 const uniq = (list) => { const seen = new Set(); return list.filter((e) => { const k = `${e.key}|${e.at}|${e.hold}`; if (seen.has(k)) return false; seen.add(k); return true; }); };
@@ -131,6 +133,42 @@ export class TalentFx {
     return [...b.plan.loop, ...b.plan.start, ...b.plan.range].filter((e) => e.hold === 'skill' && !isPost(e));
   }
 
+  /**
+   * The layer order of a binding's per-layer loops (DESIGN §33.16), bottom to top, or null: loops its buffs create with
+   * CreateBuff(s) at a buff event whose prefabs pause one another (PauseAnotherEffect — 泥岩's talent: mudrok_t_1[init] /
+   * [recharge] create a buff per 护盾 layer, mudrok_buff_01_start pauses _02 and _03, _02 pauses _03: the bottom one
+   * pauses none). undefined while a prefab still loads (asked again next frame).
+   */
+  _layerOrder(b, loops) {
+    if (b.layerOrder !== undefined) return b.layerOrder;
+    const keys = [...new Set(loops.filter((e) => /^CreateBuffs?$/.test(e.action || '') && LAYER_EVENTS.has(e.event)).map((e) => e.key))];
+    if (keys.length < 2) return (b.layerOrder = null);
+    const defs = keys.map((k) => this.w.ofx.lib.def(k));
+    if (defs.some((d) => d === undefined)) return undefined;
+    const pauses = defs.map((d) => new Set((d?.pauses || []).map((q) => q.key).filter((k) => keys.includes(k))));
+    if (!pauses.some((p) => p.size)) return (b.layerOrder = null);
+    return (b.layerOrder = keys.map((k, i) => ({ k, n: pauses[i].size })).sort((x, y) => x.n - y.n).map((x) => x.k));
+  }
+
+  /**
+   * The loops a binding keeps now: a per-layer stack (_layerOrder) on an ally plays its lowest n for the n hit-negating
+   * layers the sim reports (b.snap `layers`; the top one shows — system.js pauses the rest): 1 → mudrok_buff_03_start,
+   * 2 → _02, 3 → _01, none at 0; each layer gained plays the binding's start one-shots again (mudrok_buff_01_begin, the
+   * [recharge] template's CreateEffect). An enemy keeps the whole stack while its barrier holds (鼠王, 泥岩 boss: the top
+   * variant until 'shieldBreak' — our barrier is one part, the client's three [ASSUMED]).
+   */
+  _layerLoops(U, b, v, loops) {
+    const order = this._layerOrder(b, loops);
+    if (!order || v.isEnemy || v.info?.side === 'enemy') return loops;
+    const n = Math.max(0, Number(v.layers) | 0);
+    const mem = U.layerN || (U.layerN = new Map());
+    const was = mem.get(b.id);
+    mem.set(b.id, n);
+    if (was !== undefined && n > was) this._shots(b, v, { attacks: false });
+    const keep = new Set(order.slice(0, n));
+    return loops.filter((e) => !order.includes(e.key) || keep.has(e.key));
+  }
+
   _stopAll(U) {
     for (const t of U.loops.values()) t.h.stop();
     U.loops.clear();
@@ -139,6 +177,7 @@ export class TalentFx {
     U.post = [];
     U.inv = null;
     U.act.clear();
+    U.layerN?.clear();
   }
 
   // ---- signals ----------------------------------------------------------------------------------------------------
@@ -329,7 +368,7 @@ export class TalentFx {
         if (!on && was) for (const e of uniq(b.plan.end)) this._play(e, v);
         U.act.set(b.id, on);
         if (!on) continue;
-        for (const e of this._loopsOf(b)) want.set(`${e.key}|${e.at}`, e);
+        for (const e of this._layerLoops(U, b, v, this._loopsOf(b))) want.set(`${e.key}|${e.at}`, e);
       }
       for (const e of U.post) want.set(`${e.key}|${e.at}`, e);
       if (U.inv && now < U.inv.until) for (const e of U.inv.entries) want.set(`${e.key}|${e.at}`, e);

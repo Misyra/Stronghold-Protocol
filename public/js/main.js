@@ -53,6 +53,7 @@ import { LoadoutHost } from './screens/loadout.js';
 import { StatsHost } from './screens/stats.js';
 import { recordResult, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/loadoutSync.js';
+import { installSkinsSync } from './ui/skins.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 import { AnnouncementBanner } from './ui/announcement.js';
 import { ResourceHost } from './ui/resourcePanel.js';
@@ -414,6 +415,10 @@ async function boot() {
   installLoadoutSync({ net });
   installOwnershipSync({ net });
   installDiySync({ net });
+  // 干员皮肤 (docs/SKINS.md): keeps the server's copy of this browser's 战斗模型 choices current (PUBLIC — teammates
+  // see them) and reloads the asset manifest when anyone on this server installs a skin. The section itself is
+  // rendered by screens/loadout.js through ui/skinPicker.js; the 商店立绘 choice stays local and needs no sync.
+  installSkinsSync({ net });
   net.attachBrowserHooks();
   // Audio: unlock on first gesture, BGM follows the route / match phase (js/audio.js).
   installAudio({ getManifest: () => data.get('assets'), subscribe: store.subscribe, getState: store.get, selectRoute, settings: settingsStore.get() });

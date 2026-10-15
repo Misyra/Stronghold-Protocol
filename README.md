@@ -122,6 +122,7 @@ npm start          # 启动服务器：http://localhost:3000
 也可以直接运行启动脚本（Windows `scripts\start-windows.bat`，macOS / Linux `scripts/start.sh`）：首次会自动安装依赖、下载素材，然后启动服务器并打开浏览器。
 
 - **本地客户端素材**：本分支已提交上游 v0.1.3 完整包中的这部分素材和清单，git pull 后重启即可使用（3D 棋盘、部分界面图标与源石虫模型）。0.2.0 新增的 39 个召唤物官方模型不在其中：需要召唤物模型的源码部署，运行一次 `npm run setup -- --local` 提取，或从同版本完整包复制 `public/assets/local/`。以下为原始上游的提取方式：官方 3D 棋盘、部分官方界面图标（交流按钮与表情面板的边框、模组类型图标等）、灼热 / 炽焰源石虫和 39 个召唤物（多数自选召唤物）的官方模型需要从本机的《明日方舟》PC 客户端提取（Windows 原生客户端、macOS 的 CrossOver 或 PlayCover）。`npm run setup` 检测到客户端时会询问是否提取（需要 Python 3.8+，依赖装在项目内的 `.venv-extract`，不影响系统）；之后可以用 `node tools/setup.mjs --local` 重新提取，或用 `--game "<…/StreamingAssets/AB/Windows>"` 指定路径。没有客户端时游戏照常运行，这几样换成替代样式：2D 棋盘、样式相近的图标、染色的普通源石虫、召唤物头像。表情和「玩法说明」的教程图随上面的素材一起从公开镜像下载，不需要客户端。没有客户端的服务器（例如 Linux VPS）也可以从**同一版本**的整合包里复制 `public/assets/local/` 和 `data/local-assets.json`，见 [docs/operations/DEPLOY.md](docs/operations/DEPLOY.md) 的「本地客户端素材」。
+- **干员皮肤（可选）**：干员可以用官方时装换掉局内模型（战斗模型）和商店立绘。皮肤**不随包分发**，按需下载：在「干员调配」的干员详情里点一套「未安装」的皮肤即可（约 1 MB，装在**开服那台机器**上，所有玩家共用、也都看得见）；服务器上也可以直接跑 `node tools/install-skins.mjs list`（列出目录与已装）、`add <skinId…>`、`add-char <charId…>`、`remove <skinId…>` —— `data/skins.json` 是全部 174 套的目录，`data/skins-installed.json` 记录装了哪几套。装好后所有在线客户端会自动刷新，不用重启；一套都不装时一切照旧。设计说明见 [docs/SKINS.md](docs/SKINS.md)。
 - 素材下载优先使用 GitHub，失败时自动改用 jsDelivr 镜像。
 - `npm run doctor`（即 `node tools/doctor.mjs`）可以随时诊断：Node 版本、素材是否完整、端口占用、局域网地址和防火墙。
 

@@ -59,7 +59,9 @@ test('selection: runtime files in; tests, maintainer tools, other docs, dev page
     'docs/research/07-assets.json', 'CHANGELOG.md']) {
     assert.ok(keep.includes(f), `keeps ${f}`);
   }
-  assert.equal(keep.length, 35, keep.join(' '));
+  // 36: the shipped set grew by docs/research/08-skins.json (干员皮肤: tools/install-skins.mjs validates every
+  // install against it, and the in-game 安装 button runs that tool on the server, so it has to ship)
+  assert.equal(keep.length, 36, keep.join(' '));
   assert.equal(drop.length, 40, drop.join(' '));
   assert.ok(!keep.some((f) => drop.includes(f)));
 });

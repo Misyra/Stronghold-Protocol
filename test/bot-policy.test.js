@@ -77,7 +77,14 @@ test('partial bot configuration persists across restart and concurrent room-limi
   assert.ok(results.every((r) => r.status === 200));
   assert.equal(srv.lobby.opts.maxRooms, 700);
   assert.equal(srv.lobby.opts.allowBots, false);
-  assert.deepEqual(JSON.parse(await readFile(f.state, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: true, allowForeignConnections: true, maxForeignSessionsPerIp: 1 });
+  // v2 文档（§10.2）：两个并发写各推进一个版本、值合并，lastMutation 记的是后落盘的那一次。
+  const saved = JSON.parse(await readFile(f.state, 'utf8'));
+  assert.equal(saved.schemaVersion, 2);
+  assert.equal(saved.revision, 3);
+  assert.deepEqual(saved.values, { maxRooms: 700, allowBots: false, limitForeignSessions: true, allowForeignConnections: true, maxForeignSessionsPerIp: 1 });
+  assert.equal(saved.lastMutation.revision, 3);
+  assert.match(saved.lastMutation.opId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  assert.equal(saved.lastMutation.payloadHash.length, 64);
   await srv.close();
   const restored = await f.start();
   assert.equal(restored.lobby.opts.maxRooms, 700);
@@ -101,6 +108,12 @@ test('invalid or unauthorized bot configuration never changes policy', async (t)
   const legacy = await f.start();
   assert.equal(legacy.lobby.opts.allowBots, true);
   assert.equal(legacy.lobby.opts.maxRooms, 321);
+  // v1 存档在启动时迁成 v2 第 1 版（§10.2）：旧文件不会一直停在「每次启动都被兼容读取」的状态。
+  const migrated = JSON.parse(await readFile(f.state, 'utf8'));
+  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.revision, 1);
+  assert.deepEqual(migrated.values, { maxRooms: 321 });
+  assert.equal(migrated.lastMutation, null);
 });
 
 test('persistence failure does not apply a bot policy change', async (t) => {

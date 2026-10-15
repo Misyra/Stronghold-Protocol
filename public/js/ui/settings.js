@@ -338,11 +338,13 @@ export function SettingsModal({ open, onClose }) {
   const [touchUi] = useState(() => detectFeatures().coarse && !detectFeatures().fine);
   const mtNote = machineTranslationNote(); // a pack marked as machine translation says so under the switch
   const [fxOk, setFxOk] = useState(false);  // effects extracted from the local client: the 官方特效 row shows
+  // only while it is open: the title page keeps the modal mounted (closed), and assets.js stays lazy there
   useEffect(() => {
+    if (!open) return undefined;
     let live = true;
     import('../assets.js').then((m) => fxAvailable(m.assets)).catch(() => fxAvailable(null)).then((ok) => { if (live) setFxOk(!!ok); }, () => {});
     return () => { live = false; };
-  }, []);
+  }, [open]);
   const fxTier = resolveOfficialFx(s.officialFx, true);
   return html`<${Modal} open=${open} onClose=${onClose} title=${t('设置')} micro="SETTINGS" width="7.4rem"
                         actions=${html`<${Button} variant="secondary" icon="book" class="set-guide" onClick=${() => openGuide(0)}>${t('玩法说明')}<//>

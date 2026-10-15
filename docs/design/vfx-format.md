@@ -1124,6 +1124,28 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   (`projectileKey` by node and class, also an ability with no rows of its own) or a use's `projectileKey` — else one of
   the skill's `projectiles` by the naming rule (the only one, else the shortest named `_s<n>` / `_sk<n>` after the
   skill's number, else the first), with the ability's mount and follow-up shots.
+* **A skill's own casts and its kit's hits** (history §32.14.43): attack abilities of a skill that are no normal
+  attack carry `when` on the plan — `'end'` for a final attack (the node `FinalAttack` / `EndAttack` …, or every cast row
+  `end`: 灵知 S3, 薄荷 S2, 歌蕾蒂娅 S3, 锏 S3 [ASSUMED: by the names]), `'start'` for the attacks of a lasting or passive
+  skill whose root ability is an AbilitySequenceGroup (the skill runs it once as it starts: 缄默德克萨斯 S2 / S3's appear
+  strike, 仇白 S2's sword split, 余 S2's teleport, 焰影苇草 S2's fire balls; our record decides the kind) — and never stand
+  for a normal attack (the mode's rows do): their cast and range rows play on the owner at the skill's start (a
+  passive's: its deploy) or at its 0. Their hits, and those of an instant activation with no 'atk' between its 1 and 0,
+  are the frame's *kit hits*: 'dmg' names no source, so an HP 'dmg' on the owner's enemies (a heal ability: a 'heal' on
+  its side) that no attack owns — no waiting blow, no melee attacker, no floating unit's hit — in that frame after the
+  activation, the start or a bound kit fx is a hit of that attack (hit k of a target its group, the first its aims and
+  the attack's buffs) and stands for the procedural spark / generic heal; a final attack's hits are the damage of the
+  0's frame before the 0 (the kit deals it first) [ASSUMED: a kit hits in that frame]. In the frame of an instant
+  activation its attack is the skill's whatever kind the sim made it (阿罗玛 S1's 'beam', 夕 S1's 'bolt'; a heal stays
+  a heal), and a ReplacementSkill's replaced attack may follow its 0 in that frame (华法琳 S1): the no-attack fallback
+  waits for the frame's end. A kit fx may stand for a plan attack (`FX_BINDINGS` `attack`: 锏 S3's 'slash' is her
+  Damage ability).
+* **Facing variants of a buff template** (history §32.14.43): the uses of one template action (same `from`, event,
+  action, buff, node, carrier, role) whose keys are one effect's variants by name — `<base>_up` / `_down` / `_left` /
+  `_right`, `_back` (facing up), `_front`, the plain `<base>` — are one entry with `slots` picked by the owner's deploy
+  direction (`skills.js dirFamilies`; a facing without a variant of its own plays the plain key, else `_front`): the
+  client's CheckCharacterDefaultDirection branches (仇白 S2's sword wind: UP `_up`, DOWN `_down`, RIGHT the plain key,
+  else `_left`), which index.json writes as a use each without the condition. Before, every variant looped at once.
 * **Buffs on targets** (`on: 'targets'`) from an attack ability's `_activeBuffs` loop on that attack's targets by the
   buff's `life` (index v3): LIMITED for its `time` or our record's blackboard value of its `key`, INFINITY while the
   skill lasts, IMMEDIATELY once (`skills.js lifeOf`); without one (or a LIMITED one no blackboard gives) for our

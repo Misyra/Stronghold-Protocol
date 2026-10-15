@@ -142,18 +142,29 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
     assert.match(stored || '', new RegExp(chosen.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the choice is saved to localStorage');
   });
 
-  test('an operator with no skins shows no section at all', async () => {
+  test('an operator with no skins still gets the 立绘 switch and the model frame', async () => {
     const cat = JSON.parse(readFileSync(path.join(ROOT, 'data/skins.json'), 'utf8'));
     const bare = chessIdWhere((charId) => !(cat.chars?.[charId] || []).length);
     if (!bare) return; // every roster operator happens to have skins — nothing to assert
     await openDetailFor(bare);
-    await page.waitForSelector('.lo-detail', { timeout: 5000 });
-    // the detail panel re-renders asynchronously after the row click, so the section of the PREVIOUS operator is
-    // still on screen for a frame or two — waiting for it to go is the assertion, not a sleep
-    const gone = await page.waitForFunction(() => !document.querySelector('[data-testid="skin-section"]'), { timeout: 10000 })
-      .then(() => true).catch(() => false);
-    const title = await page.$eval('.lo-dhead__name', (el) => el.textContent.trim()).catch(() => '');
-    assert.ok(gone, `no empty 皮肤 box for ${bare} (${title})`);
+    // The section is not only about skins: 溯光星源 ships no outfit at all and still wants 原始/精英二 立绘 and the
+    // model frame — the first version hid the whole section here, which is exactly what the playtest reported.
+    await page.waitForSelector('[data-testid="skin-section"]', { timeout: 10000 });
+    const tiles = await page.$$eval('[data-skin-group="portrait"] .lo-skin', (els) => els.map((e) => e.getAttribute('data-skin')));
+    assert.ok(tiles.includes(''), `原始立绘 tile for ${bare}, got ${JSON.stringify(tiles)}`);
+    // only the operator's own two tiles: '' (原始) and the PORTRAIT_E2 sentinel — no skin tile, it has none
+    assert.ok(tiles.every((x) => x === '' || x === 'e2'), `no skin tiles, got ${JSON.stringify(tiles)}`);
+    const note = await page.$eval('[data-testid="skin-section"] .lo-sec__note', (e) => e.textContent.trim());
+    assert.match(note, /暂无皮肤/, `the header says so (${note})`);
+    const cap = await page.$eval('.lo-model__cap', (e) => e.textContent.trim());
+    assert.match(cap, /当前战斗模型/, `the frame is still there (${cap})`);
+    // …and the frame really draws something: the avatar at worst, the rendered model once it lands
+    const drawn = await page.waitForFunction(() => {
+      const box = document.querySelector('[data-testid="model-preview"] .lo-model__box');
+      const img = box?.querySelector('img');
+      return !!box.querySelector('canvas') || (img && img.getAttribute('src') && img.getAttribute('src') !== '');
+    }, { timeout: 60000 }).then(() => true).catch(() => false);
+    assert.ok(drawn, '预览框里画出了东西');
   });
 
   test('the (uninstalled) case renders its install hint', async () => {

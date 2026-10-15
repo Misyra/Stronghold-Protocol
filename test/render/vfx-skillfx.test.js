@@ -16,13 +16,14 @@ import { skillPlan, skillProjectile, targetsOf, buffDuration, planFor, chargePla
 const SKILL = 16; // UF.SKILL
 
 const LOOPING = new Set(['foo_s1_buff', 'foo_s1_ready', 'foo_s2_burn', 'buff_stun', 'buff_burn', 'foo_s3_loop', 'bar_buff', 'foo_s1_range_l',
-  'indigo_attack_charge_02', 'indigo_attack_charge_03', 'indigo_attack_charge_04', 'indigo_attack_charge_05', 'clemnt_skill_03_mark_all_01']);
+  'indigo_attack_charge_02', 'indigo_attack_charge_03', 'indigo_attack_charge_04', 'indigo_attack_charge_05', 'clemnt_skill_03_mark_all_01',
+  'once_loop', 'oncep_loop']);
 const KEYS = ['foo_atk_start', 'foo_atk_hit', 'foo_s2_mode_cast', 'foo_s3_mode_cast', 'foo_trail', 'foo_phit', 'foo_s1_buff', 'foo_s1_begin',
   'foo_s1_range', 'foo_s1_range_l', 'foo_s1_end', 'foo_s1_ready', 'foo_s1_trig', 'foo_s2_cast_start', 'foo_s2_cast_spell', 'foo_s2_aim', 'foo_s2_h1',
   'foo_s2_h2', 'foo_s2_burn', 'foo_s2_trail', 'foo_s2_phit', 'foo_s3_loop', 'foo_s3_tick', 'foo_each_hit', 'bar_buff', 'bar_birth',
   'indigo_attack_charge_01_start', 'indigo_attack_charge_02', 'indigo_attack_charge_03', 'indigo_attack_charge_04', 'indigo_attack_charge_05',
   'indigo_attack_01_trail', 'indigo_attack_01_hit', 'clemnt_skill_03_mark_all_01', 'buff_stun', 'buff_burn', 'g_hit', 'g_heal', 'g_enemy', 'g_die',
-  'qux_s1_cast', 'qux_s1_trail', 'qux_mode_cast'];
+  'qux_s1_cast', 'qux_s1_trail', 'qux_mode_cast', 'once_buff', 'once_loop', 'oncep_buff', 'oncep_loop'];
 
 const melee = (k, ev = 2) => ({ effects: [k], oneshot: 1, startEvent: ev, endEvent: 3, directionType: 0 });
 
@@ -67,6 +68,15 @@ function makeIndex() {
       { role: 'start', keys: ['qux_s1_cast'], from: 'UberEffectEmitter._castEffects', node: 'sk', ability: 'RangedAttack', startEvent: 'ON_SPELL_ON', endEvent: 'ON_CAST_END', oneshot: true, list: 'cast' },
     ] },
     skchr_clemnt_3: { mode: 1, projectiles: ['projectile_chr_clemnt_s3'], uses: [] },
+    // held loops of a skill and a passive: one prefab loops, the other is a one-shot (index.json looping false)
+    skchr_once_1: { mode: null, projectiles: [], uses: [
+      { role: 'loop', keys: ['once_buff'], from: 'BuffDuringSkill._buffs', node: 'sk', on: 'owner' },
+      { role: 'loop', keys: ['once_loop'], from: 'BuffDuringSkill._buffs', node: 'sk', on: 'owner' },
+    ] },
+    skchr_once_2: { mode: null, projectiles: [], uses: [
+      { role: 'loop', keys: ['oncep_buff'], from: 'PassiveBuffAbility._buffs', node: 'sk', on: 'owner' },
+      { role: 'loop', keys: ['oncep_loop'], from: 'PassiveBuffAbility._buffs', node: 'sk', on: 'owner' },
+    ] },
   };
   const unit = (modes, sk, skin = null) => ({ kind: 'char', skin, modes, skills: Object.fromEntries(sk.map((s) => [s, skills[s]])), startEffect: null, deadEffect: null });
   return {
@@ -82,6 +92,8 @@ function makeIndex() {
       ], ['skchr_indigo_1'], 'char_469_indigo'),
       char_4231_clemnt: unit([{ name: 'Default', attack: { class: 'MeleeAttack', cast: [], hit: [] } }, { name: 'S3', attack: { class: 'MeleeAttack', cast: [] } }], ['skchr_clemnt_3']),
       char_300_qux: unit([{ name: 'Default', attack: { class: 'MeleeAttack', cast: [melee('qux_mode_cast', 4)], hit: [] } }, { name: 'S2', attack: { class: 'MeleeAttack', cast: [] } }], ['skchr_qux_1']),
+      char_500_once: unit([{ name: 'Default', attack: { class: 'MeleeAttack', cast: [], hit: [] } }], ['skchr_once_1']),
+      char_510_oncep: unit([{ name: 'Default', attack: { class: 'MeleeAttack', cast: [], hit: [] } }], ['skchr_once_2']),
       enemy_1: { kind: 'enemy', modes: [{ name: 'Default', attack: { class: 'MeleeAttack', cast: [], hit: [] } }], skills: {} },
     },
     skills,
@@ -116,6 +128,8 @@ const RECS = {
   char_469_indigo: { charId: 'char_469_indigo', skill: { skillId: 'skchr_indigo_1', index: 0, skillType: 'MANUAL', duration: 20, bb: {} } },
   char_4231_clemnt: { charId: 'char_4231_clemnt', skill: { skillId: 'skchr_clemnt_3', index: 2, skillType: 'MANUAL', durationType: 'AMMO', duration: 0, bb: { projectile_life_time: 5 } } },
   char_300_qux: { charId: 'char_300_qux', skill: { skillId: 'skchr_qux_1', index: 0, skillType: 'MANUAL', durationType: 'NONE', duration: 10, bb: {} } },
+  char_500_once: { charId: 'char_500_once', skill: { skillId: 'skchr_once_1', index: 0, skillType: 'MANUAL', durationType: 'NONE', duration: 20, bb: {} } },
+  char_510_oncep: { charId: 'char_510_oncep', skill: { skillId: 'skchr_once_2', index: 0, skillType: 'PASSIVE', durationType: 'NONE', duration: -1, bb: {} } },
 };
 
 function fakeOfx(index, { active = true } = {}) {
@@ -505,6 +519,37 @@ describe('frames, tiers and preloading', () => {
     frame();
     assert.equal(live(handles, 'foo_s1_buff').length, 1);
     assert.equal(spawned.filter((k) => k === 'foo_s1_begin').length, 1);
+  });
+
+  test("a held loop whose prefab does not loop plays once at the start, for its own life — never again on a tier switch or a view built mid-battle", async () => {
+    const { w, spawned, handles, view, frame, ofx } = await setup();
+    const u = view(1, 'char_500_once', 5);
+    frame();
+    w.skill(u, true);
+    u.flags = SKILL;
+    assert.equal(handles.find((h) => h.key === 'once_buff').opts.loop, false, 'a one-shot prefab: no loop');
+    assert.equal(handles.find((h) => h.key === 'once_loop').opts.loop, true);
+    handles.find((h) => h.key === 'once_buff').done = true;   // its life is over
+    frame(); frame();
+    assert.equal(spawned.filter((k) => k === 'once_buff').length, 1, 'not restarted');
+    for (const h of handles) h.stop();   // OfficialFx.setTier → clear()
+    ofx.tier = 'lite'; ofx.lite = true;
+    frame();
+    assert.equal(live(handles, 'once_loop').length, 1, 'the looping prefab starts again');
+    assert.equal(spawned.filter((k) => k === 'once_buff').length, 1, 'the one-shot one does not');
+    const m = view(2, 'char_500_once', 6, { v: { flags: SKILL } });   // a view built mid-battle
+    frame();
+    assert.equal(spawned.filter((k) => k === 'once_loop').length, 3);
+    assert.equal(spawned.filter((k) => k === 'once_buff').length, 1, 'its start is over');
+    w.skill(m, false); m.flags = 0;
+    // a passive: both at the deploy, only the looping one after a tier switch
+    const p = view(3, 'char_510_oncep', 7);
+    w.deploy(p); frame();
+    assert.deepEqual(['oncep_buff', 'oncep_loop'].map((k) => spawned.filter((x) => x === k).length), [1, 1]);
+    for (const h of handles) h.stop();
+    ofx.tier = 'full'; ofx.lite = false;
+    frame();
+    assert.deepEqual(['oncep_buff', 'oncep_loop'].map((k) => spawned.filter((x) => x === k).length), [1, 2]);
   });
 
   test('keysFor preloads the plans, the skills\' projectiles, the charge and the bindings', async () => {

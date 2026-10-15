@@ -15,7 +15,9 @@
 //
 // /data/resource-manifest.json:
 //   { format: 1, version: '<digest of every url|hash>', count, tier1, sized, totalBytes,
-//     files: [ { url, tier, size?, hash } … ] }   // sorted: essential tier first, then by URL
+//     files: [ { url, tier, size?, hash?, skin? } … ] }   // sorted: essential tier first, then by URL
+//   `skin` (`<charId>/<skinId>`) marks the 干员皮肤 files: they are the one optional group the panel scopes by item
+//   rather than by tier, and a full install of them is ~328 MiB (docs/SKINS.md).
 
 import { hashFile } from './fileHash.js';
 import crypto from 'node:crypto';
@@ -40,8 +42,18 @@ export function shortHash(text) {
 export const MAX_FILE_BYTES = 24 * 1024 * 1024;
 /** Required visuals: maps/meshes, portraits, Spine, fonts, UI and icons. */
 export const TIER_ESSENTIAL = 1;
-/** Optional: voices, sound effects, music and tutorial illustrations. */
+/** Optional: voices, sound effects, music and tutorial illustrations — and 干员皮肤 (see tierForPath). */
 export const TIER_REST = 2;
+
+/**
+ * `charId/skinId` of a manifest key path that runs through `chars.<charId>.skins.<skinId>…`, else null. The ids live in
+ * `data/assets.json` keyed per operator, and a skin id only ever holds `@` / `#` / `_` — never a dot — so a dotted
+ * key path is unambiguous. The client groups and scopes skins by this value (public/js/resources/common.js).
+ */
+export function skinKeyForPath(keyPath) {
+  const m = /(?:^|\.)([^.]+)\.skins\.([^.]+)(?:\.|$)/.exec(String(keyPath || ''));
+  return m ? `${m[1]}/${m[2]}` : null;
+}
 
 /** Extension → MIME type. Mirrored by the client (public/js/resources/common.js) for URL validation. */
 export const RESOURCE_MIME = Object.freeze({
@@ -111,6 +123,9 @@ export function tierForPath(keyPath) {
   const segments = p.split(/[./]/);
   const head = segments[0];
   if (segments.some((s) => ['audio', 'voice', 'voices', 'sfx', 'bgm', 'guide'].includes(s))) return TIER_REST;
+  // 干员皮肤 is optional by design: a full install is ~328 MiB (docs/SKINS.md), a third of the whole cache, for models
+  // a given player may never equip — so it never rides the required set. The panel gives it its own switch instead.
+  if (segments.includes('skins')) return TIER_REST;
   if (head === 'local') return TIER_ESSENTIAL;
   return TIER_ESSENTIAL_SECTIONS.has(head) ? TIER_ESSENTIAL : TIER_REST;
 }
@@ -132,8 +147,12 @@ export function collectResourceFiles(assets, local) {
       // Audio is optional even when a new manifest nests it inside an otherwise required character/map section.
       const tier = resourceType(node)?.startsWith('audio/') ? TIER_REST : tierForPath(keyPath);
       const url = canonicalResourceUrl(node);
+      const skin = skinKeyForPath(keyPath);
       const prev = byUrl.get(url);
-      if (prev == null || tier < prev.tier) byUrl.set(url, { tier, source });
+      // A file that two entries name keeps its lowest tier, and the skin key of either one (the same file is never
+      // two different skins' — an avatar that two outfits share still belongs to whichever listed it first).
+      if (prev == null || tier < prev.tier) byUrl.set(url, { tier, source, skin: skin || prev?.skin || null });
+      else if (skin && !prev.skin) prev.skin = skin;
       // The crop table sits beside the atlas and is not listed in local-assets.json.
       if (source === 'local' && /\/assets\/local\/map\/autochess\/TX_autochessi_D\.(?:png|webp)(?:\?v=[0-9a-f]{16})?$/.test(url)) {
         byUrl.set(url.replace(/[^/]+$/, 'tiles.json'), { tier: TIER_ESSENTIAL, source });
@@ -152,7 +171,7 @@ export function collectResourceFiles(assets, local) {
   }
   if (local && typeof local === 'object') walk(local, 'local', 'local');
   return [...byUrl]
-    .map(([url, e]) => ({ url, tier: e.tier, source: e.source }))
+    .map(([url, e]) => ({ url, tier: e.tier, source: e.source, ...(e.skin ? { skin: e.skin } : {}) }))
     .sort((a, b) => a.tier - b.tier || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
 }
 
@@ -225,6 +244,8 @@ export function buildResourceManifest({ files, sizes = null, version = 'none', h
     const entry = { url: f.url, tier: f.tier };
     const hash = (hashes ? hashes.get(f.url) : f.hash) || null;
     if (hash) entry.hash = hash;
+    // 干员皮肤 only: `charId/skinId`, what the client scopes preloading by (public/js/resources/store.js).
+    if (f.skin) entry.skin = f.skin;
     if (Number.isSafeInteger(size) && size >= 0) {
       entry.size = size;
       totalBytes += size;

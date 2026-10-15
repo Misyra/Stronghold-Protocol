@@ -80,22 +80,47 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
     try { await server?.close(); } catch { /* gone */ }
   });
 
+  /**
+   * Dismiss this fork's optional 全屏游玩 prompt. It sits ABOVE the lobby, so the first physical click on 干员调配
+   * lands on the prompt and merely closes it — the overlay then never opens and the wait times out. The other browser
+   * tests here dismiss it the same way (test/ui/announcement.e2e.test.js, test/history/browser.e2e.test.js).
+   */
+  async function dismissFullscreenPrompt() {
+    const seen = await page.waitForSelector('.fullscreen-prompt', { timeout: 5000 }).then(() => true, () => false);
+    if (!seen) return false;
+    await page.evaluate(() => [...document.querySelectorAll('.fullscreen-prompt button')].find((b) => /暂不/.test(b.textContent))?.click());
+    await page.waitForSelector('.fullscreen-prompt', { hidden: true, timeout: 5000 });
+    return true;
+  }
+
   /** Open 干员调配 and select the operator whose base chess id is `charId`. */
   async function openDetailFor(charId) {
-    // the roster row and the button the 干员调配 screen itself uses (screens/loadout.js LoadoutButton)
-    await page.waitForSelector('[data-testid="loadout-open"]', { timeout: 20000 });
-    await page.click('[data-testid="loadout-open"]');
-    await page.waitForSelector('.lo-detail', { timeout: 10000 });
+    // The client has to be ONLINE first: until it is, the lobby stacks its connection state on top of the button
+    // (this fork's own test/ui/loadout.e2e.test.js waits for the same thing).
+    await page.waitForFunction(() => globalThis.__SP__?.store.get().connection.status === 'online', { timeout: 30000 });
+    // Only open the overlay when it is not open already: while it is, the screen that carries the entry button is
+    // hidden behind it, so looking for the button first would wait forever.
+    if (!(await page.$('.lo'))) {
+      await dismissFullscreenPrompt();
+      // the button the 干员调配 screen itself uses (screens/loadout.js LoadoutButton) — lobby, room or the brief
+      const opener = '.lobby-screen [data-testid="loadout-open"], .room-screen [data-testid="loadout-open"], .brief [data-testid="loadout-open"]';
+      await page.waitForSelector(opener, { visible: true, timeout: 20000 });
+      await page.click(opener);
+      await page.waitForSelector('.lo .lo-card', { visible: true, timeout: 20000 });
+    }
+    // The row is picked FIRST: this fork's overlay starts with no selection, so `.lo-detail` does not exist until a
+    // row is chosen (upstream's version waited for it before clicking the row — which is what timed out here).
     const ok = await page.evaluate((id) => {
       const rows = [...document.querySelectorAll('[data-chess]')];
       const row = rows.find((r) => r.getAttribute('data-chess') === id);
       if (!row) return false;
-      // `data-chess` sits on the row card, but the row's click target is the button inside it — clicking the card
+      // `data-chess` sits on the row card, but the row's click target is the pick button inside it — clicking the card
       // does nothing at all, which is exactly how these tests passed for the wrong reason before (the panel's
       // default selection is the first roster row, so the assertions held while the click was a no-op)
-      (row.querySelector('button') || row).click();
+      (row.querySelector('.lo-card__pick') || row.querySelector('button') || row).click();
       return true;
     }, charId);
+    if (ok) await page.waitForSelector('.lo-detail', { visible: true, timeout: 20000 });
     return ok;
   }
 

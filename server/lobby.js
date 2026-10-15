@@ -101,7 +101,7 @@ import { createRngFromState } from './sim/rng.js';
 //     a player seat (the seat is kept and given back on resume).
 
 import { chatEnabled, moderateChat } from './moderation/chat.js';
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks } from '../shared/protocol.js';
 import { encode, isErrCode, sendRaw, sendSession, resetSocketState } from './net.js';
@@ -118,6 +118,13 @@ import { ROOM_PROTECTION_DEFAULTS, validateRoomConfig } from './roomConfig.js';
 
 /** Room code alphabet: uppercase letters without I and O (and no digits, so no 0/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+/**
+ * Room instance id shape (see Room.roomId). Anything else that arrives from disk is not a room id we ever minted —
+ * a hand-edited or truncated state file must not be able to pin two rooms to one id, so the reader falls back to a
+ * fresh UUID instead of trusting the file.
+ */
+export const ROOM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Tunables. */
 export const LOBBY_DEFAULTS = Object.freeze({
@@ -183,9 +190,18 @@ function freezeDiy(picks) {
 
 /** One room: 4 seat slots, host, difficulty, optional running match. */
 export class Room {
-  /** @param {string} code @param {'solo'|'coop'} mode @param {string} difficulty @param {number} now */
-  constructor(code, mode, difficulty, now) {
+  /** @param {string} code @param {'solo'|'coop'} mode @param {string} difficulty @param {number} now @param {string|null} roomId */
+  constructor(code, mode, difficulty, now, roomId = null) {
     this.code = code;
+    /**
+     * Room instance id (UUID, lobby share / 联机站登记). A 4-letter code is reused by unrelated players as soon as the
+     * old room is disposed, so "the same code" is not "the same room": every consumer outside the game (browser,
+     * probe, 联机站) keys its own bookkeeping off this id, and code reuse must read as a different room. Generated
+     * here, kept across restarts through the room document, and never reused for a later room on the same code.
+     * It is an instance identifier, not a credential: it authorizes nothing.
+     * @type {string}
+     */
+    this.roomId = ROOM_ID_RE.test(roomId || '') ? roomId : randomUUID();
     this.mode = mode;
     this.difficulty = difficulty;
     /**
@@ -1010,7 +1026,7 @@ export class Lobby {
       if (!d || typeof d.code !== 'string' || d.code.length !== ROOM_CODE_LEN || this.rooms.has(d.code)) { stats.droppedSeats++; continue; }
       const mode = d.mode === 'solo' ? 'solo' : 'coop';
       const difficulty = typeof d.difficulty === 'string' && d.difficulty ? d.difficulty : 'NORMAL';
-      const room = new Room(d.code, mode, difficulty, now);
+      const room = new Room(d.code, mode, difficulty, now, typeof d.roomId === 'string' ? d.roomId : null);
       if (Number.isSafeInteger(d.createdAt) && d.createdAt >= 0 && d.createdAt <= now) room.createdAt = d.createdAt;
       room.aiPicksLast = mode !== 'solo' && d.aiPicksLast === true;
       room.ownerKey = typeof d.ownerKey === 'string' ? d.ownerKey : null;

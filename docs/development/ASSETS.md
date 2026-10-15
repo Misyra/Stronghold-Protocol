@@ -524,11 +524,13 @@ for active downloads and archive transfers, and uses the same cross-tab Web Lock
 干员皮肤 (`docs/SKINS.md`) is the one optional group with its own switch rather than a place in 「同时预载」. A full
 install is ~328 MiB across ~2 000 files, so the resource manifest marks those entries `skin: '<charId>/<skinId>'`
 (`server/resources.js` `skinKeyForPath`, tier 2) and the client keeps only the equipped skins in its selection
-(`public/js/resources/store.js` `setScope` / `skinWanted` / `normalizeSkinKeys`). `preloadSkins` is one boolean; the
-keys are not stored at all — they are the outfits this browser has equipped in 干员调配 — either row of the picker, since one pick sets both
+(`public/js/resources/store.js` `setScope` / `skinWanted` / `normalizeSkinScope`). `preloadSkins` is one boolean and so is
+`preloadSkinsAll` — the scope is `{ keys, all }`, and `all` wants every outfit the manifest lists instead of the equipped
+ones. The keys are not stored at all — they are the outfits this browser has equipped in 干员调配 — either row of the picker, since one pick sets both
 (`ui/skins.js` `equippedSkinKeys()`, chessId → charId through the chess table), so equipping one there is what starts its download:
 `main.js` re-applies the scope whenever `skinsStore` or the settings change. A player who wants a handful of outfits
-never takes every voice and soundtrack, and one who wants the soundtrack never gets 328 MiB of skins. Unequipped skins
+never takes every voice and soundtrack, and one who wants the soundtrack never gets 328 MiB of skins. A player who does
+want all of them ticks 全部皮肤 in the same row (`preloadSkinsAll`, shown only when the deployment has skins). Unequipped skins
 are out of scope for download and for status counting, but stay importable and retained: a ZIP import or a cached copy
 still counts, and 「清理可选资源」 removes them like any other optional file. A deployment with no skins installed (a
 fresh clone — `data/skins-installed.json` ships empty) has no such entries and the manager shows no section at all.

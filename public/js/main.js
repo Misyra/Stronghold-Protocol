@@ -332,13 +332,15 @@ function ScreenCrashed({ error, reset }) {
 
 function ResourceManagerHost() {
   const settings = useSettings();
-  // 干员皮肤 is one switch (docs/SKINS.md): with it on, the preload follows whatever 干员调配 has equipped — the choice
-  // list lives there, not here.
+  // 干员皮肤 is two switches (docs/SKINS.md): the master follows whatever 干员调配 has equipped — the choice list lives
+  // there, not here — and 「全部皮肤」 widens that to every outfit the manifest offers.
   return html`<${ResourceHost} enabled=${settings.preload} optional=${settings.preloadOptional} allVoices=${settings.preloadAllVoices}
     voiceLang=${settings.voiceLang} onVoiceLang=${(v) => updateSettings({ voiceLang: v })} skinPreload=${settings.preloadSkins}
+    skinPreloadAll=${settings.preloadSkinsAll}
     onChange=${(v) => updateSettings({ preload: v })} onOptional=${(v) => updateSettings({ preloadOptional: v })}
     onAllVoices=${(v) => updateSettings({ preloadAllVoices: v })}
-    onSkinPreload=${(v) => updateSettings({ preloadSkins: v })} />`;
+    onSkinPreload=${(v) => updateSettings({ preloadSkins: v })}
+    onSkinPreloadAll=${(v) => updateSettings({ preloadSkinsAll: v })} />`;
 }
 
 function App() {
@@ -466,13 +468,16 @@ function installResourcePreload() {
   // Resume only when the player enabled preload; a saved pause survives page reloads.
   import('./resources/index.js').then((r) => {
     // 干员皮肤: with `preloadSkins` on, the preload follows the outfits equipped in this browser — picking one in
-    // 干员调配 is what starts its download (docs/SKINS.md). The chess table resolves chessId → charId, so an equipped
-    // choice has no manifest key to follow until it is in; that one load re-applies the scope below.
+    // 干员调配 is what starts its download (docs/SKINS.md) — and `preloadSkinsAll` replaces that scope with every outfit
+    // in the manifest. The chess table resolves chessId → charId, so an equipped choice has no manifest key to follow
+    // until it is in; that one load re-applies the scope below.
     const apply = (s) => {
       const keys = s.preloadSkins ? equippedSkinKeys() : [];
-      r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices, keys)
+      const all = !!(s.preloadSkins && s.preloadSkinsAll);
+      r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices, { keys, all })
         .catch((err) => console.warn('[resources] sync failed', err));
-      if (s.preloadSkins && !keys.length) {
+      // 全部皮肤 wants every outfit, so an empty equipped list is the expected state, not a missing one.
+      if (s.preloadSkins && !all && !keys.length) {
         void loadEquippedSkinKeys().then((loaded) => { if (loaded.length) apply(settingsStore.get()); });
       }
     };

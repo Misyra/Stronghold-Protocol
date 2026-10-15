@@ -106,22 +106,26 @@ Three properties are load-bearing:
 
 Not part of upstream's PR: a full install is ~328 MiB, and the preload manifest is built by walking `data/assets.json`
 — so every skin file landed in the **required** tier of `/data/resource-manifest.json` and 「必备资源」 quietly meant
-one third of a gigabyte. Skins are now their own optional scope with **one switch**: 「预载我选的皮肤」. When it is on,
+one third of a gigabyte. Skins are now their own optional scope with **two switches**: 「预载干员皮肤」 and 「全部皮肤」. When the master switch is on,
 the preload follows the outfits equipped in 干员调配 (either row — they are one choice now) — picking one there downloads its files into Cache Storage, which
-is what a player actually wants (the choice list is where you make the choice). Nothing is downloaded by default.
+is what a player actually wants (the choice list is where you make the choice). 「全部皮肤」 drops that follow-the-loadout
+rule and takes every outfit the manifest lists — the explicit choice for a player who would rather download the whole
+328 MiB once than repeat the pick on every outfit (settings `preloadSkinsAll`; it only means anything while the master
+switch is on, and the second checkbox is disabled otherwise). Nothing is downloaded by default.
 
 | File | Where | What |
 |---|---|---|
 | `server/resources.js` | `skinKeyForPath()` + `tierForPath()` | a key path through `chars.<charId>.skins.<skinId>…` is tier 2 (`TIER_REST`) and carries `skin: '<charId>/<skinId>'` into the manifest entry — the one field the client groups and scopes by |
 | `public/js/resources/common.js` | `RESOURCE_GROUPS` / `resourceGroup()` | `skin: { name: N_('干员皮肤'), tier: TIER_REST }`; `resourceGroup()` returns `'skin'` for a marked entry; `SKIN_KEY_RE` / `isSkinKey` validate the key |
-| `public/js/resources/store.js` | `setScope()` / `skinWanted()` / `#tally()` | the voice language and the equipped skins are one selection: unequipped skins leave `selectedFiles`, so they are neither downloaded nor counted (but stay importable/retained); `status()` also reports per-outfit counters (`skins: [{ id, files, wanted, present, bytes, totalBytes }]`) |
+| `public/js/resources/store.js` | `setScope()` / `skinWanted()` / `#tally()` | the voice language and the skin scope are one selection: `normalizeSkinScope()` reads `'all'` / `{ keys, all }` as 'every outfit' or 'these outfits', and an unwanted skin leaves `selectedFiles`, so it is neither downloaded nor counted (but stays importable/retained); `status()` reports `skinScope: { keys, all }` plus per-outfit counters (`skins: [{ id, files, wanted, present, bytes, totalBytes }]`) |
 | `public/js/ui/skins.js` | `equippedSkinKeys()` / `loadEquippedSkinKeys()` | the equipped outfits as `charId/skinId` keys — **both rows** of the picker (battle model and 商店立绘; the art-only 原始/精英二 values name no outfit), chessId → charId through the chess table, which is why the helper waits for it |
-| `public/js/main.js` | `installResourcePreload()` | the switch is `settings.preloadSkins`; the scope is recomputed from the equipped keys and re-applied whenever `skinsStore` or the settings change — that is the auto-download |
-| `public/js/resources/index.js` | `syncResources(…, skins)` | the controller applies the scope; the optional pass runs whenever the selection contains tier-2 files (「同时预载」 **or** equipped skins), so a skin choice never drags the voices in and vice versa. `requiredComplete` / `selectionComplete` split what the panel words 「必备已保存」 / 「全部已保存」 |
-| `public/js/ui/resourcePanel.js` | `ResourceSkins()` | the compact row: 干员皮肤 + the switch + `本机已选 N 套 · 已缓存 M 套` + bytes. Outside the 可选资源 list (`g.id !== 'skin'`), and the whole row disappears when the deployment has no skins |
-| `public/js/ui/gameLogic/settings.js` | `DEFAULT_SETTINGS` / `sanitizeSettings()` | `preloadSkins: false` — one boolean, no id list to validate |
+| `public/js/main.js` | `installResourcePreload()` | the switches are `settings.preloadSkins` and `settings.preloadSkinsAll`; the scope is recomputed from the equipped keys (or widened to every outfit) and re-applied whenever `skinsStore` or the settings change — that is the auto-download. With 全部皮肤 on, an empty equipped list is the expected state, so the loadout is not consulted for keys |
+| `public/js/resources/index.js` | `syncResources(…, { keys, all })` | the controller applies the scope (`skinScopeOf` / `storeScope`) and reports it as `skinScope`; the optional pass runs whenever the selection contains tier-2 files (「同时预载」 **or** wanted skins), so a skin choice never drags the voices in and vice versa. `requiredComplete` / `selectionComplete` split what the panel words 「必备已保存」 / 「全部已保存」 |
+| `public/js/ui/resourcePanel.js` | `ResourceSkins()` | the compact row: 干员皮肤 + 预载干员皮肤 + 全部皮肤（N 套）+ `本机已选 N 套` / `全部 N 套` + `已缓存 M 套` + bytes. Outside the 可选资源 list (`g.id !== 'skin'`), and the whole row disappears when the deployment has no skins |
+| `public/js/ui/gameLogic/settings.js` | `DEFAULT_SETTINGS` / `sanitizeSettings()` | `preloadSkins: false` and `preloadSkinsAll: false` — two booleans, no id list to validate |
 | `public/css/components.css` | end of the resource block | `.resource-skins*`, rem/`--utility-text` based like the rest of the manager |
-| `test/resources/{manifest,store,index,panel}.test.js` | — | classification and the key, the scope engine, the controller end to end, the panel wiring |
+| `test/resources/{manifest,store,index,panel}.test.js` | — | classification and the key, the scope engine (both switches), the controller end to end, the panel wiring |
+| `test/resources/browser.e2e.test.js` | `makeInstall({ skins })` | headless Chrome: the two switches render, 跟随干员调配 fetches no outfit, and ticking 全部皮肤 caches the installed outfit's files |
 
 安装 (server-side, everyone shares) and 预载 (this browser's cache) stay separate: the preload list is built from the
 manifest, so it only ever offers skins the server actually has, and a skin that is installed but never equipped costs

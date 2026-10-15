@@ -91,6 +91,33 @@ test('干员皮肤: the saved selection decides which outfits are fetched, on it
   await mod.syncResources(false);
 });
 
+test('干员皮肤 全部皮肤: the scope widens to every outfit in the manifest, and narrows back to the loadout', async (t) => {
+  const files = [
+    { url: '/assets/ui/panel.png', tier: 1, size: 4 },
+    { url: '/assets/audio/voice/cn/x.mp3', tier: 2, size: 6 },
+    { url: '/assets/spine/op/kalts/boc/boc.skel', tier: 2, size: 7, skin: 'char_003_kalts/char_003_kalts@boc#6' },
+    { url: '/assets/char/avatar/skin/kalts_boc.png', tier: 2, size: 5, skin: 'char_003_kalts/char_003_kalts@boc#6' },
+    { url: '/assets/spine/op/amiya/winter/winter.skel', tier: 2, size: 8, skin: 'char_002_amiya/char_002_amiya_winter_1' },
+  ];
+  const env = stubEnv({ manifest: { ...MANIFEST, files, count: files.length, tier1: 1, sized: files.length, totalBytes: 30 } });
+  t.after(env.restore);
+  const mod = await import('../../public/js/resources/index.js?skin-all');
+  await mod.syncResources(true, false, 'cn', false, { all: true });
+  assert.deepEqual(env.calls.fetch.slice(1).sort(), [
+    ORIGIN + '/assets/ui/panel.png',
+    ORIGIN + '/assets/char/avatar/skin/kalts_boc.png',
+    ORIGIN + '/assets/spine/op/kalts/boc/boc.skel',
+    ORIGIN + '/assets/spine/op/amiya/winter/winter.skel',
+  ].sort(), 'every outfit the manifest lists, still without a single voice');
+  assert.ok(!env.calls.fetch.some((url) => url.includes('/voice/')), '全部皮肤 never drags the voices in');
+  assert.deepEqual(mod.resourceState().skinScope, { keys: [], all: true });
+  assert.equal(mod.resourceState().selectionComplete, true);
+  // Back to following 干员调配: the unpicked outfit leaves the selection (what is cached stays).
+  await mod.syncResources(true, false, 'cn', false, { keys: ['char_003_kalts/char_003_kalts@boc#6'], all: false });
+  assert.deepEqual(mod.resourceState().skinScope, { keys: ['char_003_kalts/char_003_kalts@boc#6'], all: false });
+  await mod.syncResources(false);
+});
+
 test('controller ZIP import/export uses shared lock, automatically enables preload, then fills only selected missing tiers', async (t) => {
   const files = FILES.map((f) => ({ ...f, hash: createHash('sha1').update('b'.repeat(f.size)).digest('hex').slice(0, 12) }));
   const env = stubEnv({ manifest: { ...MANIFEST, files } });

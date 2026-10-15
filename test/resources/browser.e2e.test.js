@@ -27,7 +27,7 @@ const FILES = [
 ];
 
 /** A minimal install: the client modules, the worker and a fixture asset tree. */
-function makeInstall({ voices = false, dynamic = false } = {}) {
+function makeInstall({ voices = false, dynamic = false, skins = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-e2e-res-'));
   const publicDir = path.join(dir, 'public');
   const dataDir = path.join(dir, 'data');
@@ -41,7 +41,11 @@ function makeInstall({ voices = false, dynamic = false } = {}) {
   const voiceFiles = voices ? ['cn', 'jp'].map((lang) => ({ url: `/assets/audio/voice/${lang}/char_e2e/test.mp3`, body: `${lang}-voice` })) : [];
   const dynamicFiles = dynamic ? [{ url: '/fonts/fonts.css', body: 'body { color: white; }' },
     { url: '/assets/local/map/common/materials.json', body: '{ "material": true }' }] : [];
-  for (const f of [...FILES, ...voiceFiles, ...dynamicFiles]) {
+  // One installed 干员皮肤 (docs/SKINS.md): two files under a `chars.<charId>.skins.<skinId>…` key path, which is what
+  // the resource manifest marks `skin: '<charId>/<skinId>'`.
+  const skinFiles = skins ? [{ url: '/assets/e2e/skin/boc.skel', body: 'skin-skel-bytes' },
+    { url: '/assets/e2e/skin/boc.png', body: 'skin-art-bytes' }] : [];
+  for (const f of [...FILES, ...voiceFiles, ...dynamicFiles, ...skinFiles]) {
     const abs = path.join(publicDir, f.url);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, f.body);
@@ -51,7 +55,8 @@ function makeInstall({ voices = false, dynamic = false } = {}) {
     hash: 'e2e0000',
     ui: { 'e2e/panel': FILES[0].url, ...(dynamic ? { dynamic: dynamicFiles.map((f) => f.url) } : {}) },
     audio: { bgm: { e2e: { loop: FILES[1].url } }, ...(voices ? { voice: voiceFiles.map((f) => f.url) } : {}) },
-    chars: { char_e2e: { portrait: FILES[2].url } },
+    chars: { char_e2e: { portrait: FILES[2].url,
+      ...(skins ? { skins: { 'char_e2e@boc#1': { front: { skel: skinFiles[0].url, textures: [skinFiles[1].url] } } } } : {}) } },
   }));
   fs.writeFileSync(path.join(publicDir, 'index.html'), `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />
 <title>resource e2e</title><link rel="stylesheet" href="/css/theme.css" /><link rel="stylesheet" href="/css/components.css" /></head><body><div id="app"></div>
@@ -65,11 +70,19 @@ function makeInstall({ voices = false, dynamic = false } = {}) {
   let optional = true;
   let allVoices = false;
   let voiceLang = 'cn';
+  let skinPreload = false;
+  let skinPreloadAll = false;
+  // the manager's 干员皮肤 scope, exactly as main.js computes it: no equipped outfits in this fixture, unless 全部皮肤
+  const applySkinScope = (on, all) => { skinPreload = on; skinPreloadAll = all;
+    void syncResources(enabled, optional, voiceLang, allVoices, { keys: [], all: on && all }); paint(); };
   const paint = () => render(html\`<div><\${ResourceLauncher} enabled=\${enabled} />
     <\${ResourceHost} enabled=\${enabled} optional=\${optional} allVoices=\${allVoices} voiceLang=\${voiceLang}
       onVoiceLang=\${(v) => { voiceLang = v; void syncResources(enabled, optional, v, allVoices); paint(); }}
       onAllVoices=\${(v) => { allVoices = v; void syncResources(enabled, optional, voiceLang, v); paint(); }} onChange=\${(v) => set(v)}
-      onOptional=\${(v) => { optional = v; void syncResources(enabled, v, voiceLang, allVoices); paint(); }} /></div>\`, document.getElementById('app'));
+      onOptional=\${(v) => { optional = v; void syncResources(enabled, v, voiceLang, allVoices); paint(); }}
+      skinPreload=\${skinPreload} skinPreloadAll=\${skinPreloadAll}
+      onSkinPreload=\${(v) => applySkinScope(v, skinPreloadAll)}
+      onSkinPreloadAll=\${(v) => applySkinScope(skinPreload, v)} /></div>\`, document.getElementById('app'));
   const set = (v, includeOptional = optional) => { enabled = v; optional = includeOptional; void syncResources(v, optional, voiceLang, allVoices); paint(); };
   window.__res = {
     resourceState, syncResources, clearResources, startResources, exportResources, importResources,
@@ -295,6 +308,49 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.close();
   });
 
+  test('干员皮肤 全部皮肤 caches every installed outfit, and 跟随干员调配 keeps them out', async (t) => {
+    const { startServer } = await import('../../server/index.js');
+    const own = makeInstall({ skins: true });
+    const game = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0, store: null,
+      publicDir: own.publicDir, dataDir: own.dataDir,
+      log: { info() {}, warn() {}, error() {}, debug() {} } });
+    t.after(async () => { await game.close(); fs.rmSync(own.dir, { recursive: true, force: true }); });
+    const page = await browser.newPage();
+    t.after(() => page.close());
+    const problems = [];
+    page.on('pageerror', (err) => problems.push('pageerror: ' + err.message));
+    page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) problems.push('console: ' + m.text()); });
+    await page.goto(game.url + '/index.html');
+    await page.waitForFunction('window.__ready === true', { timeout: 20000 });
+    await page.evaluate(() => caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))));
+
+    await page.evaluate(() => window.__res.click());
+    await page.waitForSelector('.resource-skins');
+    assert.equal(await page.$$eval('.resource-skins .resource-choice input', (els) => els.length), 2, 'the master switch and 全部皮肤');
+    assert.equal(await page.$eval('[data-testid="skin-preload-all"]', (el) => el.disabled), true, '全部皮肤 waits for the master switch');
+
+    // The master switch alone follows 干员调配 — nothing is equipped here, so no outfit file is wanted.
+    await page.evaluate(() => window.__preload(true));
+    await page.waitForFunction('window.__res.state().selectionComplete === true', { timeout: 30000 });
+    assert.equal(await page.evaluate(() => window.__res.state().done), 3, 'the three fixture resources, no outfit among them');
+
+    // 全部皮肤 takes the whole manifest: both files of the one installed outfit land in Cache Storage.
+    await page.click('[data-testid="skin-preload"]');
+    await page.waitForFunction(() => document.querySelector('[data-testid="skin-preload-all"]').disabled === false);
+    await page.click('[data-testid="skin-preload-all"]');
+    await page.waitForFunction('window.__res.state().selectionComplete === true && window.__res.state().skins[0].present === 2',
+      { timeout: 30000 });
+    assert.deepEqual(await page.evaluate(() => window.__res.state().skinScope), { keys: [], all: true });
+    assert.equal(await page.evaluate(() => window.__res.state().done), 5);
+    const body = await page.$eval('.resource-skins', (el) => el.textContent);
+    assert.match(body, /全部 1 套 · 已缓存 1 套/, 'all-skins summary: ' + body);
+    const cached = await page.evaluate(() => caches.open('stronghold-resources-v1-all')
+      .then((cache) => cache.keys()).then((keys) => keys.map((r) => new URL(r.url).pathname)));
+    assert.ok(cached.some((p) => p.endsWith('/assets/e2e/skin/boc.skel')), 'the outfit model is cached: ' + cached.join(', '));
+    assert.ok(cached.some((p) => p.endsWith('/assets/e2e/skin/boc.png')), 'and its art');
+    assert.deepEqual(problems, []);
+    await page.evaluate(async () => { await window.__res.syncResources(false); await window.__res.clearResources(); });
+  });
   test('a second tab does not download the same files twice (real Web Locks)', async (t) => {
     const first = await open();
     await ready(first.page, first.problems);

@@ -87,35 +87,44 @@ describe('where the preload is reachable', () => {
 });
 
 /**
- * 干员皮肤 in the manager (docs/SKINS.md): one switch next to the required/optional tiers — the outfit choice itself
- * lives in 干员调配, and equipping one there is what starts its download.
+ * 干员皮肤 in the manager (docs/SKINS.md): a master switch plus an explicit 全部皮肤 one next to the required/optional
+ * tiers — the outfit choice itself lives in 干员调配, and equipping one there is what starts its download.
  */
 describe('the 干员皮肤 scope', () => {
   const panel = read('public/js/ui/resourcePanel.js');
 
-  test('one switch, no list', () => {
+  test('two switches, no list', () => {
     assert.ok(panel.includes("g.tier === tier && g.id !== 'skin'"), 'the 可选资源 list skips the skin group');
     assert.match(panel, /<\$\{ResourceSkins\} st=\$\{st\}/, 'the section is rendered by the manager');
     assert.match(panel, /if \(!skins\.length\) return null;/, 'a deployment without skins installed shows nothing');
     assert.ok(panel.includes('data-testid="skin-preload"'));
-    assert.ok(panel.includes("t('预载我选的皮肤')"));
+    assert.ok(panel.includes("t('预载干员皮肤')"));
+    assert.ok(panel.includes('data-testid="skin-preload-all"'));
+    assert.ok(panel.includes("t('全部皮肤（{total} 套）', { total: skins.length })"), '全部皮肤 names how many outfits it means');
     assert.ok(panel.includes('本机已选 {n} 套 · 已缓存 {done} 套'));
+    assert.ok(panel.includes('全部 {n} 套 · 已缓存 {done} 套'));
     assert.ok(panel.includes("t('还没选过皮肤：在干员调配里挑一套，这里会跟着缓存。')"));
+    assert.ok(panel.includes("t('全部皮肤：{total} 套都会缓存，不再跟随干员调配里的选择。', { total: skins.length })"));
+    assert.ok(panel.includes('const everyOutfit = !!(on && all);'), 'both switches decide the scope');
     assert.equal(/resource-skins__rows|SkinList|跟随我的皮肤选择|全选/.test(panel), false, 'no per-outfit list here');
   });
 
-  test('the switch is a settings flag, and the keys come from the equipped outfits', () => {
+  test('the switches are settings flags, and the keys come from the equipped outfits', () => {
     const main = read('public/js/main.js');
     assert.match(main, /skinPreload=\$\{settings\.preloadSkins\}/);
     assert.match(main, /onSkinPreload=\$\{\(v\) => updateSettings\(\{ preloadSkins: v \}\)\}/);
+    assert.match(main, /skinPreloadAll=\$\{settings\.preloadSkinsAll\}/);
+    assert.match(main, /onSkinPreloadAll=\$\{\(v\) => updateSettings\(\{ preloadSkinsAll: v \}\)\}/);
     // Equipping a skin in 干员调配 must re-apply the scope: nothing else announces that change.
     assert.match(main, /const keys = s\.preloadSkins \? equippedSkinKeys\(\) : \[\];/);
+    assert.match(main, /const all = !!\(s\.preloadSkins && s\.preloadSkinsAll\);/);
+    assert.match(main, /r\.syncResources\(s\.preload, s\.preloadOptional, s\.voiceLang, s\.preloadAllVoices, \{ keys, all \}\)/);
     assert.match(main, /skinsStore\.subscribe\(\(\) => apply\(settingsStore\.get\(\)\)\)/);
     const skins = read('public/js/ui/skins.js');
     assert.match(skins, /export function equippedSkinKeys\(\)/);
     assert.match(skins, /charId = data\.lookup\('chess', chessId\)\?\.charId/);
     const settings = read('public/js/ui/gameLogic/settings.js');
-    assert.ok(settings.includes('preloadSkins: false,'));
+    assert.ok(settings.includes('preloadSkins: false, preloadSkinsAll: false,'));
     assert.equal(/preloadSkinIds/.test(settings), false, 'a boolean switch needs no id list');
   });
 });

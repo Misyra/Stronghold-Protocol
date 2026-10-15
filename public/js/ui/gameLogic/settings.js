@@ -29,14 +29,14 @@ export const TEXT_SIZES = Object.freeze(['sm', 'md', 'lg', 'xl']);
  *  ammoCount: 设置「弹药数量」 — the rounds left / the magazine under an ammo skill's bar (render/units.js; PR #552), off
  *  by default: the official HUD has no such number (the maintainer's decision of 2026-10-13).
  *  fpsLimit: the render cap 0|30|60|120 (frameRate.js FRAME_RATES; 0 = uncapped, display only). */
-export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', voiceOverrides: Object.freeze({}), muted: false, damageNumbers: true, officialDamageNumbers: false, ammoCount: false, quality: 'high', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadAllVoices: false, preloadSkins: false, keys: DEFAULT_HOTKEYS });
+export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', voiceOverrides: Object.freeze({}), muted: false, damageNumbers: true, officialDamageNumbers: false, ammoCount: false, quality: 'high', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadAllVoices: false, preloadSkins: false, preloadSkinsAll: false, keys: DEFAULT_HOTKEYS });
 const QUALITIES = ['high', 'medium', 'low'];
 
 /**
  * Sanitize persisted settings.
  * @param {any} raw
  * @returns {{ bgm: number, sfx: number, voice: number, voiceLang: 'cn'|'jp', voiceOverrides: Record<string, string>, muted: boolean, damageNumbers: boolean, officialDamageNumbers: boolean, ammoCount: boolean, quality: 'high'|'medium'|'low', fpsLimit: 0|30|60|120,
- *   preload: boolean, preloadOptional: boolean, preloadAllVoices: boolean, preloadSkins: boolean,
+ *   preload: boolean, preloadOptional: boolean, preloadAllVoices: boolean, preloadSkins: boolean, preloadSkinsAll: boolean,
  *   textSize: 'sm'|'md'|'lg'|'xl', keys: Record<'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready', string> }}
  */
 export function sanitizeSettings(raw) {
@@ -58,6 +58,7 @@ export function sanitizeSettings(raw) {
     preloadOptional: typeof r.preloadOptional === 'boolean' ? r.preloadOptional : DEFAULT_SETTINGS.preloadOptional,
     preloadAllVoices: r.preloadAllVoices === true,
     preloadSkins: r.preloadSkins === true,
+    preloadSkinsAll: r.preloadSkinsAll === true,
     textSize: TEXT_SIZES.includes(r.textSize) ? r.textSize : DEFAULT_SETTINGS.textSize,
     keys: sanitizeHotkeys(r.keys),
   };

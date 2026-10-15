@@ -32,7 +32,10 @@ export function roomStatus(room, now = Date.now()) {
   });
   const occupied = seats.filter(Boolean);
   return {
-    code: room.code, mode: room.mode, difficulty: room.difficulty, difficultyName: DIFFICULTY_NAMES[room.difficulty] || room.difficulty,
+    // roomId is the room **instance** id (lobby.js/Room). Public on purpose: the browser cannot tell "this code was
+    // reused by another lobby" from "my room is still there" without it, and a code is shared explicitly anyway.
+    // It authorizes nothing — ownership stays with hostId / the seat's own session.
+    code: room.code, roomId: room.roomId, mode: room.mode, difficulty: room.difficulty, difficultyName: DIFFICULTY_NAMES[room.difficulty] || room.difficulty,
     inMatch: !!room.match, joinable: room.mode === 'coop' && !room.match && !room.matchmaking && seats.includes(null),
     capacity: seats.length, occupied: occupied.length,
     humans: occupied.filter((s) => !s.isBot).length,

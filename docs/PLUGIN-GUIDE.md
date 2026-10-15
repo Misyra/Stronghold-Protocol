@@ -392,8 +392,8 @@ node tools/plugin.mjs test my-script
 ```
 
 `test` 会在本机执行作者的测试代码，不受服务器沙箱开关和受信任哈希许可限制；它不是生产环境的安全检查。
-正式房间默认不开脚本。服主设置 `SP_PLUGIN_SCRIPTS=sandbox` 后，`script` 类在 SES 沙箱中运行，浏览器用 Worker，
-服务器用受限子进程；要求锁文件与全部文件一致，不要求每位玩家逐个同意，也允许公网监听。修改文件后需重新打包。
+正式房间默认不开脚本。服主设置 `SP_PLUGIN_SCRIPTS=sandbox` 后（也可以启动时加 `--scripts sandbox`，Windows 上直接
+双击 `scripts\start-windows-sandbox.bat`），`script` 类在 SES 沙箱中运行，浏览器用 Worker，服务器用受限子进程；要求锁文件与全部文件一致，不要求每位玩家逐个同意，也允许公网监听。修改文件后需重新打包。
 
 `trusted` / `trusted-force` 是原生受信任执行：服主审查文件后，在 `plugins/config.json` 的 `trusted` 中填写锁文件
 SHA-256，每位在座玩家也要同意。公网、`0.0.0.0` / `::` 通配监听或公网反代需 `trusted-force`。

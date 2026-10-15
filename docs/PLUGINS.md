@@ -875,7 +875,9 @@ files being tested; this is not validation that they are the production-pinned v
 ### P3b sandbox execution
 
 `SP_PLUGIN_SCRIPTS=sandbox` enables script-class plugins with a valid lock and matching bytes, without an owner
-pin or per-player consent; public listeners are allowed (maintainer decision, 2026-10-14). The room labels
+pin or per-player consent; public listeners are allowed (maintainer decision, 2026-10-14). The start scripts set it
+with `--scripts sandbox` (`scripts/launch.mjs`; `--scripts off` drops an inherited value), and on Windows a double click
+on `scripts/start-windows-sandbox.bat` is `start-windows.bat --scripts sandbox`. The room labels
 these `脚本（沙箱）`; matches remain unofficial. Trusted-class plugins stay disabled in this mode. In trusted modes a
 mixed script/trusted composition runs entirely natively and requires consent for every member [ASSUMED]. Execution
 mode is pinned inside the hashed descriptors, so a mode change creates a new cs.

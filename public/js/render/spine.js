@@ -626,6 +626,12 @@ export class SpineActor {
     return null;
   }
 
+  /** The animation an attack plays now (the official effects' UberAnimation groups, render/vfx/wiring.js _rowOk). */
+  attackAnim() {
+    const c = this._attackClip();
+    return c ? c.loop : null;
+  }
+
   // Skill loops that are pure stances (no OnAttack in the loop) are still valid attack visuals during a skill;
   // only an idle-typed skill loop is treated as buff-only.
   _skillIsBuffOnly() {

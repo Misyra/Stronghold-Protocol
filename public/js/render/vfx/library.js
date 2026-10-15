@@ -16,6 +16,7 @@
 
 import { compileEffect } from './effect.js';
 import { FX_LIST_URL, loadFxList } from './available.js';
+import { setIndexVersion } from './mounts.js';
 const MAX_PARALLEL = 8;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -150,10 +151,10 @@ export class FxLibrary {
     return res.json();
   }
 
-  /** index.json (null without one). */
+  /** index.json (null without one); its version tells mounts.js whether skins still need skinShift. */
   index() {
     if (this._index) return this._index;
-    this._index = this.init().then(() => this._json(this.url('fx', 'index'))).catch(() => null);
+    this._index = this.init().then(() => this._json(this.url('fx', 'index'))).then((j) => { setIndexVersion(j?.version); return j; }).catch(() => null);
     return this._index;
   }
 

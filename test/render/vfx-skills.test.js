@@ -174,7 +174,8 @@ describe('skill plans (synthetic)', () => {
     assert.deepEqual(keysOf(attackFx(p, { ranged: true }).cast), ['ranged_cast']);
     assert.equal(attackFx(p).ability, 'MeleeAttack');
     assert.deepEqual(attackFx(p).aim.map((e) => e.key), ['tgt_aim']);
-    assert.deepEqual(attackFx({ attacks: [], each: { cast: [], hit: [[]] } }), { node: null, ability: null, cast: [], range: [], aim: [], hit: [] });
+    assert.deepEqual(attackFx({ attacks: [], each: { cast: [], hit: [[]] } }), { node: null, ability: null, cast: [], range: [], aim: [], hit: [],
+      hitOpts: { indexed: false, loop: false, random: false, once: false } });
   });
   test('MultiHit groups: a row starts a group unless it names a range; repeated keys are separate hits; `group` wins', () => {
     const p = skillPlan(idx, null, 'sk_multi');
@@ -385,13 +386,19 @@ describe('the extracted effects (when fx was extracted on this machine)', { skip
       for (const k of chargeKeys(chargePlan(real, unit))) assert.ok(refs.has(k), `${unit} refs ${k}`);
     }
   });
-  test('the roster coverage: most operator skills get a plan; token and enemy skills are not in the index', () => {
+  test('the roster coverage: most operator skills get a plan; token and enemy skills from index version 2 on', () => {
     const data = Object.fromEntries(['chess', 'backups', 'tokens', 'enemies'].map((n) => [n, JSON.parse(readFileSync(path.join(ROOT, 'data', `${n}.json`), 'utf8'))]));
     const rep = coverage(real, data);
     const op = rep.groups.operators;
     assert.ok(op.resolved / op.skills > 0.95, `${op.resolved} / ${op.skills} resolved`);
     assert.ok(op.planned / op.skills > 0.8, `${op.planned} / ${op.skills} planned`);
-    assert.equal(rep.groups.enemies.resolved, 0);
+    const { enemies, tokens } = rep.groups;
+    if ((real.version || 1) >= 2) {
+      // index v2: the enemies' skills by prefabKey (123 of 126 roster pairs), the summons' (71 of 78)
+      assert.ok(enemies.resolved / enemies.skills > 0.9, `${enemies.resolved} / ${enemies.skills} enemy skills resolved`);
+      assert.ok(tokens.resolved / tokens.skills > 0.8, `${tokens.resolved} / ${tokens.skills} summon skills resolved`);
+      assert.ok(rep.attacks.enemy.withRows / rep.attacks.enemy.units > 0.7, 'most enemies have official attack rows (combat)');
+    } else assert.equal(enemies.resolved, 0);
     assert.ok(rep.unmapped.every((u) => UNMAPPED[u.reason]));
   });
 });

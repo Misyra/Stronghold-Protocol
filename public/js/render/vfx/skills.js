@@ -1,9 +1,12 @@
 // render/vfx/skills.js — the official skill, talent and charge effects of a battle unit as plans the wiring plays
-// (DESIGN §33.12 `skills`; 0.3.0 Phase 3a). Pure logic over index.json and our data: no GL, no DOM, Node-importable.
+// (DESIGN §33.12 `skills`, §33.16; 0.3.0 Phase 3a–3c). Pure logic over index.json and our data: no GL, no DOM,
+// Node-importable.
 //
 //   resolveSkill(idx, { info, rec })        → { unitKey, skillId, skill, via, reason } — the official skill a unit uses
 //   skillPlan(idx, unitKey, skillId, opts)  → SkillPlan (below): what to play on which client signal, and where
-//   planFor(idx, { info, rec })             → { unitKey, skillId, reason, srec, plan, charge } — both in one call (the wiring)
+//   planFor(idx, { info, rec })             → { unitKey, skillId, reason, srec, plan, charge, enemy } — in one call (the wiring)
+//   enemySkillsOf(idx, unitKey, rec)        → an enemy's skills by its record's slots (index v2), [{ slot, prefabKey, skill }]
+//   hitGroups(rows) / hitOptsOf(rows)       → a MultiHit emitter's rows as hit groups / its choice flags
 //   attackFx(plan, { heal, ranged })        → the effects of one attack of the owner while the skill is on
 //   skillProjectile(idx, plan)              → the projectile a ranged attack of the skill's own ability flies, or null
 //   targetsOf(idx, plan)                    → the `targets` entries the client can place: { status, hit, none }
@@ -11,8 +14,8 @@
 //   slotKey(entry, dir)                     → the key of a directional row for a facing ('UP' | 'RIGHT' | 'DOWN' | 'LEFT')
 //   planKeys(plan) / chargeKeys(plan)       → every key of a plan (preloading)
 //   anchorOf(desc)                          → where a prefab descriptor places its effect (_spawnLocation, FollowMountPoint)
-//   chargePlan(idx, unitKey)                → a 秘术师's stored-energy effects (chargeSource: the index's export, else
-//                                             CHARGE_EMITTERS), null for other units
+//   chargePlan(idx, unitKey)                → a 秘术师's stored-energy effects (chargeSource: the index's export —
+//                                             chargeFromIndex for version 2 —, else CHARGE_EMITTERS), null for other units
 //   chargeStep(plan, prev, next)            → what changes when the stored count goes prev → next
 //   FX_BINDINGS / bindingKeys(idx, skillId) → kit 'fx' tuples bound to a skill's official effect (Phase 3b, below)
 //   eventNum(e)                             → an ability event (name or number) → Torappu.Battle.AbilityStandard/Event
@@ -32,12 +35,14 @@
 //     client's naming `skchr_<code>_<skillIndex + 1>` of a `char_<n>_<code>` unit (`via: 'name'`; not when a record names
 //     a skill the index lacks — the naming could hit another skill: 琴柳's slot 0, skcom_assist_cost[3], is no
 //     skchr_sleach_1).
-// Tokens: their skills (`sktok_*`, `skcom_withdraw`) are not in index.json (the extractor crawls the chess skills and
-// every `skchr_<code>_<n>`): `reason: 'token-skill'`. A token's own `S1` / `S2` / `S3` modes follow its summoner's skill
-// (麦哲伦's drones, 凯尔希's Mon3tr) [ASSUMED from the mode names]; UnitInfo carries no summoner link (ownerId is the
-// player), so FxWiring.mode's `S<skillIndex + 1>` cannot be right for them yet. Enemies: index.json has no enemy skill
-// effects (their abilities live in the enemy prefab; data/enemies.json `skills[].prefabKey` names them) — the sim's
-// `['cast', id, slot]` (PR #275) has nothing to look up: `reason: 'enemy-skill'`.
+// Tokens: version 1 has no summon skills (`reason: 'token-skill'`); version 2 lists them (`sktok_*` in the unit's
+// `skills`): the token's record names its skill, else it casts the only one its unit has (`via: 'only'` [ASSUMED]). A
+// token's own `S1` / `S2` / `S3` modes follow its summoner's skill (麦哲伦's drones, 凯尔希's Mon3tr) [ASSUMED from the
+// mode names]; UnitInfo carries no summoner link (ownerId is the player), so FxWiring.mode's `S<skillIndex + 1>` cannot
+// be right for them yet. Enemies: version 1 has no enemy skills (`reason: 'enemy-skill'`); version 2's
+// `units[enemy].skills` are keyed by the lower-case `prefabKey` of data/enemies.json `skills[]` — enemySkillsOf lists them
+// by slot (the sim's `['cast', id, slot]`, PR #275), planFor plans them (`enemy`: the Default mode's), and skillPlan's
+// `opts.mode` gives another mode's copy (a use with `mode` belongs to that mode's copy; one without to every copy).
 //
 // ---- The plan (skillPlan) ------------------------------------------------------------------------------------------
 //   { unitKey, skillId, mode, modeName, kind,
@@ -48,9 +53,11 @@
 //     targets,                             on other units (the skill's buffs on targets / aura members): no client signal
 //     unmapped: [{ key, role, reason, from }] }
 // `hit` lists are hit groups: [[entry…]…] — the k-th hit of one attack plays group min(k, last) (a plain attack has one
-// group); `aim` plays on the attack's targets at its cast, once. Entry = { key, role, at, loop, hold, from, node?,
+// group; `hitOpts` { indexed, loop, random, once }: index v2's exported groups and the emitter's flags — skillfx.js
+// pickGroup); `aim` plays on the attack's targets at its cast, once. Entry = { key, role, at, loop, hold, from, node?,
 // ability?, list?, startEvent?, endEvent?, directionType?, slots?, firstOnly?, afterFirst?, event?, action?, buff?,
-// on?, byName?, point?, follow? }:
+// on?, byName?, point?, follow?, and index v2's group?, groups?, anim?, mode?, useLoopHitEffect?, useRandomHitEffect?,
+// keepBaseHitEffect?, oncePerTarget? }:
 //   at    'owner' (placed on the owner by the prefab's own _spawnLocation: feet, HitPoint, Muzzle, a Special point, its
 //         ground centre — the wiring's playOn reads it), 'target' (on the target hit; HIT_POINT for most), 'targets'
 //         (the carriers of a buff the client cannot name);
@@ -59,26 +66,30 @@
 //         FxWiring's CAST_LOOP_S; a looping prefab in a one-shot role gets it too, except a skill-level begin effect —
 //         `_beginEffect`, a buff's start action —, which lasts the skill [ASSUMED]), 'ready' (stop when the skill stops
 //         being ready), null (a one-shot: it plays out);
-//   point / follow  (with `opts.describe`) the prefab's SpawnLocation / FollowMountPoint names (anchorOf).
+//   point / follow  the prefab's SpawnLocation / FollowMountPoint names: index v2's prefab summary (`spawn` / `follow`),
+//         else — with `opts.describe` — the descriptor's (anchorOf; it wins when given).
 // `mode` / `modeName`: the owner's attack mode the skill switches to (index.json skills[id].mode — from the skill's data
 // or `S<n>` by name); the normal attacks then use that mode's cast / hit / projectile (FxWiring.attack): Phase 3b should
 // take it from here instead of `S<skillIndex + 1>` (204 of 210 skills agree; the plan is right for the other 6).
 // `kind` (with `opts.rec`, our skill record): 'passive' (skillType PASSIVE — the sim starts it at deploy and sends no
 // skill window for one with a duration: its loops run while the unit is deployed [ASSUMED]), 'ammo', 'lasting'
-// (duration > 0), 'instant' (else: 'skill' on and off in one tick, around the skill's attack if it has one).
+// (duration > 0), 'instant' (else: 'skill' on and off in one tick, around the skill's attack if it has one). Index v2's
+// `rootClass`: a ReplacementSkill* is 'instant' whatever the record (its single attack is the skill), a PassiveSkill
+// without a record 'passive'.
 //
 // How a use of index.json (skills[id].uses) is placed — the extractor's roles (DESIGN §33.12) refined by its fields:
 //   * emitter rows (a use with `ability`, the ability the emitter serves): an attack ability (/Attack|Heal/, not
 //     Channeling*) → `attacks` — `start` / `loop` / `end` rows to `cast` (on each attack's cast; a non-one-shot row is
 //     held for that cast), `range` rows to its `range`, `hit` rows to `hit` (MultiHitUberEffectEmitter._hitGroups → hit
-//     groups, below; plain `_hitEffects` rows play on every hit), `castTarget` / `inputTarget` rows to `aim` (on the
+//     groups, below; plain `_hitEffects` rows play on every hit — a MultiHit emitter's own only with
+//     `keepBaseHitEffect` when it has groups), `castTarget` / `inputTarget` rows to `aim` (on the
 //     targets at the cast). Any other ability is the skill's own action → skill level: a row held past its cast — Channeling*
 //     (the channel lasts the skill), or ActiveBuffAbility / BuffDuring* / Passive* / *Aura* not ending at ON_CAST_END —
 //     is a `loop`; other non-one-shot rows are `start` held for the cast. Their `hit` rows have no event naming the
 //     targets (unmapped 'hit-no-attack' / 'channel-hit').
 //     Why attack rows go per attack, also in a one-cast skill: the sim sends ['skill', id, 1], the skill's attack
-//     ['atk', …], then ['skill', id, 0] — the rows play with that attack (index.json does not say which skills are one
-//     cast: the root class, ReplacementSkill / CastSkill, is not exported).
+//     ['atk', …], then ['skill', id, 0] — the rows play with that attack (version 1 does not say which skills are one
+//     cast; version 2's root class does — `kind` above).
 //   * buffs (a buff's effect: overrideEffectKey, else its template's effectKey) loop on their carrier: `on: 'owner'` (or
 //     unknown) → `loop` (hold 'skill'), `on: 'targets'` → `targets`, a token's → unmapped 'token'.
 //   * buff template actions (`event`): at ON_BUFF_START / ENABLE / LATE_ENABLE / ON_SKILL_START / ON_TOGGLE_SKILL_START →
@@ -99,16 +110,18 @@
 //   * `by: 'name'` (placed by the key's name) keeps that placement with `byName` [ASSUMED]; role `other` → unmapped.
 //   * hookEffectAfterFirstAttack: the row's key on the first attack (`firstOnly`), the hook's from the second on
 //     (`afterFirst`).
-//   * MultiHitUberEffectEmitter._hitGroups arrive flattened (index.json keeps no group index): a row starts a new group
+//   * MultiHitUberEffectEmitter._hitGroups: version 2 gives each row its `group`, the list's length (`groups`) and the
+//     emitter's flags — hitGroups keeps every group (an empty one too: that hit plays nothing), hitOptsOf the flags.
+//     Version 1 has them flattened: a row starts a new group
 //     unless its key names a range (`_range`), which joins the group before it. This reproduces the client's groups of
 //     all 10 skills of the used set that have them (client 26-09-13, [uc]skills.ab: skchr_acpion_3 8, ascln_1 2,
 //     blkkgt_1 2, chen_3 10, chen3_2 6, irene_1 2, phatm2_1 2 (hit + hit_range each), vvana_1 2 + 3, zuole_1 2 / 3,
-//     zuole_3 7); [ASSUMED] for later sets — a `group` field on the use (a later extractor) wins.
+//     zuole_3 7); [ASSUMED] for other sets — version 2's `group` wins.
 //   * `pulse`: the entries left unmapped as 'tick' / 'channel-hit' / 'hit-no-attack' (the skill's periodic or non-attack
 //     hits) are also listed here with their reason: no event of the engine names them, but a kit may send an 'fx' of its
 //     own for that moment (the wiring binds them to it, Phase 3b — below). They stay in `unmapped` (the static count).
 //   * `projectiles`: the skill's own projectile keys that index.json has (skills[id].projectiles); `rootClass`: the
-//     skill's root class when the extractor writes it (ReplacementSkill, CastSkill, … — a later extractor), else null.
+//     skill's root class (index v2: ReplacementSkill, CastSkill, …), else null.
 //
 // ---- Role → client signal (render/app.js handleEvent; b.ev tuples, DESIGN §8.2; b.snap via render/interp.js) ---------
 //   start     ['skill', id, 1]. An instant skill sends 1 and 0 in one tick (its attack, if any, between them); a passive
@@ -140,11 +153,12 @@
 //     (Phase 3b binds them where they stand for a plan's `pulse` rows or an FX_BINDINGS entry);
 //   * buff events past start / finish / take-damage (periodic ticks, condition checks, would-die, kills, moves);
 //   * the tiles / path of an area or line effect (_tileEffectKey, Aphris's path, range outlines);
-//   * enemy and token skills (not in index.json); the hit index of a multi-hit attack (only the event order);
+//   * the moment of an enemy's skill, unless ['cast', id, slot] arrives (the sim on this line sends none) or a
+//     single-skill enemy's snapshot shows SKILL (skillfx.js); the hit index of a multi-hit attack (only the event order);
 //   * 维伊's and 黑键's stores (kit-private: the charge section).
 //
 // ---- The 秘术师 charge (CHARGE_EMITTERS, chargePlan, chargeStep; GitHub #633) --------------------------------------
-// index.json does not carry the charge emitters: they sit on the unit prefab's Trait/Charge*Group (AbilityChargeableGroup /
+// Version 1 of index.json does not carry the charge emitters: they sit on the unit prefab's Trait/Charge*Group (AbilityChargeableGroup /
 // AbilityExChargeGroup with MultiChargeUberEffectEmitter, MultiExChargeUberEffectEmitter, MergeableChargeUberEffectEmitter),
 // which the extractor's attack reader skips (it takes a mode's `UberEffectEmitter` only — so 深靛's, 黑键's and 维伊's
 // attack `cast` rows, a MultiChargeUberEffectEmitter's, are missing from their modes too; client 26-09-13, the operators'
@@ -172,8 +186,12 @@
 //     5, 6, 8, 9, 10), every 3 merge (_mergeSize) into a 转置能量 slot (…_rank_02[_k] + …_rank_02_change[_k]); her kit
 //     (op-veen.js) keeps its own store: no signal either.
 //
-// A later extractor exports the charge emitters itself (Phase 1c): `chargeSource` reads index.json's `units[id].charge`
-// when it has CHARGE_EMITTERS' shape ({ cap, slots: [{ spell, cast, mount }], projectiles, … }) and falls back to the table.
+// Version 2 exports them (Phase 1c, DESIGN §33.12 Charge): `chargeSource` turns `units[id].charge` (the chargeable
+// groups) into CHARGE_EMITTERS' shape (chargeFromIndex: the reference store ability is the one whose `modes` hold
+// Default — its emitters' and the group node's groups are the slots, at its `mountPointForProjectiles`; the ex emitters
+// at `exMounts` the elite slots, a `forceExCharge` ability's for its modes; `mergeSize` the merged slots; each ability's
+// projectiles for its `modes`) — for the three units the same as the table —, else reads an object of the table's shape
+// ({ cap, slots: [{ spell, cast, mount }], projectiles, … }), else falls back to the table.
 //
 // ---- What the client can place beyond the signals above (Phase 3b; render/vfx/skillfx.js plays it) --------------------
 //   * targetsOf: a `targets` entry carried by the buffs an attack ability of the skill applies (`<Attack>._activeBuffs`)
@@ -319,6 +337,9 @@ export function resolveSkill(idx, { info = null, rec = null, unitKey = null, ski
     const s = find(id);
     if (s) return { ...out, skillId: id, skill: s, via: 'name' };
   }
+  // a summon without a record of its skill (index v2 has the summons' skills): the only one its unit has [ASSUMED]
+  const own = isObj(unit.skills) ? Object.keys(unit.skills) : [];
+  if (!srec && kind === 'token' && own.length === 1) return { ...out, skillId: own[0], skill: unit.skills[own[0]], via: 'only' };
   out.skillId = skillIdsOf(srec)[0] || null;
   out.reason = kind === 'enemy' || info?.side === 'enemy' ? 'enemy-skill' : kind === 'token' ? 'token-skill' : srec ? 'not-in-index' : 'no-skill';
   return out;
@@ -326,19 +347,36 @@ export function resolveSkill(idx, { info = null, rec = null, unitKey = null, ski
 
 // ---- the plan -------------------------------------------------------------------------------------------------------
 
-/** The rows of a MultiHitUberEffectEmitter's _hitGroups in use order → groups (header: a `_range` row joins the one before). */
+/**
+ * The rows of a MultiHitUberEffectEmitter's _hitGroups → groups. Index v2 gives each row its `group` and the list's
+ * length (`groups`): every group is kept, an empty one too (that hit plays nothing). Index v1 lists them flattened in use
+ * order: a row starts a new group unless its key names a range (`_range`), which joins the group before it (header).
+ */
 export function hitGroups(rows) {
+  if (rows.some((r) => Number.isInteger(r.group))) {
+    let n = 0;
+    for (const r of rows) n = Math.max(n, Number.isInteger(r.groups) ? r.groups : 0, Number.isInteger(r.group) ? r.group + 1 : 0);
+    const groups = Array.from({ length: n }, () => []);
+    for (const r of rows) if (Number.isInteger(r.group) && r.group >= 0) groups[r.group].push(r);
+    return groups;
+  }
   const groups = [];
   let last = null;
   for (const r of rows) {
-    if (Number.isInteger(r.group)) {
-      (groups[r.group] || (groups[r.group] = [])).push(r);
-      continue;
-    }
     if (last && /_range/.test(r.key)) last.push(r);
     else groups.push((last = [r]));
   }
-  return groups.filter(Boolean);
+  return groups;
+}
+
+/**
+ * How a hit-group list plays (the MultiHit emitter's settings on its rows, index v2): `indexed` (the groups are the
+ * client's, empty ones included), `loop` (hit k plays group k mod n), `random` (a random group per hit), `once` (once
+ * per target per cast).
+ */
+export function hitOptsOf(rows) {
+  const f = (k) => rows.some((r) => r[k] === 1 || r[k] === true);
+  return { indexed: rows.some((r) => Number.isInteger(r.group)), loop: f('useLoopHitEffect'), random: f('useRandomHitEffect'), once: f('oncePerTarget') };
 }
 
 /** SpawnLocation names (ParticleEffect._spawnLocation, DESIGN §33.11 metadata). */
@@ -381,10 +419,14 @@ export function anchorOf(desc) {
   };
 }
 
-/** Our skill record → plan.kind (header). */
-function kindOf(srec) {
-  if (!isObj(srec)) return null;
-  if (srec.skillType === 'PASSIVE') return 'passive';
+/**
+ * Our skill record (and the skill's root class, index v2) → plan.kind (header): a PASSIVE record is 'passive', a
+ * `ReplacementSkill*` root one cast that replaces the next attack ('instant'), else the record's duration type.
+ */
+function kindOf(srec, rootClass = null) {
+  if (isObj(srec) && srec.skillType === 'PASSIVE') return 'passive';
+  if (typeof rootClass === 'string' && /^ReplacementSkill/.test(rootClass)) return 'instant';
+  if (!isObj(srec)) return rootClass === 'PassiveSkill' ? 'passive' : null;
   if (srec.durationType === 'AMMO') return 'ammo';
   return Number(srec.duration) > 0 ? 'lasting' : 'instant';
 }
@@ -413,6 +455,7 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
   const unit = unitKey && isObj(idx?.units) ? idx.units[unitKey] : null;
   const skill = (id && isObj(unit?.skills) && unit.skills[id]) || (id && isObj(idx?.skills) && idx.skills[id]) || null;
   if (!skill) return plan;
+  plan.kind = kindOf(opts.rec, skill.rootClass);
   if (Number.isInteger(skill.mode)) {
     plan.mode = skill.mode;
     plan.modeName = unit?.modes?.[skill.mode]?.name ?? null;
@@ -435,9 +478,13 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
   const eachHit = [];
   const miss = (key, role, reason, u) => { plan.unmapped.push({ key, role, reason, from: u.from }); };
 
+  // an enemy skill held in several modes (index v2): its copies' uses name their `mode` — the plan of `opts.mode`
+  // (default 'Default') keeps that copy's and the uses without one
+  const mode = typeof opts.mode === 'string' ? opts.mode : 'Default';
   for (let i = 0; i < uses.length; i++) {
     const u = uses[i];
     if (!isObj(u) || !Array.isArray(u.keys)) continue;
+    if (typeof u.mode === 'string' && u.mode !== mode) continue;
     const role = u.role;
     const hook = typeof u.from === 'string' && u.from.endsWith(HOOK);
     const hooked = !hook && uses[i + 1]?.from === `${u.from}${HOOK}` && uses[i + 1]?.node === u.node;
@@ -460,8 +507,13 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
   }
   for (const a of attacks.values()) {
     const groups = hitGroups(a.grouped);
-    const hit = groups.length ? groups.map((g) => [...g, ...a.all]) : [a.all];
-    plan.attacks.push({ node: a.node, ability: a.ability, cast: a.cast, range: a.range, aim: a.aim, hit: hit.filter((g) => g.length) });
+    const hitOpts = hitOptsOf(a.grouped);
+    // a MultiHit emitter's own `_hitEffects` give way to its groups unless it keeps them (`keepBaseHitEffect`)
+    const keep = a.grouped.some((e) => e.keepBaseHitEffect === 1 || e.keepBaseHitEffect === true);
+    const all = groups.length && !keep ? a.all.filter((e) => e.from !== 'MultiHitUberEffectEmitter._hitEffects') : a.all;
+    const hit = groups.length ? groups.map((g) => [...g, ...all]) : [all];
+    // the client's own groups keep their empty ones (that hit plays nothing); v1's rebuilt groups drop them
+    plan.attacks.push({ node: a.node, ability: a.ability, cast: a.cast, range: a.range, aim: a.aim, hit: hitOpts.indexed ? hit : hit.filter((g) => g.length), hitOpts });
   }
   plan.each.hit = [eachHit];
   return plan;
@@ -470,9 +522,15 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
 /** A plan entry of one key of a use (`prefabs`: index.json prefabs, the key's summary among them). */
 function entryOf(key, role, u, prefabs, describe) {
   const e = { key, role, at: 'owner', loop: !!prefabs[key].looping, hold: null, from: u.from };
-  for (const f of ['node', 'ability', 'list', 'startEvent', 'endEvent', 'directionType', 'event', 'action', 'buff', 'on']) {
+  // (v2: a group list's `group` / `groups`, a replace group's `anim`, the MultiHit choice flags, an enemy copy's `mode`)
+  for (const f of ['node', 'ability', 'list', 'startEvent', 'endEvent', 'directionType', 'event', 'action', 'buff', 'on',
+    'group', 'groups', 'anim', 'useLoopHitEffect', 'useRandomHitEffect', 'keepBaseHitEffect', 'oncePerTarget', 'mode']) {
     if (u[f] != null) e[f] = u[f];
   }
+  // where it sits on its owner: index v2's prefab summary (`spawn` / `follow`), without loading the descriptor
+  const sum = prefabs[key];
+  if (Number.isInteger(sum.spawn)) e.point = SPAWN_LOCATIONS[sum.spawn] || null;
+  if (Number.isInteger(sum.follow)) e.follow = mountPointName(sum.follow);
   // a slot without an extracted prefab plays nothing (null)
   if (Array.isArray(u.slots) && u.slots.length) e.slots = u.slots.map((x) => { const k = lc(x); return k && prefabs[k] ? k : null; });
   if (u.by === 'name') e.byName = true;
@@ -584,9 +642,11 @@ export function attackFx(plan, { heal = false, ranged = false } = {}) {
   const each = plan?.each || { cast: [], hit: [[]] };
   const extra = each.hit?.[0] || [];
   const groups = a && a.hit.length ? a.hit.map((g) => [...g, ...extra]) : [extra];
+  const hitOpts = a?.hitOpts || { indexed: false, loop: false, random: false, once: false };
   return {
     node: a ? a.node : null, ability: a ? a.ability : null,
-    cast: [...(a ? a.cast : []), ...(each.cast || [])], range: a ? a.range : [], aim: a ? a.aim : [], hit: groups.filter((g) => g.length),
+    cast: [...(a ? a.cast : []), ...(each.cast || [])], range: a ? a.range : [], aim: a ? a.aim : [],
+    hit: hitOpts.indexed ? groups : groups.filter((g) => g.length), hitOpts,
   };
 }
 
@@ -647,18 +707,37 @@ export function buffDuration(srec) {
 }
 
 /**
+ * An enemy's skills by its data record's slots (index v2: `units[enemy].skills`, keyed by the lower-case node name —
+ * data/enemies.json `skills[].prefabKey`; the sim's ['cast', id, slot] names a slot): [{ slot, prefabKey, skill }] for
+ * the slots the index has.
+ */
+export function enemySkillsOf(idx, unitKey, rec) {
+  const unit = unitKey ? idx?.units?.[unitKey] : null;
+  const out = [];
+  if (!isObj(unit?.skills)) return out;
+  (Array.isArray(rec?.skills) ? rec.skills : []).forEach((s, slot) => {
+    const key = lc(s?.prefabKey);
+    if (key && unit.skills[key]) out.push({ slot, prefabKey: key, skill: unit.skills[key] });
+  });
+  return out;
+}
+
+/**
  * Everything the wiring needs of a battle unit, in one call: its official skill (resolveSkill), our skill record, the
- * plan (with `kind` from the record) and its charge plan.
+ * plan (with `kind` from the record) and its charge plan; for an enemy its skills' plans by slot (`enemy`: [{ slot,
+ * prefabKey, plan }], the Default mode's — SkillFx builds another mode's when the enemy takes it).
  * @param {any} idx index.json
  * @param {{ info?: any, rec?: any, unitKey?: string|null }} unit
- * @returns {{ unitKey: string|null, skillId: string|null, reason: string|null, srec: any, plan: ReturnType<typeof skillPlan>|null, charge: ReturnType<typeof chargePlan> }}
+ * @returns {{ unitKey: string|null, skillId: string|null, reason: string|null, srec: any, plan: ReturnType<typeof skillPlan>|null, charge: ReturnType<typeof chargePlan>, enemy: Array<{ slot: number, prefabKey: string, plan: ReturnType<typeof skillPlan> }> }}
  */
 export function planFor(idx, { info = null, rec = null, unitKey = null } = {}) {
   const res = resolveSkill(idx, { info, rec, unitKey });
   const index = Number.isInteger(info?.diy?.skillIndex) ? info.diy.skillIndex : Number.isInteger(info?.skillIndex) ? info.skillIndex : undefined;
   const srec = skillRecordOf(rec, index);
   const plan = res.skill ? skillPlan(idx, res.unitKey, res.skillId, { rec: srec }) : null;
-  return { unitKey: res.unitKey, skillId: res.skillId, reason: res.reason, srec, plan, charge: res.unitKey ? chargePlan(idx, res.unitKey) : null };
+  const isEnemy = info?.side === 'enemy' || idx?.units?.[res.unitKey]?.kind === 'enemy';
+  const enemy = isEnemy ? enemySkillsOf(idx, res.unitKey, rec).map(({ slot, prefabKey }) => ({ slot, prefabKey, plan: skillPlan(idx, res.unitKey, prefabKey) })) : [];
+  return { unitKey: res.unitKey, skillId: res.skillId, reason: res.reason, srec, plan, charge: res.unitKey ? chargePlan(idx, res.unitKey) : null, enemy };
 }
 
 /** Torappu SharedConsts.Direction: the slot of a facing. */
@@ -747,7 +826,8 @@ function chargeSlots(list, prefabs, missing) {
     const spell = s.spell.map(lc).filter(ok), cast = s.cast.map(lc).filter(ok);
     return {
       hold: spell.filter((k) => prefabs[k].looping),     // stays while the energy is stored
-      gain: [...cast, ...spell.filter((k) => !prefabs[k].looping)],   // one-shots of the store (cast start, spell on)
+      // one-shots of the store (cast start, spell on: one effect named at both plays once — one store moment here)
+      gain: [...new Set([...cast, ...spell.filter((k) => !prefabs[k].looping)])],
       mount: mountPointName(s.mount),                     // where its projectile leaves from
       mountType: Number.isInteger(s.mount) ? s.mount : null,   // the same as a MountPointType (render/vfx/mounts.js)
     };
@@ -758,12 +838,80 @@ function chargeSlots(list, prefabs, missing) {
 const isChargeSource = (c) => isObj(c) && Number.isInteger(c.cap) && Array.isArray(c.slots) && c.slots.length > 0
   && c.slots.every((s) => isObj(s) && Array.isArray(s.spell) && Array.isArray(s.cast));
 
+/** The keys of a charge emitter's group k (index v2 rows), by when they play: ON_SPELL_ON (4) → spell, else cast. */
+function chargeRows(emitters, field, k, out) {
+  for (const em of emitters) {
+    for (const row of (Array.isArray(em?.[field]) ? em[field][k] : null) || []) {
+      const keys = (Array.isArray(row?.effects) ? row.effects : []).map(lc).filter(Boolean);
+      (eventNum(row.startEvent) === 4 ? out.spell : out.cast).push(...keys);
+    }
+  }
+  return out;
+}
+
+/** Slots of a list of charge emitters (index v2): group k of `effects` / `casts` → { spell, cast, mount }. */
+function chargeSlotsOf(emitters, effects, casts, mounts, prefabs) {
+  let n = 0;
+  for (const em of emitters) for (const f of [effects, casts]) n = Math.max(n, Array.isArray(em?.[f]) ? em[f].length : 0);
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const sl = chargeRows(emitters, casts, k, chargeRows(emitters, effects, k, { spell: [], cast: [] }));
+    sl.spell = [...new Set(sl.spell)];
+    sl.cast = [...new Set(sl.cast)];
+    // where its projectile leaves from: the ability's mount, else where the slot's loop follows (index v2 summary)
+    const loopKey = sl.spell.find((key) => prefabs[key]?.looping);
+    sl.mount = Number.isInteger(mounts?.[k]) ? mounts[k] : (Number.isInteger(prefabs[loopKey]?.follow) ? prefabs[loopKey].follow : null);
+    out.push(sl);
+  }
+  return out;
+}
+
 /**
- * The charge emitters of a unit: index.json's own export (`units[id].charge`, a later extractor) when it has
- * CHARGE_EMITTERS' shape, else the transcribed table; null for a unit without one.
+ * Index v2's chargeable groups of a unit (`units[id].charge`: the 秘术师's stored energies, DESIGN §33.12 Charge) in
+ * CHARGE_EMITTERS' shape: per energy the group node's and the store ability's emitter groups (`chargeEffectGroups` /
+ * `chargeCastGroups`; the normal ones — 黑键's `isExEffectEmitter` emitter gives `elite`, an ability with
+ * `forceExCharge` `eliteS3`, 维伊's merged groups `merged`), the mounts of the ability the Default mode releases (its
+ * `mountPointForProjectiles`, else the loops' FollowMountPoint), the cap and every ability's projectiles by its modes.
+ */
+export function chargeFromIndex(groups, prefabs = {}) {
+  const g = Array.isArray(groups) ? groups.find((x) => isObj(x) && Array.isArray(x.abilities)) : null;
+  if (!g) return null;
+  const abil = g.abilities.filter(isObj);
+  const ref = abil.find((a) => (a.modes || []).includes('Default')) || abil.find((a) => !a.forceExCharge) || abil[0] || null;
+  const ems = (list, ex) => (Array.isArray(list) ? list : []).filter((e) => isObj(e) && !!e.isExEffectEmitter === ex);
+  const normal = [...ems(g.emitters, false), ...ems(ref?.emitters, false)];
+  const slots = chargeSlotsOf(normal, 'chargeEffectGroups', 'chargeCastGroups', ref?.mountPointForProjectiles, prefabs);
+  if (!slots.length) return null;
+  const src = {
+    cap: Number.isInteger(g.maxChargeTimes) && g.maxChargeTimes > 0 ? g.maxChargeTimes : Number.isInteger(ref?.maxChargeTimes) && ref.maxChargeTimes > 0 ? ref.maxChargeTimes : slots.length,
+    slots, projectiles: {},
+  };
+  const elite = chargeSlotsOf([...ems(g.emitters, true), ...ems(ref?.emitters, true)], 'chargeEffectGroups', 'chargeCastGroups', ref?.exMounts, prefabs);
+  if (elite.length) src.elite = elite;
+  const forced = abil.find((a) => a.forceExCharge);
+  if (forced) {
+    const s3 = chargeSlotsOf(ems(forced.emitters, true), 'chargeEffectGroups', 'chargeCastGroups', forced.exMounts, prefabs);
+    if (s3.length) src.eliteS3 = s3;
+  }
+  const merged = chargeSlotsOf(normal, 'mergedChargeEffectGroups', 'mergedChargeCastGroups', ref?.mountPointForProjectiles, prefabs);
+  if (merged.length) { src.merged = merged; src.mergeSize = Number.isInteger(ref?.mergeSize) ? ref.mergeSize : null; }
+  for (const a of abil) {
+    for (const m of Array.isArray(a.modes) ? a.modes : []) {
+      if (lc(a.projectileKey)) src.projectiles[m] = lc(a.projectileKey);
+      if (lc(a.exProjectileKey)) (src.eliteProjectiles || (src.eliteProjectiles = {}))[m] = lc(a.exProjectileKey);
+      if (lc(a.mergeProjectileKey)) (src.mergedProjectiles || (src.mergedProjectiles = {}))[m] = lc(a.mergeProjectileKey);
+    }
+  }
+  return src;
+}
+
+/**
+ * The charge emitters of a unit: index v2's chargeable groups (`units[id].charge`, chargeFromIndex), else an export in
+ * CHARGE_EMITTERS' shape, else — a version-1 index — the transcribed table; null for a unit without one.
  */
 export function chargeSource(idx, unitKey) {
   const own = idx?.units?.[unitKey]?.charge;
+  if (Array.isArray(own)) { const v2 = chargeFromIndex(own, isObj(idx.prefabs) ? idx.prefabs : {}); if (v2) return v2; }
   if (isChargeSource(own)) return own;
   return CHARGE_EMITTERS[unitKey] || null;
 }

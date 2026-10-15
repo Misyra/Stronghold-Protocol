@@ -352,10 +352,22 @@ describe('field view features in headless Chrome', { skip }, () => {
         v.setCamera('prep', { instant: true });
         return { after, hiddenOnBoard: !d.leader.view.root.visible };
       });
+      // a leader that turns (盐风主教昆图斯, the regular FaceSwitcher) faces the player's half [ASSUMED look]; 假想敌：胄
+      // above faces right on either half (render/units.js FIXED_FACING, GitHub #648)
+      const turning = await page.evaluate(async (side) => {
+        const v = window.__demo.view, d = v.debug;
+        v.setCamera('bossPrep', { side, instant: true });
+        const st = JSON.parse(JSON.stringify(window.__demo.scene.state));
+        st.nextEnemies = [{ enemyKey: 'enemy_1521_dslily', count: 1, gate: 'upper', t: 0, fly: false, elite: true, boss: true, source: 'wave', tag: 'boss', start: [3, 10] }];
+        v.setPrep(st, { editable: true });
+        await new Promise((res) => setTimeout(res, 600));
+        return { key: d.leader?.view.info.defId ?? null, facing: d.leader?.view.visFacing ?? null };
+      }, side);
       await page.close();
       assert.deepEqual(problems, []);
       assert.deepEqual([r.has, r.x, r.y, r.shown], [true, 10, 3, true], 'on its spawn tile (3, 10), shown by the boss-field prep camera');
-      assert.equal(r.facing, side === 'R' ? 1 : -1, 'facing the player\'s half');
+      assert.equal(r.facing, 1, '假想敌：胄 faces right on either half (FIXED_FACING, GitHub #648)');
+      assert.deepEqual(turning, { key: 'enemy_1521_dslily', facing: side === 'R' ? 1 : -1 }, 'a leader that turns faces the player\'s half');
       assert.ok(r.spine, 'its Spine model');
       assert.ok(!r.pen.includes('enemy_9013_acstmk') && r.pen.length === 3, `not in the pen: ${r.pen}`);
       assert.deepEqual(r.before, [], 'no red tiles without a range preview');

@@ -29,10 +29,12 @@
 // a FLIP_TWO_SIDE hit is mirrored when the blow comes from the right; the generic hit by damage type for a melee attack
 // that lists none (an enemy's: `enemy`); a heal that came by no official projectile plays the generic heal hit.
 
-import { spawnPoint, mountPoint, unitPoint, spawnKind } from './mounts.js';
+import { spawnPoint, mountPoint, unitPoint, spawnKind, mountKind } from './mounts.js';
 import { GROUND_SPAWNS } from './effect.js';
 import { SkillFx, fitsAttack, pickGroup, formMode } from './skillfx.js';
 import { TalentFx } from './talentfx.js';
+import { FunnelFx } from './funnelfx.js';
+import { boneShift } from './bones.js';
 import { formModes } from './talents.js';
 import { shotOf } from './skills.js';
 import { UF } from '../../../../shared/constants.js';
@@ -145,6 +147,7 @@ export class FxWiring {
     this.castFrame = new Map();   // unit id → the frame of its last attack (several targets of one attack cast once)
     this.skills = new SkillFx(this);
     this.talents = new TalentFx(this);
+    this.funnels = new FunnelFx(this);
   }
 
   get index() { return this.idx; }
@@ -251,6 +254,7 @@ export class FxWiring {
     // talents' and abilities' (render/vfx/talentfx.js, index v3)
     for (const k of this.skills.keys(views)) keys.add(k);
     for (const k of this.talents.keys(views)) keys.add(k);
+    for (const k of this.funnels.keys(views)) keys.add(k);   // the 驭械术士's floating units (render/vfx/funnelfx.js)
     return [...keys].map(lc).filter((k) => k && this.ofx.lib.has(k));
   }
 
@@ -364,7 +368,13 @@ export class FxWiring {
     return pz.all ? all && pz.conds.length > 0 : any;
   }
 
-  /** Spawn an effect key on a view at its spawn location; o: { toward (view|point), flipFrom (view), track }. */
+  /**
+   * Spawn an effect key on a view at its spawn location; o: { toward (view|point), flipFrom (view), track, follow (keep
+   * a FollowMountPoint prefab on the unit's point), bone (that point follows the skeleton bone too: render/vfx/bones.js),
+   * loop, important, data, skip }. A prefab not loaded yet places itself by index.json's summary (`prefabs[key].spawn` /
+   * `follow`, index v2) and takes up its direction and pause behaviours once it is loaded (an idle loop started in the
+   * battle's first frame used to sit at the HitPoint for good).
+   */
   playOn(key, v, o = {}) {
     let k = lc(key);
     if (!k || !this.ofx.lib.has(k)) return null;
@@ -376,28 +386,42 @@ export class FxWiring {
     }
     const u = this.unitOf(v);
     const skin = this.skinOf(u);
-    const spawn = def ? def.spawn : 2;
+    const sum = def ? null : this.idx?.prefabs?.[k] || null;
+    const spawn = def ? def.spawn : Number.isInteger(sum?.spawn) ? sum.spawn : 2;
     const pose = this.pose(v);
     const pos = spawnPoint(skin, spawn, pose);
+    if (o.bone) boneShift(v, skin, spawnKind(spawn), pose, pos);
     const ground = (v.z || 0);
-    if (def && GROUND_SPAWNS.has(spawn)) pos[2] = -ground;
+    if (GROUND_SPAWNS.has(spawn)) pos[2] = -ground;
     const place = { pos, groundZ: -ground, yaw: 0, mirror: false, flipY: false };
     this._orient(def, place, pose, o, v);
     const opts = { track: o.track || null, data: o.data ?? null, loop: !!o.loop, important: !!o.important, skip: o.skip > 0 ? o.skip : 0 };
     // the owner each frame: FollowMountPoint keeps the effect on the unit's point (status loops: o.follow), FollowDirection
     // turns it with the unit, PauseEffectIf hides it while the unit shows a condition
-    const follow = o.follow && def?.follow, turn = !!def?.direction, pause = def?.pause;
-    if (!o.track && (follow || turn || pause)) {
+    const mount = o.follow ? (def ? (def.follow ? def.follow.mount : null) : Number.isInteger(sum?.follow) ? sum.follow : null) : null;
+    const follow = mount != null;
+    const lazy = !def;
+    if (!o.track && (follow || lazy || def.direction || def.pause)) {
+      let d = def;
       opts.track = (fx) => {
         if (!v || v.destroyed) return;
+        if (!d) {
+          d = this.ofx.lib.def(k);
+          // loaded now: the direction it takes at its spawn (FLIP_TWO_SIDE, towards the target), once
+          if (d) { const pl = { yaw: fx.yaw, mirror: fx.mirror, flipY: fx.flipY }; this._orient(d, pl, pose, o, v); fx.yaw = pl.yaw; fx.mirror = pl.mirror; fx.flipY = pl.flipY; }
+        }
         const p = this.pose(v);
-        if (follow) { mountPoint(skin, def.follow.mount, p, fx.anchor); fx.groundZ = -(v.z || 0); }
-        if (turn) {
+        if (follow) {
+          mountPoint(skin, mount, p, fx.anchor);
+          if (o.bone) boneShift(v, skin, mountKind(mount), p, fx.anchor);
+          fx.groundZ = -(v.z || 0);
+        }
+        if (d && d.direction) {
           const pl = { yaw: fx.yaw, mirror: fx.mirror, flipY: fx.flipY };
-          this._orient(def, pl, p, {}, v);
+          this._orient(d, pl, p, {}, v);
           fx.yaw = pl.yaw; fx.mirror = pl.mirror; fx.flipY = pl.flipY;
         }
-        if (pause) fx.hidden = this._paused(pause, v, p);
+        if (d && d.pause) fx.hidden = this._paused(d.pause, v, p);
       };
     }
     return this.ofx.spawn(k, place, opts);
@@ -567,7 +591,9 @@ export class FxWiring {
     const u = this.unitOf(src);
     const nth = this.attackN.get(src.id ?? src.info?.id) || 0;
     const set = sk?.replace ? null : this._attackSet(u, this.mode(u, src, info.skillOn), src, tgt, kind, nth);
-    if (!set && !sk) return false;
+    // a funnel shot's casts on its floating unit (耶拉's token) start with the owner's wind-up
+    const fun = this.funnels.castStart(src, tgt, kind, info);
+    if (!set && !sk) return fun;
     if (set) this._casts(set, src, tgt, 'start', info);
     if (sk) this.skills.casts(sk, src, tgt, 'start', info);
     return true;
@@ -593,7 +619,10 @@ export class FxWiring {
     const set = this._attackSet(u, this.mode(u, src), src, tgt, kind, nth);
     const a = sk?.replace ? null : set;
     if (tgt) this.lastTargets.set(id, tgt);
-    if (!a && !sk) return false;
+    // the 驭械术士's floating units (render/vfx/funnelfx.js): they leave home and hit with the attack, or fly the funnel
+    // shot from their point; the body shot of another target of the same attack is not flown (`skipBody`)
+    const fun = this.funnels.attack(src, tgt, kind, time, again, wound);
+    if (!a && !sk) return !!fun;
     this.castFrame.set(id, this.skills.frame);
     const phase = wound ? 'strike' : 'all';
     if (a) this._casts(a, src, tgt, phase, { owner: !again });
@@ -614,6 +643,7 @@ export class FxWiring {
     if (a?.groups) { rec.modeGroups = a.groups.map(keysOf); rec.modeOpts = a.hitOpts; }
     if (sk && (sk.fx.hit.length || sk.buffs.length)) { rec.groups = sk.fx.hit; rec.hitOpts = sk.fx.hitOpts; rec.buffs = sk.buffs; rec.U = sk.U; }
     const grouped = !!(rec.groups || rec.modeGroups);
+    if (proj && tgt && isShot && fun?.skipBody) return true;
     if (proj && tgt && isShot) {
       // index v3: where the shot leaves (mount, a mount group's points) and its follow-up shots (skills.js shotOf)
       const shot = sk?.projectile ? sk.shot : set?.shot;
@@ -766,7 +796,9 @@ export class FxWiring {
     if (hpHit) this.skills.trigger(v);
     const id = v.id ?? v.info?.id;
     const m = this._pending(id, time);
-    const drawn = m && hpHit ? this._landed(m, v, time, type) : false;
+    // an attached floating unit's hit lands with its damage (荒芜拉普兰德's wolves: render/vfx/funnelfx.js)
+    const fun = hpHit ? this.funnels.damage(v, time, type) : false;
+    const drawn = (m && hpHit ? this._landed(m, v, time, type) : false) || fun;
     const arr = this.arrived.get(id);
     if (arr != null && this.ofx.time - arr < ARRIVAL_WINDOW) return true;
     return drawn;
@@ -837,6 +869,7 @@ export class FxWiring {
     for (const [slot, h] of this.loops) if (slot.startsWith(`${id}|`)) { h.stop(); this.loops.delete(slot); }
     this.skills.release(v);
     this.talents.release(v);
+    this.funnels.release(v);
   }
 
   /** b.ev ['skill', id, on] (SkillFx.skill): true when the official layer shows the skill (no procedural burst / aura). */
@@ -844,6 +877,7 @@ export class FxWiring {
     if (!v || !this.idx) return false;
     const drew = this.skills.skill(v, !!on);
     this.talents.skill(v, !!on);   // the talents a skill start casts (ON_SKILL_START)
+    this.funnels.skill(v, !!on);   // the floating units of the skill's mode (render/vfx/funnelfx.js)
     return drew;
   }
 
@@ -859,6 +893,7 @@ export class FxWiring {
     const list = Array.isArray(views) ? views : [...views];   // (render/app.js passes the views Map's iterator)
     this.skills.sync(list);
     this.talents.sync(list);
+    this.funnels.sync(list);
   }
 
   /**
@@ -869,7 +904,9 @@ export class FxWiring {
   simFx(kind, x, y, extra) {
     if (!this.idx) return false;
     const t = this.talents.fx(kind, extra);
-    return this.skills.simFx(kind, x, y, extra) || t;
+    // the floating units stand for the kit's 'drone' / 'drones' / 'droneLock' / 'overload' (render/vfx/funnelfx.js)
+    const f = this.funnels.simFx(kind, x, y, extra);
+    return this.skills.simFx(kind, x, y, extra) || t || f;
   }
 
   /** b.ev 'die': the unit's own death effect or the generic one. */
@@ -917,6 +954,7 @@ export class FxWiring {
     this.castFrame.clear();
     this.skills.clear();
     this.talents.clear();
+    this.funnels.clear();
     this.forms.clear();
     this.lastTargets.clear();
     this.picks.clear();

@@ -21,7 +21,8 @@
 //        drives it, every frame still syncs the wiring)
 // Puppeteer hook: window.__fx = { ready, error, lib, ofx, play(key, o), step(frames, dt), render(), clear(), stats(),
 //   setTier(t), keys(), skillDemo(unit, o), skillCmd(cmd, a, b), skillUnits() } — the tests drive frames by hand
-//   (ticker stopped) for deterministic pictures.
+//   (ticker stopped) for deterministic pictures. The kit fx a 驭械术士's floating units stand for (render/vfx/funnelfx.js) go
+//   through skillCmd('fx', kind, extra): 'drone' / 'drones' { n } / 'droneLock' { id: 2, src: 1 } / 'overload'.
 
 import { OfficialFx } from '../js/render/vfx/system.js';
 import { FxWiring } from '../js/render/vfx/wiring.js';
@@ -391,6 +392,8 @@ async function main() {
     keys: () => keys,
     /** Screen px of a board point (col, row, height): where the tests look. */
     project: (x, y, z = 0) => { const p = cam.project(x, y, z); return { x: p.x, y: p.y, s: p.s }; },
+    /** The Unity battle-frame point of a skin point kind ('hit', 's0', …) of a unit pose (render/vfx/mounts.js unitPoint). */
+    unitPointOf: (skin, kind, pose) => unitPoint(skin, kind, pose),
     unitTile: () => ({ ...UNIT_TILE }),
     stopTicker: () => app.ticker.stop(),
     setLoop: (v) => { state.loop = !!v; },

@@ -1,12 +1,13 @@
 // 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
-// test/skins-portrait.test.js — 商店立绘 (docs/SKINS.md): the shop card's portrait is a per-browser choice,
-// INDEPENDENT of the battle model (whose own test is test/skins.test.js / test/skins-lifecycle.test.js).
+// test/skins-portrait.test.js — 商店立绘 (docs/SKINS.md): the shop card's portrait, chosen in 干员调配 next to the battle
+// model (whose own test is test/skins.test.js / test/skins-lifecycle.test.js).
 //
 // Three things are worth pinning, because each is a place the feature can silently do nothing:
 //   * the resolution — a chosen skin must resolve through its OPERATOR (`chars[charId].skins[skinId].portrait`), and
 //     must return null (so the card falls back to `chessPortraitUrl`) when nothing is chosen or the skin is unknown;
-//   * the two choices are truly independent — picking a battle model must not move the shop art and vice versa;
-//   * the choice is LOCAL: it lives in its own preference and never touches the synced `entries` map.
+//   * choosing an outfit on EITHER row applies it to both (this fork: otherwise the same choice has to be made twice),
+//     while 原始立绘 / 精英二立绘 are art-only and never touch the battle model;
+//   * the art lives in its own LOCAL preference and never touches the synced `entries` map.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,7 +15,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { skinPortraitUrl, chessPortraitUrl, chessOwnPortraitUrl, shopPortraitUrl, PORTRAIT_E2 } from '../public/js/ui/assetUrls.js';
-import { skinsStore, setPortrait, clearPortrait, portraitFor, setSkin, clearSkin, skinFor, PORTRAITS_PREF, SKINS_PREF } from '../public/js/ui/skins.js';
+import { skinsStore, setPortrait, clearPortrait, portraitFor, setSkin, clearSkin, skinFor, setSkins, setPortraits, equippedSkinKeys, PORTRAITS_PREF, SKINS_PREF } from '../public/js/ui/skins.js';
+import { data } from '../public/js/data.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CHESS = 'chess_char_1_01_a';           // 隐现 char_498_inside 的基础 chess
@@ -87,18 +89,38 @@ describe('商店立绘: resolution', () => {
   });
 });
 
-describe('商店立绘: the two choices are independent and local', () => {
-  test('picking a battle model does not move the shop art, and picking shop art does not move the model', () => {
+describe('商店立绘: one pick sets both rows, the art-only values stay local', () => {
+  test('choosing an outfit on either row applies it to both', () => {
     setSkin(CHESS, SKIN);
-    setPortrait(CHESS, 'char_498_inside@summer#22');
-    assert.equal(skinFor(CHESS), SKIN, 'the battle model keeps its own choice');
-    assert.equal(portraitFor(CHESS), 'char_498_inside@summer#22', 'the shop art keeps its own');
-
-    clearPortrait(CHESS);
-    assert.equal(skinFor(CHESS), SKIN, 'clearing the shop art leaves the battle model alone');
-    assert.equal(portraitFor(CHESS), null);
+    assert.equal(portraitFor(CHESS), SKIN, 'the shop card follows the battle model — no second pick');
+    setPortrait(OTHER, SKIN);
+    assert.equal(skinFor(OTHER), SKIN, 'picking an outfit as shop art sets the battle model too');
     clearSkin(CHESS);
-    assert.equal(skinFor(CHESS), null);
+    assert.equal(portraitFor(CHESS), SKIN, 'clearing the model leaves an explicitly chosen art alone');
+    clearPortrait(CHESS);
+    clearSkin(OTHER);
+    clearPortrait(OTHER);
+  });
+
+  test('原始立绘 and 精英二立绘 are art only — they never touch the battle model', () => {
+    setSkin(CHESS, SKIN);
+    setPortrait(CHESS, PORTRAIT_E2);
+    assert.equal(portraitFor(CHESS), PORTRAIT_E2);
+    assert.equal(skinFor(CHESS), SKIN, '精英二 is not an outfit');
+    clearPortrait(CHESS);
+    assert.equal(skinFor(CHESS), SKIN, 'going back to 原始立绘 leaves the model alone');
+    clearSkin(CHESS);
+  });
+
+  test('the bulk writers own one map each (the roster sync must not rewrite local art)', () => {
+    setSkins({ [CHESS]: 'char_498_inside@kitchen#2' });
+    assert.equal(skinFor(CHESS), 'char_498_inside@kitchen#2');
+    assert.equal(portraitFor(CHESS), null, 'a synced roster entry does not move the shop art');
+    setPortraits({ [CHESS]: SKIN });
+    assert.equal(skinFor(CHESS), 'char_498_inside@kitchen#2', 'and the art does not move the model');
+    assert.equal(portraitFor(CHESS), SKIN);
+    setSkins({});
+    setPortraits({});
   });
 
   test('per chess id, and an empty map is not persisted as junk', () => {
@@ -108,6 +130,8 @@ describe('商店立绘: the two choices are independent and local', () => {
     assert.equal(portraitFor(OTHER), SKIN);
     clearPortrait(CHESS);
     clearPortrait(OTHER);
+    clearSkin(CHESS);
+    clearSkin(OTHER);
     assert.deepEqual(skinsStore.get().portraits, {}, 'both cleared');
     assert.equal(skinsStore.get().entries && typeof skinsStore.get().entries, 'object', 'the synced map is still a map');
     assert.notEqual(PORTRAITS_PREF, SKINS_PREF, 'the shop art has its own preference (never synced as `entries`)');
@@ -120,6 +144,31 @@ describe('商店立绘: the two choices are independent and local', () => {
     clearPortrait(CHESS);
     assert.equal(portraitFor(CHESS), null);
     assert.equal(shopPortraitUrl(MANIFEST, chess, portraitFor(CHESS)), '/assets/char/portrait/char_498_inside_1.png');
+  });
+});
+
+describe('干员皮肤预载: which outfits the preload follows', () => {
+  test('both rows count, and the art-only values add nothing', (t) => {
+    // The preload is keyed by `<charId>/<skinId>` while a choice is stored per chess, so `equippedSkinKeys()` reads the
+    // chess table; the real one is not loaded in a unit test, and the mapping itself is not what this pins.
+    const lookup = data.lookup.bind(data);
+    data.lookup = (name, id) => (name === 'chess' ? { charId: id === CHESS ? 'char_498_inside' : 'char_1012_skadi2' } : lookup(name, id));
+    t.after(() => { data.lookup = lookup; });
+
+    // 「默认模型 + 某套立绘」 — reachable by picking the outfit as art and then clearing the model.
+    setPortrait(CHESS, 'char_498_inside@summer#22');
+    clearSkin(CHESS);
+    assert.deepEqual(equippedSkinKeys(), ['char_498_inside/char_498_inside@summer#22'], 'an art-only outfit is wanted');
+
+    setPortrait(CHESS, PORTRAIT_E2);
+    assert.deepEqual(equippedSkinKeys(), [], '精英二 is not an outfit — nothing to download');
+
+    setSkin(CHESS, SKIN);
+    setSkin(OTHER, SKIN);
+    assert.deepEqual(equippedSkinKeys(), ['char_1012_skadi2/char_498_inside@kitchen#2', 'char_498_inside/char_498_inside@kitchen#2'], 'one key per operator, both rows merged');
+
+    clearSkin(CHESS); clearSkin(OTHER); clearPortrait(CHESS); clearPortrait(OTHER);
+    assert.deepEqual(equippedSkinKeys(), []);
   });
 });
 

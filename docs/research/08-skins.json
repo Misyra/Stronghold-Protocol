@@ -1,5 +1,6 @@
 {
  "meta": {
+  "portedFrom": "sganggs/Stronghold-Protocol PR #652 by @alien-zzy (https://github.com/sganggs/Stronghold-Protocol/pull/652) — the whole 干员皮肤 feature, this table included, was ported into this fork on 2026-10-14; see docs/SKINS.md.",
   "generatedFrom": [
    "fexli/ArknightsResource — spine/{charId}/{stem}/{Front,Back}/ (dir listing, via the GitHub contents API)",
    "Kengxxiao/ArknightsGameData — zh_CN/gamedata/excel/skin_table.json (charSkins[].displaySkin / portraitId)",

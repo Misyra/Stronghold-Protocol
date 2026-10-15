@@ -1,3 +1,4 @@
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
 // tools/build-skins.mjs — docs/research/08-skins.json → data/skins.json (docs/SKINS.md).
 //
 // The client cannot read docs/research/ (the static server only mounts /data/, /shared/, /sim/ and public/), so
@@ -29,6 +30,8 @@ async function main() {
   const out = {
     version: VERSION,
     counts: { chars: Object.keys(chars).length, skins: total },
+    // Provenance (this fork): the feature, this table and the pipeline that reads it are ported — see docs/SKINS.md.
+    source: 'ported from sganggs/Stronghold-Protocol PR #652 (upstream 0.2.7-dev)',
     chars,
   };
   await writeFile(OUT, JSON.stringify(out, null, 1));

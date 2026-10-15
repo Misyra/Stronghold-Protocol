@@ -164,6 +164,9 @@ export function SkinSection({ chess, net = appNet }) {
   const isPrimary = (c) => (c.kind === 'skill' ? c.skillIndex < 3 : (c.id === 'deploy' || c.id === 'idle' || c.id === 'attack'));
   const primaryClips = clips.filter(isPrimary);
   const extraClips = clips.filter((c) => !isPrimary(c));
+  // Folding pays off from three extras on: with one or two the row is shorter than the toggle would be, so they stay
+  // inline and no 更多动画 button appears at all.
+  const fold = extraClips.length >= 3;
   const [extraOpen, setExtraOpen] = useState(false);
   // the catalogue lives in data/skins.json and the installed set in data/assets.json; both may still be loading
   useEffect(() => {
@@ -293,11 +296,11 @@ export function SkinSection({ chess, net = appNet }) {
       </div>
       <p class="lo-model__cap">${t('当前战斗模型：{name}', { name: previewName })}${currentClip ? ` · ${clipLabel(currentClip)}` : ''}${clipTotal ? ` · ${t('共 {n} 段动画', { n: clipTotal })}` : ''}${note}</p>
       <div class="lo-model__clips" role="group" aria-label=${t('预览动画')}>
-        ${[...primaryClips, ...(extraOpen ? extraClips : [])].map((c) => html`<button key=${c.id} type="button" data-clip=${c.id} title=${c.names.join(' > ')}
+        ${[...primaryClips, ...(fold && !extraOpen ? [] : extraClips)].map((c) => html`<button key=${c.id} type="button" data-clip=${c.id} title=${c.names.join(' > ')}
             aria-pressed=${(clipId || 'idle') === c.id ? 'true' : 'false'}
             class=${cx('lo-clipbtn', (clipId || 'idle') === c.id && 'is-on')}
             onClick=${() => setClipId(c.id)}>${clipLabel(c)}</button>`)}
-        ${extraClips.length ? html`<button key="more" type="button" data-clip-more="1" aria-expanded=${extraOpen ? 'true' : 'false'}
+        ${fold ? html`<button key="more" type="button" data-clip-more="1" aria-expanded=${extraOpen ? 'true' : 'false'}
             class=${cx('lo-clipbtn', 'lo-clipbtn--more', extraOpen && 'is-on')}
             onClick=${() => setExtraOpen((v) => !v)}>${extraOpen ? t('收起') : t('更多动画')} <b class="num">${extraClips.length}</b></button>` : null}
       </div>

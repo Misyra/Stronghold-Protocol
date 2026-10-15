@@ -157,7 +157,7 @@ the model itself is **played live** in the frame below them, with one button per
   files are the ones a battle already pulls, from the HTTP cache.
 - **Buttons follow the skeleton, not a list.** `clipsOf(m, assetId, skinId)` collects one entry per animation the
   model actually has: 部署 / 待机 / 攻击 / 攻击·下 / 技能1…n / 眩晕 / 移动 / 死亡 — 部署 / 待机 / 攻击 and up to three
-  skills stay on screen, the rest fold behind a 更多动画 toggle. Three sources, on purpose:
+  skills stay on screen, the rest fold behind a 更多动画 toggle — and only from THREE extras on: with one or two the row is shorter than the toggle would be, so they stay inline and no toggle appears. Three sources, on purpose:
   - the manifest's `anims` roles (the same roles the battlefield plays),
   - **the skeleton's own clip names**, via `skillFamilies()`: `Skill_1` / `Skill1` / `Skill_01` (a one-clip skill) and
     `Skill_<n>_Begin/_Loop/_End`, merged with the roles by index. Directional (`Skill_Right_Loop`) and prone

@@ -185,6 +185,27 @@ export function negView(u) {
   return v > 0 ? Math.min(1, Math.max(0.01, r2(v))) : null;
 }
 
+/**
+ * `layerView(u)` = the hit-negating 护盾 layers a unit holds (the sum of its buffs' shieldHits — 泥岩's 沃土予身), null
+ * without any. Display only: render/vfx/talentfx.js shows the official effect of that many layers (mudrok_buff_03 / 02 /
+ * 01_start).
+ */
+export function layerView(u) {
+  let n = 0;
+  for (const b of u.buffs) if (b.shieldHits > 0) n += b.shieldHits;
+  return n >= 1 ? Math.min(999, Math.floor(n)) : null;
+}
+
+/**
+ * `chargeView(u)` = `[charges stored, the skill's maximum]` of an ally whose skill stores charges (maxCharges > 1, 卡涅利安):
+ * the 技能充能 the official sand armour shows (render/vfx/skillfx.js, the `[eff_cond]` buffs). Display only.
+ */
+export function chargeView(u) {
+  const sk = u.skill;
+  if (u.side !== 'ally' || !sk || sk.noSkill || !(sk.maxCharges > 1)) return null;
+  return [Math.max(0, Math.min(sk.maxCharges, Math.floor(sk.charges || 0))), sk.maxCharges];
+}
+
 /** Units included in a snapshot: deployed & visible, plus recently dead ones (DIE animation). */
 export function snapshotUnits(units, t) {
   const out = [];

@@ -38,6 +38,8 @@
 //     (skills.js targetsOf `hit`) loop on each target hit for the buff's duration (our record's blackboard), else while
 //     the skill lasts; a status loop the status wiring draws for the same key takes over.
 //   * `trigger`: a 'dmg' on the owner while on (at most once a frame).
+//   * `cond`: the `[eff_cond]` loops (skills.js COND_BUFFS, condState) by the state each frame — the skill on (cast with
+//     every charge: its start fx's `charged`), else the charges b.snap `charges` says it stores.
 //   * The 秘术师 charge (b.snap energy, PR #636 — sent whatever 设置「秘术师能量」 says): each store plays its one-shots and
 //     lights the next slot's loop (FollowMountPoint on its Special point); an attack releases them — the wiring flies the
 //     attack's own projectile from the muzzle and this flies one per stored energy from its slot's mount point (the
@@ -49,7 +51,8 @@
 //     ENEMY_GRACE s after the anim leaves SKILL (or on death / leak) with its loops stopped and its end played. An enemy
 //     in a form naming one of its modes (formMode) plays that mode's copy of the skill.
 //   * Kit 'fx' tuples (simFx; the procedural fx is skipped when this returns true):
-//       (1) FX_BINDINGS (skills.js): a kit fx standing for an official effect no plan row places (克莱门莎 S3's mark);
+//       (1) FX_BINDINGS (skills.js): a kit fx standing for an official effect no plan row places (克莱门莎 S3's mark,
+//           泡泡 S2's counter on her attacker);
 //       (2) pulse: a fx tagged with its skill (`extra.skill`) while the skill is on, when the plan has `pulse` entries —
 //           the owner's buff ticks for a fx on the owner, the skill's other hits for a fx away from it — plays them there;
 //       (3) the start flash: a cast-flash fx (FLASH archetypes) on the owner in the frame of its official skill start;
@@ -60,7 +63,7 @@
 
 import {
   planFor, skillPlan, attackFx as planAttack, slotKey, planKeys, chargeKeys, chargeStep, skillProjectile, targetsOf, buffDuration,
-  eventNum, FX_BINDINGS, bindingEffects, bindingKeys, lifeOf,
+  eventNum, FX_BINDINGS, bindingEffects, bindingKeys, lifeOf, COND_BUFFS, condState,
 } from './skills.js';
 import { fxSpec } from '../fx/kinds.js';
 import { UF, ANIM } from '../../../../shared/constants.js';
@@ -446,6 +449,7 @@ export class SkillFx {
 
   _releaseU(U) {
     if (U.ewin) { for (const h of U.ewin.loops) h.stop(); U.ewin = null; }
+    this._stopCond(U);
     this._stopLoops(U);
     this._stopReady(U);
     for (const hs of U.slotLoops) for (const h of hs || []) h.stop();
@@ -608,6 +612,7 @@ export class SkillFx {
       for (const U of this.units.values()) {
         if (!U) continue;
         for (const h of [...U.loops, ...U.ready, ...U.slotLoops.flat().filter(Boolean), ...(U.ewin ? U.ewin.loops : [])]) h.stop();
+        this._stopCond(U);
         U.loops = []; U.ready = []; U.slotLoops = []; U.loopsOn = false; U.readyOn = false; U.passiveOn = false; U.energy = 0; U.quiet = true;
         U.ewin = null;
       }
@@ -658,6 +663,7 @@ export class SkillFx {
         }
       }
       if (U.charge) this._charge(U, v, Array.isArray(v.energy) ? Math.max(0, Math.floor(Number(v.energy[0]) || 0)) : 0);
+      if (U.plan?.cond?.length) this._cond(U, v);
       U.quiet = false;
     }
     for (const U of this.units.values()) {
@@ -673,12 +679,40 @@ export class SkillFx {
     if (this.marks.length) this.marks = this.marks.filter((m) => m.until > now);
   }
 
+  /**
+   * The `[eff_cond]` loops of the skill (skills.js COND_BUFFS, plan.cond — 卡涅利安's sand armour), reconciled each frame
+   * with the client graph's state now (condState): the skill on (and `charged` — its start fx said so, simFx), else the
+   * charges it stores (b.snap `charges`): 1 → the half armour, 2 → the full one, none below.
+   */
+  _cond(U, v) {
+    const on = this._on(U);
+    if (!on) U.charged = false;
+    const st = condState({ on, charged: !!U.charged, charges: v.charges });
+    const want = new Map();
+    if (st) for (const e of U.plan.cond) if (COND_BUFFS[e.buff]?.[st]?.includes(e.key)) want.set(e.key, e);
+    const map = U.cond || (U.cond = new Map());
+    for (const [k, t] of map) if (!want.has(k) || (!t.h.alive && t.e.loop)) { if (!want.has(k)) t.h.stop(); map.delete(k); }
+    for (const [k, e] of want) {
+      if (map.has(k)) continue;
+      const h = this.w.playOn(k, v, { follow: true, loop: e.loop !== false, important: true });
+      if (h) map.set(k, { h, e });
+    }
+  }
+
+  _stopCond(U) {
+    if (!U.cond) return;
+    for (const t of U.cond.values()) t.h.stop();
+    U.cond.clear();
+  }
+
   // ---- kit fx -----------------------------------------------------------------------------------------------------
 
   /** b.ev ['fx', kind, x, y, extra]: true when the official layer stands for it (module header: bindings 1–4). */
   simFx(kind, x, y, extra) {
     if (!this.active() || !extra || typeof extra !== 'object' || typeof kind !== 'string') return false;
     const now = this.w.ofx.time;
+    // a skill start cast with every charge stored (the kit's `charged`: 卡涅利安) — the `[eff_cond]` state (_cond)
+    if (extra.charged === true && extra.id != null) { const C = this.units.get(extra.id); if (C) C.charged = true; }
     // (1) explicit bindings and what they cover
     for (const m of this.marks) {
       if (m.until > now && m.cover.includes(kind) && extra.id === m.owner && Math.round(y) === m.r && Math.round(x) === m.c) return true;
@@ -711,10 +745,20 @@ export class SkillFx {
     return extra.skill != null && on && (U.loops.some((h) => h.alive) || !!U.ewin?.loops.some((h) => h.alive));
   }
 
-  /** An FX_BINDINGS entry: the projectile's reached effects where the fx happens, held as the binding says. */
+  /**
+   * An FX_BINDINGS entry: the projectile's reached effects where the fx happens, held as the binding says; a binding's
+   * own `keys` at 'target' once on the unit the fx names.
+   */
   _bound(U, bind, x, y, extra) {
     const keys = bindingEffects(this.w.idx, bind).filter((k) => this.w.ofx.lib.has(k));
     if (!keys.length) return false;
+    if (bind.at === 'target') {
+      // once on the unit the fx names (泡泡's attacker), else where it happens; turned by the owner's side
+      const tv = this.w.view(extra.target) || { id: 'fx:point', x, y, z: 0 };
+      let drew = false;
+      for (const k of keys) if (this.w.playOn(k, tv, { flipFrom: U.v || undefined })) drew = true;
+      return drew;
+    }
     const tv = this.w.view(extra.id);
     const at = bind.at === 'point' || !tv ? { id: 'fx:point', x, y, z: tv ? tv.z || 0 : 0 } : tv;
     const bb = U.srec?.bb || {};

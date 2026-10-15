@@ -65,7 +65,8 @@ import { readAssetsCdnVersionFile, readAssetsManifestFile, VERSION_PREFIX } from
 import { SimulationPool, workerSettings } from './workers/pool.js';
 import { RoomWorkerPool } from './workers/roomPool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
-import { listenRoomAdmin, loadRoomConfig } from './roomAdmin.js';
+import { listenRoomAdmin, loadRoomConfigDocument } from './roomAdmin.js';
+import { saveRoomConfigDocument } from './roomConfig.js';
 import { openCountryLookup, parseGeoipMode } from './geoip.js';
 import { cleanupRuntime } from './runtimeCleanup.js';
 
@@ -132,11 +133,18 @@ export async function startServer(opts = {}) {
     if (within(root, roomAdminStateFile))
       throw new Error('SP_ROOM_ADMIN_STATE_FILE 不能位于公开静态目录');
   }
-  let savedRoomConfig = null;
+  let roomConfig = null;
   if (roomAdminToken) {
-    try { savedRoomConfig = await loadRoomConfig(roomAdminStateFile); }
+    try { roomConfig = await loadRoomConfigDocument(roomAdminStateFile); }
     catch (error) { log.error('[room-admin] saved room limit unavailable; using startup configuration', error); }
+    // v1 → v2 迁移（§10.2）：读出来就按第 1 版落成 v2。不这么做的话，旧文件会一直停在「被兼容读取」的
+    // 状态 —— 每次启动都读一遍旧格式，而第一次改动才写新格式，中间任何一个只读的排查都得自己换算。
+    if (roomConfig?.migrated) {
+      try { await saveRoomConfigDocument(roomAdminStateFile, roomConfig); }
+      catch (error) { log.error('[room-admin] room config migration to v2 failed; the old file stays readable', error); }
+    }
   }
+  const savedRoomConfig = roomConfig?.values ?? null;
   lobbyOptions.maxRooms = opts.maxRooms ?? savedRoomConfig?.maxRooms ?? lobbyOptions.maxRooms ?? 1000;
   if (opts.allowBots == null && typeof savedRoomConfig?.allowBots === 'boolean') lobbyOptions.allowBots = savedRoomConfig.allowBots;
   if (opts.limitForeignSessions == null && typeof savedRoomConfig?.limitForeignSessions === 'boolean')
@@ -288,7 +296,7 @@ export async function startServer(opts = {}) {
     if (bound === null) throw lastError;
     boundHost = bound;
     try {
-      roomAdmin = await listenRoomAdmin({ lobby, registry, token: roomAdminToken, gameBootId,
+      roomAdmin = await listenRoomAdmin({ lobby, registry, token: roomAdminToken, gameBootId, roomConfig,
         port: opts.roomAdminPort ?? (process.env.SP_ROOM_ADMIN_PORT ? Number(process.env.SP_ROOM_ADMIN_PORT) : 3001),
         stateFile: roomAdminStateFile, log });
     } catch (error) { log.error('[room-admin] loopback API unavailable; game service remains online', error); }

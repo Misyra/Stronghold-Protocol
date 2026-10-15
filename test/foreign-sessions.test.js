@@ -235,7 +235,10 @@ test('policy persists with other room settings, honors override and reports miss
   assert.equal(f.srv.lobby.opts.limitForeignSessions, true);
   const results = await Promise.all([putPolicy(f.srv, { limitForeignSessions: false }), putPolicy(f.srv, { maxRooms: 700, allowBots: false })]);
   assert.ok(results.every((r) => r.status === 200));
-  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: false, allowForeignConnections: true, maxForeignSessionsPerIp: 1 });
+  const saved = JSON.parse(await readFile(file, 'utf8'));
+  assert.equal(saved.schemaVersion, 2);
+  assert.equal(saved.revision, 3, '两个并发写各推进一个版本（§10.2）');
+  assert.deepEqual(saved.values, { maxRooms: 700, allowBots: false, limitForeignSessions: false, allowForeignConnections: true, maxForeignSessionsPerIp: 1 });
   await f.srv.close();
   const restored = await fixture(t, lookup, options);
   assert.equal(restored.srv.network.foreignSessions.stats().enabled, false);
@@ -319,8 +322,11 @@ test('foreign cap persistence, auth, partial updates and explicit restart overri
   const config = await (await fetch(f.srv.roomAdminUrl + '/api/room-config', { headers: { Authorization: `Bearer ${adminToken}` } })).json();
   assert.equal(config.maxForeignSessionsPerIp, 3); assert.equal(config.maxRooms, 700); assert.equal(config.allowBots, false);
   assert.equal(config.limitForeignSessions, true); assert.equal(config.allowForeignConnections, true);
-  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { schemaVersion: 1, maxRooms: 700, allowBots: false,
+  // 平铺的旧字段与版本化文档说的是同一件事：过渡期两条读法都必须成立（§10.2）。
+  assert.equal(config.revision, 3); assert.deepEqual(config.values, { maxRooms: 700, allowBots: false,
     limitForeignSessions: true, allowForeignConnections: true, maxForeignSessionsPerIp: 3 });
+  const saved = JSON.parse(await readFile(file, 'utf8'));
+  assert.equal(saved.schemaVersion, 2); assert.equal(saved.revision, 3); assert.deepEqual(saved.values, config.values);
   await f.srv.close();
   const restored = await fixture(t, lookup, options);
   assert.equal(restored.srv.network.foreignSessions.stats().maxPerIp, 3);
@@ -389,7 +395,7 @@ test('blocking new connections keeps authenticated players but rejects reconnect
   assert.equal((await refusedUpgrade(f.srv)).status, 403);
   assert.equal((await (await f.connect(domestic)).hello('Domestic')).t, 'welcome');
   assert.equal(f.srv.registry.size, 2);
-  assert.equal(JSON.parse(await readFile(file, 'utf8')).allowForeignConnections, false);
+  assert.equal(JSON.parse(await readFile(file, 'utf8')).values.allowForeignConnections, false);
   const restored = await fixture(t, lookup, options);
   assert.equal(restored.srv.network.foreignSessions.stats().foreignConnectionsBlocked, true);
   const override = await fixture(t, lookup, { ...options, allowForeignConnections: true });

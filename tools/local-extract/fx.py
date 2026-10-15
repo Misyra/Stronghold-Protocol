@@ -63,6 +63,9 @@ EFFECT_GLOBS = ('battle/prefabs/effects/*.ab', 'pkgrps/btl_pfb_fx_*.ab')
 CAB_DIRS = ('refs/fx', 'shaders', 'anon', 'arts/effects', 'battle/prefabs/effects', 'pkgrps')
 CAB_FILES = ('[uc]shaders.ab', 'arts/maps/effect.ab')
 PROJECTILES = 'battle/prefabs/[uc]projectiles.ab'
+# projectile behaviours whose _mainEffect is the line they stretch from the shooter to the shot (index.json `link`):
+# a chain lightning's, a harpoon's or lasso's rope — not the projectile's flying effect (`main`)
+LINK_BEHAVIOURS = ('ChainLightningEffectBehaviour', 'HarpoonRenderer')
 SKILLS = 'battle/prefabs/[uc]skills.ab'
 ENEMY_GLOB = 'battle/enm_pfb_*.ab'
 TOKEN_GLOB = 'pkgrps/btl_pfb_tokens_*.ab'
@@ -942,9 +945,10 @@ class Exporter:
         if h.m_Colors:
             doc['colors'] = [f6(x) for x in norm_channel(flat(h.m_Colors, 4), color_format(m, h))]
         doc['submeshes'] = [[i for tri in sub for i in tri] for sub in h.get_triangles()]
-        if h.m_BoneWeights:
-            doc['boneWeights'] = flat(h.m_BoneWeights, 4)
-            doc['boneIndices'] = [int(x) for r in (h.m_BoneIndices or []) for x in list(r)[:4]]
+        bone_i, bone_w = skin_rows(h.m_BoneIndices, h.m_BoneWeights, h.m_VertexCount)
+        if bone_i:                                            # four influences per vertex (skin_rows; §33.9)
+            doc['boneWeights'] = bone_w
+            doc['boneIndices'] = bone_i
             doc['bindPoses'] = [[f6(bp.get(f'e{r}{c}', 0)) for r in range(4) for c in range(4)] for bp in (self.env.tt(o).get('m_BindPose') or [])]
         body = json.dumps(doc, separators=(',', ':'))
         key = f'{FX_SAFE.sub("_", m.m_Name or "mesh").strip("._") or "mesh"}-{hashlib.sha1(body.encode()).hexdigest()[:8]}'
@@ -1589,6 +1593,28 @@ def norm_channel(values, fmt):
     signed ones, clamped), anything else (Float, Float16; None: unknown or already normalized) unchanged."""
     div = NORM_FORMATS.get(fmt)
     return list(values) if div is None else [max(-1.0, x / div) for x in values]
+
+
+def skin_rows(indices, weights, count):
+    """A skinned mesh's bone influences as §33.9 writes them: four (index, weight) pairs per vertex, flat —
+    (boneIndices, boneWeights), or (None, None) without bone indices. UnityPy hands the vertex channels over as they
+    are stored: a Unity 2019+ mesh keeps 1–4 influences per vertex (the BlendIndices / BlendWeight channels' dimension —
+    2 for 铃兰 S3's fox tails, 琴柳's flags, 森蚺 S2) and drops the BlendWeight channel when every vertex follows a
+    single bone (weight 1: 伊芙利特 S3's flame tongues, 凯尔希 S1, 8 of 铃兰's 9 tails); the legacy m_Skin and a
+    compressed mesh give four. Missing pairs are (0, 0)."""
+    if not indices:
+        return None, None
+    out_i, out_w = [], []
+    for v in range(count):
+        ri = [int(x) for x in list(indices[v])[:4]] if v < len(indices) else []
+        if weights:
+            rw = [f6(x) for x in list(weights[v])[:4]] if v < len(weights) else []
+        else:
+            rw = [1.0] if ri else []                          # one bone per vertex: no BlendWeight channel, weight 1
+        rw = rw[:len(ri)]
+        out_i += ri + [0] * (4 - len(ri))
+        out_w += rw + [0.0] * (4 - len(rw))
+    return out_i, out_w
 
 
 def color_format(mesh, handler):
@@ -2557,9 +2583,14 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                 fields = {k: enc_value(v, lambda p: None) for k, v in d.items() if k not in SKIP_FIELDS and not is_pptr(v)}
                 entry['behaviours'].append({'class': cls, 'node': gdd.get('m_Name'), 'fields': fields})
                 all_strings({k: v for k, v in d.items() if k != 'm_Name'}, strings)
-                if '_mainEffect' in d:
+                if '_mainEffect' in d and cls.endswith('Projectile'):
+                    # the projectile class's own flying effect and life (SimpleProjectile, HarpoonProjectile, …); until
+                    # 2026-10-15 any behaviour's _mainEffect overwrote them — a chain's or a rope's line (below) became
+                    # `main` and `lifeTime` was lost (30 projectiles)
                     entry['main'] = ek(d.get('_mainEffect')) or entry['main']
                     entry['lifeTime'] = f6(d.get('_lifeTime'))
+                elif '_mainEffect' in d and cls in LINK_BEHAVIOURS and ek(d.get('_mainEffect')):
+                    entry.setdefault('link', ek(d.get('_mainEffect')))
                 if cls.endswith('Movement') and entry['movement'] is None:
                     entry['movement'] = {'class': cls, **{k.lstrip('_'): v for k, v in fields.items()}}
                 for src, dst in lists:

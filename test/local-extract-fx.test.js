@@ -148,6 +148,17 @@ print(json.dumps({'lists': fx.emitter_lists(f), 'live': fx.est_live(ps)}))`);
     'a directional row keeps the effect per facing (0 UP, 1 RIGHT, 2 DOWN, 3 LEFT)');
     assert.equal(out.live, 11, '10/s × 0.6 s + a burst of 5');
   });
+
+  test('skin_rows: four (index, weight) pairs per vertex whatever the client stores (§33.9) — 2 per vertex, 1 without weights, the legacy 4', () => {
+    const out = py(`print(json.dumps([fx.skin_rows([(10, 9), (3, 0)], [(0.503710, 0.496290), (1.0, 0.0)], 2),
+                  fx.skin_rows([(4,), (7,)], None, 2), fx.skin_rows([(1, 2, 3, 4)], [(0.25, 0.25, 0.25, 0.25)], 1),
+                  fx.skin_rows(None, None, 3), fx.skin_rows([(5,)], None, 2)]))`);
+    assert.deepEqual(out[0], [[10, 9, 0, 0, 3, 0, 0, 0], [0.50371, 0.49629, 0, 0, 1, 0, 0, 0]], '铃兰 S3\'s Plane011: BlendWeight / BlendIndices of dimension 2');
+    assert.deepEqual(out[1], [[4, 0, 0, 0, 7, 0, 0, 0], [1, 0, 0, 0, 1, 0, 0, 0]], 'one bone per vertex: no BlendWeight channel, weight 1 (8 of the 9 tails, 伊芙利特 S3)');
+    assert.deepEqual(out[2], [[1, 2, 3, 4], [0.25, 0.25, 0.25, 0.25]], 'm_Skin / a compressed mesh: four already');
+    assert.deepEqual(out[3], [null, null], 'no skin');
+    assert.deepEqual(out[4], [[5, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0, 0]], 'a vertex past the rows binds nothing');
+  });
 });
 
 describe('fx.py units: emitters of every class, charge groups, sub-abilities, skills\' root class (index.json v2)', { skip: !PY && 'no python3' }, () => {
@@ -756,5 +767,32 @@ describe('extracted effects (when fx was extracted on this machine)', { skip: !f
       if (m.colors) { n++; assert.ok(m.colors.every((c) => c >= 0 && c <= 1), `${k}: colours 0…1`); }
     }
     assert.ok(n > 0 || !Object.keys(groups['fx/mesh'] || {}).length, 'some meshes have colours');
+  });
+
+  test('skinned meshes the descriptors name carry four bone influences per vertex and their bind poses (skin_rows, 2026-10-15)', { skip: !hasFiles && 'files not here' }, () => {
+    let n = 0;
+    for (const [k, e] of Object.entries(groups['fx/prefabs'] || {})) {
+      const d = readJson(path.join('public', e.path), FX_ROOT);
+      for (const nd of d?.nodes || []) {
+        const key = nd.skinnedMeshRenderer?.m_Mesh?.mesh;
+        const me = key && groups['fx/mesh'][key];
+        if (!me) continue;
+        const m = readJson(path.join('public', me.path), FX_ROOT);
+        n++;
+        assert.ok(Array.isArray(m?.boneIndices) && m.boneIndices.length === m.vertexCount * 4, `${k}/${nd.name}: ${key} has 4 bone indices per vertex (an extraction before the fix wrote the client's 1–2, or none)`);
+        assert.equal(m.boneWeights?.length, m.vertexCount * 4, `${k}/${nd.name}: 4 weights per vertex`);
+        assert.ok(m.bindPoses?.length > 0, `${k}/${nd.name}: bind poses`);
+      }
+    }
+    assert.ok(n > 0, 'the set has skinned meshes (伊芙利特 S3, 铃兰 S3, 凯尔希 S1 …)');
+  });
+
+  test('projectiles of an index written by the fixed extractor: `main` is the projectile class\'s flying effect, a chain\'s line is `link`', { skip: !Object.values(index?.projectiles || {}).some((p) => p.link) && 'an index written before the fix (the runtime reads the behaviours: wiring.js projectileParts)' }, () => {
+    for (const [k, p] of Object.entries(index.projectiles)) {
+      const own = (p.behaviours || []).find((b) => /Projectile$/.test(b.class) && b.fields && '_mainEffect' in b.fields);
+      if (own) assert.equal(p.main, (own.fields._mainEffect || '').toLowerCase() || null, `${k}: main`);
+      const link = (p.behaviours || []).find((b) => /^(ChainLightningEffectBehaviour|HarpoonRenderer)$/.test(b.class) && b.fields?._mainEffect);
+      if (link) assert.equal(p.link, link.fields._mainEffect.toLowerCase(), `${k}: link`);
+    }
   });
 });

@@ -1,5 +1,3 @@
-import { restoreMatch as applyMatchCheckpoint } from './match/snapshot.js';
-import { createRngFromState } from './sim/rng.js';
 // server/lobby.js — rooms, seats, host, AI seats, ready/start, reconnect, and room → Match wiring
 // (DESIGN §2, §6.1 LOBBY, §8.1). Implements the handler interface consumed by server/net.js.
 //
@@ -111,7 +109,7 @@ import { Match as DefaultMatch } from './match/Match.js';
 import { Matchmaking } from './matchmaking.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
 import { RoomActionLimiter } from './roomProtection.js';
-import { BotPopulation, botCountry } from './botPopulation.js';
+import { BotPopulation } from './botPopulation.js';
 import { RoomReclamation } from './roomReclamation.js';
 import { ROOM_PROTECTION_DEFAULTS, validateRoomConfig } from './roomConfig.js';
 import { installSkinInBackground } from './skinInstall.js';
@@ -1052,7 +1050,7 @@ export class Lobby {
     const ctx = { live: true, ended: false, disposed: false, match: null, lastPublic: null, status: null,
       sharedResult: null, results: new Map(), workerPoolKey: room.code };
     const matchNo = checkpoint ? Math.max(1, room.matchCount) : room.matchCount + 1;
-    let seed = 0;
+    let seed;
     try { seed = this.seedFn() >>> 0; } catch { seed = randomInt(2 ** 32); }
     if (checkpoint && Number.isInteger(checkpoint.seed)) seed = checkpoint.seed >>> 0;
     try {

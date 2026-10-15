@@ -14,6 +14,8 @@
 | `/api/ping` | HTTP GET / HEAD / OPTIONS | 无会话的 HTTP 延迟探测 | `Access-Control-Allow-Origin: *` |
 | `/api/nickname/validate` | HTTP POST | 进入游戏前校验昵称；不返回词表或命中详情 | 未开放 CORS |
 | `/api/announcement` | HTTP GET / HEAD | 读取当前维护公告 | 未开放 CORS |
+| `/api/portal-room` | HTTP GET / HEAD / POST | 房间分享的功能探测与提交（`off` / `legacy-http` / `agent` 三种模式） | 未开放 CORS |
+| `/api/portal-room/status` | HTTP GET / HEAD | 查询当前房主那条登记的结果（仅 `agent` 模式） | 未开放 CORS |
 | `/healthz` | HTTP GET / HEAD | 公开状态：增加素材版本、CDN、`roomProtection` / `botPopulation` / `foreignSessions` 计数 | 未开放 CORS |
 | `/metrics` | HTTP GET / HEAD | 进程内部性能与诊断（worker、内存、持久化…）；只回应回环 / 私网调用者 | 未开放 CORS |
 | `/data/resource-manifest.json` | HTTP GET / HEAD | 动态生成资源预载清单 | 未开放 CORS |
@@ -480,7 +482,65 @@ HEAD /data/resource-manifest.json
 
 `room.addBot` 检查实时 AI 席位存量：全服合计达到 300 个返回 `AI_POPULATION_LIMIT`；配置私有 GeoLite Country 数据库后，海外来源（非 `CN`，含港澳台）共用 50 个名额，达到后新的海外请求返回 `FOREIGN_AI_POPULATION_LIMIT`。全服限制优先且不依赖 GeoLite。两种拒绝都不关闭房间或删除已有 AI；备战和运行中都计数，移除、销毁释放名额，存档恢复重建计数。健康接口 `botPopulation` 提供当前存量与上限，详细配置见 [ROOM_PROTECTION.md](../operations/ROOM_PROTECTION.md)。
 
-## 9. 实现出处与验证
+## 9. 房间分享与联机站
+
+房主可以把一间**仍有空位、未开局、未排队**的协力房间公开到联机站，让其他玩家按房间码加入。目的地与凭据全部来自服务器启动配置，请求体里没有「发给哪个站」这种字段。
+
+### 9.1 `GET /api/portal-room`
+
+无需会话。返回 `{ enabled, mode, available }`：
+
+| 字段 | 说明 |
+|---|---|
+| `enabled` | 本站是否开放分享（`off` 模式为 `false`，界面隐藏入口） |
+| `mode` | `off` / `legacy-http` / `agent`（见 [PORTAL_ROOMS.md](../operations/PORTAL_ROOMS.md)） |
+| `available` | 链路是否可用。`agent` 模式下是本机对 Agent 的 15 秒缓存探测结果（不打中央接口）；配置了但不可用时界面显示「暂不可用」并允许重试 |
+
+不返回 URL、站点 ID、密钥或任何房间信息。
+
+### 9.2 `POST /api/portal-room`
+
+同源 JSON，`Authorization: Bearer <当前游戏会话 token>`，请求体 `{"code":"ABCD"}`（最大 128 字节）。
+
+服务端依次检查：功能已配置 → 会话在线 → 当前房主 → 房间处于可加入的待机状态 → 同源 → 限流（同房间一分钟、全服 4 个在途）。提交前后各确认一次房间**实例**，晚回执不会写进新房间的界面。
+
+| 响应 | 含义 |
+|---|---|
+| `200 {ok:true, registered:true, expiresAt, remainingMs, opId, listingId?}` | 联机站确认收录（`expiresAt` 由中央裁定，十分钟） |
+| `202 {ok:false, status:'pending', opId}` | **发出去了但结果未知**（回执丢失）。必须保留 `opId` 并用 §9.3 查询，**不能**当作失败 |
+| `409 {code:'ROOM_CHANGED'\|'ROOM_NOT_JOINABLE'\|…}` | 确定被拒，可显示失败文案 |
+| `429` / `503` / `502` | 限流 / 链路不可用 / 其它；响应体带业务码与可重试标记 |
+
+`legacy-http` 模式的成功回执只有 `{ok:true, registered:true}`（没有 `expiresAt`），并且**没有** §9.3 的查询接口。界面不得用 `response.ok` 判断是否已收录，必须看 `registered`。
+
+### 9.3 `GET /api/portal-room/status?code=ABCD`
+
+同源，`Authorization: Bearer <当前游戏会话 token>`，仅**当前房主**可查本站当前实例。`agent` 模式返回：
+
+| `state` | 含义 |
+|---|---|
+| `registered` | 在册，含 `expiresAt` 与 `remainingMs` |
+| `ended` | 曾经登记、现在已撤下或过期 |
+| `absent` | 查不到这条申请（确定没登记） |
+| `pending` | 上一次申请还没有定论（保留 `opId`） |
+| `unknown` | 查询本身失败（`503`），**不是**「没登记」 |
+
+`legacy-http` 模式返回 `501 本站不支持登记状态查询`（该模式没有这条读接口，不编造结论）；`off` 模式返回 `503`。
+
+### 9.4 房间实例号
+
+`room.state`、`GET /api/rooms/<code>/status` 与联机站的私有状态端点都会带 `roomId`（房间**实例** UUID）。房间码会被复用，只有实例号能区分「同一间房」与「同码的新房」。它只是标识、不是凭据：公开状态接口本来就能读到。旧存档没有这个字段时服务器补一枚并尽快落盘，不视为开新对局。
+
+关房与登记都按实例绑定：`POST /api/rooms/:code/close` 接受 `{roomId, createdAt, expiresAt}`，实例不一致或一个凭据都不给返回 `409 ROOM_CHANGED`；`expiresAt` 已过期则**不执行**（`200 {closed:false, code:'DEADLINE_EXCEEDED'}`）；执行成功返回 `{closed:true, roomCode, roomId, createdAt}` —— 调用方只有看到 `closed:true` 才应记为成功。
+
+### 9.5 私有房间状态端点（Agent 用）
+
+配置 `SP_ROOM_ADMIN_TOKEN` 后，本机回环管理端口另有联机站专用入口，参数最多二十项、只回答问题里问到的房间（从不枚举其它房间），且**不**包含座位名、玩家 ID 或 IP：
+
+- `GET /api/portal/rooms/:code/status` → `{state:'ok', roomId, createdAt, gameBootId, room:{code,roomId,mode,difficulty,difficultyName,capacity,occupied,humans,inMatch,joinable,phase,round}}`；房间不在时 `{state:'closed', roomId:null}` —— 调用方必须能区分「问过了，没有」与「没问成」（后者是 4xx/5xx/超时）。
+- `POST /api/portal/rooms/status-batch`：`{"items":[{"listingId","code","roomId"}]}`，1–20 项，整批拒绝畸形条目，逐项返回同一个投影。
+
+## 10. 实现出处与验证
 
 | 契约 | 实现 / 已有测试 |
 |---|---|
@@ -490,6 +550,8 @@ HEAD /data/resource-manifest.json
 | 匹配、延迟探测、难度名称 | [server/matchmaking.js](../../server/matchmaking.js)、[server/lobby.js](../../server/lobby.js)、[shared/protocol.js](../../shared/protocol.js)、[test/matchmaking.test.js](../../test/matchmaking.test.js) |
 | 资源清单 | [server/resources.js](../../server/resources.js)、[test/resources/manifest.test.js](../../test/resources/manifest.test.js) |
 | 结算扩展 | [server/match/results.js](../../server/match/results.js)、[test/match/results.test.js](../../test/match/results.test.js) |
+| 房间分享、联机站状态端点 | [server/http/portalRoom.js](../../server/http/portalRoom.js)、[test/portal-room.test.js](../../test/portal-room.test.js)、[test/portal-room-agent.test.js](../../test/portal-room-agent.test.js)、[test/portal-room-config.test.js](../../test/portal-room-config.test.js)、[test/portal-room-admin.test.js](../../test/portal-room-admin.test.js) |
+| 配置版本与 CAS、实例号关房 | [server/roomConfig.js](../../server/roomConfig.js)、[server/roomAdmin.js](../../server/roomAdmin.js)、[test/room-config-v2.test.js](../../test/room-config-v2.test.js) |
 
 可在项目根目录运行已有接口测试核对契约：
 

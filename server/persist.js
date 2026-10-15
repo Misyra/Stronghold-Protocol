@@ -105,6 +105,10 @@ function replayFrameList(frames) {
 export function roomDoc(room) {
   return {
     code: room.code,
+    // Room instance id travels with the room: a restored room keeps the id the browser and the 联机站 already know it
+    // by, so a restart does not read as "this code now points at a different room" (that would drop its registration).
+    // Documents written before this field existed carry none — the reader mints one and the next save writes it.
+    roomId: room.roomId,
     createdAt: room.createdAt,
     mode: room.mode,
     difficulty: room.difficulty,

@@ -1917,5 +1917,7 @@
   "减少": "Decrease",
   "增加": "Increase",
   "奖杯等级 {lv} · 累计奖杯 {n}": "Trophy level {lv} · {n} trophies total",
-  " + 隐秘核心": "+ Hidden Core"
+  " + 隐秘核心": "+ Hidden Core",
+  "前往联机站招募队友：": "Recruit teammates at the multiplayer hub:",
+  "同盟内可快捷分享到联机站。": "You can also share your alliance directly to the multiplayer hub."
 }

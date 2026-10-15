@@ -1,17 +1,22 @@
 import { LobbyMusicButton } from '../ui/lobbyMusic.js';
 import { AccountMeChip } from '../ui/accounts.js';
-import { isOwnerName, decorateOwnerName } from '../ui/ownerName.js';
-import { enabled as federationEnabled } from '../federation.js';
+import { decorateOwnerName } from '../ui/ownerName.js';
 import { MatchmakingCount } from '../ui/matchmaking.js';
 import { Emblem } from './title.js';
 import { useHubBackdrop, HubBackdrop, HubRadar, BackdropSettings, BackdropGlyph, backdropTheme } from '../ui/hubBackdrop.js';
 // Lobby screen — a hub (owner's request, 2026-10-13): an original backdrop (ui/hubBackdrop.js: generated night scenes or
 // the player's own picture) with the game's dot-matrix emblem in the middle, a left column (密钥加入 · tips), a right
-// column (缺人同盟 card · S.W.E.E.P.报告 (screens/sweep.js) · 干员调配) and four big entries at the bottom right:
-// 独立模拟 / 同盟模拟 / 无限火力 open the start sheet (difficulty 标准/险境/绝境/终极, 无限火力's variant, private room,
-// 快速匹配, create), 搜寻队友 opens the room list. The 密钥加入 dialog joins with a 同盟密钥 (recent codes remembered) —
-// as a player (加入同盟) or in one of its MAX_SPECTATORS spectator seats (观战: room.spectate, also while its match
-// runs; community report #26). The server is picked on the title screen.
+// column (S.W.E.E.P.报告 (screens/sweep.js) · 干员调配) and the entries at the bottom right:
+// 独立模拟 / 同盟模拟 open the start sheet (difficulty 标准/险境/绝境/终极) and 选择同盟方式, 同盟匹配 opens THIS fork's
+// own queue (matchmaking.join; see below). The 密钥加入 dialog joins with a 同盟密钥 (recent codes remembered) — as a
+// player (加入同盟) or in one of its MAX_SPECTATORS spectator seats (观战: room.spectate, also while its match runs;
+// community report #26). The server is picked on the title screen.
+//
+// The hub's PUBLIC ROOM DIRECTORY is deliberately ABSENT (owner's request, 2026-10-15): the 缺人同盟 card, the 三服统一大厅
+// list, the 浏览公开同盟 / 模拟邀约 / 搜寻队友 pills and the 私密房间 switch all needed messages this server does not have
+// (room.list / room.setPrivate / match.queue / room.setRandom, see AGENTS.md), so every one of them was dead — the card
+// read a store key nothing writes and rendered an empty box forever. This fork's own door is the room key (密钥加入) plus
+// the optional 门户登记 (server/http/portalRoom.js), which publishes a room to the 联机站 for ten minutes.
 //
 // Difficulty descriptions come from data/config.json `modes[modeId]` when present, else from the
 // official act2autochess `modeDataDict` texts embedded below (desc + effectDescList), so the
@@ -37,10 +42,10 @@ import { PwaInstallButton, fullscreen } from '../ui/device.js';
 import { LoadoutButton } from './loadout.js';
 import { SweepReport } from './sweep.js';
 import { ProtocolScene } from '../ui/protocolScene.js';
-import { SearchPanel, RadarScene, CreateArt, JoinArt } from '../ui/matchFlow.js';
+import { SearchPanel, RecruitHint, RadarScene, CreateArt, JoinArt } from '../ui/matchFlow.js';
 import { useLeave } from '../ui/transitions.js';
 import { net, identity } from '../net.js';
-import { store, useStore, shallowEqual, loadPref, savePref } from '../store.js';
+import { store, useStore, shallowEqual, serverNow, loadPref, savePref } from '../store.js';
 import { getConfig, getMode, getStage, useData } from '../data.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { C2S as SERVER_C2S } from '../../../shared/protocol.js';
@@ -303,53 +308,6 @@ function TipsPanel() {
   </div>`;
 }
 
-/**
- * 缺人同盟: public alliance rooms still waiting for doctors, fewest empty seats first (closest to starting), joinable in
- * one click. A fixed-height card — three rows, or an empty note with a shortcut to create one.
- */
-export function recruitingRooms(rooms) {
-  return (Array.isArray(rooms) ? rooms : [])
-    .filter((r) => r && typeof r.code === 'string' && !r.inMatch && r.humans > 0 && r.humans < (r.maxSeats || MAX_SEATS))
-    .sort((a, b) => ((a.maxSeats || MAX_SEATS) - a.humans) - ((b.maxSeats || MAX_SEATS) - b.humans) || b.humans - a.humans);
-}
-
-function RecruitCard({ rooms, online, onJoin, onAll, onCreate }) {
-  const open = recruitingRooms(rooms);
-  return html`<section class="hub-recruit" aria-label=${t('缺人同盟')}>
-    <header class="hub-recruit__head">
-      <span class=${`hub-recruit__pulse${open.length ? ' is-live' : ''}`} aria-hidden="true"></span>
-      <span class="hub-recruit__title">${t('缺人同盟')}</span>
-      <span class="hub-recruit__en">RECRUITING</span>
-      <span class="hub-recruit__n num">${open.length}</span>
-      <button type="button" class="hub-recruit__all" onClick=${onAll}>${t('全部')}<${Icon} name="chevronRight" /></button>
-    </header>
-    <div class="hub-recruit__list">
-      ${open.length ? open.slice(0, 3).map((r) => {
-        const max = r.maxSeats || MAX_SEATS;
-        const name = r.name || t('同盟 #{code}', { code: r.code });
-        return html`<div key=${`${r.node || ''}:${r.code}`} class="hub-recruit__row" style=${`--d-color:${DIFFICULTY_COLORS[r.difficulty] || 'var(--mint-500)'}`}>
-          <span class="hub-recruit__info">
-            <span class=${`hub-recruit__name${isOwnerName(r.hostName || r.name) ? ' sp-owner-name' : ''}`}>${name}</span>
-            <span class="hub-recruit__meta">
-              <${DifficultyIcon} difficulty=${r.difficulty} class="diff-glyph" />
-              <span>${DIFFICULTY_NAMES[r.difficulty] ? t(DIFFICULTY_NAMES[r.difficulty]) : r.difficulty}</span>
-              ${r.random ? html`<span class="hub-recruit__fp">${t('无限火力')}</span>` : null}
-              ${r.nodeName ? html`<span class="t-dim">${r.nodeName}</span>` : null}
-            </span>
-          </span>
-          <span class="hub-recruit__seats">
-            <span class="hub-recruit__pips" aria-hidden="true">${Array.from({ length: max }, (_, i) => html`<i key=${i} class=${i < r.humans ? 'is-on' : ''}></i>`)}</span>
-            <span class="hub-recruit__need">${t('缺')}<b class="num">${max - r.humans}</b>${t('人')}</span>
-          </span>
-          <button type="button" class="hub-recruit__join" disabled=${!online} onClick=${() => onJoin(r.code, r.node)}>${t('加入')}</button>
-        </div>`;
-      }) : html`<div class="hub-recruit__empty">
-        <span>${t('暂时没有缺人的同盟')}</span>
-        <button type="button" class="hub-recruit__create" onClick=${onCreate}>${t('创建同盟')}<${Icon} name="chevronRight" /></button>
-      </div>`}
-    </div>
-  </section>`;
-}
 
 /** 全屏 / 退出全屏 in the top bar, styled like its neighbours (hidden where the browser has no element fullscreen). */
 function HubFullscreenButton() {
@@ -492,13 +450,13 @@ export function ProtoCard({ roomMode, difficulty, selected, onSelect, matchmakin
 /**
  * 选择模拟协议 (2026-10-13, the owner's request: the event's second screen after 独立模拟): full screen, the picture of
  * the selected difficulty at the left (ui/protocolScene.js, original), the difficulties down the right with the
- * 已选定 stamp, 开始模拟 at the bottom right. Kept from the old start sheet: 无限火力's variants and notes, the private
- * room, 快速匹配, the queue counts, rounds / 隐秘核心 / battlefields and the hints. Esc or ‹ returns to the hub.
+ * 已选定 stamp, 开始模拟 at the bottom right. Kept from the old start sheet: 无限火力's variants and notes, the queue
+ * counts, rounds / 隐秘核心 / battlefields and the hints. Esc or ‹ returns to the hub.
  * Comes up from black over the hub (`chained`: straight after 选择同盟方式, already black) and fades back out
  * (ui/transitions.js); the picture is redrawn for each difficulty.
  */
-function ProtocolSelect({ card, roomMode, random, variant, difficulty, onDifficulty, onClose, matchmaking, brief, privateRoom, onPrivate,
-  online, maint, busy, isSearching, onCreate, onQueue, purpose = 'create', onSearch, onCancel, mm, onBrowse, chained = false }) {
+function ProtocolSelect({ card, roomMode, random, variant, difficulty, onDifficulty, onClose, matchmaking, brief,
+  online, maint, busy, isSearching, onCreate, purpose = 'create', onSearch, onCancel, mm, chained = false }) {
   const [leaving, leave] = useLeave(onClose);
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.modal, .guide')) leave(); };
@@ -563,17 +521,11 @@ function ProtocolSelect({ card, roomMode, random, variant, difficulty, onDifficu
         <div class="proto-foot">
           ${search ? html`<div class="proto-opts">
             <span class="proto-mode-chip"><${Icon} name="search" />${t('精确搜寻')}</span>
-            <${Button} variant="secondary" size="md" icon="users" onClick=${onBrowse}>${t('浏览公开同盟')}<//>
-          </div>` : roomMode !== 'solo' ? html`<div class="proto-opts">
-            ${roomMode !== 'solo' && CAN_PRIVATE ? html`<label class="proto-private" title=${t('不在公开大厅显示，仅通过房间码或邀请加入')}>
-              <input type="checkbox" checked=${privateRoom} onChange=${(e) => onPrivate(e.currentTarget.checked)} /><span>${t('私密房间')}</span></label>` : null}
-            ${roomMode === 'coop' && CAN_QUEUE ? html`<${Button} variant="secondary" size="md" icon="refresh" loading=${busy === 'queue'} disabled=${!online || maint?.active || isSearching}
-              onClick=${onQueue}>${t('快速匹配')}<//>` : null}
           </div>` : null}
           <p class="proto-hint">${hint}</p>
-          <button type="button" class="proto-start" disabled=${!online || maint?.active || busy === 'create' || busy === 'queue'} onClick=${search ? onSearch : onCreate}>
+          <button type="button" class="proto-start" disabled=${!online || maint?.active || busy === 'create'} onClick=${search ? onSearch : onCreate}>
             <span class="proto-start__mark" aria-hidden="true"><span class="proto-start__rook"><i>[</i><${Icon} name="rook" /><i>]</i></span><small>STRONGHOLD<br />PROTOCOL</small></span>
-            <span class="proto-start__label">${busy === 'create' || busy === 'queue' ? html`<${Spinner} size="sm" />` : null}${label}</span>
+            <span class="proto-start__label">${busy === 'create' ? html`<${Spinner} size="sm" />` : null}${label}</span>
             <span class="proto-start__deco" aria-hidden="true"></span>
           </button>
         </div>
@@ -586,10 +538,9 @@ function ProtocolSelect({ card, roomMode, random, variant, difficulty, onDifficu
 /**
  * 选择同盟方式 (2026-10-13, the owner's request: the event's screen after 同盟模拟, video 5:22–6:29): the radar at the
  * left (ui/matchFlow.js), 创建同盟 (a room at the remembered difficulty — it is changed in the room) and 加入同盟 (the
- * key field, 观战, recent keys) at the right, 模拟邀约 (the public alliances) and 搜寻队友 between them, 入门协议 (玩法说明)
- * at the bottom left. Esc or ‹ returns to the hub.
+ * key field, 观战, recent keys) at the right, 入门协议 (玩法说明) at the bottom left. Esc or ‹ returns to the hub.
  */
-function AllianceSelect({ onClose, code, onCode, codeOk, recent, online, maint, busy, onCreate, onJoin, onSpectate, onBrowse, onSearch, recruiting = 0, difficulty }) {
+function AllianceSelect({ onClose, code, onCode, codeOk, recent, online, maint, busy, onCreate, onJoin, onSpectate, difficulty }) {
   const [leaving, leave] = useLeave(onClose);
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.modal, .guide')) leave(); };
@@ -616,10 +567,6 @@ function AllianceSelect({ onClose, code, onCode, codeOk, recent, online, maint, 
           <span class="ally-card__bar"><span class="ally-card__icon"><${Icon} name="plus" /></span>${maint?.active ? t('维护中 · 暂停开局') : t('创建同盟')}
             ${busy === 'create' ? html`<${Spinner} size="sm" />` : html`<small>${t('难度：{name}（可在同盟内更改）', { name: t(DIFFICULTY_NAMES[difficulty]) })}</small>`}</span>
         </button>
-        <div class="ally-links">
-          ${CAN_QUEUE ? html`<button type="button" class="ally-pill" onClick=${onSearch}><${Icon} name="search" />${t('搜寻队友')}</button>` : null}
-          ${CAN_LIST ? html`<button type="button" class="ally-pill ally-pill--invite" onClick=${onBrowse}>${t('模拟邀约')}${recruiting ? html`<b class="num">${recruiting}</b>` : null}<span class="ally-pill__mark" aria-hidden="true"></span></button>` : null}
-        </div>
         <div class="ally-card ally-card--join">
           <span class="ally-card__art"><${JoinArt} /></span>
           <label class="ally-key"><${Icon} name="search" />
@@ -639,146 +586,10 @@ function AllianceSelect({ onClose, code, onCode, codeOk, recent, online, maint, 
   </div>`;
 }
 
-function MatchmakingModal({ open, onClose, onJoin, onSpectate }) {
-  const lobbyStats = useStore((s) => s.lobbyStats, shallowEqual);
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState(() => ({
-    online: lobbyStats?.online ?? 1,
-    roomsCount: lobbyStats?.roomsCount ?? 0,
-    matchesCount: lobbyStats?.matchesCount ?? 0,
-    rooms: lobbyStats?.rooms ?? [],
-  }));
-
-  useEffect(() => {
-    if (federationEnabled) {net.request('room.list').then(r=>setData(r)).catch(()=>{});return;}
-    if (lobbyStats && typeof lobbyStats.online === 'number') {
-      setData({
-        online: lobbyStats.online,
-        roomsCount: lobbyStats.roomsCount,
-        matchesCount: lobbyStats.matchesCount,
-        rooms: lobbyStats.rooms,
-      });
-    }
-  }, [lobbyStats]);
-
-  const fetchRooms = async () => {
-    setLoading(true);
-    try {
-      const res = CAN_LIST ? await net.request('room.list') : null;
-      if (res && res.ok) {
-        setData(res);
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!open) return undefined;
-    fetchRooms();
-    const timer = setInterval(() => { if (!document.hidden) fetchRooms(); }, 4000);
-    return () => clearInterval(timer);
-  }, [open]);
-
-  if (!open) return null;
-
-  return html`<div class="modal mm-modal" role="presentation"
-      onMouseDown=${(e) => { if (e.target === e.currentTarget && onClose) onClose(); }}>
-    <div class="modal__box mm-modal__box brackets" role="dialog" aria-modal="true">
-      <div class="modal__stripe" aria-hidden="true"></div>
-      <header class="modal__head mm-modal__head">
-        <${MicroLabel} tone="mint">MULTIPLAYER MATCHMAKING<//>
-        <div class="mm-modal__title-row">
-          <h2 class="modal__title mm-modal__title">${t('三服统一大厅')}</h2>
-          <button type="button" class="mm-modal__close" onClick=${onClose} aria-label=${t('关闭')}>
-            <${Icon} name="close" />
-          </button>
-        </div>
-      </header>
-
-      <div class="mm-modal__body">
-        <div class="mm-stats-bar">
-          <div class="mm-stats-col">
-            <span class="mm-stats-num mm-stats-num--mint num">${data.online ?? 1}</span>
-            <span class="mm-stats-label">${t('在线博士')}</span>
-          </div>
-          <div class="mm-stats-col">
-            <span class="mm-stats-num num">${data.roomsCount ?? 0}</span>
-            <span class="mm-stats-label">${t('同盟房间')}</span>
-          </div>
-          <div class="mm-stats-col">
-            <span class="mm-stats-num num">${data.matchesCount ?? 0}</span>
-            <span class="mm-stats-label">${t('进行中对局')}</span>
-          </div>
-          <button type="button" class="mm-refresh-btn" onClick=${fetchRooms} disabled=${loading}>
-            <${Icon} name="refresh" class=${loading ? 'is-spinning' : ''} />
-            <span>${t('刷新')}</span>
-          </button>
-        </div>
-
-        ${data.partial ? html`<p>${t('部分节点暂未连通，当前列表可能不完整。')}</p>` : null}
-        <div class="mm-room-list">
-          ${data.rooms && data.rooms.length > 0
-            ? data.rooms.map((r) => html`<div key=${`${r.node || ''}:${r.code}`} class="mm-room-card">
-                <div class="mm-room-code num">${r.code}${r.nodeName ? html`<small style="display:block;font-size:11px">${r.nodeName}</small>` : null}</div>
-                <div class="mm-room-info">
-                  <div class="mm-room-name"><span class=${isOwnerName(r.hostName || r.name) ? "sp-owner-name" : ""}>${r.name || t('同盟 #{code}', { code: r.code })}</span>${["isomer", t('凑鹈鹕'), t('香鹈鹕')].includes(String(r.hostName || r.name || "").trim().toLowerCase()) ? html`<span class="mm-owner-badge" title=${t('服主')} style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:2px 6px;border:1px solid #e4bd60;color:#e4bd60;font-size:11px;line-height:1.4;white-space:nowrap;vertical-align:middle"><${Icon} name="crown" />${t('服主')}</span>` : null}</div>
-                  <div class="mm-room-meta">
-                    <span class="mm-room-diff" style=${`--d-color:${DIFFICULTY_COLORS[r.difficulty] || 'var(--mint)'}`}>
-                      <${DifficultyIcon} difficulty=${r.difficulty} class="diff-glyph" />
-                      <span>${DIFFICULTY_NAMES[r.difficulty] || r.difficulty}</span>
-                    </span>
-                    ${r.random ? html`<span class="mm-room-rm">${t('无限火力 · 1.1 ·')} ${r.variant === 'endurance' ? t('持久鏖战') : r.variant === 'marathon' ? t('最长时赛') : t('快速突袭')}</span>` : null}
-                    <span class="mm-room-players">
-                      <${Icon} name="users" />
-                      <span class="num">${r.humans} / ${r.maxSeats || MAX_SEATS}</span>
-                    </span>
-                    <span class=${`mm-room-status ${r.inMatch ? 'is-in-match' : 'is-waiting'}`}>
-                      ${r.inMatch ? t('进行中') : t('等待中')}
-                    </span>
-                  </div>
-                </div>
-                <div class="mm-room-actions">
-                  <${Button}
-                    variant="primary"
-                    size="md"
-                    icon="users"
-                    class=${`mm-btn-join ${r.inMatch ? 'is-disabled-match' : ''}`}
-                    disabled=${r.inMatch}
-                    onClick=${() => { onClose(); onJoin(r.code,r.node); }}>
-                    ${t('加入')}
-                  <//>
-                  <${Button}
-                    variant="secondary"
-                    size="md"
-                    icon="eye"
-                    class="mm-btn-spectate"
-                    onClick=${() => { onClose(); onSpectate(r.code,r.node); }}>
-                    ${t('观战')}
-                  <//>
-                </div>
-              </div>`)
-            : html`<div class="mm-room-empty">
-                <${Icon} name="search" />
-                <span>${t('暂无公开同盟房间，可创建同盟或使用快速匹配')}</span>
-              </div>`
-          }
-        </div>
-
-        <footer class="mm-modal__foot">
-          <div class="mm-foot-tag"><${MicroLabel}>AUTO-REFRESH 4S<//></div>
-          <div class="mm-foot-text">${t('列表每 4 秒自动刷新；观战不占博士席位，「进行中」的同盟只能观战。')}</div>
-        </footer>
-      </div>
-    </div>
-  </div>`;
-}
 
 // package: features follow the target server's message list (shared/protocol.js C2S)
 const HAS = (type) => !!SERVER_C2S && Object.hasOwn(SERVER_C2S, type);
-const CAN_QUEUE = HAS('match.queue'), CAN_FIREPOWER = HAS('room.setRandom'), CAN_PRIVATE = HAS('room.setPrivate'), CAN_LIST = HAS('room.list');
+const CAN_FIREPOWER = HAS('room.setRandom');
 // This fork's 同盟匹配 (server/matchmaking.js: identified players of ONE difficulty, the group gets a room of its own)
 // takes the hub's 搜寻队友 entry: `match.queue` is not a message this server knows, `matchmaking.join` is.
 const CAN_SEARCH = true;
@@ -796,7 +607,6 @@ export function LobbyScreen() {
   const randomMode = simulation === 'firepower';
   const variant = randomMode ? fpVariant : 'blitz';
   const [code, setCode] = useState('');
-  const [privateRoom, setPrivateRoom] = useState(false);
   const [busy, setBusy] = useState(null);
   const [recent] = useState(recentRooms);
   const alive = useRef(true);
@@ -808,10 +618,6 @@ export function LobbyScreen() {
   const codeOk = CODE_RE.test(code);
   const mm = useStore((s) => s.matchmaking, shallowEqual);
   const maint = useStore((s) => s.maintenance, shallowEqual);
-  const [modalOpen, setModalOpen] = useState(() => new URLSearchParams(location.search).has('modal'));
-  const lobbyStats = useStore((s) => s.lobbyStats, shallowEqual);
-  const [onlineCount, setOnlineCount] = useState(() => lobbyStats?.online ?? 1);
-  const [rooms, setRooms] = useState(() => (federationEnabled ? [] : lobbyStats?.rooms ?? []));
   const bg = useHubBackdrop();
   const [bgOpen, setBgOpen] = useState(false);
   const [sweepOpen, setSweepOpen] = useState(false);
@@ -839,7 +645,7 @@ export function LobbyScreen() {
   // (serverNow), which is what every other display in this app uses.
   const mmView = isSearching ? {
     ...mm, matched: mm.players, target: mm.target || MAX_SEATS,
-    elapsed: mm.joinedAt ? Math.max(0, Math.floor(((mm.serverNow ?? Date.now()) - mm.joinedAt) / 1000)) : 0,
+    elapsed: mm.joinedAt ? Math.max(0, Math.floor((serverNow() - mm.joinedAt) / 1000)) : 0,
   } : mm;
   const [, setMmTick] = useState(0);
   useEffect(() => {
@@ -847,32 +653,6 @@ export function LobbyScreen() {
     const timer = setInterval(() => setMmTick((n) => n + 1), 1000);
     return () => clearInterval(timer);
   }, [isSearching, mm?.joinedAt]);
-
-  useEffect(() => {
-    if (!federationEnabled && lobbyStats && Number.isFinite(lobbyStats.online)) {
-      setOnlineCount(lobbyStats.online);
-    }
-  }, [lobbyStats?.online]);
-  useEffect(() => {
-    if (!federationEnabled && Array.isArray(lobbyStats?.rooms)) setRooms(lobbyStats.rooms);
-  }, [lobbyStats?.rooms]);
-
-  useEffect(() => {
-    if (!online) return undefined;
-    let cancelled = false;
-    const poll = () => {
-      if (document.hidden || !CAN_LIST) return;
-      net.request('room.list').then((res) => {
-        if (!cancelled && res && res.ok && Number.isFinite(res.online)) {
-          setOnlineCount(res.online);
-        }
-        if (!cancelled && res && res.ok && Array.isArray(res.rooms)) setRooms(res.rooms);
-      }).catch(() => {});
-    };
-    poll();
-    const t = setInterval(poll, 10000);
-    return () => { cancelled = true; clearInterval(t); };
-  }, [online]);
 
   const pickMode = (m) => {
     if (!MODE_CARDS.some((c) => c.id === m)) return;
@@ -903,7 +683,7 @@ export function LobbyScreen() {
     savePref('lobby.firepowerVariant', v);
   };
 
-  const create = () => run('create', () => net.request('room.create', { mode: roomMode, difficulty, random: randomMode, private: roomMode !== 'solo' && privateRoom, ...(randomMode ? { variant } : {}) }));
+  const create = () => run('create', () => net.request('room.create', { mode: roomMode, difficulty, random: randomMode, ...(randomMode ? { variant } : {}) }));
   const queueMatch = () => run('search', () => net.request('matchmaking.join', { difficulty }));
   const cancelMatch = () => run('cancel', () => net.request('matchmaking.cancel'));
   const join = (c = code, federationNode) => {
@@ -959,7 +739,7 @@ export function LobbyScreen() {
   const openSearch = () => { pickMode('coop'); setSheetChained(allyOpen); setAllyOpen(false); setSheetPurpose('search'); setSheetOpen(true); };
   const modeCard = MODE_CARDS.find((c) => c.id === simulation) || MODE_CARDS[0];
 
-  return html`<div class="screen lobby-screen lobby-hub" data-hub-theme=${backdropTheme(bg)}>
+  return html`<div class=${`screen lobby-screen lobby-hub${isSearching ? ' lobby-hub--searching' : ''}`} data-hub-theme=${backdropTheme(bg)}>
     <${HubBackdrop} bg=${bg} />
     <header class="topbar hub-topbar">
       <div class="topbar__left">
@@ -978,7 +758,6 @@ export function LobbyScreen() {
         </div>
       </div>
       <div class="topbar__right">
-        ${lobbyStats ? html`<span class="hub-online"><span class="online-pill__dot"></span><span class="num">${onlineCount}</span><span>${t('名博士在线')}</span></span>` : null}
         <${ResumeMatchButton} />
         <${AccountMeChip} player=${me} onStats=${openStats} />
       </div>
@@ -993,13 +772,13 @@ export function LobbyScreen() {
 
       <aside class="hub-side">
         <${AchievementEntry} key=${achOpen ? 'open' : 'shut'} onOpen=${() => setAchOpen(true)} />
+        <${HubTile} icon="chart" label=${t('统计数据')} en="STATISTICS" onClick=${() => openStats('overview')} />
         <${HubTile} icon="key" label=${t('密钥加入')} en="JOIN WITH KEY" onClick=${() => setJoinOpen(true)} />
         <${FriendsTile} />
         <${TipsPanel} />
       </aside>
 
       <aside class="hub-right">
-        <${RecruitCard} rooms=${rooms} online=${online} onJoin=${join} onAll=${() => setModalOpen(true)} onCreate=${() => openMode('coop')} />
         <div class="hub-right__plates">
           <${SweepPlate} onClick=${() => setSweepOpen(true)} />
           <${LoadoutButton} from="lobby" size="lg" class="hub-plate hub-plate--loadout" label=${t('干员调配')} />
@@ -1012,7 +791,7 @@ export function LobbyScreen() {
           <div class="matching-panel__count"><${Spinner} label="SEARCHING" /><div><strong class="num">${mmView?.matched || 1}/${mmView?.target || MAX_SEATS} ${t('名博士')}</strong><p>${DIFFICULTY_NAMES[mmView?.difficulty] ? t(DIFFICULTY_NAMES[mmView.difficulty]) : ''} · ${t('当前站点')}</p></div></div>
           <progress class="matching-panel__progress" max=${mmView?.target || MAX_SEATS} value=${mmView?.matched || 1} aria-label=${t('匹配队列人数')}></progress>
           <p class="matching-panel__note">${t('等待同站同难度的博士，凑齐 4 人后直接进入模拟。可随时取消，不添加 AI 队友。')}</p>
-          ${(mmView?.elapsed || 0) >= 10 ? html`<p class="matching-panel__note">${t('迟迟匹配不到人？可前往')} <a href="https://game.rainya.me/" target="_blank" rel="noopener noreferrer">game.rainya.me</a> ${t('创建同盟并发布房间号，来人更快。')}</p>` : null}
+          <${RecruitHint} />
           <${Button} variant="ghost" size="lg" icon="chevronLeft" loading=${busy === 'cancel'} onClick=${cancelMatch}>${t('取消搜寻')}<//>
           <p class="matching-panel__foot">${t('匹配成功后无需房间准备，可在本局信息确认阶段查看同盟密钥。')}</p>
         </div>` : null}
@@ -1029,13 +808,13 @@ export function LobbyScreen() {
     ${sheetOpen ? html`<${ProtocolSelect} card=${modeCard} roomMode=${roomMode} random=${randomMode} variant=${variant} difficulty=${difficulty}
       onDifficulty=${pickDifficulty} onClose=${() => setSheetOpen(false)} matchmaking=${matchmakingCounts}
       brief=${randomMode ? html`<${FirepowerBrief} variant=${fpVariant} onVariant=${pickVariant} />` : null}
-      privateRoom=${privateRoom} onPrivate=${setPrivateRoom} online=${online} maint=${maint} busy=${busy} isSearching=${isSearching}
-      onCreate=${create} onQueue=${async () => { await queueMatch(); setSheetOpen(false); }}
-      purpose=${sheetPurpose} onSearch=${queueMatch} onCancel=${cancelMatch} mm=${mmView} onBrowse=${() => setModalOpen(true)} chained=${sheetChained} />` : null}
+        online=${online} maint=${maint} busy=${busy} isSearching=${isSearching}
+        onCreate=${create}
+        purpose=${sheetPurpose} onSearch=${queueMatch} onCancel=${cancelMatch} mm=${mmView} chained=${sheetChained} />` : null}
 
     ${allyOpen ? html`<${AllianceSelect} onClose=${() => setAllyOpen(false)} code=${code} onCode=${(v) => setCode(normalizeCode(v))} codeOk=${codeOk}
-      recent=${recent} online=${online} maint=${maint} busy=${busy} difficulty=${difficulty} recruiting=${recruitingRooms(rooms).length}
-      onCreate=${create} onJoin=${() => join()} onSpectate=${() => spectate()} onBrowse=${() => setModalOpen(true)} onSearch=${openSearch} />` : null}
+      recent=${recent} online=${online} maint=${maint} busy=${busy} difficulty=${difficulty}
+      onCreate=${create} onJoin=${() => join()} onSpectate=${() => spectate()} />` : null}
 
     <${HubDialog} open=${joinOpen} micro="JOIN WITH ALLIANCE KEY" title=${t('密钥加入')} onClose=${() => setJoinOpen(false)}>
       <div class="join-row">
@@ -1061,7 +840,6 @@ export function LobbyScreen() {
       <${BackdropSettings} bg=${bg} />
     <//>
 
-    <${MatchmakingModal} open=${modalOpen} onClose=${() => setModalOpen(false)} onJoin=${join} onSpectate=${spectate} />
     ${achOpen ? html`<${AchievementPanel} me=${me} onClose=${() => setAchOpen(false)} />` : null}
     ${sweepOpen ? html`<${SweepReport} onClose=${() => setSweepOpen(false)} />` : null}
   </div>`;

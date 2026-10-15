@@ -103,6 +103,7 @@ test('版本化写：正确的 revision 落盘并递增，落盘失败不改运�
   assert.equal(before.body.revision, 1, '全新安装：内存里的当前值就是第 1 版');
   assert.deepEqual(before.body.values, VALUES);
   assert.equal(before.body.maxRooms, 1000, '过渡期：旧字段仍然平铺在顶层');
+  assert.equal(before.body.persisted, undefined, '读响应不说「写落没落地」');
 
   const written = await f.call({ expectedRevision: 1, opId: OP_A, patch: { maxRooms: 700 } });
   assert.equal(written.status, 200);

@@ -1510,5 +1510,9 @@
   "公开本房间密钥到联机站，方便其他博士加入；十分钟后自动过期": "Publish this room's Alliance Key on the multiplayer portal so other Doctors can join; the listing expires after ten minutes",
   "已提交到联机站": "Submitted to the multiplayer portal",
   "提交本房间到联机站": "Submit this room to the multiplayer portal",
-  "公开同盟密钥，方便组队 · 十分钟后自动过期": "Publish the Alliance Key to find teammates · Expires after ten minutes"
+  "公开同盟密钥，方便组队 · 十分钟后自动过期": "Publish the Alliance Key to find teammates · Expires after ten minutes",
+  "请求无效": "Invalid request",
+  "请稍后重试": "Please try again later",
+  "本站不支持登记状态查询": "This server cannot query the listing result",
+  "联机站暂不可用，请稍后重试": "The multiplayer portal is temporarily unavailable. Please try again later"
 }

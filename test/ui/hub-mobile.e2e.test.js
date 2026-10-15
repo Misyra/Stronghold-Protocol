@@ -26,13 +26,14 @@ test('hub search ticks without queue updates; phone controls fit and receive rea
   });
   // Exercise the existing share UI without publishing a real room to an external service.
   let submissions = 0;
+  let shareEnabled = false;
   await page.setRequestInterception(true);
   page.on('request', (request) => {
     if (new URL(request.url()).pathname === '/api/portal-room') {
       if (request.method() === 'POST') submissions++;
       void request.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(
         request.method() === 'POST' ? { registered: true, remainingMs: 600000 }
-          : { enabled: true, mode: 'legacy-http', available: true }) });
+          : { enabled: shareEnabled, mode: shareEnabled ? 'legacy-http' : 'off', available: shareEnabled }) });
     } else void request.continue();
   });
   await page.goto(`http://127.0.0.1:${server.port}/`, { waitUntil: 'domcontentloaded' });
@@ -91,6 +92,14 @@ test('hub search ticks without queue updates; phone controls fit and receive rea
   assert.ok(target.width >= 90 && target.height >= 32 && target.hit, JSON.stringify(target));
   await page.click('.rseat__botadd');
   await page.waitForFunction(() => globalThis.__SP__.store.get().room.seats.some((s) => s?.isBot));
+  await page.waitForFunction(() => document.querySelector('.room-portal-entry')?.textContent.includes('本地服务尚未配置联机站分享'));
+  assert.equal(await page.$eval('.room-portal-entry .btn', (el) => el.disabled), true);
+  assert.equal(await page.$eval('.room-portal-entry a', (el) => el.href), 'https://game.rainya.me/');
+  assert.equal(submissions, 0, '未配置时不发出登记请求');
+  await settle();
+  await page.screenshot({ path: `${output}/hub-room-local-share.png` });
+  shareEnabled = true;
+  await page.click('.room-portal-entry .btn--ghost');
   await page.waitForSelector('.room-portal-entry .btn:not(:disabled)');
   assert.ok(await page.$eval('.room-portal-entry .btn', (el) => el.getBoundingClientRect().height >= 32));
   await page.click('.room-portal-entry .btn');

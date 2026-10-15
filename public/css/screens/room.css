@@ -355,6 +355,7 @@
   color: var(--text-lo);
 }
 .room-portal-entry .btn { min-height: max(.55rem, 32px); font-size: max(calc(.15 * var(--utility-text, var(--t))), 11px); }
+.room-portal-entry a { display: inline-flex; align-items: center; min-height: max(.55rem, 32px); color: var(--mint-400); font-size: max(calc(.15 * var(--utility-text, var(--t))), 11px); text-decoration: underline; }
 
 /* ---- 添加/移除 AI 队友 (this fork) ------------------------------------------------------------------------------
    The hub's room screen (lobby.css, rseat-*) draws an empty seat as 邀请 and a bot seat with no action at all, which

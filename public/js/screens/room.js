@@ -602,7 +602,7 @@ export function RoomScreen() {
 
 
   // 分享那一行的六个分支（§43.5）：不可用 / 提交中 / 待确认 / 已登记（剩余分钟）/ 已过期 / 冷却。
-  const shareStatus = shareView(share, { serverNow: serverNow(), online,
+  const shareStatus = shareView(share, { serverNow: serverNow(), online, hostname: globalThis.location?.hostname,
     canSubmit: !busy && !facts.searching && facts.emptySeats >= 1 });
   const shareLabels = {
     unavailable: t('联机站暂不可用'),
@@ -614,6 +614,7 @@ export function RoomScreen() {
     idle: t('提交本房间到联机站'),
   };
   const shareHints = {
+    unconfigured: t('本地服务尚未配置联机站分享，可复制邀请链接后前往联机站发布。'),
     unavailable: t('联机站暂不可用，请稍后重试'),
     submitting: t('公开本房间密钥到联机站，方便其他博士加入；十分钟后自动过期'),
     pending: t('提交已发出，正在等待联机站确认；也可以手动查询'),
@@ -632,6 +633,9 @@ export function RoomScreen() {
       title=${t('查询登记结果')} onClick=${() => run('shareQuery', () => queryShare())}>${t('查询登记结果')}<//>` : null}
     ${shareStatus.action === 'retry' ? html`<${Button} size="sm" variant="ghost" title=${t('重试')}
       onClick=${() => probeShare()}>${t('重试')}<//>` : null}
+    ${shareStatus.kind === 'unconfigured' ? html`
+      <${Button} size="sm" variant="secondary" icon="link" onClick=${() => copy('link')}>${t('复制邀请链接')}<//>
+      <a href="https://game.rainya.me/" target="_blank" rel="noopener noreferrer">${t('前往联机站')}</a>` : null}
     <span>${shareHints[shareStatus.kind] ?? shareHints.idle}</span>
   </div>` : null;
 

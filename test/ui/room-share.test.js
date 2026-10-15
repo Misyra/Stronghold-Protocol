@@ -5,11 +5,27 @@
 //   或者看到一次失败，都不该改变登记的剩余时间；反过来，登记到期也不该让按钮在冷却里多锁一会儿。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initialShare, shareAfterStatus, shareAfterSubmit, shareTiming, shareView,
+import { initialShare, shareAfterStatus, shareAfterSubmit, shareTiming, shareView, isLocalShareHost,
   SHARE_COOLDOWN_MS, SHARE_POLL_TRIES, SHARE_TTL_MS } from '../../public/js/ui/roomShare.js';
 
 const NOW = 1_800_000_000_000;
 const enabled = () => ({ ...initialShare({ enabled: true, mode: 'agent', available: true }) });
+
+test('本机和局域网未配置时显示分享入口，但不允许直接提交', () => {
+  for (const hostname of ['localhost', 'sp.localhost', '127.0.0.1', '127.0.0.2', '::1', '[::1]', '192.168.1.6', '10.0.0.2', '172.16.0.1', '172.31.255.255']) {
+    assert.equal(isLocalShareHost(hostname), true, hostname);
+    const view = shareView(initialShare(), { serverNow: NOW, hostname });
+    assert.equal(view.visible, true, hostname);
+    assert.equal(view.kind, 'unconfigured');
+    assert.equal(view.disabled, true);
+    assert.equal(view.action, 'retry');
+    assert.equal(shareView(enabled(), { serverNow: NOW, hostname }).kind, 'idle', '配置后恢复真实分享');
+  }
+  for (const hostname of ['', 'game.example.com', 'localhost.example.com', '192.168.999.1', '172.15.0.1', '172.32.0.1', '8.8.8.8']) {
+    assert.equal(isLocalShareHost(hostname), false, hostname);
+    assert.equal(shareView(initialShare(), { serverNow: NOW, hostname }).visible, false, hostname);
+  }
+});
 
 test('未配置就隐藏；配置了但链路不可用是「暂不可用 + 重试」，不是隐藏', () => {
   assert.equal(shareView(initialShare(), { serverNow: NOW }).visible, false);

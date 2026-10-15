@@ -59,15 +59,27 @@ export function shareTiming(state, serverNow) {
     expired: remainingMs === 0, cooldownMs, cooldownSec: Math.ceil(cooldownMs / 1000) };
 }
 
+/** Local UI affordance only; authorization and relay configuration still belong to the server. */
+export function isLocalShareHost(hostname = '') {
+  const host = String(hostname).toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost') || host === '::1' || host === '[::1]') return true;
+  const parts = host.split('.');
+  if (parts.length !== 4 || !parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) return false;
+  const [a, b] = parts.map(Number);
+  return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31);
+}
+
 /**
  * 界面要显示的那一个分支。
  * @param {object} state initialShare() 的形状（state.state 为 'submitting' 时是提交中）
- * @param {{ serverNow: number, online?: boolean, canSubmit?: boolean }} context
+ * @param {{ serverNow: number, online?: boolean, canSubmit?: boolean, hostname?: string }} context
  * @returns {{ visible: boolean, kind: string, disabled?: boolean, action?: 'retry'|'query' } & ReturnType<typeof shareTiming>}
  */
-export function shareView(state, { serverNow, online = true, canSubmit = true }) {
+export function shareView(state, { serverNow, online = true, canSubmit = true, hostname = '' }) {
   const timing = shareTiming(state, serverNow);
-  if (!state.enabled) return { visible: false, kind: 'hidden', ...timing };
+  if (!state.enabled) return isLocalShareHost(hostname)
+    ? { visible: true, kind: 'unconfigured', disabled: true, action: 'retry', ...timing }
+    : { visible: false, kind: 'hidden', ...timing };
   // 配置了但链路不可用：按钮还在，但按不动，并提供「重试」重新探测（不是隐藏 —— 隐藏会让房主以为
   // 本站根本没有分享功能）。
   if (!state.available) return { visible: true, kind: 'unavailable', disabled: true, action: 'retry', ...timing };

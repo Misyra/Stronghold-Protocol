@@ -764,10 +764,8 @@ describe('in-match UI (mock harness, headless Chrome)', { skip: !ENABLED && 'set
         const tt = v.tileScreen(row, col);
         return { uid: piece.uid, row, col, from: { x: r.left + r.width / 2, y: r.top + r.height * 0.6 }, to: { x: tt.x, y: tt.y } };
       });
-      const m = page.mouse;
-      await m.move(plan.from.x, plan.from.y); await m.down();
-      for (let i = 1; i <= 14; i++) { await m.move(plan.from.x + ((plan.to.x - plan.from.x) * i) / 14, plan.from.y + ((plan.to.y - plan.from.y) * i) / 14); await sleep(16); }
-      await sleep(120); await m.up();
+      // (aimed after the pickup: the deploy fold zooms the boss-field half as a piece is picked up — GitHub #602)
+      await aimedDrag(page, plan.from, plan.to, { steps: 14, pause: 16, settle: 120 });
       await swipeWheel(page, 'RIGHT');
       await page.waitForFunction((uid) => globalThis.__MOCK__.S().priv.board.some((b) => b.uid === uid), { timeout: 4000 }, plan.uid);
       const sent = await page.evaluate(() => globalThis.__MOCK__.S().requests.filter((r) => r[0] === 'g.move').pop()[1]);

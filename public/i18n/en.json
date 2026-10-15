@@ -1563,16 +1563,9 @@
   "登记已过期，可以重新提交": "The listing has expired; you can submit again",
   "一分钟内只能提交一次，{n} 秒后可再试": "Only one submission per room per minute — try again in {n} seconds",
   "干员皮肤": "Operator skins",
-  "按套下载皮肤模型与立绘：一套约 1.2 MiB，{total} 套共 {size}。": "Downloaded per outfit — about 1.2 MiB each, {total} outfits at {size}.",
-  "皮肤预载范围": "Outfit preload scope",
-  "不预载": "None",
-  "挑选": "Pick",
-  "{done} / {total} 套已保存": "{done} / {total} outfits saved",
-  "已选 {n} 套": "{n} picked",
-  "搜索干员、皮肤或系列": "Search operator, outfit or series",
-  "跟随我的皮肤选择": "Follow my outfit picks",
-  "全选": "Select all",
-  "只预载勾选的皮肤；未勾选的不会下载，已缓存的其他皮肤不会被清理。": "Only the picked outfits are preloaded — the rest is not downloaded, and other outfits already cached stay.",
-  "未保存": "Not saved",
-  "没有匹配的皮肤。": "No outfit matches."
+  "预载我选的皮肤": "Preload my picked outfits",
+  "在干员调配里选中的皮肤会自动缓存到本机：一套约 1.2 MiB，{total} 套共 {size}。": "An outfit picked in the Operator Loadout is cached on this machine — about 1.2 MiB each, {total} outfits at {size}.",
+  "本机已选 {n} 套 · 已缓存 {done} 套": "{n} picked · {done} cached",
+  "预载资源总开关没打开，先开它。": "Preload itself is off — turn it on first.",
+  "还没选过皮肤：在干员调配里挑一套，这里会跟着缓存。": "No outfit picked yet — choose one in the Operator Loadout and it gets cached here."
 }

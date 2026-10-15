@@ -101,6 +101,26 @@ export function clearSkin(chessId) {
 /** The skin this browser picked for an operator, or null. */
 export const skinFor = (chessId) => skinsStore.get().entries[chessId] || null;
 
+/**
+ * The outfits this browser has equipped, as the `<charId>/<skinId>` keys the 资源预载 follows (docs/SKINS.md). The
+ * choice is stored per chess and the asset manifest (hence the preload) is keyed per operator, so the chess table has
+ * to be in for this to return anything: `loadEquippedSkinKeys()` waits for it.
+ * @returns {string[]} sorted, deduplicated
+ */
+export function equippedSkinKeys() {
+  const keys = new Set();
+  for (const [chessId, skinId] of Object.entries(skinsStore.get().entries || {})) {
+    const charId = data.lookup('chess', chessId)?.charId;
+    if (charId && skinId) keys.add(`${charId}/${skinId}`);
+  }
+  return [...keys].sort();
+}
+
+/** `equippedSkinKeys()` once the chess table is loaded (resolves to the keys, or to `[]` when it cannot be loaded). */
+export function loadEquippedSkinKeys() {
+  return data.load('chess').then(() => equippedSkinKeys(), () => []);
+}
+
 // ---- 商店立绘 (local only) ---------------------------------------------------------------------------------------
 
 /** Replace the whole 商店立绘 selection (persisted at once; nothing is synced). */

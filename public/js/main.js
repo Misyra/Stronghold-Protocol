@@ -53,7 +53,7 @@ import { LoadoutHost } from './screens/loadout.js';
 import { StatsHost } from './screens/stats.js';
 import { recordResult, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/loadoutSync.js';
-import { installSkinsSync } from './ui/skins.js';
+import { equippedSkinKeys, installSkinsSync, loadEquippedSkinKeys, skinsStore } from './ui/skins.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 import { AnnouncementBanner } from './ui/announcement.js';
 import { ResourceHost } from './ui/resourcePanel.js';
@@ -332,14 +332,13 @@ function ScreenCrashed({ error, reset }) {
 
 function ResourceManagerHost() {
   const settings = useSettings();
-  // 干员皮肤 rides its own axis (docs/SKINS.md): a mode plus the picked `charId/skinId` keys, so the panel can offer
-  // 「全部」 without turning it into a synonym of 「同时预载可选资源」.
-  const skinScope = { mode: settings.preloadSkins, keys: settings.preloadSkinIds };
+  // 干员皮肤 is one switch (docs/SKINS.md): with it on, the preload follows whatever 干员调配 has equipped — the choice
+  // list lives there, not here.
   return html`<${ResourceHost} enabled=${settings.preload} optional=${settings.preloadOptional} allVoices=${settings.preloadAllVoices}
-    voiceLang=${settings.voiceLang} onVoiceLang=${(v) => updateSettings({ voiceLang: v })} skins=${skinScope}
+    voiceLang=${settings.voiceLang} onVoiceLang=${(v) => updateSettings({ voiceLang: v })} skinPreload=${settings.preloadSkins}
     onChange=${(v) => updateSettings({ preload: v })} onOptional=${(v) => updateSettings({ preloadOptional: v })}
     onAllVoices=${(v) => updateSettings({ preloadAllVoices: v })}
-    onSkins=${(scope) => updateSettings({ preloadSkins: scope.mode, preloadSkinIds: scope.keys })} />`;
+    onSkinPreload=${(v) => updateSettings({ preloadSkins: v })} />`;
 }
 
 function App() {
@@ -466,12 +465,21 @@ async function boot() {
 function installResourcePreload() {
   // Resume only when the player enabled preload; a saved pause survives page reloads.
   import('./resources/index.js').then((r) => {
+    // 干员皮肤: with `preloadSkins` on, the preload follows the outfits equipped in this browser — picking one in
+    // 干员调配 is what starts its download (docs/SKINS.md). The chess table resolves chessId → charId, so an equipped
+    // choice has no manifest key to follow until it is in; that one load re-applies the scope below.
     const apply = (s) => {
-      r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices,
-        { mode: s.preloadSkins, keys: s.preloadSkinIds }).catch((err) => console.warn('[resources] sync failed', err));
+      const keys = s.preloadSkins ? equippedSkinKeys() : [];
+      r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices, keys)
+        .catch((err) => console.warn('[resources] sync failed', err));
+      if (s.preloadSkins && !keys.length) {
+        void loadEquippedSkinKeys().then((loaded) => { if (loaded.length) apply(settingsStore.get()); });
+      }
     };
     apply(settingsStore.get());
     settingsStore.subscribe(apply);
+    // Equipping a different skin changes what the preload wants, with no settings change to announce it.
+    skinsStore.subscribe(() => apply(settingsStore.get()));
     let timer;
     const priority = () => {
       const s = store.get();

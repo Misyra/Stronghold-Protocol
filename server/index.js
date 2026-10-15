@@ -46,7 +46,7 @@ import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom, roomAdminTokenFrom, lobbyOptionsFrom } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom, roomAdminTokenFrom, lobbyOptionsFrom, portalRoomOptionsFrom, siteIdFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPackRegistry } from './packs.js';
@@ -109,6 +109,9 @@ export async function startServer(opts = {}) {
   const log = opts.log || makeLogger(!!opts.quiet);
   const announcementOptions = announcementOptionsFrom(opts);
   const roomAdminToken = roomAdminTokenFrom(opts);
+  // 分享模式与它的本机凭据（§14.3）。放在启动时校验：填错一个字节不该等到某个玩家点分享才暴露。
+  const portalRoom = portalRoomOptionsFrom(opts);
+  const siteId = siteIdFrom(opts);
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
   const lobbyOptions = lobbyOptionsFrom(opts);
   const geoLiteFile = opts.geoLiteCountryFile ?? process.env.SP_GEOLITE_COUNTRY_DB;
@@ -155,6 +158,9 @@ export async function startServer(opts = {}) {
     lobbyOptions.maxForeignSessionsPerIp = savedRoomConfig.maxForeignSessionsPerIp;
   log.info(`[sessions] foreign per-IP limit: ${lobbyOptions.limitForeignSessions ? lobbyOptions.maxForeignSessionsPerIp : 'off'}, GeoIP ${countryLookup ? 'ready' : 'unavailable'}`);
   log.info(`[connections] foreign access: ${lobbyOptions.allowForeignConnections ? 'allowed' : 'blocked when GeoIP identifies a foreign source'}`);
+  // 分享模式的启动自述：排障的第一件事就是「这个站点是哪种模式、往哪里发」，而这两件事都只来自启动配置。
+  log.info(`[portal] site ${siteId ?? 'unset'} · room share ${portalRoom.mode}` +
+    (portalRoom.mode === 'agent' ? ` via ${portalRoom.agentUrl}` : portalRoom.mode === 'legacy-http' ? ` to ${new URL('/api/rooms/from-game', portalRoom.url).origin}` : ''));
   const chatLog = new ChatLog({ dir: opts.chatLogDir ?? process.env.SP_CHAT_LOG_DIR,
     compressAfterDays: opts.chatLogCompressAfterDays ?? process.env.SP_CHAT_LOG_COMPRESS_AFTER_DAYS,
     retentionDays: opts.chatLogRetentionDays ?? process.env.SP_CHAT_LOG_RETENTION_DAYS,
@@ -261,7 +267,7 @@ export async function startServer(opts = {}) {
     serveStatic,
     health: { startedAt, gameBootId, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic },
     log, allowStatus, allowNickname, readAnnouncement, announcementSource: announcementOptions.source,
-    trustProxy: network.opts.trustProxy,
+    portalRoom, trustProxy: network.opts.trustProxy,
   }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic, wsCompression: opts.wsCompression ?? process.env.SP_WS_COMPRESSION });

@@ -29,7 +29,9 @@ test('relay authenticates current room host and signs only server-selected desti
   f.session.playerId = 'host';
   assert.equal((await f.post({ headers: { Authorization: `Bearer ${token}`, Origin: 'https://evil.example' } })).status, 403);
   const response = await f.post();
-  assert.equal(response.status, 200); assert.deepEqual(await response.json(), { ok: true });
+  assert.equal(response.status, 200);
+  // 业务状态是契约（§12.1）：`response.ok` 不够，界面必须看 registered。
+  assert.deepEqual(await response.json(), { ok: true, status: 'registered', registered: true, mode: 'legacy-http' });
   assert.equal(f.calls(), 1);
   const remote = f.remote(), h = remote.headers;
   assert.equal(remote.url.href, 'https://portal.example/api/rooms/from-game');
@@ -51,7 +53,10 @@ test('relay rejects stale room clicks, oversized body and non-joinable rooms wit
 
 test('relay is opt-in and fails closed for partial or unsafe configuration', async (t) => {
   const f = await fixture(t, { url: '', siteId: '', key: '' });
-  assert.deepEqual(await (await fetch(f.url)).json(), { enabled: false });
+  const probe = await (await fetch(f.url)).json();
+  assert.equal(probe.enabled, false);
+  assert.equal(probe.mode, 'off');
+  assert.equal(probe.available, false);
   assert.equal((await f.post()).status, 503);
   assert.throws(() => createPortalRoomHandler({ url: 'http://evil.example', siteId: 'test', key }), /HTTPS/);
   assert.throws(() => createPortalRoomHandler({ url: 'https://portal.example', siteId: 'test', key: 'short' }), /configuration/);

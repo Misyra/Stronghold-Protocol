@@ -24,13 +24,16 @@
 //   * GET /api/rooms/<code>/status → the room's read-only public projection (server/roomStatus.js), rate-limited per
 //     network; private enumeration and room controls live on the separate loopback listener (server/roomAdmin.js);
 //   * GET /api/announcement → the hot-loaded maintenance notice and the server time (no write API);
+//   * GET /api/portal-room (feature probe) / POST /api/portal-room (submit this room) / GET /api/portal-room/status
+//     (the result of that submission) → the opt-in room share (http/portalRoom.js). The mode (off / legacy-http /
+//     agent), the destination and the credentials all come from the startup configuration, never from the request;
 //   * everything else → the static files (static.js).
 // Every response's body bytes count in the traffic counters (traffic.js meter). A route that throws is logged and
 // answers 500.
 
 // Health snapshot reuse adapted from xinhai 23d0a929; retain this fork's detailed fields.
 import { validateNickname } from './nickname.js';
-import { createPortalRoomHandler } from './portalRoom.js';
+import { createPortalRoomHandler, PORTAL_ROOM_STATUS_PATH } from './portalRoom.js';
 import { performance } from 'node:perf_hooks';
 import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN, ERR, ERR_TEXT } from '../../shared/constants.js';
 import { CODE_ALPHABET } from '../lobby.js';
@@ -150,14 +153,16 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  *           allowNickname?: (req: import('node:http').IncomingMessage) => boolean,
  *           allowStatus?: (req: import('node:http').IncomingMessage) => boolean,
  *           readAnnouncement?: () => Promise<object | null>, announcementSource?: { mode: string, siteId: string | null },
- *           trustProxy?: 'auto' | boolean }} deps
+ *           portalRoom?: object, trustProxy?: 'auto' | boolean }} deps
  *   trustProxy: whose forwarding headers name the client (net.js clientAddress; the server's TRUST_PROXY) — the gate
  *   on the `?traffic=1` figures
+ *   portalRoom: the share mode and its local credentials (http/config.js portalRoomOptionsFrom); absent → off
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, allowNickname = null, allowStatus = null, readAnnouncement = null, announcementSource = null, trustProxy = 'auto' }) {
+export function createRequestHandler({ serveStatic, health, log, allowNickname = null, allowStatus = null, readAnnouncement = null, announcementSource = null, portalRoom = null, trustProxy = 'auto' }) {
   const healthBody = createHealthBody(health);
-  const portalRoom = createPortalRoomHandler({ registry: health.registry, lobby: health.lobby,
+  const portalRoomHandler = createPortalRoomHandler({ ...(portalRoom ?? {}),
+    registry: health.registry, lobby: health.lobby, log,
     trustProxy: health.network?.opts?.trustProxy ?? 'auto' });
   const methodAllowed = (req, res) => {
     if (req.method === 'GET' || req.method === 'HEAD') return true;
@@ -192,7 +197,7 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
     if (!parts) { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
-    if (parts.rawPath === '/api/portal-room') { await portalRoom(req, res); return; }
+    if (parts.rawPath === '/api/portal-room' || parts.rawPath === PORTAL_ROOM_STATUS_PATH) { await portalRoomHandler(req, res); return; }
     if (parts.rawPath === '/api/nickname/validate') {
       await validateNickname(req, res, allowNickname);
       return;

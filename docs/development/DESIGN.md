@@ -38,3 +38,4 @@ normative lines it rewrote).
 | §29 | [history/0.2.4.md](../history/0.2.4.md) | 0.2.4 — after the 0.2.3 release (2026-10-11) |
 | §30 | [history/0.2.5.md](../history/0.2.5.md) | 0.2.5 — after the 0.2.4 release (2026-10-12) |
 | §31 | [history/0.2.6.md](../history/0.2.6.md) | 0.2.6 — after the 0.2.5 release (2026-10-13) |
+| §32, §33, §34, §35, §36, §37, §38, §39, §40, §41, §42, §43, §44, §45, §46, §47, §48, §49, §50, §51 | [design/portal-agent-wss.md](../design/portal-agent-wss.md) | 游戏站 Agent 与 sp-portal 的双向通信：WSS 协议、公告与配置、房间分享（设计 + 实施记录） |

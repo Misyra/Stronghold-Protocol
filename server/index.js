@@ -109,7 +109,7 @@ export async function startServer(opts = {}) {
   const log = opts.log || makeLogger(!!opts.quiet);
   const announcementOptions = announcementOptionsFrom(opts);
   const roomAdminToken = roomAdminTokenFrom(opts);
-  // 分享模式与它的本机凭据（§14.3）。放在启动时校验：填错一个字节不该等到某个玩家点分享才暴露。
+  // 分享模式与它的本机凭据（§45.3）。放在启动时校验：填错一个字节不该等到某个玩家点分享才暴露。
   const portalRoom = portalRoomOptionsFrom(opts);
   const siteId = siteIdFrom(opts);
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
@@ -140,7 +140,7 @@ export async function startServer(opts = {}) {
   if (roomAdminToken) {
     try { roomConfig = await loadRoomConfigDocument(roomAdminStateFile); }
     catch (error) { log.error('[room-admin] saved room limit unavailable; using startup configuration', error); }
-    // v1 → v2 迁移（§10.2）：读出来就按第 1 版落成 v2。不这么做的话，旧文件会一直停在「被兼容读取」的
+    // v1 → v2 迁移（§41.2）：读出来就按第 1 版落成 v2。不这么做的话，旧文件会一直停在「被兼容读取」的
     // 状态 —— 每次启动都读一遍旧格式，而第一次改动才写新格式，中间任何一个只读的排查都得自己换算。
     if (roomConfig?.migrated) {
       try { await saveRoomConfigDocument(roomAdminStateFile, roomConfig); }
@@ -253,7 +253,7 @@ export async function startServer(opts = {}) {
   const readAnnouncement = createAnnouncementReader({ ...announcementOptions, log });
   log.info(`[announcement] ${announcementOptions.source.mode} ${announcementOptions.announcementUrl || announcementOptions.filePath}`);
   const startedAt = Date.now();
-  // Game boot id (lobby share / 联机站, docs/design/portal-agent-wss.md §13.3): a fresh value on every process start.
+  // Game boot id (lobby share / 联机站, docs/design/portal-agent-wss.md §44.3): a fresh value on every process start.
   // The room instance id survives a restart, so "the same roomId" alone cannot tell a probe whether an observation it
   // still holds predates the restart — this can, and the Agent reports it with every room observation.
   const gameBootId = randomUUID();

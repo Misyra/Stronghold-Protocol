@@ -30,7 +30,7 @@ test('relay authenticates current room host and signs only server-selected desti
   assert.equal((await f.post({ headers: { Authorization: `Bearer ${token}`, Origin: 'https://evil.example' } })).status, 403);
   const response = await f.post();
   assert.equal(response.status, 200);
-  // 业务状态是契约（§12.1）：`response.ok` 不够，界面必须看 registered。
+  // 业务状态是契约（§43.1）：`response.ok` 不够，界面必须看 registered。
   assert.deepEqual(await response.json(), { ok: true, status: 'registered', registered: true, mode: 'legacy-http' });
   assert.equal(f.calls(), 1);
   const remote = f.remote(), h = remote.headers;

@@ -249,7 +249,7 @@ export function RoomScreen() {
   const [busy, setBusy] = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const [fillTeam, setFillTeam] = useState(false);
-  // 分享（§12.5）：探测到的能力 + 本机登记状态 + 两个独立的计时（冷却 / 有效期）。判定全在 ui/roomShare.js 里。
+  // 分享（§43.5）：探测到的能力 + 本机登记状态 + 两个独立的计时（冷却 / 有效期）。判定全在 ui/roomShare.js 里。
   const [share, setShare] = useState(() => initialShare());
   const [, setClockTick] = useState(0);
   /** 本机状态里的一切时间都用「服务端时间」比较（store 的 clock.offset），玩家机器的时钟不参与。 */
@@ -264,7 +264,7 @@ export function RoomScreen() {
     } catch { return null; }
   };
   useEffect(() => { probeShare(); }, []);
-  // 房间实例或房主变了：旧登记状态与在途结果都不再属于这个界面（§12.5）。实例号是唯一能区分
+  // 房间实例或房主变了：旧登记状态与在途结果都不再属于这个界面（§43.5）。实例号是唯一能区分
   // 「同一个码被新房间复用」的东西，所以它变了就一定要清。
   useEffect(() => {
     applyShare((current) => ({ ...initialShare(current), enabled: current.enabled, mode: current.mode, available: current.available }));
@@ -275,7 +275,7 @@ export function RoomScreen() {
     const timer = setInterval(() => setClockTick((n) => n + 1), 1000);
     return () => clearInterval(timer);
   }, [share.state, share.cooldownUntil]);
-  /** 登记结果查询（§12.1「操作结果待确认时界面调用状态查询」）。 */
+  /** 登记结果查询（§43.1「操作结果待确认时界面调用状态查询」）。 */
   const queryShare = async ({ silent = false } = {}) => {
     const current = store.get().room;
     if (!current?.code) return null;
@@ -340,7 +340,7 @@ export function RoomScreen() {
   };
 
   const toggleReady = () => run('ready', () => net.request('room.ready', { ready: !myReady }));
-  // 提交（§12.1）：只有服务端明说 registered 才算收录；202 是「发出去了但不知道结果」，界面转待确认；
+  // 提交（§43.1）：只有服务端明说 registered 才算收录；202 是「发出去了但不知道结果」，界面转待确认；
   // 其余按业务码给文案。晚回执（房间已经不是当时那间）一概不写进界面。
   const submitPortal = () => run('portal', async () => {
     const boundRoomId = room.roomId ?? null;
@@ -420,7 +420,7 @@ export function RoomScreen() {
         ? html`<span class="t-mint">${t('已就绪 · 等待创建者开始模拟')}</span>`
         : html`<span class="t-lo">${t('准备就绪后，创建者即可开始模拟')}</span>`;
 
-  // 分享那一行的六个分支（§12.5）：不可用 / 提交中 / 待确认 / 已登记（剩余分钟）/ 已过期 / 冷却。
+  // 分享那一行的六个分支（§43.5）：不可用 / 提交中 / 待确认 / 已登记（剩余分钟）/ 已过期 / 冷却。
   const shareStatus = shareView(share, { serverNow: serverNow(), online,
     canSubmit: !busy && !facts.searching && facts.emptySeats >= 1 });
   const shareLabels = {

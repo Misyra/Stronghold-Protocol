@@ -343,18 +343,6 @@
 .room-matchmaking:hover:not(.is-disabled) { border-color: var(--mint-400); }
 .room-matchmaking:focus-within { outline: 2px solid var(--mint-400); outline-offset: 2px; }
 .room-matchmaking.is-disabled { cursor: default; opacity: .6; }
-.room-recruit-hint {
-  position: absolute;
-  bottom: 1.66rem;
-  left: .6rem;
-  right: .6rem;
-  margin: 0;
-  font-size: calc(.18 * var(--utility-text, var(--t)));
-  line-height: 1.5;
-  color: var(--text-lo);
-  text-align: center;
-}
-.room-recruit-hint a { color: var(--mint-400); text-decoration: underline; }
 .room-portal-entry {
   display: flex;
   flex: none;
@@ -366,17 +354,25 @@
   font-size: calc(.14 * var(--utility-text, var(--t)));
   color: var(--text-lo);
 }
+.room-portal-entry .btn { min-height: max(.55rem, 32px); font-size: max(calc(.15 * var(--utility-text, var(--t))), 11px); }
 
 /* ---- 添加/移除 AI 队友 (this fork) ------------------------------------------------------------------------------
    The hub's room screen (lobby.css, rseat-*) draws an empty seat as 邀请 and a bot seat with no action at all, which
    would drop room.addBot / room.removeBot from the UI. The button goes over the empty card's art, in the same corner
-   the invite button leaves free, and shrinks with the compact layer like the rest of the room. */
+   the invite button leaves free, and shrinks with the compact layer like the rest of the room.
+   `bottom: .12rem` lands it in the dashed `.rseat__plate--empty` band, and that plate is positioned and comes LATER
+   in the DOM: with both at `z-index: auto` the plate painted over the button and swallowed every click, so 添加 AI 队友
+   looked dead (a real mouse press hit the plate — a JS `.click()` worked, which is how the bug hid). The z-index lifts
+   the button over the plate, and the empty plate is decoration only (`<div ... aria-hidden="true"></div>`, no children,
+   no handler), so it does not need to be a hit target at all — belt and braces for the same band. */
 .rseat__botadd {
-  position: absolute; left: 50%; bottom: .12rem; display: inline-flex; align-items: center; gap: .05rem;
-  padding: .05rem .12rem; transform: translateX(-50%); font: inherit; font-size: calc(.13 * var(--utility-text, var(--t)));
-  color: var(--text-md); background: rgba(6, 8, 8, .82); border: 1px solid var(--line-2); cursor: pointer; white-space: nowrap;
+  position: absolute; left: 50%; bottom: .08rem; z-index: 2; display: inline-flex; align-items: center; justify-content: center; gap: .08rem;
+  width: calc(100% - .2rem); min-height: max(.55rem, 32px); padding: .08rem .12rem;
+  transform: translateX(-50%); font: inherit; font-size: max(calc(.17 * var(--utility-text, var(--t))), 12px);
+  color: var(--mint-400); background: #10251f; border: 1px solid var(--mint-700); cursor: pointer; white-space: nowrap;
   transition: border-color var(--t-fast), color var(--t-fast);
 }
+.rseat__plate--empty { pointer-events: none; }
 .rseat__botadd:hover:not(:disabled) { color: var(--mint-400); border-color: var(--mint-700); }
 .rseat__botadd:disabled { opacity: .4; cursor: default; }
 .rseat__botadd .icon, .rseat__botadd .spinner { width: 1em; height: 1em; }

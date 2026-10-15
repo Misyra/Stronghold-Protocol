@@ -1093,7 +1093,9 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   rows then play), else a form named like a mode. An arts barrier's talent (its key names a shield) plays while the
   barrier holds: the sim's 'shieldBreak' ends it, its 'artsBarrier' phase raises it again [ASSUMED]. One effect key on
   one spot plays once whichever binding wants it (a mode switch from one copy to another keeps it running); a prefab
-  that does not loop plays once while its binding is in force. Not drawn: what no client signal shows (template casts at
+  that does not loop plays once while its binding is in force — so does a skill's held row of such a prefab (SkillFx:
+  at the skill start, for its own life; a tier switch or a view built mid-battle does not replay it). Not drawn: what no
+  client signal shows (template casts at
   events the client never sees, filter / range / profession checkers, a talent attack no kit fx marks, the buffs on
   others, `spineEffects`).
 * **Placement (v2)**: `prefabs[key].spawn` / `follow` give a plan entry its `point` / `follow` without loading the

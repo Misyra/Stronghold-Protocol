@@ -98,6 +98,8 @@ export function formMode(unit, form, map = null) {
 }
 
 const idOf = (v) => v?.info?.id ?? v?.id;
+/** A held entry that loops for its hold: hold 'skill' and a looping prefab (a one-shot prefab plays once at the start). */
+const isLoop = (e) => e.hold === 'skill' && e.loop !== false;
 /**
  * The entries of a list with a key of their own (the first of each): the extractor may reach one effect by two paths
  * (a buff's `_buffs` and `_extraBuffs`, two nodes of one skill) — played once, as the one buff it is [ASSUMED].
@@ -239,13 +241,18 @@ export class SkillFx {
     return slotKey(e, DIRS[this.w._dirIndex(e.directionType, v)]);
   }
 
-  /** Play an entry on a view; held ones (skill / ready / deploy) follow the unit's mount point and are never dropped. */
+  /**
+   * Play an entry on a view; held ones (skill / ready / deploy) follow the unit's mount point and are never dropped. A
+   * held entry whose prefab does not loop (index.json prefabs[key].looping false: a buff's or a long ability's one-shot
+   * effect) is no loop: it plays once, for its own life (stopped early only when its hold ends).
+   */
   _play(e, v, o = {}) {
     if (!v) return null;
     const k = this._key(e, v);
     if (!k) return null;
     const held = e.hold === 'skill' || e.hold === 'ready' || e.hold === 'cast';
-    return this.w.playOn(k, v, { follow: held, loop: e.hold === 'skill' || e.hold === 'ready', important: held || !!o.important, toward: o.toward, flipFrom: o.flipFrom, skip: o.skip });
+    const loop = (e.hold === 'skill' || e.hold === 'ready') && e.loop !== false;
+    return this.w.playOn(k, v, { follow: held, loop, important: held || !!o.important, toward: o.toward, flipFrom: o.flipFrom, skip: o.skip });
   }
 
   /** Keep a started entry by its hold: the skill's loops, the ready loops, or stopped at the cast's end. */
@@ -274,29 +281,32 @@ export class SkillFx {
     U.readyOn = false;
   }
 
-  /** The loops of a skill that is on without its start (a view built mid-battle, the layer switched on): no one-shots. */
+  /**
+   * The loops of a skill that is on without its start (a view built mid-battle, the layer switched on): no one-shots —
+   * a held entry whose prefab does not loop belongs to the start (isLoop) and is not played again.
+   */
   _loopsOnly(U, v, byFlag) {
     U.loopsOn = true;
     U.byFlag = byFlag;
-    for (const e of uniq([...U.plan.start, ...U.plan.range, ...U.plan.loop])) if (e.hold === 'skill') this._keep(U, e, this._play(e, v));
+    for (const e of uniq([...U.plan.start, ...U.plan.range, ...U.plan.loop])) if (isLoop(e)) this._keep(U, e, this._play(e, v));
   }
 
-  /** A passive's loops (while deployed) and, once per deployment, its start one-shots. */
+  /** A passive's loops (while deployed) and, once per deployment, its start one-shots (a held one-shot prefab too). */
   _passive(U, v, shots) {
     let drew = false;
     if (!U.passiveOn) {
       U.passiveOn = true;
       U.loopsOn = true;
       for (const e of uniq([...U.plan.start, ...U.plan.range, ...U.plan.loop])) {
-        if (e.hold !== 'skill') continue;
+        if (!isLoop(e)) continue;
         const h = this._play(e, v);
         if (h) { drew = true; this._keep(U, e, h); }
       }
     }
     if (shots && !U.passiveShots) {
       U.passiveShots = true;
-      for (const e of uniq([...U.plan.start, ...U.plan.range])) {
-        if (e.hold === 'skill') continue;
+      for (const e of uniq([...U.plan.start, ...U.plan.range, ...U.plan.loop])) {
+        if (isLoop(e)) continue;
         const h = this._play(e, v);
         if (h) { drew = true; this._keep(U, e, h); }
       }

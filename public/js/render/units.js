@@ -541,16 +541,19 @@ export function groundZ(ctx, x, y) {
 export const ENEMY_MODEL_FACES_LEFT = false;
 
 /**
- * Leaders the official draws one way only (1 = right, the authored way), by enemy key. GitHub #648, the Hidden Core's
+ * Leaders the official draws one way only (1 = right, the authored way), by enemy key (GitHub #648). The Hidden Core's
  * 假想敌：管: its prefab enemy_9021_acduml_2 differs from the Final Assault's enemy_9021_acduml only in the BoxCollider2D
  * offset (+1, +1 — data/enemies.json hitArea dx 1) and the boss HUD offset `_bossHudOffset` (+1.4, 0) (local client,
  * 2026-10-15). Both lie right of its spawn tile (row 3, col 9), where its body lies when the model faces right as
  * authored; mirrored to the left it reached 2½ tiles onto the left half (the report's screenshot), while the
- * maintainer's official recording shows it over the boss block. [ASSUMED] it never turns: its prefab's FaceSwitcher
- * `_defaultLOrR` is 1 (regular enemies 3), read as "right"; every leader of the mode shares that 1, so the Final
- * Assault's 管 may face right too, which nothing has shown yet.
+ * maintainer's official recording shows it over the boss block. The maintainer also saw the Hidden Core's 假想敌：胄
+ * face right; enemy_9013_acstmk_2 is the Final Assault 胄's own prefab, and the Final Assault 管's prefab differs from
+ * the hidden one in the collider and the HUD alone, so both Final Assault copies face right as well. [ASSUMED] they
+ * never turn (self-bound, SELF_BOUND in server/sim/content/bosses.js); their FaceSwitcher `_defaultLOrR` is 1 (regular
+ * enemies 3), read as "right". 阿利斯泰尔, “萨米的意志” and 假想敌：弦 share that 1 but nothing has shown their look yet,
+ * so they keep the regular start (left) and their turns.
  */
-const FIXED_FACING = Object.freeze({ enemy_9021_acduml_2: 1 });
+const FIXED_FACING = Object.freeze({ enemy_9013_acstmk: 1, enemy_9013_acstmk_2: 1, enemy_9021_acduml: 1, enemy_9021_acduml_2: 1 });
 /** The official boss HUD's sideways offset from the unit position, tiles (the prefab's `_bossHudOffset.x`), by key. */
 const BOSS_HUD_DX = Object.freeze({ enemy_9021_acduml_2: 1.4 });
 

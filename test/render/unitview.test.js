@@ -866,12 +866,14 @@ describe('death timing (PR #380): a dying flyer drops inside the fade, a long Di
 describe('GitHub #648: the Hidden Core 假想敌：管 (enemy_9021_acduml_2)', () => {
   const boss = (defId) => view({ side: 'enemy', kind: 'enemy', defId, boss: true, x: 9, y: 3, maxHp: 600000 });
 
-  test('faces right as authored whatever turn it is given; the Final Assault 管 still turns', () => {
-    const h = boss('enemy_9021_acduml_2');
-    assert.equal(h.visFacing, 1, 'right from the start');
-    h.visFacing = -1; // an attack, a walk or the prep leader's faceLeader
-    assert.equal(h.visFacing, 1, 'still right');
-    const b = boss('enemy_9021_acduml');
+  test('faces right as authored whatever turn it is given — so do the other 管 and both 胄; other leaders still turn', () => {
+    for (const key of ['enemy_9021_acduml_2', 'enemy_9021_acduml', 'enemy_9013_acstmk', 'enemy_9013_acstmk_2']) {
+      const h = boss(key);
+      assert.equal(h.visFacing, 1, `${key}: right from the start`);
+      h.visFacing = -1; // an attack, a walk or the prep leader's faceLeader
+      assert.equal(h.visFacing, 1, `${key}: still right`);
+    }
+    const b = boss('enemy_1521_dslily'); // 盐风主教昆图斯: a huge leader with the regular FaceSwitcher 3
     assert.equal(b.visFacing, -1, 'an enemy starts facing left');
     b.visFacing = 1;
     assert.equal(b.visFacing, 1, 'and turns');

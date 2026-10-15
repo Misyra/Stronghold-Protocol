@@ -6,7 +6,7 @@ import { canTargetAlly, areaSelectable } from '../../targeting.js';
 import { periodicDamage } from '../../damage.js';
 import {
   BOOM_RADIUS, nthOf, stOf, T, elem, hurt, targetsNear, allTargets, areaAllies, areaAlliesInTiles, byPriority,
-  stayRoute, spawnChildren, expose, auraBuff, watchDeaths, onTerrain,
+  stayRoute, spawnChildren, expose, auraBuff, watchDeaths, onTerrain, castSlot,
 } from './helpers.js';
 import {
   unblockable, runWhenHit, blockWeight, taunt, maxTargets, ep, nthAttackPower, lowHpBuff, deathBoom, setFloat, float,
@@ -52,6 +52,7 @@ function kitChimera(ab) {
     if (a.on || !onTerrain(b, e, 'infection')) return;
     a.on = true;
     e.mem.ab.atkType = 'arts';
+    castSlot(b, e, ab.sk.triggerAnim);   // its activation (triggerAnim): the skill slot for the client, display only
     b.fx('telegraph', { x: e.x, y: e.y, r: CHIMERA_AURA_RADIUS, kind: 'chimera', id: e.id });
   };
   return [{
@@ -188,6 +189,8 @@ function kitRush(ab) {
 function kitFirstAoe(ab) {
   const scale = T(ab, 'AOEAttack.atk_scale') ?? 0;
   return [blockWeight(3), {
+    // the splashing first attack is its AOEAttack: the skill slot for the client (castSlot, display only)
+    before(c, b, e, a) { if (!a.done && !a.cast) { a.cast = true; castSlot(b, e, ab.sk.AOEAttack); } },
     dealt(c, b, e, a) {
       if (a.done) return;
       a.done = true;
@@ -311,7 +314,7 @@ export const SPECIAL_KITS = Object.freeze({
   enemy_1069_icebrk_2: (ab) => [{ hitOut(c, b, e) { if (c.dmg.isAttack && c.target.s.flags.freeze) c.dmg.amount *= T(ab, 'atkup.atk_scale') ?? 1; } }], // 雪怪小队破冰者 · ×3 vs frozen
   enemy_1026_aghost: () => [unblockable()],                          // 幽灵组长 · unblockable
   enemy_1062_rager_2: (ab) => [{ iv: 1, tick(b, e) { const v = T(ab, 'periodic_damage.damage') ?? 0; if (v > 0) b.dealDamage(null, e, periodicDamage(v)); } }], // 狂暴宿主组长 · "自身每秒受到500无来源真实伤害" (damage, not 流失)
-  enemy_1183_mlasrt: (ab) => [ep('erosion', T(ab, 'EpDamage.attack@ep_damage_ratio') ?? 0), nthAttackPower(nthOf(ab.sk.PowerAttack), (ab.sk.PowerAttack && ab.sk.PowerAttack.bb.atk_scale) || 1)], // 无胄盟清扫小队 · erosion; every 4th attack ×1.5
+  enemy_1183_mlasrt: (ab) => [ep('erosion', T(ab, 'EpDamage.attack@ep_damage_ratio') ?? 0), nthAttackPower(nthOf(ab.sk.PowerAttack), (ab.sk.PowerAttack && ab.sk.PowerAttack.bb.atk_scale) || 1, null, 0, ab.sk.PowerAttack)], // 无胄盟清扫小队 · erosion; every 4th attack ×1.5
   enemy_1273_stmgun_2: (ab) => {                                     // 高准度伦蒂尼姆城防自行炮 · locks the highest max-HP unit in range, bombards the highest HP% on its 9 tiles
     // the allies in its range (the engine's ranged reach: radius + the ally collider)
     const inRange = (b, e) => allTargets(b, e).filter((a) => hypot(a.x - e.x, a.y - e.y) <= (e.base.rangeRadius || 0) + ALLY_COLLIDER_RADIUS + 1e-9);
@@ -382,6 +385,7 @@ export const SPECIAL_KITS = Object.freeze({
           if (!e.alive || !n) return;
           const lock = allTargets(b, e).sort((p, q) => q.hp - p.hp)[0];
           if (!lock) return;
+          castSlot(b, e, ap);   // the entrance barrage is its Appear skill (display only)
           b.fx('telegraph', { x: lock.x, y: lock.y, r: 1, kind: 'barrage', id: e.id });
           for (let i = 0; i < n; i++) {
             // "对碰撞范围内的1名当前生命值最高的我方单位" — an area selection: never an airborne 起飞 ally nor an unblocking
@@ -393,7 +397,7 @@ export const SPECIAL_KITS = Object.freeze({
       },
       hitOut(c, b, e) { if (c.dmg.isAttack && c.target !== e.blockedBy) c.dmg.amount *= T(ab, 'range.attack@atk_scale_range') ?? 1; },
     }, mc ? {
-      cd: mc.cd, icd: mc.icd, fire(b, e) { e.mem.ab.multi = boundedCount(mc.bb.times ?? 1, PLUGIN_TIMES_MAX, 1); },
+      cd: mc.cd, icd: mc.icd, sk: mc, fire(b, e) { e.mem.ab.multi = boundedCount(mc.bb.times ?? 1, PLUGIN_TIMES_MAX, 1); },
       dealt(c, b, e) {
         const m = e.mem.ab.multi;
         if (!(m > 1)) return;
@@ -407,6 +411,8 @@ export const SPECIAL_KITS = Object.freeze({
     return [{
       sil: true,                                                     // silenced: the barrel is kept (and its speed) until an unsilenced attack
       spawn(b, e) { b.addBuff(e, { key: 'ab:barrel', persist: true, mods: { moveMul: T(ab, '1.move_speed') ?? 1 } }); },
+      // the barrel blow is its BlockedBoom: the skill slot for the client (castSlot, display only)
+      before(c, b, e, a) { if (!a.done) castSlot(b, e, ab.sk.BlockedBoom); },
       hitOut(c, b, e, a) { if (!a.done && c.dmg.isAttack) c.dmg.amount *= s.blockee_atk_scale ?? 1; },
       attack(c, b, e, a) {
         if (a.done) return;
@@ -429,6 +435,7 @@ export const SPECIAL_KITS = Object.freeze({
     tick(b, e, a) {
       a.n = (a.n ?? 0) + 1;
       if (a.n > 5) return;
+      castSlot(b, e, ab.sk.ForeverEnhance);   // each enhancement is its ForeverEnhance (display only)
       const s = ab.sk.ForeverEnhance ? ab.sk.ForeverEnhance.bb : {};
       b.addBuff(e, { key: 'ab:enhance', refresh: 'stack', stacks: 1, maxStacks: 5, persist: true, mods: { moveFlat: (s.move_speed_add ?? 0) * e.base.moveSpeed, atkPct: s.atk_add ?? 0 } });
     },
@@ -460,7 +467,7 @@ export const SPECIAL_KITS = Object.freeze({
   },
   enemy_10118_ymgprc: (ab) => {                                      // 澪 · double hits; 寒晖: every 4th attack (spCost 3) is a ×1.5 double hit
     const scale = (ab.sk.PowerAttack && ab.sk.PowerAttack.bb.atk_scale) || 1;
-    const pw = nthAttackPower(nthOf(ab.sk.PowerAttack), scale);
+    const pw = nthAttackPower(nthOf(ab.sk.PowerAttack), scale, null, 0, ab.sk.PowerAttack);
     return [pw, { dealt(c, b, e) { hurt(b, e, c.target, e.s.atk * (pw.power ? scale : 1), 'phys', { isSkill: false }); } }];
   },
   enemy_10127_rkmbst_2: (ab) => [taunt(1), { spawn(b, e) {           // 异质裂兽·α · M0 shield (damage ×0.5, ASPD +100, barrier)

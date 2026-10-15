@@ -110,7 +110,7 @@
 // Every name this file exported before the split is still exported from here.
 
 import { TICK } from '../constants.js';
-import { stOf, abOf, attach, safe, dispatch, canCast, elem, alliesInTiles } from './enemies/helpers.js';
+import { stOf, abOf, attach, safe, dispatch, canCast, elem, alliesInTiles, castSlot } from './enemies/helpers.js';
 import { INVISIBLE_KITS } from './enemies/invisible.js';
 import { TIMES_KITS } from './enemies/times.js';
 import { ELEMENT_KITS } from './enemies/element.js';
@@ -125,7 +125,7 @@ export {
   EROSION, EROSION_BURST, HUSK_REBIRTH, nthOf, abOf, attach, T, silenced, canCast, unbalancedNow, elem, hurt, alliesInTiles,
   targetsNear, allTargets, areaAllies, areaAlliesInTiles, fieldAllies, auraAllies, targetAndArea, byPriority, zone,
   remainingRoute, stayRoute, spawnChildren, stepToward, setHits, hitCount, isHitCount, setForm, lpLoss, expose,
-  expectedFinal, absorbArts,
+  expectedFinal, absorbArts, castSlot,
 } from './enemies/helpers.js';
 export { TRANSLATOR_CHANGE } from './enemies/leaders.js';
 export { BOMBD_RELEASE, BOMBD_POST_DELAY } from './enemies/fly.js';
@@ -267,6 +267,7 @@ function onTick(b, dt) {
           a.left = Math.max(TICK, a.cd);
           a.casts = (a.casts ?? 0) + 1;
           e.skillAnimUntil = b.time + 0.5;
+          if (a.sk) castSlot(b, e, a.sk);   // display only: the skill slot it uses (render/app.js 'cast')
           safe(b, e, () => a.fire(b, e, a));
         }
       }

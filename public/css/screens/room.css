@@ -366,3 +366,17 @@
   font-size: calc(.14 * var(--utility-text, var(--t)));
   color: var(--text-lo);
 }
+
+/* ---- 添加/移除 AI 队友 (this fork) ------------------------------------------------------------------------------
+   The hub's room screen (lobby.css, rseat-*) draws an empty seat as 邀请 and a bot seat with no action at all, which
+   would drop room.addBot / room.removeBot from the UI. The button goes over the empty card's art, in the same corner
+   the invite button leaves free, and shrinks with the compact layer like the rest of the room. */
+.rseat__botadd {
+  position: absolute; left: 50%; bottom: .12rem; display: inline-flex; align-items: center; gap: .05rem;
+  padding: .05rem .12rem; transform: translateX(-50%); font: inherit; font-size: calc(.13 * var(--utility-text, var(--t)));
+  color: var(--text-md); background: rgba(6, 8, 8, .82); border: 1px solid var(--line-2); cursor: pointer; white-space: nowrap;
+  transition: border-color var(--t-fast), color var(--t-fast);
+}
+.rseat__botadd:hover:not(:disabled) { color: var(--mint-400); border-color: var(--mint-700); }
+.rseat__botadd:disabled { opacity: .4; cursor: default; }
+.rseat__botadd .icon, .rseat__botadd .spinner { width: 1em; height: 1em; }

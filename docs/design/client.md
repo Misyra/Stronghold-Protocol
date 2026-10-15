@@ -87,29 +87,31 @@ history and the open points: DESIGN §32.14.25.
   A shader of no ported family (GrabPass distortion, RGB split, blur, toon, matcap, outline, …) draws with the basic or
   dissolve program by its name and is logged once (`materials.js fallbackLog`).
 - **Wiring** (`wiring.js FxWiring`, from index.json §33.12). An attack: its cast rows on the attacker — the
-  ON_CAST_START ones when the attack's wind-up starts its Spine clip (`app.js onUpcoming` → `castStart`, as far into
-  the effect as the clip started), the ON_SPELL_ON ones at the 'atk' event; a NONE row's first slot, a directional
-  row's slot for the facing, `hookEffectAfterFirstAttack` / `onlyOnce` by the unit's attack count; a looping row, and
-  a looping prefab on a one-shot row, stops at the cast's end: the clip's end at its own speed, else after 0.6 s —, its
+  ON_CAST_START ones when the attack's wind-up starts its Spine clip (`app.js onUpcoming` → `castStart`, as far into the
+  effect as the clip started), the ON_SPELL_ON ones at the 'atk' event; a NONE row's first slot, a directional row's
+  slot for the facing, `hookEffectAfterFirstAttack` / `onlyOnce` by the unit's attack count; a looping row, and a
+  looping prefab on a one-shot row, stops at the cast's end: the clip's end at its own speed, else after 0.6 s —, its
   `castTarget` / `inputTarget` rows on the target, its projectile's main effect flown from the muzzle to the target's
   HitPoint in the sim's flight time (homing, the Paracurve rise) with `onHit` on arrival, its hit rows when a melee or
   direct blow's damage lands (else the generic hit by damage type). One attack on several targets — the sim sends an
-  'atk' per target in one tick — casts once (its target rows play on each). Index version 2 (0.3.0 Phase 3c, §33.16):
-  a melee blow of a unit that is blocked or blocks (UF.BLOCKED), and every attack of a mode without `attack`, plays
-  the mode's `combat`; a group ability plays the sub-abilities that fire (a Parallel group all, a Random group one
-  picked by a seed of the unit's id and attack count, the others the one that fits the attack's kind) and flies the
-  first one's projectile; a MultiHit emitter's hit groups play by the hit's order in the blow's frame (group min(k,
-  last); in turn with `useLoopHitEffect`, seeded with `useRandomHitEffect`, the first only with `oncePerTarget`) and
-  its rows without a group on every hit; an UberAnimation replace group's rows play with their animation (in turn for
-  `loopType` 1, else the model's attack clip); an InCertainMode emitter's rows only in its mode; a VigilWolf row bound
-  to a buff of its owner never. Also the generic heal hit, the status loops
-  (`generic.status` by the sim's status names) on the unit's mount point while they last, and the unit's own death /
-  deploy effect or the generic one. A drawn official hit replaces the procedural spark and slash (the numbers stay);
+  'atk' per target in one tick — casts once (its target rows play on each). Index version 2 (0.3.0 Phase 3c, §33.16): a
+  melee blow of a unit that is blocked or blocks (UF.BLOCKED), and every attack of a mode without `attack`, plays the
+  mode's `combat`; a group ability plays the sub-abilities that fire (a Parallel group all, a Random group one picked by
+  a seed of the unit's id and attack count, the others the one that fits the attack's kind) and flies the first one's
+  projectile; a MultiHit emitter's hit groups play by the hit's order in the blow's frame (group min(k, last); in turn
+  with `useLoopHitEffect`, seeded with `useRandomHitEffect`, the first only with `oncePerTarget`) and its rows without a
+  group on every hit; an UberAnimation replace group's rows play with their animation (index v3: `loopType` 0 in turn, 1
+  a seeded pick); an InCertainMode emitter's rows only in its mode; a VigilWolf row bound to a buff of its owner never.
+  Index version 3 (Phase 3d): a group's `select` picks its sub-ability (parallel all with its main first, random seeded
+  and never the previous one with `diffFromLast`, loop / sequential in turn, the first of the attack's kind else, a
+  burst attack left out); a shot leaves from its ability's `mount` (a `mountGroup`'s points in turn or at random) and a
+  multi attack flies its `additionalTimes` follow-up shots every `triggerDelta` s. Also the generic heal hit, the status
+  loops (`generic.status` by the sim's status names) on the unit's mount point while they last, and the unit's own death
+  / deploy effect or the generic one. A drawn official hit replaces the procedural spark and slash (the numbers stay);
   what index.json does not drive — a unit it does not list, chain bounces, an enemy skill no signal opens (Skills,
-  below) — stays procedural.
-  `mounts.js` reads the skin's points (HitPoint, Muzzle, HeadPoint, Special points; front / back skeleton, mirrored for
-  a unit facing left) at the unit's feet.
-- **Skills** (0.3.0 Phase 3b, 3c, `skillfx.js SkillFx`, owned by the wiring; the plans of `skills.js`, DESIGN §33.12
+  below), a talent no signal binds (Talents) — stays procedural. `mounts.js` reads the skin's points (HitPoint, Muzzle,
+  HeadPoint, Special points; front / back skeleton, mirrored for a unit facing left) at the unit's feet.
+- **Skills** (0.3.0 Phase 3b – 3d, `skillfx.js SkillFx`, owned by the wiring; the plans of `skills.js`, DESIGN §33.12
   and §33.16). A battle unit resolves once to its official skill and plan (its data record: `ctx.lookupDef`) and its
   秘术师 charge plan. ['skill', id, 1] plays the plan's `start` and `range` and starts its `loop` (held for the skill:
   stopped with the effect's own fade on ['skill', id, 0], the unit's death, leak or retreat, the battle's reset); 0
@@ -133,13 +135,30 @@ history and the open points: DESIGN §32.14.25.
   which play there; and `skills.js FX_BINDINGS` (克莱门莎 S3's 'lock': her skill projectile's mark and three strikes on
   the tile, which also stand for her 'blast's there). A skill with nothing official (no plan, or none of its rows
   extracted) keeps the procedural burst and aura. An effect a plan reaches two ways (a buff's `_buffs` and
-  `_extraBuffs`) plays once. Enemies (index version 2): an enemy's skills by its data record's `skills[].prefabKey`
-  (the slots); a skill's window opens on ['cast', id, slot] (the sim on this line sends none) or, for an enemy whose
-  record has a single skill, when the snapshot's anim turns SKILL (the sim holds it 0.5 s after an ability fires): its
-  start, range and loops play and the enemy's attacks in it use the skill's attack rows; it ends 0.3 s after the anim
-  leaves SKILL, or on the enemy's death or leak. An enemy in a form whose name is one of its modes' attacks in that
+  `_extraBuffs`) plays once. A skill attack flies its ability's projectile (index v3 `projectileKey`, else the naming
+  rule) and the buffs of its attacks last their `life` (LIMITED: its time or the record's blackboard key; INFINITY: the
+  skill; IMMEDIATELY: once). Enemies (index version 2): an enemy's skills by its data record's `skills[].prefabKey`
+  (the slots); a skill's window opens on ['cast', id, slot, dur?] (the sim sends it since 0.3.0 Phase 3d: SIM.md) or,
+  for an enemy whose record has a single skill, when the snapshot's anim turns SKILL (the sim holds it 0.5 s after an
+  ability fires): its start, range and loops play and the enemy's attacks in it use the skill's attack rows (with no
+  attack in its first frame, its attack's cast plays); it ends once the anim leaves SKILL and its `dur` (else 0.3 s) is
+  over, or on the enemy's death or leak. An enemy in a form whose name is one of its modes' attacks in that
   mode and plays that mode's copies of its skills. A summon's skill — its record's, else the only one its unit has —
   plays like an operator's.
+- **Talents and abilities** (0.3.0 Phase 3d, `talentfx.js TalentFx`, owned by the wiring; the bindings of `talents.js`,
+  DESIGN §33.16, index v3 §33.17). A battle unit's talents in force — an operator's by its record's talents through
+  `talentKeys` (a module's with its module, the trait's always, a node valid with one skill only with it), an enemy's
+  all — and its common / general abilities and trait play by `when`: deploy talents at the 'deploy' (an enemy's or a
+  summon's 'spawn'; render/app.js `wiring.spawned`) once per life, with their loops while the unit stands; passive ones
+  while it stands (a mode's copy, a general ability, while that mode is on); toggles while their checkers hold on the
+  snapshot (HP ratio, UF.BLOCKED, the 隐匿 UF.STEALTH, a blocked checker's restore delay); an enemy's 重生 from the
+  knock-out form fx (the handler's loop) to the stand-up fx (its end, the 无敌 loop for the enemy record's blackboard
+  time, the buffs it leaves) — render/app.js hands every form fx to `wiring.form`, which also sets the unit's attack
+  mode from the data (`talents.js formModes`: a 重生's second form, a husk's, 风丸's 替身 → Stand); a node a template casts on
+  the sim's fx (a fatal blow's 'substitute' / 'undying', the stand-in's end 'swap' / 'dollEnd', the skill start, the
+  deploy); a talent attack on the kit's 'extraAttack'; an arts barrier's talent until 'shieldBreak'. One effect plays
+  once per spot whichever binding wants it. When the official rows draw a kit fx's or a form fx's moment, its procedural
+  fx is skipped.
 - **Budget.** Tier 完整 (`full`: up to 220 effects and 6,000 particles, full-size textures) and 精简 (`lite`: 90 and
   2,500, half-size textures, half the emission, the prefabs' FxLODSetting nodes off, no rim or distortion lookups).
   Past the caps a new one-shot is dropped (loops and projectiles always start), and so is a one-shot whose prefab
@@ -155,7 +174,8 @@ history and the open points: DESIGN §32.14.25.
   `?attack=<unit id>` repeats that unit's attack from index.json through the wiring; `?skilldemo=<unit id>&s=<slot>`
   cycles its skill through the wiring — on, an attack a second, off — with `&instant=1`, `&passive=1`, `&charge=<n>`,
   `&ready=1`, `&hits=<n>` (damage events per blow: a MultiHit attack's groups); an enemy's opens its window with the
-  snapshot's SKILL anim and the 'cast' slot, `&block=1` for its combat, `&form=<form>` for a form's mode; `&tier=`,
+  snapshot's SKILL anim and the 'cast' slot, `&block=1` for its combat, `&form=<form>` for a form's mode (skillCmd also
+  drives talents: spawn, hp, flags, form, kitfx); `&tier=`,
   `&stress=<loops>,<hits per s>`); `public/dev/battle-perf.html` takes `&fx=off|lite|full|auto`
   and `tools/perfbench.mjs --fx`; `tools/vfx-skill-coverage.mjs` prints the roster's plan coverage and what the battle
   view plays of it.

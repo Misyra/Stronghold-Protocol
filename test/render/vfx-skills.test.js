@@ -175,7 +175,7 @@ describe('skill plans (synthetic)', () => {
     assert.equal(attackFx(p).ability, 'MeleeAttack');
     assert.deepEqual(attackFx(p).aim.map((e) => e.key), ['tgt_aim']);
     assert.deepEqual(attackFx({ attacks: [], each: { cast: [], hit: [[]] } }), { node: null, ability: null, cast: [], range: [], aim: [], hit: [],
-      hitOpts: { indexed: false, loop: false, random: false, once: false } });
+      hitOpts: { indexed: false, loop: false, random: false, once: false }, projectile: null, shot: null });
   });
   test('MultiHit groups: a row starts a group unless it names a range; repeated keys are separate hits; `group` wins', () => {
     const p = skillPlan(idx, null, 'sk_multi');

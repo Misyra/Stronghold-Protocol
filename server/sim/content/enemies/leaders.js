@@ -6,7 +6,7 @@ import { aggroCmp, areaSelectable } from '../../targeting.js';
 import { periodicDamage } from '../../damage.js';
 import {
   nthOf, T, hurt, alliesInTiles, targetsNear, allTargets, areaAllies, areaAlliesInTiles, auraAllies, targetAndArea,
-  byPriority, setForm, auraBuff, watchDeaths, unbalancedNow,
+  byPriority, setForm, auraBuff, watchDeaths, unbalancedNow, castSlot,
 } from './helpers.js';
 import {
   unblockable, maxTargets, onHitStatus, splashAttack, pathKeysAhead, noAirTargets, resist, nthAttackStatus, lowHpBuff,
@@ -339,7 +339,7 @@ function kitLeaderMisc(key, ab, e) {
     case 'enemy_2052_smgia': {
       // 数次攻击后晕眩; 受到来自自然环境的伤害时 (terrain damage), 自身在短时间内获得高额脆弱 (damage taken ×damage_scale)
       const lim = T(ab, 'Weak.weak[limit]') ?? 0, scale = T(ab, 'Weak.damage_scale') ?? 1;
-      return [nthAttackStatus(nthOf(ab.sk.StunAttack), 'stun', (ab.sk.StunAttack && ab.sk.StunAttack.bb.stun) || 0, false), {
+      return [nthAttackStatus(nthOf(ab.sk.StunAttack), 'stun', (ab.sk.StunAttack && ab.sk.StunAttack.bb.stun) || 0, false, ab.sk.StunAttack), {
         taken(c, b, e2) {
           if (!(lim > 0) || !(c.amount > 0) || !(c.dmg.tags && c.dmg.tags.includes('terrain'))) return;
           b.addBuff(e2, { key: 'ab:natureWeak', duration: lim, refresh: 'replace', visible: true, mods: { dmgTakenMul: scale } });
@@ -386,6 +386,7 @@ function kitUglyThing(ab) {
       dur: T(ab, 'reborn.duration') ?? 0,
       onKo(b, e) {                                  // 生命值降至0后自爆，造成大范围晕眩 (an area selection), 2.17 s into the 重生
         const x = e.x, y = e.y;
+        castSlot(b, e, ab.sk['bomb[reborning]']);   // the self-destruct is its bomb[reborning] skill (display only)
         b.fx('telegraph', { x, y, r: MCM_BOMB_RADIUS, dur: MCM_BOMB_DELAY, kind: 'mechBomb', id: e.id });
         b.after(MCM_BOMB_DELAY, () => {
           if (!e.alive || e.removed) return;
@@ -422,7 +423,8 @@ function kitWarden(ab) {
       e.profile.melee = false;
       b.addBuff(e, { key: 'ab:warden', persist: true, visible: true, mods: { resFlat: en('magic_resistance') } });  // 法术抗性大幅提升
     },
-    before(c, b) { const s = P.killer ? pierce : iron; P.power = !!s && (P.n + 1) % nthOf(s) === 0; },
+    // the (sp+1)th attack is the form's skill: its slot for the client (castSlot, display only)
+    before(c, b, e) { const s = P.killer ? pierce : iron; P.power = !!s && (P.n + 1) % nthOf(s) === 0; if (P.power) castSlot(b, e, s); },
     hitOut(c) { if (P.killer && P.power && c.dmg.isAttack) c.dmg.defIgnorePct = Math.min(1, (c.dmg.defIgnorePct || 0) + pen()); },
     dealt(c, b, e) {
       if (!P.killer || !P.power || !pierce) return;
@@ -818,6 +820,7 @@ export const LEADER_KITS = Object.freeze({
   enemy_10141_xdpeng_2: (ab) => [noAirTargets(), unbalanced((b, e, a) => {
     if (a.done) return;
     a.done = true;
+    castSlot(b, e, ab.sk.switch);   // losing the egg is its `switch` skill (display only)
     e.profile.noAttack = true;
     b.addBuff(e, { key: 'ab:noEgg', persist: true, visible: true, flags: { unblockable: true }, mods: { moveMul: 1 + (T(ab, 'speed.move_speed') ?? 0) } });
   })],

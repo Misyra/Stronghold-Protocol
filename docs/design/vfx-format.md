@@ -998,7 +998,7 @@ Still outside the index after Phase 1c: the effect emitters of talents (deploy e
 abilities (stand switches, revives) and a few modes' general abilities (funnels, an aura) — 33 units, 47 nodes. Phase 1d
 exports them (§33.17: 42 of the 47; the other 5 are attacks no mode references).
 
-### 33.16 The runtime's skill wiring (0.3.0 Phase 3b, 3c)
+### 33.16 The runtime's skill wiring (0.3.0 Phase 3b, 3c, 3d)
 
 The field view plays a skill's effects from its `uses` (`render/vfx/skills.js skillPlan`: each use placed by its
 role, its ability, its events and its carrier — the module header; `render/vfx/skillfx.js` plays the plan, DESIGN §9
@@ -1024,7 +1024,14 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   `loopType` 1 the group animations in turn by the unit's attack count [ASSUMED], else the animation the model plays
   (SpineActor.attackAnim), else `sourceAnimKey`; an InCertainMode emitter's rows only in the mode of index
   `activeMode`; a VigilWolf row bound to a buff of its owner (`buffKey`) never (no view shows that buff). Version 1's
-  attacks carry none of these fields and play as before.
+  attacks carry none of these fields and play as before. Version 3 (Phase 3d): the UberAnimation `loopType` is 0 LOOP
+  (in turn) and 1 RANDOM (a seeded pick — §33.17 resolved it; Phase 3c had taken 1 for in turn); a group's `select`
+  decides its sub-ability — `parallel` all (its `main` first: that one's projectile), `random` a seeded pick
+  (`diffFromLast`: never the previous one; `probKeys` weights are not read: equal odds [ASSUMED]), `loop` / `sequential`
+  in turn by the unit's attack count, `trigger` / `firstSucceed` the first of the attack's kind, a BurstAttackGroup's
+  `burst` attack left out [ASSUMED]; the ability firing the projectile gives the shot's `mount` (else the muzzle), a
+  `mountGroup`'s points in turn (LOOP) or at random, and `additionalTimes` follow-up shots every `triggerDelta` s flying
+  `additionalProjectile(s)` (else its own) — drawn only, the sim deals the attack's hits with the attack.
 * **Hit groups**: a MultiHit emitter's grouped rows are the hit groups — every group kept, an empty one too (that hit
   plays nothing); hit k of a blow (its k-th HP 'dmg' or 'heal' on the target in the blow's frame) plays group min(k,
   last), k mod n with `useLoopHitEffect`, a seeded group with `useRandomHitEffect`, only the first with `oncePerTarget`;
@@ -1033,11 +1040,14 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
   way (`skills.js hitGroups`, `hitOptsOf`); a version 1 index's flattened rows keep the `_range` rule of §33.12's
   skills.js reading.
 * **Attack abilities of a skill** (`ability` matching /Attack|Heal/, not Channeling*): their rows replace the attack
-  mode's while the skill is on; a ranged one flies one of the skill's `projectiles` — the only one, else the shortest
-  named `_s<n>` / `_sk<n>` after the skill's number, else the first (the skill's uses do not say which ability fires
-  which projectile: an ability's `projectileKey` on its uses would settle it).
-* **Buffs on targets** (`on: 'targets'`) from an attack ability's `_activeBuffs` loop on that attack's targets for our
-  record's blackboard duration (`duration`, `…_duration`, `….duration`) — the template's own life time is not exported.
+  mode's while the skill is on; a ranged one flies its ability's projectile — index v3: `skills[id].abilities[]`
+  (`projectileKey` by node and class, also an ability with no rows of its own) or a use's `projectileKey` — else one of
+  the skill's `projectiles` by the naming rule (the only one, else the shortest named `_s<n>` / `_sk<n>` after the
+  skill's number, else the first), with the ability's mount and follow-up shots.
+* **Buffs on targets** (`on: 'targets'`) from an attack ability's `_activeBuffs` loop on that attack's targets by the
+  buff's `life` (index v3): LIMITED for its `time` or our record's blackboard value of its `key`, INFINITY while the
+  skill lasts, IMMEDIATELY once (`skills.js lifeOf`); without one (or a LIMITED one no blackboard gives) for our
+  record's blackboard duration (`duration`, `…_duration`, `….duration`), else while the skill lasts.
 * **Charges**: a unit's `charge` (v2: the chargeable groups) makes the charge plan (`skills.js chargeFromIndex`): the
   reference store ability is the one whose `modes` hold `Default`; its slots are the group node's emitters' and the
   reference's non-ex emitters' groups (`chargeEffectGroups` at ON_SPELL_ON: the stored energy's loops; the others: the
@@ -1049,14 +1059,43 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
 * **Root class**: a skill's `rootClass` is kept on the plan (`plan.rootClass`); a ReplacementSkill* is one cast (the
   plan's kind `instant`: its single attack is the skill), a PassiveSkill without our record a passive.
 * **Enemy skills (v2)**: `units[enemy].skills` by the lower-case `prefabKey` of the enemy's data record's `skills[]`
-  (the slot order). A skill's window opens on ['cast', id, slot] (PR #275's event; the sim on this line sends none)
+  (the slot order). A skill's window opens on ['cast', id, slot, dur?] — since Phase 3d the sim sends it (SIM.md,
+  `content/enemies/helpers.js castSlot`: a cooldown cast, an SP skill's attack before its 'atk', a kit's own moment) —
   or, for an enemy whose record has a single skill, when the snapshot's anim turns SKILL (the sim holds it 0.5 s after
   an ability fires) [ASSUMED]; it plays the plan's start, range and loops, the enemy's attacks in it play the skill's
-  attack rows, and it ends — its loops stop, its end plays — 0.3 s after the anim leaves SKILL [ASSUMED], or on the
-  enemy's death or leak. A use's `mode` picks the copy of the enemy's current mode; `inModes` is not needed. Not drawn:
-  a skill of an enemy with several (no 'cast' event), a skill that fires on the enemy's Nth attack (no signal), the
-  skill's effects on others (`on: 'targets'`: no event names them).
+  attack rows (a skill of attack rows with no 'atk' in its first frame — the kit flies its own shot — plays that
+  attack's cast and range rows [ASSUMED]), and it ends — its loops stop, its end plays — once the anim leaves SKILL and
+  its time is over (the event's `dur`, else 0.3 s [ASSUMED]), or on the enemy's death or leak. A use's `mode` picks the
+  copy of the enemy's current mode; `inModes` is not needed. Not drawn: the skill's effects on others (`on: 'targets'`:
+  no event names them).
 * **Summons' skills** (v2) play like an operator's.
+* **Talents and abilities (v3, Phase 3d)**: `render/vfx/talents.js` plans every talent node and ability of a unit with
+  the skills' planner and binds it by `when`; `render/vfx/talentfx.js` plays it. In force: an operator's or a summon's
+  talents by its record (`talents[].index` → `talentKeys.base`, a `fromModule` one → `modules[record.module.id]`, the
+  `trait` always), a node with `skills` only with one of those equipped; an enemy's all. A talent's uses find their node
+  by its path, and by `ability` or the field's class where nodes share a path; a mode's copy (`same`) plays its
+  original's. `deploy` — its one-shots at the 'deploy' (an enemy's or a summon's 'spawn'), once per life, and its loops
+  while the unit stands (AppearSyncedTalent auras); `passive` — its loops while the unit stands, a node in a mode (a
+  general ability's `modes`) while that mode is on (the skill's mode window, a form); `toggle` — while its checkers
+  hold: HpRatioToggleChecker on the snapshot's HP ratio (a full-range checker beside a blackboard `hp_ratio` takes that
+  bound [ASSUMED]), BlockedToggleChecker on UF.BLOCKED, the enemies' 隐匿 (AdvancedCompound, `common_invisible`) on
+  UF.STEALTH, one that only turns off while blocked off while UF.BLOCKED and `restoreDelay` s after; any other checker
+  has no signal; `reborn` — the 重生's knock-out fx ('reborn', 'stone' form) plays the handler's rows held until the
+  stand-up fx ('form2', 'fly'), which plays its end rows and the talent's own buffs (`RebornTalent._buffs`: LIMITED for
+  its blackboard key's value in our enemy record's `talents.bb` under the talent's `bb` prefix — the 无敌 loop —, INFINITY
+  while the unit stands, IMMEDIATELY once), a husk's revival ('revived') its ManualTriggerRebornTalent's `_effects`;
+  then `reborn.mode`'s attacks; null — the sim fx its `triggers` name (a fatal blow, ON_BEFORE_TRY_SET_HP_ZERO:
+  'substitute' / 'undying'; a stand-in buff's ON_BUFF_FINISH: 'swap' / 'dollEnd'; ON_SKILL_START: the skill's start;
+  ON_OWNER_BORN: the deploy), its rows once (a loop for 3 s [ASSUMED]); `attack` — only where a kit fx marks the
+  talent's attack ('extraAttack': 守林人's 受选之人 — the attack's casts on the owner, its hits on that attack's target), else
+  nothing (8 roster nodes). The forms' modes come from the data (`talents.js formModes`: a RebornTalent's 'form2' →
+  `reborn.mode`, a husk's modes, a 傀儡师's 'doll' → the mode its fatal-blow node switches to — 风丸 → Stand, whose attack
+  rows then play), else a form named like a mode. An arts barrier's talent (its key names a shield) plays while the
+  barrier holds: the sim's 'shieldBreak' ends it, its 'artsBarrier' phase raises it again [ASSUMED]. One effect key on
+  one spot plays once whichever binding wants it (a mode switch from one copy to another keeps it running); a prefab
+  that does not loop plays once while its binding is in force. Not drawn: what no client signal shows (template casts at
+  events the client never sees, filter / range / profession checkers, a talent attack no kit fx marks, the buffs on
+  others, `spineEffects`).
 * **Placement (v2)**: `prefabs[key].spawn` / `follow` give a plan entry its `point` / `follow` without loading the
   descriptor (a charge slot without a `mountPointForProjectiles` point leaves from its loop's `follow`; a descriptor
   read with `opts.describe` still wins, and at play time the loaded descriptor places the effect as before);
@@ -1065,12 +1104,23 @@ index.json — version 1 and the version 2 fields (§33.12, §33.15; Phase 3c) �
 * **Projectile reached effects**: a skill projectile's `onReached` (else `onHit`) is what `skills.js FX_BINDINGS` plays
   where a kit's fx stands for that projectile (克莱门莎 S3's `projectile_chr_clemnt_s3`).
 
-Coverage of the roster (`tools/vfx-skill-coverage.mjs`, version 1 → version 2): operator (unit, skill) pairs 547 → 548
-of 549 in the index, 501 → 502 with a plan the battle view drives (91.4 %); summons 2 → 71 of 78, 2 → 23 drivable;
-enemies 0 → 123 of 126, 0 → 86 drivable (68.3 %); units with attack rows: operators 189 → 202 of 210, enemies 75 of 243
-→ 201 of 249 (version 2 lists the 6 aliases as units), summons 19 → 21 of 57. Of the 58 roster enemies with a skill
-plan, 23 show the snapshot's SKILL window in a battle (a survey through the sim) and 11 of those have a single skill —
-their windows open on this line; the others wait for the 'cast' event.
+Coverage of the roster (`tools/vfx-skill-coverage.mjs`, version 1 → version 2; version 3 below): operator (unit, skill)
+pairs 547 → 548 of 549 in the index, 501 → 502 with a plan the battle view drives (91.4 %); summons 2 → 71 of 78, 2 → 23
+drivable; enemies 0 → 123 of 126, 0 → 86 drivable (68.3 %); units with attack rows: operators 189 → 202 of 210, enemies
+75 of 243 → 201 of 249 (version 2 lists the 6 aliases as units), summons 19 → 21 of 57. Of the 58 roster enemies with a
+skill plan, 23 show the snapshot's SKILL window in a battle (a survey through the sim) and 11 of those have a single
+skill — their windows open on this line; the others wait for the 'cast' event.
+
+Index version 3 with the sim's 'cast' event (Phase 3d; `--sim` runs the enemy duels): of the 58 roster enemies with a
+skill plan 46 open their skill windows in a 75 s duel against two operators and all 46 play official skill keys (11
+before: single-skill enemies on the SKILL anim); the other 12 cast nothing there — 3 BornAnim skills and 2 enemies the
+sim gives no skill use (赘生甲壳, the ally 炎佑), the rest need what a duel does not make (源石污染区 tiles, flying prey, a
+knock-out, half HP, a push, other enemies in range). Talents and abilities (bindings in force; bound / all): operators
+52 / 152 on 33 of the 122 units with talents (passive talents 17 / 81, abilities 31 / 47, deploy 1 / 2, toggles 1 / 4,
+template-cast talents 2 / 10, attack talents 0 / 8), summons 28 / 37, enemies 181 / 262 on 125 of 249 (passive 84 / 122,
+toggles 41 / 47, reborn 13 / 13, deploy 6 / 12, abilities 37 / 51); the others name no effect the client can place
+(unmapped rows 76, no effects 51, targets only 31) or have no signal (a template trigger 21, a toggle 6, a talent attack
+5).
 
 ### 33.17 Phase 1d: talents, common and general abilities, the abilities' projectiles, buff lives (index.json version 3)
 

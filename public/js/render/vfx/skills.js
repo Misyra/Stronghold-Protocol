@@ -431,7 +431,8 @@ function kindOf(srec, rootClass = null) {
   return Number(srec.duration) > 0 ? 'lasting' : 'instant';
 }
 
-const emptyPlan = (unitKey, skillId) => ({
+/** An empty plan (the shape skillPlan returns; render/vfx/talents.js fills one per talent node with planUses). */
+export const emptyPlan = (unitKey, skillId) => ({
   unitKey, skillId, mode: null, modeName: null, kind: null, rootClass: null, projectiles: [],
   start: [], loop: [], end: [], ready: [], range: [], attacks: [], each: { cast: [], hit: [[]] }, trigger: [], targets: [],
   pulse: [], unmapped: [],
@@ -466,13 +467,61 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
     const kk = lc(k);
     if (kk && projs[kk] && !plan.projectiles.includes(kk)) plan.projectiles.push(kk);
   }
-  const prefabs = isObj(idx.prefabs) ? idx.prefabs : {};
-  const uses = Array.isArray(skill.uses) ? skill.uses : [];
-  const attacks = new Map();   // node|ability → { node, ability, cast, range, aim, all (every hit), grouped (_hitGroups) }
+  return planUses(idx, plan, Array.isArray(skill.uses) ? skill.uses : [], { ...opts, abilities: skill.abilities });
+}
+
+/** A MountPointType number of its name (mountPointName's inverse: 'MUZZLE' → 2, 'SPECIAL_6' → 12), or null. */
+export function mountPointType(name) {
+  if (typeof name !== 'string' || !name) return null;
+  const fixed = { FOOT: 0, HIT: 1, MUZZLE: 2, HEAD: 3, UI: 4, SPECIAL_0: 5, SPECIAL_1: 6, GROUND: 7, SPECIAL_2: 8, SPECIAL_3: 9 };
+  if (Object.hasOwn(fixed, name)) return fixed[name];
+  const m = /^SPECIAL_(\d+)$/.exec(name);
+  return m && Number(m[1]) >= 4 && Number(m[1]) <= 23 ? Number(m[1]) + 6 : null;
+}
+
+/**
+ * The shots of an attack ability (index v3, DESIGN §33.17): where its projectile leaves (`mount`, a `mountGroup`'s
+ * points taken in turn or at random) and the follow-up shots of a multi attack (`additionalTimes` after the first, every
+ * `triggerDelta` s, flying `additionalProjectile(s)` — one key for all, one per shot — else the attack's own); null for
+ * a plain one-shot from the muzzle.
+ */
+export function shotOf(ab, projs = {}) {
+  if (!isObj(ab)) return null;
+  const keyOk = (k) => { const kk = lc(k); return kk && projs[kk] ? kk : null; };
+  const mount = mountPointType(ab.mount);
+  const group = isObj(ab.mountGroup) && Array.isArray(ab.mountGroup.mounts) ? ab.mountGroup.mounts.map(mountPointType).filter((x) => x != null) : [];
+  const times = Number.isInteger(ab.additionalTimes) && ab.additionalTimes > 0 ? Math.min(12, ab.additionalTimes) : 0;
+  const extra = Array.isArray(ab.additionalProjectiles) ? ab.additionalProjectiles : Array.isArray(ab.additionalProjectile) ? ab.additionalProjectile
+    : ab.additionalProjectile != null ? [ab.additionalProjectile] : [];
+  const additional = extra.map(keyOk);
+  const shot = {
+    mount: mount != null && mount !== 2 ? mount : null,
+    mountGroup: group.length ? { random: ab.mountGroup.loop === 'RANDOM', mounts: group } : null,
+    times, delta: Number(ab.triggerDelta) > 0 ? Math.min(2, Number(ab.triggerDelta)) : 0,
+    // the key of follow-up shot i (1-based): its own, the one key given for all, else the attack's projectile (null)
+    additional: additional.length > 1 ? additional : additional.length === 1 ? Array(times).fill(additional[0]) : [],
+  };
+  return shot.mount == null && !shot.mountGroup && !shot.times ? null : shot;
+}
+
+/**
+ * Fill `plan` from a list of uses — a skill's, a talent node's, an ability's: the same shape (DESIGN §33.12, §33.17).
+ * opts.mode: the copy of an enemy skill held in several modes (default 'Default': that copy's uses and the ones without
+ * a `mode`; null keeps every use — a talent node's uses name the mode that holds the node); opts.abilities: the prefab's
+ * attack abilities (index v3 `abilities`: an attack's projectile, mount and follow-up shots; one firing a projectile
+ * without rows of its own is an attack of the plan too); opts.describe: as skillPlan's.
+ */
+export function planUses(idx, plan, uses, opts = {}) {
+  const prefabs = isObj(idx?.prefabs) ? idx.prefabs : {};
+  const projs = isObj(idx?.projectiles) ? idx.projectiles : {};
+  const attacks = new Map();   // node|ability → { node, ability, cast, range, aim, all (every hit), grouped (_hitGroups), projectile }
   const attackOf = (u) => {
     const k = `${u.node ?? ''}|${u.ability}`;
     let a = attacks.get(k);
-    if (!a) { a = { node: u.node ?? null, ability: u.ability, cast: [], range: [], aim: [], all: [], grouped: [] }; attacks.set(k, a); }
+    if (!a) { a = { node: u.node ?? null, ability: u.ability, cast: [], range: [], aim: [], all: [], grouped: [], projectile: null, shot: null }; attacks.set(k, a); }
+    // index v3: an emitter use of a projectile-firing ability names that ability's projectile
+    const pk = lc(u.projectileKey);
+    if (!a.projectile && pk && projs[pk]) a.projectile = pk;
     return a;
   };
   const eachHit = [];
@@ -480,11 +529,11 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
 
   // an enemy skill held in several modes (index v2): its copies' uses name their `mode` — the plan of `opts.mode`
   // (default 'Default') keeps that copy's and the uses without one
-  const mode = typeof opts.mode === 'string' ? opts.mode : 'Default';
+  const mode = opts.mode === null ? null : typeof opts.mode === 'string' ? opts.mode : 'Default';
   for (let i = 0; i < uses.length; i++) {
     const u = uses[i];
     if (!isObj(u) || !Array.isArray(u.keys)) continue;
-    if (typeof u.mode === 'string' && u.mode !== mode) continue;
+    if (mode !== null && typeof u.mode === 'string' && u.mode !== mode) continue;
     const role = u.role;
     const hook = typeof u.from === 'string' && u.from.endsWith(HOOK);
     const hooked = !hook && uses[i + 1]?.from === `${u.from}${HOOK}` && uses[i + 1]?.node === u.node;
@@ -505,6 +554,21 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
       }
     }
   }
+  // index v3: the prefab's attack abilities — their projectile (the naming guess of skillProjectile only without one),
+  // mount and follow-up shots; an ability firing a projectile with no rows of its own still flies it
+  for (const ab of Array.isArray(opts.abilities) ? opts.abilities : []) {
+    if (!isObj(ab) || !isAttack(ab.class)) continue;
+    const k = `${ab.node ?? ''}|${ab.class}`;
+    const pk = lc(ab.projectileKey);
+    let a = attacks.get(k);
+    if (!a) {
+      if (!(pk && projs[pk])) continue;
+      a = { node: ab.node ?? null, ability: ab.class, cast: [], range: [], aim: [], all: [], grouped: [], projectile: null, shot: null };
+      attacks.set(k, a);
+    }
+    if (!a.projectile && pk && projs[pk]) a.projectile = pk;
+    if (!a.shot) a.shot = shotOf(ab, projs);
+  }
   for (const a of attacks.values()) {
     const groups = hitGroups(a.grouped);
     const hitOpts = hitOptsOf(a.grouped);
@@ -513,7 +577,10 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
     const all = groups.length && !keep ? a.all.filter((e) => e.from !== 'MultiHitUberEffectEmitter._hitEffects') : a.all;
     const hit = groups.length ? groups.map((g) => [...g, ...all]) : [all];
     // the client's own groups keep their empty ones (that hit plays nothing); v1's rebuilt groups drop them
-    plan.attacks.push({ node: a.node, ability: a.ability, cast: a.cast, range: a.range, aim: a.aim, hit: hitOpts.indexed ? hit : hit.filter((g) => g.length), hitOpts });
+    plan.attacks.push({
+      node: a.node, ability: a.ability, cast: a.cast, range: a.range, aim: a.aim, hit: hitOpts.indexed ? hit : hit.filter((g) => g.length), hitOpts,
+      projectile: a.projectile, shot: a.shot,
+    });
   }
   plan.each.hit = [eachHit];
   return plan;
@@ -523,8 +590,9 @@ export function skillPlan(idx, unitKey, skillId, opts = {}) {
 function entryOf(key, role, u, prefabs, describe) {
   const e = { key, role, at: 'owner', loop: !!prefabs[key].looping, hold: null, from: u.from };
   // (v2: a group list's `group` / `groups`, a replace group's `anim`, the MultiHit choice flags, an enemy copy's `mode`)
+  // (v3: a buff use's `life`, an emitter use's `projectileKey`)
   for (const f of ['node', 'ability', 'list', 'startEvent', 'endEvent', 'directionType', 'event', 'action', 'buff', 'on',
-    'group', 'groups', 'anim', 'useLoopHitEffect', 'useRandomHitEffect', 'keepBaseHitEffect', 'oncePerTarget', 'mode']) {
+    'group', 'groups', 'anim', 'useLoopHitEffect', 'useRandomHitEffect', 'keepBaseHitEffect', 'oncePerTarget', 'mode', 'life', 'projectileKey']) {
     if (u[f] != null) e[f] = u[f];
   }
   // where it sits on its owner: index v2's prefab summary (`spawn` / `follow`), without loading the descriptor
@@ -633,7 +701,7 @@ function place(plan, e, u, { attackOf, eachHit }) {
  * (a heal → a /Heal/ ability, a ranged shot → /Ranged/, a melee blow → /Melee/; else the first), plus `each`.
  * @param {ReturnType<typeof skillPlan>} plan
  * @param {{ heal?: boolean, ranged?: boolean }} [what]
- * @returns {{ node: string|null, ability: string|null, cast: any[], range: any[], aim: any[], hit: any[][] }}
+ * @returns {{ node: string|null, ability: string|null, cast: any[], range: any[], aim: any[], hit: any[][], hitOpts: any, projectile: string|null, shot: any }}
  */
 export function attackFx(plan, { heal = false, ranged = false } = {}) {
   const list = plan?.attacks || [];
@@ -647,7 +715,31 @@ export function attackFx(plan, { heal = false, ranged = false } = {}) {
     node: a ? a.node : null, ability: a ? a.ability : null,
     cast: [...(a ? a.cast : []), ...(each.cast || [])], range: a ? a.range : [], aim: a ? a.aim : [],
     hit: hitOpts.indexed ? groups : groups.filter((g) => g.length), hitOpts,
+    // index v3: the projectile the ability fires (else skillProjectile's naming guess) and its shots
+    projectile: a?.projectile || null, shot: a?.shot || null,
   };
+}
+
+/**
+ * How long a buff an entry carries lasts (index v3 `life`, DESIGN §33.17 Buff lives): { s } for a LIMITED buff — its
+ * `time`, else our record's blackboard value of its `key` (`srec.bb[key]`; an enemy talent's `${bb}.${key}`) —, { skill:
+ * true } for INFINITY (while the skill or its carrier lasts), { once: true } for IMMEDIATELY (its effect plays once);
+ * null without a life or for a LIMITED one whose time no blackboard gives (the caller keeps its own rule).
+ * @param {any} life  a use's life { type, time?, key?, tick? }
+ * @param {any} bb    the blackboard to read `key` in (our skill record's bb, an enemy record's talents.bb)
+ * @param {string|null} [prefix]  an enemy talent's blackboard prefix (index v3 talents[key].bb)
+ */
+export function lifeOf(life, bb = null, prefix = null) {
+  if (!isObj(life) || typeof life.type !== 'string') return null;
+  if (life.type === 'IMMEDIATELY') return { once: true };
+  if (life.type === 'INFINITY') return { skill: true };
+  if (life.type !== 'LIMITED') return null;
+  if (Number(life.time) > 0) return { s: Number(life.time) };
+  if (typeof life.key === 'string' && life.key && isObj(bb)) {
+    const want = [prefix ? `${prefix}.${life.key}` : null, life.key].filter(Boolean).map((k) => k.toLowerCase());
+    for (const w of want) for (const [k, v] of Object.entries(bb)) if (k.toLowerCase() === w && typeof v === 'number' && Number.isFinite(v)) return { s: Math.max(0, v) };
+  }
+  return null;
 }
 
 /**

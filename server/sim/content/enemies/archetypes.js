@@ -7,7 +7,7 @@ import { MOVE_SCALE, COLS, STEALTH_RESTORE } from '../../constants.js';
 import {
   HUSK_REBIRTH, BOOM_RADIUS, POLLUTION_INTERVAL, STEALTH_RESTORE_BY_KEY, DUCK_STEALTH_RESTORE, nthOf, stOf, safe, num, T, elem, hurt,
   areaAllies, areaAlliesInTiles, zone, spawnChildren, stepToward, setHits, hitCount, setForm, absorbArts, auraBuff,
-  unbalancedNow,
+  unbalancedNow, castSlot,
 } from './helpers.js';
 import { hypot } from '../../detmath.js';
 
@@ -132,9 +132,11 @@ const resist = (immune = []) => ({
 const immuneTo = (...keys) => ({ spawn(b, e, a, ab) { ab.immune = new Set([...(ab.immune || []), ...keys]); } });
 
 /** Every Nth attack: status on the targets ("攻击2次后，下一次攻击会晕眩目标"). */
-const nthAttackStatus = (n, key, dur, sil = true) => ({
+const nthAttackStatus = (n, key, dur, sil = true, s = null) => ({
   sil,
   spawn(b, e, a) { a.n = 0; },
+  // the Nth attack is the skill's (display only: its slot for the client, castSlot)
+  before(c, b, e, a) { if (s && (a.n + 1) % n === 0) castSlot(b, e, s); },
   attack(c, b, e, a) {
     a.n++;
     if (a.n % n) return;
@@ -146,9 +148,9 @@ const nthAttackStatus = (n, key, dur, sil = true) => ({
 });
 
 /** Every Nth attack deals ×scale (+ optional element). */
-const nthAttackPower = (n, scale, el = null, ratio = 0) => ({
+const nthAttackPower = (n, scale, el = null, ratio = 0, s = null) => ({
   spawn(b, e, a) { a.n = 0; a.power = false; },
-  before(c, b, e, a) { a.power = (a.n + 1) % n === 0; },
+  before(c, b, e, a) { a.power = (a.n + 1) % n === 0; if (a.power && s) castSlot(b, e, s); },
   hitOut(c, b, e, a) { if (a.power && c.dmg.isAttack) c.dmg.amount *= scale; },
   dealt(c, b, e, a) { if (a.power && el && ratio > 0) elem(b, e, c.target, el, e.s.atk * ratio); },
   attack(c, b, e, a) { a.n++; },
@@ -611,7 +613,7 @@ function dmgZone(b, src, x, y, r, life, iv, amount, type = 'arts', kind = 'zone'
 
 /** A cooldown skill ability (`id` labels it for tests / other abilities). */
 const skill = (s, fire, { cond = null, sil = false, cd = null, icd = null, id = null } = {}) => (s || cd != null) && fire ? ({
-  id: id ?? null, sil, cd: cd ?? s.cd, icd: icd ?? s.icd, cond, fire,
+  id: id ?? null, sil, cd: cd ?? s.cd, icd: icd ?? s.icd, cond, fire, sk: s || null,   // sk: its slot for the 'cast' event
 }) : null;
 
 /** Blink past the blocker along the path (弑君者 / 卢西恩). Returns the start position. */
@@ -654,7 +656,7 @@ const kitPrisoner = (freeAll = false) => (ab) => [prisoner(ab, { freeAll })];
 
 const kitDeathSpawn = (extra = []) => (ab) => [deathSpawn(ab.tS['DeadSpawn.enemy_key'], T(ab, 'DeadSpawn.cnt') ?? 0), ...extra];
 
-const kitStun3 = (ab) => [nthAttackStatus(nthOf(ab.sk.stuncombat), 'stun', (ab.sk.stuncombat && ab.sk.stuncombat.bb.stun) || 0, true)];
+const kitStun3 = (ab) => [nthAttackStatus(nthOf(ab.sk.stuncombat), 'stun', (ab.sk.stuncombat && ab.sk.stuncombat.bb.stun) || 0, true, ab.sk.stuncombat)];
 
 const kitSelfFear = (ab) => [selfFear(ab)];
 

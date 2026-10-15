@@ -60,7 +60,7 @@
 
 import {
   planFor, skillPlan, attackFx as planAttack, slotKey, planKeys, chargeKeys, chargeStep, skillProjectile, targetsOf, buffDuration,
-  eventNum, FX_BINDINGS, bindingEffects, bindingKeys,
+  eventNum, FX_BINDINGS, bindingEffects, bindingKeys, lifeOf,
 } from './skills.js';
 import { fxSpec } from '../fx/kinds.js';
 import { UF, ANIM } from '../../../../shared/constants.js';
@@ -82,13 +82,16 @@ const CAST_START = new Set([0, 2]);
 const ENEMY_GRACE = 0.3;
 
 /**
- * The index mode an enemy's form (render/units.js FORMS: a sim setForm) fights in: the mode of that name
- * (case-insensitive: 'reborn' → Reborn, 'stone' → Stone, 'fly' → Fly), the second form of a reborn boss its Reborn mode;
- * null else [ASSUMED: the form names are the remake's, not the client's].
+ * The index mode a unit's form (a sim setForm / a 傀儡师's 替身 — shared/protocol.js fxForm) fights in: the mode the data
+ * ties to that form (`map`, render/vfx/talents.js formModes: a reborn talent's `reborn.mode` for 'form2', a husk's
+ * modes, the 替身's switchMode for 'doll'), else the mode of that name (case-insensitive: 'stone' → Stone, 'fly' → Fly),
+ * the second form of a reborn boss its Reborn mode; null else [ASSUMED: the form names are the remake's, not the
+ * client's].
  */
-export function formMode(unit, form) {
+export function formMode(unit, form, map = null) {
   if (typeof form !== 'string' || !form) return null;
   const modes = Array.isArray(unit?.modes) ? unit.modes : [];
+  if (map && typeof map[form] === 'string' && modes.some((m) => m?.name === map[form])) return map[form];
   const f = form.toLowerCase();
   const hit = modes.find((m) => typeof m?.name === 'string' && m.name.toLowerCase() === f) || (f === 'form2' ? modes.find((m) => m?.name === 'Reborn') : null);
   return hit ? hit.name : null;
@@ -364,19 +367,28 @@ export class SkillFx {
   // ---- enemy skills (index v2) ------------------------------------------------------------------------------------
 
   /**
-   * b.ev ['cast', id, slot] (PR #275's enemy skill slot; the sim on this line sends none yet): the enemy's skill of that
-   * slot of its data record (its prefabKey → index v2 `units[enemy].skills`) starts its window.
+   * b.ev ['cast', id, slot, dur?] (the sim's enemy skill slot, server/sim/content/enemies/helpers.js castSlot): the
+   * enemy's skill of that slot of its data record (its prefabKey → index v2 `units[enemy].skills`) starts its window,
+   * held for the skill's blackboard `duration` when the event carries one. A window the snapshot's SKILL anim opened for
+   * the same slot a moment before is kept (the event and the snapshot come apart by up to a frame).
    */
-  cast(v, slot) {
+  cast(v, slot, dur = 0) {
     const U = this.of(v);
     const entry = U?.enemy?.find((x) => x.slot === slot);
     if (!entry || !this.active()) return false;
-    return this._enemyCast(U, v, entry);
+    const now = this.w.ofx.time;
+    const hold = Math.max(ENEMY_GRACE, Number(dur) > 0 ? Number(dur) : 0);
+    if (U.ewin && U.ewin.byAnim && U.ewin.slot === entry.slot && now - U.ewin.at < 0.25) {
+      U.ewin.byAnim = false;
+      U.ewin.until = Math.max(U.ewin.until, now + hold);
+      return U.ewin.draws;
+    }
+    return this._enemyCast(U, v, entry, hold);
   }
 
   /** The plan of an enemy's skill in the mode its form names (formMode; the copies of a boss's skill differ by mode). */
   _enemyPlan(U, entry, v) {
-    const mode = formMode(this.w.idx.units[U.key], v?.form ?? v?.info?.form) || 'Default';
+    const mode = formMode(this.w.idx.units[U.key], this.w.formOf(v), this.w.formMap(U.key)) || 'Default';
     if (mode === 'Default') return entry.plan;
     const key = `${entry.slot}|${mode}`;
     let p = U.modePlans.get(key);
@@ -388,10 +400,11 @@ export class SkillFx {
    * An enemy's skill window starts: the plan's start and range play, its loops start (held until the window ends —
    * the snapshot's anim leaves SKILL — or the enemy dies); attacks in the window use its attack rows (state).
    */
-  _enemyCast(U, v, entry) {
+  _enemyCast(U, v, entry, hold = ENEMY_GRACE) {
     if (U.ewin) this._enemyEnd(U, v);
     const plan = this._enemyPlan(U, entry, v);
-    const win = { plan, slot: entry.slot, at: this.w.ofx.time, loops: [], draws: false };
+    const at = this.w.ofx.time;
+    const win = { plan, slot: entry.slot, at, until: at + hold, loops: [], draws: false, startFrame: this.frame, shown: false };
     U.ewin = win;
     U.startFrame = this.frame;
     U.atkN = 0;
@@ -457,9 +470,10 @@ export class SkillFx {
     // (斩业星熊 S2: her MultiMelee mode attacks while the skill's AroundTargetRangedAttack throws on its own)
     const replace = !!fx.ability && fitsAttack(fx.ability, { heal, ranged });
     if (fx.ability && !replace) { fx.cast = fx.cast.filter((e) => e.ability !== fx.ability); fx.range = []; fx.aim = []; fx.hit = st.plan.each.hit[0].length ? [st.plan.each.hit[0]] : []; }
-    const projectile = replace && ranged ? skillProjectile(this.w.idx, st.plan) : null;
+    // the projectile its ability fires (index v3: abilities[].projectileKey, a use's projectileKey), else the naming guess
+    const projectile = replace && ranged ? fx.projectile || skillProjectile(this.w.idx, st.plan) : null;
     if (!replace && !fx.cast.length && !fx.hit.length && !st.U.tHit.length) return null;
-    return { U: st.U, fx, replace, projectile, buffs: st.U.tHit };
+    return { U: st.U, fx, replace, projectile, shot: replace ? fx.shot : null, buffs: st.U.tHit };
   }
 
   /**
@@ -501,14 +515,23 @@ export class SkillFx {
   _targetLoop(U, e, v) {
     const key = this._key(e, v);
     if (!key || this.w.statusShows(v, key)) return null;
+    // index v3: the buff's own life — LIMITED (its time or our record's blackboard key), INFINITY (while the skill
+    // lasts), IMMEDIATELY (its effect once) — else the record's blackboard duration, else while a lasting skill lasts
+    const life = lifeOf(e.life, U.srec?.bb);
+    if (life?.once) {
+      const h1 = this._play({ ...e, hold: null }, v, { flipFrom: U.v || undefined });
+      if (h1 && e.loop) later(this.w.ofx, SKILL_CAST_S, () => h1.stop());
+      return h1;
+    }
     const lasting = U.plan.kind === 'lasting' || U.plan.kind === 'ammo';
-    if (!(U.buffS > 0) && !lasting) return null;
+    const dur = life?.s > 0 ? life.s : life?.skill ? 0 : U.buffS;
+    if (!(dur > 0) && !lasting && !life?.skill) return null;
     const slot = `${idOf(v)}|${key}`;
-    const until = U.buffS > 0 ? this.w.ofx.time + U.buffS : Infinity;
+    const until = dur > 0 ? this.w.ofx.time + dur : Infinity;
     const t = this.tloops.get(slot);
     if (t && t.h.alive) { t.until = Math.max(t.until, until); t.U = U; return t.h; }
     const h = this.w.playOn(key, v, { follow: true, loop: true, important: true, flipFrom: U.v || undefined });
-    if (h) this.tloops.set(slot, { h, until, U, tgt: v, bySkill: !(U.buffS > 0) });
+    if (h) this.tloops.set(slot, { h, until, U, tgt: v, bySkill: !(dur > 0) });
     return h;
   }
 
@@ -596,8 +619,19 @@ export class SkillFx {
         // an enemy's skill window: the snapshot's anim SKILL (the sim's 0.5 s after an ability fires); with no 'cast'
         // slot event, an enemy whose data record has a single skill opens that skill's window on it [ASSUMED]
         const anim = v.anim | 0;
-        if (anim === ANIM.SKILL && U.prevAnim !== ANIM.SKILL && !U.ewin && U.enemySlots === 1 && U.enemy.length === 1) this._enemyCast(U, v, U.enemy[0]);
-        else if (U.ewin && anim !== ANIM.SKILL && now - U.ewin.at > ENEMY_GRACE) this._enemyEnd(U, v);
+        if (anim === ANIM.SKILL && U.prevAnim !== ANIM.SKILL && !U.ewin && U.enemySlots === 1 && U.enemy.length === 1) {
+          this._enemyCast(U, v, U.enemy[0]);
+          if (U.ewin) U.ewin.byAnim = true;   // a 'cast' event for it may follow (cast: kept, not restarted)
+        }
+        else if (U.ewin && anim !== ANIM.SKILL && now > U.ewin.until) this._enemyEnd(U, v);
+        // a skill whose effects are its attack's rows with no 'atk' of the enemy in its first frame (the kit flies its
+        // own projectile or blast): that attack's cast and range rows play now [ASSUMED: the skill is that attack]
+        const win = U.ewin;
+        if (win && !win.shown && this.frame > win.startFrame) {
+          win.shown = true;
+          const a = win.plan.attacks[0];
+          if (a && U.atkN === 0 && !win.draws) for (const e of uniq([...a.cast, ...a.range])) { const h = this._play(e, v); if (h) this._keep(U, e, h); }
+        }
         U.prevAnim = anim;
       }
       if (U.plan) {

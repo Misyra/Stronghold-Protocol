@@ -1607,6 +1607,8 @@ export async function createFieldView(host, options = {}) {
         gone.delete(info.id);
         const v = battleView(info.id);
         if (v && info.side === 'enemy' && renderT0Battle != null && now - renderT0Battle > 0.2) fx.ring(info.x, info.y, 0, 0.1, 0.7, 0xff5a4a, 0.4);
+        // an enemy's or a summon's deploy talents (render/vfx/talentfx.js: auras, birth effects — once per life)
+        if (v) wiring.spawned(v);
         break;
       }
       case 'deploy': {
@@ -1647,7 +1649,7 @@ export async function createFieldView(host, options = {}) {
       }
       // the skill slot an enemy ability casts (PR #275): the view swaps to that slot's clip (a multi-skill boss's Skill_01..04)
       // (and its official skill effects: render/vfx/skillfx.js cast — index v2 has the enemies' skills)
-      case 'cast': { const v = views.get(e[1]); if (v) { v.setSkillSlot?.(e[2] | 0); wiring.enemyCast(v, e[2] | 0); } break; }
+      case 'cast': { const v = views.get(e[1]); if (v) { v.setSkillSlot?.(e[2] | 0); wiring.enemyCast(v, e[2] | 0, Number(e[3]) || 0); } break; }
       case 'die': {
         const v = views.get(e[1]);
         const used = consumedIds.delete(e[1]);
@@ -1693,14 +1695,19 @@ export async function createFieldView(host, options = {}) {
         // without its telegraph, its closing clip shortened by the lateness.
         const form = fxForm(e);
         const late = form !== undefined ? LATE.get(e) || 0 : 0;
+        let officialForm = false;
         if (form !== undefined) {
           const inf = infos.get(e[4].id);
           if (inf && (form === null || FORMS[inf.spine || inf.defId]?.[form])) inf.form = form;
           const x = late > 0 ? { ...e[4], late, ...(Number(e[4].dur) > 0 ? { dur: Math.max(0, Number(e[4].dur) - late) } : {}) } : e[4];
-          views.get(e[4].id)?.setForm?.(form, x);
+          const fv = views.get(e[4].id);
+          fv?.setForm?.(form, x);
+          // the unit's attack mode from now on and its talents' 重生 rows (render/vfx/wiring.js form, talentfx.js)
+          if (fv) officialForm = wiring.form(fv, form, x);
         }
-        // a kit fx the official skill effects stand for (render/vfx/skillfx.js simFx) is not drawn procedurally
-        if (!(late > 0) && !wiring.simFx(e[1], Number(e[2]), Number(e[3]), e[4])) fx.simFx(e[1], Number(e[2]), Number(e[3]), e[4]);
+        // a kit fx the official skill / talent effects stand for (render/vfx/skillfx.js, talentfx.js) is not drawn procedurally
+        const official = !(late > 0) && wiring.simFx(e[1], Number(e[2]), Number(e[3]), e[4]);
+        if (!(late > 0) && !official && !officialForm) fx.simFx(e[1], Number(e[2]), Number(e[3]), e[4]);
         break;
       }
       case 'layer': {

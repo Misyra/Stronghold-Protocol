@@ -32,6 +32,9 @@
 import { spawnPoint, mountPoint, unitPoint, spawnKind } from './mounts.js';
 import { GROUND_SPAWNS } from './effect.js';
 import { SkillFx, fitsAttack, pickGroup, formMode } from './skillfx.js';
+import { TalentFx } from './talentfx.js';
+import { formModes } from './talents.js';
+import { shotOf } from './skills.js';
 import { UF } from '../../../../shared/constants.js';
 
 /** Battle seconds a non-oneshot cast effect lasts without its end event. */
@@ -75,23 +78,46 @@ function abilityFits(a, kind, depth = 0) {
 }
 
 /**
- * The attacks one 'atk' plays of an ability (index v2, DESIGN §33.12): the ability itself and, of a group, the
- * sub-abilities that fire — every one of a Parallel group, else among those of the attack's kind (a heal, a shot, a
- * blow; all when none is) a seeded pick for a Random group and the first for the others (Selectable, FirstSucceed,
- * Burst: the client's choice, which no data shows); a funnel attack is itself (its funnels fire on their own). [ASSUMED]
+ * The attacks one 'atk' plays of an ability (index v2 / v3, DESIGN §33.12, §33.17): the ability itself and, of a group,
+ * the sub-abilities that fire. Index v3's `select` says how: `parallel` (and a `sequence`'s steps) — every one, its
+ * `main` first (its projectile is the attack's); `random` — a seeded pick (unit id × attack count: the same in a
+ * replay; `diffFromLast` — never the previous one, `mem` keeping it per unit; weights by `probKeys` are not read: equal
+ * odds [ASSUMED]); `loop` / `sequential` — in turn by the unit's attack count; `trigger` / `firstSucceed` — the first
+ * whose trigger finds its target: the first of the attack's kind (a heal, a shot, a blow); a BurstAttackGroup's `burst`
+ * attack is left out (no signal marks it). Without `select` (index v2) the class decides: Parallel all, Random a seeded
+ * pick, the others the first of the kind. A funnel attack is itself (its funnels fire on their own). [ASSUMED]
  * @param {any} a an Attack of index.json
  * @param {{ heal?: boolean, ranged?: boolean }} kind
  * @param {number} seed seedOf(unit, attack count)
+ * @param {number} depth
+ * @param {number} nth the unit's attack count
+ * @param {Map<any, number>|null} mem the unit's last random picks by group
  */
-export function pickAttacks(a, kind, seed = 0, depth = 0) {
+export function pickAttacks(a, kind, seed = 0, depth = 0, nth = 0, mem = null) {
   if (!a) return [];
   const subs = Array.isArray(a.abilities) ? a.abilities.filter(Boolean) : [];
   if (!subs.length || FUNNEL.test(a.class || '') || depth > 4) return [a];
-  if (PARALLEL.test(a.class || '')) return [a, ...subs.flatMap((x) => pickAttacks(x, kind, seed, depth + 1))];
-  const fit = subs.filter((x) => abilityFits(x, kind));
-  const pool = fit.length ? fit : subs;
-  const pick = RANDOM.test(a.class || '') ? pool[seed % pool.length] : pool[0];
-  return [a, ...pickAttacks(pick, kind, seed >>> 3, depth + 1)];
+  const sel = a.select && typeof a.select === 'object' ? a.select : null;
+  const method = sel?.method || (PARALLEL.test(a.class || '') ? 'parallel' : RANDOM.test(a.class || '') ? 'random' : 'first');
+  const next = (x) => pickAttacks(x, kind, seed >>> 3, depth + 1, nth, mem);
+  if (method === 'parallel' || method === 'sequence') {
+    const main = Number.isInteger(sel?.main) ? subs[sel.main] : null;
+    return [a, ...(main ? [main, ...subs.filter((x) => x !== main)] : subs).flatMap(next)];
+  }
+  const burst = Number.isInteger(sel?.burst) ? subs[sel.burst] : null;
+  const cand = burst && subs.length > 1 ? subs.filter((x) => x !== burst) : subs;
+  const fit = cand.filter((x) => abilityFits(x, kind));
+  const pool = fit.length ? fit : cand;
+  let i = 0;
+  if (method === 'random') {
+    i = seed % pool.length;
+    if (sel?.diffFromLast && mem && pool.length > 1) {
+      const last = mem.get(a);
+      if (last === i) i = (i + 1 + ((seed >>> 7) % (pool.length - 1))) % pool.length;
+      mem.set(a, i);
+    }
+  } else if (method === 'loop' || method === 'sequential') i = nth % pool.length;
+  return [a, ...next(pool[i])];
 }
 
 export class FxWiring {
@@ -108,12 +134,17 @@ export class FxWiring {
     this.flights = new Set();     // projectile flights in the air
     this.loops = new Map();       // `${unitId}|${status}` → handle
     this.melee = new Map();       // target id → the waiting blow { hits, modeGroups?, groups?, buffs?, src, t, n, hitT, window, seed }
+    this.forms = new Map();       // unit id → its sim form (the form fx: render/app.js → form())
+    this.formMaps = new Map();    // index unit key → { form: mode } (talents.js formModes)
+    this.lastTargets = new Map(); // attacker id → the view its last attack named (a talent's added attack: TalentFx.fx)
+    this.picks = new Map();       // unit id → Map(group ability → its last random pick: select.diffFromLast)
     this.arrived = new Map();     // target id → battle time of an official projectile hit
     this.healed = new Map();      // target id → battle time of an official heal projectile hit
     this.keyCache = new Map();    // unit id → index unit key | null
     this.attackN = new Map();     // unit id → attacks so far (onlyOnce / hookEffectAfterFirstAttack rows)
     this.castFrame = new Map();   // unit id → the frame of its last attack (several targets of one attack cast once)
     this.skills = new SkillFx(this);
+    this.talents = new TalentFx(this);
   }
 
   get index() { return this.idx; }
@@ -216,8 +247,10 @@ export class FxWiring {
       if (u.startEffect) keys.add(u.startEffect);
       if (u.deadEffect) keys.add(u.deadEffect);
     }
-    // the skill, talent and charge effects (render/vfx/skillfx.js keys: plans, the skills' projectiles, bindings)
+    // the skill, talent and charge effects (render/vfx/skillfx.js keys: plans, the skills' projectiles, bindings) and the
+    // talents' and abilities' (render/vfx/talentfx.js, index v3)
     for (const k of this.skills.keys(views)) keys.add(k);
+    for (const k of this.talents.keys(views)) keys.add(k);
     return [...keys].map(lc).filter((k) => k && this.ofx.lib.has(k));
   }
 
@@ -254,9 +287,44 @@ export class FxWiring {
       const m = modes.find((x) => x.name === name);
       if (m && (m.attack || m.combat)) return m;
     }
-    const fm = v?.isEnemy ? formMode(u, v.form ?? v.info?.form) : null;
+    // a form the data ties to a mode (talents.js formModes: a 重生's second form, a husk, a 傀儡师's 替身 → 风丸's Stand),
+    // else a form named like a mode
+    const fm = formMode(u, this.formOf(v), this.formMap(this.unitKeyOf(v)));
     if (fm) { const m = modes.find((x) => x.name === fm); if (m && (m.attack || m.combat)) return m; }
     return modes.find((x) => x.name === 'Default') || modes[0];
+  }
+
+  /** A unit's sim form now: the last form fx (form()), else the view's / its info's (a view built mid-battle). */
+  formOf(v) {
+    const id = v?.id ?? v?.info?.id;
+    if (id != null && this.forms.has(id)) return this.forms.get(id);
+    return v?.form ?? v?.info?.form ?? null;
+  }
+
+  /** The form → mode map the data gives an index unit (talents.js formModes), cached. */
+  formMap(key) {
+    if (!key || !this.idx) return null;
+    let m = this.formMaps.get(key);
+    if (m === undefined) { m = formModes(this.idx, key); this.formMaps.set(key, m); }
+    return m;
+  }
+
+  /**
+   * A form fx of a unit (shared/protocol.js fxForm — render/app.js passes every one, a late one too): its mode from now
+   * on (mode()), and the talents' 重生 rows (TalentFx.form). Returns true when something official drew.
+   */
+  form(v, form, extra = null) {
+    if (!v) return false;
+    const id = v.id ?? v.info?.id;
+    if (id != null) this.forms.set(id, typeof form === 'string' ? form : null);
+    if (!this.idx || !this.ofx.active || typeof form !== 'string') return false;
+    return this.talents.form(v, form, extra);
+  }
+
+  /** The view an attacker's last attack named (TalentFx: the target of a talent's added attack), or null. */
+  lastTarget(id) {
+    const t = this.lastTargets.get(id);
+    return t && !t.destroyed && t.alive !== false ? t : null;
   }
 
   /**
@@ -426,9 +494,10 @@ export class FxWiring {
    * for a melee blow of a unit that blocks or is blocked (UF.BLOCKED) or when the mode has no `attack`, else its
    * `attack`; the attacks that fire (pickAttacks: a group's sub-abilities); their rows as their emitters allow (_rowOk);
    * a MultiHit emitter's grouped hit rows as the hit groups (with its loop / random / once settings; its rows without a
-   * group only with `keepBaseHitEffect`); the first projectile. Index v1's attacks have none of these fields and pass
-   * through unchanged.
-   * @returns {{ cast: any[], castTarget: any[], inputTarget: any[], hit: any[], groups: any[][]|null, hitOpts: any, projectileKey: string|null }|null}
+   * group only with `keepBaseHitEffect`); the first projectile, and (index v3) the shots of the ability firing it — its
+   * mount, a mount group's points, its follow-up shots (skills.js shotOf). Index v1's attacks have none of these fields
+   * and pass through unchanged.
+   * @returns {{ cast: any[], castTarget: any[], inputTarget: any[], hit: any[], groups: any[][]|null, hitOpts: any, projectileKey: string|null, shot: any }|null}
    */
   _attackSet(u, m, src, tgt, kind, nth) {
     if (!m) return null;
@@ -436,8 +505,11 @@ export class FxWiring {
     if (m.combat && (!a || (kind === 'none' && ((src.flags | 0) & UF.BLOCKED)))) a = m.combat;
     if (!a) return null;
     const heal = !!tgt && !tgt.isEnemy && !src.isEnemy;
-    const list = pickAttacks(a, { heal, ranged: !!kind && kind !== 'none' }, seedOf(src.id ?? src.info?.id, nth));
-    const set = { cast: [], castTarget: [], inputTarget: [], hit: [], groups: null, hitOpts: null, projectileKey: null };
+    const id = src.id ?? src.info?.id;
+    let mem = this.picks.get(id);
+    if (!mem) { mem = new Map(); this.picks.set(id, mem); }
+    const list = pickAttacks(a, { heal, ranged: !!kind && kind !== 'none' }, seedOf(id, nth), 0, nth, mem);
+    const set = { cast: [], castTarget: [], inputTarget: [], hit: [], groups: null, hitOpts: null, projectileKey: null, shot: null };
     const modeIdx = (u?.modes || []).indexOf(m);
     for (const x of list) {
       const ems = Array.isArray(x.emitters) ? x.emitters : [];
@@ -457,16 +529,17 @@ export class FxWiring {
           // a MultiHit emitter's own rows without a group give way to its groups unless it keeps them (none in this client)
         } else set.hit.push(r);
       }
-      if (!set.projectileKey && lc(x.projectileKey)) set.projectileKey = lc(x.projectileKey);
+      if (!set.projectileKey && lc(x.projectileKey)) { set.projectileKey = lc(x.projectileKey); set.shot = shotOf(x, this.idx.projectiles); }
     }
     return set;
   }
 
   /**
    * Whether an emitter row plays on this attack (index v2): an UberAnimation replace group's row (`anim`) when the
-   * attack plays its animation — in turn by the unit's attack count for `loopType` 1, else the animation its model plays
-   * (SpineActor.attackAnim), else the emitter's `sourceAnimKey` [ASSUMED]; an InCertainMode emitter's in its mode
-   * (`activeMode`: the mode's index); a VigilWolf row bound to a buff of its owner (`buffKey`) never (no view shows it).
+   * attack plays its animation — the group animations replace `sourceAnimKey` in turn by the unit's attack count for
+   * `loopType` 0 (LOOP), at random for 1 (RANDOM: index v3's `loopTypeName`; a seeded pick by unit id × attack count, the
+   * same in a replay); an InCertainMode emitter's in its mode (`activeMode`: the mode's index); a VigilWolf row bound to
+   * a buff of its owner (`buffKey`) never (no view shows it).
    */
   _rowOk(r, em, src, nth, modeIdx) {
     if (!r) return false;
@@ -475,9 +548,8 @@ export class FxWiring {
     if (r.anim && em?.class === 'UberAnimationEffectEmitter') {
       const anims = Array.isArray(em.replaceAnims) ? em.replaceAnims : [];
       if (!anims.length) return true;
-      if (em.loopType === 1) return r.anim === anims[nth % anims.length];
-      const now = typeof src.actor?.attackAnim === 'function' ? src.actor.attackAnim() : null;
-      return r.anim === (anims.includes(now) ? now : anims.includes(em.sourceAnimKey) ? em.sourceAnimKey : anims[0]);
+      const random = typeof em.loopTypeName === 'string' ? em.loopTypeName === 'RANDOM' : em.loopType === 1;
+      return r.anim === anims[(random ? seedOf(src.id ?? src.info?.id, nth) : nth) % anims.length];
     }
     return true;
   }
@@ -520,6 +592,7 @@ export class FxWiring {
     const nth = Math.max(0, (this.attackN.get(id) || 0) - (again ? 1 : 0));
     const set = this._attackSet(u, this.mode(u, src), src, tgt, kind, nth);
     const a = sk?.replace ? null : set;
+    if (tgt) this.lastTargets.set(id, tgt);
     if (!a && !sk) return false;
     this.castFrame.set(id, this.skills.frame);
     const phase = wound ? 'strike' : 'all';
@@ -542,7 +615,11 @@ export class FxWiring {
     if (sk && (sk.fx.hit.length || sk.buffs.length)) { rec.groups = sk.fx.hit; rec.hitOpts = sk.fx.hitOpts; rec.buffs = sk.buffs; rec.U = sk.U; }
     const grouped = !!(rec.groups || rec.modeGroups);
     if (proj && tgt && isShot) {
-      this._fly(proj, src, tgt, kind, time);
+      // index v3: where the shot leaves (mount, a mount group's points) and its follow-up shots (skills.js shotOf)
+      const shot = sk?.projectile ? sk.shot : set?.shot;
+      const mount = this._shotMount(shot, id, nth);
+      this._fly(proj, src, tgt, kind, time, mount != null ? { mount } : {});
+      if (!again) this._followUps(shot, pk, src, tgt, kind, time, mount);
       this.skills.released(src, tgt, kind, time);
       if (grouped) { rec.hits = []; rec.window = this._flightTime(src, tgt, kind) + ARRIVAL_WINDOW; this.melee.set(tid, rec); }
       return true;
@@ -559,6 +636,30 @@ export class FxWiring {
       this.melee.set(tid, rec);
     }
     return false;
+  }
+
+  /** The MountPointType a shot leaves from (a mount group's point in turn or at random by attack count), or null (muzzle). */
+  _shotMount(shot, id, nth) {
+    if (!shot) return null;
+    const g = shot.mountGroup;
+    if (g && g.mounts.length) return g.mounts[(g.random ? seedOf(id, nth) : nth) % g.mounts.length];
+    return shot.mount;
+  }
+
+  /**
+   * A multi attack's follow-up shots (index v3 `additionalTimes`, every `triggerDelta` s, flying `additionalProjectile(s)`
+   * else the attack's own): drawn only — the sim deals all of the attack's hits with the attack (its 'dmg' events) [ASSUMED].
+   */
+  _followUps(shot, pk, src, tgt, kind, time, mount) {
+    if (!shot || !(shot.times > 0)) return;
+    for (let i = 1; i <= shot.times; i++) {
+      const key = shot.additional[i - 1] || pk;
+      const proj = key ? this.idx.projectiles[key] : null;
+      if (!proj) continue;
+      const go = () => { if (tgt && !tgt.destroyed && tgt.alive !== false && src && !src.destroyed) this._fly(proj, src, tgt, kind, this.ofx.time, mount != null ? { mount } : {}); };
+      if (!(shot.delta > 0)) go();
+      else setTimeout0(this.ofx, { stop: go }, shot.delta * i, true);
+    }
   }
 
   /** The sim's flight time of a shot of `kind` from src to tgt (battle s). */
@@ -735,29 +836,40 @@ export class FxWiring {
     const id = v?.id ?? v?.info?.id;
     for (const [slot, h] of this.loops) if (slot.startsWith(`${id}|`)) { h.stop(); this.loops.delete(slot); }
     this.skills.release(v);
+    this.talents.release(v);
   }
 
   /** b.ev ['skill', id, on] (SkillFx.skill): true when the official layer shows the skill (no procedural burst / aura). */
   skill(v, on) {
     if (!v || !this.idx) return false;
-    return this.skills.skill(v, !!on);
+    const drew = this.skills.skill(v, !!on);
+    this.talents.skill(v, !!on);   // the talents a skill start casts (ON_SKILL_START)
+    return drew;
   }
 
-  /** b.ev ['cast', id, slot] (an enemy's skill slot, SkillFx.cast): that skill's window. */
-  enemyCast(v, slot) {
+  /** b.ev ['cast', id, slot, dur?] (an enemy's skill slot, SkillFx.cast): that skill's window. */
+  enemyCast(v, slot, dur = 0) {
     if (!v || !this.idx || !Number.isInteger(slot)) return false;
-    return this.skills.cast(v, slot);
+    return this.skills.cast(v, slot, dur);
   }
 
   /** Once per frame after the views took the frame's sample (SkillFx.sync: mid-battle, passive, ready and charge loops). */
   sync(views) {
-    if (this.idx) this.skills.sync(views);
+    if (!this.idx) return;
+    const list = Array.isArray(views) ? views : [...views];   // (render/app.js passes the views Map's iterator)
+    this.skills.sync(list);
+    this.talents.sync(list);
   }
 
-  /** b.ev 'fx' of a kit (SkillFx.simFx): true when the official layer stands for it (the procedural fx is skipped). */
+  /**
+   * b.ev 'fx' of a kit: the talents' and abilities' nodes it casts (TalentFx.fx: a fatal blow's 替身 / 不死, a stand-in's
+   * end, a talent's added attack) and the skills' bindings (SkillFx.simFx): true when the official layer stands for it
+   * (the procedural fx is skipped).
+   */
   simFx(kind, x, y, extra) {
     if (!this.idx) return false;
-    return this.skills.simFx(kind, x, y, extra);
+    const t = this.talents.fx(kind, extra);
+    return this.skills.simFx(kind, x, y, extra) || t;
   }
 
   /** b.ev 'die': the unit's own death effect or the generic one. */
@@ -776,11 +888,21 @@ export class FxWiring {
   deploy(v) {
     if (!v || !this.idx) return false;
     this.skills.deployed(v);   // a passive's loops and start one-shots (it is drawn whatever the deploy effect is)
+    this.talents.deployed(v);  // the deploy talents' one-shots (耀骑士临光's birth), once per life
     if (!this.ofx.active || v.isEnemy) return false;
     const u = this.unitOf(v);
     const m = u ? this.mode(u, v) : null;
     const key = lc(m?.overrideStartEffect) || lc(u?.startEffect) || this.idx.generic?.birth?.char;
     return !!(key && this.playOn(key, v, {}));
+  }
+
+  /**
+   * b.ev 'spawn' (an enemy, a summon, an operator's first deploy — its 'deploy' follows): the unit's deploy talents
+   * (TalentFx.deployed, once per life: an enemy's AppearSyncedTalent auras, its birth effects). Returns true when drawn.
+   */
+  spawned(v) {
+    if (!v || !this.idx) return false;
+    return this.talents.deployed(v);
   }
 
   /** Battle reset. */
@@ -794,6 +916,10 @@ export class FxWiring {
     this.attackN.clear();
     this.castFrame.clear();
     this.skills.clear();
+    this.talents.clear();
+    this.forms.clear();
+    this.lastTargets.clear();
+    this.picks.clear();
     this.ofx.timers = [];
   }
 

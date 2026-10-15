@@ -7,7 +7,9 @@
 // three stored energies and their release beside the shot, a passive's loop (砾 S2), a ready loop (阿罗玛 S1), the light
 // tier; index v2 (Phase 3c): an enemy's skill by its 'cast' slot (enemy_1209_sfden), a single-skill enemy's window from
 // the snapshot's SKILL anim (enemy_10001_trslim: its loop held until the window ends), a MultiHit mode attack (char_4009_irene:
-// hit 1 and hit 2 play their own groups), a blocked enemy's combat (enemy_10027_vtsk); the console stays clean.
+// hit 1 and hit 2 play their own groups), a blocked enemy's combat (enemy_10027_vtsk); index v3 (Phase 3d): a multi-skill
+// leader's windows by slot (鼠王 enemy_1509_mousek), a 重生 (“复仇者” enemy_1539_reid: the handler loop, then its end), a
+// deploy talent (耀骑士临光 char_1014_nearl2's birth); the console stays clean.
 //
 // Opt-in (starts Chrome, needs the effects extracted from the local client: extract.py --only fx):
 //   RENDER_E2E=1 node --test test/render/vfx-skills.browser.test.js
@@ -201,6 +203,38 @@ describe('official skill effects in headless Chrome', { skip }, () => {
     const f = await shot('enemy-vtsk-shot', 'enemy_10027_vtsk', { kind: 'enemy', dist: 3 }, [['attack'], 6]);
     assert.ok(f.keys.includes('enemy_vtsk_skill_01_trail_01'), String(f.keys));
     assert.ok(!f.keys.includes('enemy_vtsk_attack_start_01'), 'not the combat');
+  });
+
+  test("a multi-skill leader's windows by slot (index v3 sim cast event, 鼠王 enemy_1509_mousek): DriftSand's slot 0, SandStorm's slot 1", async () => {
+    // the data record's order (data/enemies.json: DriftSand, SandStorm, Mark) — the slots the sim's 'cast' names
+    const order = ['DriftSand', 'SandStorm', 'Mark'];
+    const r = await shot('enemy-mousek-slot0', 'enemy_1509_mousek', { s: 0, dist: 2, skills: order }, [['cast', 0], 12]);
+    const keys0 = await page.evaluate(() => {
+      const fx = window.__fx, u = fx.wiring.idx.units.enemy_1509_mousek;
+      return (u.skills.driftsand.uses || []).flatMap((x) => x.keys).map((k) => k.toLowerCase());
+    });
+    assert.ok(keys0.some((k) => r.keys.includes(k)), `DriftSand ${keys0} in ${r.keys}`);
+    const s = await shot('enemy-mousek-slot1', 'enemy_1509_mousek', { s: 1, dist: 2, skills: order }, [['cast', 1, 15], 12]);
+    const keys1 = await page.evaluate(() => (window.__fx.wiring.idx.units.enemy_1509_mousek.skills.sandstorm.uses || []).flatMap((x) => x.keys).map((k) => k.toLowerCase()));
+    assert.ok(keys1.some((k) => s.keys.includes(k)), `SandStorm ${keys1} in ${s.keys}`);
+    assert.ok(changed(s.img, s.src.x, s.src.y, 120) > 200);
+  });
+
+  test("a 重生 (“复仇者” enemy_1539_reid): the knock-out plays its handler loop until the stand-up, then its end", async () => {
+    const r = await shot('enemy-reid-reborn', 'enemy_1539_reid', { s: 0 }, [['form', 'reborn', { dur: 5 }], 20]);
+    assert.ok(r.keys.includes('enemy_reid_revive_01'), String(r.keys));
+    assert.ok(changed(r.img, r.src.x, r.src.y, 100) > 200, 'the 重生 loop');
+    await page.evaluate(() => { window.__fx.skillCmd('form', 'form2', { kind: 'reborn' }); window.__fx.step(10, 1 / 60); window.__fx.render(); });
+    const after = await page.evaluate(() => window.__fx.ofx.effects.filter((e) => e.state === 'play').map((e) => e.def?.key));
+    assert.ok(!after.includes('enemy_reid_revive_01'), String(after));
+    assert.ok((await page.evaluate(() => window.__fx.liveKeys())).includes('enemy_reid_revive_02'));
+    await page.screenshot({ path: path.join(OUT, 'vfx-skill-enemy-reid-standup.png') });
+  });
+
+  test("a deploy talent (耀骑士临光 char_1014_nearl2's AppearTalent): its birth effect at the deploy", async () => {
+    const r = await shot('nearl2-deploy', 'char_1014_nearl2', { s: 0 }, [['deploy'], 14]);
+    assert.ok(r.keys.includes('nearl2_birth_01_start'), String(r.keys));
+    assert.ok(changed(r.img, r.src.x, r.src.y, 120) > 300);
   });
 
   test('the console stays clean', () => {

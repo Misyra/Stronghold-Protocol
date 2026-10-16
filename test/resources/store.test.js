@@ -139,6 +139,62 @@ describe('ResourceStore', () => {
     assert.equal((await s.status()).count, 0);
   });
 
+test('a cache the browser refuses to enumerate in one query is read from the index instead', async () => {
+    const m = manifest([{ url: '/assets/a.png', tier: 1, size: 4 }, { url: '/assets/b.png', tier: 2, size: 4 }]);
+    const caches = new MemoryCaches();
+    await seed(caches, `${ORIGIN}/assets/a.png`, 'aaaa', 'h0');
+    await seed(caches, `${ORIGIN}/assets/b.png`, 'bbbb', 'an-old-digest');
+    const cache = await caches.open(CACHE_NAME);
+    let reads = 0;
+    // Exactly what Chrome throws for `Cache.keys()` above its ~10 MiB query budget (cache_storage_cache.cc
+    // kMaxQueryCacheResultBytes — about 16 000 entries at the real manifest's URL length).
+    cache.keys = async () => { reads++; throw new DOMException(`Failed to execute 'keys' on 'Cache': Operation too large.`, 'AbortError'); };
+    const s = store(m, { caches });
+    const st = await s.status();
+    assert.deepEqual([st.count, st.bytes, st.scan], [1, 4, 'index'], 'the index answers, and its record still decides freshness');
+    // A refusal is a size class, not one unlucky call: the doomed query is not paid again.
+    assert.equal((await s.status()).count, 1);
+    assert.equal(reads, 1);
+  });
+
+  test('a run over such a cache downloads only what the index lacks, and still cleans up', async () => {
+    const m = manifest([{ url: '/assets/a.png', tier: 1, size: 4 }, { url: '/assets/ui/b.png', tier: 2, size: 4 }]);
+    const caches = new MemoryCaches();
+    await seed(caches, `${ORIGIN}/assets/a.png`, 'aaaa', 'h0');
+    // an entry the manifest no longer lists: its index record is what makes it removable
+    await seed(caches, `${ORIGIN}/assets/gone.png`, 'zzzz', 'old');
+    const cache = await caches.open(CACHE_NAME);
+    cache.keys = async () => { throw new DOMException(`Failed to execute 'keys' on 'Cache': Operation too large.`, 'AbortError'); };
+    const { fetch, calls } = fetcherFor({ bodies: { [`${ORIGIN}/assets/ui/b.png`]: 'bbbb' } });
+    const s = store(m, { caches, fetch });
+    const done = await s.download();
+    assert.deepEqual(calls, [`${ORIGIN}/assets/ui/b.png`], 'the entry the index records is never fetched again');
+    assert.deepEqual([done.count, done.complete, done.scan], [2, true, 'index']);
+    assert.equal(await cache.match(`${ORIGIN}/assets/gone.png`), undefined, 'the full run pruned the dropped entry through the index');
+    assert.equal(await s.pruneStale(), 0);
+  });
+
+  test('clearing only the optional resources works while the cache cannot be enumerated', async () => {
+    const m = manifest([{ url: '/assets/ui/a.png', tier: 1, size: 4 }, { url: '/assets/audio/voice/cn/v.mp3', tier: 2, size: 4 }]);
+    const caches = new MemoryCaches();
+    await seed(caches, `${ORIGIN}/assets/ui/a.png`, 'aaaa', 'h0');
+    await seed(caches, `${ORIGIN}/assets/audio/voice/cn/v.mp3`, 'vvvv', 'h1');
+    const cache = await caches.open(CACHE_NAME);
+    const keys = cache.keys.bind(cache);
+    let reads = 0;
+    // The budget covers two entries: this cache (body + voice + index) is over it, the pruned one is not.
+    cache.keys = async () => {
+      reads++;
+      if (cache.entries.size > 2) throw new DOMException(`Failed to execute 'keys' on 'Cache': Operation too large.`, 'AbortError');
+      return keys();
+    };
+    const s = store(m, { caches });
+    const st = await s.clear({ optionalOnly: true });
+    assert.equal(reads, 2, 'a smaller cache is enumerated again instead of trusting the memo forever');
+    assert.deepEqual([st.count, st.scan], [1, 'keys']);
+    assert.deepEqual((await keys()).map((request) => request.url).sort(), [`${ORIGIN}/assets/ui/a.png`, indexUrl(ORIGIN)].sort());
+  });
+
   test('status reports what is cached, in files and bytes', async () => {
     const m = manifest([{ url: '/assets/a.png', tier: 1, size: 10 }, { url: '/assets/b.png', tier: 2, size: 20 }, { url: '/assets/c.png', tier: 2, size: 30 }]);
     const caches = new MemoryCaches();

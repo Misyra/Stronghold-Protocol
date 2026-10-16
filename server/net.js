@@ -71,6 +71,7 @@ export const NET_DEFAULTS = Object.freeze({
   backpressurePollMs: 25,      // blocked peers do not spin the setImmediate send pump
   maxConnections: 2000,         // concurrent sockets (enforced by index.js at upgrade time)
   maxConnectionsPerAddr: 64,    // concurrent sockets per client network key (0 = unlimited); see clientAddress
+  maxConnectionsPerIp: 0,      // exact source IP, including local/LAN peers (0 = unlimited)
   maxSessions: 20_000,          // registry cap; oldest idle sessions are evicted first
   heavyPerSec: 2,               // refill of the bucket for resend-heavy intents (HEAVY_TYPES)
   heavyBurst: 6,
@@ -596,6 +597,12 @@ export function clientAddress(req, trustProxy = NET_DEFAULTS.trustProxy) {
   return { ip: peer, key: limitKeyOf(peer) };
 }
 
+/** Exact normalized IP, without the per-network limiter's IPv6 /64 grouping or local exemptions. */
+function socketIpKey(raw) {
+  const ip = normalizeIp(raw);
+  return isIP(ip) === 6 ? new URL(`http://[${ip}]/`).hostname : ip;
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Network: per-socket pipeline
 // ---------------------------------------------------------------------------------------------------
@@ -606,6 +613,7 @@ class Connection {
   constructor(ws, addr, now, opts) {
     this.ws = ws;
     this.ip = addr.ip;
+    this.ipKey = socketIpKey(addr.ip);
     /** @type {string | null} per-network limit key (see clientAddress) */
     this.key = addr.key;
     this.openedAt = now;
@@ -656,6 +664,8 @@ export class Network {
     this.conns = new Map();
     /** @type {Map<string, number>} open sockets per client network key */
     this.connsPerKey = new Map();
+    /** Open sockets per exact IP, independent of country and network-range limits. */
+    this.connsPerIp = new Map();
     this.closed = false;
     this.diagnostics = diagnostics;
     this.draining = false;
@@ -696,7 +706,10 @@ export class Network {
   admission(req) {
     if (this.closed || this.draining) return 'shutdown';
     if (this.conns.size >= this.opts.maxConnections) return 'full';
-    const { key } = clientAddress(req, this.opts.trustProxy);
+    const { ip, key } = clientAddress(req, this.opts.trustProxy);
+    const ipKey = socketIpKey(ip);
+    const ipCap = this.opts.maxConnectionsPerIp;
+    if (ipKey && ipCap > 0 && (this.connsPerIp.get(ipKey) || 0) >= ipCap) return 'per-address';
     const cap = this.opts.maxConnectionsPerAddr;
     if (key && cap > 0 && (this.connsPerKey.get(key) || 0) >= cap) return 'per-address';
     return null;
@@ -715,6 +728,7 @@ export class Network {
     socketNetworks.set(ws, this);
     socketDiagnostics.set(ws, this.diagnostics);
     if (conn.key) this.connsPerKey.set(conn.key, (this.connsPerKey.get(conn.key) || 0) + 1);
+    if (conn.ipKey) this.connsPerIp.set(conn.ipKey, (this.connsPerIp.get(conn.ipKey) || 0) + 1);
     ws.on('message', (data, isBinary) => {
       const start = performance.now();
       conn.frameType = 'invalid';
@@ -930,10 +944,12 @@ export class Network {
     socketNetworks.delete(conn.ws);
     this.outbound.forget(conn.ws);
     socketDiagnostics.delete(conn.ws);
-    if (this.conns.delete(conn.ws) && conn.key) {
-      const n = (this.connsPerKey.get(conn.key) || 1) - 1;
-      if (n > 0) this.connsPerKey.set(conn.key, n);
-      else this.connsPerKey.delete(conn.key);
+    if (this.conns.delete(conn.ws)) {
+      for (const [counts, key] of [[this.connsPerKey, conn.key], [this.connsPerIp, conn.ipKey]]) {
+        if (!key) continue;
+        const n = (counts.get(key) || 1) - 1;
+        if (n > 0) counts.set(key, n); else counts.delete(key);
+      }
     }
     const s = conn.session;
     conn.session = null;

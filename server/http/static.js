@@ -476,6 +476,9 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   handler.version = release.tag;
   handler.runtimeVersion = release.runtimeTag;
   handler.artVersion = release.artTag;
+  // The request handler builds the site CSP from the bytes this server actually serves (http/csp.js):
+  // the transformed page carries a rewritten import map and the injected release tag.
+  handler.transformPage = (text, ext) => release.transform(text, ext);
   /** Cache usage for /healthz: the gzip LRU and the small transformed-response cache. */
   handler.cacheStats = () => ({ gzipBytes: gzipCache.total, gzipEntries: gzipCache.map.size,
     gzipLimitBytes: gzipCache.maxTotal, gzipInflight: gzipCache.inflight.size,

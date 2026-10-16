@@ -95,7 +95,7 @@ node --test <目标测试集>
 
 重点：`test/package.test.js`（发货集合）、`test/plugins/**`（插件层）、`test/match/**`（规则与 bot）、`test/vite.test.js`（按 `--test-name-pattern` 拆着跑，整份超预算）、`test/client-static.test.js`、`test/ui/**`。HTTP 层改过之后要真的起一次 handler 取个页面（本次就是这样抓到 `static.js` 丢了最后一行 `serveFile` 调用 —— 所有请求都拿不到响应头）。
 
-## 7. 合并后验证阶段改回来的四处（都是混血/静默丢失，语法与单测都查不出来）
+## 7. 合并后验证阶段改回来的八处（7.1–7.7 是混血/静默丢失，语法与单测都查不出来；7.8 是 0.3.0 新功能与本分支 release 层的集成 bug）
 
 ### 7.1 `server/match/bot.js` 的 `Layout` 取上游（代价：本分支的布阵优化被顶掉）
 - 症状：`npm run golden` 只有 matches 一族红（21 个场景全差），其余五族全绿。样例 `solo-FUNNY-1`：期望 `victory` / `roundsPassed 9` / `teamLp 27`，实测 `false` / `3` / `eliminated`。
@@ -132,6 +132,12 @@ node --test <目标测试集>
 ### 7.7 新拆出的 `public/js/spineManifest.js` 必须先 `git add`
 - `test/package.test.js:83` 报 `public/js/assets.js:58 imports ./spineManifest.js (not shipped)`：`tools/package.mjs` 的 `trackedFiles` 走 `git ls-files -z`，`importProblems` 只认发货集合里**已跟踪**的文件，所以新模块还挂在未跟踪（`??`）时会被判 not shipped。
 - 这个文件是把 `spineEntry` / `localAssetUrl` / `validSpine` / `hasBackSpine` / `baseCharId` 等纯函数从 `public/js/assets.js` 拆出来的：`test/ui/plugins-client.test.js:419` 要求 `public/js/assets.js` **不在** `public/js/main.js` 的静态 import 图里，而本分支的 `public/js/render/spinePreview.js` 正好把 `assets.js` 拉了进去（main → screens/loadout → spinePreview）。拆出纯层后 `spinePreview.js` 静态只 import `spineManifest.js`，`assets` 改成按需 `await import(../assets.js)`（`clipsOf` 仍同步用 `spineEntry`，不能整份改异步）。**副作用：新文件必须先 `git add` 再跑 `test/package.test.js`。**
+
+### 7.8 CSP 只放行磁盘版 import map，而发出去的是 `/_v/` 改写版（0.3.0 新加的 CSP × 本分支 release 层）
+- 症状：`--source-client` 起服务器，客户端黑屏报「游戏脚本加载失败」（`public/js/boot.js` 写的 `#boot-err`），控制台两条 CSP 违规（被拒的两条内联脚本建议哈希分别是改写后的 import map 与注入的版本脚本），`globalThis.__spRuntimeVersion`／`__spAssetVersion` 全是 `undefined`，`/_v/shared/*.js` 一批 404。可 `/healthz` 的 tag 是对的，`/_v/<tag>/js/main.js` 直接 fetch 也 200 —— 第一次看会以为素材或版本层坏了。
+- 根因：0.3.0 新加 `server/http/csp.js`，`siteCsp(publicDir)` 只做一件事：读磁盘上 6 个 HTML，把 **importmap 正文**算成 sha256 放进 `script-src`。而本分支的 release 层在响应时把 HTML 交给 `assetVersion.transform`：重写 importmap 的值（`/vendor/preact.module.js` → `/_v/<tag>/vendor/preact.module.js`，另追加 `/js/` `/shared/` `/sim/` 这些前缀键）并在 `<head>` 注入内联 `globalThis.__spAssetVersion=…`。于是**浏览器拿到的两份内联脚本都不是被哈希的那份** → importmap 被拒 → `preact`／`htm` 裸说明符解析不了 → 整条模块图挂掉（注入脚本被拒是 `resourceUrl()` 拿不到 tag、那批 `/_v/shared/*.js` 404 的直接来源）。合并前本分支**没有 CSP**（`f7518df3` 里没有 `server/http/csp.js`），所以这是合并新引入的集成缺陷，不是既存红。
+- 处置：`siteCsp(publicDir, transformPage = null)` 对**两个变体**都取哈希 —— 磁盘版（上游原规则一字未改）与 `transformPage(html, path.extname(rel))` 版（真正发出去的字节）；新增 `INJECTED_RELEASE` 规则，只认 release 层自己写的那句 `globalThis.__sp…`，仍然是「只哈希 import map + 本服务器自己写的内联脚本」，没有放宽到任意内联脚本。候选文件补了 `build/index.html`（默认模式发的就是它）。`createStaticHandler` 暴露 `handler.transformPage = (text, ext) => release.transform(text, ext)`，`server/index.js` 改成 `siteCsp(publicDir, serveStatic.transformPage)`。
+- 验证：`test/plugins/csp.test.js` 加一条回归（`clientBuild` 两种模式各请求一次 `/`，断言响应体里**每个**非 `src` 内联脚本的 sha256 都在响应头的策略里，并断言注入了 release tag）；真起服务器用 puppeteer 走通：0 条 CSP 违规、0 条 console 错误、0 个 ≥400 响应，`__spRuntimeVersion`／`__spAssetVersion` 有值，标题页之后大厅渲染出 3 个入口与 S.W.E.E.P.报告／干员调配；`npm run build` 重生成 `public/build` 后默认（构建）客户端同样 0 违规 0 错误。
 
 ## 6. 遗留
 

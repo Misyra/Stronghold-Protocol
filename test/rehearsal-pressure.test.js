@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RehearsalPressure } from '../server/rehearsalPressure.js';
+import { RehearsalPressure, rehearsalPressureCapEnabled } from '../server/rehearsalPressure.js';
 import { makeMatch } from './match/harness.js';
 import { PHASE } from '../shared/constants.js';
 import { createRehearsal, planLayout, REHEARSAL_VARIANTS, LAYOUT_PARAMS } from '../server/match/bot.js';
@@ -8,9 +8,9 @@ import { startServer } from '../server/index.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { TestClient } from './helpers/wsClient.js';
 
-function fixture({ fallback = false } = {}) {
+function fixture({ fallback = false, capEnabled = true } = {}) {
   let now = 0, user = 0, active = 0, idle = 0, reads = 0;
-  const pressure = new RehearsalPressure({ autoStart: false, now: () => now,
+  const pressure = new RehearsalPressure({ autoStart: false, capEnabled, now: () => now,
     cpuUsage: fallback ? null : () => { reads++; return { user, system: 0 }; },
     eluNow: () => ({ active, idle }) });
   return { pressure, reads: () => reads, sample(percent, ms = 1000) {
@@ -36,6 +36,28 @@ test('main-thread thresholds are strictly above 60/70 and hot AI reads never sam
   assert.equal(f.reads(), reads);
   assert.equal(p.stats().source, 'main-thread-cpu');
   assert.equal(p.cap(0), 0);
+});
+
+test('SP_REHEARSAL_PRESSURE=off 只关压档、不关采样：/metrics 的负载还在，候选数按配置走', () => {
+  // 值的口径与其它开关一致：off / 0 / false / no 关，缺省与别的写法照旧开。
+  assert.equal(rehearsalPressureCapEnabled({}), true);
+  assert.equal(rehearsalPressureCapEnabled({ SP_REHEARSAL_PRESSURE: 'on' }), true);
+  assert.equal(rehearsalPressureCapEnabled({ SP_REHEARSAL_PRESSURE: '' }), true);
+  for (const value of ['off', 'OFF', '0', 'false', 'no']) {
+    assert.equal(rehearsalPressureCapEnabled({ SP_REHEARSAL_PRESSURE: value }), false, value);
+  }
+  const f = fixture({ capEnabled: false }), p = f.pressure;
+  f.sample(90);
+  assert.equal(p.stats().enabled, false);
+  assert.equal(p.stats().state, 'off');
+  assert.equal(p.stats().percent, 90, '采样照旧，/metrics 上的负载百分比不能因为关压档就消失');
+  assert.equal(p.cap(3), 3, '关掉压档后完全按配置走');
+  assert.equal(p.cap(8), 8);
+  assert.equal(p.cap(0), 0, '配置为 0 仍然不预演');
+  // 关压档不会让采样器偷偷回到压档：连续高负载也不产生 maxCandidates。
+  for (let i = 0; i < 5; i++) f.sample(95);
+  assert.equal(p.stats().maxCandidates, null);
+  assert.equal(p.cap(3), 3);
 });
 
 test('recovery needs five low samples; threshold jitter cannot flap rehearsal budgets', () => {

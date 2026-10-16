@@ -1,7 +1,7 @@
 // Adapted from xinhai-ai/Stronghold-Protocol commit 23d0a929 (GPL-3.0-or-later).
 import { monitorEventLoopDelay, performance, PerformanceObserver, constants } from 'node:perf_hooks';
 import { C2S } from '../shared/protocol.js';
-import { RehearsalPressure } from './rehearsalPressure.js';
+import { RehearsalPressure, rehearsalPressureCapEnabled } from './rehearsalPressure.js';
 
 // Bounded histograms: no per-player data, frame contents, or growing sample arrays.
 const BOUNDS = [0.1, 0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024,
@@ -41,7 +41,7 @@ export class NetDiagnostics {
     this.loop = monitorEventLoopDelay({ resolution: 20 });
     this.loop.enable();
     this.intervals = new ProcessIntervals({ windowMs, cpuUsage, eluNow });
-    this.rehearsalPressure = new RehearsalPressure();
+    this.rehearsalPressure = new RehearsalPressure({ capEnabled: rehearsalPressureCapEnabled() });
     this.receivedFrames = 0;
     this.receivedBytes = 0;
     this.handlers = new Map();

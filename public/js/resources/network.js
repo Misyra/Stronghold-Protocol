@@ -1,6 +1,12 @@
 // Bounded full-body downloads. The deadline includes response headers AND body; retries never include a 404 or quota error.
 import { MAX_FILE_BYTES, abortError, checkAbort } from './common.js';
 
+/** Shared by the page, worker handoff and run recovery; permanent failures never auto-retry. */
+export function isTransientResourceError(err) {
+  return err?.name === 'TimeoutError' || err?.name === 'TypeError' || err?.transient === true
+    || err?.status === 408 || err?.status === 429 || err?.status >= 500;
+}
+
 export function waitForResource(ms, signal) {
   checkAbort(signal);
   return new Promise((resolve, reject) => {
@@ -25,7 +31,8 @@ export async function fetchResource(url, { fetcher = globalThis.fetch?.bind(glob
     let reader;
     try {
       return await Promise.race([deadline, (async () => {
-        const response = await fetcher(url, { mode: 'cors', credentials: 'omit', cache, signal: controller.signal });
+        // Keep the game host's browser/session gate cookie. Cross-origin CDN requests remain anonymous.
+        const response = await fetcher(url, { mode: 'cors', credentials: 'same-origin', cache, signal: controller.signal });
         if (!response.ok) {
           const retryAfter = response.headers.get('Retry-After');
           void response.body?.cancel().catch(() => {});
@@ -65,8 +72,7 @@ export async function fetchResource(url, { fetcher = globalThis.fetch?.bind(glob
       })()]);
     } catch (err) {
       checkAbort(signal);
-      const transient = err?.name === 'TimeoutError' || err instanceof TypeError || err?.transient
-        || err?.status === 408 || err?.status === 429 || err?.status >= 500;
+      const transient = isTransientResourceError(err);
       if (!transient || attempt >= retries) throw err;
       // Retry-After is respected up to 30s; explicit pause also interrupts this backoff.
       clearTimeout(timer);

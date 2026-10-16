@@ -17,12 +17,13 @@ import { ResourceSchedule } from './schedule.js';
 import { ensurePersistence, missingStorage, storageEstimate } from './storage.js';
 import { createResourceState } from './state.js';
 import { ResourceTasks } from './tasks.js';
+import { ResourceRecovery } from './recovery.js';
 import { t } from '../../../shared/i18n.js';
 
 /** @type {any} */
 const stateStore = createResourceState({
   enabled: false,
-  phase: 'off', // off | checking | download | foreign (another tab) | ready | paused | error
+  phase: 'off', // off | checking | download | foreign | ready | paused | partial | offline | retrying | error
   supported: true,
   reason: '',
   done: 0,
@@ -66,6 +67,7 @@ const stateStore = createResourceState({
   skinScope: { keys: [], all: false },
   /** Whole-manifest file count and byte total — every scope, whatever is switched on. */
   manifestFiles: 0,
+  manifestReady: false,
   manifestBytes: 0,
   // 官方特效: how many effect files the manifest offers at all. The panel keeps the 特效 box visible with it, even
   // while the box itself is off (docs/design/vfx-format.md).
@@ -78,6 +80,8 @@ const state = stateStore.state;
 const set = stateStore.set;
 let current = false;
 const tasks = new ResourceTasks();
+const recovery = new ResourceRecovery();
+let recoveryAttempts = 0;
 let contextPromise = null;
 let optional = true;
 let voices = true;
@@ -172,6 +176,7 @@ const counters = (s) => ({
   voiceLanguages: s.voiceLanguages ?? [],
   fxFiles: s.fxFiles ?? 0,
   manifestFiles: s.manifestFiles ?? 0,
+  manifestReady: typeof s.manifestFiles === 'number',
   manifestBytes: s.manifestBytes ?? 0,
   skins: s.skins ?? [],
   skinScope: s.skinScope ?? { keys: [], all: false },
@@ -223,14 +228,15 @@ export function resourceContext() {
         // Revalidate the HTTP cache on every page load: on a 304 the browser supplies the cached body instead of
         // re-downloading the manifest (the server answers with a strong ETag over the full response).
         const res = await fetch(MANIFEST_URL, { cache: 'no-cache', signal });
-        if (!res.ok) return { error: t('无法读取资源清单：HTTP {status}', { status: res.status }) };
+        if (!res.ok) return { error: t('无法读取资源清单：HTTP {status}', { status: res.status }),
+          retryable: res.status === 408 || res.status === 429 || res.status >= 500 };
         doc = await res.json();
         break;
       } catch (err) {
         const timedOut = signal?.aborted || err?.name === 'TimeoutError';
         const transient = timedOut || err?.name === 'TypeError' || err?.name === 'AbortError';
         if (attempt === 0 && transient) continue;
-        return { error: t('无法读取资源清单：{0}', { 0: timedOut ? t('请求超时，请重试') : err?.message || err }) };
+        return { error: t('无法读取资源清单：{0}', { 0: timedOut ? t('请求超时，请重试') : err?.message || err }), retryable: transient };
       }
     }
     let manifest;
@@ -253,9 +259,13 @@ export function resourceContext() {
 async function ensureWorker() {
   const nav = globalThis.navigator;
   if (!nav?.serviceWorker) throw new Error('不支持 Service Worker');
-  const reg = await nav.serviceWorker.register(resourceWorkerUrl(), { type: 'module', scope: '/', updateViaCache: 'none' });
-  set({ worker: '' });
-  return reg;
+  let timer;
+  try {
+    return await Promise.race([
+      nav.serviceWorker.register(resourceWorkerUrl(), { type: 'module', scope: '/', updateViaCache: 'none' }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('资源缓存服务启动超时，请重试')), 10000); }),
+    ]);
+  } finally { clearTimeout(timer); }
 }
 
 /** Unregister the worker (nothing to serve from the cache any more). */
@@ -291,6 +301,8 @@ export async function syncResources(enabled, includeOptional = optional, languag
   const changed = optional !== !!includeOptional || voiceLang !== language || allVoices !== !!includeAllVoices
     || !sameSkinScope({ keys: skinKeys, all: allSkins }, nextScope) || fx !== nextFx || voices !== nextVoices;
   if (enabled === current && !changed) { set({ enabled }); return; }
+  recovery.cancel();
+  recoveryAttempts = 0;
   tasks.invalidate();
   current = enabled;
   wantRun = enabled;
@@ -321,8 +333,25 @@ export async function syncResources(enabled, includeOptional = optional, languag
 /** Continue (or start) the download of an enabled preload. */
 export async function startResources() {
   if (!current) return;
+  recoveryAttempts = 0;
   wantRun = true;
   return start();
+}
+
+/** Network failures get two delayed run retries after the per-file retries; online recovery preserves user intent. */
+function recoverDownload(task, { retryable = false, foreign = false, retryAfter = 0 } = {}) {
+  if (!task.current() || task.signal.aborted || !current || !wantRun) return;
+  const offline = globalThis.navigator?.onLine === false;
+  if (!offline && !foreign && (!retryable || recoveryAttempts >= 2)) return;
+  const delay = offline ? null : foreign ? 5000 : Math.max(retryAfter, 5000 * 3 ** recoveryAttempts++);
+  if (!foreign) task.publish(set)({ phase: offline ? 'offline' : 'retrying',
+    message: [state.message, offline ? t('网络已断开，联网后自动继续；已保存的资源保留。')
+      : t('部分资源暂时无法下载，稍后自动重试；已保存的资源保留。')].filter(Boolean).join(' ') });
+  recovery.wait(() => {
+    void Promise.resolve(tasks.download.promise).catch(() => {}).then(() => {
+      if (current && wantRun && task.current() && !tasks.busy) void start();
+    });
+  }, { delay });
 }
 
 /**
@@ -349,32 +378,31 @@ async function withDownloadLock(job) {
   return locks.request(DOWNLOAD_LOCK, { ifAvailable: true }, async (lock) => (lock ? job() : { busy: true }));
 }
 
-/** Another tab owns the download: show what is cached and look again when this tab becomes visible. */
+/** Another tab owns the download: refresh while visible and take over when it releases the lock. */
 function watchOtherTab(store, task) {
-  if (globalThis.document?.addEventListener && task.current() && !task.signal.aborted) {
-    const recheck = () => {
-      if (document.visibilityState !== 'visible' || !current || !wantRun) return;
-      tasks.unwatch();
-      void startResources();
-    };
-    tasks.watch(document, recheck);
-  }
   return store.status().then((st) => {
     if (!task.signal.aborted) task.publish(set)({
-      ...counters(st), phase: 'foreign', error: false,
+      ...counters(st), phase: st.complete ? 'ready' : 'foreign', error: false,
       message: st.complete ? t('资源已全部预载完成。') : t('另一个标签页正在预载⋯回到这个标签页时会自动继续。'),
     });
+    if (!st.complete) recoverDownload(task, { foreign: true });
   });
 }
 
 function start() {
+  recovery.cancel();
   if (tasks.clear) return tasks.clear;
   if (tasks.archive.promise) return tasks.archive.promise.catch(() => {});
   return tasks.run('download', async (task) => {
+    // Stop all lanes on disconnect instead of walking thousands of remaining files through network retries.
+    // The aborted-run restart below enters offline recovery while preserving the saved enabled setting.
+    const offline = () => { if (current && wantRun) tasks.download.controller?.abort(); };
+    globalThis.window?.addEventListener('offline', offline);
     try { await startDownload(task); }
     catch (err) {
       if (!task.signal.aborted) task.publish(set)({ phase: 'error', error: true, message: t('无法访问资源缓存：{0}', { 0: err?.message || err }) });
     }
+    finally { globalThis.window?.removeEventListener('offline', offline); }
   }, ({ signal }) => {
     if (current && wantRun && signal.aborted && !tasks.archive.promise && !tasks.clear) return start();
   });
@@ -384,15 +412,18 @@ async function startDownload(task) {
   const { signal } = task;
   const set = task.publish(stateStore.set);
   set({ phase: 'checking', message: t('正在检查已保存的资源…'), error: false });
+  if (globalThis.navigator?.onLine === false) { recoverDownload(task); return; }
   const checkStart = performance.now();
   const ctx = await resourceContext();
   const manifestReady = performance.now();
   if (!current || signal.aborted) { set({ phase: 'paused' }); return; }
+  if (ctx.manifest) set({ manifestReady: true, fxFiles: ctx.manifest.files.filter((file) => file.fx).length });
   if (ctx.error || ctx.unsupported || ctx.empty) {
     const message = ctx.error || ctx.unsupported || t('服务器没有可预载的资源');
     set({ phase: 'error', message, error: true, supported: !ctx.unsupported });
     if (ctx.unsupported) void dropWorker();
     if (ctx.error) contextPromise = null;
+    recoverDownload(task, { retryable: ctx.retryable });
     return;
   }
   const store = ctx.store;
@@ -407,7 +438,7 @@ async function startDownload(task) {
   set({ supported: true, version: store.manifest.version });
   // registering an already-registered worker is a cheap no-op, so every start can retry a failed one. A failure here
   // does NOT stop the download (the page fills Cache Storage itself) — it only means nothing can be served offline.
-  workerPromise = ensureWorker().catch((err) => {
+  workerPromise = ensureWorker().then((reg) => { set({ worker: '' }); return reg; }).catch((err) => {
     console.warn('[resources] service worker not registered — the cached assets cannot be served without the network', err);
     set({ worker: t('预载服务未启用（{0}），资源仍会下载，但不会从本机缓存读取。', { 0: err?.message || err }) });
   });
@@ -417,7 +448,7 @@ async function startDownload(task) {
     ...before.checkTimings, durationMs: performance.now() - checkStart, cached: before.count, files: before.total });
   if (!current || signal.aborted) { set({ phase: 'paused' }); return; }
   const ready = !!before.complete;
-  set({ ...counters(before), phase: ready ? 'ready' : 'download',
+  set({ ...counters(before), phase: ready ? 'ready' : 'download', failed: 0, failures: [],
     message: ready ? restWanted ? t('资源已全部预载完成。') : t('必备资源已预载完成；可选资源按需加载。') : '' });
   if (ready) { if (before.complete) await withDownloadLock(() => store.prune()); return; }
   const onProgress = (p) => {
@@ -433,7 +464,8 @@ async function startDownload(task) {
       const essential = await store.download({ tiers: [TIER_ESSENTIAL], signal, onProgress });
       const rest = restWanted ? await store.download({ tiers: [TIER_REST], signal,
         onProgress: (p) => onProgress({ ...p, failed: p.failed + essential.failed, failures: [...essential.failures, ...p.failures].slice(0, 10) }) }) : { failed: 0, failures: [] };
-      return { busy: false, failed: essential.failed + rest.failed, failures: [...essential.failures, ...rest.failures].slice(0, 10) };
+      return { busy: false, failed: essential.failed + rest.failed, failures: [...essential.failures, ...rest.failures].slice(0, 10),
+        retryable: essential.retryableFailed > 0 || rest.retryableFailed > 0, retryAfter: Math.max(essential.retryAfter || 0, rest.retryAfter || 0) };
     });
     if (outcome.busy) { await watchOtherTab(store, task); return; }
     const after = await store.status();
@@ -442,7 +474,7 @@ async function startDownload(task) {
     checkAbort(signal);
     set({
       ...counters(after),
-      phase: 'ready',
+      phase: after.complete ? 'ready' : 'partial',
       failed: outcome.failed,
       failures: outcome.failures,
       error: outcome.failed > 0,
@@ -451,6 +483,7 @@ async function startDownload(task) {
         : t('必备资源已预载完成；可选资源按需加载。')
         : t('已保存 {count}/{total} 个文件；未完成的会在下次开启时重试。', { count: after.count, total: after.total }),
     });
+    if (!after.complete) recoverDownload(task, { retryable: outcome.retryable, retryAfter: outcome.retryAfter });
   } catch (err) {
     // Only our own abort pauses: the browser's own AbortErrors (a refused Cache Storage query, an aborted stream that
     // is not ours) are failures and must not read as "the player pressed pause".
@@ -469,6 +502,7 @@ async function startDownload(task) {
 
 /** Stop downloading (keeps what is cached). */
 export function pauseResources() {
+  recovery.cancel();
   tasks.invalidate();
   wantRun = false;
   tasks.archive.controller?.abort();
@@ -476,6 +510,7 @@ export function pauseResources() {
     tasks.download.controller.abort();
     set({ phase: 'paused', message: t('已暂停，可继续下载或清理缓存。') });
   }
+  else if (current) set({ phase: 'paused', message: t('已暂停，可继续下载或清理缓存。') });
 }
 
 /** ZIP support stays out of the initial module graph. An import can be started before enabling network preloading. */
@@ -498,7 +533,7 @@ export async function importResources(file, { onImported } = {}) {
  * @returns {Promise<{count: number, version: string, blob: Blob}>}
  */
 export async function exportResources(scope) {
-  const resume = current && wantRun && !!tasks.download.promise;
+  const resume = current && wantRun && (!!tasks.download.promise || ['offline', 'retrying', 'foreign'].includes(state.phase));
   const revision = tasks.revision;
   try { return await transferArchive('export', null, scope); }
   finally {
@@ -508,6 +543,7 @@ export async function exportResources(scope) {
 
 function transferArchive(kind, file, scope) {
   if (tasks.archive.promise || tasks.clear) return Promise.reject(new Error('资源包正在处理中'));
+  recovery.cancel();
   wantRun = false;
   set({ archive: kind, archiveResult: null, archivePhase: '', archivePercent: 0, archiveGroup: '',
     message: kind === 'import' ? t('正在准备导入资源包…') : t('正在准备导出资源包…'), error: false });
@@ -583,6 +619,7 @@ function transferArchive(kind, file, scope) {
  */
 export function clearResources({ optionalOnly = false } = {}) {
   if (tasks.clear) return tasks.clear;
+  recovery.cancel();
   tasks.invalidate();
   wantRun = false;
   set({ clearing: true });
@@ -623,12 +660,13 @@ export function clearResources({ optionalOnly = false } = {}) {
 /** Opening the manager checks the cache without starting network asset downloads. */
 export async function inspectResources() {
   // An active run already publishes authoritative counters; opening the panel must not enqueue another cache scan.
-  if (tasks.busy) return;
+  if (tasks.busy || ['offline', 'retrying', 'foreign'].includes(state.phase)) return;
   const isCurrent = tasks.inspection();
   const set = (patch) => { if (isCurrent()) stateStore.set(patch); };
   if (!tasks.download.promise && !tasks.archive.promise) set({ phase: 'checking', error: false, message: t('正在检查已保存的资源…') });
   const ctx = await resourceContext();
   if (!isCurrent()) return;
+  if (ctx.manifest) set({ manifestReady: true, fxFiles: ctx.manifest.files.filter((file) => file.fx).length });
   if (!ctx.store) {
     set({ phase: 'error', supported: !ctx.unsupported, error: true, message: ctx.error || ctx.unsupported || t('服务器没有可预载的资源') });
     // A later open can retry a temporarily unavailable manifest.
@@ -643,6 +681,7 @@ export async function inspectResources() {
     await updateStorage(ctx.store, status, undefined, set);
     if (tasks.download.promise || tasks.archive.promise || tasks.clear || revision !== tasks.revision) return;
     set({ ...counters(status), version: ctx.manifest.version, supported: true,
+      ...(status.complete ? { failed: 0, failures: [] } : {}),
       ...(!tasks.download.promise && !tasks.archive.promise ? { phase: status.complete ? 'ready' : 'paused', message: '', error: false } : {}) });
   } catch (err) {
     set({ phase: 'error', error: true, message: t('无法读取本机资源缓存：{0}', { 0: err?.message || err }) });

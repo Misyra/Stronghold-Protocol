@@ -13,6 +13,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import http from 'node:http';
+import { png } from '../helpers/pluginFixtures.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CHROME = process.env.CHROME_PATH || (process.platform === 'win32'
@@ -498,7 +500,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.waitForFunction('!window.__res.state().voices && !window.__res.state().optional && window.__res.state().tier2Wanted === 0');
     assert.deepEqual(requests, [], 'choosing presets never starts a paused preload');
     await page.waitForFunction(() => [...document.querySelectorAll('.btn')].some(b => b.textContent === '开始预载'));
-    await page.click('.resource-modal .modal__actions .btn--primary');
+    await page.click('[data-testid="resource-preload"]');
     await page.waitForFunction('window.__res.state().selectionComplete');
     await page.click('[data-testid="voice-preload"]');
     await page.waitForFunction('window.__res.state().phase === "ready" && window.__res.state().tier2Done === 1');
@@ -512,9 +514,11 @@ describe('offline resources in headless Chrome', { skip }, () => {
 
   test('a second tab does not download the same files twice (real Web Locks)', async (t) => {
     const first = await open();
+    t.after(() => first.page.close());
     await ready(first.page, first.problems);
     await first.page.evaluate(() => caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))));
     const second = await open();
+    t.after(() => second.page.close());
     await ready(second.page, second.problems);
     const requested = [];
     const countRequest = (req) => { if (/\/assets\//.test(req.url)) requested.push(`http://127.0.0.1:${srv.port}${req.url}`); };
@@ -525,22 +529,21 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await first.page.evaluate(() => {
       window.__release = null;
       const gate = new Promise((resolve) => { window.__release = resolve; });
-      window.__holding = navigator.locks.request('stronghold-resources-preload', () => gate);
+      window.__holding = navigator.locks.request('stronghold-resources-preload', () => { window.__locked = true; return gate; });
     });
+    await first.page.waitForFunction('window.__locked');
     await second.page.evaluate(() => window.__preload(true));
-    await second.page.waitForFunction("window.__res.state().phase === 'foreign'", { timeout: 15000 });
+    await second.page.waitForFunction("window.__res.state().phase === 'foreign'", { timeout: 15000 })
+      .catch(async (err) => { throw new Error(`${err.message}: ${JSON.stringify(await second.page.evaluate(() => window.__res.state()))}`); });
     await second.page.waitForFunction("document.querySelector('.res-pill__state').textContent === '另一标签页处理中'");
     assert.deepEqual(requested, [], 'the second tab asked for no resource file at all');
     assert.deepEqual(await second.page.evaluate(() => ({ done: window.__res.state().done, total: window.__res.state().total })), { done: 0, total: 3 });
 
     // the first tab releases the lock (finished or closed): the second one takes over and completes the rest
     await first.page.evaluate(() => window.__release());
-    await second.page.evaluate(() => window.__res.startResources());
     await second.page.waitForFunction('window.__res.state().complete === true', { timeout: 30000 });
     assert.deepEqual(requested.map((u) => u.replace(/\/_v\/[a-f0-9]{16}/, '')).sort(), FILES.map((f) => `http://127.0.0.1:${srv.port}${f.url}`).sort());
     assert.deepEqual(second.problems, []);
-    await first.page.close();
-    await second.page.close();
   });
 
   test('a second visit finds the files already cached (a new manifest version starts over)', async () => {
@@ -584,6 +587,101 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.deepEqual(result, { status: 206, body: 'bgm', cached: '1' });
     await page.setOfflineMode(false);
     await page.evaluate(async () => { await window.__res.syncResources(false); await window.__res.clearResources(); });
+  });
+
+  test('effects card stays mounted while the manifest loads, fails and confirms no effects are installed', async (t) => {
+    const page = await browser.newPage();
+    t.after(() => page.close());
+    await page.setRequestInterception(true);
+    let hold = true, held, entered;
+    const requested = new Promise((resolve) => { entered = resolve; });
+    page.on('request', (req) => {
+      if (hold && req.url().includes('/data/resource-manifest.json')) { held = req; entered(); }
+      else void req.continue();
+    });
+    await page.goto(srv.url + '/index.html');
+    await ready(page, []);
+    await page.click('.res-pill__head');
+    await requested;
+    await page.waitForSelector('.resource-effects');
+    assert.match(await page.$eval('.resource-effects', (el) => el.textContent), /正在读取特效资源清单/);
+    assert.equal(await page.$eval('[data-testid="fx-preload"]', (el) => el.disabled), true);
+    hold = false;
+    await held.respond({ status: 503, body: 'temporarily unavailable' });
+    await page.waitForFunction(() => document.querySelector('.resource-effects')?.textContent.includes('资源清单暂时无法读取'));
+    await page.click('.resource-modal .modal__actions .btn--primary');
+    await page.waitForFunction('window.__res.state().manifestReady');
+    assert.equal(await page.$$eval('.resource-effects', (els) => els.length), 1);
+    assert.match(await page.$eval('.resource-effects', (el) => el.textContent), /服务器尚未提供官方特效资源/);
+    assert.equal(await page.$eval('[data-testid="fx-preload"]', (el) => el.disabled), true);
+  });
+
+  test('CDN-only official effects load every file type with preload disabled and no Service Worker', async (t) => {
+    const fixture = makeInstall({ fx: true });
+    t.after(() => fs.rmSync(fixture.dir, { recursive: true, force: true }));
+    const base = '/assets/local/fx/';
+    const image = png(1, 1);
+    const bodies = {
+      'index.json': JSON.stringify({ version: 2, units: {} }),
+      'textures.json': JSON.stringify({ textures: {} }),
+      'prefabs/test.json': JSON.stringify({ meshes: [], systems: [] }),
+      'mesh/test.json': JSON.stringify({ positions: [0, 0, 0] }),
+      'tex/test.png': image, 'tex/test-half.png': image,
+    };
+    for (const [name, body] of Object.entries(bodies)) {
+      const target = path.join(fixture.publicDir, base + name);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, body);
+    }
+    fs.writeFileSync(path.join(fixture.dataDir, 'local-fx.json'), JSON.stringify({ version: 1, groups: {
+      fx: { index: { path: base + 'index.json' }, textures: { path: base + 'textures.json' } },
+      'fx/prefabs': { test: { path: base + 'prefabs/test.json' } },
+      'fx/mesh': { test: { path: base + 'mesh/test.json' } },
+      'fx/tex': { test: { path: base + 'tex/test.png', half: base + 'tex/test-half.png' } },
+    } }));
+    const runtime = path.join(fixture.dir, 'game-public');
+    fs.cpSync(fixture.publicDir, runtime, { recursive: true, filter: (src) => path.basename(src) !== 'assets' });
+    assert.equal(fs.existsSync(path.join(runtime, 'assets')), false, 'game host has no asset tree');
+    const seen = [];
+    const cdn = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://localhost');
+      seen.push(url.pathname + url.search);
+      const body = bodies[url.pathname.slice(base.length)];
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', url.pathname.endsWith('.png') ? 'image/png' : 'application/json');
+      res.writeHead(body == null ? 404 : 200); res.end(body ?? 'missing');
+    });
+    await new Promise((resolve) => cdn.listen(0, '127.0.0.1', resolve));
+    t.after(() => new Promise((resolve) => cdn.close(resolve)));
+    const cdnBase = `http://127.0.0.1:${cdn.address().port}`;
+    const hashes = Object.fromEntries(Object.entries(bodies).map(([name, body]) => [base + name, createHash('sha256').update(body).digest('hex').slice(0, 16)]));
+    const manifestFile = path.join(fixture.dir, 'cdn-manifest.json');
+    fs.writeFileSync(manifestFile, JSON.stringify({ tag: '0123456789abcdef', hashes }));
+    const { startServer } = await import('../../server/index.js');
+    const game = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0, clientBuild: false,
+      publicDir: runtime, dataDir: fixture.dataDir, assetsCdn: cdnBase, assetsCdnVersion: '', assetsManifestFile: manifestFile });
+    t.after(() => game.close());
+    const page = await browser.newPage();
+    t.after(() => page.close());
+    const errors = [];
+    page.on('response', (res) => { if (res.status() >= 400 && res.url().includes('/assets/local/fx/')) errors.push(res.url()); });
+    await page.goto(game.url + '/index.html');
+    await page.waitForFunction('window.__ready');
+    const result = await page.evaluate(async () => {
+      const { FxLibrary } = await import('/js/render/vfx/library.js');
+      const lib = new FxLibrary();
+      const [index, textures, prefab, mesh, full, half] = await Promise.all([
+        lib.index(), lib.texInfo(), lib.descriptor('test'), lib.loadMesh('test'), lib.loadTexture('test', false), lib.loadTexture('test', true),
+      ]);
+      const result = { index: index?.version, textures: !!textures, prefab: !!prefab, mesh: mesh?.positions.length,
+        full: full?.image.width, half: half?.image.width, preload: window.__res.state().enabled,
+        workers: (await navigator.serviceWorker.getRegistrations()).length, caches: (await caches.keys()).length };
+      lib.dropImages();
+      return result;
+    });
+    assert.deepEqual(result, { index: 2, textures: true, prefab: true, mesh: 3, full: 1, half: 1, preload: false, workers: 0, caches: 0 });
+    assert.deepEqual(errors, []);
+    assert.deepEqual(seen.sort(), Object.keys(bodies).map((name) => base + name + '?v=' + hashes[base + name]).sort());
   });
 
   test('manager ZIP export and file import restore verified resources without resource downloads', async (t) => {

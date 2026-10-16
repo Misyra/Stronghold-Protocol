@@ -24,6 +24,22 @@ const origin = 'https://game.example';
 const file = (url, body, tier = 1) => ({ url, tier, size: Buffer.byteLength(body), hash: createHash('sha1').update(body).digest('hex').slice(0, 12) });
 const manifest = (files) => ({ format: 1, version: 'network-tests', files });
 
+test('downloads preserve same-origin gate credentials and classify transient failures without losing cache progress', async () => {
+  const files = [file('/assets/ok.png', 'ok'), file('/assets/busy.png', 'busy'), file('/assets/missing.png', 'missing')];
+  const caches = new Caches();
+  const store = new ResourceStore(manifest(files), { origin, caches, network: { retries: 0 }, fetcher: async (url, opts) => {
+    assert.equal(opts.credentials, 'same-origin');
+    return url.endsWith('/ok.png') ? new Response('ok') : new Response('no', { status: url.endsWith('/busy.png') ? 503 : 404 });
+  } });
+  const result = await store.download();
+  assert.equal(result.phase, 'partial');
+  assert.equal(result.failed, 2);
+  assert.equal(result.retryableFailed, 1);
+  assert.equal(result.count, 1);
+  assert.equal(result.complete, false);
+  assert.equal(await (await (await caches.open(CACHE_NAME)).match(origin + '/assets/ok.png')).text(), 'ok');
+});
+
 test('full-body deadline cancels a hanging response and retries only transient failures', async () => {
   let calls = 0, cancelled = 0;
   const response = await fetchResource(origin + '/assets/a.png', { timeoutMs: 15, retryDelayMs: 0,

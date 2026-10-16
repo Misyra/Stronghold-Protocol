@@ -1,6 +1,6 @@
 // Page/worker handoff carries metadata only: verified resource bodies stay in Cache Storage.
 import { CONTENT_HASH_RE, absoluteUrl, checkAbort } from './common.js';
-import { waitForResource } from './network.js';
+import { waitForResource, isTransientResourceError } from './network.js';
 
 function request(worker, data, { signal, timeoutMs }) {
   checkAbort(signal);
@@ -64,8 +64,7 @@ export function createWorkerCache(getWorker, { origin = globalThis.location?.ori
         return result?.cached === true && result.url === url && result.hash === file.hash && result.size === (file.size ?? null) ? result : null;
       }
       const err = Object.assign(new Error(reply.error.message || '资源下载失败'), reply.error);
-      const transient = err.name === 'TimeoutError' || err.name === 'TypeError' || err.transient
-        || err.status === 408 || err.status === 429 || err.status >= 500;
+      const transient = isTransientResourceError(err);
       if (!transient || attempt >= retries) throw err;
       await waitForResource(Math.min(30000, Math.max(0, err.retryAfter || 0, retryDelayMs * 2 ** attempt)), signal);
     }

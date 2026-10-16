@@ -53,6 +53,126 @@ const FILES = [
 ];
 const MANIFEST = { format: 1, version: 'testversion', count: FILES.length, tier1: 2, sized: FILES.length, totalBytes: 22, files: FILES };
 
+test('offline startup waits for reconnect, and pause removes reconnect recovery', async (t) => {
+  const env = stubEnv();
+  t.after(env.restore);
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const window = new EventTarget();
+  Object.defineProperty(globalThis, 'window', { value: window, configurable: true });
+  t.after(() => { if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow); else delete globalThis.window; });
+  navigator.onLine = false;
+  const mod = await import('../../public/js/resources/index.js?offline-recovery');
+  t.after(() => mod.pauseResources());
+  await mod.syncResources(true, false);
+  assert.equal(mod.resourceState().phase, 'offline');
+  assert.equal(env.calls.fetch.length, 0);
+  navigator.onLine = true;
+  const complete = new Promise((resolve) => {
+    const unsubscribe = mod.subscribeResources((s) => { if (s.phase === 'ready' && s.selectionComplete) { unsubscribe(); resolve(); } });
+  });
+  window.dispatchEvent(new Event('online'));
+  await complete;
+  assert.equal(mod.resourceState().phase, 'ready');
+  await mod.clearResources();
+  navigator.onLine = false;
+  await mod.startResources();
+  assert.equal(mod.resourceState().phase, 'offline');
+  mod.pauseResources();
+  const count = env.calls.fetch.length;
+  navigator.onLine = true;
+  window.dispatchEvent(new Event('online'));
+  await new Promise(setImmediate);
+  assert.equal(env.calls.fetch.length, count);
+  assert.equal(mod.resourceState().phase, 'paused');
+  await mod.syncResources(false);
+});
+
+test('disconnect during download aborts the lanes, waits offline and resumes missing files on reconnect', async (t) => {
+  const env = stubEnv();
+  t.after(env.restore);
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const window = new EventTarget();
+  Object.defineProperty(globalThis, 'window', { value: window, configurable: true });
+  t.after(() => { if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow); else delete globalThis.window; });
+  navigator.onLine = true;
+  const fetcher = globalThis.fetch;
+  let blocked = true, entered;
+  const started = new Promise((resolve) => { entered = resolve; });
+  globalThis.fetch = (url, opts) => {
+    if (url !== MANIFEST_URL && blocked) { entered(); return new Promise(() => {}); }
+    return fetcher(url, opts);
+  };
+  const mod = await import('../../public/js/resources/index.js?mid-run-offline');
+  t.after(() => mod.pauseResources());
+  const pending = mod.syncResources(true, false);
+  await started;
+  navigator.onLine = false;
+  window.dispatchEvent(new Event('offline'));
+  await pending;
+  assert.equal(mod.resourceState().phase, 'offline');
+  assert.equal(mod.resourceState().enabled, true);
+  blocked = false;
+  navigator.onLine = true;
+  const ready = new Promise((resolve) => {
+    const unsubscribe = mod.subscribeResources((s) => { if (s.phase === 'ready') { unsubscribe(); resolve(); } });
+  });
+  window.dispatchEvent(new Event('online'));
+  await ready;
+  assert.equal(mod.resourceState().selectionComplete, true);
+  assert.equal(mod.resourceState().failed, 0);
+  await mod.syncResources(false);
+});
+
+test('transient run failures retry twice with backoff, permanent failures retain manual retry', async (t) => {
+  const env = stubEnv();
+  t.after(env.restore);
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const mod = await import('../../public/js/resources/index.js?bounded-recovery');
+  t.after(() => mod.pauseResources());
+  const { store } = await mod.resourceContext();
+  store.network = { retries: 0 };
+  let status = 503, requests = 0;
+  store.fetcher = async () => { requests++; return new Response('unavailable', { status }); };
+  await mod.syncResources(true, false);
+  assert.equal(mod.resourceState().phase, 'retrying');
+  for (const delay of [5000, 15000]) {
+    t.mock.timers.tick(delay);
+    for (let i = 0; i < 20; i++) await new Promise(setImmediate);
+  }
+  assert.equal(requests, 6, 'three runs of two missing essential files');
+  assert.equal(mod.resourceState().phase, 'partial');
+  t.mock.timers.tick(60000);
+  await new Promise(setImmediate);
+  assert.equal(requests, 6, 'automatic retries are bounded');
+  status = 404;
+  await mod.startResources();
+  assert.equal(mod.resourceState().phase, 'partial');
+  t.mock.timers.tick(60000);
+  await new Promise(setImmediate);
+  assert.equal(requests, 8, '404 requires an explicit retry');
+  await mod.syncResources(false);
+});
+
+test('a stalled worker registration has a deadline, page downloads survive, and retry repairs the worker warning', async (t) => {
+  const files = FILES.map((f) => ({ ...f, hash: createHash('sha1').update('b'.repeat(f.size)).digest('hex').slice(0, 12) }));
+  const env = stubEnv({ manifest: { ...MANIFEST, files } });
+  t.after(env.restore);
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const register = navigator.serviceWorker.register;
+  navigator.serviceWorker.register = () => new Promise(() => {});
+  const mod = await import('../../public/js/resources/index.js?worker-deadline');
+  const pending = mod.syncResources(true, false);
+  for (let i = 0; i < 10; i++) await new Promise(setImmediate);
+  t.mock.timers.tick(10000);
+  await pending;
+  assert.equal(mod.resourceState().selectionComplete, true, 'verified page path still fills the cache');
+  assert.match(mod.resourceState().worker, /启动超时/);
+  navigator.serviceWorker.register = register;
+  await mod.startResources();
+  assert.equal(mod.resourceState().worker, '');
+  await mod.syncResources(false);
+});
+
 test('manifest retries transient header and body failures once, sharing the request between callers', async (t) => {
   for (const stage of ['headers', 'body', 'body-abort', 'network']) await t.test(stage, async (t) => {
     const env = stubEnv();
@@ -105,7 +225,7 @@ test('exhausted body timeouts give an actionable error and a manual retry can co
   const mod = await import('../../public/js/resources/index.js?manifest-timeout-recovery');
   await mod.syncResources(true, false);
   assert.equal(requests, 2, 'automatic retry is bounded');
-  assert.equal(mod.resourceState().phase, 'error');
+  assert.equal(mod.resourceState().phase, 'retrying');
   assert.equal(mod.resourceState().error, true);
   assert.match(mod.resourceState().message, /无法读取资源清单.*请求超时，请重试/);
   assert.equal(env.calls.registered.length, 0);

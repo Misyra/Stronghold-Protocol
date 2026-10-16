@@ -58,7 +58,7 @@ export function storageText(storage) {
 const resourceUi = createStore({ open: false });
 export const openResources = () => resourceUi.set({ open: true });
 const closeResources = () => resourceUi.set({ open: false });
-const busy = (st) => !!st.clearing || !!st.archive || st.phase === 'download' || st.phase === 'checking';
+const busy = (st) => !!st.clearing || !!st.archive || ['download', 'checking', 'offline', 'retrying', 'foreign'].includes(st.phase);
 
 function useResources() {
   const [state, setState] = useState(resourceState);
@@ -66,13 +66,16 @@ function useResources() {
   return state;
 }
 
-function stateText(st, enabled) {
+export function stateText(st, enabled) {
   if (st.archive) return st.archive === 'import' ? t('正在导入') : t('正在导出');
   if (st.phase === 'foreign') return t('另一标签页处理中');
   if (st.phase === 'checking') return t('正在检查已缓存资源');
   if (st.phase === 'download') return t('正在下载');
   if (st.clearing) return t('正在清理');
+  if (st.phase === 'offline') return t('等待联网');
+  if (st.phase === 'retrying') return t('等待重试');
   if (st.error && !st.manifestFiles) return t('读取失败');
+  if (st.error || st.failed) return t('部分下载失败');
   // The selection decides the wording: with optional files (or chosen 干员皮肤) in it, 「全部已保存」 means those too.
   if (st.selectionComplete) return st.tier2Wanted > 0 ? t('全部已保存') : t('必备已保存');
   if (st.requiredComplete && st.tier1Total) return t('必备已保存');
@@ -128,11 +131,13 @@ function ResourceChoice({ id, on, disabled, onChange, children }) {
       onChange=${(e) => onChange?.(e.currentTarget.checked)} />${children}</label>`;
 }
 
-function ResourceScope({ st, enabled, disabled, preferences, onPreset }) {
+function ResourceScope({ st, enabled, disabled, preferences, onPreset, onChange }) {
   const plan = resourcePlan(st);
   return html`<section class="resource-scope" aria-label=${t('预载范围')}>
     <div class="resource-scope__head"><h3>${t('预载范围')}</h3>
       <span class="resource-scope__total">${t('只补齐缺少的文件，已缓存资源会保留。')}</span></div>
+    <${ResourceChoice} id="resource-preload" on=${enabled} disabled=${disabled || !st.supported} onChange=${onChange}>${t('开启资源预载')}<//>
+    ${!enabled ? html`<p class="set-hint">${t('预载尚未开启：选择范围后，开启上方开关或点击「开始预载」。')}</p>` : null}
     <div class="resource-presets" role="group" aria-label=${t('快捷方案')}>
       ${[['essential', t('仅必备')], ['daily', t('日常推荐')], ['full', t('完整预载')]].map(([key, label]) => html`
         <button type="button" disabled=${disabled || !onPreset}
@@ -174,7 +179,7 @@ function ResourceTier({ st, tier, optional, voices, disabled, onOptional, onVoic
   return html`<section class=${`resource-tier${on ? '' : ' is-off'}`}>
     <header class="resource-tier__head"><div><${MicroLabel}>${required ? '01 / ESSENTIAL' : '02 / VOICE'}<//>
       <h3>${required ? t('必备资源') : t('干员语音')}</h3></div>
-      ${required ? html`<span class="resource-badge">${t('始终预载')}</span>`
+      ${required ? html`<span class="resource-badge">${t('开启后预载')}</span>`
         : html`<${ResourceChoice} id="voice-preload" on=${voices} disabled=${disabled} onChange=${onVoices}>${t('预载')}<//>`}
     </header>
     <p class="resource-card__description">${required ? t('地图、干员图片与 Spine 等画面资源') : t('按所选语言缓存语音，切换后只补载缺少部分。')}</p>
@@ -226,14 +231,16 @@ function ResourceSkins({ st, on, all, disabled, onSkin, onAll }) {
 }
 
 function ResourceEffects({ st, on, disabled, onChange }) {
-  if (!(st.fxFiles > 0)) return null;
+  const available = st.fxFiles > 0;
+  const pending = !st.manifestReady;
   const groups = st.groups.filter((g) => g.id === 'fx');
   return html`<section class=${`resource-tier resource-effects${on ? '' : ' is-off'}`}>
     <header class="resource-tier__head"><div><${MicroLabel}>04 / EFFECTS<//><h3>${t('额外特效')}</h3></div>
-      <${ResourceChoice} id="fx-preload" on=${on} disabled=${disabled} onChange=${onChange}>${t('预载')}<//></header>
+      <${ResourceChoice} id="fx-preload" on=${on} disabled=${disabled || !available || !st.supported} onChange=${onChange}>${t('预载')}<//></header>
     <p class="resource-card__description">${t('官方战斗特效素材；是否显示仍跟随画质设置。')}</p>
-    <${ResourceProgress} groups=${groups} />
-    <p class="resource-card__note">${on ? t('提前缓存，减少战斗中首次加载。') : t('未预载') + ' · ' + t('使用时按需加载')}</p>
+    ${available ? html`<${ResourceProgress} groups=${groups} />` : null}
+    <p class="resource-card__note">${!available ? pending ? st.error ? t('资源清单暂时无法读取，请重试。') : t('正在读取特效资源清单…')
+      : t('服务器尚未提供官方特效资源。') : on ? t('提前缓存，减少战斗中首次加载。') : t('未预载') + ' · ' + t('使用时按需加载')}</p>
   </section>`;
 }
 
@@ -293,7 +300,7 @@ export function ResourceHost({ enabled, optional, voices = optional, allVoices, 
           onClick=${() => enabled ? startResources() : onChange(true)}>${st.error ? t('重试') : st.selectionComplete ? t('检查资源') : enabled ? t('继续下载') : t('开始预载')}<//>`}
       <${Button} variant="secondary" onClick=${closeResources}>${t('关闭')}<//>`}>
     <div class="resource-manager">
-      <${ResourceScope} st=${st} enabled=${enabled} disabled=${archiveBusy} preferences=${preferences} onPreset=${onPreset} />
+      <${ResourceScope} st=${st} enabled=${enabled} disabled=${archiveBusy} preferences=${preferences} onPreset=${onPreset} onChange=${onChange} />
       <div class="resource-manager__tiers">
         <${ResourceTier} st=${st} tier=${1} optional=${!!optional} disabled=${archiveBusy} onOptional=${onOptional} />
         <${ResourceTier} st=${st} tier=${2} voices=${!!voices} disabled=${archiveBusy} onVoices=${onVoices}

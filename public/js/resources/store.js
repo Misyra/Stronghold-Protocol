@@ -20,7 +20,7 @@ import { resourceIdentity } from '../../../shared/resourcePaths.js';
 import { VOICE_LANGS } from '../voicePrefs.js';
 import { absoluteUrl, CACHE_NAME, CACHE_PREFIX, cacheNameForScope, checkAbort, CONTENT_HASH_RE, indexUrl, isCacheQueryLimit, isQuotaError, isSkinKey, MAX_FILE_BYTES, RESOURCE_GROUPS, RESOURCE_SCOPES, resourceGroup, resourceScope, resourceType, SHARD_CACHE_NAMES, TIER_ESSENTIAL, TIER_REST } from './common.js';
 import { resourceDigests, verifiedResourceBytes } from './integrity.js';
-import { fetchResource } from './network.js';
+import { fetchResource, isTransientResourceError } from './network.js';
 
 /** Files above this are downloaded one at a time (a 20 MiB Spine texture should not race three others). */
 const BIG_FILE_BYTES = 4 << 20;
@@ -914,6 +914,8 @@ export class ResourceStore {
     let bytes = start.bytes;
     let sized = start.sized;
     let failed = 0;
+    let retryableFailed = 0;
+    let retryAfter = 0;
     let tier1Done = start.tier1Present;
     let tier2Done = start.tier2Present;
     let pendingFlush = 0;
@@ -932,7 +934,7 @@ export class ResourceStore {
         tier1: start.tier1, tier1Present: tier1Done, tier2: start.tier2, tier2Present: tier2Done,
         tier1Wanted: start.tier1Wanted, tier2Wanted: start.tier2Wanted,
         groups: tally.groups, scopes: tally.scopes, skins: tally.skins, skinScope: tally.skinScope,
-        complete: false, failed, failures: failures.slice(), current, adopted, downloaded,
+        complete: false, failed, retryableFailed, retryAfter, failures: failures.slice(), current, adopted, downloaded,
       };
     };
     const emit = (current = null, force = false) => {
@@ -1012,6 +1014,10 @@ export class ResourceStore {
             throw quota;
           }
           failed++;
+          if (isTransientResourceError(err)) {
+            retryableFailed++;
+            retryAfter = Math.max(retryAfter, Math.min(30000, Number(err.retryAfter) || 0));
+          }
           if (failures.length < MAX_FAILURES) failures.push({ url: file.url, message: String(err?.message || err) });
         }
         emit(file.url);
@@ -1060,7 +1066,8 @@ export class ResourceStore {
       checkAbort(signal);
     }
     const after = await this.status();
-    const result = { ...after, phase: 'ready', failed, failures: failures.slice(), adopted, downloaded };
+    const result = { ...after, phase: after.complete ? 'ready' : 'partial', failed, retryableFailed, retryAfter,
+      failures: failures.slice(), adopted, downloaded };
     onProgress?.(result);
     // Only a complete set may drop anything: a partial run never deletes files it did not replace. Cleanup is
     // maintenance, not part of the download - it enumerates every card again, so it runs only when this run changed

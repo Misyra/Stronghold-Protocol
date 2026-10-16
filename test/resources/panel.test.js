@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { byteText, detailText, percent, resourcePlan, RESOURCE_PRESETS } from '../../public/js/ui/resourcePanel.js';
+import { byteText, detailText, percent, resourcePlan, RESOURCE_PRESETS, stateText } from '../../public/js/ui/resourcePanel.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -21,6 +21,13 @@ const state = (over = {}) => ({
 });
 
 describe('preload numbers', () => {
+  test('incomplete failures stay visible even after required files finish', () => {
+    assert.equal(stateText(state({ phase: 'partial', error: true, failed: 1, manifestFiles: 2, requiredComplete: true, tier1Total: 1 }), true), '部分下载失败');
+    assert.equal(stateText(state({ phase: 'offline' }), true), '等待联网');
+    assert.equal(stateText(state({ phase: 'retrying' }), true), '等待重试');
+    assert.equal(stateText(state({ phase: 'off' }), false), '未开启');
+    assert.match(read('public/js/ui/resourcePanel.js'), /id="resource-preload"/);
+  });
   test('the plan counts selected cacheable files, reuses cache and reports unknown sizes', () => {
     const groups = [{ totalBytes: 100, bytes: 60, unknownSize: 0, allBytes: 900 },
       { totalBytes: 0, bytes: 0, unknownSize: 0, allBytes: 2000 }];
@@ -121,7 +128,8 @@ describe('the 干员皮肤 scope', () => {
     assert.ok(panel.includes('data-testid=${id}'));
     assert.ok(panel.includes('data-testid="skin-preload-all"'));
     assert.match(panel, /if \(!skins\.length\) return null;/);
-    assert.match(panel, /if \(!\(st\.fxFiles > 0\)\) return null;/);
+    assert.equal(panel.includes('if (!(st.fxFiles > 0)) return null;'), false, 'the effects card stays visible while loading, unavailable or disabled');
+    assert.match(panel, /const pending = !st\.manifestReady;/);
     for (const field of ['allTotal', 'allPresent', 'allBytes']) assert.ok(panel.includes(field));
     assert.ok(panel.includes("t('未预载')"));
     assert.ok(panel.includes('onSkin=${onSkinPreload}'));

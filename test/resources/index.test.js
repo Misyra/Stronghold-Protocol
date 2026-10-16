@@ -433,6 +433,44 @@ function stubEnv({ manifest = MANIFEST, fail = false, secure = true } = {}) {
   return { calls, caches, restore };
 }
 
+test('a cache above the browser query budget still reports a complete preload instead of failing', async (t) => {
+  const files = FILES.map((f, i) => ({ ...f, hash: `h${i}` }));
+  const env = stubEnv({ manifest: { ...MANIFEST, files } });
+  t.after(env.restore);
+  const mod = await import('../../public/js/resources/index.js?query-budget');
+  await mod.syncResources(true, true);
+  assert.equal(mod.resourceState().complete, true);
+  // The browser refuses the one-shot enumeration (the panel used to read「无法访问资源缓存：… Operation too large.」);
+  // every cached file stays matchable, which is all a report needs.
+  const cache = await env.caches.open(CACHE_NAME);
+  let reads = 0;
+  cache.keys = async () => { reads++; throw new DOMException(`Failed to execute 'keys' on 'Cache': Operation too large.`, 'AbortError'); };
+  const fetches = env.calls.fetch.length;
+  await mod.syncResources(false);
+  await mod.syncResources(true, true);
+  const st = mod.resourceState();
+  assert.deepEqual([st.phase, st.error, st.done, st.complete], ['ready', false, 4, true]);
+  assert.match(st.message, /资源已全部预载完成/);
+  assert.equal(env.calls.fetch.length, fetches, 'nothing is re-fetched: the index proves what is cached');
+  assert.equal(reads, 1, 'the refused query is not retried on every check');
+  await mod.syncResources(false);
+});
+
+test('a browser AbortError is a failure, not the player cancelling the archive', async (t) => {
+  const env = stubEnv({ manifest: { ...MANIFEST, files: FILES.map((f, i) => ({ ...f, hash: `h${i}` })) } });
+  t.after(env.restore);
+  const mod = await import('../../public/js/resources/index.js?foreign-abort');
+  await mod.syncResources(true, false);
+  const open = env.caches.open.bind(env.caches);
+  env.caches.open = async () => { throw new DOMException(`Failed to execute 'keys' on 'Cache': Operation too large.`, 'AbortError'); };
+  await assert.rejects(mod.exportResources(), (err) => err.name === 'AbortError');
+  assert.deepEqual([mod.resourceState().phase, mod.resourceState().error], ['error', true]);
+  assert.match(mod.resourceState().message, /资源包导出失败/);
+  assert.equal(mod.resourceState().archiveResult.status, 'error');
+  env.caches.open = open;
+  await mod.syncResources(false);
+});
+
 test('the preload controller: off by default, downloads in two passes, serves offline state', async (t) => {
   // `import` after the stubs: the module reads globals lazily, but the manifest fetch is kicked off on the first call
   const env = stubEnv();

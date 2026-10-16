@@ -84,7 +84,7 @@ export async function exportResourceZip(store, { signal, onProgress } = {}) {
   checkAbort(signal);
   const status = await store.status();
   const cache = await store.caches.open(store.cacheName);
-  const cached = new Set((await cache.keys()).map((request) => request.url));
+  const cached = await store.cachedKeys();
   // Game requests also populate this cache, without updating the page-owned index. Recover those bytes by digest;
   // an unindexed older version is simply unavailable, while an indexed current file failing verification is damage.
   const files = store.files.filter((f) => store.eligible(f) && (status.present.has(store.keyOf(f.url))

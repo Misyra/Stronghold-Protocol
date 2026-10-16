@@ -682,6 +682,24 @@ optional preloading through the settings callback; full cleanup pauses downloads
 Concurrent startup cache checks share an in-flight scan of cache keys and index records without reading resource bodies.
 ZIP and CRC code are loaded on demand from the locally vendored zip.js library, without ZIP Web Workers.
 
+Chromium refuses a single `Cache.keys()` whose result exceeds a fixed query budget (10 MiB,
+`kMaxQueryCacheResultBytes` in `content/browser/cache_storage/cache_storage_cache.cc`), rejecting it with
+`AbortError: Operation too large.` Measured on Chrome 155 the budget is spent as ≈474 bytes per entry (462–498) plus the
+request URL, which puts the ceiling near 18 200 entries at 89-byte keys and near 19 400 at this manifest's 72-byte mean;
+a full selection (voices + every installed outfit + 官方特效) reaches ~22 500, and a seeded 22 493-entry cache in these
+`?v=` URLs is refused exactly as reported. A complete cache is therefore the one case the browser will not enumerate. Every full listing therefore goes through `ResourceStore#keyUrls`
+(`store.js`): it tries `cache.keys()` once, and on `AbortError` records the cache name in `#keysRefused` and answers
+from the index record the page itself writes (`/__sp-resource-index__`), which costs one entry regardless of catalog
+size. Status counting, 清理可选资源 (`clear({ optionalOnly })`), stale pruning and ZIP export
+(`ResourceStore#cachedKeys`, used by `archive.js`) keep working, and `status().scan` reports `'index'` instead of
+`'keys'`. Only `isCacheQueryLimit` (`common.js`) falls back — `AbortError`, or a message mentioning the limit —
+so a genuine cache failure still surfaces as `无法访问资源缓存`. An optional-only cleanup drops the flag once the cache
+is small enough to enumerate again. `pruneOld` deliberately keeps indexing out of it: a legacy cache has no index, and
+an empty listing must never be read as "this language is disposable". Because the browser raises `AbortError` for this
+limit too, a download pause is judged by `signal.aborted` (`index.js`), never by the DOMException name — otherwise a
+query-budget failure looked like the player cancelling, which is how 「资源包处理已取消，已保存的资源保留。」 could
+appear for a cache the browser simply refused to list.
+
 The implementation is adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later, resource manager commit
 `234dc52b`, v2 ZIP optimization `5d8e91e`, and subsequent resource updates). This fork retains streaming download limits, strict content verification,
 versioned CDN cache reuse and pause/resume hardening. Resources alone do not provide offline gameplay.

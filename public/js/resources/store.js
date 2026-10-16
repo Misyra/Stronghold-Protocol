@@ -17,7 +17,7 @@ import { markResourceHeaders, cacheIndex, readCacheIndex } from './cacheMetadata
 import { resourceIdentity } from '../../../shared/resourcePaths.js';
 import { VOICE_LANGS } from '../voicePrefs.js';
 import {
-  CACHE_NAME, CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, TIER_ESSENTIAL, TIER_REST, RESOURCE_GROUPS, resourceGroup, resourceType, absoluteUrl, indexUrl, checkAbort, isQuotaError, isSkinKey,
+  CACHE_NAME, CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, TIER_ESSENTIAL, TIER_REST, RESOURCE_GROUPS, resourceGroup, resourceType, absoluteUrl, indexUrl, checkAbort, isCacheQueryLimit, isQuotaError, isSkinKey,
 } from './common.js';
 import { resourceDigests, verifiedResourceBytes } from './integrity.js';
 import { fetchResource } from './network.js';
@@ -85,6 +85,9 @@ async function digestOf(response, { consume = false } = {}) {
 }
 
 export class ResourceStore {
+  /** Cache names whose whole-cache `keys()` query the browser refuses: the page-owned index answers instead. */
+  #keysRefused = new Set();
+
   /**
    * @param {{ files: { url: string, tier: number, size?: number, hash?: string }[], version: string, totalBytes?: number|null }} manifest
    * @param {{ caches?: any, fetcher?: typeof fetch, origin?: string, smallLanes?: number, bigLanes?: number,
@@ -404,24 +407,54 @@ export class ResourceStore {
       present: new Set(status.present) };
   }
 
+  /**
+   * Every key the cache holds, as absolute URLs. `Cache.keys()` is ONE query whose answer the browser builds from every
+   * entry: Chrome refuses it once that answer would exceed ~10 MiB of serialized requests
+   * (`kMaxQueryCacheResultBytes` in content/browser/cache_storage/cache_storage_cache.cc — about 16 000 entries at this
+   * manifest's URL length) and hands back an AbortError reading "Operation too large.". Above that line the page-owned
+   * index is the authority instead: it records every entry this store wrote (the ZIP import included), and an entry with
+   * no record never counted as current anyway (`#fresh`), so the numbers stay right. What the fallback loses is noticing
+   * browser-side eviction of an *indexed* entry — `ensureCached`/`#adopt` verify those bytes again on the next run.
+   * Only that refusal falls back: any other failure of the query is a real failure and has to surface (a status that
+   * quietly reported "nothing is cached" would hide it).
+   * @param {any} cache
+   * @param {string} name cache name (a refusal is remembered per name — size class, not one unlucky call)
+   */
+  async #keyUrls(cache, name) {
+    if (!this.#keysRefused.has(name)) {
+      try { return new Set((await cache.keys()).map((key) => key.url)); }
+      catch (err) {
+        if (!isCacheQueryLimit(err)) throw err;
+        this.#keysRefused.add(name);
+        console.warn('[resources] Cache.keys() refused — reading the resource index instead', err);
+      }
+    }
+    const index = await this.#readIndex(cache);
+    return new Set(Object.keys(index.files));
+  }
+
+  /** The keys this cache holds: what `status().present` is derived from (`archive.js` exports from the same set). */
+  async cachedKeys() {
+    return this.#keyUrls(await this.caches.open(this.cacheName), this.cacheName);
+  }
+
   async #status() {
     const started = performance.now();
     const cache = await this.caches.open(this.cacheName);
     let keysMs = 0;
     let indexMs = 0;
-    const [keys, index] = await Promise.all([
+    const [cached, index] = await Promise.all([
       (async () => {
         const start = performance.now();
-        try { return await cache.keys(); } finally { keysMs = performance.now() - start; }
+        try { return await this.#keyUrls(cache, this.cacheName); } finally { keysMs = performance.now() - start; }
       })(),
       (async () => {
         const start = performance.now();
         try { return await this.#readIndex(cache); } finally { indexMs = performance.now() - start; }
       })(),
     ]);
-    const cached = new Set(keys.map((k) => k.url));
     const fresh = this.#fresh(cached, index);
-    return { ...this.#tally(fresh), present: fresh,
+    return { ...this.#tally(fresh), present: fresh, scan: this.#keysRefused.has(this.cacheName) ? 'index' : 'keys',
       checkTimings: { statusMs: performance.now() - started, cacheKeysMs: keysMs, indexReadMs: indexMs } };
   }
 
@@ -774,11 +807,14 @@ export class ResourceStore {
       for (const name of await this.caches.keys()) {
         if (!name.startsWith(CACHE_PREFIX)) continue;
         const cache = await this.caches.open(name);
-        const keys = await cache.keys();
-        for (const key of keys) if (isOptional(key.url)) await cache.delete(key);
         const index = await this.#readIndex(cache);
+        // `keys()` may be refused here too — this cleanup is exactly what a cache over the query budget needs — and the
+        // index lists the same entries, minus the ones a game request wrote without a record (not ours to call optional).
+        for (const url of await this.#keyUrls(cache, name)) if (isOptional(url)) await cache.delete(url);
         for (const key of Object.keys(index.files)) if (isOptional(key)) delete index.files[key];
         await this.#writeIndex(cache, index.files, this.manifest.version);
+        // Smaller now: let the next status try one-shot enumeration again.
+        this.#keysRefused.delete(name);
       }
       return this.status();
     }
@@ -786,8 +822,9 @@ export class ResourceStore {
       const names = await this.caches.keys();
       await Promise.all(names.filter((n) => n.startsWith(CACHE_PREFIX)).map((n) => this.caches.delete(n)));
     }
+    this.#keysRefused.clear();
     this.statusPromise = null;
-    return { ...this.#tally(new Set()), present: new Set() };
+    return { ...this.#tally(new Set()), present: new Set(), scan: 'keys' };
   }
 
   /** Drop the caches of other versions (a new asset manifest frees the files of the previous one). */
@@ -798,7 +835,12 @@ export class ResourceStore {
     for (const name of stale) {
       if (this.voiceScope) {
         const cache = await this.caches.open(name);
-        const keep = (await cache.keys()).some((key) => {
+        // An older cache has no index to fall back on (`#adopt` moves its entries file by file), so a refused
+        // enumeration means "cannot tell": keep it rather than delete the only copy of another language's voices.
+        let entries;
+        try { entries = await cache.keys(); }
+        catch { continue; }
+        const keep = entries.some((key) => {
           const language = /\/assets\/audio\/voice\/([^/]+)\//.exec(new URL(key.url).pathname)?.[1];
           return language && language !== this.voiceScope;
         });
@@ -819,12 +861,12 @@ export class ResourceStore {
     const cache = await this.caches.open(this.cacheName);
     const wanted = new Set(this.files.map((f) => this.keyOf(f.url)));
     const indexKey = indexUrl(this.origin);
-    const keys = await cache.keys();
-    const doomed = keys.filter((k) => k.url !== indexKey && !wanted.has(k.url));
-    if (!doomed.length) return 0;
-    await Promise.all(doomed.map((k) => cache.delete(k)));
     const index = await this.#readIndex(cache);
-    for (const k of doomed) delete index.files[k.url];
+    const doomed = [...await this.#keyUrls(cache, this.cacheName)]
+      .filter((url) => url !== indexKey && !wanted.has(url));
+    if (!doomed.length) return 0;
+    await Promise.all(doomed.map((url) => cache.delete(url)));
+    for (const url of doomed) delete index.files[url];
     await this.#writeIndex(cache, index.files, this.manifest.version);
     return doomed.length;
   }

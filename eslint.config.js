@@ -65,6 +65,11 @@ export default [
       'public/dev/**',
       '.cache/**',
       'coverage/**',
+      // Session-local scratch (gitignored): .local/ plans and probes, public/.state/ throwaway builds.
+      // They are not part of the repo, so a stray syntax error there must not fail `npm run lint`.
+      '.local/**',
+      '.state/**',
+      'public/.state/**',
     ],
   },
   {

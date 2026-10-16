@@ -430,7 +430,9 @@ async function startDownload(task) {
         : t('已保存 {count}/{total} 个文件；未完成的会在下次开启时重试。', { count: after.count, total: after.total }),
     });
   } catch (err) {
-    if (err?.name === 'AbortError') {
+    // Only our own abort pauses: the browser's own AbortErrors (a refused Cache Storage query, an aborted stream that
+    // is not ours) are failures and must not read as "the player pressed pause".
+    if (signal.aborted) {
       const now = await store.status().catch(() => null);
       set({ ...(now ? counters(now) : {}), phase: 'paused', message: current ? t('已暂停，可继续下载或清理缓存。') : t('已停止预载。') });
       return;
@@ -535,7 +537,7 @@ function transferArchive(kind, file) {
     } catch (err) {
       const ctx = await resourceContext();
       const status = await ctx.store?.status().catch(() => null);
-      const aborted = err?.name === 'AbortError';
+      const aborted = signal.aborted;
       set({ ...(status ? counters(status) : {}), phase: aborted ? 'paused' : 'error', error: !aborted,
         message: aborted ? t('资源包处理已取消，已保存的资源保留。')
           : isQuotaError(err) || /空间不足/i.test(String(err?.message || '')) ? t('浏览器存储空间不足，已保存的资源保留，可清理后重试。')

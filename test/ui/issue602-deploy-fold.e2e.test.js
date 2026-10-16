@@ -33,13 +33,17 @@ describe('the shop folds while deploying a piece and restores afterwards (#602)'
   });
 
   /** Open the mock PREP match with a free deploy slot (one board operator sold, like facing.e2e.test.js). */
-  async function openPage(viewport) {
+  async function openPage(viewport, enabled = true) {
     const page = await browser.newPage();
     if (viewport) await page.setViewport(viewport);
     const problems = [];
     page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
     await page.goto(`${base}/dev/game-mock.html?shot=1&render=fallback&phase=PREP`, { waitUntil: 'networkidle0', timeout: 60000 });
     await page.waitForSelector('.ff-piece');
+    await page.evaluate(async (enabled) => {
+      const { updateSettings } = await import('/js/ui/settings.js');
+      updateSettings({ prepDeployZoom: enabled });
+    }, enabled);
     const initial = await page.evaluate(() => JSON.parse(JSON.stringify(globalThis.__MOCK__.S().priv)));
     const sell = initial.board.find((p) => p.kind === 'chess' && !p.golden);
     await page.click(`.ff-piece[data-uid="${sell.uid}"]`);
@@ -73,6 +77,17 @@ describe('the shop folds while deploying a piece and restores afterwards (#602)'
     };
     return { page, problems, chess, item, tile, folded, pickup, cancelDrag, dropOn };
   }
+
+  test('with the default settings, dragging an operator or equipment leaves the shop open', async () => {
+    const h = await openPage({ width: 1600, height: 900 }, false);
+    for (const piece of [h.chess, h.item]) {
+      await h.pickup(piece);
+      assert.deepEqual(await h.folded(), { cls: false, tab: false });
+      await h.cancelDrag();
+    }
+    assert.deepEqual(h.problems, []);
+    await h.page.close();
+  });
 
   test('picking up an operator folds the shop; cancelling the drag restores it (phone viewport)', async () => {
     const h = await openPage({ width: 390, height: 844 });
@@ -121,8 +136,12 @@ describe('the shop folds while deploying a piece and restores afterwards (#602)'
     await page.setViewport({ width: 1280, height: 720, hasTouch: true });
     const problems = [];
     page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
-    await page.goto(`${base}/dev/game-mock.html?shot=1&phase=PREP`, { waitUntil: 'networkidle0', timeout: 60000 });
+    await page.goto(`${base}/dev/game-mock.html?shot=1&phase=PREP`, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForFunction(() => globalThis.__SP_VIEW__?.raw?.stats?.().mode === 'prep', { timeout: 30000 });
+    await page.evaluate(async () => {
+      const { updateSettings } = await import('/js/ui/settings.js');
+      updateSettings({ prepDeployZoom: true });
+    });
     await sleep(1500);
     const cam = () => page.evaluate(() => JSON.stringify(globalThis.__SP_VIEW__.raw.debug.cam.params()));
     const shopCam = await cam();

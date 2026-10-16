@@ -49,7 +49,7 @@ import { resolveOfficialFx } from '../render/vfx/tier.js';
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
 /**
- * Settings store: { bgm, sfx, voice, voiceLang, voiceNative, voiceOverrides, muted, damageNumbers, officialDamageNumbers, ammoCount, combatMetrics, mysticEnergy, quality, fpsLimit, textSize, preload, preloadOptional, preloadAllVoices, preloadSkins, preloadSkinsAll, keys }.
+ * Settings store: { bgm, sfx, voice, voiceLang, voiceNative, voiceOverrides, muted, damageNumbers, officialDamageNumbers, ammoCount, combatMetrics, prepDeployZoom, mysticEnergy, quality, fpsLimit, textSize, preload, preloadOptional, preloadAllVoices, preloadSkins, preloadSkinsAll, keys }.
  */
 export const settingsStore = createStore(sanitizeSettings(loadPref('settings', null)));
 
@@ -390,6 +390,8 @@ export function SettingsModal({ open, onClose }) {
       <p class="set-hint">${t('在秘术师的血条下方显示储存的攻击能量 / 上限（如 2/3）。官方用干员身上的特效表示，没有这个数字。')}</p>
       <${Toggle} label=${t('作战统计')} micro="COMBAT STATS" value=${s.combatMetrics} onChange=${(v) => updateSettings({ combatMetrics: v })} />
       <p class="set-hint">${t('打开后，对局左下角可以查看自己干员的伤害、治疗和 DPS / HPS。官方界面没有这个窗口。改变玩法的插件对局在 Worker 里演算，统计不到，按钮不显示。')}</p>
+      <${Toggle} label=${t('整备期拖动缩放')} micro="DEPLOY ZOOM" value=${s.prepDeployZoom} onChange=${(v) => updateSettings({ prepDeployZoom: v })} />
+      <p class="set-hint">${t('整备期拖动干员或装备时，临时收起商店并放大棋盘，操作结束后恢复。默认关闭。')}</p>
       <div class="set-row">
         <span class="set-row__label">${t('画面质量')}<${MicroLabel}>QUALITY<//></span>
         <div class="set-seg" role="radiogroup">

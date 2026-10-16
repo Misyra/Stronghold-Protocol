@@ -16,7 +16,7 @@ import { GEO } from '../../shared/constants.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (p) => readFileSync(path.join(ROOT, p), 'utf8');
 
-const { deployFoldsShop, prepCameraFor } = await import('../../public/js/ui/gameLogic.js');
+const { deployFoldsShop, prepCameraFor, DEFAULT_SETTINGS, sanitizeSettings } = await import('../../public/js/ui/gameLogic.js');
 const { hudBands } = await import('../../public/js/ui/fieldHost.js');
 const { presetCamera } = await import('../../public/js/render/projection.js');
 const { FOLD_CAMERA_MS, CAMERA_MS } = await import('../../public/js/render/app/tune.js');
@@ -24,7 +24,20 @@ const { FOLD_CAMERA_MS, CAMERA_MS } = await import('../../public/js/render/app/t
 // ---- the choice (gameLogic deployFoldsShop) -----------------------------------------------------------------------
 
 describe('deployFoldsShop: the deploy interaction temporarily folds the shop', () => {
-  const own = { ownPrep: true, editable: true, pen: false };
+  const own = { enabled: true, ownPrep: true, editable: true, pen: false };
+
+  test('zoom is opt-in, including old saved profiles and invalid values', () => {
+    assert.equal(DEFAULT_SETTINGS.prepDeployZoom, false);
+    for (const raw of [null, {}, { bgm: 0.4 }, { prepDeployZoom: false }, { prepDeployZoom: 'true' }, { prepDeployZoom: 1 }]) {
+      assert.equal(sanitizeSettings(raw).prepDeployZoom, false);
+    }
+    const saved = JSON.parse(JSON.stringify(sanitizeSettings({ prepDeployZoom: true })));
+    assert.equal(sanitizeSettings(saved).prepDeployZoom, true);
+    for (const enabled of [undefined, false, 'true', 1, null]) {
+      assert.equal(deployFoldsShop({ ...own, enabled, drag: true }), false);
+      assert.equal(deployFoldsShop({ ...own, enabled, facing: true }), false);
+    }
+  });
 
   test('a dragged piece or the open direction wheel on the editable own prep board folds it', () => {
     assert.equal(deployFoldsShop({ ...own, drag: true }), true, 'piece picked up (operator / equipment / summon)');
@@ -61,7 +74,7 @@ describe('game.js wiring', () => {
   const game = read('public/js/screens/game.js');
 
   test('deployFold is derived from the interaction state on the own editable prep board, never written into `collapsed`', () => {
-    assert.match(game, /const deployFold = deployFoldsShop\(\{\n\s+ownPrep: !!view && viewModeRef\.current === 'prep' && showPrep, editable, pen, drag: !!drag, facing: !!facing,\n\s+\}\);/);
+    assert.match(game, /const deployFold = deployFoldsShop\(\{\n\s+enabled: settings\.prepDeployZoom,\n\s+ownPrep: !!view && viewModeRef\.current === 'prep' && showPrep, editable, pen, drag: !!drag, facing: !!facing,\n\s+\}\);/);
     // the player's own state feeds the camera state only ORed with the temporary fold (pen behavior untouched)
     assert.match(game, /const shopFolded = showShop && \(pen \? penRef\.current\.collapsed : \(collapsed \|\| deployFold\)\);/);
     assert.match(game, /const barCollapsed = collapsed \|\| deployFold;/);

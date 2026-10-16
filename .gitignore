@@ -88,6 +88,11 @@ docs/dev/
 /test/ui/announcement.render.test.js
 /tools/build-size.mjs
 
+# Working-session scratch: probe scripts, screenshots, one-off notes, the Node compile cache.
+/.local/
+# The same under the served tree (e.g. a throwaway vite build a probe wrote into public/.state/probe-build).
+/public/.state/
+
 # --- OS / editor clutter ---------------------------------------------------------------------------
 .DS_Store
 Thumbs.db

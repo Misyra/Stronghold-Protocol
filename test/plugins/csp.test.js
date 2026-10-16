@@ -45,6 +45,26 @@ test('page import maps hash exact bytes; no inline executable script/events; pag
   }
 });
 
+test('the served page passes its own policy: every inline script the release layer writes is hashed', async () => {
+  // Regression (2026-10-16): the policy hashed the import map as it sits on disk, while the release layer
+  // hands the browser a rewritten one plus an injected release-tag script. Both were rejected, the module
+  // graph never resolved and the client booted to 游戏脚本加载失败 while /healthz reported correct tags.
+  // Both the source client and the built one go through the same transform, so both must pass their own policy.
+  for (const clientBuild of [false, true]) {
+    const serveStatic = createStaticHandler({ publicDir, dataDir: path.resolve('data'), sharedDir: path.resolve('shared'), clientBuild });
+    const csp = siteCsp(publicDir, serveStatic.transformPage);
+    const serve = createRequestHandler({ serveStatic, health: {}, log: console, csp });
+    const page = await request(serve, '/');
+    assert.equal(page.status, 200, `clientBuild=${clientBuild}`);
+    assert.equal(page.headers['content-security-policy'], csp);
+    assert.match(page.body, /globalThis\.__spRuntimeVersion=/, `clientBuild=${clientBuild} carries the release tag`);
+    const inline = [...page.body.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)].filter(m => !/\bsrc=/.test(m[1]) && m[2].trim());
+    // The source client also carries the import map inline; the built one bundles its imports away.
+    assert.ok(inline.length >= 1, `clientBuild=${clientBuild} serves the release tag as an inline script`);
+    if (!clientBuild) assert.match(page.body, /<script type="importmap">/, 'the source client keeps its import map');
+    for (const m of inline) assert.ok(csp.includes(createHash('sha256').update(m[2]).digest('base64')), `clientBuild=${clientBuild}: ${m[2].slice(0, 60)}`);
+  }
+});
 test('native script HTTP routes serve exact descriptor bytes and JavaScript MIME under site CSP',async t=>{
   const f=scriptFixture(t);
   f.put('native',"import {kit} from 'sp:sdk@1'; export default sp => {};",

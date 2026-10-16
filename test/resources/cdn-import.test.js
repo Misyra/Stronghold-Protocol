@@ -35,13 +35,22 @@ const bodies = new Map([
   ['/assets/spine/op/[opt]a.png', 'texture'],
   ['/assets/audio/voice/jp/a/cn_001.mp3', 'voice'],
   ['/assets/audio/sfx/a.mp3', 'sound'],
+  ['/assets/local/fx/index.json', '{"format":"fx-index","units":{}}\n'],
+  ['/assets/local/fx/textures.json', '{"format":"fx-textures","textures":{}}\n'],
+  ['/assets/local/fx/mesh/a.json', '{"positions":[0,1,2]}\n'],
+  ['/assets/local/fx/prefabs/a.json', '{"duration":1,"texture":"fire"}\n'],
+  ['/assets/local/map/autochesssand/materials.json', '{"texture":"sand"}\n'],
+  ['/assets/local/mesh/trap_110/prefab.json', '{"mesh":"platform"}\n'],
+  ['/assets/local/scene/stage/scene.json', '{"materials":{"ground":{"map":"floor"}}}\n'],
 ]);
 function install(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-import-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const dataDir = path.join(root, 'data'), publicDir = path.join(root, 'public');
   fs.mkdirSync(dataDir); fs.mkdirSync(publicDir);
-  fs.writeFileSync(path.join(dataDir, 'assets.json'), JSON.stringify({ chars: [...bodies.keys()] }));
+  fs.writeFileSync(path.join(dataDir, 'assets.json'), JSON.stringify({ chars: [...bodies.keys()].filter((p) => !p.includes('/local/fx/')) }));
+  fs.writeFileSync(path.join(dataDir, 'local-fx.json'), JSON.stringify({ groups: { fx: Object.fromEntries(
+    [...bodies.keys()].filter((p) => p.includes('/local/fx/')).map((p, i) => [i, { path: p }])) } }));
   const published = publishedAssetsManifest([...bodies].map(([url, body]) => ({ key: url.slice(1),
     hash: sha(body, 'sha256', 16), contentHash: sha(body, 'sha1', 12), size: Buffer.byteLength(body) })));
   const manifestFile = path.join(root, '.assets-manifest.json');
@@ -80,6 +89,7 @@ test('a CDN-only server imports an old synthetic-hash ZIP and adopts its existin
     assert.equal(f.hash, inst.published.preload[key].hash);
     assert.equal(f.size, inst.published.preload[key].size);
   }
+  assert.equal(current.files.filter((f) => f.fx).length, 4, 'effect JSON joins the verifiable import set');
   const publicManifest = await fetch(base + '/assets-manifest.json?v=' + inst.published.tag);
   assert.equal(await publicManifest.text(), JSON.stringify({ tag: inst.published.tag, hashes: inst.published.hashes }),
     'adding server-only metadata preserves the exact body at the existing immutable URL');
@@ -93,6 +103,7 @@ test('a CDN-only server imports an old synthetic-hash ZIP and adopts its existin
   const result = await importResourceZip(target.store, exported.blob);
   assert.equal(result.imported, bodies.size);
   assert.equal(result.skippedPackage, 0);
+  assert.equal(result.complete, true, 'the complete ZIP includes all render JSON, with nothing left to fetch');
   await target.store.download();
   assert.deepEqual(target.calls, [], 'old packages need no second export or resource network requests');
   const upgraded = store(current, source.caches);

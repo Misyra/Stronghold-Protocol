@@ -53,6 +53,97 @@ async function environment(t, files, { onFetch, storage } = {}) {
   return { mod, caches, calls };
 }
 
+test('download progress updates group, card and skin counters without changing earlier snapshots or hiding the catalog', async () => {
+  const skin = 'char_001_test/char_001_test@one#1';
+  const files = [file('/assets/ui/a.png', 'ui'),
+    { ...file('/assets/local/fx/index.json', '{}', 2), fx: true },
+    { ...file('/assets/spine/op/test/skin.skel', 'skin', 2), skin },
+    file('/assets/audio/voice/cn/test/a.mp3', 'cn', 2), file('/assets/audio/voice/jp/test/a.mp3', 'jp', 2)];
+  const env = makeStore(files);
+  let clock = 0;
+  env.store.now = () => clock += 300;
+  env.store.smallLanes = 1;
+  env.store.setScope({ optional: true, voiceLang: 'cn', skins: [skin], fx: true });
+  const seen = [];
+  await env.store.download({ onProgress: (p) => seen.push(p) });
+  const updates = seen.filter((p) => p.phase === 'download');
+  assert.deepEqual(updates.map((p) => p.count), [0, 1, 2, 3, 4]);
+  assert.ok(updates.every((p) => p.manifestFiles === 5 && p.fxFiles === 1));
+  assert.ok(updates.every((p) => p.voiceLanguages.join(',') === 'cn,jp'));
+  const final = seen.at(-1);
+  assert.deepEqual(updates.at(-1).groups, final.groups);
+  assert.deepEqual(updates.at(-1).scopes, final.scopes);
+  assert.deepEqual(updates.at(-1).skins, final.skins);
+  assert.equal(updates[0].groups.reduce((n, g) => n + g.present, 0), 0);
+  assert.equal(updates[0].scopes.reduce((n, s) => n + s.cached, 0), 0);
+  assert.equal(updates[0].skins[0].present, 0, 'later progress does not mutate an earlier snapshot');
+  assert.equal(final.fxPresent, 1);
+});
+
+test('progress after a small download never rescans thousands of unrelated catalog files', async () => {
+  let dormantReads = 0;
+  const files = Array.from({ length: 8 }, (_, i) => file(`/assets/ui/${i}.png`, 'ui'));
+  for (let i = 0; i < 4000; i++) {
+    const url = `/assets/local/fx/mesh/${i}.json`;
+    files.push({ ...file(url, '{}', 2), fx: true, get url() { dormantReads++; return url; } });
+  }
+  const env = makeStore(files);
+  let clock = 0, updates = 0;
+  env.store.now = () => clock += 300;
+  env.store.smallLanes = 1;
+  env.store.setScope({ optional: false, voices: false, fx: false });
+  await env.store.download({ onProgress: (p) => {
+    if (p.phase !== 'download') return;
+    if (p.current) {
+      updates++;
+      assert.equal(dormantReads, 0, 'completed-file progress must not walk the dormant effect catalog');
+    }
+    dormantReads = 0;
+  } });
+  assert.equal(updates, 8);
+  assert.equal(env.calls.length, 8);
+});
+
+test('large page-side metadata scans yield to pending input tasks before the scan completes', async (t) => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', { value: {}, configurable: true });
+  t.after(() => { if (saved) Object.defineProperty(globalThis, 'document', saved); else delete globalThis.document; });
+  let clock = 0;
+  t.mock.method(performance, 'now', () => clock += 10);
+  const files = Array.from({ length: 1024 }, (_, i) => file(`/assets/ui/${i}.png`, 'ui'));
+  const env = makeStore(files);
+  let inputHandled = false;
+  const input = new Promise((resolve) => setTimeout(() => { inputHandled = true; resolve(); }, 0));
+  const status = await env.store.status();
+  assert.equal(inputHandled, true, 'a long scan must allow a queued page task to run');
+  assert.equal(status.total, files.length);
+  assert.equal(status.count, 0);
+  await input;
+});
+
+test('ZIP progress counts imported unselected skins/effects in their cards without widening the download selection', async () => {
+  const skin = 'char_001_test/char_001_test@one#1';
+  const files = [file('/assets/ui/a.png', 'ui'), { ...file('/assets/local/fx/index.json', '{}', 2), fx: true },
+    { ...file('/assets/spine/op/test/skin.skel', 'skin', 2), skin }];
+  const source = makeStore(files);
+  source.store.setScope({ optional: true, skins: 'all', fx: true });
+  await source.store.download();
+  const zip = await exportResourceZip(source.store);
+  const target = makeStore(files), seen = [];
+  target.store.setScope({ optional: false, voices: false, skins: 'off', fx: false });
+  await importResourceZip(target.store, zip.blob, { concurrency: 1, onProgress: (p) => {
+    if (p.getStatus) seen.push(p.getStatus());
+  } });
+  assert.equal(seen[0].scopes.reduce((n, s) => n + s.cached, 0), 0);
+  const final = seen.at(-1);
+  assert.equal(final.count, 1);
+  assert.deepEqual(final.scopes.map((s) => s.cached), [1, 0, 1, 1]);
+  assert.equal(final.skins[0].present, 1);
+  assert.equal(final.fxPresent, 1);
+  assert.equal(final.groups.find((g) => g.id === 'fx').present, 0);
+  assert.equal(final.groups.find((g) => g.id === 'fx').allPresent, 1);
+});
+
 test('digest failures reject downloads and preserve unverified existing bytes without marking them current', async (t) => {
   const files = [file('/assets/ui/a.png', 'expected')];
   const fresh = makeStore(files);

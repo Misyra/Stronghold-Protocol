@@ -26,7 +26,7 @@ import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { canonicalResourceUrl, isBoardResourceJson } from '../shared/resourcePaths.js';
+import { canonicalResourceUrl, isRawResourceJson } from '../shared/resourcePaths.js';
 import { CUSTOM_EMOTE_THEME, emoteArtPath } from '../shared/constants.js';
 
 export const RESOURCE_MANIFEST_FILE = 'resource-manifest.json';
@@ -189,13 +189,14 @@ const FX_PATH_PREFIX = '/assets/local/fx/';
  * Sizes and hashes come from the same place every other file's do: measure() on an install that has the files on disk,
  * the published asset manifest on a CDN-only install (createResourceIndex).
  * @param {any} fx parsed data/local-fx.json, optional
+ * @param {string} [cdnBase] strip a CDN base path before recognizing the extraction tree
  * @returns {{ url: string, tier: number, source: 'fx', fx: true }[]}
  */
-export function collectFxFiles(fx) {
+export function collectFxFiles(fx, cdnBase = '') {
   const byUrl = new Map();
   const walk = (node) => {
     if (typeof node === 'string') {
-      if (!validateResourceUrl(node) || !pathKey(node).startsWith(FX_PATH_PREFIX)) return;
+      if (!validateResourceUrl(node) || !pathKey(node, cdnBase).startsWith(FX_PATH_PREFIX)) return;
       const url = canonicalResourceUrl(node);
       if (!byUrl.has(url)) byUrl.set(url, { url, tier: TIER_REST, source: 'fx', fx: true });
       return;
@@ -321,10 +322,11 @@ export function localPathFor(url, publicDir, cdnBase = '') {
  * The served resource manifest, built from the data directory and cached until one of its sources changes.
  * @param {{ dataDir: string, publicDir: string, cdnBase?: string, rewrite?: (v: any) => any,
  *           statFile?: (p: string) => Promise<{ isFile(): boolean, size: number }>, readFile?: typeof fsp.readFile, log?: any,
+ *           transformResource?: (source: string, ext: string) => string,
  *           assetsManifest?: { hashes: Record<string, string>, preload?: Record<string, { hash: string, size: number }> } | null }} opts
  */
 export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite = (v) => v, statFile = (p) => fsp.stat(p),
-  readFile = (p, opts) => fsp.readFile(p, opts), log = null, assetsManifest = null } = {}) {
+  readFile = (p, opts) => fsp.readFile(p, opts), log = null, assetsManifest = null, transformResource = null } = {}) {
   /** @type {{ key: string, sourceKey: string, tileFiles: any[], body: Buffer, gzip: Buffer, etag: string, mtimeMs: number, manifest: any } | null} */
   let cache = null;
   let pending = null, generation = 0;
@@ -429,7 +431,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     // here and gets the same hashes/sizes as the rest of the list. ~12.5 k files, one entry each (a texture's `half`
     // variant is a path of its own). Still optional; the panel just groups and switches it separately.
     const seenUrls = new Set(collected.map((f) => f.url));
-    for (const file of collectFxFiles(fxDoc)) {
+    for (const file of collectFxFiles(fxDoc, cdnBase)) {
       if (seenUrls.has(file.url)) continue;
       seenUrls.add(file.url);
       collected.push(file);
@@ -466,9 +468,20 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     };
     const sizes = await measure(files, real, publishedSizes);
     const fileHashes = resolveHashes(files, real, stamps, cdnBase);
-    // CSS/JSON can be rewritten by the serving host. Their index fingerprint includes the URL namespace, but is
-    // deliberately not a raw-byte digest: a CDN host may rewrite these small files differently from this game host.
-    for (const f of files) if (/\.(?:css|json)(?:\?v=[0-9a-f]{16})?$/.test(f.url) && !isBoardResourceJson(f.url)) {
+    // Extracted render JSON is served verbatim. Host-rewritten CSS/JSON must instead describe the actual response
+    // bytes (including their size), so a ZIP exported on this host is also fully importable on it.
+    for (const f of files) if (/\.(?:css|json)(?:\?v=[0-9a-f]{16})?$/.test(f.url) && !isRawResourceJson(f.url)) {
+      const own = f.url.startsWith('/') && !f.url.startsWith('//');
+      const abs = own && localPathFor(f.url, publicDir);
+      if (transformResource && abs) {
+        try {
+          const ext = path.extname(pathKey(f.url));
+          const body = Buffer.from(transformResource(await readFile(abs, 'utf8'), ext));
+          fileHashes.set(f.url, crypto.createHash('sha1').update(body).digest('hex').slice(0, 12));
+          sizes.set(f.url, body.length);
+          continue;
+        } catch { /* absent local file: retain the namespace-bound fallback */ }
+      }
       fileHashes.set(f.url, 'syn-' + shortHash(fileHashes.get(f.url) + '|' + f.url));
     }
     // The version is informational now (the client keys its cache per file), but it must still change whenever the set

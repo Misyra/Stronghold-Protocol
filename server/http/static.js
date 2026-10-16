@@ -79,7 +79,7 @@ import { isStudioPath } from '../studio/paths.js';
 import { PACKS_URL, PACK_INDEX_FILE } from '../../shared/packs.js';
 import { createAssetVersion, VERSION_PREFIX } from '../assetVersion.js';
 import { createResourceIndex, RESOURCE_MANIFEST_FILE } from '../resources.js';
-import { isBoardResourceJson } from '../../shared/resourcePaths.js';
+import { isRawResourceJson } from '../../shared/resourcePaths.js';
 import { PLUGINS_URL, PLUGIN_INDEX_VERSION, buildPluginIndex, extOf, isPackPath, isPluginId } from '../../shared/plugins/manifest.js';
 import { csUrlPart } from '../../shared/plugins/identity.js';
 import { FILE_URL_DIGITS, PLUGIN_AUDIO_EXTS, PLUGIN_FILES_URL, VISUAL_DOC_FILE, VISUAL_SETS_URL, VS_URL_DIGITS } from '../../shared/plugins/visual.js';
@@ -186,7 +186,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   const gzipCache = new CompressCache();
   const release = createAssetVersion(mounts, DATA_SHIM_JS, cdn);
   const resources = createResourceIndex({ dataDir, publicDir, cdnBase: cdn.base, assetsManifest,
-    rewrite: (v) => JSON.parse(release.transform(JSON.stringify(v), '.json')), log });
+    rewrite: (v) => JSON.parse(release.transform(JSON.stringify(v), '.json')),
+    transformResource: (source, ext) => release.transform(source, ext), log });
   let assetsManifestBody;
   // Small transformed responses share both the read and the result; bounded independently of the gzip cache.
   const transformed = new Map();
@@ -454,10 +455,10 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       sendError(req, res, 503, '资源文件已变更，请重启服务器 · Restart required'); return;
     }
     const ext = path.extname(absPath).toLowerCase();
-    // Board sidecars use asset names/relative paths, resolved through the local-art manifest by the renderer.
+    // Extracted map/mesh/scene/effect sidecars use asset names/relative paths, resolved by the renderer.
     // Keep their bytes identical to the CDN and hash tooling so verified ZIP imports work across hosts.
     const rewrite = ['.html', '.htm'].includes(ext) || (versioned && (ext === '.css' || (ext === '.json'
-      && !isBoardResourceJson(decoded) && (mount.name === 'data' || segments[0] === 'assets'))));
+      && !isRawResourceJson(decoded) && (mount.name === 'data' || segments[0] === 'assets'))));
     const body = rewrite ? await bodyFor(absPath, stat, ext) : null;
     const builtAsset = /^\/build\/assets\/[\w.-]+-[\w-]{8,}\.[a-z0-9]+$/.test(decoded);
     // A gameplay data file named by its own content hash (?v=<sha8>, the URL of the vanilla content manifest):

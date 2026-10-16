@@ -593,6 +593,9 @@ The overview offers three atomic presets without changing the master switch or p
 完整预载 (all optional groups, all installed skins and all available voice languages).
 
 The overview counts **selected cacheable files** and shows 本次预载 / 已缓存 / 还需下载 with a single progress bar.
+Download progress updates at most every 250 ms (completion is immediate). A completed file updates only its own
+category, card and skin counters; progress never rescans the full resource catalog. URL keys are reused across checks,
+and page-side cache scans yield after roughly 8 ms of work so input and animation can continue during large checks.
 Unknown sizes show a `+` and use file-count progress. Required, voice and effect cards keep catalog counters
 (`allTotal` / `allPresent` / `allBytes`) visible even when disabled, labelled 未预载; only language changes narrow the voice catalog.
 The skin card's main bar measures selected outfits only. Its separate server-installed / locally-cached totals
@@ -668,8 +671,11 @@ the server uses them only for matching per-file CDN URL versions. The public imm
 original `{ tag, hashes }` response. Old ZIPs exported under synthetic server hashes still contain actual content
 digests and become reusable after this metadata is deployed. Existing cache bodies are verified and adopted
 without downloading them again. Synthetic server fingerprints cannot authorize ZIP imports.
-Host-rewritten CSS/JSON with synthetic fingerprints are intentionally skipped during import and supplemented from
-the current server; an exported package can therefore restore fewer files than its entry count without failing.
+Extracted map, mesh, scene and official-effect JSON is served byte-for-byte on both local and CDN hosts and retains
+its content fingerprint, so complete ZIPs include the effect descriptions as well as their textures. CSS/JSON rewritten
+on the game host carries the hash and size of its actual response (including versioned/CDN references), making a ZIP
+exported there fully reusable on the same deployment. Remote rewritten files without verifiable metadata retain
+synthetic fingerprints and are supplemented from their serving host.
 Both archive and decompressed totals are capped at 2 GiB; one resource is capped at 24 MiB.
 Cancelled or failed imports keep completed verified files; failed entries are never
 written. Small entries run in up to four concurrent lanes within a 1 MiB raw-byte budget, while larger entries run

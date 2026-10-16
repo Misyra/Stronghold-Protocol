@@ -2,10 +2,12 @@
 // public/js/resources/store.js — the preload store: downloads the manifest's files into Cache Storage and reports what
 // is already there (docs/ASSETS.md「Preload」).
 //
-// One cache (`CACHE_NAME`) holds every asset, whatever manifest it came from, and each file's *hash* decides whether the
-// stored bytes are still current: an asset update re-downloads the changed files only (~310 MiB → a few MiB), and a
-// re-run of the extraction or a redeploy with unchanged art costs nothing. The hashes of the stored files live in one
-// index entry inside that cache, written as the run advances — an interrupted run keeps the progress it flushed.
+// One cache per preload card (`resourceScope`, common.js) holds that card's assets, whatever manifest they came from, and
+// each file's *hash* decides whether the stored bytes are still current: an asset update re-downloads the changed files
+// only (~310 MiB → a few MiB), and a re-run of the extraction or a redeploy with unchanged art costs nothing. Each card
+// keeps its own index entry (`/__sp-resource-index__`, absolute URL → hash), written as the run advances — an interrupted
+// run keeps the progress it flushed. The cards also keep every listing enumerable: the browser refuses one `Cache.keys()`
+// above ~10 MiB of keys, which a complete 干员语音 + 干员皮肤 + 官方特效 preload reaches (docs/ASSETS.md「Preload」).
 //
 // The current worker verifies/writes once and acknowledges over a private channel; the page owns the index.
 // Without a compatible worker the page does the downloading (`fetch` plus `cache.put`), so a page without a Service Worker
@@ -16,9 +18,7 @@
 import { markResourceHeaders, cacheIndex, readCacheIndex } from './cacheMetadata.js';
 import { resourceIdentity } from '../../../shared/resourcePaths.js';
 import { VOICE_LANGS } from '../voicePrefs.js';
-import {
-  CACHE_NAME, CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, TIER_ESSENTIAL, TIER_REST, RESOURCE_GROUPS, resourceGroup, resourceType, absoluteUrl, indexUrl, checkAbort, isCacheQueryLimit, isQuotaError, isSkinKey,
-} from './common.js';
+import { absoluteUrl, CACHE_NAME, CACHE_PREFIX, cacheNameForScope, checkAbort, CONTENT_HASH_RE, indexUrl, isCacheQueryLimit, isQuotaError, isSkinKey, MAX_FILE_BYTES, RESOURCE_GROUPS, RESOURCE_SCOPES, resourceGroup, resourceScope, resourceType, SHARD_CACHE_NAMES, TIER_ESSENTIAL, TIER_REST } from './common.js';
 import { resourceDigests, verifiedResourceBytes } from './integrity.js';
 import { fetchResource } from './network.js';
 
@@ -87,6 +87,9 @@ async function digestOf(response, { consume = false } = {}) {
 export class ResourceStore {
   /** Cache names whose whole-cache `keys()` query the browser refuses: the page-owned index answers instead. */
   #keysRefused = new Set();
+  /** Key → recorded hash across every card, as of the last `status()`: `#download` reads that snapshot instead of
+   *  opening and parsing four indexes again (only `#status()` writes it). */
+  #indexSnapshot = new Map();
 
   /**
    * @param {{ files: { url: string, tier: number, size?: number, hash?: string }[], version: string, totalBytes?: number|null }} manifest
@@ -107,6 +110,7 @@ export class ResourceStore {
     this.network = network;
     this.schedule = schedule;
     this.ensureCached = ensureCached;
+    // The catch-all card keeps the pre-split name; `shardName(file)` picks the card a manifest entry lives in.
     this.cacheName = CACHE_NAME;
     /** @type {Promise<any> | null} */
     this.running = null;
@@ -214,8 +218,28 @@ export class ResourceStore {
     checkAbort(signal);
     if (this.running) throw new Error('请先暂停资源下载');
     const lanes = Number.isInteger(concurrency) ? Math.max(1, Math.min(4, concurrency)) : 4;
-    const cache = await this.caches.open(this.cacheName);
-    const index = await this.#readIndex(cache);
+    const cards = new Map();
+    // One card per name, memoized as a *promise*: four lanes reach the same name at once, and a memoized state
+    // object would let each of them read the index separately and then flush only whichever object won the map.
+    const card = (name) => {
+      let pending = cards.get(name);
+      if (!pending) {
+        pending = (async () => {
+          const cache = await this.caches.open(name);
+          return { name, cache, index: await this.#readIndex(cache), dirty: false };
+        })();
+        cards.set(name, pending);
+      }
+      return pending;
+    };
+    // The flag lives on the card, not on the index object, and is set beside every index write.
+    const flushIndexes = async () => {
+      for (const state of await Promise.all(cards.values())) {
+        if (!state.dirty) continue;
+        state.dirty = false;
+        await this.#writeIndex(state.cache, state.index.files, this.manifest.version);
+      }
+    };
     const before = await this.status();
     const allowed = new Set(this.files);
     const groups = new Map(before.groups.map((group) => [group.id, group]));
@@ -240,7 +264,7 @@ export class ResourceStore {
     const check = () => { if (failed) throw failure; checkAbort(signal); };
     const writeIndex = async () => {
       const start = performance.now();
-      try { await this.#writeIndex(cache, index.files, this.manifest.version); }
+      try { await flushIndexes(); }
       finally { timings.indexWriteMs += performance.now() - start; }
     };
     // Update counters per completed key; publishing copies only the small category list, not the whole manifest.
@@ -276,6 +300,8 @@ export class ResourceStore {
         currentFile = file;
         check();
         const key = this.keyOf(file.url);
+        const state = await card(this.shardName(file));
+        const { cache, index } = state;
         const cacheStart = performance.now();
         let current;
         try {
@@ -302,6 +328,7 @@ export class ResourceStore {
           finally { timings.cacheWriteMs += performance.now() - writeStart; }
           // A put cannot be cancelled: always index successful writes, even when another lane has since failed.
           index.files[key] = file.hash;
+          state.dirty = true;
           markPresent(key);
           imported++;
           if (imported % INDEX_FLUSH_EVERY === 0) {
@@ -433,38 +460,123 @@ export class ResourceStore {
     return new Set(Object.keys(index.files));
   }
 
-  /** The keys this cache holds: what `status().present` is derived from (`archive.js` exports from the same set). */
+  /** Which card a manifest entry lives in (`essential` / `voice` / `skin` / `fx`). */
+  scopeOf(file) {
+    return resourceScope(file);
+  }
+
+  /** The Cache Storage name of that card. */
+  shardName(file) {
+    return cacheNameForScope(resourceScope(file));
+  }
+
+  /** Every cache of this app: the four cards first, then the leftovers of older layouts. */
+  async #cacheNames() {
+    const names = ((await this.caches.keys()) || []).filter((n) => n.startsWith(CACHE_PREFIX));
+    return [...SHARD_CACHE_NAMES.filter((n) => names.includes(n)), ...names.filter((n) => !SHARD_CACHE_NAMES.includes(n))];
+  }
+
+  /** The cards this browser has right now, in panel order. Reading status must not create one. */
+  async #shards() {
+    const existing = new Set((await this.caches.keys()) || []);
+    const shards = [];
+    for (const name of SHARD_CACHE_NAMES) {
+      if (existing.has(name)) shards.push({ name, cache: await this.caches.open(name) });
+    }
+    return shards;
+  }
+
+  /** Every key every cache of this app holds (`archive.js` finds cached-but-unindexed entries through this). Each card
+   *  stays enumerable on its own; an older build's cache is asked too, because its entries are still served. */
   async cachedKeys() {
-    return this.#keyUrls(await this.caches.open(this.cacheName), this.cacheName);
+    const keys = new Set();
+    for (const name of await this.#cacheNames()) {
+      for (const key of await this.#keyUrls(await this.caches.open(name), name)) keys.add(key);
+    }
+    return keys;
+  }
+
+  /** The stored entry of a manifest file: its own card first, then any other cache (an older layout's copy). */
+  async cachedResponse(file) {
+    return this.cachedResponseFor(this.keyOf(file.url), this.shardName(file));
+  }
+
+  /** @param {string} key absolute URL @param {string} [preferred] cache name to look in first */
+  async cachedResponseFor(key, preferred = '') {
+    const names = await this.#cacheNames();
+    const ordered = preferred && names.includes(preferred) ? [preferred, ...names.filter((n) => n !== preferred)] : names;
+    for (const name of ordered) {
+      const hit = await (await this.caches.open(name)).match(key);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  /** A reader for a whole export — `(key, preferred) => Promise<Response|null>` over the caches that exist right now
+   *  (`archive.js` asks for tens of thousands of entries: the list is resolved once, not per file). */
+  async entryReader() {
+    const cards = await Promise.all((await this.#cacheNames()).map(async (name) => ({ name, cache: await this.caches.open(name) })));
+    return async (key, preferred = '') => {
+      for (const card of cards) if (card.name === preferred) { const hit = await card.cache.match(key); if (hit) return hit; }
+      for (const card of cards) { if (card.name === preferred) continue; const hit = await card.cache.match(key); if (hit) return hit; }
+      return null;
+    };
   }
 
   async #status() {
     const started = performance.now();
-    const cache = await this.caches.open(this.cacheName);
     let keysMs = 0;
     let indexMs = 0;
-    const [cached, index] = await Promise.all([
-      (async () => {
-        const start = performance.now();
-        try { return await this.#keyUrls(cache, this.cacheName); } finally { keysMs = performance.now() - start; }
-      })(),
-      (async () => {
-        const start = performance.now();
-        try { return await this.#readIndex(cache); } finally { indexMs = performance.now() - start; }
-      })(),
-    ]);
-    const fresh = this.#fresh(cached, index);
-    return { ...this.#tally(fresh), present: fresh, scan: this.#keysRefused.has(this.cacheName) ? 'index' : 'keys',
+    let refused = false;
+    let misplaced = false;
+    let stale = false;
+    const cached = new Set();
+    const files = new Map();
+    const indexKey = indexUrl(this.origin);
+    // What every manifest entry is called and which card it belongs in: a listing can then tell whether some card holds
+    // an entry that belongs elsewhere (#tidy) or one the manifest no longer wants (prune), instead of both passes
+    // enumerating every card again on a run that changes nothing.
+    const byKey = new Map(this.files.map((f) => [this.keyOf(f.url), f]));
+    await Promise.all((await this.#shards()).map(async ({ name, cache }) => {
+      // One query for the keys and one index read, started together: the pair is what makes a status check a
+      // single round of cache metadata reads, and a refused enumeration must not delay the index by a whole query.
+      // The two timers are read where each promise settles — reading them after `Promise.all` would report the
+      // slower of the pair twice and hide which half a slow status check actually spent its time in.
+      const keysStart = performance.now();
+      const keysRead = this.#keyUrls(cache, name).then((value) => { keysMs += performance.now() - keysStart; return value; });
+      const indexStart = performance.now();
+      const indexRead = this.#readIndex(cache).then((value) => { indexMs += performance.now() - indexStart; return value; });
+      const [keys, index] = await Promise.all([keysRead, indexRead]);
+      if (this.#keysRefused.has(name)) refused = true;
+      for (const key of keys) {
+        cached.add(key);
+        if (key === indexKey) continue; // the index document is not an asset of the manifest
+        const file = byKey.get(key);
+        if (!file) stale = true;
+        else if (this.shardName(file) !== name) misplaced = true;
+      }
+      for (const [key, hash] of Object.entries(index.files)) {
+        files.set(key, hash);
+        if (!byKey.has(key)) stale = true; // a record of a file the manifest dropped
+      }
+    }));
+    const fresh = this.#fresh(cached, files);
+    // `#download` inherits the alias map from here: every card was just read, so no index has to be parsed twice.
+    this.#indexSnapshot = files;
+    // A refused listing answers from the index, which says nothing about where an entry actually sits: the run has to
+    // look for itself.
+    if (refused) misplaced = true;
+    return { ...this.#tally(fresh), present: fresh, scan: refused ? 'index' : 'keys', misplaced, stale,
       checkTimings: { statusMs: performance.now() - started, cacheKeysMs: keysMs, indexReadMs: indexMs } };
   }
 
   /** The subset of `cached` whose recorded hash equals the manifest's (an entry without a hash counts as current). */
-  #fresh(cached, index) {
+  #fresh(cached, files) {
     const fresh = new Set();
     for (const f of this.files) {
       const key = this.keyOf(f.url);
       if (!cached.has(key)) continue;
-      if (f.hash && index.files[key] !== f.hash) continue;
+      if (f.hash && files.get(key) !== f.hash) continue;
       fresh.add(key);
     }
     return fresh;
@@ -472,8 +584,7 @@ export class ResourceStore {
 
   /** Caches of earlier builds this app wrote: their entries carry no hash record and are verified before being kept. */
   async #olderCaches() {
-    const names = (await this.caches.keys()) || [];
-    return names.filter((n) => n.startsWith(CACHE_PREFIX) && n !== this.cacheName);
+    return (await this.#cacheNames()).filter((n) => !SHARD_CACHE_NAMES.includes(n));
   }
 
   /** Fetch a file and hand back a storable response (an opaque or empty or failed answer throws). */
@@ -491,7 +602,7 @@ export class ResourceStore {
     const key = this.keyOf(file.url);
     const alias = aliases.get(resourceIdentity(key));
     if (file.hash && CONTENT_HASH_RE.test(file.hash) && alias?.hash === file.hash && alias.key !== key) {
-      const hit = await cache.match(alias.key);
+      const hit = await this.cachedResponseFor(alias.key, this.shardName(file));
       if (hit) { await cache.put(key, hit); return true; }
     }
     if (!file.hash || !CONTENT_HASH_RE.test(file.hash)) return false; // nothing to compare against
@@ -590,14 +701,21 @@ export class ResourceStore {
     // Per-group figures over the whole manifest — switched-off scopes included, narrowed only by the voice language.
     // The panel draws its cards from these: a box that is off greys out its card instead of
     // deleting it, and no figure moves while boxes are toggled (docs/ASSETS.md).
+    // The same pass feeds the per-card figures the ZIP card exports from: one card at a time, and no figure moves
+    // while a switch is toggled (docs/ASSETS.md). The catch-all card is the whole tree minus the other three.
+    const scopes = new Map(RESOURCE_SCOPES.map((id) => [id, { id, total: 0, cached: 0, bytes: 0, totalBytes: 0 }]));
     for (const f of this.files) {
       if (!this.languageOk(f)) continue;
       const group = groups[resourceGroup(f)];
+      const scope = scopes.get(resourceScope(f));
+      const stored = present.has(this.keyOf(f.url));
       group.allTotal++;
-      if (Number.isSafeInteger(f.size)) group.allBytes += f.size; else group.allUnknown++;
-      if (present.has(this.keyOf(f.url))) {
+      scope.total++;
+      if (Number.isSafeInteger(f.size)) { group.allBytes += f.size; scope.totalBytes += f.size; } else group.allUnknown++;
+      if (stored) {
         group.allPresent++;
-        if (Number.isSafeInteger(f.size)) group.allCached += f.size;
+        scope.cached++;
+        if (Number.isSafeInteger(f.size)) { group.allCached += f.size; scope.bytes += f.size; }
       }
     }
     // Whole-manifest totals, independent of the selection: the per-tier figures only ever add up what is switched
@@ -624,6 +742,7 @@ export class ResourceStore {
       tier1Wanted,
       tier2Wanted,
       groups: Object.values(groups).filter((g) => g.allTotal > 0),
+      scopes: [...scopes.values()],
       // Sorted by key so the panel's list is stable; the UI joins the ids with the skin catalogue for names.
       skins: [...skins.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
       manifestFiles: this.files.length,
@@ -634,6 +753,66 @@ export class ResourceStore {
       skinScope: this.skinScope(),
       complete: wanted > 0 && count >= wanted,
     };
+  }
+
+  /**
+   * Move entries that sit in a card they do not belong to: an install from before the split keeps every byte in the
+   * catch-all cache, and such a file must not be downloaded a second time. One file at a time — copy it with its index
+   * record, then delete the old copy — so an interrupted pass never leaves two copies and the extra storage the pass
+   * needs is one file. An entry that had no index record does not gain one: the next run verifies its bytes like any
+   * other unindexed entry.
+   * @returns {Promise<number>} how many entries moved
+   */
+  async #tidy({ signal } = {}) {
+    const cards = new Map();
+    // One card per name, memoized as a *promise*: four lanes reach the same name at once, and a memoized state
+    // object would let each of them read the index separately and then flush only whichever object won the map.
+    const card = (name) => {
+      let pending = cards.get(name);
+      if (!pending) {
+        pending = (async () => {
+          const cache = await this.caches.open(name);
+          return { name, cache, index: await this.#readIndex(cache), dirty: false };
+        })();
+        cards.set(name, pending);
+      }
+      return pending;
+    };
+    const flush = async () => {
+      for (const state of await Promise.all(cards.values())) {
+        if (!state.dirty) continue;
+        state.dirty = false;
+        await this.#writeIndex(state.cache, state.index.files, this.manifest.version);
+      }
+    };
+    const wanted = new Map(this.files.map((f) => [this.keyOf(f.url), f]));
+    let moved = 0;
+    for (const { name, cache } of await this.#shards()) {
+      const source = await card(name);
+      for (const key of await this.#keyUrls(cache, name)) {
+        checkAbort(signal);
+        const file = wanted.get(key);
+        if (!file || this.shardName(file) === name) continue;
+        const hit = await cache.match(key);
+        if (!hit) {
+          if (key in source.index.files) { delete source.index.files[key]; source.dirty = true; }
+          continue;
+        }
+        const destination = await card(this.shardName(file));
+        await destination.cache.put(key, hit);
+        if (key in source.index.files) destination.index.files[key] = source.index.files[key];
+        destination.dirty = true;
+        await cache.delete(key);
+        if (key in source.index.files) delete source.index.files[key];
+        source.dirty = true;
+        moved++;
+        if (moved % INDEX_FLUSH_EVERY === 0) await flush();
+      }
+      // Smaller now (or verified empty): let the next status try one-shot enumeration again.
+      this.#keysRefused.delete(name);
+    }
+    if (moved) await flush();
+    return moved;
   }
 
   /**
@@ -650,8 +829,27 @@ export class ResourceStore {
 
   async #download({ signal, onProgress, tiers }) {
     const wanted = new Set(tiers);
-    const cache = await this.caches.open(this.cacheName);
-    const index = await this.#readIndex(cache);
+    const cards = new Map();
+    // One card per name, memoized as a *promise*: four lanes reach the same name at once, and a memoized state
+    // object would let each of them read the index separately and then flush only whichever object won the map.
+    const card = (name) => {
+      let pending = cards.get(name);
+      if (!pending) {
+        pending = (async () => {
+          const cache = await this.caches.open(name);
+          return { name, cache, index: await this.#readIndex(cache), dirty: false };
+        })();
+        cards.set(name, pending);
+      }
+      return pending;
+    };
+    const flushIndexes = async () => {
+      for (const state of await Promise.all(cards.values())) {
+        if (!state.dirty) continue;
+        state.dirty = false;
+        await this.#writeIndex(state.cache, state.index.files, this.manifest.version);
+      }
+    };
     const start = await this.status();
     checkAbort(signal);
     const work = this.selectedFiles.filter((f) => wanted.has(f.tier) && this.eligible(f) && !start.present.has(this.keyOf(f.url)));
@@ -676,7 +874,7 @@ export class ResourceStore {
         bytes, totalBytes: start.totalBytes, sized, sizedTotal: start.sizedTotal,
         tier1: start.tier1, tier1Present: tier1Done, tier2: start.tier2, tier2Present: tier2Done,
         tier1Wanted: start.tier1Wanted, tier2Wanted: start.tier2Wanted,
-        groups: tally.groups, skins: tally.skins, skinScope: tally.skinScope,
+        groups: tally.groups, scopes: tally.scopes, skins: tally.skins, skinScope: tally.skinScope,
         complete: false, failed, failures: failures.slice(), current, adopted, downloaded,
       };
     };
@@ -688,6 +886,13 @@ export class ResourceStore {
       onProgress(progress(current));
     };
     emit(null, true);
+    // Cards from before the split hold another card's files: move them before anything is fetched (no network traffic).
+    // Only when the listing saw an entry out of place: the pass costs one enumeration of every card, which an install
+    // that is already laid out correctly would pay for nothing.
+    if (start.misplaced) {
+      adopted += await this.#tidy({ signal });
+      if (adopted) emit(null, true);
+    }
     if (work.length) {
       // the manifest is sorted essential-first, so a plain order keeps tier 1 ahead of tier 2
       const small = [];
@@ -695,10 +900,15 @@ export class ResourceStore {
       for (const f of work) (Number.isSafeInteger(f.size) && f.size > BIG_FILE_BYTES ? big : small).push(f);
       // Caches of the pre-hash layout: their entries are verified (and moved) before anything is fetched.
       const older = await this.#olderCaches();
-      const aliases = new Map(Object.entries(index.files).map(([key, hash]) => [resourceIdentity(key), { key, hash }]));
+      // Old-layout keys (aliases) come from the snapshot `status()` just built: it spans every card, so an alias
+      // cannot go missing merely because its entry sits in another one.
+      const aliases = new Map();
+      for (const [key, hash] of this.#indexSnapshot) aliases.set(resourceIdentity(key), { key, hash });
       const one = async (file) => {
         checkAbort(signal);
         const key = this.keyOf(file.url);
+        const state = await card(this.shardName(file));
+        const { cache, index } = state;
         try {
           if (await this.#adopt(file, cache, older, aliases, signal)) adopted++;
           else {
@@ -728,7 +938,8 @@ export class ResourceStore {
           // A missing index record is recovered by verifying the saved bytes on the next run.
           if (file.hash) {
             index.files[key] = file.hash;
-            if (++pendingFlush >= INDEX_FLUSH_EVERY) { pendingFlush = 0; await this.#writeIndex(cache, index.files, this.manifest.version); }
+            state.dirty = true;
+            if (++pendingFlush >= INDEX_FLUSH_EVERY) { pendingFlush = 0; await flushIndexes(); }
           }
           done++;
           start.present.add(key);
@@ -785,7 +996,7 @@ export class ResourceStore {
       } finally {
         // Flush on every exit — an abort or a quota failure included: the files stored so far must count as current
         // next time. A failing write requires verifying their saved bytes on the next run.
-        try { await this.#writeIndex(cache, index.files, this.manifest.version); } catch { /* out of storage: the run is already failing */ }
+        try { await flushIndexes(); } catch { /* out of storage: the run is already failing */ }
       }
     } else {
       checkAbort(signal);
@@ -793,8 +1004,11 @@ export class ResourceStore {
     const after = await this.status();
     const result = { ...after, phase: 'ready', failed, failures: failures.slice(), adopted, downloaded };
     onProgress?.(result);
-    // Only a complete set may drop anything: a partial run never deletes files it did not replace.
-    if (result.complete) await this.prune();
+    // Only a complete set may drop anything: a partial run never deletes files it did not replace. Cleanup is
+    // maintenance, not part of the download - it enumerates every card again, so it runs only when this run changed
+    // something or the listing already saw an entry the manifest no longer wants (a dropped asset, an earlier
+    // layout's cache). An install that is complete and in order has nothing to clean.
+    if (result.complete && (downloaded || adopted || start.stale)) await this.prune();
     return result;
   }
   /** Delete every cache this app owns, of every version — 「清理缓存」 in the settings panel. Never re-creates one. */
@@ -830,7 +1044,7 @@ export class ResourceStore {
   /** Drop the caches of other versions (a new asset manifest frees the files of the previous one). */
   async pruneOld() {
     const names = (await this.caches.keys()) || [];
-    const stale = names.filter((n) => n.startsWith(CACHE_PREFIX) && n !== this.cacheName);
+    const stale = names.filter((n) => n.startsWith(CACHE_PREFIX) && !SHARD_CACHE_NAMES.includes(n));
     const removed = [];
     for (const name of stale) {
       if (this.voiceScope) {
@@ -858,17 +1072,19 @@ export class ResourceStore {
    * entry at all — i.e. after the migration of this run moved or dropped what it could.
    */
   async pruneStale() {
-    const cache = await this.caches.open(this.cacheName);
     const wanted = new Set(this.files.map((f) => this.keyOf(f.url)));
     const indexKey = indexUrl(this.origin);
-    const index = await this.#readIndex(cache);
-    const doomed = [...await this.#keyUrls(cache, this.cacheName)]
-      .filter((url) => url !== indexKey && !wanted.has(url));
-    if (!doomed.length) return 0;
-    await Promise.all(doomed.map((url) => cache.delete(url)));
-    for (const url of doomed) delete index.files[url];
-    await this.#writeIndex(cache, index.files, this.manifest.version);
-    return doomed.length;
+    let removed = 0;
+    for (const { name, cache } of await this.#shards()) {
+      const index = await this.#readIndex(cache);
+      const doomed = [...await this.#keyUrls(cache, name)].filter((url) => url !== indexKey && !wanted.has(url));
+      if (!doomed.length) continue;
+      await Promise.all(doomed.map((url) => cache.delete(url)));
+      for (const url of doomed) delete index.files[url];
+      await this.#writeIndex(cache, index.files, this.manifest.version);
+      removed += doomed.length;
+    }
+    return removed;
   }
 
   /**

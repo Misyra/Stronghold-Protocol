@@ -1184,6 +1184,10 @@
 .resource-archive__toolbar .res-actions { gap: .08rem; }
 .resource-archive__help { margin-top: .06rem; font-size: calc(.13 * var(--utility-text, var(--t))); color: var(--text-dim); }
 .resource-archive__help p { margin-top: .08rem; }
+.resource-archive__scope { display: flex; align-items: center; flex-wrap: wrap; gap: .06rem .12rem; margin-top: .1rem; }
+.resource-archive__scope-label { color: var(--text-md); font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-archive__scope-size { margin-left: auto; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-archive__scope .resource-presets { gap: .05rem; }
 .resource-archive .pbar { margin-top: .1rem; }
 .resource-manager summary { cursor: pointer; }
 .resource-manager summary:hover { color: var(--text-hi); }
@@ -1193,6 +1197,7 @@
   .resource-manager__tiers { grid-template-columns: minmax(0, 1fr); }
   .resource-modal .modal__head, .resource-modal .modal__body, .resource-modal .modal__actions { padding-left: .16rem; padding-right: .16rem; }
   .resource-archive__toolbar { align-items: flex-start; flex-direction: column; }
+  .resource-archive__scope-size { margin-left: 0; }
   .resource-cache__storage { flex-basis: 100%; padding-left: .18rem; }
 }
 @media (pointer: coarse) {

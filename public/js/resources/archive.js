@@ -80,15 +80,17 @@ async function extract(entry, limit, signal, source, timings) {
   return bytes;
 }
 
-export async function exportResourceZip(store, { signal, onProgress } = {}) {
+// One package per card: a whole install is close to the 2 GiB package limit, and a phone should never be asked to
+// build or parse a single blob that large (docs/ASSETS.md). `scope` picks the card; omitting it exports everything.
+export async function exportResourceZip(store, { scope, signal, onProgress } = {}) {
   checkAbort(signal);
   const status = await store.status();
-  const cache = await store.caches.open(store.cacheName);
+  const read = await store.entryReader();
   const cached = await store.cachedKeys();
-  // Game requests also populate this cache, without updating the page-owned index. Recover those bytes by digest;
+  // Game requests also populate the cards, without updating the page-owned index. Recover those bytes by digest;
   // an unindexed older version is simply unavailable, while an indexed current file failing verification is damage.
-  const files = store.files.filter((f) => store.eligible(f) && (status.present.has(store.keyOf(f.url))
-    || (CONTENT_HASH_RE.test(f.hash || '') && cached.has(store.keyOf(f.url)))));
+  const files = store.files.filter((f) => (!scope || store.scopeOf(f) === scope) && store.eligible(f)
+    && (status.present.has(store.keyOf(f.url)) || (CONTENT_HASH_RE.test(f.hash || '') && cached.has(store.keyOf(f.url)))));
   if (!files.length) throw new Error('没有已缓存的资源，请先预载或导入资源');
   const writer = new ZipWriter(new BlobWriter('application/zip'), { ...OPTIONS, level: 0 });
   const rows = [];
@@ -99,7 +101,7 @@ export async function exportResourceZip(store, { signal, onProgress } = {}) {
     onProgress?.({ phase: 'export', done: 0, total: files.length });
     for (const file of files) {
       checkAbort(signal);
-      const response = await cache.match(store.keyOf(file.url));
+      const response = await read(store.keyOf(file.url), store.shardName(file));
       if (!response || response.type === 'opaque' || !response.ok) {
         if (status.present.has(store.keyOf(file.url))) throw new Error('缓存资源不可读取，请重新预载');
         onProgress?.({ phase: 'export', done: ++done, total: files.length });

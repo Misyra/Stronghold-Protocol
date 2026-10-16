@@ -6,7 +6,7 @@
 // only from caches this app wrote (`X-SP-Resource`): code, data, API responses, manifests and WebSocket traffic never
 // pass through this module.
 
-import { CACHE_NAME, CACHE_PREFIX, absoluteUrl, isResourcePath, mediaCandidates, rangeResponse } from './common.js';
+import { CACHE_PREFIX, SHARD_CACHE_NAMES, absoluteUrl, isResourcePath, mediaCandidates, rangeResponse } from './common.js';
 
 /**
  * @param {Request} request
@@ -51,14 +51,14 @@ function cacheKeys(url) {
 }
 
 /**
- * First cache entry for a request across every cache this app owns: the current cache first, then the caches of earlier
- * builds (the pre-hash layout). Those are still answered while an update migrates them into `CACHE_NAME` — and the
- * order matters, because a stale entry left in an older cache must never shadow the fresh file of the current one.
+ * First cache entry for a request across every cache this app owns: the cards of the current preload first, then the
+ * caches of earlier builds (the pre-hash layout). Those are still answered while an update migrates them into a card —
+ * and the order matters, because a stale entry left in an older cache must never shadow the fresh file of a card.
  */
 async function matchResource(url, caches) {
   const keys = cacheKeys(url);
   const names = (await caches.keys()).filter((n) => n.startsWith(CACHE_PREFIX));
-  names.sort((a, b) => (a === CACHE_NAME ? -1 : b === CACHE_NAME ? 1 : 0));
+  names.sort((a, b) => (SHARD_CACHE_NAMES.includes(a) ? 0 : 1) - (SHARD_CACHE_NAMES.includes(b) ? 0 : 1));
   for (const name of names) {
     const cache = await caches.open(name);
     for (const key of keys) {

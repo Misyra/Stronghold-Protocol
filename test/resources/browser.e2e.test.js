@@ -401,7 +401,8 @@ describe('offline resources in headless Chrome', { skip }, () => {
     const body = await page.$eval('.resource-skins', (el) => el.textContent);
     assert.match(body, /本次 1 套/, 'all-skins summary: ' + body);
     assert.match(body, /本机已缓存 1 套/, 'catalog cache summary: ' + body);
-    const cached = await page.evaluate(() => caches.open('stronghold-resources-v1-all')
+    // Every card owns a cache of its own, so the outfit files land in the 皮肤 one (docs/ASSETS.md「Preload」).
+    const cached = await page.evaluate(() => caches.open('stronghold-resources-v1-skin')
       .then((cache) => cache.keys()).then((keys) => keys.map((r) => new URL(r.url).pathname)));
     assert.ok(cached.some((p) => p.endsWith('/assets/e2e/skin/boc.skel')), 'the outfit model is cached: ' + cached.join(', '));
     assert.ok(cached.some((p) => p.endsWith('/assets/e2e/skin/boc.png')), 'and its art');
@@ -445,8 +446,11 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.evaluate(() => [...document.querySelectorAll('.btn')].find((b) => b.textContent === '开始预载').click());
     await page.waitForFunction('window.__res.state().selectionComplete === true && window.__res.state().done === 4', { timeout: 30000 });
     assert.equal(await page.evaluate(() => window.__res.state().tier2Wanted), 2, 'only the two effect files are optional here');
-    const cached = await page.evaluate(() => caches.open('stronghold-resources-v1-all')
-      .then((cache) => cache.keys()).then((keys) => keys.map((r) => new URL(r.url).pathname)));
+    // Cards of their own: both assertions read every preload cache, so "no voice" stays a claim about the install.
+    const cached = await page.evaluate(() => caches.keys()
+      .then((names) => Promise.all(names.filter((n) => n.startsWith('stronghold-resources-v1-'))
+        .map((n) => caches.open(n).then((c) => c.keys()))))
+      .then((lists) => lists.flat().map((r) => new URL(r.url).pathname)));
     assert.ok(cached.some((path) => path.endsWith('/assets/local/fx/tex/fire_1.webp')), 'the effect texture is cached: ' + cached.join(', '));
     assert.equal(cached.some((path) => path.includes('/assets/audio/voice/')), false, 'no voice without 额外资源');
 
@@ -463,9 +467,9 @@ describe('offline resources in headless Chrome', { skip }, () => {
       '额外资源 is back (the fixture bgm.mp3 sits outside /bgm/) and the 特效 row stays listed');
     assert.equal(groups.find((g) => g.id === 'fx').wanted, 0, '特效 is out of the selection while its box is off');
     assert.equal(groups.find((g) => g.id === 'fx').allTotal, 2, 'its row still counts the whole manifest');
-    const after = await page.evaluate(() => caches.open('stronghold-resources-v1-all')
+    const after = await page.evaluate(() => caches.open('stronghold-resources-v1-voice')
       .then((cache) => cache.keys()).then((keys) => keys.map((r) => new URL(r.url).pathname)));
-    assert.ok(after.some((path) => path.endsWith('/assets/audio/voice/cn/char_e2e/test.mp3')), 'the Chinese voice is cached now: ' + after.join(', '));
+    assert.ok(after.some((path) => path.endsWith('/assets/audio/voice/cn/char_e2e/test.mp3')), 'the Chinese voice is cached in its own card now: ' + after.join(', '));
     assert.deepEqual(problems, []);
     await page.evaluate(async () => { await window.__res.syncResources(false); await window.__res.clearResources(); });
   });

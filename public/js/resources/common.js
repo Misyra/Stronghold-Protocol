@@ -7,11 +7,16 @@ import { canonicalResourceUrl } from '../../../shared/resourcePaths.js';
 // this module. It owns the manifest shape, the URL/MIME rules and byte formatting — the same rules the server applies
 // when it generates /data/resource-manifest.json (server/resources.js).
 
-/** Cache Storage names this app owns. One cache holds every version: entries are replaced per file (by hash), so an
- * asset update re-downloads the changed files only (docs/ASSETS.md「Preload」). */
+/** Cache Storage names this app owns. One cache per preload card (`resourceScope`): a browser refuses a single
+ * `Cache.keys()` over roughly 10 MiB of keys (Chromium's `kMaxQueryCacheResultBytes`), and a complete preload
+ * (≈22 000 files) is far past that — per-card caches stay enumerable, so each card can also be measured, cleared or
+ * exported on its own. Entries are still replaced per file (by hash), so an asset update re-downloads the changed
+ * files only (docs/ASSETS.md「Preload」). */
 export const CACHE_PREFIX = 'stronghold-resources-v1-';
+/** The catch-all card (map/character/spine/ui, plus sfx/music/other) keeps the pre-split name `…-all`: an install that
+ * predates the split already has those bytes in this cache, under exactly this name. */
 export const CACHE_NAME = CACHE_PREFIX + 'all';
-/** The one synthetic entry of that cache: absolute URL → the hash of the bytes stored for it. */
+/** The one synthetic entry of each card cache: absolute URL → the hash of the bytes stored for it. */
 export const INDEX_PATH = '/__sp-resource-index__';
 /** A hash as the server writes it (hex digest, the `syn-` fallback, a `sha1-…` label). */
 export const HASH_RE = /^[A-Za-z0-9._:-]{1,64}$/;
@@ -85,6 +90,25 @@ export function resourceGroup(file) {
   if (/\/(?:char|chars|enemy|enemies|token|tokens)\//.test(path)) return 'character';
   return 'ui';
 }
+
+/** The four preload cards, in panel order — one Cache Storage cache each (`cacheNameForScope`). */
+export const RESOURCE_SCOPES = Object.freeze(['essential', 'voice', 'skin', 'fx']);
+
+/** Which card a manifest entry belongs to: 官方特效, 干员皮肤 and 干员语音 have a card of their own, everything else
+ *  (including the optional 音效 / 音乐 / 玩法说明) shares the catch-all card. */
+export function resourceScope(file) {
+  const group = resourceGroup(file);
+  return group === 'voice' || group === 'skin' || group === 'fx' ? group : 'essential';
+}
+
+/** Cache Storage name of a card. `essential` keeps the legacy `CACHE_NAME` — see its comment. */
+export function cacheNameForScope(scope) {
+  return scope === 'essential' ? CACHE_NAME : CACHE_PREFIX + String(scope || 'essential');
+}
+
+/** Every card cache name: these are the caches a current preload lives in (`pruneOld()` keeps them and deletes the
+ *  version-named caches of older builds). */
+export const SHARD_CACHE_NAMES = Object.freeze(RESOURCE_SCOPES.map((scope) => cacheNameForScope(scope)));
 
 /** The extension-less audio route the game asks audio through (`shared/media.js`; a test keeps the two lists identical).
  * The manifest keeps the real `/assets/audio/….mp3` URLs — a plain static host (the CDN) cannot resolve `/media/…` — and
@@ -176,7 +200,8 @@ export function isResourceUrl(url) {
   return isResourcePath(pathname) && !!resourceType(pathname);
 }
 
-/** A version-named cache of the pre-hash layout (`pruneOld()` cleans those up). The store itself uses CACHE_NAME. */
+/** A version-named cache of the pre-hash layout (`pruneOld()` cleans those up). The store itself uses the card caches
+ * (`cacheNameForScope`). */
 export function cacheName(version) {
   return CACHE_PREFIX + String(version || 'none');
 }

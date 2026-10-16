@@ -66,8 +66,9 @@ test('digest failures reject downloads and preserve unverified existing bytes wi
   result = await fresh.store.download();
   assert.equal(result.failed, 1);
   assert.equal(await (await cache.match(ORIGIN + files[0].url)).text(), 'unverified');
-  const index = await (await cache.match(indexUrl(ORIGIN))).json();
-  assert.equal(index.files[ORIGIN + files[0].url], undefined);
+  const index = await cache.match(indexUrl(ORIGIN));
+  const recorded = index ? (await index.json()).files : {};
+  assert.equal(recorded[ORIGIN + files[0].url], undefined, 'unverified bytes are never recorded as current');
 });
 
 test('voice scopes download only selected language, retain other languages, and import/export both', async () => {

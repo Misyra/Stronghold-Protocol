@@ -14,7 +14,7 @@ import { CACHE_PREFIX, MANIFEST_URL, resourceWorkerUrl, isResourceWorker, TIER_E
 import { ResourceStore, normalizeSkinScope } from './store.js';
 import { createWorkerCache } from './workerCache.js';
 import { ResourceSchedule } from './schedule.js';
-import { missingStorage, storageEstimate } from './storage.js';
+import { ensurePersistence, missingStorage, storageEstimate } from './storage.js';
 import { createResourceState } from './state.js';
 import { ResourceTasks } from './tasks.js';
 import { t } from '../../../shared/i18n.js';
@@ -51,6 +51,10 @@ const stateStore = createResourceState({
   voices: true,
   selectionComplete: false,
   groups: [],
+  /** Per-card figures (必备 / 语音 / 时装 / 特效) for the ZIP card's "which card to export" choice. */
+  scopes: [],
+  /** `navigator.storage` persistence: whether the browser promised to keep these bytes (docs/ASSETS.md). */
+  persistence: null,
   failures: [],
   archiveResult: null,
   storage: null,
@@ -164,6 +168,7 @@ const counters = (s) => ({
   adopted: s.adopted ?? 0,
   downloaded: s.downloaded ?? 0,
   groups: s.groups ?? [],
+  scopes: s.scopes ?? [],
   voiceLanguages: s.voiceLanguages ?? [],
   fxFiles: s.fxFiles ?? 0,
   manifestFiles: s.manifestFiles ?? 0,
@@ -184,6 +189,11 @@ const skinScopeOf = (raw) => {
 const sameSkinKeys = (a, b) => a.length === b.length && a.every((key, i) => key === b[i]);
 
 const sameSkinScope = (a, b) => a.all === b.all && sameSkinKeys(a.keys, b.keys);
+
+/** One card's name, for the sentences that say what a package holds (docs/ASSETS.md). */
+const SCOPE_LABEL = { essential: () => t('必备资源'), voice: () => t('干员语音'), skin: () => t('干员皮肤'), fx: () => t('官方特效') };
+
+const scopeLabel = (scope) => (scope && SCOPE_LABEL[scope] ? SCOPE_LABEL[scope]() : t('全部资源'));
 
 /** The current selection as the store wants it, whichever axis changed last. */
 const storeScope = () => ({ optional, voices, voiceLang, allVoices, skins: { keys: skinKeys, all: allSkins }, fx });
@@ -378,6 +388,9 @@ async function startDownload(task) {
   }
   const store = ctx.store;
   store.setScope(storeScope());
+  // Ask the browser to keep these bytes (750 MiB – 1.8 GiB without it can be evicted wholesale). Best effort: a browser
+  // that refuses persistence still caches, it just may drop everything under pressure.
+  void ensurePersistence().then((persistence) => set({ persistence }));
   // Optional files are in play when the 额外资源 switch asks for them, when 干员皮肤 were picked, or while 官方特效 is
   // on — the store's selection already excludes everything else, so one question covers all three and the sets never ride
   // along on each other.
@@ -469,16 +482,22 @@ export async function importResources(file, { onImported } = {}) {
   return outcome;
 }
 
-export async function exportResources() {
+/**
+ * Write a ZIP of what is on this machine.
+ * @param {string} [scope] one card (必备 / 语音 / 时装 / 特效) — the panel exports one at a time, because a whole
+ *   install is close to the 2 GiB package limit and a single blob that large does not fit a phone
+ * @returns {Promise<{count: number, version: string, blob: Blob}>}
+ */
+export async function exportResources(scope) {
   const resume = current && wantRun && !!tasks.download.promise;
   const revision = tasks.revision;
-  try { return await transferArchive('export'); }
+  try { return await transferArchive('export', null, scope); }
   finally {
     if (resume && current && revision === tasks.revision) void startResources();
   }
 }
 
-function transferArchive(kind, file) {
+function transferArchive(kind, file, scope) {
   if (tasks.archive.promise || tasks.clear) return Promise.reject(new Error('资源包正在处理中'));
   wantRun = false;
   set({ archive: kind, archiveResult: null, archivePhase: '', archivePercent: 0, archiveGroup: '',
@@ -491,6 +510,8 @@ function transferArchive(kind, file) {
       if (!ctx.store) throw new Error(ctx.error || ctx.unsupported || '服务器没有可预载的资源');
       checkAbort(signal);
       ctx.store.setScope(storeScope());
+      // An import writes hundreds of megabytes straight into Cache Storage: same request as a download.
+      void ensurePersistence().then((persistence) => set({ persistence }));
       const outcome = await withDownloadLock(() => withWorkerWritesPaused(async () => {
         set(counters(await ctx.store.status()));
         const archive = await import('./archive.js');
@@ -515,7 +536,7 @@ function transferArchive(kind, file) {
           ? archive.importResourceZip(ctx.store, file, { signal, onProgress,
             onPlan: (plan) => updateStorage(ctx.store, null, plan, set),
             onDiagnostics: (timings) => console.info('[resources] ZIP import timings', timings) })
-          : archive.exportResourceZip(ctx.store, { signal, onProgress });
+          : archive.exportResourceZip(ctx.store, { scope, signal, onProgress });
       }));
       if (outcome.busy) throw new Error('另一个标签页正在处理资源，请暂停后重试');
       checkAbort(signal);
@@ -525,7 +546,7 @@ function transferArchive(kind, file) {
       const missing = (status.tier1Wanted - status.tier1Present) + (status.tier2Wanted - status.tier2Present);
       set({ ...counters(status), failed: 0, phase: status.complete ? 'ready' : 'paused',
         message: kind === 'export'
-          ? t('已导出 {count} 个资源文件。', { count: outcome.count })
+          ? t('已导出 {count} 个资源文件（{0}）。', { count: outcome.count, 0: scopeLabel(scope) })
           : t('已导入 {imported} 个资源文件，已有 {already} 个，跳过 {skippedPackage} 个不适用的资源；{2}', { imported: outcome.imported, already: outcome.already || 0, skippedPackage: outcome.skippedPackage, 2: missing === 0 ? t('所选资源已齐全。') : t('所选资源还需下载 {missing} 个文件。', { missing }) }) });
       set({ archiveResult: { kind, status: 'success', imported: outcome.imported || 0, already: outcome.already || 0,
         count: outcome.count, skippedPackage: outcome.skippedPackage || 0, skipReasons: outcome.skipReasons || {}, message: state.message } });

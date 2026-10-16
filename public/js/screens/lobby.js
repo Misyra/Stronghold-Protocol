@@ -32,6 +32,7 @@ import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_S
 import { RANDOM_MODE } from '../../../shared/randomMode.js';
 import { html, Button, Icon, MicroLabel, Panel, TextField, PingPill, AvatarFrame, Tooltip, Spinner, DifficultyIcon, doctorNo } from '../ui/components.js';
 import { toast, toastError } from '../ui/toasts.js';
+import { copyText } from '../ui/clipboard.js';
 import { GuideButton, openGuide } from '../ui/guide.js';
 import { openStats } from './stats.js';
 import { AchievementEntry, AchievementPanel } from '../ui/achievements.js';
@@ -49,6 +50,8 @@ import { store, useStore, shallowEqual, serverNow, loadPref, savePref } from '..
 import { getConfig, getMode, getStage, useData } from '../data.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { C2S as SERVER_C2S } from '../../../shared/protocol.js';
+
+const COMMUNITY_GROUP = '709955459';
 
 /** Official mode texts (activity_table act2autochess.modeDataDict), fallback when config.json is absent. */
 export const MODE_TEXT = {
@@ -777,10 +780,14 @@ export function LobbyScreen() {
         <${FriendsTile} />
         <${TipsPanel} />
         <footer class="hub-credits">
-          <p class="hub-credits__group">${t('交流群')} <strong class="num">709955459</strong></p>
+          <p class="hub-credits__group"><button type="button" class="hub-credits__copy"
+            title=${`${t('复制')} ${t('防失联群')} ${COMMUNITY_GROUP}`} aria-label=${`${t('复制')} ${t('防失联群')} ${COMMUNITY_GROUP}`}
+            onKeyDown=${(e) => e.stopPropagation()} onClick=${async () => {
+              const ok = await copyText(COMMUNITY_GROUP);
+              toast(ok ? t('已复制到剪贴板') : t('复制失败，请手动复制'), ok ? 'success' : 'warn');
+            }}><${Icon} name="copy" />${t('防失联群')} <strong class="num">${COMMUNITY_GROUP}</strong></button></p>
           <p>${t('界面设计')} <strong>Bilibili@雨千代chiyo</strong></p>
-          <p>${t('非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有')}</p>
-          <p><a href=${REPOSITORY_URL} target="_blank" rel="noopener noreferrer">${t('项目仓库')}<${Icon} name="chevronRight" /></a><span> · v${APP_VERSION}</span></p>
+          <p class="hub-credits__meta">${t('非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有')} · <a href=${REPOSITORY_URL} target="_blank" rel="noopener noreferrer">${t('项目仓库')}</a><span> · v${APP_VERSION}</span></p>
         </footer>
       </aside>
 

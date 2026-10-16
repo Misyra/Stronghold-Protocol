@@ -700,10 +700,27 @@
 .hub-credits p { margin: 0; }
 .hub-credits p + p { margin-top: .02rem; }
 .hub-credits strong { color: var(--text-hi); font-weight: 700; }
+.hub-credits .hub-credits__group { margin-bottom: .1rem; }
+.hub-credits .hub-credits__meta { margin-top: .07rem; }
 .hub-credits__group strong { color: var(--mint-400); }
-.hub-credits a { display: inline-flex; align-items: center; gap: .05rem; min-height: 24px; color: var(--mint-400); }
+.hub-credits__copy { position: relative; display: inline-flex; align-items: center; gap: .07rem; min-height: max(.42rem, 26px);
+  padding: .06rem .12rem; border: 1px solid var(--mint-a35); background: transparent; color: var(--text-hi);
+  font: inherit; font-size: calc(.14 * var(--utility-text, var(--t))); font-weight: 700; text-align: left; white-space: nowrap; }
+.hub-credits__copy::before { content: ''; position: absolute; inset: -4px; pointer-events: none;
+  background:
+    linear-gradient(var(--mint-400), var(--mint-400)) left top / 8px 2px no-repeat,
+    linear-gradient(var(--mint-400), var(--mint-400)) right top / 8px 2px no-repeat,
+    linear-gradient(var(--mint-400), var(--mint-400)) left bottom / 8px 2px no-repeat,
+    linear-gradient(var(--mint-400), var(--mint-400)) right bottom / 8px 2px no-repeat,
+    linear-gradient(var(--mint-400), var(--mint-400)) left top / 2px 8px no-repeat,
+    linear-gradient(var(--mint-400), var(--mint-400)) right top / 2px 8px no-repeat,
+    linear-gradient(var(--mint-400), var(--mint-400)) left bottom / 2px 8px no-repeat,
+    linear-gradient(var(--mint-400), var(--mint-400)) right bottom / 2px 8px no-repeat; }
+.hub-credits__copy > .icon { color: var(--mint-400); }
+.hub-credits__copy:hover { border-color: var(--mint-400); }
+.hub-credits a { display: inline-flex; align-items: center; min-height: 24px; color: inherit; text-decoration: underline; text-underline-offset: .02rem; }
 .hub-credits a:hover { color: var(--text-hi); }
-.hub-credits a:focus-visible, .hub-notice:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
+.hub-credits a:focus-visible, .hub-credits__copy:focus-visible, .hub-notice:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
 
 /* right column: the S.W.E.E.P.报告 and 干员调配 plates, above the entries (the 缺人同盟 card was removed with the rest of
    the public room directory — see screens/lobby.js) */

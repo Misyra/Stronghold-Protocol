@@ -20,7 +20,7 @@ export const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
 /** startServer() options handed on to net.js Network / lobby.js Lobby (an absent one keeps that module's default). */
 const NET_OPTION_KEYS = ['reconnectWindowMs', 'heartbeatMs', 'helloTimeoutMs', 'ratePerSec', 'rateBurst', 'maxConnections', 'abuseDropsPerSec',
-  'maxConnectionsPerAddr', 'maxConnectionsPerIp', 'heavyPerSec', 'heavyBurst', 'trustProxy'];
+  'maxConnectionsPerAddr', 'heavyPerSec', 'heavyBurst', 'trustProxy'];
 const LOBBY_OPTION_KEYS = ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMatchesPerAddr', 'resyncMinGapMs', 'soloReconnectWindowMs'];
 
 /**
@@ -131,18 +131,12 @@ export function serveDirs(opts) {
 }
 
 /** net.js Network options out of the startServer() options; `trustProxy` falls back to TRUST_PROXY. */
-export function netOptionsFrom(opts, env = process.env) {
+export function netOptionsFrom(opts) {
   const netOptions = {};
   for (const k of NET_OPTION_KEYS) {
     if (opts[k] != null) netOptions[k] = opts[k];
   }
-  if (netOptions.maxConnectionsPerIp == null && env.SP_MAX_CONNECTIONS_PER_IP != null && env.SP_MAX_CONNECTIONS_PER_IP !== '') {
-    netOptions.maxConnectionsPerIp = Number(env.SP_MAX_CONNECTIONS_PER_IP);
-  }
-  if (netOptions.maxConnectionsPerIp != null && (!Number.isInteger(netOptions.maxConnectionsPerIp) || netOptions.maxConnectionsPerIp < 0)) {
-    throw new RangeError('SP_MAX_CONNECTIONS_PER_IP must be a non-negative integer');
-  }
-  if (netOptions.trustProxy == null) netOptions.trustProxy = parseTrustProxy(env.TRUST_PROXY);
+  if (netOptions.trustProxy == null) netOptions.trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
   return netOptions;
 }
 

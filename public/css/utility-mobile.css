@@ -472,8 +472,6 @@
   .lobby-hub--searching .hub-entry { width: 100%; height: .85rem; min-height: 36px; padding: .1rem; }
   .lobby-hub--searching .hub-entry__en { display: none; }
   .lobby-hub--searching .hub-entry__name { font-size: calc(.22 * var(--utility-text)); }
-  .rs-foot__center > .recruit-hint { text-align: center; }
-  .rs-foot__center > .recruit-hint span { display: inline; }
 
   .settings-modal .set-list { gap: .15rem; }
   .settings-modal .set-row { gap: .2rem; min-height: .75rem; }

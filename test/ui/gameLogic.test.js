@@ -734,7 +734,7 @@ describe('keyboard & settings', () => {
   test('sanitizeSettings', () => {
     assert.deepEqual(sanitizeSettings(null), { ...DEFAULT_SETTINGS });
     assert.deepEqual(sanitizeSettings({ bgm: 3, sfx: -1, voice: 2, muted: 'yes', damageNumbers: false, quality: 'ultra' }),
-      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceOverrides: {}, muted: false, damageNumbers: false, officialDamageNumbers: false, ammoCount: false, quality: 'high', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadAllVoices: false, preloadSkins: false, preloadSkinsAll: false, keys: { ...DEFAULT_SETTINGS.keys }, voiceNative: false, combatMetrics: false, mysticEnergy: false, officialFx: 'auto' },
+      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceOverrides: {}, muted: false, damageNumbers: false, officialDamageNumbers: false, ammoCount: false, quality: 'high', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadAllVoices: false, preloadSkins: false, preloadSkinsAll: false, keys: { ...DEFAULT_SETTINGS.keys }, voiceNative: false, combatMetrics: false, prepDeployZoom: false, mysticEnergy: false, officialFx: 'auto' },
       'a saved profile without `keys` (before 0.2.0) gets the default key map (test/ui/feedback5-hotkeys.test.js)');
     assert.equal(sanitizeSettings({ bgm: 0.5 }).voice, DEFAULT_SETTINGS.voice, 'a saved profile without `voice` gets the default');
     // 语音语言: 中文 by default. en / kr are dubs (0.3.0); anything else, including the per-operator 'native', stays 中文.

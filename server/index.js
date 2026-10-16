@@ -316,7 +316,7 @@ export async function startServer(opts = {}) {
   // reachable through GET /healthz?traffic=1 for a loopback or private-network client only (http/routes.js).
   const traffic = createTrafficCounter();
   const server = http.createServer(createRequestHandler({
-    serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage),
+    serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base),
     health: { startedAt, gameBootId, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic, content, trusted: trustedRuntime?.health },
     log, allowStatus, allowNickname, readAnnouncement, announcementSource: announcementOptions.source,
     portalRoom, studio, trustedRuntime, trustProxy: network.opts.trustProxy,

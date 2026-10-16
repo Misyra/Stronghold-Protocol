@@ -655,11 +655,12 @@ test('a Worker host never attaches the combat meter, even when the setting is on
   r.runner.dispose();
 });
 
-test('settings expose 作战统计 off by default and the match hides the button unless it is on', () => {
+test('settings expose 作战统计 on by default and the match hides the button unless it is off', () => {
   const settings = readFileSync(new URL('../../public/js/ui/settings.js', import.meta.url), 'utf8');
   const game = readFileSync(new URL('../../public/js/screens/game.js', import.meta.url), 'utf8');
   const logic = readFileSync(new URL('../../public/js/ui/gameLogic/settings.js', import.meta.url), 'utf8');
-  assert.match(logic, /combatMetrics: false/);
+  assert.match(logic, /combatMetrics: true, prepDeployZoom/, 'the default is on (2026-10-16)');
+  assert.match(logic, /combatMetrics: typeof r\.combatMetrics === 'boolean' \? r\.combatMetrics : DEFAULT_SETTINGS\.combatMetrics/);
   assert.match(settings, /label=\$\{t\('作战统计'\)\} micro="COMBAT STATS" value=\$\{s\.combatMetrics\}/);
   assert.match(game, /setCombatMetrics\(s\?\.combatMetrics === true\)/);
   assert.match(game, /const showMetrics = metricsSetting && !modRoom && !spectator/);

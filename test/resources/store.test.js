@@ -30,6 +30,24 @@ class MemoryCaches {
 
 const ORIGIN = 'https://game.example';
 
+test('voice scope is independent of music and supports every global dub, without hiding cached catalogs', async () => {
+  const files = ['cn', 'jp', 'en', 'kr'].map((lang) => ({ url: `/assets/audio/voice/${lang}/test.mp3`, tier: 2, size: 4 }));
+  files.push({ url: '/assets/audio/bgm/test.mp3', tier: 2, size: 5 });
+  const s = new ResourceStore(manifest(files), { caches: new MemoryCaches(), origin: ORIGIN });
+  for (const lang of ['cn', 'jp', 'en', 'kr']) {
+    s.setScope({ optional: false, voices: true, voiceLang: lang });
+    assert.deepEqual(s.selectedFiles.map((f) => f.url), [`/assets/audio/voice/${lang}/test.mp3`]);
+    const st = await s.status();
+    assert.deepEqual(st.voiceLanguages, ['cn', 'jp', 'en', 'kr']);
+    assert.equal(st.groups.find((g) => g.id === 'voice').allTotal, 1);
+  }
+  s.setScope({ optional: true, voices: false, voiceLang: 'en' });
+  assert.deepEqual(s.selectedFiles.map((f) => f.url), ['/assets/audio/bgm/test.mp3']);
+  assert.equal((await s.status()).groups.find((g) => g.id === 'voice').allTotal, 1);
+  s.setScope({ optional: false, voices: true, allVoices: true });
+  assert.equal(s.selectedFiles.length, 4);
+});
+
 function manifest(files, over = {}) {
   // Every file carries a hash unless the test says otherwise (`hash: null` is the pre-hash manifest).
   const all = files.map((f, i) => (f.hash !== undefined ? f : { ...f, hash: `h${i}` }));
@@ -581,12 +599,8 @@ test('versioned media routes resolve cached audio and preserve range responses',
 });
 
 /**
- * 干员皮肤 in the preload selection (docs/SKINS.md): a full install is ~328 MiB, so the group is off by default and the
- * player's picks decide what 「可选」 means for it — independently of the voices/sound/music switch.
- */
-/**
- * 干员皮肤 in the preload selection (docs/SKINS.md): a full install is ~328 MiB, so the group is off by default and the
- * outfits equipped in 干员调配 decide what 「可选」 means for it — independently of the voices/sound/music switch.
+ * 干员皮肤 in the preload selection (docs/SKINS.md): a full install is ~328 MiB, so it has a box of its own in the
+ * optional tier's header — 默认全预载, and the outfits equipped in 干员调配 decide which of them are cached.
  */
 describe('干员皮肤 selection', () => {
   const KALTS = 'char_003_kalts/char_003_kalts@boc#6';
@@ -638,7 +652,7 @@ describe('干员皮肤 selection', () => {
     const { fetch, calls } = fetcherFor();
     const s = store(manifest(FILES), { fetch });
     s.setScope({ optional: false, skins: [KALTS] });
-    // 「同时预载」 off and the voices stay out — an equipped outfit must never drag them along (and vice versa).
+    // 额外资源 off and the voices stay out — an equipped outfit must never drag them along (and vice versa).
     assert.deepEqual(s.selectedFiles.map((f) => f.url).sort(), [
       '/assets/char/avatar/skin/char_003_kalts_boc_6.png',
       '/assets/spine/op/char_003_kalts/char_003_kalts_boc_6/front/char_003_kalts_boc_6.skel',
@@ -677,7 +691,7 @@ describe('干员皮肤 selection', () => {
       '/assets/spine/op/char_002_amiya/char_002_amiya_winter_1/front/char_002_amiya_winter_1.skel',
       '/assets/spine/op/char_003_kalts/char_003_kalts_boc_6/front/char_003_kalts_boc_6.skel',
     ].sort());
-    assert.ok(!s.selectedFiles.some((f) => f.url.includes('/audio/voice/')), 'the voices still need 「同时预载」');
+    assert.ok(!s.selectedFiles.some((f) => f.url.includes('/audio/voice/')), 'the voices still need 额外资源');
     const st = await s.status();
     assert.deepEqual(st.skins.map((x) => x.id), [AMIYA, KALTS]);
     assert.deepEqual(st.skins.map((x) => x.wanted), [1, 2], 'each listed outfit counts its own files');
@@ -706,5 +720,72 @@ describe('干员皮肤 selection', () => {
     const files = collectResourceFiles({ chars: { c: { avatar: shared, skins: { 'c@x#1': { avatar: shared } } } } }, null);
     assert.equal(files[0].skin, 'c/c@x#1');
     assert.equal(files[0].tier, TIER_ESSENTIAL, 'the required listing wins the tier');
+  });
+});
+
+/**
+ * 官方特效 in the preload selection (docs/design/vfx-format.md): the extracted effect tree is one indivisible set of
+ * ~185 MiB, so it gets a box of its own in the optional tier's header — beside 额外资源 and 皮肤, and never implied by
+ * either of them in either direction.
+ */
+describe('官方特效 selection', () => {
+  const FILES = [
+    { url: '/assets/spine/op/char_003_kalts/front/char_003_kalts.skel', tier: TIER_ESSENTIAL, size: 10 },
+    { url: '/assets/audio/voice/cn/char_003_kalts/1.mp3', tier: TIER_REST, size: 20 },
+    { url: '/assets/local/fx/index.json', tier: TIER_REST, size: 5, fx: true },
+    { url: '/assets/local/fx/tex/fire_1.webp', tier: TIER_REST, size: 40, fx: true },
+    { url: '/assets/local/fx/tex/half/fire_1.webp', tier: TIER_REST, size: 12, fx: true },
+  ];
+
+  test('特效 rides its own switch: 额外资源 off keeps the whole tree, and not one voice comes with it', async () => {
+    const { fetch, calls } = fetcherFor();
+    const s = store(manifest(FILES), { fetch });
+    s.setScope({ optional: false, fx: true });
+    assert.deepEqual(s.selectedFiles.filter((f) => f.fx).map((f) => f.url), [
+      '/assets/local/fx/index.json',
+      '/assets/local/fx/tex/fire_1.webp',
+      '/assets/local/fx/tex/half/fire_1.webp',
+    ]);
+    assert.ok(!s.selectedFiles.some((f) => f.url.includes('/audio/voice/')), '额外资源 stays out');
+    const st = await s.status();
+    const group = st.groups.find((g) => g.id === 'fx');
+    assert.equal(group.tier, TIER_REST);
+    assert.deepEqual([group.total, group.wanted], [3, 3], 'a row of its own, not folded into 玩法说明与其他资源');
+    assert.equal(st.wanted, 4, 'the required spine plus the three effect files');
+    await s.download({ tiers: [TIER_ESSENTIAL] });
+    await s.download({ tiers: [TIER_REST] });
+    assert.equal(calls.filter((u) => u.includes('/assets/local/fx/')).length, 3);
+    const after = await s.status();
+    assert.equal(after.complete, true);
+    assert.equal(after.groups.find((g) => g.id === 'fx').present, 3);
+  });
+
+  test('the two switches are independent: 特效 off keeps 额外资源, and the other way round', async () => {
+    const s = store(manifest(FILES));
+    s.setScope({ optional: true, fx: false });
+    const urls = s.selectedFiles.map((f) => f.url);
+    assert.ok(urls.includes('/assets/audio/voice/cn/char_003_kalts/1.mp3'));
+    assert.ok(!urls.some((u) => u.startsWith('/assets/local/fx/')), 'not a single effect file');
+    const st = await s.status();
+    const fxRow = st.groups.find((g) => g.id === 'fx');
+    assert.ok(fxRow, 'the 特效 row is still listed once its switch is off');
+    assert.deepEqual([fxRow.total, fxRow.wanted, fxRow.allTotal], [0, 0, 3], 'greyed out, not deleted: the figures are manifest-wide');
+    s.setScope({ fx: true });
+    assert.equal(s.fx, true);
+    assert.equal(s.selectedFiles.filter((f) => f.fx).length, 3, 'back on, without touching the voices');
+    s.setScope({ optional: false });
+    assert.equal(s.selectedFiles.filter((f) => f.fx).length, 3, 'fx ignores the 额外资源 switch in both directions');
+    s.setScope({ optional: false, fx: false });
+    assert.deepEqual(s.selectedFiles.map((f) => f.url), ['/assets/spine/op/char_003_kalts/front/char_003_kalts.skel']);
+  });
+
+  test('clearing the optional resources takes the effects with them', async () => {
+    const caches = new MemoryCaches();
+    const s = store(manifest(FILES), { caches });
+    s.setScope({ optional: true, fx: true });
+    await seed(caches, `${ORIGIN}/assets/local/fx/tex/fire_1.webp`, 'fx', 'h3');
+    assert.equal((await s.status()).groups.find((g) => g.id === 'fx').present, 1);
+    await s.clear({ optionalOnly: true });
+    assert.equal((await s.status()).groups.find((g) => g.id === 'fx').present, 0, '特效 is an optional resource too');
   });
 });

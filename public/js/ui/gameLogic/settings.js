@@ -31,15 +31,20 @@ export const TEXT_SIZES = Object.freeze(['sm', 'md', 'lg', 'xl']);
  *  officialDamageNumbers: show only the numbers the official game shows (upstream 0.2.5, default off).
  *  ammoCount: 设置「弹药数量」 — the rounds left / the magazine under an ammo skill's bar (render/units.js; PR #552), off
  *  by default: the official HUD has no such number (the maintainer's decision of 2026-10-13).
- *  combatMetrics: 设置「作战统计」 (PR #618), off by default: the official HUD has no such panel.
+ *  combatMetrics: 设置「作战统计」 (PR #618) — the local damage/healing meter. **On by default** (YG, 2026-10-16);
+ *  turning it off drops the corner button and leaves the hooks unattached, so a player who wants the bare official HUD
+ *  gets it back from the settings modal.
  *  prepDeployZoom: 设置「整备期拖动缩放」 — temporarily fold the shop and zoom while deploying, off by default.
  *  mysticEnergy: 设置「秘术师能量」 (PR #636) — a 秘术师's stored attack energies as stored/cap under the bars
  *  (render/units.js), off by default: the official HUD shows them as an effect on the operator, not a number (the
  *  maintainer's decision of 2026-10-15).
  *  fpsLimit: the render cap 0|30|60|120 (frameRate.js FRAME_RATES; 0 = uncapped, display only).
  *  officialFx: 设置「官方特效」 (0.3.0, render/vfx): 'auto' (完整 on a desktop, 精简 on a touch device — render/vfx/tier.js),
- *  'off', 'lite' (精简), 'full' (完整); only shown when effects were extracted from the local client. */
-export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', voiceNative: false, voiceOverrides: Object.freeze({}), muted: false, damageNumbers: true, officialDamageNumbers: false, ammoCount: false, combatMetrics: false, prepDeployZoom: false, mysticEnergy: false, quality: 'high', officialFx: 'auto', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadAllVoices: false, preloadSkins: false, preloadSkinsAll: false, keys: DEFAULT_HOTKEYS });
+ *  'off', 'lite' (精简), 'full' (完整); only shown when effects were extracted from the local client.
+ *  preload / preloadOptional / preloadVoices / preloadAllVoices / preloadSkins / preloadSkinsAll / preloadFx:
+ *  independent resource scopes. The master stays off on first visit. Voices migrate from the older optional-audio
+ *  choice; presets change scope flags in one update and never start a paused download. */
+export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', voiceNative: false, voiceOverrides: Object.freeze({}), muted: false, damageNumbers: true, officialDamageNumbers: false, ammoCount: false, combatMetrics: true, prepDeployZoom: false, mysticEnergy: false, quality: 'high', officialFx: 'auto', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: DEFAULT_HOTKEYS });
 const QUALITIES = ['high', 'medium', 'low'];
 /** The values of 设置「官方特效」 (render/vfx/tier.js OFFICIAL_FX). */
 export const OFFICIAL_FX_MODES = Object.freeze(['auto', 'off', 'lite', 'full']);
@@ -48,7 +53,7 @@ export const OFFICIAL_FX_MODES = Object.freeze(['auto', 'off', 'lite', 'full']);
  * Sanitize persisted settings.
  * @param {any} raw
  * @returns {{ bgm: number, sfx: number, voice: number, voiceLang: 'cn'|'jp'|'en'|'kr', voiceNative: boolean, voiceOverrides: Record<string, string>, muted: boolean, damageNumbers: boolean, officialDamageNumbers: boolean, ammoCount: boolean, combatMetrics: boolean, prepDeployZoom: boolean, mysticEnergy: boolean, quality: 'high'|'medium'|'low', officialFx: 'auto'|'off'|'lite'|'full',
- *   fpsLimit: 0|30|60|120, preload: boolean, preloadOptional: boolean, preloadAllVoices: boolean, preloadSkins: boolean, preloadSkinsAll: boolean,
+ *   fpsLimit: 0|30|60|120, preload: boolean, preloadOptional: boolean, preloadVoices: boolean, preloadAllVoices: boolean, preloadSkins: boolean, preloadSkinsAll: boolean, preloadFx: boolean,
  *   textSize: 'sm'|'md'|'lg'|'xl', keys: Record<'buy'|'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready', string> }}
  */
 export function sanitizeSettings(raw) {
@@ -72,9 +77,14 @@ export function sanitizeSettings(raw) {
     fpsLimit: normalizeFrameRate(r.fpsLimit),
     preload: r.preload === true,
     preloadOptional: typeof r.preloadOptional === 'boolean' ? r.preloadOptional : DEFAULT_SETTINGS.preloadOptional,
+    preloadVoices: typeof r.preloadVoices === 'boolean' ? r.preloadVoices
+      : typeof r.preloadOptional === 'boolean' ? r.preloadOptional : DEFAULT_SETTINGS.preloadVoices,
     preloadAllVoices: r.preloadAllVoices === true,
-    preloadSkins: r.preloadSkins === true,
+    // 皮肤 and 特效 default to on (DEFAULT_SETTINGS): only the master switch starts off, so a first visit caches
+    // nothing until it is turned on — a saved `false` is respected either way.
+    preloadSkins: typeof r.preloadSkins === 'boolean' ? r.preloadSkins : DEFAULT_SETTINGS.preloadSkins,
     preloadSkinsAll: r.preloadSkinsAll === true,
+    preloadFx: typeof r.preloadFx === 'boolean' ? r.preloadFx : DEFAULT_SETTINGS.preloadFx,
     officialFx: OFFICIAL_FX_MODES.includes(r.officialFx) ? r.officialFx : DEFAULT_SETTINGS.officialFx,
     textSize: TEXT_SIZES.includes(r.textSize) ? r.textSize : DEFAULT_SETTINGS.textSize,
     keys: sanitizeHotkeys(r.keys),

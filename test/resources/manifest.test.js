@@ -1,5 +1,6 @@
 // test/resources/manifest.test.js — /data/resource-manifest.json (server/resources.js, docs/ASSETS.md「Preload」): the
-// file list the client may preload, its two tiers, the sizes of the files this install has, the CDN rewrite and the
+// file list the client may preload, its two tiers, the sizes of the files this install has, the CDN rewrite, the official
+// battle-effect tree (data/local-fx.json, docs/design/vfx-format.md) and the HTTP shape (no-cache + ETag/304 + gzip + HEAD).
 // HTTP shape (no-cache + ETag/304 + gzip + HEAD).
 
 import { test, describe } from 'node:test';
@@ -14,7 +15,8 @@ import { listResourceFiles, collectHashes } from '../../tools/asset-hashes.mjs';
 
 import { createStaticHandler } from '../../server/index.js';
 import {
-  pathKey, RESOURCE_MANIFEST_FILE, RESOURCES_FORMAT, TIER_ESSENTIAL, TIER_REST, buildResourceManifest, collectResourceFiles,
+  LOCAL_FX_FILE, pathKey, RESOURCE_MANIFEST_FILE, RESOURCES_FORMAT, TIER_ESSENTIAL, TIER_REST, buildResourceManifest, collectFxFiles,
+  collectResourceFiles,
   createResourceIndex, isResourcePath, localPathFor, resourceType, skinKeyForPath, tierForPath, validateResourceUrl,
 } from '../../server/resources.js';
 
@@ -67,8 +69,22 @@ const local = () => ({
   },
 });
 
+/** data/local-fx.json as the extractor writes it: groups of { path } entries, some with a half variant (docs/design/vfx-format.md). */
+const fx = () => ({
+  version: 1,
+  format: 'fx-manifest',
+  set: 'used',
+  groups: {
+    fx: { index: { path: '/assets/local/fx/index.json' }, textures: { path: '/assets/local/fx/textures.json' } },
+    'fx/prefabs': { 'char_002_amiya/skill_1': { path: '/assets/local/fx/prefabs/amiya_s1.json', kind: 'effect' } },
+    'fx/tex': { fx_fire_1: { path: '/assets/local/fx/tex/fire_1.webp', half: '/assets/local/fx/tex/half/fire_1.webp', kind: 'sprite' } },
+    // outside the effect tree, and a path repeated inside it — both dropped
+    other: { stray: { path: '/assets/local/emoticon/e1.png' }, again: { path: '/assets/local/fx/index.json' } },
+  },
+});
+
 /** A temp install: the two manifests (plus optional asset hashes) and the files that actually exist on disk. */
-function install({ assets = manifest(), localDoc = local(), hashesDoc = null, files = [
+function install({ assets = manifest(), localDoc = local(), hashesDoc = null, fxDoc = null, files = [
   'assets/char/avatar/char_002_amiya.png', 'assets/ui/battle/sprite_shadow.png', 'assets/audio/bgm/lobby_loop.mp3',
   'assets/spine/op/char_002_amiya/front/char_002_amiya.skel', 'assets/local/map/autochess/TX_D.png', 'fonts/bender-regular.woff2',
 ] } = {}) {
@@ -77,6 +93,7 @@ function install({ assets = manifest(), localDoc = local(), hashesDoc = null, fi
   if (assets) fs.writeFileSync(path.join(dataDir, 'assets.json'), JSON.stringify(assets));
   if (localDoc) fs.writeFileSync(path.join(dataDir, 'local-assets.json'), JSON.stringify(localDoc));
   if (hashesDoc) fs.writeFileSync(path.join(dataDir, 'asset-hashes.json'), JSON.stringify(hashesDoc));
+  if (fxDoc) fs.writeFileSync(path.join(dataDir, LOCAL_FX_FILE), JSON.stringify(fxDoc));
   for (const rel of files) {
     const abs = path.join(publicDir, rel);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -181,6 +198,28 @@ describe('resource manifest building', () => {
     assert.equal(built.files.find((f) => f.url.endsWith('char_003_kalts_boc_6.skel')).skin, 'char_003_kalts/char_003_kalts@boc#6');
     assert.equal(built.files.find((f) => f.url.endsWith('/front/char_003_kalts.skel')).skin, undefined);
     assert.equal(built.tier1, 2, 'only the operator’s own avatar and model stay required');
+  });
+
+  test('官方特效: the effect tree joins as an optional set of its own, marked with fx', () => {
+    // data/local-fx.json is a whole art tree (~185 MiB, docs/design/vfx-format.md) that data/local-assets.json knows
+    // nothing about: collectFxFiles walks it on its own and forces every hit into tier 2, however local it looks.
+    const files = collectFxFiles(fx());
+    assert.deepEqual(files.map((f) => f.url), [
+      '/assets/local/fx/index.json', '/assets/local/fx/prefabs/amiya_s1.json', '/assets/local/fx/tex/fire_1.webp',
+      '/assets/local/fx/tex/half/fire_1.webp', '/assets/local/fx/textures.json',
+    ], 'sorted, deduplicated (index.json appears twice in the fixture), half variants included');
+    assert.ok(files.every((f) => f.tier === TIER_REST), 'never part of the required set the panel starts with');
+    assert.ok(files.every((f) => f.fx === true && f.source === 'fx'));
+    assert.ok(!files.some((f) => f.url.includes('/emoticon/')), 'only the effect tree');
+    assert.equal(collectFxFiles(null).length, 0);
+    assert.equal(collectFxFiles({ groups: { 'fx/tex': { a: { path: '/assets/char/avatar/char_002_amiya.png' } } } }).length, 0,
+      'an asset-tree path inside local-fx.json is not an effect');
+    // The built manifest carries the marker, which is what the client groups and switches by.
+    const built = buildResourceManifest({ files, version: 'v' });
+    assert.ok(built.files.every((f) => f.tier === TIER_REST && f.fx === true));
+    assert.equal(built.tier1, 0);
+    assert.equal(buildResourceManifest({ files: [{ url: '/assets/local/fx/index.json', tier: TIER_REST }], version: 'v' }).files[0].fx, undefined,
+      'only an actual effect entry carries it');
   });
 
   test('collect: every resource file, deduplicated, essential first, ids/aliases skipped', () => {    const files = collectResourceFiles(manifest(), local());
@@ -300,6 +339,30 @@ describe('the served resource manifest', () => {
     assert.ok(m.totalBytes > 0);
     assert.deepEqual(m.files.map((f) => f.tier), [...m.files.map((f) => f.tier)].sort((a, b) => a - b), 'essential first');
   });
+  test('a local-fx.json install lists the effect files with their sizes and hashes, all optional', async (t) => {
+    const fxFiles = ['assets/local/fx/index.json', 'assets/local/fx/tex/fire_1.webp', 'assets/local/fx/tex/half/fire_1.webp'];
+    const withFx = install({ fxDoc: fx(), files: fxFiles });
+    const srv = await serve(withFx);
+    t.after(() => { srv.close(); withFx.cleanup(); });
+    const m = await (await fetch(`http://127.0.0.1:${srv.address().port}/data/${RESOURCE_MANIFEST_FILE}`)).json();
+    const plain = install();
+    const plainSrv = await serve(plain);
+    t.after(() => { plainSrv.close(); plain.cleanup(); });
+    const without = await (await fetch(`http://127.0.0.1:${plainSrv.address().port}/data/${RESOURCE_MANIFEST_FILE}`)).json();
+
+    const byUrl = new Map(m.files.map((f) => [pathKey(f.url), f]));
+    const effect = m.files.filter((f) => f.fx);
+    assert.equal(effect.length, 5, 'index + textures + prefab + the texture and its half variant');
+    assert.ok(effect.every((f) => f.tier === TIER_REST), 'the whole tree stays optional');
+    assert.equal(byUrl.get('/assets/local/fx/tex/fire_1.webp').size, 'assets/local/fx/tex/fire_1.webp'.length, 'a file on disk carries its size');
+    assert.equal(byUrl.get('/assets/local/fx/tex/half/fire_1.webp').size, 'assets/local/fx/tex/half/fire_1.webp'.length);
+    assert.match(byUrl.get('/assets/local/fx/tex/fire_1.webp').hash, /^[0-9a-f]{12}$/, 'a real hash for a file this install has');
+    assert.equal(byUrl.get('/assets/local/fx/prefabs/amiya_s1.json').size, undefined, 'a CDN-only effect carries no size here');
+    assert.equal(m.tier1, without.tier1, 'the required set is unchanged: an effect never becomes essential');
+    assert.ok(!without.files.some((f) => f.fx), 'without data/local-fx.json nothing is marked');
+    assert.notEqual(m.version, without.version, 'the effect tree is part of the manifest version');
+  });
+
 
   test('the CDN rewrites the entries (the client preloads from the CDN without knowing it)', async (t) => {
     const inst = install();
@@ -413,6 +476,24 @@ describe('the resource index cache', () => {
     assert.match(c.manifest.version, /^[0-9a-f]{12}$/);
     assert.ok(c.gzip.length < c.body.length, 'the served copy is compressed too');
     inst.cleanup();
+
+  test('a republished effect tree invalidates the manifest, and its files are sized from disk', async () => {
+    const inst = install({ fxDoc: fx(), files: ['assets/local/fx/tex/fire_1.webp'] });
+    try {
+      const index = createResourceIndex({ dataDir: inst.dataDir, publicDir: inst.publicDir });
+      const a = await index.get();
+      assert.equal(a.manifest.files.filter((f) => f.fx).length, 5);
+      assert.equal(a.manifest.files.find((f) => f.url === '/assets/local/fx/tex/fire_1.webp').size,
+        'assets/local/fx/tex/fire_1.webp'.length, 'the effect files this install has are measured like any other');
+      await new Promise((r) => setTimeout(r, 20));
+      const grown = fx();
+      grown.groups = { ...grown.groups, 'fx/mesh': { 'a/b': { path: '/assets/local/fx/mesh/a.json' } } };
+      fs.writeFileSync(path.join(inst.dataDir, LOCAL_FX_FILE), JSON.stringify(grown));
+      const b = await index.get();
+      assert.equal(b.manifest.files.filter((f) => f.fx).length, 6, 'a re-extraction with one more effect lists it');
+      assert.notEqual(b.manifest.version, a.manifest.version, 'the effect tree is part of the manifest version');
+    } finally { inst.cleanup(); }
+  });
   });
 
   test('a missing file simply has no size (a CDN-only install)', async () => {

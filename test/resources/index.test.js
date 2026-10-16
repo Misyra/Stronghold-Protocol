@@ -26,6 +26,24 @@ class MemoryCaches {
 }
 
 const ORIGIN = 'https://game.example';
+
+test('controller carries the independent voice scope and English/Korean language through to downloads', async (t) => {
+  const files = ['cn', 'en', 'kr'].map((lang) => ({ url: `/assets/audio/voice/${lang}/x.mp3`, tier: 2, size: 4 }));
+  files.push({ url: '/assets/audio/bgm/x.mp3', tier: 2, size: 4 });
+  const env = stubEnv({ manifest: { ...MANIFEST, files, count: 4, tier1: 0, sized: 4, totalBytes: 16 } });
+  t.after(env.restore);
+  const mod = await import('../../public/js/resources/index.js?independent-voice');
+  await mod.syncResources(true, false, 'en', false, { voices: true, fx: false });
+  assert.deepEqual(env.calls.fetch.slice(1), [ORIGIN + '/assets/audio/voice/en/x.mp3']);
+  await mod.syncResources(true, false, 'kr', false, { voices: true, fx: false });
+  assert.equal(mod.resourceState().voiceLang, 'kr');
+  assert.equal(mod.resourceState().voices, true);
+  assert.equal(env.calls.fetch.at(-1), ORIGIN + '/assets/audio/voice/kr/x.mp3');
+  await mod.syncResources(true, true, 'kr', false, { voices: false, fx: false });
+  assert.equal(env.calls.fetch.at(-1), ORIGIN + '/assets/audio/bgm/x.mp3');
+  assert.equal(mod.resourceState().groups.find((g) => g.id === 'voice').wanted, 0);
+  await mod.syncResources(false);
+});
 const FILES = [
   // the real manifest is sorted essential-first (server/resources.js) — the fixture mirrors that
   { url: '/assets/audio/bgm.mp3', tier: 1, size: 6 },
@@ -70,7 +88,7 @@ test('干员皮肤: the saved selection decides which outfits are fetched, on it
   const env = stubEnv({ manifest: { ...MANIFEST, files, count: files.length, tier1: 1, sized: files.length, totalBytes: 30 } });
   t.after(env.restore);
   const mod = await import('../../public/js/resources/index.js?skin-selection');
-  // 「同时预载可选资源」 off + one picked outfit: that outfit only — never a voice, never another outfit.
+  // 额外资源 off + one picked outfit: that outfit only — never a voice, never another outfit.
   await mod.syncResources(true, false, 'cn', false, ['char_003_kalts/char_003_kalts@boc#6']);
   assert.deepEqual(env.calls.fetch.slice(1).sort(), [
     ORIGIN + '/assets/ui/panel.png',
@@ -115,6 +133,38 @@ test('干员皮肤 全部皮肤: the scope widens to every outfit in the manifes
   // Back to following 干员调配: the unpicked outfit leaves the selection (what is cached stays).
   await mod.syncResources(true, false, 'cn', false, { keys: ['char_003_kalts/char_003_kalts@boc#6'], all: false });
   assert.deepEqual(mod.resourceState().skinScope, { keys: ['char_003_kalts/char_003_kalts@boc#6'], all: false });
+  await mod.syncResources(false);
+});
+
+test('官方特效: its own switch, separate from 额外资源 in both directions (docs/design/vfx-format.md)', async (t) => {
+  const files = [
+    { url: '/assets/ui/panel.png', tier: 1, size: 4 },
+    { url: '/assets/audio/voice/cn/x.mp3', tier: 2, size: 6 },
+    { url: '/assets/local/fx/index.json', tier: 2, size: 3, fx: true },
+    { url: '/assets/local/fx/tex/fire.webp', tier: 2, size: 40, fx: true },
+  ];
+  const env = stubEnv({ manifest: { ...MANIFEST, files, count: files.length, tier1: 1, sized: files.length, totalBytes: 53 } });
+  t.after(env.restore);
+  const mod = await import('../../public/js/resources/index.js?fx-selection');
+  // 额外资源 off, 特效 on (the panel's default): the effect tree alone, and not one voice with it.
+  await mod.syncResources(true, false, 'cn', false, { keys: [], all: false, fx: true });
+  assert.deepEqual(env.calls.fetch.slice(1).sort(), [
+    ORIGIN + '/assets/ui/panel.png',
+    ORIGIN + '/assets/local/fx/index.json',
+    ORIGIN + '/assets/local/fx/tex/fire.webp',
+  ].sort(), 'the effects download without a single voice');
+  assert.equal(mod.resourceState().tier2Wanted, 2, 'the two effect files are what 「可选」 means here');
+  assert.equal(mod.resourceState().selectionComplete, true);
+  // 特效 off, 额外资源 on now: only the newly wanted voice is fetched. The 特效 row stays in the panel — greyed out and
+  // out of the counters — because its figures span the whole manifest (`allTotal`), so nothing moves with the boxes.
+  const count = env.calls.fetch.length;
+  await mod.syncResources(true, true, 'cn', false, { keys: [], all: false, fx: false });
+  assert.deepEqual(env.calls.fetch.slice(count), [ORIGIN + '/assets/audio/voice/cn/x.mp3']);
+  const fxRow = mod.resourceState().groups.find((g) => g.id === 'fx');
+  assert.ok(fxRow, 'the 特效 row is still listed once its switch is off');
+  assert.equal(fxRow.wanted, 0, 'and nothing from the effect tree is wanted');
+  assert.deepEqual([fxRow.allTotal, fxRow.allPresent], [2, 2], 'its figures span the manifest: both files, both already cached');
+  assert.equal(mod.resourceState().tier2Wanted, 1);
   await mod.syncResources(false);
 });
 

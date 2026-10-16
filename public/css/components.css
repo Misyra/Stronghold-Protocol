@@ -1143,6 +1143,14 @@
 .resource-modal .modal__head { flex: none; }
 .resource-modal .modal__body { min-height: 0; padding-top: .12rem; padding-bottom: .16rem; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
 .resource-modal .modal__actions { flex-wrap: wrap; }
+
+/* On a desktop viewport the wide tier cards share one row, so the panel takes the room the phone layout never has —
+   a little under two thirds of the width: enough for both cards, short of filling the screen. The compact layer keeps
+   its own min(12rem, 100%) and loads later, so it still wins when it applies. Note that 1rem is 1/19.2 of the viewport
+   width (theme.css), so these rem figures are viewport fractions: 12rem ≈ 62.5vw. */
+@media (min-width: 1001px) {
+  .modal--utility .resource-modal { width: min(12rem, calc(100vw - 1.4rem)); max-height: min(80vh, calc(100dvh - 1.2rem)); }
+}
 .resource-manager { display: flex; flex-direction: column; gap: .12rem; font-size: calc(.15 * var(--utility-text, var(--t))); }
 .resource-manager p { margin: 0; line-height: 1.55; }
 .resource-manager__intro { color: var(--text-dim); }
@@ -1154,6 +1162,14 @@
 .resource-archive p { font-size: calc(.14 * var(--utility-text, var(--t))); color: var(--text-md); }
 .resource-choice { display: flex; align-items: center; gap: .06rem; white-space: nowrap; color: var(--mint-400); cursor: pointer; }
 .resource-choice input { accent-color: var(--mint-400); }
+/* 预载范围 (docs/ASSETS.md): selected-download summary and presets, followed by the four resource cards. */
+.resource-scope { display: flex; flex-direction: column; gap: .08rem; padding: .12rem .16rem; border: 1px solid var(--line-2); background: rgba(23, 249, 183, .03); }
+.resource-scope__head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .04rem .12rem; }
+.resource-scope__head h3 { margin: 0; color: var(--text-hi); font-size: calc(.16 * var(--utility-text, var(--t))); }
+.resource-scope__total { color: var(--text-dim); font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-choice__size { color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-manager .resource-choice.is-off { color: var(--text-dim); }
+.resource-tier__list li.is-off, .resource-tier__list li.is-off > .num, .resource-tier__list li.is-off small { color: var(--text-dim); }
 .resource-tier__summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .06rem; margin: .12rem 0 .06rem; font-size: calc(.14 * var(--utility-text, var(--t))); }
 .resource-tier__list { list-style: none; margin: .08rem 0 0; padding: 0; }
 .resource-tier__list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: .08rem; padding: .055rem 0; border-bottom: 1px solid var(--line); font-size: calc(.13 * var(--utility-text, var(--t))); }
@@ -1212,15 +1228,48 @@
 .resource-archive__result.is-error, .resource-manager__failures { color: var(--amber); }
 .resource-manager__failures ul { margin: .08rem 0; padding-left: .2rem; overflow-wrap: anywhere; }
 
-/* 干员皮肤 — one switch and two numbers next to the tiers (docs/SKINS.md). Same box as a tier: the choice itself lives
-   in 干员调配, so there is no list here to size. */
+/* Skin selection follows the loadout; this card measures selected outfits and reports the catalog separately. */
 .resource-skins { padding: .14rem .16rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .18); }
 .resource-skins h3 { margin: 0; color: var(--text-hi); font-size: calc(.18 * var(--utility-text, var(--t))); }
-.resource-skins__head { display: flex; gap: .1rem; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
-.resource-skins__head p { margin-top: .04rem; font-size: calc(.13 * var(--utility-text, var(--t))); color: var(--text-dim); }
 .resource-skins .resource-choice { color: var(--amber); }
 .resource-skins .resource-choice input { accent-color: var(--amber); }
-.resource-skins__hint { margin-top: .06rem; font-size: calc(.13 * var(--utility-text, var(--t))); color: var(--text-dim); }
+
+/* Resource cards keep the choice, its cost and its cache progress together. The overview is scoped to this run. */
+.resource-presets { display: flex; flex-wrap: wrap; gap: .06rem; }
+.resource-presets button { min-height: .32rem; padding: .055rem .12rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .15); color: var(--text-md); font: inherit; font-size: calc(.13 * var(--utility-text, var(--t))); cursor: pointer; }
+.resource-presets button[aria-pressed="true"] { color: var(--mint-400); border-color: var(--mint-400); background: rgba(23, 249, 183, .08); }
+.resource-presets button:hover { color: var(--text-hi); border-color: var(--text-md); }
+.resource-presets button:disabled { opacity: .5; cursor: default; }
+.resource-presets button:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
+.resource-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .12rem; padding: .08rem 0; }
+.resource-overview > div { display: flex; flex-direction: column; gap: .025rem; min-width: 0; }
+.resource-overview > div + div { border-left: 1px solid var(--line-2); padding-left: .14rem; }
+.resource-overview span { color: var(--text-md); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-overview strong { color: var(--text-hi); font-size: calc(.24 * var(--utility-text, var(--t))); line-height: 1.3; overflow-wrap: anywhere; }
+.resource-overview > div:last-child strong { color: var(--mint-400); }
+.resource-overview__state { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .04rem .1rem; color: var(--text-md); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-manager__tiers > section { min-width: 0; border-top: 2px solid var(--mint-400); }
+.resource-manager__tiers > .resource-skins { border-top-color: var(--amber); }
+.resource-manager__tiers > section.is-off { border-top-color: var(--line-2); }
+.resource-tier__head .micro { display: block; margin: 0 0 .035rem; color: var(--text-dim); }
+.resource-tier__head .resource-choice { flex-shrink: 0; font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-badge { padding: .025rem .06rem; color: var(--mint-400); background: rgba(23, 249, 183, .08); white-space: nowrap; font-size: calc(.11 * var(--utility-text, var(--t))); }
+.resource-manager .resource-card__description { margin-top: .065rem; color: var(--text-md); font-size: calc(.125 * var(--utility-text, var(--t))); }
+.resource-manager .resource-card__note { margin-top: .07rem; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-card__details { margin-top: .08rem; font-size: calc(.13 * var(--utility-text, var(--t))); color: var(--text-md); }
+.resource-extra { border-top: 1px solid var(--line-2); margin-top: .1rem; padding-top: .08rem; }
+.resource-extra > .resource-choice { white-space: normal; font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-tier .resource-manager__voice { padding: 0; margin-top: .1rem; background: none; flex-direction: column; align-items: flex-start; gap: .07rem; }
+.resource-tier .resource-voice-tabs { flex-wrap: wrap; max-width: 100%; }
+.resource-tier .resource-voice-tabs button { flex: 1; }
+.resource-skins__all { margin-top: .1rem; white-space: normal; font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-archive > summary { display: flex; align-items: center; justify-content: space-between; gap: .1rem; color: var(--text-hi); font-size: calc(.14 * var(--utility-text, var(--t))); list-style: none; }
+.resource-archive > summary::-webkit-details-marker { display: none; }
+.resource-archive > summary::before { content: '+'; color: var(--mint-400); }
+.resource-archive[open] > summary::before { content: '−'; }
+.resource-archive > summary > span { margin-left: auto; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-archive__toolbar { margin-top: .12rem; }
+.resource-footer__hint { flex: 1; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
 
 /* Single-line announcement ticker and its shared full-text viewer. */
 .announcement__content { flex: 1; min-width: 0; display: block; overflow: hidden; padding: .04rem 0; border: 0; background: none; color: var(--text-hi); text-align: left; cursor: pointer; font: inherit; }

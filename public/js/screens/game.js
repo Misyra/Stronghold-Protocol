@@ -138,7 +138,7 @@ import { MatchEnded, PausedOverlay } from './game/overlays.js';
 import { inspectRange } from './game/range.js';
 import { t, tParts } from '../../../shared/i18n.js';
 
-// 作战统计 is opt-in (settings `combatMetrics`, default off). The runner does not import the settings store;
+// 作战统计 follows settings `combatMetrics` (on by default since 2026-10-16). The runner does not import the store;
 // this screen pushes the switch. Outside a browser battleRunner is null, so this is a no-op.
 if (battleRunner) {
   const applyCombatMetrics = (s) => battleRunner.setCombatMetrics(s?.combatMetrics === true);

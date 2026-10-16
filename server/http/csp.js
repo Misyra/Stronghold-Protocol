@@ -24,7 +24,7 @@ function addInlineHashes(hashes, html) {
   }
 }
 /** The page policy: every response carries it, and it may only allow scripts this server writes itself. */
-export function siteCsp(publicDir, transformPage = null) {
+export function siteCsp(publicDir, transformPage = null, cdnBase = '') {
   const hashes = new Set();
   for (const rel of CANDIDATES) {
     let html;
@@ -34,5 +34,10 @@ export function siteCsp(publicDir, transformPage = null) {
     if (!transformPage) continue;
     try { addInlineHashes(hashes, transformPage(html, path.extname(rel))); } catch {}
   }
-  return `default-src 'self'; script-src 'self'${hashes.size ? ' ' + [...hashes].join(' ') : ''}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'`;
+  // Art served from `assetsCdn` (SP_ASSETS_CDN) arrives from a second origin, and CSP does not care that it is ours:
+  // every directive the pictures, audio and fonts land in has to name it, and connect-src covers the preload's own
+  // fetches. `script-src` never gains it — a CDN may ship art, never code.
+  let art = '';
+  if (cdnBase) { try { art = ` ${new URL(cdnBase).origin}`; } catch { art = ''; } }
+  return `default-src 'self'; script-src 'self'${hashes.size ? ' ' + [...hashes].join(' ') : ''}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com${art}; font-src 'self' https://fonts.gstatic.com${art}; img-src 'self' data: blob:${art}; media-src 'self'${art}; connect-src 'self'${art}; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'`;
 }

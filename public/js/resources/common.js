@@ -54,6 +54,10 @@ export const RESOURCE_GROUPS = Object.freeze({
   // 干员皮肤 is optional like the rest, but it is the one group the player picks item by item (docs/SKINS.md):
   // the manifest marks those entries with `skin`, and the store keeps only the chosen skins in its selection.
   skin: { name: N_('干员皮肤'), tier: TIER_REST },
+  // 官方特效 (`data/local-fx.json`, docs/design/vfx-format.md) is the second group with a preload switch of its own:
+  // ~185 MiB of effect prefabs, textures and meshes — the largest optional set after 干员皮肤. `optional` does not
+  // cover it; `ResourceStore#inScope` keeps the two switches apart.
+  fx: { name: N_('官方特效'), tier: TIER_REST },
 });
 
 /** `charId/skinId` as the server writes it (`server/resources.js` `skinKeyForPath`): both halves are key-path segments,
@@ -66,6 +70,9 @@ export function isSkinKey(key) {
 
 export function resourceGroup(file) {
   if (isSkinKey(file?.skin)) return 'skin';
+  // 官方特效 is marked by the server (`server/resources.js` `collectFxFiles`), so an unrelated texture that happens
+  // to sit under some `fx/` directory is not mistaken for the official extraction.
+  if (file?.fx) return 'fx';
   const path = new URL(file.url, 'https://resources.invalid').pathname;
   if (file.tier === TIER_REST) {
     if (/\/voice\//.test(path)) return 'voice';
@@ -213,6 +220,8 @@ export function validateManifest(m) {
     if (f.hash != null && (typeof f.hash !== 'string' || !HASH_RE.test(f.hash))) throw new Error(`资源指纹无效：${f.url.slice(0, 80)}`);
     // Optional too: 干员皮肤 files carry the skin they belong to, which is what the panel scopes by.
     if (f.skin != null && !isSkinKey(f.skin)) throw new Error(`资源皮肤标识无效：${f.url.slice(0, 80)}`);
+    // Optional too: 官方特效 entries carry the server's `fx` marker, which is what its own switch scopes by.
+    if (f.fx != null && typeof f.fx !== 'boolean') throw new Error(`资源特效标识无效：${f.url.slice(0, 80)}`);
   }
   return m;
 }

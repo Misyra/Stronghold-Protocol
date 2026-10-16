@@ -580,19 +580,33 @@ Adapted from xinhai-ai/Stronghold-Protocol commit `a94c720`.
 The title screen and settings open one resource manager. Preloading is off by default; after app boot the page resumes
 background preloading only when the saved `preload` setting is enabled, and a saved pause survives page reloads.
 It downloads required
-visuals (maps, portraits, Spine models, UI, icons and fonts). The separate optional checkbox includes voices, sound
-effects, music and tutorial illustrations and is checked by default. The choice persists in `preloadOptional`;
-profiles without a saved choice default to true, while explicit saved choices are retained.
-The manager exposes Chinese/Japanese buttons synchronized with the game's `voiceLang` setting (Chinese by default);
-the separate `preloadAllVoices` checkbox opts into both languages and is disabled when optional preloading is off.
+visuals (maps, portraits, Spine models, UI, icons and fonts). Four cards place choices beside their cache progress:
+必备资源, 干员语音 (`preloadVoices`), 干员皮肤 (`preloadSkins`, docs/SKINS.md), and 额外特效 (`preloadFx`,
+docs/design/vfx-format.md). The required card's expandable details also expose 音效、音乐与玩法说明 (`preloadOptional`).
+Voices and other audio now have independent switches; older profiles inherit `preloadVoices` from their saved
+`preloadOptional` value. Skins and effects are only shown when the server provides them. Defaults are unchanged,
+including the master `preload` being off on first visit.
+Voice buttons reflect the server's available Chinese/Japanese/English/Korean files and synchronize the game's
+`voiceLang` setting. `preloadAllVoices` requests all languages offered by the server and is disabled when voice preload is off.
+The overview offers three atomic presets without changing the master switch or playback language:
+仅必备 (required visuals), 日常推荐 (visuals, selected-language voices, sound/music/guides and equipped skins),
+完整预载 (all optional groups, all installed skins and all available voice languages).
+
+The overview counts **selected cacheable files** and shows 本次预载 / 已缓存 / 还需下载 with a single progress bar.
+Unknown sizes show a `+` and use file-count progress. Required, voice and effect cards keep catalog counters
+(`allTotal` / `allPresent` / `allBytes`) visible even when disabled, labelled 未预载; only language changes narrow the voice catalog.
+The skin card's main bar measures selected outfits only. Its separate server-installed / locally-cached totals
+describe the full catalog, preventing a few equipped skins from appearing to require the entire ~328 MiB collection.
 Switching language downloads only missing voices. Other cached languages remain available and exportable, and
 ZIP imports may still restore every language.
-Closing the manager keeps downloads running; pausing stops this visit's downloads and keeps verified files, while
-disabling preload persists as well, so later page visits stay paused until it is enabled again. When the setting is
+ZIP import/export and cache cleanup live in expandable sections; archive activity automatically expands the ZIP section.
+Closing the manager keeps downloads running; pausing also disables the saved preload setting and keeps verified files,
+so later page visits stay paused until it is enabled again. When the setting is
 enabled, the next page visit resumes automatically and reuses verified files. Cache clearing waits
 for active downloads and archive transfers, and uses the same cross-tab Web Lock as downloads.
 
-干员皮肤 (`docs/SKINS.md`) is the one optional group with its own switch rather than a place in 「同时预载」. A full
+干员皮肤 (`docs/SKINS.md`) is the first of two optional groups that keep a switch of their own rather than a place in
+额外资源. A full
 install is ~328 MiB across ~2 000 files, so the resource manifest marks those entries `skin: '<charId>/<skinId>'`
 (`server/resources.js` `skinKeyForPath`, tier 2) and the client keeps only the equipped skins in its selection
 (`public/js/resources/store.js` `setScope` / `skinWanted` / `normalizeSkinScope`). `preloadSkins` is one boolean and so is
@@ -601,10 +615,20 @@ ones. The keys are not stored at all — they are the outfits this browser has e
 (`ui/skins.js` `equippedSkinKeys()`, chessId → charId through the chess table), so equipping one there is what starts its download:
 `main.js` re-applies the scope whenever `skinsStore` or the settings change. A player who wants a handful of outfits
 never takes every voice and soundtrack, and one who wants the soundtrack never gets 328 MiB of skins. A player who does
-want all of them ticks 全部皮肤 in the same row (`preloadSkinsAll`, shown only when the deployment has skins). Unequipped skins
+want all of them ticks 全部皮肤 in the 干员皮肤 card (`preloadSkinsAll`, shown only when the deployment has skins). Unequipped skins
 are out of scope for download and for status counting, but stay importable and retained: a ZIP import or a cached copy
 still counts, and 「清理可选资源」 removes them like any other optional file. A deployment with no skins installed (a
 fresh clone — `data/skins-installed.json` ships empty) has no such entries and the manager shows no section at all.
+
+官方特效 (`docs/design/vfx-format.md`) has its own 额外特效 card and switch. The extraction itself
+lives in `data/local-fx.json` (one entry per file, no hashes of its own); `server/resources.js` walks it with
+`collectFxFiles` — paths under `/assets/local/fx/` only — and lists every file as a tier-2 entry marked `fx: true`, the
+field the client groups and scopes by (`resources/common.js` `RESOURCE_GROUPS` / `resourceGroup`, `store.js` `inScope` /
+`setScope`). ~12 500 files / ~185 MiB, the largest optional set after skins, so it is never implied by 额外资源 in either
+direction: `preloadFx` is a setting of its own (default true, 默认全预载). Effect files are sized and hashed like
+anything else — from disk when the tree is installed, from `.assets-manifest.json.preload` on a CDN install — and
+「清理可选资源」 removes them like any other optional file. A deployment without an effect tree (a fresh clone: the file
+comes from the local-client extraction) has no such entries and the manager shows no 特效 box.
 
 Each preload fetch has a 30-second deadline covering both headers and the complete response body, with at most two
 retries for network failures, timeouts, HTTP 408/429 and 5xx. Backoff starts at 500 ms and doubles; Retry-After is

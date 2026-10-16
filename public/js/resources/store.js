@@ -15,6 +15,7 @@
 
 import { markResourceHeaders, cacheIndex, readCacheIndex } from './cacheMetadata.js';
 import { resourceIdentity } from '../../../shared/resourcePaths.js';
+import { VOICE_LANGS } from '../voicePrefs.js';
 import {
   CACHE_NAME, CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, TIER_ESSENTIAL, TIER_REST, RESOURCE_GROUPS, resourceGroup, resourceType, absoluteUrl, indexUrl, checkAbort, isQuotaError, isSkinKey,
 } from './common.js';
@@ -46,7 +47,7 @@ export function normalizeSkinKeys(raw = null) {
 
 /**
  * The 干员皮肤 scope: the equipped keys to follow, or every outfit the manifest offers (`all`). A full install is
- * ~328 MiB, so 全部皮肤 is always an explicit choice (设置 ▸ 预载资源 ▸ 全部皮肤): it never rides 「同时预载可选资源」,
+ * ~328 MiB, so 全部皮肤 is always an explicit choice (设置 ▸ 预载资源 ▸ 全部皮肤): it never rides 额外资源,
  * and an install without skins has nothing for it to widen (docs/SKINS.md).
  * @param {Iterable<string>|{ keys?: Iterable<string>, all?: boolean }|'all'|'off'|null} [raw]
  * @returns {{ keys: Set<string>, all: boolean }}
@@ -92,6 +93,8 @@ export class ResourceStore {
   constructor(manifest, { caches = globalThis.caches, fetcher = globalThis.fetch?.bind(globalThis), origin, smallLanes = 4, bigLanes = 1, now = () => Date.now(), network = {}, schedule = null, ensureCached = null } = {}) {
     this.manifest = manifest;
     this.files = Array.isArray(manifest.files) ? manifest.files : [];
+    this.voiceLanguages = [...new Set(this.files.filter((f) => resourceGroup(f) === 'voice')
+      .map((f) => /\/voice\/([^/]+)\//.exec(new URL(f.url, 'https://resources.invalid').pathname)?.[1]).filter(Boolean))];
     this.caches = caches;
     this.fetcher = fetcher;
     this.origin = origin || globalThis.location?.origin || 'http://localhost';
@@ -109,51 +112,68 @@ export class ResourceStore {
     this.voiceScope = null;
     /** @type {boolean} whether the optional (tier 2) set is part of the selection at all. */
     this.optional = true;
+    this.voices = true;
     /** @type {Set<string>} the 干员皮肤 (`charId/skinId`) this browser has equipped (docs/SKINS.md). */
     this.skins = normalizeSkinKeys('off');
     /** @type {boolean} 全部皮肤: want every outfit the manifest offers, whatever 干员调配 has equipped. */
     this.allSkins = false;
+    /** @type {boolean} 官方特效 (`data/local-fx.json`, docs/design/vfx-format.md): the panel's third switch. */
+    this.fx = true;
     // The default selection is already scoped (no skins), not just an alias for "everything".
     this.scopedFiles = this.files.filter((file) => this.inScope(file));
   }
 
   /**
    * The preload selection — which optional files are wanted (`optional`), which voice language (`voiceLang` /
-   * `allVoices`) and which 干员皮肤 (`skins` — the equipped ones, or every outfit with `all`). It narrows download and status only: every manifest
-   * entry stays importable and retained, so a ZIP import or an older cache still counts.
+   * `allVoices`), which 干员皮肤 (`skins` — the equipped ones, or every outfit with `all`) and whether 官方特效
+   * (`fx`) ride along. It narrows download and status only: every manifest entry stays importable and retained, so a
+   * ZIP import or an older cache still counts.
    *
-   * 干员皮肤 ride their own switch rather than the 「同时预载」 one: a player who wants a handful of outfits should not
-   * have to take every voice and soundtrack as well, and one who wants the soundtrack should not get 328 MiB of skins.
-   * @param {{ optional?: boolean, voiceLang?: string, allVoices?: boolean,
+   * 干员皮肤 and 官方特效 ride switches of their own rather than 「额外资源」: a player who wants a handful of outfits
+   * should not have to take every voice, soundtrack and effect as well, and one who wants the soundtrack should not
+   * get 328 MiB of skins or 185 MiB of effects.
+   * @param {{ optional?: boolean, voices?: boolean, voiceLang?: string, allVoices?: boolean, fx?: boolean,
    *           skins?: Iterable<string>|{ keys?: Iterable<string>, all?: boolean }|'all'|'off'|null }} [scope]
    */
-  setScope({ optional = this.optional, voiceLang = 'cn', allVoices = false, skins = null } = {}) {
-    const voice = allVoices ? null : (voiceLang === 'jp' ? 'jp' : 'cn');
+  setScope({ optional = this.optional, voices = optional, voiceLang = 'cn', allVoices = false, skins = null, fx = this.fx } = {}) {
+    const voice = allVoices ? null : (VOICE_LANGS.includes(voiceLang) ? voiceLang : 'cn');
     const next = normalizeSkinScope(skins);
     if (voice === this.voiceScope && !!optional === this.optional && next.all === this.allSkins
-      && sameSkinKeys(next.keys, this.skins)) return;
+      && sameSkinKeys(next.keys, this.skins) && !!fx === this.fx && !!voices === this.voices) return;
     this.voiceScope = voice;
     this.optional = !!optional;
+    this.voices = !!voices;
     this.skins = next.keys;
     this.allSkins = next.all;
+    this.fx = !!fx;
     this.scopedFiles = this.files.filter((file) => this.inScope(file));
     this.statusPromise = null;
   }
 
   /** Language + all-voices only (the shape the voice panel and the older callers use). */
   setVoiceScope(language = 'cn', all = false) {
-    this.setScope({ voiceLang: language, allVoices: all });
+    this.setScope({ voiceLang: language, allVoices: all, voices: this.voices });
   }
 
   /** Whether a manifest entry is part of what this selection downloads and counts. */
   inScope(file) {
-    if (file.skin) { if (!this.skinWanted(file)) return false; }
+    // 官方特效 is not bound to `optional`: unchecking 额外资源 keeps the effects (and the other way round) — each
+    // switch means exactly what its own label says (`public/js/ui/resourcePanel.js`).
+    if (file.fx) { if (!this.fx) return false; }
+    else if (file.skin) { if (!this.skinWanted(file)) return false; }
+    else if (file.tier === TIER_REST && resourceGroup(file) === 'voice') { if (!this.voices) return false; }
     else if (file.tier === TIER_REST && !this.optional) return false;
-    if (this.voiceScope) {
-      const language = /\/assets\/audio\/voice\/([^/]+)\//.exec(new URL(file.url, this.origin).pathname)?.[1];
-      if (language && language !== this.voiceScope) return false;
-    }
-    return true;
+    return this.languageOk(file);
+  }
+
+  /**
+   * The voice-language half of `inScope` on its own: the panel's per-group figures span the whole manifest and only
+   * the language knob narrows them, since that knob picks files rather than a scope (docs/ASSETS.md).
+   */
+  languageOk(file) {
+    if (!this.voiceScope) return true;
+    const language = /\/assets\/audio\/voice\/([^/]+)\//.exec(new URL(file.url, this.origin).pathname)?.[1];
+    return !language || language === this.voiceScope;
   }
 
   /** Whether this file's skin is wanted: 全部皮肤 takes them all, otherwise only the equipped ones. */
@@ -232,6 +252,8 @@ export class ResourceStore {
         before.count++;
         if (file.tier === TIER_ESSENTIAL) before.tier1Present++; else before.tier2Present++;
         const group = groups.get(resourceGroup(file));
+        group.allPresent++;
+        if (Number.isSafeInteger(file.size)) group.allCached += file.size;
         group.present++;
         if (Number.isSafeInteger(file.size)) { before.bytes += file.size; before.sized++; group.bytes += file.size; }
       }
@@ -480,7 +502,8 @@ export class ResourceStore {
     let tier1Wanted = 0;
     let tier2Wanted = 0;
     const groups = Object.fromEntries(Object.entries(RESOURCE_GROUPS).map(([id, group]) => [id,
-      { id, ...group, total: 0, wanted: 0, present: 0, bytes: 0, totalBytes: 0, unknownSize: 0 }]));
+      { id, ...group, total: 0, wanted: 0, present: 0, bytes: 0, totalBytes: 0, unknownSize: 0,
+        allTotal: 0, allPresent: 0, allBytes: 0, allCached: 0, allUnknown: 0 }]));
     for (const f of selected) {
       const hit = present.has(this.keyOf(f.url));
       const group = groups[resourceGroup(f)];
@@ -521,6 +544,33 @@ export class ResourceStore {
       if (!this.inScope(f)) continue;
       entry.wanted++;
     }
+    // 官方特效 availability, counted over the whole manifest rather than the selection: the panel decides whether the
+    // effect box exists at all, so it has to know the tree is there even while the box itself is switched off —
+    // counting the selection instead would delete the way back (docs/design/vfx-format.md).
+    let fxFiles = 0;
+    let fxPresent = 0;
+    for (const f of this.files) {
+      if (!f.fx) continue;
+      fxFiles++;
+      if (present.has(this.keyOf(f.url))) fxPresent++;
+    }
+    // Per-group figures over the whole manifest — switched-off scopes included, narrowed only by the voice language.
+    // The panel draws its cards from these: a box that is off greys out its card instead of
+    // deleting it, and no figure moves while boxes are toggled (docs/ASSETS.md).
+    for (const f of this.files) {
+      if (!this.languageOk(f)) continue;
+      const group = groups[resourceGroup(f)];
+      group.allTotal++;
+      if (Number.isSafeInteger(f.size)) group.allBytes += f.size; else group.allUnknown++;
+      if (present.has(this.keyOf(f.url))) {
+        group.allPresent++;
+        if (Number.isSafeInteger(f.size)) group.allCached += f.size;
+      }
+    }
+    // Whole-manifest totals, independent of the selection: the per-tier figures only ever add up what is switched
+    // on, so the panel needs one honest number for what the entire tree weighs (docs/ASSETS.md).
+    let manifestBytes = 0;
+    for (const f of this.files) if (Number.isSafeInteger(f.size)) manifestBytes += f.size;
     const wanted = total - skipped;
     return {
       version: this.manifest.version,
@@ -540,9 +590,14 @@ export class ResourceStore {
       tier2Present,
       tier1Wanted,
       tier2Wanted,
-      groups: Object.values(groups).filter((g) => g.total > 0),
+      groups: Object.values(groups).filter((g) => g.allTotal > 0),
       // Sorted by key so the panel's list is stable; the UI joins the ids with the skin catalogue for names.
       skins: [...skins.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+      manifestFiles: this.files.length,
+      manifestBytes,
+      voiceLanguages: this.voiceLanguages,
+      fxFiles,
+      fxPresent,
       skinScope: this.skinScope(),
       complete: wanted > 0 && count >= wanted,
     };

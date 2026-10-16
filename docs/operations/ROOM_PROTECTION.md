@@ -27,18 +27,18 @@
 
 必须正确配置可信代理和有效 `SP_GEOLITE_COUNTRY_DB`。内网、国家未知、查询错误或缺库时放行，不猜测归属；大陆专用库的 IPv4 未命中按下面 `cn-only` 规则处理。面板缺库警告、只读 `foreignSessionGeoipAvailable` 与健康信息 `foreignSessions.foreignConnectionsBlocked` 指示配置是否具备生效条件，`connectionDenied` 为拒绝次数。单会话开关、AI 开关和房间上限独立，均不被覆盖。
 
-## 海外 IP 会话上限
+## 所有 IP 会话上限
 
-配置 `SP_GEOLITE_COUNTRY_DB` 后，对识别为非 `CN` 的公开 IP（含港澳台）限制新增身份时的在线游戏 session 数量，默认上限为 `1`。使用现有可信代理地址解析结果；此规则按单个 IP，而不是建房频率规则的 IPv6 `/64`。`SP_FOREIGN_SESSION_LIMIT=on/off` 设置启动开关，默认 `on`；`SP_FOREIGN_MAX_SESSIONS_PER_IP` 设置启动上限，必须为 1–100 的整数，程序选项名为 `maxForeignSessionsPerIp`。
+对所有来源 IP 限制新增身份时的在线游戏 session 数量，默认上限为 `1`；国内、海外、未知国家、局域网与回环地址都适用，不依赖 GeoLite。使用现有可信代理地址解析结果；此规则按单个 IP，而不是建房频率规则的 IPv6 `/64`。为兼容已有部署和面板，继续使用 `SP_FOREIGN_SESSION_LIMIT=on/off`（默认 `on`）、`SP_FOREIGN_MAX_SESSIONS_PER_IP`（1–100 的整数）及程序选项 `maxForeignSessionsPerIp`，只扩大适用范围，不增加另一套限额。
 
 监控面板可以通过现有 RW Agent 实时更新 `PUT /api/room-config` 的布尔字段 `limitForeignSessions` 及整数 `maxForeignSessionsPerIp`，例如 `{"maxForeignSessionsPerIp":3}`，无需重启。保存的面板配置优先于环境默认值，显式程序选项优先级最高，与 `allowBots` 一致。会话设置与房间上限、AI 添加开关及海外连接准入独立，不修改其他值。数据库文件和查询模式仍只在启动时加载，本功能不是数据库热更新。
 
-关闭后允许海外同 IP 多身份，但仍保留来源配额键，供再次开启时识别。开启或调低上限不踢掉已有在线身份，之后仅在在线数低于新上限时接受新身份；有空位时按原规则回收该 IP 的离线旧身份。已有身份的同 IP 有效 token 重连仍可用，因此调低后的过渡期可能保留超过新上限的已有身份，这不是强制踢人的硬收缩。接口中的只读 `foreignSessionGeoipAvailable` 指示国家库是否可用；即使设置已保存，缺少国家库时保护仍不生效。旧版游戏没有对应字段时管理面板隐藏不支持的控件。
+关闭后允许同 IP 多身份，但仍保留来源配额键，供再次开启时识别。开启或调低上限不踢掉已有在线身份，之后仅在在线数低于新上限时接受新身份；有空位时按原规则回收该 IP 的离线旧身份。已有身份的同 IP 有效 token 重连仍可用，因此调低后的过渡期可能保留超过新上限的已有身份。接口中的只读 `foreignSessionGeoipAvailable` 仅指示国家库是否可用，不再影响会话限额是否生效。
 
 - 该 IP 在线身份数达到配置上限时，拒绝新身份以及其他 IP 的 token 向此 IP 的迁入，返回 `FOREIGN_SESSION_LIMIT`；不踢原玩家。携带当前身份的有效 token 重连仍沿用现有同身份窗口接管规则。
 - 同 IP 的旧 session 已断线时，新身份会先按大厅的退出逻辑清理旧席位、匹配队列和回放，再撤销旧 token。无人房间销毁并释放 AI；仍有其他真人的房间保留。不会继承旧玩家的配置、房间访问权或战斗结果。
 - 仍有效的聊天处罚转入新身份，不能靠换 token 清空处罚。旧 token 再次连接时不能踢掉新的在线身份。
-- 国内、内网和未知地区不应用这条限制；未配置 GeoLite 时整条规则关闭。查询异常不会误判国内为海外，异常计数可在健康接口查看。因此上线必须同时配置有效国家库，不能只部署代码。
+- 国内、内网、未知地区及未配置 GeoLite 的来源都应用此限制。国家查询异常不影响会话计数，异常计数仍可在健康接口查看；国家库只影响独立的海外连接准入策略。
 - 海外 session 的私有 SHA-256 IP 配额键随存档保存，重启恢复时重建索引，不增加原始 `session.addr` 的持久化。该键是可关联的配额标识，**不是匿名化保证**；不出现在客户端消息、公开健康信息或审计中。旧存档缺少此键时不猜测来源，首次重连后才纳入规则。
 - 平时检查同 IP 索引，不逐次遍历全体房间或 session；恢复后首次海外握手初始化索引，过期扫描清理索引引用。`foreignSessions` 健康指标包括启用状态、每 IP 上限、回收/拒绝和查询异常计数；审计使用 `session.foreignLimit.denied`（每 IP 10 秒采样）和 `session.foreignLimit.reclaimed`，不记录 token。
 
@@ -70,7 +70,7 @@
 | --- | --- | --- |
 | `SP_GEOLITE_COUNTRY_DB` | 未配置 | 私有 Country `.mmdb` 文件路径；未配置时海外限制不启用，全服总量限制仍生效 |
 | `SP_GEOIP_MODE` | `country` | `country` 用于全球国家库；`cn-only` 用于大陆 IPv4 专用库（GeoIP2-CN），将 IPv4 未命中视为非大陆 |
-| `SP_FOREIGN_MAX_SESSIONS_PER_IP` | `1` | 海外单 IP 在线新身份配额，1–100；面板 `maxForeignSessionsPerIp` 可实时覆盖并保存 |
+| `SP_FOREIGN_MAX_SESSIONS_PER_IP` | `1` | 所有 IP 的在线新身份配额，1–100；面板 `maxForeignSessionsPerIp` 可实时覆盖并保存 |
 | `SP_BOT_MAX_TOTAL` | `300` | 全服 AI 席位上限，1–10000 |
 | `SP_BOT_MAX_FOREIGN` | `50` | 海外来源 AI 席位共用上限，1–10000 |
 

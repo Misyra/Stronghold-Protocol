@@ -12,6 +12,8 @@ import { StubMatch } from '../server/match/StubMatch.js';
 import { TestClient } from './helpers/wsClient.js';
 import { lobbyOptionsFrom } from '../server/http/config.js';
 
+process.env.SP_FOREIGN_SESSION_LIMIT = 'on';
+
 const foreign = '203.0.113.1', domestic = '203.0.113.10';
 const lookup = (ip) => ip === domestic ? 'CN' : ['203.0.113.1', '203.0.113.2', '2001:db8::1', '2001:0db8:0:0:0:0:0:1'].includes(ip) ? 'HK' : null;
 const adminToken = 'foreign-policy-test-token-01234567890123456789';
@@ -114,12 +116,14 @@ test('replacement preserves active chat penalties without copying player loadout
   assert.equal(s.loadout, null); assert.equal(s.roomCode, null);
 });
 
-test('domestic, unknown, private and disabled GeoLite sources retain existing multi-session behavior', async (t) => {
+test('domestic, unknown, private and missing GeoLite sources all enforce the same one-session quota', async (t) => {
   for (const [countryLookup, ip] of [[lookup, domestic], [lookup, '203.0.113.99'], [lookup, '127.0.0.2'], [null, foreign]]) {
     const f = await fixture(t, countryLookup);
-    const a = await (await f.connect(ip)).hello('A'), b = await (await f.connect(ip)).hello('B');
-    assert.notEqual(a.playerId, b.playerId);
-    assert.equal(f.srv.registry.size, 2);
+    const a = await (await f.connect(ip)).hello('A'), b = await f.connect(ip);
+    assert.equal((await b.request({ t: 'hello', name: 'B' })).code, 'FOREIGN_SESSION_LIMIT');
+    assert.equal(f.srv.registry.size, 1);
+    assert.equal((await b.hello('A', a.token)).playerId, a.playerId, 'same-identity reconnect remains available');
+    assert.equal(f.srv.network.foreignSessions.stats().scope, 'all');
   }
 });
 
@@ -248,7 +252,7 @@ test('policy persists with other room settings, honors override and reports miss
   const config = await (await putPolicy(noDatabase.srv, { limitForeignSessions: true })).json();
   assert.equal(config.limitForeignSessions, true); assert.equal(config.foreignSessionGeoipAvailable, false);
   assert.equal(noDatabase.srv.network.foreignSessions.stats().configured, true);
-  assert.equal(noDatabase.srv.network.foreignSessions.stats().enabled, false);
+  assert.equal(noDatabase.srv.network.foreignSessions.stats().enabled, true);
 });
 
 test('failed policy persistence leaves enforcement unchanged', async (t) => {
@@ -334,19 +338,22 @@ test('foreign cap persistence, auth, partial updates and explicit restart overri
   assert.equal(override.srv.network.foreignSessions.stats().maxPerIp, 2);
   const missing = await fixture(t, null, options);
   assert.equal(missing.srv.network.foreignSessions.stats().maxPerIp, 3);
-  assert.equal(missing.srv.network.foreignSessions.stats().enabled, false);
+  assert.equal(missing.srv.network.foreignSessions.stats().enabled, true);
   await writeFile(file, JSON.stringify({ schemaVersion: 1, maxRooms: 700, allowBots: false, limitForeignSessions: true, allowForeignConnections: true }));
   const legacy = await fixture(t, lookup, options);
   assert.equal(legacy.srv.network.foreignSessions.stats().maxPerIp, 1, 'old saved files retain the default');
 });
 
-test('simultaneous foreign hellos cannot overbook the configured cap and domestic identities remain exempt', async t => {
+test('simultaneous hellos cannot overbook the configured cap for either foreign or domestic identities', async t => {
   const f = await fixture(t, lookup, { maxForeignSessionsPerIp: 2 });
   const clients = await Promise.all([f.connect(), f.connect(), f.connect()]);
   const replies = await Promise.all(clients.map((client, i) => client.request({ t: 'hello', name: `Foreign${i}` })));
   assert.equal(replies.filter(reply => reply.t === 'welcome').length, 2);
   assert.equal(replies.filter(reply => reply.code === 'FOREIGN_SESSION_LIMIT').length, 1);
-  for (let i = 0; i < 3; i++) assert.equal((await (await f.connect(domestic)).hello(`Domestic${i}`)).t, 'welcome');
+  const domesticReplies = await Promise.all(Array.from({ length: 3 }, async (_, i) =>
+    (await f.connect(domestic)).request({ t: 'hello', name: `Domestic${i}` })));
+  assert.equal(domesticReplies.filter(reply => reply.t === 'welcome').length, 2);
+  assert.equal(domesticReplies.filter(reply => reply.code === 'FOREIGN_SESSION_LIMIT').length, 1);
   const other = await f.connect('203.0.113.2'), owner = await other.hello('Other');
   const moved = await f.connect();
   assert.equal((await moved.request({ t: 'hello', name: 'Other', token: owner.token })).code, 'FOREIGN_SESSION_LIMIT');

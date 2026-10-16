@@ -14,6 +14,8 @@ import { startServer } from '../server/index.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { loadRoomConfigDocument, payloadFingerprint, roomConfigMutation, saveRoomConfigDocument } from '../server/roomConfig.js';
 
+process.env.SP_FOREIGN_SESSION_LIMIT = 'on';
+
 const TOKEN = 'room-config-v2-test-token-0123456789';
 const OP_A = '11111111-1111-4111-8111-111111111111';
 const OP_B = '22222222-2222-4222-8222-222222222222';

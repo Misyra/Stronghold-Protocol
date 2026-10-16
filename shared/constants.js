@@ -193,7 +193,7 @@ export const ERR_TEXT = {
   BOTS_DISABLED: N_('当前服务器禁止添加 AI 队友'),
   AI_POPULATION_LIMIT: N_('当前服务器AI队友数量异常，可能正在被攻击，暂停AI 队友创建。'),
   FOREIGN_AI_POPULATION_LIMIT: N_('由于你的ip属于海外，当前AI队友达到上限，如果你开了代理请关闭代理，或者前往联机大厅匹配队友'),
-  FOREIGN_SESSION_LIMIT: N_('当前海外 IP 已有在线玩家，请关闭原窗口或关闭代理后重试'),
+  FOREIGN_SESSION_LIMIT: N_('当前 IP 已有在线玩家，请关闭原窗口后重试'),
   FOREIGN_CONNECTIONS_DISABLED: N_('本服务器暂时仅对中国大陆服务'),
   CHAT_DISABLED: N_('当前服务器未开启聊天'),
   CHAT_MUTED: N_('你因多次发送不适宜内容被暂停聊天，请稍后再试'),

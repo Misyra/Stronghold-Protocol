@@ -26,8 +26,58 @@ const FILES = [
   { url: '/assets/e2e/deep/portrait.png', tier: 2, body: 'portrait' },
 ];
 
+/**
+ * The fixture page's module, kept in a file of its own: the site policy (server/http/csp.js) hashes only the import
+ * map and the release-tag script, so an inline module would be blocked, while `script-src 'self'` serves this one.
+ */
+const FIXTURE_MODULE = [
+  "import { render } from '/vendor/preact.module.js';",
+  "import { html } from '/js/ui/components.js';",
+  "import { ResourceLauncher, ResourceHost } from '/js/ui/resourcePanel.js';",
+  "import { resourceState, syncResources, clearResources, startResources, exportResources, importResources } from '/js/resources/index.js';",
+  "// the fixture drives the real launcher, exactly as the title screen does",
+  "let enabled = false;",
+  "let optional = true;",
+  "let voices = true;",
+  "let allVoices = false;",
+  "let voiceLang = 'cn';",
+  "let skinPreload = false;",
+  "let skinPreloadAll = false;",
+  "let fxPreload = true;",
+  "// The three preload scopes, exactly as main.js passes them: skins follow 干员调配 (nothing is equipped in this",
+  "// fixture) unless 全部皮肤 widens it, and 官方特效 rides a switch of its own — on by default (默认全预载).",
+  "const scope = () => ({ keys: [], all: skinPreload && skinPreloadAll, fx: fxPreload, voices });",
+  "const applyScope = () => { void syncResources(enabled, optional, voiceLang, allVoices, scope()); };",
+  "const applySkinScope = (on, all) => { skinPreload = on; skinPreloadAll = all; applyScope(); paint(); };",
+  "const paint = () => render(html`<div><${ResourceLauncher} enabled=${enabled} />",
+  "  <${ResourceHost} enabled=${enabled} optional=${optional} voices=${voices} allVoices=${allVoices} voiceLang=${voiceLang}",
+  "    onVoiceLang=${(v) => { voiceLang = v; applyScope(); paint(); }}",
+  "    onAllVoices=${(v) => { allVoices = v; applyScope(); paint(); }} onChange=${(v) => set(v)}",
+  "    onOptional=${(v) => { optional = v; applyScope(); paint(); }}",
+  "    onVoices=${(v) => { voices = v; applyScope(); paint(); }}",
+  "    onPreset=${(p) => { optional = p.preloadOptional; voices = p.preloadVoices; skinPreload = p.preloadSkins; skinPreloadAll = p.preloadSkinsAll; fxPreload = p.preloadFx; allVoices = p.preloadAllVoices; applyScope(); paint(); }}",
+  "    skinPreload=${skinPreload} skinPreloadAll=${skinPreloadAll} fxPreload=${fxPreload}",
+  "    onSkinPreload=${(v) => applySkinScope(v, skinPreloadAll)}",
+  "    onSkinPreloadAll=${(v) => applySkinScope(skinPreload, v)}",
+  "    onFxPreload=${(v) => { fxPreload = v; applyScope(); paint(); }} /></div>`, document.getElementById('app'));",
+  "const set = (v, includeOptional = optional) => { enabled = v; optional = includeOptional; applyScope(); paint(); };",
+  "window.__res = {",
+  "  resourceState, syncResources, clearResources, startResources, exportResources, importResources,",
+  "  state: () => ({ ...resourceState(), enabled }),",
+  "  click: () => document.querySelector('.res-pill__head').click(),",
+  "};",
+  "window.__preload = (v) => set(v, true);",
+  "paint();",
+  "window.__ready = true;",
+].join('\n');
+
+/** The fixture page: one div, the stylesheets the manager uses, and the module above. */
+const FIXTURE_PAGE = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />'
+  + '<title>resource e2e</title><link rel="stylesheet" href="/css/theme.css" /><link rel="stylesheet" href="/css/components.css" /></head>'
+  + '<body><div id="app"></div><script type="module" src="/e2e-fixture.js"></script></body></html>';
+
 /** A minimal install: the client modules, the worker and a fixture asset tree. */
-function makeInstall({ voices = false, dynamic = false, skins = false } = {}) {
+function makeInstall({ voices = false, dynamic = false, skins = false, fx = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-e2e-res-'));
   const publicDir = path.join(dir, 'public');
   const dataDir = path.join(dir, 'data');
@@ -37,6 +87,9 @@ function makeInstall({ voices = false, dynamic = false, skins = false } = {}) {
   fs.cpSync(path.join(ROOT, 'public', 'vendor'), path.join(publicDir, 'vendor'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'public', 'css'), path.join(publicDir, 'css'), { recursive: true });
   fs.copyFileSync(path.join(ROOT, 'public', 'index.html'), path.join(publicDir, 'app.html'));
+  // The real shell has an import map; CSP hashes only known entry pages, while index.html below is the map-free fixture.
+  fs.mkdirSync(path.join(publicDir, 'dev'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'public', 'index.html'), path.join(publicDir, 'dev', 'game-mock.html'));
   fs.copyFileSync(path.join(ROOT, 'public', 'resource-sw.js'), path.join(publicDir, 'resource-sw.js'));
   const voiceFiles = voices ? ['cn', 'jp'].map((lang) => ({ url: `/assets/audio/voice/${lang}/char_e2e/test.mp3`, body: `${lang}-voice` })) : [];
   const dynamicFiles = dynamic ? [{ url: '/fonts/fonts.css', body: 'body { color: white; }' },
@@ -45,7 +98,11 @@ function makeInstall({ voices = false, dynamic = false, skins = false } = {}) {
   // the resource manifest marks `skin: '<charId>/<skinId>'`.
   const skinFiles = skins ? [{ url: '/assets/e2e/skin/boc.skel', body: 'skin-skel-bytes' },
     { url: '/assets/e2e/skin/boc.png', body: 'skin-art-bytes' }] : [];
-  for (const f of [...FILES, ...voiceFiles, ...dynamicFiles, ...skinFiles]) {
+  // The official battle effects (docs/design/vfx-format.md): data/local-fx.json lists every file under
+  // /assets/local/fx/, which server/resources.js turns into tier-2 entries marked `fx: true`.
+  const fxFiles = fx ? [{ url: '/assets/local/fx/index.json', body: '{ \"fx\": true }' },
+    { url: '/assets/local/fx/tex/fire_1.webp', body: 'fx-texture-bytes' }] : [];
+  for (const f of [...FILES, ...voiceFiles, ...dynamicFiles, ...skinFiles, ...fxFiles]) {
     const abs = path.join(publicDir, f.url);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, f.body);
@@ -58,41 +115,14 @@ function makeInstall({ voices = false, dynamic = false, skins = false } = {}) {
     chars: { char_e2e: { portrait: FILES[2].url,
       ...(skins ? { skins: { 'char_e2e@boc#1': { front: { skel: skinFiles[0].url, textures: [skinFiles[1].url] } } } } : {}) } },
   }));
-  fs.writeFileSync(path.join(publicDir, 'index.html'), `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />
-<title>resource e2e</title><link rel="stylesheet" href="/css/theme.css" /><link rel="stylesheet" href="/css/components.css" /></head><body><div id="app"></div>
-<script type="module">
-  import { render } from '/vendor/preact.module.js';
-  import { html } from '/js/ui/components.js';
-  import { ResourceLauncher, ResourceHost } from '/js/ui/resourcePanel.js';
-  import { resourceState, syncResources, clearResources, startResources, exportResources, importResources } from '/js/resources/index.js';
-  // the fixture drives the real launcher, exactly as the title screen does
-  let enabled = false;
-  let optional = true;
-  let allVoices = false;
-  let voiceLang = 'cn';
-  let skinPreload = false;
-  let skinPreloadAll = false;
-  // the manager's 干员皮肤 scope, exactly as main.js computes it: no equipped outfits in this fixture, unless 全部皮肤
-  const applySkinScope = (on, all) => { skinPreload = on; skinPreloadAll = all;
-    void syncResources(enabled, optional, voiceLang, allVoices, { keys: [], all: on && all }); paint(); };
-  const paint = () => render(html\`<div><\${ResourceLauncher} enabled=\${enabled} />
-    <\${ResourceHost} enabled=\${enabled} optional=\${optional} allVoices=\${allVoices} voiceLang=\${voiceLang}
-      onVoiceLang=\${(v) => { voiceLang = v; void syncResources(enabled, optional, v, allVoices); paint(); }}
-      onAllVoices=\${(v) => { allVoices = v; void syncResources(enabled, optional, voiceLang, v); paint(); }} onChange=\${(v) => set(v)}
-      onOptional=\${(v) => { optional = v; void syncResources(enabled, v, voiceLang, allVoices); paint(); }}
-      skinPreload=\${skinPreload} skinPreloadAll=\${skinPreloadAll}
-      onSkinPreload=\${(v) => applySkinScope(v, skinPreloadAll)}
-      onSkinPreloadAll=\${(v) => applySkinScope(skinPreload, v)} /></div>\`, document.getElementById('app'));
-  const set = (v, includeOptional = optional) => { enabled = v; optional = includeOptional; void syncResources(v, optional, voiceLang, allVoices); paint(); };
-  window.__res = {
-    resourceState, syncResources, clearResources, startResources, exportResources, importResources,
-    state: () => ({ ...resourceState(), enabled }),
-    click: () => document.querySelector('.res-pill__head').click(),
-  };
-  window.__preload = (v) => set(v, true);
-  paint();
-  window.__ready = true;
-</script></body></html>`);
+  if (fx) {
+    fs.writeFileSync(path.join(dataDir, 'local-fx.json'), JSON.stringify({
+      version: 1, format: 'fx-manifest', set: 'used',
+      groups: { fx: { index: { path: fxFiles[0].url }, textures: { path: fxFiles[1].url } } },
+    }));
+  }
+  fs.writeFileSync(path.join(publicDir, 'e2e-fixture.js'), FIXTURE_MODULE);
+  fs.writeFileSync(path.join(publicDir, 'index.html'), FIXTURE_PAGE);
   return { dir, publicDir, dataDir };
 }
 
@@ -146,7 +176,8 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.goto(`http://127.0.0.1:${srv.port}/index.html`);
     await page.evaluate(() => localStorage.setItem('sp.pref.settings', JSON.stringify({ preload: false, preloadOptional: false })));
     await page.goto(`http://127.0.0.1:${srv.port}/app.html`);
-    await page.waitForFunction('!!window.__SP__');
+    await page.waitForFunction('!!window.__SP__', { timeout: 20000 })
+      .catch((err) => { throw new Error(`${err.message} — ${problems.join(' | ') || 'no console error'}`); });
     await page.waitForFunction(async () => !(await import('/js/resources/index.js')).resourceState().optional);
     assert.equal(await page.evaluate(async () => (await import('/js/ui/settings.js')).settingsStore.get().preload), false);
     assert.deepEqual(resourceRequests, [], 'a saved disabled setting does not download assets');
@@ -182,6 +213,26 @@ describe('offline resources in headless Chrome', { skip }, () => {
       'a saved pause survives reload');
     assert.equal(await page.evaluate(async () => (await import('/js/resources/index.js')).resourceState().enabled), false);
     assert.deepEqual(resourceRequests, [], 'reloading a paused page does not download assets');
+    // Hold the cache check open so the real pause button is exercised before the tiny fixture finishes downloading.
+    await page.evaluate(async () => {
+      const { store } = await (await import('/js/resources/index.js')).resourceContext();
+      const status = store.status.bind(store);
+      store.status = () => new Promise((resolve) => {
+        window.__releaseResourceCheck = () => { store.status = status; resolve(status()); };
+      });
+      (await import('/js/ui/settings.js')).updateSettings({ preload: true, preloadOptional: true });
+      (await import('/js/ui/resourcePanel.js')).openResources();
+    });
+    await page.waitForSelector('.resource-modal');
+    if (await page.$('.fullscreen-prompt')) await page.click('.fullscreen-prompt .btn--secondary');
+    await page.click('.resource-modal .modal__actions .btn--secondary');
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('sp.pref.settings')).preload), false,
+      'the physical pause button saves the disabled preference');
+    await page.evaluate(() => window.__releaseResourceCheck());
+    await page.reload();
+    await page.waitForFunction('!!window.__SP__');
+    assert.equal(await page.evaluate(async () => (await import('/js/ui/settings.js')).settingsStore.get().preload), false);
+    assert.deepEqual(resourceRequests, [], 'the pause button prevents downloads on reload');
     await page.evaluate(async () => (await import('/js/resources/index.js')).clearResources());
     assert.deepEqual(problems, []);
   });
@@ -282,13 +333,17 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.waitForSelector('.resource-manager');
     await page.waitForFunction("window.__res.state().phase === 'paused'");
     assert.equal(await page.evaluate(() => window.__res.state().enabled), false, 'opening the manager does not enable downloads');
-    assert.equal(await page.$eval('.resource-tier .resource-choice input', (el) => el.checked), true, 'both tiers are selected by default');
-    await page.click('.resource-tier .resource-choice input');
+    assert.equal(await page.$eval('[data-testid="optional-preload"]', (el) => el.checked), true, 'both tiers are selected by default');
+    await page.$eval('.resource-card__details', (el) => { el.open = true; });
+    await page.click('[data-testid="optional-preload"]');
+    await page.waitForFunction(() => [...document.querySelectorAll('.btn')].some((b) => b.textContent === '开始预载'));
     await page.evaluate(() => [...document.querySelectorAll('.btn')].find((b) => b.textContent === '开始预载').click());
     await page.waitForFunction('window.__res.state().selectionComplete === true');
-    assert.equal(await page.evaluate(() => window.__res.state().complete), false, 'optional audio is not fetched');
+    assert.equal(await page.evaluate(() => window.__res.state().complete), true, 'the selected required set is complete');
+    assert.equal(await page.evaluate(() => window.__res.state().groups.find((g) => g.id === 'other').allPresent), 0, 'optional audio is not fetched');
     assert.equal(await page.evaluate(() => window.__res.state().done), 2);
-    await page.click('.resource-tier .resource-choice input');
+    await page.$eval('.resource-card__details', (el) => { el.open = true; });
+    await page.click('[data-testid="optional-preload"]');
     await page.waitForFunction('window.__res.state().complete === true', { timeout: 30000 });
     await page.waitForFunction("document.querySelector('.res-pill__state').textContent === '全部已保存'");
     const body = await page.$eval('.resource-manager', (el) => el.textContent);
@@ -326,7 +381,8 @@ describe('offline resources in headless Chrome', { skip }, () => {
 
     await page.evaluate(() => window.__res.click());
     await page.waitForSelector('.resource-skins');
-    assert.equal(await page.$$eval('.resource-skins .resource-choice input', (els) => els.length), 2, 'the master switch and 全部皮肤');
+    assert.equal(await page.evaluate(() => document.querySelectorAll('.resource-skins .resource-choice input').length), 2, 'the skin switch and all-skins choice live together');
+    assert.equal(await page.$eval('[data-testid="skin-preload"]', (el) => el.closest('.resource-skins') !== null), true, 'the skin choice sits beside its progress');
     assert.equal(await page.$eval('[data-testid="skin-preload-all"]', (el) => el.disabled), true, '全部皮肤 waits for the master switch');
 
     // The master switch alone follows 干员调配 — nothing is equipped here, so no outfit file is wanted.
@@ -343,7 +399,8 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.deepEqual(await page.evaluate(() => window.__res.state().skinScope), { keys: [], all: true });
     assert.equal(await page.evaluate(() => window.__res.state().done), 5);
     const body = await page.$eval('.resource-skins', (el) => el.textContent);
-    assert.match(body, /全部 1 套 · 已缓存 1 套/, 'all-skins summary: ' + body);
+    assert.match(body, /本次 1 套/, 'all-skins summary: ' + body);
+    assert.match(body, /本机已缓存 1 套/, 'catalog cache summary: ' + body);
     const cached = await page.evaluate(() => caches.open('stronghold-resources-v1-all')
       .then((cache) => cache.keys()).then((keys) => keys.map((r) => new URL(r.url).pathname)));
     assert.ok(cached.some((p) => p.endsWith('/assets/e2e/skin/boc.skel')), 'the outfit model is cached: ' + cached.join(', '));
@@ -351,6 +408,104 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.deepEqual(problems, []);
     await page.evaluate(async () => { await window.__res.syncResources(false); await window.__res.clearResources(); });
   });
+
+  test('官方特效 特效 caches the effect tree on its own and never implies 额外资源', async (t) => {
+    const { startServer } = await import('../../server/index.js');
+    const own = makeInstall({ voices: true, fx: true });
+    const game = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0, store: null,
+      publicDir: own.publicDir, dataDir: own.dataDir,
+      log: { info() {}, warn() {}, error() {}, debug() {} } });
+    t.after(async () => { await game.close(); fs.rmSync(own.dir, { recursive: true, force: true }); });
+    const page = await browser.newPage();
+    t.after(() => page.close());
+    const problems = [];
+    page.on('pageerror', (err) => problems.push('pageerror: ' + err.message));
+    page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) problems.push('console: ' + m.text()); });
+    await page.goto(game.url + '/index.html');
+    await page.waitForFunction('window.__ready === true', { timeout: 20000 })
+      .catch((err) => { throw new Error(`${err.message} — ${problems.join(' | ') || 'no console error'}`); });
+    await page.evaluate(() => caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))));
+
+    await page.evaluate(() => window.__res.click());
+    await page.waitForSelector('.resource-manager');
+    // The panel only knows about 特效 once the opening scan has read the manifest (and this tree is installed).
+    await page.waitForSelector('[data-testid="fx-preload"]', { timeout: 15000 });
+    // One box per scope, in the optional tier's header, all of them checked (默认全预载). No skins in this install.
+    assert.deepEqual(await page.$$eval('.resource-manager__tiers [data-testid]', (els) => els.map((el) => el.dataset.testid)),
+      ['optional-preload', 'voice-preload', 'fx-preload'], 'audio and effects have independent controls');
+    assert.equal(await page.$eval('[data-testid="fx-preload"]', (el) => el.checked), true, '特效 defaults to on');
+    assert.equal(await page.$('[data-testid="skin-preload"]'), null, 'no outfits installed, so no 皮肤 box');
+
+    // Music and voice off: the whole effect tree alone still lands.
+    await page.click('[data-testid="voice-preload"]');
+    await page.$eval('.resource-card__details', (el) => { el.open = true; });
+    await page.click('[data-testid="optional-preload"]');
+    // The footer button is re-rendered whenever the scope changes, so poll for it before clicking.
+    await page.waitForFunction(() => [...document.querySelectorAll('.btn')].some((b) => b.textContent === '开始预载'), { timeout: 15000 });
+    await page.evaluate(() => [...document.querySelectorAll('.btn')].find((b) => b.textContent === '开始预载').click());
+    await page.waitForFunction('window.__res.state().selectionComplete === true && window.__res.state().done === 4', { timeout: 30000 });
+    assert.equal(await page.evaluate(() => window.__res.state().tier2Wanted), 2, 'only the two effect files are optional here');
+    const cached = await page.evaluate(() => caches.open('stronghold-resources-v1-all')
+      .then((cache) => cache.keys()).then((keys) => keys.map((r) => new URL(r.url).pathname)));
+    assert.ok(cached.some((path) => path.endsWith('/assets/local/fx/tex/fire_1.webp')), 'the effect texture is cached: ' + cached.join(', '));
+    assert.equal(cached.some((path) => path.includes('/assets/audio/voice/')), false, 'no voice without 额外资源');
+
+    // 特效 off, 额外资源 back on: exactly the other way round.
+    await page.click('[data-testid="fx-preload"]');
+    await page.click('[data-testid="voice-preload"]');
+    await page.$eval('.resource-card__details', (el) => { el.open = true; });
+    await page.click('[data-testid="optional-preload"]');
+    // 额外资源 on again: the two audio files (background music + the Chinese voice) replace the effects, and
+    // `done` counts what the selection holds — the fx files stay cached without being wanted.
+    await page.waitForFunction('window.__res.state().selectionComplete === true && window.__res.state().done === 4', { timeout: 30000 });
+    const groups = await page.evaluate(() => window.__res.state().groups.map((g) => ({ id: g.id, wanted: g.wanted, allTotal: g.allTotal })));
+    assert.deepEqual(groups.map((g) => g.id).sort(), ['fx', 'other', 'ui', 'voice'],
+      '额外资源 is back (the fixture bgm.mp3 sits outside /bgm/) and the 特效 row stays listed');
+    assert.equal(groups.find((g) => g.id === 'fx').wanted, 0, '特效 is out of the selection while its box is off');
+    assert.equal(groups.find((g) => g.id === 'fx').allTotal, 2, 'its row still counts the whole manifest');
+    const after = await page.evaluate(() => caches.open('stronghold-resources-v1-all')
+      .then((cache) => cache.keys()).then((keys) => keys.map((r) => new URL(r.url).pathname)));
+    assert.ok(after.some((path) => path.endsWith('/assets/audio/voice/cn/char_e2e/test.mp3')), 'the Chinese voice is cached now: ' + after.join(', '));
+    assert.deepEqual(problems, []);
+    await page.evaluate(async () => { await window.__res.syncResources(false); await window.__res.clearResources(); });
+  });
+
+  test('presets plan all four cards while paused, and voices download independently of other audio', async (t) => {
+    const { startServer } = await import('../../server/index.js');
+    const own = makeInstall({ voices: true, skins: true, fx: true });
+    const game = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0, store: null,
+      publicDir: own.publicDir, dataDir: own.dataDir, log: { info() {}, warn() {}, error() {}, debug() {} } });
+    t.after(async () => { await game.close(); fs.rmSync(own.dir, { recursive: true, force: true }); });
+    const page = await browser.newPage();
+    t.after(() => page.close());
+    const requests = [];
+    game.server.on('request', req => { if (req.url.includes('/assets/')) requests.push(req.url); });
+    await page.goto(game.url + '/index.html');
+    await ready(page, []);
+    await page.click('.res-pill__head');
+    await page.waitForSelector('[data-testid="fx-preload"]');
+    await page.click('.resource-presets button:nth-child(2)');
+    await page.waitForFunction('window.__res.state().voices && !window.__res.state().skinScope.all && window.__res.state().groups.find(g => g.id === "fx").wanted === 0');
+    assert.equal(await page.evaluate(() => window.__res.state().enabled), false);
+    await page.click('.resource-presets button:nth-child(3)');
+    await page.waitForFunction('window.__res.state().allVoices && window.__res.state().skinScope.all');
+    assert.equal(await page.$eval('.resource-presets button:nth-child(3)', el => el.getAttribute('aria-pressed')), 'true');
+    await page.click('.resource-presets button:first-child');
+    await page.waitForFunction('!window.__res.state().voices && !window.__res.state().optional && window.__res.state().tier2Wanted === 0');
+    assert.deepEqual(requests, [], 'choosing presets never starts a paused preload');
+    await page.waitForFunction(() => [...document.querySelectorAll('.btn')].some(b => b.textContent === '开始预载'));
+    await page.click('.resource-modal .modal__actions .btn--primary');
+    await page.waitForFunction('window.__res.state().selectionComplete');
+    await page.click('[data-testid="voice-preload"]');
+    await page.waitForFunction('window.__res.state().phase === "ready" && window.__res.state().tier2Done === 1');
+    assert.equal(await page.evaluate(() => window.__res.state().optional), false);
+    assert.equal(requests.filter(url => url.includes('/voice/')).length, 1);
+    assert.equal(requests.some(url => /skin\/|local\/fx|e2e\/bgm\.mp3/.test(url)), false);
+    await page.click('.resource-manager__voice input');
+    await page.waitForFunction('window.__res.state().phase === "ready" && window.__res.state().tier2Done === 2');
+    assert.equal(requests.filter(url => url.includes('/voice/')).length, 2, 'all languages adds only the missing Japanese voice');
+  });
+
   test('a second tab does not download the same files twice (real Web Locks)', async (t) => {
     const first = await open();
     await ready(first.page, first.problems);
@@ -411,7 +566,8 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.goto(game.url + '/index.html');
     await page.waitForFunction('window.__ready === true');
     await page.evaluate(() => window.__preload(true));
-    await page.waitForFunction('window.__res.state().complete === true');
+    await page.waitForFunction('window.__res.state().complete === true', { timeout: 20000 })
+      .catch(async (err) => { const st = await page.evaluate(() => window.__res.state()); throw new Error(`${err.message} — phase=${st.phase} done=${st.done}/${st.total} wanted=${st.wanted} msg=${st.message} failures=${JSON.stringify(st.failures).slice(0, 300)}`); });
     await page.waitForFunction('!!navigator.serviceWorker.controller');
     const paths = await page.evaluate(() => fetch('/data/resource-manifest.json').then((r) => r.json()).then((m) => m.files.map((f) => f.url)));
     assert.ok(paths.every((p) => perFile ? p.startsWith(srv.url + '/assets/') && /\?v=[a-f0-9]{16}$/.test(p)
@@ -563,7 +719,9 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.deepEqual(required.settings, { voiceLang: 'jp', bgm: 0.23 });
     await page.waitForFunction('window.__res.state().phase === "ready"');
     assert.equal(await page.$eval('.resource-manager__voice input', (el) => el.disabled), true);
-    await page.click('.resource-tier .resource-choice input');
+    await page.click('[data-testid="voice-preload"]');
+    await page.$eval('.resource-card__details', (el) => { el.open = true; });
+    await page.click('[data-testid="optional-preload"]');
     await page.waitForFunction('window.__res.state().phase === "ready" && window.__res.state().optional');
     await page.click('.resource-manager__voice input');
     await page.waitForFunction('window.__res.state().allVoices');

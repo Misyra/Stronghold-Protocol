@@ -484,11 +484,12 @@ normalized values from the room, read-only for non-hosts and during a match. Van
 
 Authoring checks (DESIGN §32.9.1): numeric fields display the shared official bounds and positive step floor; invalid saves are refused. DSL validation network failures are explicit, and saving revalidates the current spec before writing. Unkeyed studio state reads omit script source. Trial replay remains a data-only renderer feed; sandbox simulation runs in the same SES executor as a formal match. Forge and catalogue entry points remain available beside the authoring templates.
 
-### Combat metrics (作战统计) — ported from the xinhai-ai fork, opt-in
+### Combat metrics (作战统计) — ported from the xinhai-ai fork, on by default
 
-设置 →「作战统计」 (`combatMetrics`, PR #618 by @robll-v1) defaults off, the same kind of decision as 弹药数量: the
-official HUD has no such panel. Off, the corner button is not rendered and `trackCombat` is not called (no `damaged`
-hook, `battle.heal` is not wrapped). On, the corner's 作战统计 button (`gm__metrics`, `ui/combatMetrics.js`) opens a
+设置 →「作战统计」 (`combatMetrics`, PR #618 by @robll-v1) now defaults **on** (YG, 2026-10-16; it shipped off for the
+0.3.0 merge, the same kind of decision as 弹药数量 — the official HUD has no such panel). Off, the corner button is not
+rendered and `trackCombat` is not called (no `damaged` hook, `battle.heal` is not wrapped), so the official HUD comes
+back untouched. On, the corner's 作战统计 button (`gm__metrics`, `ui/combatMetrics.js`) opens a
 modeless panel over the running battle: the fight keeps playing behind it, ✕ / Esc closes it, and the next frame's
 prep keeps it usable.
 

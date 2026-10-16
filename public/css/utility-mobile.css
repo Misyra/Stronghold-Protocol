@@ -117,6 +117,9 @@
   }
   .resource-choice { min-height: 28px; gap: 5px; white-space: normal; font-size: max(calc(.14 * var(--utility-text)), 11px); }
   .resource-choice input { flex: none; width: 14px; height: 14px; margin: 0; }
+  .resource-scope { padding: 6px 8px; gap: 4px; }
+  .resource-scope__head h3 { font-size: max(calc(.16 * var(--utility-text)), 12px); }
+  .resource-scope__total, .resource-choice__size { font-size: max(calc(.13 * var(--utility-text)), 10px); }
   .resource-tier__summary { margin: 6px 0 4px; gap: 3px; }
   .resource-tier__list { margin-top: 4px; }
   .resource-tier__list li { gap: 5px; padding: 4px 0; align-items: baseline; }
@@ -435,6 +438,7 @@
   .resource-tier__summary, .resource-tier__list li, .resource-manager__maintenance { font-size: calc(.14 * var(--t)); }
   .resource-choice { min-height: .7rem; gap: .125rem; font-size: calc(.14 * var(--t)); }
   .resource-choice input { width: .35rem; height: .35rem; }
+  .resource-scope { padding: .15rem .2rem; gap: .1rem; }
   .resource-tier__summary { margin: .15rem 0 .1rem; gap: .075rem; }
   .resource-tier__list { margin-top: .1rem; }
   .resource-tier__list li { gap: .125rem; padding: .1rem 0; }
@@ -451,6 +455,15 @@
   .resource-modal .resource-manager summary { min-height: .65rem; }
   .resource-modal .resource-manager__status { font-size: calc(.14 * var(--utility-text)); }
   .resource-modal .resource-archive__toolbar .res-actions { margin-top: 0; }
+  .resource-presets button { min-height: .7rem; padding: .1rem .2rem; }
+  .resource-overview { gap: .15rem; padding: .15rem 0; }
+  .resource-overview > div + div { padding-left: .2rem; }
+  .resource-manager__tiers > .resource-skins { padding: .2rem; }
+  .resource-tier__head .micro { margin-bottom: .1rem; font-size: calc(.1 * var(--utility-text)); }
+  .resource-tier .resource-manager__voice { margin-top: .2rem; gap: .1rem; }
+  .resource-extra { margin-top: .2rem; padding-top: .15rem; }
+  .resource-archive > summary { min-height: .65rem; }
+  .resource-footer__hint { flex-basis: 100%; }
 
   .lobby-hub--searching .hub-stage {
     grid-template-columns: minmax(3rem, 1fr) minmax(0, 2.5fr);

@@ -15,9 +15,11 @@
 //
 // /data/resource-manifest.json:
 //   { format: 1, version: '<digest of every url|hash>', count, tier1, sized, totalBytes,
-//     files: [ { url, tier, size?, hash?, skin? } … ] }   // sorted: essential tier first, then by URL
+//     files: [ { url, tier, size?, hash?, skin?, fx? } … ] }   // sorted: essential tier first, then by URL
 //   `skin` (`<charId>/<skinId>`) marks the 干员皮肤 files: they are the one optional group the panel scopes by item
 //   rather than by tier, and a full install of them is ~328 MiB (docs/SKINS.md).
+//   `fx` marks the official battle effects of `data/local-fx.json` (docs/design/vfx-format.md): optional like every
+//   other tier-2 group, but with a preload switch of its own — ~185 MiB, the largest optional set after skins.
 
 import { hashFile } from './fileHash.js';
 import crypto from 'node:crypto';
@@ -30,6 +32,8 @@ import { CUSTOM_EMOTE_THEME, emoteArtPath } from '../shared/constants.js';
 export const RESOURCE_MANIFEST_FILE = 'resource-manifest.json';
 /** Per-file content hashes of the fetched assets, written by tools/asset-hashes.mjs (optional). */
 export const ASSET_HASHES_FILE = 'asset-hashes.json';
+/** The official battle-effect extraction (docs/design/vfx-format.md): an optional art tree of its own. */
+export const LOCAL_FX_FILE = 'local-fx.json';
 export const RESOURCES_FORMAT = 1;
 /** A hash as the client accepts it (hex digests, the `syn-` fallback, a plain `sha1-…` label). */
 export const HASH_RE = /^[A-Za-z0-9._:-]{1,64}$/;
@@ -42,7 +46,7 @@ export function shortHash(text) {
 export const MAX_FILE_BYTES = 24 * 1024 * 1024;
 /** Required visuals: maps/meshes, portraits, Spine, fonts, UI and icons. */
 export const TIER_ESSENTIAL = 1;
-/** Optional: voices, sound effects, music and tutorial illustrations — and 干员皮肤 (see tierForPath). */
+/** Optional: voices, sound effects, music, tutorial illustrations, 干员皮肤 and 官方特效 (see tierForPath). */
 export const TIER_REST = 2;
 
 /**
@@ -175,6 +179,34 @@ export function collectResourceFiles(assets, local) {
     .sort((a, b) => a.tier - b.tier || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
 }
 
+/** The official battle-effect tree — `data/local-fx.json` only ever names files below this prefix. */
+const FX_PATH_PREFIX = '/assets/local/fx/';
+
+/**
+ * Every file named by `data/local-fx.json` (docs/design/vfx-format.md): effect prefabs, meshes and their textures
+ * (each texture also has a `half` variant of its own). That manifest is a plain index of the extraction tree — no
+ * hashes, no tiers — so this walks every `/assets/local/fx/…` string it meets, deduplicated and sorted, as optional.
+ * Sizes and hashes come from the same place every other file's do: measure() on an install that has the files on disk,
+ * the published asset manifest on a CDN-only install (createResourceIndex).
+ * @param {any} fx parsed data/local-fx.json, optional
+ * @returns {{ url: string, tier: number, source: 'fx', fx: true }[]}
+ */
+export function collectFxFiles(fx) {
+  const byUrl = new Map();
+  const walk = (node) => {
+    if (typeof node === 'string') {
+      if (!validateResourceUrl(node) || !pathKey(node).startsWith(FX_PATH_PREFIX)) return;
+      const url = canonicalResourceUrl(node);
+      if (!byUrl.has(url)) byUrl.set(url, { url, tier: TIER_REST, source: 'fx', fx: true });
+      return;
+    }
+    if (Array.isArray(node)) { for (const item of node) walk(item); return; }
+    if (node && typeof node === 'object') for (const value of Object.values(node)) walk(value);
+  };
+  walk(fx);
+  return [...byUrl.values()].sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
+}
+
 /** The per-file cache-bust query manifest mode appends (`?v=<16 hex>`): part of the URL, never of the file it names. */
 const BUST_QUERY = /\?v=[0-9a-f]{16}$/;
 
@@ -217,7 +249,7 @@ export function collectRealHashes(localDoc, hashesDoc, cdnBase = '') {
  * (any change to the source manifest's own hash/mtime invalidates everything of that source).
  * @param {{ url: string, source: string }[]} files
  * @param {Map<string, string>} real
- * @param {{ web: string, local: string }} stamps
+ * @param {{ web: string, local: string, fx: string }} stamps
  * @returns {Map<string, string>}
  */
 export function resolveHashes(files, real, stamps, cdnBase = '') {
@@ -246,6 +278,8 @@ export function buildResourceManifest({ files, sizes = null, version = 'none', h
     if (hash) entry.hash = hash;
     // 干员皮肤 only: `charId/skinId`, what the client scopes preloading by (public/js/resources/store.js).
     if (f.skin) entry.skin = f.skin;
+    // 官方特效 only: the preload panel's third switch (public/js/resources/common.js `resourceGroup`).
+    if (f.fx) entry.fx = true;
     if (Number.isSafeInteger(size) && size >= 0) {
       entry.size = size;
       totalBytes += size;
@@ -359,8 +393,8 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
   async function build(epoch) {
     // Check only cheap source metadata on the hot path, including 304 revalidation. JSON reads/parsing,
     // CDN rewriting and traversal must all stay behind this gate, not just the final body/gzip generation.
-    const [assetsStat, localStat, hashesStat] = await Promise.all([
-      sourceStat('assets.json'), sourceStat('local-assets.json'), sourceStat(ASSET_HASHES_FILE),
+    const [assetsStat, localStat, hashesStat, fxStat] = await Promise.all([
+      sourceStat('assets.json'), sourceStat('local-assets.json'), sourceStat(ASSET_HASHES_FILE), sourceStat(LOCAL_FX_FILE),
     ]);
     // Small site-owned emotes ship with the code, independently of the optional official extraction manifest.
     const custom = await Promise.all(CUSTOM_EMOTE_THEME.emotes.map(async (emote) => {
@@ -371,7 +405,8 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
       } catch { return null; }
     }));
     const sourceKey = [assetsStat ? `${assetsStat.mtimeMs}:${assetsStat.size}` : '-', localStat ? `${localStat.mtimeMs}:${localStat.size}` : '-',
-      hashesStat ? `${hashesStat.mtimeMs}:${hashesStat.size}` : '-', cdnBase, ...custom.map(f => f?.stamp || '-')].join('|');
+      hashesStat ? `${hashesStat.mtimeMs}:${hashesStat.size}` : '-', fxStat ? `${fxStat.mtimeMs}:${fxStat.size}` : '-',
+      cdnBase, ...custom.map(f => f?.stamp || '-')].join('|');
     let tiles;
     if (cache && cache.sourceKey === sourceKey) {
       // Remember dependencies even when tiles.json is absent: creation/deletion must invalidate the cached list.
@@ -379,15 +414,27 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
       if (cache.key === [sourceKey, ...tiles.map(f => f?.stamp || '-')].join('|')) return cache;
     }
     const t0 = Date.now();
-    const [assets, local, hashesDoc] = await Promise.all([
+    const [assets, local, hashesDoc, fx] = await Promise.all([
       readJson('assets.json', assetsStat), readJson('local-assets.json', localStat), readJson(ASSET_HASHES_FILE, hashesStat),
+      readJson(LOCAL_FX_FILE, fxStat),
     ]);
     const assetsDoc = assets ? rewrite(assets.doc) : null;
     const localDoc = local ? rewrite(local.doc) : null;
+    const fxDoc = fx ? rewrite(fx.doc) : null;
     const collected = collectResourceFiles(assetsDoc, localDoc);
     for (const file of custom) if (file && !collected.some(f => f.url === file.url)) {
       collected.push({ url: file.url, tier: TIER_ESSENTIAL, source: 'local' });
     }
+    // 官方特效 (data/local-fx.json) is its own extraction tree — no asset manifest mentions it — so it is merged in
+    // here and gets the same hashes/sizes as the rest of the list. ~12.5 k files, one entry each (a texture's `half`
+    // variant is a path of its own). Still optional; the panel just groups and switches it separately.
+    const seenUrls = new Set(collected.map((f) => f.url));
+    for (const file of collectFxFiles(fxDoc)) {
+      if (seenUrls.has(file.url)) continue;
+      seenUrls.add(file.url);
+      collected.push(file);
+    }
+
     collected.sort((a, b) => a.tier - b.tier || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
     const tileFiles = collected.filter((f) => /\/assets\/local\/map\/autochess\/tiles\.json$/.test(f.url));
     tiles ??= await tileSources(tileFiles);
@@ -415,6 +462,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
     const stamps = {
       web: assetsDoc && assetsDoc.hash ? assetsDoc.hash : assets ? `m${Math.floor(assets.mtimeMs)}` : 'none',
       local: localDoc && localDoc.hash ? localDoc.hash : local ? `l${Math.floor(local.mtimeMs)}` : 'none',
+      fx: fxDoc && fxDoc.hash ? fxDoc.hash : fx ? `x${Math.floor(fx.mtimeMs)}` : 'none',
     };
     const sizes = await measure(files, real, publishedSizes);
     const fileHashes = resolveHashes(files, real, stamps, cdnBase);

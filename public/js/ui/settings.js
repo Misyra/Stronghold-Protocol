@@ -1,6 +1,5 @@
 // Player settings (BGM/SFX/voice volume, the voice dub 语音语言, mute, damage numbers, the optional 弹药数量 under an ammo
-// skill's bar — not in the official HUD, off by default, PR #552 —, the optional 作战统计 panel — off by default,
-// PR #618 —, render quality, 文字大小, the
+// skill's bar — not in the official HUD, off by default, PR #552 —, the optional 作战统计 panel — on by default, PR #618 —, render quality, 文字大小, the
 // shortcut keys): a tiny observable store persisted in localStorage (`sp.pref.settings`), applied to the audio manager
 // and to the document on every change, plus the settings modal — which also holds the language switch (ui/lang.js; kept
 // apart in `sp.pref.lang`; under it a note while the current language's pack is a machine translation,

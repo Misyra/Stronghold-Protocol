@@ -209,7 +209,8 @@ export function createBattleRunner(deps) {
     // the same battleId is only ever replaced by a longer-running look at it (a replica re-requested, a takeover)
     if (!(combatHistory.get(e.battleId)?.seconds > record.seconds)) { combatHistory.set(e.battleId, record); combatVersion++; }
   };
-  // Opt-in (设置「作战统计」, default off). A boolean deps.combatMetrics pins a test and ignores setCombatMetrics.
+  // Driven by 设置「作战统计」 (on by default; `metricsWanted` still starts false, so nothing attaches until the
+  // screen pushes the store). A boolean deps.combatMetrics pins a test and ignores setCombatMetrics.
   // Otherwise screens/game.js pushes the settings store. A Worker host never attaches: its page battle is wire state.
   let metricsWanted = false;
   const metricsEnabled = () => (typeof deps.combatMetrics === 'boolean' ? deps.combatMetrics : metricsWanted);

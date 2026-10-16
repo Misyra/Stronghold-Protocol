@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   CACHE_NAME, CACHE_PREFIX, HASH_RE, INDEX_PATH, MAX_FILE_BYTES, MEDIA_PREFIX, AUDIO_EXTS, RESOURCES_FORMAT,
   TIER_ESSENTIAL, TIER_REST, cacheName, absoluteUrl, formatBytes, indexUrl, isQuotaError, isResourcePath, isResourceUrl,
-  mediaCandidates, resourceType, validateManifest, rangeResponse, checkAbort, abortError,
+  mediaCandidates, RESOURCE_GROUPS, resourceGroup, resourceType, validateManifest, rangeResponse, checkAbort, abortError,
 } from '../../public/js/resources/common.js';
 import { MEDIA_PREFIX as SHARED_MEDIA_PREFIX, AUDIO_EXTS as SHARED_AUDIO_EXTS } from '../../shared/media.js';
 
@@ -52,6 +52,16 @@ describe('resource manifest validation', () => {
     assert.throws(() => validateManifest({ ...base, files: [{ url: '/assets/a.png', tier: 1, hash: 'x'.repeat(65) }] }), /指纹/);
     assert.throws(() => validateManifest({ ...base, files: [{ url: '/assets/a.png', tier: 1, hash: 'a/b' }] }), /指纹/);
   });
+  test('the fx flag is optional, boolean, and passed through (官方特效, docs/design/vfx-format.md)', () => {
+    // 官方特效 is one indivisible set: the flag is what tells the panel to give it a switch and a row of its own.
+    const base = { format: RESOURCES_FORMAT, version: 'v' };
+    for (const fx of [true, false, undefined]) {
+      const files = [{ url: '/assets/local/fx/tex/a.webp', tier: TIER_REST, ...(fx === undefined ? {} : { fx }) }];
+      assert.equal(validateManifest({ ...base, files }).files[0].fx, fx);
+    }
+    assert.throws(() => validateManifest({ ...base, files: [{ url: '/assets/local/fx/tex/a.webp', tier: TIER_REST, fx: 'yes' }] }), /特效/);
+  });
+
 
   test('URL rules: site paths and CDN URLs yes, everything else no', () => {
     for (const url of ['/assets/char/avatar/char_002_amiya.png', '/fonts/bender.woff2', '/assets/local/map/autochess/TX_D.png',
@@ -94,6 +104,14 @@ describe('resource manifest validation', () => {
     assert.equal(absoluteUrl('https://cdn.example/assets/x.png', 'https://site.example'), 'https://cdn.example/assets/x.png');
     assert.equal(absoluteUrl('::::', 'https://site.example'), 'https://site.example/::::', 'a relative string resolves');
     assert.equal(absoluteUrl('/assets/x.png', 'not a url'), null);
+  });
+
+  test('官方特效 takes a group of its own rather than joining 额外资源 (docs/design/vfx-format.md)', () => {
+    const fx = { url: '/assets/local/fx/tex/fire_1.webp', tier: TIER_REST, fx: true };
+    assert.equal(resourceGroup(fx), 'fx');
+    assert.equal(resourceGroup({ ...fx, fx: undefined }), 'other', 'without the flag it is just another optional file');
+    assert.equal(resourceGroup({ ...fx, skin: 'char_003_kalts/char_003_kalts@boc#6' }), 'skin', 'a skin key still wins');
+    assert.equal(RESOURCE_GROUPS.fx.tier, TIER_REST, 'the panel lists it under 可选资源');
   });
 
   test('the extension-less audio route: shared/media.js values, and the canonical files a request resolves to', () => {

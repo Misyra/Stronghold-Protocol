@@ -48,16 +48,24 @@ const stateStore = createResourceState({
   archivePercent: 0,
   archiveGroup: '',
   optional: true,
+  voices: true,
   selectionComplete: false,
   groups: [],
   failures: [],
   archiveResult: null,
   storage: null,
   voiceLang: 'cn',
+  voiceLanguages: [],
   allVoices: false,
   // 干员皮肤: the per-item selection and the counters the panel's skin list renders (docs/SKINS.md).
   skins: [],
   skinScope: { keys: [], all: false },
+  /** Whole-manifest file count and byte total — every scope, whatever is switched on. */
+  manifestFiles: 0,
+  manifestBytes: 0,
+  // 官方特效: how many effect files the manifest offers at all. The panel keeps the 特效 box visible with it, even
+  // while the box itself is off (docs/design/vfx-format.md).
+  fxFiles: 0,
   requiredComplete: false,
   clearing: false,
   combat: false,
@@ -68,6 +76,7 @@ let current = false;
 const tasks = new ResourceTasks();
 let contextPromise = null;
 let optional = true;
+let voices = true;
 let wantRun = false;
 let workerPromise = null;
 let voiceLang = 'cn';
@@ -76,6 +85,8 @@ let allVoices = false;
 let skinKeys = [];
 /** @type {boolean} 全部皮肤: preload every outfit the manifest offers instead of the equipped ones (docs/SKINS.md). */
 let allSkins = false;
+/** @type {boolean} 官方特效: its own preload switch, kept apart from 「额外资源」 (docs/design/vfx-format.md). */
+let fx = true;
 
 const schedule = new ResourceSchedule();
 
@@ -153,6 +164,10 @@ const counters = (s) => ({
   adopted: s.adopted ?? 0,
   downloaded: s.downloaded ?? 0,
   groups: s.groups ?? [],
+  voiceLanguages: s.voiceLanguages ?? [],
+  fxFiles: s.fxFiles ?? 0,
+  manifestFiles: s.manifestFiles ?? 0,
+  manifestBytes: s.manifestBytes ?? 0,
   skins: s.skins ?? [],
   skinScope: s.skinScope ?? { keys: [], all: false },
 });
@@ -171,7 +186,7 @@ const sameSkinKeys = (a, b) => a.length === b.length && a.every((key, i) => key 
 const sameSkinScope = (a, b) => a.all === b.all && sameSkinKeys(a.keys, b.keys);
 
 /** The current selection as the store wants it, whichever axis changed last. */
-const storeScope = () => ({ optional, voiceLang, allVoices, skins: { keys: skinKeys, all: allSkins } });
+const storeScope = () => ({ optional, voices, voiceLang, allVoices, skins: { keys: skinKeys, all: allSkins }, fx });
 
 /** Why this browser cannot keep the resources (empty ⇒ it can). */
 export function unsupportedReason() {
@@ -239,28 +254,35 @@ async function dropWorker() {
  * Turn the preload on or off and hand it the current selection (idempotent: the settings store fires on every volume
  * change).
  * @param {boolean} enabled
- * @param {boolean} [includeOptional] the optional (tier 2) set — voices, sound effects, music, tutorial art
+ * @param {boolean} [includeOptional] 额外资源: the optional (tier 2) set — voices, sound effects, music, tutorials
  * @param {string} [language] voice language kept in the selection
  * @param {boolean} [includeAllVoices]
- * @param {Iterable<string>|{ keys?: Iterable<string>, all?: boolean }|'all'|'off'|null} [skinSelection]
- *   干员皮肤: the equipped `charId/skinId` keys to follow, or every outfit with `{ all: true }` (docs/SKINS.md)
+ * @param {Iterable<string>|{ keys?: Iterable<string>, all?: boolean, fx?: boolean, voices?: boolean }|'all'|'off'|null} [selection]
+ *   干员皮肤: the equipped `charId/skinId` keys to follow, or every outfit with `{ all: true }` (docs/SKINS.md).
+ *   官方特效: `{ fx }` — its own switch (tier 2, ~185 MiB, docs/design/vfx-format.md), unaffected by `includeOptional`.
  */
-export async function syncResources(enabled, includeOptional = optional, language = voiceLang, includeAllVoices = allVoices, skinSelection = { keys: skinKeys, all: allSkins }) {
+export async function syncResources(enabled, includeOptional = optional, language = voiceLang, includeAllVoices = allVoices, selection = { keys: skinKeys, all: allSkins }) {
   enabled = !!enabled;
-  language = language === 'jp' ? 'jp' : 'cn';
-  const nextScope = skinScopeOf(skinSelection);
+  language = ['cn', 'jp', 'en', 'kr'].includes(language) ? language : 'cn';
+  const nextScope = skinScopeOf(selection);
+  // 官方特效 rides the selection object beside the outfit keys — a scope axis of its own, and never implied by 额外资源.
+  const nextFx = selection && !Array.isArray(selection) && typeof selection.fx === 'boolean' ? selection.fx : fx;
+  // Older callers tied voices to optional; the manager now exposes the two choices independently.
+  const nextVoices = selection && typeof selection.voices === 'boolean' ? selection.voices : !!includeOptional;
   const changed = optional !== !!includeOptional || voiceLang !== language || allVoices !== !!includeAllVoices
-    || !sameSkinScope({ keys: skinKeys, all: allSkins }, nextScope);
+    || !sameSkinScope({ keys: skinKeys, all: allSkins }, nextScope) || fx !== nextFx || voices !== nextVoices;
   if (enabled === current && !changed) { set({ enabled }); return; }
   tasks.invalidate();
   current = enabled;
   wantRun = enabled;
   optional = !!includeOptional;
+  voices = nextVoices;
   voiceLang = language;
   allVoices = !!includeAllVoices;
   skinKeys = nextScope.keys;
   allSkins = nextScope.all;
-  set({ enabled, optional, voiceLang, allVoices, skinScope: nextScope, error: false, message: '' });
+  fx = nextFx;
+  set({ enabled, optional, voices, voiceLang, allVoices, skinScope: nextScope, error: false, message: '' });
   if (!enabled) {
     tasks.cancel('download', 'archive');
     set({ phase: state.complete ? 'ready' : 'paused', message: state.complete ? t('预载已停止；已保存的资源保留，可继续下载或清理缓存。') : t('已停止预载。') });
@@ -356,8 +378,9 @@ async function startDownload(task) {
   }
   const store = ctx.store;
   store.setScope(storeScope());
-  // Optional files are in play when the 「同时预载」 switch asks for them or when 干员皮肤 were picked — the store's
-  // selection already excludes everything else, so one question covers both and voices never ride along on a skin choice.
+  // Optional files are in play when the 额外资源 switch asks for them, when 干员皮肤 were picked, or while 官方特效 is
+  // on — the store's selection already excludes everything else, so one question covers all three and the sets never ride
+  // along on each other.
   const restWanted = store.selectedFiles.some((f) => f.tier === TIER_REST);
   set({ supported: true, version: store.manifest.version });
   // registering an already-registered worker is a cheap no-op, so every start can retry a failed one. A failure here
@@ -382,7 +405,7 @@ async function startDownload(task) {
     set({ ...counters(p), phase: 'download', failed: p.failed, failures: p.failures || [], error: false, message });
   };
   try {
-    // Required visuals first, then the optional set (audio/tutorials when 「同时预载」, plus any picked 干员皮肤).
+    // Required visuals first, then the optional set (额外资源 / 干员皮肤 / 官方特效 — whichever switches are on).
     const outcome = await withDownloadLock(async () => {
       checkAbort(signal);
       const essential = await store.download({ tiers: [TIER_ESSENTIAL], signal, onProgress });
@@ -438,7 +461,8 @@ export async function importResources(file, { onImported } = {}) {
   if (revision !== tasks.revision) return outcome;
   // Persist the UI setting after a successful import, then enable/resume the selected incremental downloads.
   onImported?.();
-  const run = current ? startResources() : syncResources(true);
+  const run = current ? startResources() : syncResources(true, optional, voiceLang, allVoices,
+    { keys: skinKeys, all: allSkins, fx, voices });
   void run.catch((err) => console.warn('[resources] enable after import failed', err));
   return outcome;
 }

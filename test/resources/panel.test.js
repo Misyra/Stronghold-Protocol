@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { byteText, detailText, percent } from '../../public/js/ui/resourcePanel.js';
+import { byteText, detailText, percent, resourcePlan, RESOURCE_PRESETS } from '../../public/js/ui/resourcePanel.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -21,6 +21,27 @@ const state = (over = {}) => ({
 });
 
 describe('preload numbers', () => {
+  test('the plan counts selected cacheable files, reuses cache and reports unknown sizes', () => {
+    const groups = [{ totalBytes: 100, bytes: 60, unknownSize: 0, allBytes: 900 },
+      { totalBytes: 0, bytes: 0, unknownSize: 0, allBytes: 2000 }];
+    assert.deepEqual(resourcePlan({ groups, wanted: 4, done: 2 }),
+      { total: 100, cached: 60, remaining: 40, missing: 2, unknown: 0, progress: 60 });
+    assert.equal(resourcePlan({ groups: [{ ...groups[0], unknownSize: 1 }], wanted: 4, done: 2 }).progress, 50);
+    assert.equal(resourcePlan({ groups, wanted: 4, done: 4, selectionComplete: true }).progress, 100);
+    assert.equal(resourcePlan({}).progress, 0);
+  });
+
+  test('presets change scopes together without starting a paused download or changing playback language', () => {
+    for (const preset of Object.values(RESOURCE_PRESETS)) {
+      assert.equal('preload' in preset, false);
+      assert.equal('voiceLang' in preset, false);
+    }
+    assert.equal(RESOURCE_PRESETS.essential.preloadVoices, false);
+    assert.equal(RESOURCE_PRESETS.daily.preloadSkinsAll, false);
+    assert.equal(RESOURCE_PRESETS.daily.preloadFx, false);
+    assert.equal(RESOURCE_PRESETS.full.preloadAllVoices, true);
+    assert.equal(RESOURCE_PRESETS.full.preloadSkinsAll, true);
+  });
   test('byteText: only when the server could size the files', () => {
     assert.equal(byteText(state()), '', 'nothing known yet');
     assert.equal(byteText(state({ totalBytes: null })), '');
@@ -87,26 +108,30 @@ describe('where the preload is reachable', () => {
 });
 
 /**
- * 干员皮肤 in the manager (docs/SKINS.md): a master switch plus an explicit 全部皮肤 one next to the required/optional
- * tiers — the outfit choice itself lives in 干员调配, and equipping one there is what starts its download.
+ * 干员皮肤 / 官方特效 in the manager (docs/SKINS.md, docs/design/vfx-format.md): 预载范围 is one row above the counters
+ * holding three boxes — 额外资源, 皮肤 and 特效, 默认全预载 — while the outfit choice itself still lives in 干员调配, where
+ * equipping starts its download.
  */
 describe('the 干员皮肤 scope', () => {
   const panel = read('public/js/ui/resourcePanel.js');
 
-  test('two switches, no list', () => {
-    assert.ok(panel.includes("g.tier === tier && g.id !== 'skin'"), 'the 可选资源 list skips the skin group');
-    assert.match(panel, /<\$\{ResourceSkins\} st=\$\{st\}/, 'the section is rendered by the manager');
-    assert.match(panel, /if \(!skins\.length\) return null;/, 'a deployment without skins installed shows nothing');
-    assert.ok(panel.includes('data-testid="skin-preload"'));
-    assert.ok(panel.includes("t('预载干员皮肤')"));
+  test('four cards keep each choice with its progress and retain disabled scopes', () => {
+    for (const title of ['必备资源', '干员语音', '干员皮肤', '额外特效']) assert.ok(panel.includes("t('" + title + "')"));
+    for (const id of ['voice-preload', 'optional-preload', 'skin-preload', 'fx-preload']) assert.ok(panel.includes('id="' + id + '"'));
+    assert.ok(panel.includes('data-testid=${id}'));
     assert.ok(panel.includes('data-testid="skin-preload-all"'));
-    assert.ok(panel.includes("t('全部皮肤（{total} 套）', { total: skins.length })"), '全部皮肤 names how many outfits it means');
-    assert.ok(panel.includes('本机已选 {n} 套 · 已缓存 {done} 套'));
-    assert.ok(panel.includes('全部 {n} 套 · 已缓存 {done} 套'));
+    assert.match(panel, /if \(!skins\.length\) return null;/);
+    assert.match(panel, /if \(!\(st\.fxFiles > 0\)\) return null;/);
+    for (const field of ['allTotal', 'allPresent', 'allBytes']) assert.ok(panel.includes(field));
+    assert.ok(panel.includes("t('未预载')"));
+    assert.ok(panel.includes('onSkin=${onSkinPreload}'));
+    assert.ok(panel.includes('onChange=${onFxPreload}'));
+    assert.ok(panel.includes('disabled=${disabled}'));
+    assert.equal(/disabled=\$\{archiveBusy \|\| !enabled\}/.test(panel), false);
+    assert.ok(panel.includes('skins.filter((s) => everyOutfit || keys.has(s.id))'), 'skin progress uses equipped selection, not all installed skins');
     assert.ok(panel.includes("t('还没选过皮肤：在干员调配里挑一套，这里会跟着缓存。')"));
-    assert.ok(panel.includes("t('全部皮肤：{total} 套都会缓存，不再跟随干员调配里的选择。', { total: skins.length })"));
-    assert.ok(panel.includes('const everyOutfit = !!(on && all);'), 'both switches decide the scope');
-    assert.equal(/resource-skins__rows|SkinList|跟随我的皮肤选择|全选/.test(panel), false, 'no per-outfit list here');
+    assert.equal(/resource-skins__rows|SkinList/.test(panel), false);
+    assert.ok(panel.includes('pauseResources(); if (!archiveBusy) onChange(false);'), 'pause persists across reloads');
   });
 
   test('the switches are settings flags, and the keys come from the equipped outfits', () => {
@@ -118,13 +143,15 @@ describe('the 干员皮肤 scope', () => {
     // Equipping a skin in 干员调配 must re-apply the scope: nothing else announces that change.
     assert.match(main, /const keys = s\.preloadSkins \? equippedSkinKeys\(\) : \[\];/);
     assert.match(main, /const all = !!\(s\.preloadSkins && s\.preloadSkinsAll\);/);
-    assert.match(main, /r\.syncResources\(s\.preload, s\.preloadOptional, s\.voiceLang, s\.preloadAllVoices, \{ keys, all \}\)/);
+    assert.match(main, /r\.syncResources\(s\.preload, s\.preloadOptional, s\.voiceLang, s\.preloadAllVoices, \{ keys, all, fx: s\.preloadFx, voices: s\.preloadVoices \}\)/);
     assert.match(main, /skinsStore\.subscribe\(\(\) => apply\(settingsStore\.get\(\)\)\)/);
+    assert.match(main, /fxPreload=\$\{settings\.preloadFx\}/);
+    assert.match(main, /onFxPreload=\$\{\(v\) => updateSettings\(\{ preloadFx: v \}\)\}/);
     const skins = read('public/js/ui/skins.js');
     assert.match(skins, /export function equippedSkinKeys\(\)/);
     assert.match(skins, /charId = data\.lookup\('chess', chessId\)\?\.charId/);
     const settings = read('public/js/ui/gameLogic/settings.js');
-    assert.ok(settings.includes('preloadSkins: false, preloadSkinsAll: false,'));
+    assert.ok(settings.includes('preloadSkins: true, preloadSkinsAll: false, preloadFx: true,'), '默认全预载: 皮肤 and 特效 start checked');
     assert.equal(/preloadSkinIds/.test(settings), false, 'a boolean switch needs no id list');
   });
 });

@@ -734,7 +734,7 @@ describe('keyboard & settings', () => {
   test('sanitizeSettings', () => {
     assert.deepEqual(sanitizeSettings(null), { ...DEFAULT_SETTINGS });
     assert.deepEqual(sanitizeSettings({ bgm: 3, sfx: -1, voice: 2, muted: 'yes', damageNumbers: false, quality: 'ultra' }),
-      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceOverrides: {}, muted: false, damageNumbers: false, officialDamageNumbers: false, ammoCount: false, quality: 'high', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadAllVoices: false, preloadSkins: false, preloadSkinsAll: false, keys: { ...DEFAULT_SETTINGS.keys }, voiceNative: false, combatMetrics: false, prepDeployZoom: false, mysticEnergy: false, officialFx: 'auto' },
+      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceOverrides: {}, muted: false, damageNumbers: false, officialDamageNumbers: false, ammoCount: false, quality: 'high', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: { ...DEFAULT_SETTINGS.keys }, voiceNative: false, combatMetrics: true, prepDeployZoom: false, mysticEnergy: false, officialFx: 'auto' },
       'a saved profile without `keys` (before 0.2.0) gets the default key map (test/ui/feedback5-hotkeys.test.js)');
     assert.equal(sanitizeSettings({ bgm: 0.5 }).voice, DEFAULT_SETTINGS.voice, 'a saved profile without `voice` gets the default');
     // 语音语言: 中文 by default. en / kr are dubs (0.3.0); anything else, including the per-operator 'native', stays 中文.
@@ -742,15 +742,16 @@ describe('keyboard & settings', () => {
     assert.equal(DEFAULT_SETTINGS.voiceNative, false);
     assert.equal(sanitizeSettings({ bgm: 0.5 }).voiceLang, 'cn');
     assert.equal(sanitizeSettings({ bgm: 0.5 }).voiceNative, false, 'a profile saved before the switch stays off');
-    assert.equal(DEFAULT_SETTINGS.combatMetrics, false);
-    assert.equal(sanitizeSettings({ bgm: 0.5 }).combatMetrics, false, 'a profile saved before 作战统计 stays off');
+    assert.equal(DEFAULT_SETTINGS.combatMetrics, true, '作战统计 is on by default (2026-10-16)');
+    assert.equal(sanitizeSettings({ bgm: 0.5 }).combatMetrics, true, 'a profile saved before 作战统计 gets the default');
     assert.equal(sanitizeSettings({ combatMetrics: true }).combatMetrics, true);
+    assert.equal(sanitizeSettings({ combatMetrics: false }).combatMetrics, false, 'an explicit off is respected');
     // 官方特效 (0.3.0): 'auto' by default (完整 on a desktop, 精简 on a touch device); unknown values fall back to it
     assert.equal(DEFAULT_SETTINGS.officialFx, 'auto');
     assert.equal(sanitizeSettings({ bgm: 0.5 }).officialFx, 'auto', 'a profile saved before 官方特效 gets the default');
     for (const v of ['off', 'lite', 'full', 'auto']) assert.equal(sanitizeSettings({ officialFx: v }).officialFx, v);
     assert.equal(sanitizeSettings({ officialFx: 'ultra' }).officialFx, 'auto');
-    assert.equal(sanitizeSettings({ combatMetrics: 'yes' }).combatMetrics, false, 'a non-boolean stays off');
+    assert.equal(sanitizeSettings({ combatMetrics: 'yes' }).combatMetrics, true, 'a non-boolean falls back to the default');
     assert.equal(sanitizeSettings({ voiceLang: 'jp' }).voiceLang, 'jp');
     assert.equal(sanitizeSettings({ voiceLang: 'en' }).voiceLang, 'en');
     assert.equal(sanitizeSettings({ voiceLang: 'kr' }).voiceLang, 'kr');
@@ -761,13 +762,24 @@ describe('keyboard & settings', () => {
     assert.equal(sanitizeSettings({ preload: true }).preloadOptional, true, 'profiles without a scope select both tiers by default');
     assert.equal(sanitizeSettings({ preloadOptional: true }).preloadOptional, true);
     assert.equal(sanitizeSettings({ preloadOptional: false }).preloadOptional, false, 'an explicit saved opt-out is preserved');
+    assert.equal(sanitizeSettings({}).preloadVoices, true);
+    assert.equal(sanitizeSettings({ preloadOptional: false }).preloadVoices, false, 'migrate an older audio opt-out');
+    assert.equal(sanitizeSettings({ preloadOptional: false, preloadVoices: true }).preloadVoices, true, 'voice preload is independent');
+    assert.equal(sanitizeSettings({ preloadOptional: true, preloadVoices: false }).preloadVoices, false);
     assert.equal(sanitizeSettings({ preloadOptional: 'true' }).preloadOptional, true, 'invalid values fall back to the default');
-    // 干员皮肤预载 (docs/SKINS.md): one switch — the outfits equipped in 干员调配 are what the preload follows, so there
-    // is no id list in the settings to validate.
-    assert.equal(DEFAULT_SETTINGS.preloadSkins, false);
+    // 干员皮肤预载 (docs/SKINS.md): the outfits equipped in 干员调配 are what the preload follows, so there is no id
+    // list in the settings to validate. The box sits in the optional tier's header; 默认全预载, so it defaults to on.
+    assert.equal(DEFAULT_SETTINGS.preloadSkins, true);
     assert.equal(sanitizeSettings({ preloadSkins: true }).preloadSkins, true);
-    assert.equal(sanitizeSettings({ preloadSkins: false }).preloadSkins, false);
-    for (const bad of ['picked', 'all', 'true', 1, null, []]) assert.equal(sanitizeSettings({ preloadSkins: bad }).preloadSkins, false, String(bad));
+    assert.equal(sanitizeSettings({ preloadSkins: false }).preloadSkins, false, 'an explicit saved opt-out is preserved');
+    for (const bad of ['picked', 'all', 'true', 1, null, []]) assert.equal(sanitizeSettings({ preloadSkins: bad }).preloadSkins, DEFAULT_SETTINGS.preloadSkins, String(bad));
+    // 官方特效 (docs/design/vfx-format.md): its own box beside 皮肤 in the same header — the biggest optional set after
+    // skins (~185 MiB), and never implied by 额外资源 in either direction.
+    assert.equal(DEFAULT_SETTINGS.preloadFx, true);
+    assert.equal(sanitizeSettings({ preloadFx: true }).preloadFx, true);
+    assert.equal(sanitizeSettings({ preloadFx: false }).preloadFx, false, 'an explicit saved opt-out is preserved');
+    for (const bad of ['all', 'true', 1, null, []]) assert.equal(sanitizeSettings({ preloadFx: bad }).preloadFx, DEFAULT_SETTINGS.preloadFx, String(bad));
+    assert.equal(sanitizeSettings({ bgm: 0.5 }).preloadFx, true, 'a profile saved before 官方特效 preloads it');
     // 全部皮肤 (docs/SKINS.md): a second switch — the master still gates it, and it is never saved as a key list.
     assert.equal(DEFAULT_SETTINGS.preloadSkinsAll, false);
     assert.equal(sanitizeSettings({ preloadSkinsAll: true }).preloadSkinsAll, true);

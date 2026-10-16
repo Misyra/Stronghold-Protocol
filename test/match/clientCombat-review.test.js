@@ -15,6 +15,7 @@ import { buildBattleSpec, createBattleFromSpec, compactResult, resultDigest } fr
 import { validateClientResult, specBounds, HeadlessPacer, HeadlessJob, runHeadless } from '../../server/match/fields.js';
 import { VirtualScheduler } from '../../server/match/scheduler.js';
 import { GameData } from '../../server/match/gamedata.js';
+import { uniteSurvivors } from '../../server/match/unite.js';
 import { startServer } from '../../server/index.js';
 import { TestClient } from '../helpers/wsClient.js';
 import { FakeBattle } from './fakeBattle.js';
@@ -181,6 +182,33 @@ test('validation: 联防 survivors that content spawned (splits) are billed only
   assert.deepEqual(validateClientResult(spec, raw(['p_2']), { gd }), { ok: false, reason: 'leak source' }, 'p_2 sent no 磨砻 in');
 });
 
+test('validation: a leak born on the 联防 field survives the round trip and is what stops the 联防 from billing it', () => {
+  const parent = 'enemy_1195_sfyin'; // 磨砻: DeadSpawn 2 × 木制瑞印
+  const child = 'enemy_1196_msfyin';
+  assert.ok(specBounds({ spawns: [{ enemyKey: parent, count: 1 }] }, gd).derived.has(child), 'data: the parent spawns the child');
+  const spec = buildBattleSpec({ battleId: 'v6', fieldId: 'u', kind: 'unite', seed: 1, round: 5, timeLimit: 120,
+    players: [{ playerId: 'h', units: [], bonds: {} }],
+    spawns: [{ enemyKey: parent, count: 1, time: 1, sourcePlayerId: 'p_1' }], flags: { layerGainsEnabled: false } });
+  // the helper struck the 磨砻 down on the field and both children walked out: real enemies of the fight (`counted`), but
+  // tagged `uniteRuntime` — the flag uniteSurvivors filters, so the leaker pays nothing for what he never sent in
+  const leaked = [0, 1].map(() => ({ enemyKey: child, lpr: 1, sourcePlayerId: 'p_1', tag: null, counted: true, uniteRuntime: true }));
+  const raw = { reason: 'timeout', time: 120, killed: 1, total: 1, errors: 0,
+    perPlayer: { h: perPlayer({ killed: 1, total: 1, perfect: false, leaked }) } };
+  const v = validateClientResult(spec, raw, { gd });
+  assert.ok(v.ok, v.reason);
+  assert.deepEqual(v.result.perPlayer.h.leaked.map((l) => [l.counted, l.uniteRuntime]), [[true, true], [true, true]], 'the flag is kept, not dropped');
+  const plan = { notReentered: new Map(), leaked: [{ enemyKey: parent, sourcePlayerId: 'p_1' }], leakers: [] };
+  assert.equal(uniteSurvivors(plan, v.result).get('p_1') || 0, 0, 'nothing to charge the leaker');
+  // …and it is not a laundromat: the same two children WITHOUT the tag are survivors of a 磨砻 and are billed
+  const untagged = leaked.map(({ uniteRuntime, ...l }) => l);
+  const billed = validateClientResult(spec, { ...raw, perPlayer: { h: perPlayer({ killed: 1, total: 1, perfect: false, leaked: untagged }) } }, { gd });
+  assert.ok(billed.ok, billed.reason);
+  assert.equal(uniteSurvivors(plan, billed.result).get('p_1'), 2, 'the leaker pays for both');
+  assert.notEqual(resultDigest(billed.result).hash, resultDigest(v.result).hash, 'the flag is part of the digest (SP_VERIFY re-simulation)');
+  assert.equal(resultDigest(validateClientResult(spec, raw, { gd }).result).hash, resultDigest(v.result).hash);
+  // the compact form is what actually travels to the server in client mode
+  assert.equal(compactResult(v.result).perPlayer.h.leaked.find((l) => l.uniteRuntime).uniteRuntime, true, 'the compact form keeps it');
+});
 test('validation: a leaked split / summon keeps the mods of its parent (round multipliers, bounty id) for its 联防 re-entry', () => {
   const parent = 'enemy_1203_sfhu';
   const child = 'enemy_1204_msfhu';

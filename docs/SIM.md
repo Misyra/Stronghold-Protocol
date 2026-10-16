@@ -457,13 +457,15 @@ recorded for the player whose half contains the goal it reached, with `sourcePla
 ```js
 { time, reason: 'cleared'|'timeout'|'forced', killed, total, resolved, errors, unspawned?: [{enemyKey,time,tag}], bossHpLeft?,
   perPlayer: { [playerId]: { killed, total, resolved, killedInTotal, leakedInTotal, perfect,
-      leaked: [{ enemyKey, mods, lpr, sourcePlayerId, tag, counted, boss?, spawned }],
+      leaked: [{ enemyKey, mods, lpr, sourcePlayerId, tag, counted, uniteRuntime?, boss?, spawned }],
       layerGains: {bondId: n}, coins, damageDealt, bossDamage, healingDone, deaths,
       unitsEnd: [{ uid, id, defId, hpPct, sp, skillActive, alive }],   // operators + board summon pieces; sp = skill.spTotal
       unitStats: [{ id, uid, defId, name, kind, dmg, kills, heal, taken, attacks }] } } }
 ```
 - **Two sets of counters, and they never cross.** `counted` drives the official LP / 完美作战 / `killed` reading (master's,
-  untouched): every counted enemy — a runtime split child, a summon, a boss's summon included — is in it. `inTotal` (the
+  untouched): every counted enemy — a runtime split child, a summon, a boss's summon included — is in it, on every field. A
+  联防 field puts **`uniteRuntime`** on top of such a spawn (`spawns.js`; player report 2026-10-16: only what the escaped
+  wave sent in is billable — META §4 / unite.js) — a billing-only flag that `counted` and the capsule never read. `inTotal` (the
   new flag, `spawns.js`) is the HUD capsule's own set (DESIGN §14 顶栏胶囊): only the enemies the field itself scheduled
   (`_queueSpawn`, and only those that `counted` — `countInTotal: false`, `tag: 'boss'` / `'part'`, data `notCountInTotal`
   stay out) are `inTotal`. Everything a runtime `spawnEnemy` makes defaults to `inTotal: false` (an explicit
@@ -471,7 +473,8 @@ recorded for the player whose half contains the goal it reached, with `sourcePla
 - `total` counts the `inTotal` enemies (the capsule's denominator), `killedInTotal` / `leakedInTotal` (battle level and per
   player) count those that were knocked down or leaked, and `resolved = min(total, killedInTotal + leakedInTotal)` is the
   capsule's numerator (official: 开局 0/3 → 漏一个 1/3 → 打死一个 2/3 → 打死会分裂的 3/3). A leaked split child or summon
-  moves none of them, while `leakedCount` / `leaked[]` still charge its LP and break 完美作战. The per-player numbers are
+  moves none of them, while on a normal field `leakedCount` / `leaked[]` still charge its LP and break 完美作战 (a 联防
+  field tags runtime enemies `uniteRuntime`, so there they charge nothing — `uniteSurvivors` filters exactly that — while `counted`, the `killed` credit and the capsule read as on any field). The per-player numbers are
   attributed like their `counted` twins — a knock-out to the enemy's owner (as `total`), a leak to the player whose half it
   reached (`_recordLeak`) — so in a two-half field (the 联防 lane, col 18 → col 2; the boss pair's crossing routes) an enemy
   that spawns on one half and leaks on the other is in one player's `total` and in the other's `leakedInTotal`, and each

@@ -72,6 +72,7 @@ function stateText(st, enabled) {
   if (st.phase === 'checking') return t('正在检查已缓存资源');
   if (st.phase === 'download') return t('正在下载');
   if (st.clearing) return t('正在清理');
+  if (st.error && !st.manifestFiles) return t('读取失败');
   // The selection decides the wording: with optional files (or chosen 干员皮肤) in it, 「全部已保存」 means those too.
   if (st.selectionComplete) return st.tier2Wanted > 0 ? t('全部已保存') : t('必备已保存');
   if (st.requiredComplete && st.tier1Total) return t('必备已保存');
@@ -289,7 +290,7 @@ export function ResourceHost({ enabled, optional, voices = optional, allVoices, 
       ${enabled ? html`<span class="resource-footer__hint">${t('关闭面板后，下载仍会在后台继续。')}</span>` : null}
       ${busy(st) ? html`<${Button} variant="secondary" icon="hourglass" disabled=${st.clearing} onClick=${pause}>${st.clearing ? t('正在清理') : archiveBusy ? t('取消处理') : t('暂停下载')}<//>`
         : html`<${Button} variant="primary" icon="play" disabled=${!st.supported || st.clearing}
-          onClick=${() => enabled ? startResources() : onChange(true)}>${st.selectionComplete ? t('检查资源') : enabled ? t('继续下载') : t('开始预载')}<//>`}
+          onClick=${() => enabled ? startResources() : onChange(true)}>${st.error ? t('重试') : st.selectionComplete ? t('检查资源') : enabled ? t('继续下载') : t('开始预载')}<//>`}
       <${Button} variant="secondary" onClick=${closeResources}>${t('关闭')}<//>`}>
     <div class="resource-manager">
       <${ResourceScope} st=${st} enabled=${enabled} disabled=${archiveBusy} preferences=${preferences} onPreset=${onPreset} />

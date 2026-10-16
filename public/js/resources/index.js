@@ -214,19 +214,28 @@ export function resourceContext() {
   contextPromise ??= (async () => {
     const reason = unsupportedReason();
     if (reason) return { unsupported: reason }; // no point in asking for a list this browser cannot store
-    let res;
-    try {
-      const signal = typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(10000) : undefined;
-      // Revalidate the HTTP cache on every page load: on a 304 the browser supplies the cached body instead of
-      // re-downloading the manifest (the server answers with a strong ETag over the full response).
-      res = await fetch(MANIFEST_URL, { cache: 'no-cache', signal });
-    } catch (err) {
-      return { error: t('无法读取资源清单：{0}', { 0: err?.message || err }) };
+    let doc;
+    // A full install has ~27k entries. Allow for a cold server and a slow response body, and retry a transient
+    // failure once. The deadline covers json() too: receiving headers does not mean the manifest has arrived.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const signal = typeof globalThis.AbortSignal?.timeout === 'function' ? AbortSignal.timeout(30000) : undefined;
+      try {
+        // Revalidate the HTTP cache on every page load: on a 304 the browser supplies the cached body instead of
+        // re-downloading the manifest (the server answers with a strong ETag over the full response).
+        const res = await fetch(MANIFEST_URL, { cache: 'no-cache', signal });
+        if (!res.ok) return { error: t('无法读取资源清单：HTTP {status}', { status: res.status }) };
+        doc = await res.json();
+        break;
+      } catch (err) {
+        const timedOut = signal?.aborted || err?.name === 'TimeoutError';
+        const transient = timedOut || err?.name === 'TypeError' || err?.name === 'AbortError';
+        if (attempt === 0 && transient) continue;
+        return { error: t('无法读取资源清单：{0}', { 0: timedOut ? t('请求超时，请重试') : err?.message || err }) };
+      }
     }
-    if (!res.ok) return { error: t('无法读取资源清单：HTTP {status}', { status: res.status }) };
     let manifest;
     try {
-      manifest = validateManifest(await res.json());
+      manifest = validateManifest(doc);
     } catch (err) {
       return { error: String(err?.message || err) };
     }

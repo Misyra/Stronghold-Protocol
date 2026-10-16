@@ -53,6 +53,88 @@ const FILES = [
 ];
 const MANIFEST = { format: 1, version: 'testversion', count: FILES.length, tier1: 2, sized: FILES.length, totalBytes: 22, files: FILES };
 
+test('manifest retries transient header and body failures once, sharing the request between callers', async (t) => {
+  for (const stage of ['headers', 'body', 'body-abort', 'network']) await t.test(stage, async (t) => {
+    const env = stubEnv();
+    t.after(env.restore);
+    const fetcher = globalThis.fetch;
+    let requests = 0;
+    const deadlines = [];
+    let controller;
+    t.mock.method(AbortSignal, 'timeout', (ms) => {
+      deadlines.push(ms);
+      controller = new AbortController();
+      return controller.signal;
+    });
+    globalThis.fetch = async (url, opts) => {
+      if (url === MANIFEST_URL && ++requests === 1) {
+        const error = stage === 'network' ? new TypeError('Failed to fetch') : new DOMException('signal timed out', 'TimeoutError');
+        if (stage === 'body-abort') return { ok: true, json: async () => {
+          controller.abort(error);
+          throw new DOMException('The operation was aborted.', 'AbortError');
+        } };
+        if (stage === 'body') return { ok: true, json: async () => { throw error; } };
+        throw error;
+      }
+      return fetcher(url, opts);
+    };
+    const mod = await import(`../../public/js/resources/index.js?manifest-retry-${stage}`);
+    const [first, second] = await Promise.all([mod.resourceContext(), mod.resourceContext()]);
+    assert.equal(first, second);
+    assert.ok(first.store, 'a transient failure does not leave the manager at 0 files');
+    assert.equal(requests, 2);
+    assert.deepEqual(deadlines, [30000, 30000]);
+    await mod.inspectResources();
+    assert.equal(mod.resourceState().manifestFiles, FILES.length);
+    assert.equal(mod.resourceState().error, false);
+    assert.equal(requests, 2, 'successful context is reused');
+  });
+});
+
+test('exhausted body timeouts give an actionable error and a manual retry can complete preload', async (t) => {
+  const env = stubEnv();
+  t.after(env.restore);
+  const fetcher = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async (url, opts) => {
+    if (url === MANIFEST_URL && ++requests <= 2) return {
+      ok: true, json: async () => { throw new DOMException('signal timed out', 'TimeoutError'); },
+    };
+    return fetcher(url, opts);
+  };
+  const mod = await import('../../public/js/resources/index.js?manifest-timeout-recovery');
+  await mod.syncResources(true, false);
+  assert.equal(requests, 2, 'automatic retry is bounded');
+  assert.equal(mod.resourceState().phase, 'error');
+  assert.equal(mod.resourceState().error, true);
+  assert.match(mod.resourceState().message, /无法读取资源清单.*请求超时，请重试/);
+  assert.equal(env.calls.registered.length, 0);
+  assert.deepEqual(await env.caches.keys(), [], 'manifest failures do not alter the resource cache');
+  await mod.startResources();
+  assert.equal(requests, 3, 'manual retry requests a fresh manifest');
+  assert.equal(mod.resourceState().selectionComplete, true);
+  assert.equal(mod.resourceState().error, false);
+  await mod.syncResources(false);
+});
+
+test('HTTP errors and malformed manifests are reported without automatic retries', async (t) => {
+  for (const kind of ['http', 'json', 'manifest']) await t.test(kind, async (t) => {
+    const env = stubEnv();
+    t.after(env.restore);
+    let requests = 0;
+    globalThis.fetch = async () => {
+      requests++;
+      return kind === 'http' ? new Response('unavailable', { status: 503 })
+        : new Response(kind === 'json' ? '{broken' : JSON.stringify({ ...MANIFEST, format: 999 }));
+    };
+    const mod = await import(`../../public/js/resources/index.js?manifest-permanent-${kind}`);
+    await mod.inspectResources();
+    assert.equal(requests, 1);
+    assert.equal(mod.resourceState().error, true);
+    assert.equal(mod.resourceState().phase, 'error');
+  });
+});
+
 test('required-only preload stops after visuals; opting in later downloads only missing optional files', async (t) => {
   const env = stubEnv();
   t.after(env.restore);

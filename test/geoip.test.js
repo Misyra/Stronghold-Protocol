@@ -71,15 +71,28 @@ test('invalid configured files and modes fail startup, rather than enabling an e
   await assert.rejects(startServer({ geoLiteCountryFile: file, geoipMode: 'cn-only' }));
 });
 
-test('real GeoIP2-CN file blocks an overseas entry but allows a mainland WebSocket client', {
-  skip: process.env.SP_GEOIP_TEST_DB ? false : 'Set SP_GEOIP_TEST_DB to an independently downloaded GeoIP2-CN Country.mmdb',
+/** A real database is opt-in: SP_GEOIP_TEST_DB=<file>; SP_GEOIP_TEST_MODE=country for a worldwide one. */
+const realDb = process.env.SP_GEOIP_TEST_DB;
+const realMode = process.env.SP_GEOIP_TEST_MODE === 'country' ? 'country' : 'cn-only';
+
+test(`a real ${realMode} database blocks an overseas entry but allows a mainland WebSocket client`, {
+  skip: realDb ? false : 'Set SP_GEOIP_TEST_DB to a downloaded Country.mmdb (SP_GEOIP_TEST_MODE=country for a worldwide one)',
 }, async t => {
-  const file = process.env.SP_GEOIP_TEST_DB, lookup = await openCountryLookup(file, { mode: 'cn-only' });
-  assert.equal(lookup('114.114.114.114'), 'CN'); assert.equal(lookup('8.8.8.8'), 'ZZ');
-  assert.equal(lookup('<节点地址>'), 'CN'); assert.equal(lookup('154.219.110.142'), 'ZZ');
-  assert.equal(lookup('240e::1'), null);
+  const file = realDb, lookup = await openCountryLookup(file, { mode: realMode });
+  assert.equal(lookup('114.114.114.114'), 'CN'); assert.equal(lookup('<节点地址>'), 'CN');
+  if (realMode === 'cn-only') {
+    // The mainland-only source says nothing about a foreign country: an IPv4 miss is the marker 'ZZ'.
+    assert.equal(lookup('8.8.8.8'), 'ZZ'); assert.equal(lookup('154.219.110.142'), 'ZZ');
+    assert.equal(lookup('240e::1'), null, 'a mainland-only file carries no mainland IPv6 coverage to trust');
+  } else {
+    // A worldwide file answers with real codes (HK/MO/TW included) and covers part of IPv6; the rest stays unknown.
+    assert.match(lookup('8.8.8.8'), /^[A-Z]{2}$/); assert.notEqual(lookup('8.8.8.8'), 'CN');
+    assert.match(lookup('154.219.110.142'), /^[A-Z]{2}$/); assert.notEqual(lookup('154.219.110.142'), 'CN');
+    assert.ok(['2001:4860:4860::8888', '2400:3200::1'].some(ip => lookup(ip)), 'the worldwide file resolves IPv6 samples');
+  }
+  assert.equal(lookup('invalid'), null);
   const srv = await startServer({ host: '127.0.0.1', port: 0, workers: 0, stateFile: 'off', quiet: true,
-    geoLiteCountryFile: file, geoipMode: 'cn-only', allowForeignConnections: false });
+    geoLiteCountryFile: file, geoipMode: realMode, allowForeignConnections: false });
   let client;
   t.after(async () => { await client?.close(); await srv.close(); });
   const blocked = await fetch(srv.url, { headers: { 'X-Real-IP': '8.8.8.8' } });

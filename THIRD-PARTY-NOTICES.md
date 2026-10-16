@@ -61,6 +61,19 @@ source) and [Kengxxiao/ArknightsGameData_YoStar](https://github.com/Kengxxiao/Ar
 Quotations of PRTS Wiki, BWIKI, NGA, 巴哈姆特 and other community pages in `docs/` stay under the terms of their
 sources (the wikis' texts are CC BY-NC-SA).
 
+## GeoIP data
+
+`geoip/GeoLite2-Country.mmdb` is a copy of the [MaxMind](https://www.maxmind.com/) **GeoLite2 Country** database
+(release 2026.10.13, 3410978 bytes, sha256 `635078e412c4443a2950c2e3f775ccdc400e0a1fea5ffd32e5489e5401a9e51d`),
+taken from the community mirror [P3TERX/GeoLite.mmdb](https://github.com/P3TERX/GeoLite.mmdb). MaxMind publishes
+GeoLite2 under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); downloading it from MaxMind itself
+additionally requires an account and acceptance of the GeoLite2 end-user licence, whose terms restrict redistribution —
+verify them before redistributing this repository, or point `SP_GEOLITE_COUNTRY_DB` at a redistributable database
+instead (for example [DB-IP Lite](https://db-ip.com/db/download/ip-to-country-lite), CC BY 4.0). The server loads the
+file from disk at start-up only; it is never sent to a browser. See [geoip/README.md](geoip/README.md).
+
+> This product includes GeoLite2 data created by MaxMind, available from <https://www.maxmind.com>.
+
 ## Translations
 
 The English UI strings (`public/i18n/en.json`) and the fallback game-text translations (`tools/i18n/fallback-pr70.json`)
@@ -578,3 +591,10 @@ THE SOFTWARE.
 The Apache-2.0 licence text reproduced above applies to SES and its listed Endo dependencies as well.
 Their package licence files remain in the release bundle. Copyright and source notices are also retained
 in the vendored SES bundle.
+
+### GeoLite2 (MaxMind) — CC BY-SA 4.0
+
+The database at `geoip/GeoLite2-Country.mmdb` is distributed under the Creative Commons Attribution-ShareAlike 4.0
+International licence; the full text is at <https://creativecommons.org/licenses/by-sa/4.0/legalcode> (attribution:
+"This product includes GeoLite2 data created by MaxMind, available from <https://www.maxmind.com>"). Copyright
+© MaxMind, Inc. — <https://www.maxmind.com/>.

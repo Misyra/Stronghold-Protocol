@@ -14,6 +14,7 @@
 #
 # Run:  see docs/operations/DEPLOY.md for CDN, probe announcement directory and persistent state mounts.
 # Env:  PORT (3000), HOST (0.0.0.0), SP_COMBAT (client|server), SP_VERIFY (off|sample|all), TRUST_PROXY (auto|1|0), DEBUG
+#       SP_GEOLITE_COUNTRY_DB (geoip/GeoLite2-Country.mmdb), SP_GEOIP_MODE (country) — optional GeoIP limits
 
 ARG NODE_IMAGE=node:22-alpine
 
@@ -36,6 +37,7 @@ COPY data ./data
 COPY public ./public
 COPY plugins ./plugin-resources
 COPY schemas ./schemas
+COPY geoip ./geoip
 COPY test/helpers/battleHarness.js ./test/helpers/battleHarness.js
 COPY docs/PLUGIN*.md docs/plugin-catalog.example.json ./docs/
 COPY docs/research ./docs/research
@@ -65,6 +67,7 @@ COPY --from=build /app/tools/assets ./tools/assets
 COPY --from=build /app/tools/plugin.mjs ./tools/plugin.mjs
 COPY --from=build /app/test/helpers/battleHarness.js ./test/helpers/battleHarness.js
 COPY --from=build /app/schemas ./schemas
+COPY --from=build /app/geoip ./geoip
 COPY --from=build /app/docs/PLUGIN*.md /app/docs/plugin-catalog.example.json ./docs/
 # Root-owned templates and author guides remain visible when /app/plugins is a bind mount or named volume.
 COPY --from=build /app/plugin-resources ./plugin-resources

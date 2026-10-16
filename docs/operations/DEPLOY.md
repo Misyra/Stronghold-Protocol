@@ -64,6 +64,17 @@ SP_MODERATION_KEY_FILE=/etc/stronghold/moderation.key
 
 默认开启服务端检查点；保留状态目录可恢复最近的安全阶段，作战进行中重启可能重打该回合。状态目录包含私有重连身份，必须随配置一起备份。具体恢复边界见 [PERSISTENCE.md](PERSISTENCE.md)。
 
+### 国家库（GeoLite，可选）
+
+海外 AI 席位上限、连接准入与 `foreign` 人群的单 IP 会话配额都要先识别来源国家，需要一个 Country `.mmdb`。本仓库把全球库放在 `geoip/GeoLite2-Country.mmdb`，随 `git pull` 到服务器（不进玩家发行包）：
+
+```ini
+SP_GEOLITE_COUNTRY_DB=/opt/Stronghold-Protocol/geoip/GeoLite2-Country.mmdb
+SP_GEOIP_MODE=country
+```
+
+`SP_GEOIP_MODE` 必须与库匹配：全球库用 `country`（默认），大陆专用库（Hackl0us/GeoIP2-CN）用 `cn-only`。模式配错、库缺失或损坏都会在启动时报错，不会静默放行；库也不能放在 `public/`、`data/`、`shared/`、`packs/` 静态目录中。来源、校验值、许可与更新步骤见 [geoip/README.md](../../geoip/README.md)，各变量、判定规则与限制见[房间与连接保护](ROOM_PROTECTION.md)。启动日志出现 `[geoip] country database loaded in country mode` 即生效；未配置时游戏照常启动，只是海外相关限制不启用。
+
 <a id="4-macos--linux-常驻"></a>
 
 ## 开服流量（0.2.6）
@@ -213,7 +224,7 @@ docker run -d --name stronghold --restart unless-stopped \
   -v stronghold-state:/app/.state stronghold-protocol
 ```
 
-容器内部需要监听 `0.0.0.0`，覆盖宿主机环境文件里的 `127.0.0.1`；状态路径同样覆盖为容器持久卷。不用 CDN 时，以 `--build-arg FETCH_ASSETS=1` 构建并移除 `SP_ASSETS_CDN`，或挂载宿主机已准备好的整个 `public/assets`（包括 `local/`）。
+容器内部需要监听 `0.0.0.0`，覆盖宿主机环境文件里的 `127.0.0.1`；状态路径同样覆盖为容器持久卷。不用 CDN 时，以 `--build-arg FETCH_ASSETS=1` 构建并移除 `SP_ASSETS_CDN`，或挂载宿主机已准备好的整个 `public/assets`（包括 `local/`）。镜像自带 `geoip/GeoLite2-Country.mmdb`：容器里配置 `SP_GEOLITE_COUNTRY_DB=/app/geoip/GeoLite2-Country.mmdb`（`SP_GEOIP_MODE=country`）即可启用海外识别，也可以挂载宿主机自己的库替换它。
 
 Compose 示例：
 
@@ -267,6 +278,7 @@ sudo systemctl start stronghold
 2. `curl -s http://127.0.0.1:3000/api/announcement`：`source.mode` 为 `agent`（无探针 feed 站点为 `panel`）；在面板发布后确认正文生效。
 3. 浏览器打开游戏，创建并加入房间；确认 WebSocket 正常连接，刷新后可重连。
 4. CDN 模式检查图片和音频请求带 `?v=`；预载窗口可导入资源包并显示结果。
+5. 配置了国家库的服务器看启动日志 `[geoip] country database loaded in <mode> mode`：`geoip/GeoLite2-Country.mmdb` 随 `git pull` 更新，换库后必须重启才生效；海外识别没生效时先查这条日志与 `SP_GEOIP_MODE`。
 
 ## 排错与调优
 
@@ -280,6 +292,8 @@ sudo systemctl start stronghold
 | CPU / 内存过高 | Worker 数量、队列与校验模式，见[性能说明](../development/PERFORMANCE.md) |
 | 想知道开服电脑上传了多少流量 | 本机 / 局域网打开 `/healthz?traffic=1`，按类别看 `traffic.http` 与 `traffic.ws`；公网访问者只会拿到普通报告 |
 | 素材地址里出现 `/_v/<tag>/` 前缀 | 这是本仓库的版本化地址（`server/assetVersion.js`）：素材字节没变前缀就不变、浏览器长期缓存，属正常现象；怀疑素材没更新时先确认服务器上真的换了文件 |
+| 海外玩家 / 海外 AI 限制没有生效 | 启动日志是否有 `[geoip] country database loaded in … mode`；`SP_GEOLITE_COUNTRY_DB` 是否指向 `geoip/GeoLite2-Country.mmdb`，`SP_GEOIP_MODE` 是否与库匹配；未命中、内网与查询失败的地址按未知放行，属正常行为；见[房间与连接保护](ROOM_PROTECTION.md) |
+| 启动即报国家库错误 | 库缺失、损坏、是 ASN 库，或模式与库不匹配（全球库配 `cn-only`，或大陆专用库配 `country`）；重新 `git pull` 取回 `geoip/GeoLite2-Country.mmdb`，或按 [geoip/README.md](../../geoip/README.md) 更新 |
 
 `SP_WS_COMPRESSION` 默认 `on`，可设 `off`；`SP_WORKERS` 控制模拟线程数，0 关闭，默认可用逻辑核心减 2、至少 1、最多 8。资源占用与真实并发有关，用 `/metrics` 观察 CPU、内存、队列与网络状况后调整，变量修改需重启。
 

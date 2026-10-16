@@ -120,10 +120,6 @@ WantedBy=multi-user.target
 
 发布沿用现有停止保存、重启恢复和客户端自动重连流程，无需等待对局结束。先确认部署启用了存档目录且新旧进程使用同一目录；停止须留足最终存档时间，避免强制杀死。
 
-`SP_MAX_CONNECTIONS_PER_IP=1` 将所有来源 IP 的同时在线游戏 WebSocket 限制为 1 条（国内、海外、局域网和回环地址都计入）。
-使用现有可信代理规则解析真实 IP；IPv6 按单个地址计数，连接关闭后释放名额，第二条连接在升级前返回 HTTP 429。
-默认 `0` 不启用这一额外限制；它与原有的每网段限额及海外访问策略独立。修改后重启服务。
-
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now stronghold

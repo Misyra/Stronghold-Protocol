@@ -27,6 +27,7 @@ Dockerfile text eol=lf
 *.ttf binary
 *.mp3 binary
 *.ogg binary
+*.mmdb binary
 # Preserve the release's resource bytes (including OBJ/atlas sidecars) across platforms.
 public/assets/local/** -text
 

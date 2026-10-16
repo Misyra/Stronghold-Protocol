@@ -544,7 +544,7 @@ export function plan(root, opts = {}) {
   const pkg = readJson(path.join(root, 'package.json')) || {};
   const lock = readJson(path.join(root, 'package-lock.json')) || {};
   const generated = shipsPacks(keep) ? [GENERATED_PACK_INDEX] : [];
-  const files = [...keep, ...art.files, ...generated];
+  const files = [...new Set([...keep, ...art.files, ...generated])];
   const problems = [];
   for (const f of files) if (isRefused(f) || isJunk(f)) problems.push(`refused: ${f}`);
   const byCase = new Map();
@@ -579,7 +579,8 @@ export function plan(root, opts = {}) {
   const artBytes = sumBytes(root, art.files);
   const orphanBytes = sumBytes(root, art.orphans);
   const modulesBytes = sumBytes(root, modules);
-  const vendorBytes = opts.measure !== false ? sumBytes(root, listTree(root, 'public/vendor')) : 0;
+  const vendor = opts.measure !== false ? listTree(root, 'public/vendor') : [];
+  const vendorBytes = sumBytes(root, vendor);
   const dropBytes = Object.values(dropped).reduce((n, g) => n + g.bytes, 0);
   return {
     version: pkg.version || '0.0.0', lite, tracked: keep, art: art.files, generated, files, dropped, orphans: art.orphans,
@@ -587,7 +588,7 @@ export function plan(root, opts = {}) {
     scenes: { files: art.scenes || [], bytes: sumBytes(root, art.scenes || []) },
     bytes: {
       tracked: trackedBytes, art: artBytes, modules: modulesBytes, vendor: vendorBytes,
-      total: trackedBytes + artBytes + modulesBytes + vendorBytes,
+      total: sumBytes(root, [...new Set([...keep, ...art.files, ...modules, ...vendor])]),
       // what 0.1.x's whole-tree layout adds on top: every other tracked file and (full) the art nothing lists
       leftOut: dropBytes + (lite ? 0 : orphanBytes), orphans: orphanBytes,
     },

@@ -3,6 +3,48 @@ import assert from 'node:assert/strict';
 import { startServer } from '../server/index.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { TestClient } from './helpers/wsClient.js';
+import { Lobby } from '../server/lobby.js';
+import { SessionRegistry } from '../server/net.js';
+
+test('joining a queued room cancels the whole party after the host session disappears', (t) => {
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, MatchClass: StubMatch, getData: () => ({}),
+    log: { info() {}, warn() {}, error() {}, debug() {} } });
+  t.after(() => lobby.shutdown());
+  const player = (name) => { const s = registry.create(name); s.connected = true; return s; };
+  const host = player('Host'), member = player('Member'), newcomer = player('Newcomer'), outsider = player('Other queue');
+  assert.equal(lobby.create(host, { mode: 'coop', difficulty: 'NORMAL' }).ok, true);
+  const room = lobby.roomOf(host);
+  assert.equal(lobby.join(member, { code: room.code }).ok, true);
+  assert.equal(lobby.matchmaking.join(outsider, 'HARD').ok, true);
+  assert.equal(lobby.matchmaking.joinParty(room).ok, true);
+  registry.remove(host);
+  assert.equal(lobby.join(newcomer, { code: room.code }).ok, true);
+  assert.equal(room.matchmaking, false);
+  assert.ok(room.seatOf(newcomer.playerId));
+  assert.deepEqual([...lobby.matchmaking.entries.keys()], [outsider.playerId]);
+  room.matchmaking = true; // A stale flag without any remaining entry is recoverable too.
+  assert.equal(lobby.matchmaking.cancelParty(room).ok, true);
+  assert.equal(room.matchmaking, false);
+  assert.deepEqual([...lobby.matchmaking.entries.keys()], [outsider.playerId]);
+});
+
+test('host migration retains the creation network quota', (t) => {
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, MatchClass: StubMatch, getData: () => ({}), options: { maxRoomsPerAddr: 1 },
+    log: { info() {}, warn() {}, error() {}, debug() {} } });
+  t.after(() => lobby.shutdown());
+  const host = registry.create('Creator'), guest = registry.create('Successor');
+  host.connected = guest.connected = true;
+  host.limitKey = 'creation-network'; guest.limitKey = 'successor-network';
+  assert.equal(lobby.create(host, { mode: 'coop', difficulty: 'NORMAL' }).ok, true);
+  const room = lobby.roomOf(host);
+  assert.equal(lobby.join(guest, { code: room.code }).ok, true);
+  assert.equal(lobby.leave(host).ok, true);
+  assert.equal(room.hostId, guest.playerId);
+  assert.equal(room.ownerKey, host.limitKey);
+  assert.equal(lobby.create(host, { mode: 'coop', difficulty: 'NORMAL' }).error, 'RATE');
+});
 
 async function fixture(t, options = {}) {
   const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true, MatchClass: StubMatch, ...options });

@@ -109,16 +109,27 @@ export class Matchmaking {
     this.publish(party.difficulty); this.drain(party.difficulty); return { ok: true };
   }
   cancel(session, notify = true) {
+    if (!session) return { ok: true };
     const e = this.entries.get(session.playerId);
-    const entries = e?.party ? [...this.entries.values()].filter((entry) => entry.party === e.party) : e ? [e] : [];
-    for (const entry of entries) this.entries.delete(entry.playerId);
-    if (e?.party) { e.party.matchmaking = false; this.partyChanged(e.party); }
-    for (const entry of entries) {
-      const member = this.registry.byId(entry.playerId);
-      if (member && (notify || member !== session)) this.sync(member);
-    }
+    if (e?.party) return this.cancelParty(e.party, notify ? null : session);
+    if (e) this.entries.delete(e.playerId);
+    const member = e && this.registry.byId(e.playerId);
+    if (member && (notify || member !== session)) this.sync(member);
     if (notify && !e) this.sync(session);
     if (e) this.publish(e.difficulty);
+    return { ok: true };
+  }
+  /** Withdraw a whole room even when its host's session has already expired. */
+  cancelParty(party, silentSession = null) {
+    const entries = [...this.entries.values()].filter((entry) => entry.party === party);
+    for (const entry of entries) this.entries.delete(entry.playerId);
+    party.matchmaking = false;
+    this.partyChanged(party);
+    for (const entry of entries) {
+      const member = this.registry.byId(entry.playerId);
+      if (member && member !== silentSession) this.sync(member);
+    }
+    for (const difficulty of new Set([party.difficulty, ...entries.map((entry) => entry.difficulty)])) this.publish(difficulty);
     return { ok: true };
   }
   drain(difficulty) {

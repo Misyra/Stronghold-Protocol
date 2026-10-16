@@ -27,6 +27,7 @@ test('full and lite include author resources, refuse even tracked private plugin
     const p = plan(ROOT, { lite, allowDirty: true, scan: false, measure: false });
     for (const file of REQUIRED) assert.ok(p.files.includes(file), `${lite ? 'lite' : 'full'}: ${file}`);
     assert.ok(!p.files.some(file => PRIVATE.includes(file)));
+    assert.equal(p.files.length, new Set(p.files).size, 'tracked art is included only once');
     assert.deepEqual(p.problems.filter(x => !x.startsWith('missing art:') && !x.startsWith('no art under')), []);
   }
 });
@@ -80,7 +81,7 @@ test('offline release stage runs plugin CLI, native author harness and sandbox t
       run(['tools/plugin.mjs', 'check', `release-${template}`, '--strict']);
       run(['tools/plugin.mjs', 'pack', `release-${template}`, '--zip']);
     }
-    assert.match(run(['tools/plugin.mjs', 'test', 'release-script']), /# fail 0/);
+    assert.match(run(['tools/plugin.mjs', 'test', 'release-script']), /^(?:#|ℹ) fail 0$/m);
     run(['--input-type=module', '-e', `
       import assert from 'node:assert/strict';
       import { createPluginRegistry } from './server/plugins/registry.js';
@@ -116,7 +117,7 @@ test('offline release stage runs plugin CLI, native author harness and sandbox t
 
 test('Docker copies real production dependencies and separate author resources with narrow context exceptions', () => {
   const docker = fs.readFileSync(path.join(ROOT, 'Dockerfile'), 'utf8');
-  const ignore = fs.readFileSync(path.join(ROOT, '.dockerignore'), 'utf8').split('\n');
+  const ignore = fs.readFileSync(path.join(ROOT, '.dockerignore'), 'utf8').split(/\r?\n/);
   assert.match(docker, /npm ci --omit=dev --ignore-scripts/);
   assert.match(docker, /COPY --from=deps \/app\/node_modules \.\/node_modules/);
   assert.match(docker, /SP_PLUGIN_RESOURCES=\/app\/plugin-resources/);

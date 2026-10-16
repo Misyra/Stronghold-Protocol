@@ -5,6 +5,9 @@ import { once } from 'node:events';
 import { BroadcastChannel } from 'node:worker_threads';
 import WebSocket from 'ws';
 import { startServer } from '../server/index.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { CLAIM_QUERY_MS, createIdentity, Net } from '../public/js/net.js';
 
 function storage(seed = {}) {
@@ -24,7 +27,10 @@ function nextEvent(net, type) {
 }
 
 async function harness(t) {
-  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
+  // Identity uses the real network/data stack, but needs none of this machine's installed art.
+  const publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-identity-public-'));
+  t.after(() => fs.rmSync(publicDir, { recursive: true, force: true }));
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, publicDir });
   const clients = [], channels = [], replaced = [];
   const local = storage();
   const channelName = `sp.identity.test.${process.pid}.${srv.port}`;

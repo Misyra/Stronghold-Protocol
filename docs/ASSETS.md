@@ -692,6 +692,27 @@ optional preloading through the settings callback; full cleanup pauses downloads
 Concurrent startup cache checks share an in-flight scan of cache keys and index records without reading resource bodies.
 ZIP and CRC code are loaded on demand from the locally vendored zip.js library, without ZIP Web Workers.
 
+The resource manager exposes the saved master preload switch separately from scope choices and presets.
+Choosing a scope while the master is off only plans the download; the panel explains how to start it.
+The effects card stays mounted while the manifest loads or fails and when the server has no effect files;
+it displays a distinct explanation for each case and enables its switch only when files are available.
+Incomplete downloads report a partial failure instead of a completed state, even when the required tier is cached.
+Transient network/HTTP failures get at most two additional run attempts (5 and 15 seconds, respecting a bounded
+Retry-After), after the per-file retries. An offline browser waits for the online event without polling. Hidden tabs
+wait until visible before recovery; a visible tab waiting for another tab's download lock rechecks after 5 seconds
+and takes over automatically. Pause, disabling preload, import and cleanup cancel pending recovery. Export resumes
+an interrupted download or pending recovery. Already verified files are retained and skipped on subsequent runs.
+Permanent-only failures (404, integrity mismatch, quota) require manual retry or deployment repair.
+Service Worker registration has a 10-second deadline: a failed/stalled registration keeps the verified page download
+path available and displays a cache-service warning, which a later successful registration clears.
+Same-origin downloads retain browser verification cookies; CDN requests remain anonymous (`credentials: same-origin`).
+
+Official effects resolve all file-list paths through `resourceUrl()` after the CDN hash manifest is ready:
+index/texture metadata, prefab descriptors, meshes, full textures and half-resolution textures. This includes the
+legacy local-art fallback. Effects therefore load on a CDN-only deployment with preload disabled and without any
+Service Worker; preload is a cache optimization, never a requirement for showing battle effects. Rebuild the client
+after changing this frontend resolver (`npm run build`) before deploying the built client.
+
 Chromium refuses a single `Cache.keys()` whose result exceeds a fixed query budget (10 MiB,
 `kMaxQueryCacheResultBytes` in `content/browser/cache_storage/cache_storage_cache.cc`), rejecting it with
 `AbortError: Operation too large.` Measured on Chrome 155 the budget is spent as ≈474 bytes per entry (462–498) plus the

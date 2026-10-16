@@ -18,6 +18,7 @@ import { compileEffect } from './effect.js';
 import { FX_LIST_URL, loadFxList } from './available.js';
 import { loadImageElement } from '../../image.js';
 import { setIndexVersion } from './mounts.js';
+import { resourceReady, resourceUrl } from '../../resourceUrl.js';
 const MAX_PARALLEL = 8;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -109,6 +110,7 @@ export class FxLibrary {
   init() {
     if (this._init) return this._init;
     this._init = (async () => {
+      await resourceReady();
       let list = this.list;
       if (!list && this.listUrl === FX_LIST_URL && this.fetch === this._defaultFetch) list = await loadFxList(this.fetch);
       else if (!list && this.fetch) {
@@ -140,7 +142,7 @@ export class FxLibrary {
   /** URL of a file-list entry. */
   url(group, key) {
     const e = this.groups?.[group]?.[key];
-    return isObj(e) && typeof e.path === 'string' ? e.path : null;
+    return isObj(e) && typeof e.path === 'string' ? resourceUrl(e.path) : null;
   }
 
   has(key) { return !!this.url('fx/prefabs', String(key || '').toLowerCase()); }
@@ -250,7 +252,7 @@ export class FxLibrary {
         const e = this.groups?.['fx/tex']?.[key];
         const url = isObj(e) ? (half && typeof e.half === 'string' ? e.half : e.path) : null;
         if (!url) return null;
-        const img = await this._limit(() => this._image(url));
+        const img = await this._limit(() => this._image(resourceUrl(url)));
         return img ? { image: img.image, flipped: img.flipped, info: infos[key] || {} } : null;
       }).then((r) => { this.images.set(id, r); this._notify(); return r; }, (err) => {
         console.warn('[fx] texture failed', key, err?.message || err);

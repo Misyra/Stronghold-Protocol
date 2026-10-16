@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, copyFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,10 @@ test('the production bundle boots, joins the lobby and displays a foreign-connec
     // Build into an isolated install: never consume, clean or replace public/build.
     await mkdir(publicDir, { recursive: true });
     await writeFile(path.join(publicDir, 'index.html'), '<html>source fallback must not be used</html>');
+    // The HTML deliberately loads these two classic scripts outside Vite: boot diagnostics must run before modules.
+    const bootstrapScripts = new Set(['/js/boot.js', '/js/webFonts.js']);
+    await mkdir(path.join(publicDir, 'js'));
+    for (const script of bootstrapScripts) await copyFile(path.join(root, 'public', script), path.join(publicDir, script));
     const { build } = await import('vite');
     await build({ configFile: path.join(root, 'vite.config.js'), logLevel: 'silent', build: { outDir } });
     const manifest = JSON.parse(await readFile(path.join(outDir, '.vite/manifest.json'), 'utf8'));
@@ -56,8 +60,10 @@ test('the production bundle boots, joins the lobby and displays a foreign-connec
     }
     assert.equal(srv.network.connectionCount, 1);
     assert.ok(modules.some((url) => new URL(url).pathname === expectedEntry), 'the fresh build entry was requested');
-    assert.deepEqual(modules.filter((url) => !new URL(url).pathname.startsWith('/build/assets/')), [],
-      'all client scripts must come from the same build, never /js, /sim or source vendors');
+    assert.deepEqual(modules.filter((url) => {
+      const pathname = new URL(url).pathname.replace(/^\/_v\/[a-f0-9]{16}(?=\/)/, '');
+      return !pathname.startsWith('/build/assets/') && !bootstrapScripts.has(pathname);
+    }), [], 'app modules must come from the same build; only the two classic bootstrap scripts stay outside Vite');
     assert.deepEqual(failedModules, []);
     assert.deepEqual(errors, []);
     srv.lobby.applyRoomConfig({ allowForeignConnections: false });

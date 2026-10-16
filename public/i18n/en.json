@@ -2518,5 +2518,16 @@
   "导出范围": "Export scope",
   "{n} 个文件 · {size}": "{n} files · {size}",
   "尚未缓存任何资源": "Nothing is cached yet",
+  "开启资源预载": "Enable resource preloading",
+  "资源清单暂时无法读取，请重试。": "The resource list is temporarily unavailable. Please retry.",
+  "正在读取特效资源清单…": "Loading the effects resource list…",
+  "服务器尚未提供官方特效资源。": "Official effect resources are not available on this server.",
+  "开启后预载": "Preloaded when enabled",
+  "预载尚未开启：选择范围后，开启上方开关或点击「开始预载」。": "Preloading is off: choose a scope, then enable the switch above or click Start preloading.",
+  "等待联网": "Waiting for connection",
+  "等待重试": "Waiting to retry",
+  "部分下载失败": "Some downloads failed",
+  "网络已断开，联网后自动继续；已保存的资源保留。": "You are offline. Downloads will resume when connected; saved resources are kept.",
+  "部分资源暂时无法下载，稍后自动重试；已保存的资源保留。": "Some resources are temporarily unavailable. Downloads will retry shortly; saved resources are kept.",
   "浏览器未授予持久化存储：空间紧张时可能自动清理已预载的资源。": "Persistent storage was not granted: the browser may clear preloaded resources when space runs low."
 }

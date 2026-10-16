@@ -3,6 +3,8 @@
 // when effects were extracted). The served view answers `{ groups: {} }` on an install without effects; a server
 // without the view (an older one, a static host) may answer 404 — both mean "none".
 
+import { resourceUrl, resourceCache } from '../../resourceUrl.js';
+
 export const FX_LIST_URL = '/data/local-fx.json';
 
 let listPromise = null;
@@ -13,7 +15,8 @@ export function loadFxList(fetchFn = globalThis.fetch) {
     listPromise = (async () => {
       if (typeof fetchFn !== 'function') return null;
       try {
-        const res = await fetchFn(FX_LIST_URL);
+        const url = resourceUrl(FX_LIST_URL);
+        const res = await fetchFn(url, { cache: resourceCache(url) });
         if (!res || !res.ok) return null;
         const j = await res.json();
         return j && typeof j === 'object' ? j : null;

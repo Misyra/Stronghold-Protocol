@@ -917,7 +917,7 @@ export class Lobby {
     if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo room');
     const idx = room.freeSeat();
     if (idx < 0) return fail(ERR.ROOM_FULL);
-    if (room.matchmaking) this.matchmaking.cancel(this.registry.byId(room.hostId));
+    if (room.matchmaking) this.matchmaking.cancelParty(room);
     if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
     if (cur) this.removeMember(cur, session.playerId);
     room.seats[idx] = this.humanSeat(idx, session);

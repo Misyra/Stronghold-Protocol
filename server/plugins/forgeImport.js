@@ -337,7 +337,9 @@ function openValidationView({ root, dataDir, pluginsDir, stage }) {
       try { st = fs.statSync(abs); } catch { return; }
       if (!st.isDirectory()) return;
       if (!fs.existsSync(path.join(abs, PLUGIN_MANIFEST))) return;
-      fs.symlinkSync(abs, dest);
+      // This view links trusted installed/staged directories, not entries from the untrusted pack.
+      // Junctions need no symlink privilege on Windows; nested pack links are still rejected below.
+      fs.symlinkSync(abs, dest, process.platform === 'win32' ? 'junction' : 'dir');
     };
     if (pluginsDir && fs.existsSync(pluginsDir)) {
       for (const name of fs.readdirSync(pluginsDir)) take(name, path.join(pluginsDir, name));

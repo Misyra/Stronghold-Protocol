@@ -41,7 +41,9 @@ test('90% triggers, removes longest-offline first and stops strictly below 80%',
   f.offline(entries[0], 130000); // Oldest room is most recently offline, so keep it.
   f.lobby.opts.maxRooms = 10;
   const checkpoints = [];
+  const subscribed = [];
   f.lobby.onCheckpoint = (code, match) => checkpoints.push([code, match]);
+  f.lobby.subscribeCheckpoint((code, match) => subscribed.push([code, match]));
   assert.equal(f.lobby.reclaimOfflineRooms(), 2);
   assert.equal(f.lobby.rooms.size, 7);
   assert.equal(entries[0].room.disposed, false);
@@ -54,6 +56,7 @@ test('90% triggers, removes longest-offline first and stops strictly below 80%',
   assert.equal(entries[2].session.roomCode, null);
   assert.equal(entries[2].session.notice, 'capacity');
   assert.deepEqual(checkpoints, [[entries[1].room.code, null], [entries[2].room.code, null]]);
+  assert.deepEqual(subscribed, checkpoints, 'persistence subscribers also learn that the rooms are gone');
   assert.deepEqual(f.lobby.stats().roomPressure, { active: false, reclaimed: 2 });
   const audit = f.audits.find((a) => a.action === 'room.pressure.reclaimed');
   assert.equal(audit.before, 9);

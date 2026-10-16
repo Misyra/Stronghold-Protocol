@@ -1,14 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { startServer } from '../server/index.js';
 import { selectTracked } from '../tools/package.mjs';
 import { loadLexicon } from '../server/moderation/lexicon.js';
 
 async function boot(t) {
-  const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
+  // HTTP body deadlines must not depend on how many optional skins the developer has installed.
+  const publicDir = mkdtempSync(path.join(os.tmpdir(), 'sp-nickname-public-'));
+  t.after(() => rmSync(publicDir, { recursive: true, force: true }));
+  const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true, publicDir });
   t.after(() => server.close());
   return server;
 }

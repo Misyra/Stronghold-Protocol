@@ -183,6 +183,24 @@ function fakeCheckout() {
 }
 
 const runTool = (args) => spawnSync(process.execPath, [TOOL, ...args], { encoding: 'utf8', env: { ...process.env, ...ENV }, maxBuffer: 16 * 1024 * 1024 });
+
+test('tracked local art is packaged and measured once, while distinct case collisions remain errors', (t) => {
+  const { dir, put } = fakeCheckout();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const emote = 'public/assets/local/emoticon/ciallo/pic_ciallo_lena_battle.png';
+  put(emote, PNG);
+  const options = { allowDirty: true, scan: false, measure: false };
+  const baseline = plan(dir, options);
+  const p = plan(dir, { ...options, paths: [...baseline.tracked, emote] });
+  assert.equal(p.files.filter((f) => f === emote).length, 1);
+  assert.deepEqual(p.problems, []);
+  const total = p.files.reduce((n, f) => n + fs.statSync(path.join(dir, f)).size, 0);
+  assert.equal(p.bytes.total, total, 'tracked and art are overlapping categories, not additive byte totals');
+  const otherCase = emote.replace('lena', 'LENA');
+  const colliding = plan(dir, { ...options, paths: [...baseline.tracked, emote, otherCase] });
+  assert.ok(colliding.problems.some((s) => s.startsWith('paths differ only in case') && s.includes(otherCase)));
+});
+
 const listed = (stdout) => stdout.split('\n').filter((l) => l.startsWith('file ')).map((l) => l.slice(5));
 
 const SHIPPED_TRACKED = ['CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'README.md', 'THIRD-PARTY-NOTICES.md', 'data/assets.json', 'data/chess.json',

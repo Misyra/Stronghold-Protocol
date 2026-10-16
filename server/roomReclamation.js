@@ -43,7 +43,7 @@ export class RoomReclamation {
       if (room.disposed || this.members(room).some((seat) => this.online(seat))) continue;
       lobby.disposeRoom(room, 'capacity');
       reclaimed++;
-      lobby.onCheckpoint?.(room.code, null);
+      lobby.checkpoint(room.code, null);
     }
     this.state.reclaimed += reclaimed;
     if (lobby.rooms.size <= target) this.state.active = false;

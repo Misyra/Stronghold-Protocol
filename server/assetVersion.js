@@ -7,9 +7,39 @@ import { assetCdnUrl } from '../shared/assetCdn.js';
 const ROOTS = /^\/(?:js|css|fonts|vendor|assets|data|shared|sim|media)\/|^\/data\.js(?:[?#]|$)/;
 export const VERSION_PREFIX = '/_v/';
 
+const CACHE_VERSION = 1;
+const CACHE_DIR = fileURLToPath(new URL('../.cache/asset-version/', import.meta.url));
+const fileIdentity = (stat) => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+
+function defaultCacheFile(mounts) {
+  const scope = mounts.map((m) => [path.resolve(m.dir), m.prefix, [...(m.only || [])].sort(), [...(m.deny || [])].sort()]);
+  return path.join(CACHE_DIR, createHash('sha256').update(JSON.stringify(scope)).digest('hex') + '.json');
+}
+
+function readDigestCache(file) {
+  if (!file) return {};
+  try {
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return doc?.version === CACHE_VERSION && doc.files && typeof doc.files === 'object' && !Array.isArray(doc.files) ? doc.files : {};
+  } catch { return {}; }
+}
+
+function writeDigestCache(file, files) {
+  if (!file) return;
+  const tmp = `${file}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify({ version: CACHE_VERSION, files }), { mode: 0o600, flag: 'wx' });
+    fs.renameSync(tmp, file);
+  } catch {
+    // Read-only deployments still start correctly; a partial cache is never published.
+  } finally { try { fs.unlinkSync(tmp); } catch {} }
+}
+
 /** Content-based namespaces, computed at startup. Transformed data and page
- * releases retain art dependencies; unchanged executable modules keep their URLs. */
-export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }) {
+ * releases retain art dependencies; unchanged executable modules keep their URLs.
+ * Local file identities only validate the optional digest cache; public tags contain content, never mtimes. */
+export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }, { cacheFile = defaultCacheFile(mounts) } = {}) {
   // A change to URL/response rewriting must also invalidate the bytes it previously generated.
   const transformer = Buffer.concat([fs.readFileSync(new URL(import.meta.url)), fs.readFileSync(new URL('../shared/assetCdn.js', import.meta.url))]);
   const runtimeHash = createHash('sha256').update(shim).update(transformer).update(fs.readFileSync(new URL('./index.js', import.meta.url)));
@@ -17,6 +47,8 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
   const isArt = (url) => /^\/(?:assets|fonts|media)\//.test(url);
   const isCode = (url) => /^\/(?:js|vendor|shared|sim)\//.test(url) || /^\/data\.js(?:[?#]|$)/.test(url);
   const signatures = new Map();
+  const cached = readDigestCache(cacheFile), digests = {};
+  let cacheChanged = false;
   const chunk = Buffer.allocUnsafe(1024 * 1024);
   function walk(dir, prefix, mount) {
     let entries;
@@ -27,21 +59,29 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
       if (e.isDirectory()) { walk(abs, url + '/', mount); continue; }
       if (!e.isFile() || mount.deny?.has(e.name.toLowerCase()) || (mount.only && !mount.only.has(path.extname(e.name).toLowerCase()))) continue;
       const stat = fs.statSync(abs);
-      signatures.set(abs, `${stat.size}:${stat.mtimeMs}`);
+      const identity = fileIdentity(stat);
+      signatures.set(abs, identity);
       const hash = isArt(url) ? artHash : runtimeHash;
-      hash.update(url + '\0');
-      // Never put mtime in a public fingerprint: checkouts on different machines
-      // must identify identical bytes identically. Stream large files in bounded
-      // chunks instead of allocating the whole art tree at startup.
-      const fd = fs.openSync(abs, 'r');
-      try {
-        let bytes;
-        while ((bytes = fs.readSync(fd, chunk, 0, chunk.length, null)) > 0) hash.update(chunk.subarray(0, bytes));
-      } finally { fs.closeSync(fd); }
-      hash.update('\0');
+      const entry = cached[abs];
+      let digest = Array.isArray(entry) && entry[0] === identity && /^[a-f0-9]{64}$/.test(entry[1]) ? entry[1] : null;
+      if (!digest) {
+        // Hash new/changed files once, streaming large art in bounded chunks. ctime/ino also invalidate
+        // an equal-size replacement or an edit whose old mtime was restored.
+        const content = createHash('sha256'), fd = fs.openSync(abs, 'r');
+        try {
+          let bytes;
+          while ((bytes = fs.readSync(fd, chunk, 0, chunk.length, null)) > 0) content.update(chunk.subarray(0, bytes));
+          if (fileIdentity(fs.fstatSync(fd)) !== identity) throw new Error(`Asset changed while hashing: ${abs}`);
+          digest = content.digest('hex');
+        } finally { fs.closeSync(fd); }
+        cacheChanged = true;
+      }
+      digests[abs] = [identity, digest];
+      hash.update(url + '\0' + digest + '\0');
     }
   }
   for (const m of mounts) walk(m.dir, m.prefix, m);
+  if (cacheChanged || Object.keys(cached).length !== Object.keys(digests).length) writeDigestCache(cacheFile, digests);
   const artTag = artHash.digest('hex').slice(0, 16);
   const runtimeTag = runtimeHash.digest('hex').slice(0, 16);
   // JSON/CSS and preload manifests embed art addresses, so their release MUST
@@ -85,7 +125,7 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
     : 'null';
   return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spRuntimeVersion=${JSON.stringify(runtimeTag)};globalThis.__spArtVersion=${JSON.stringify(artTag)};globalThis.__spAssetCdn=${settings};globalThis.__spManifestReady=${manifestFetch};</script>`);
   }
-  return { tag, artTag, runtimeTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === `${stat.size}:${stat.mtimeMs}` };
+  return { tag, artTag, runtimeTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === fileIdentity(stat) };
 }
 
 /** The CDN release tag shipped with the repo (`.assets-cdn-version`, written by tools/r2-sync.mjs and

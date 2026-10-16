@@ -4,11 +4,77 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { spawnSync } from 'node:child_process';
 import { createStaticHandler } from '../server/index.js';
 import { resourceUrl, resourceCache } from '../public/js/resourceUrl.js';
 import { mediaUrl } from '../public/js/media.js';
 import { validSpine } from '../public/js/assets.js';
 import { createAssetVersion } from '../server/assetVersion.js';
+
+test('digest cache survives a new process and invalidates edits, replacements, additions and deletions', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-release-cache-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'assets'));
+  const art = path.join(root, 'assets/a.png'), extra = path.join(root, 'assets/b.png');
+  const cacheFile = path.join(root, '.cache/digests.json');
+  fs.writeFileSync(art, 'original');
+  fs.utimesSync(art, new Date(100000), new Date(100000));
+  const mounts = [{ dir: root, prefix: '/' }];
+  const make = () => createAssetVersion(mounts, 'shim', undefined, { cacheFile });
+  const first = make();
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import fs from 'node:fs';
+    import { createAssetVersion } from ${JSON.stringify(new URL('../server/assetVersion.js', import.meta.url).href)};
+    const open = fs.openSync;
+    fs.openSync = (file, ...args) => {
+      if (file === ${JSON.stringify(art)}) throw new Error('unchanged art must not be opened again');
+      return open(file, ...args);
+    };
+    console.log(createAssetVersion(${JSON.stringify(mounts)}, 'shim', undefined, { cacheFile: ${JSON.stringify(cacheFile)} }).tag);
+  `], { encoding: 'utf8' });
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stdout.trim(), first.tag);
+  const oldStat = fs.statSync(art);
+  fs.writeFileSync(art, 'modified'); // same size; restore mtime to defeat a size/mtime-only cache
+  fs.utimesSync(art, oldStat.atime, oldStat.mtime);
+  assert.equal(fs.statSync(art).mtimeMs, oldStat.mtimeMs);
+  assert.equal(fs.statSync(art).size, oldStat.size);
+  const changed = make();
+  assert.notEqual(changed.artTag, first.artTag);
+  assert.equal(first.matchesFile(art, fs.statSync(art)), false);
+  const replacement = path.join(root, '.replacement');
+  fs.writeFileSync(replacement, 'replaced');
+  fs.utimesSync(replacement, oldStat.atime, oldStat.mtime);
+  fs.renameSync(replacement, art);
+  const replaced = make();
+  assert.notEqual(replaced.artTag, changed.artTag);
+  fs.writeFileSync(extra, 'newly installed skin');
+  assert.notEqual(make().artTag, replaced.artTag);
+  fs.unlinkSync(extra);
+  assert.equal(make().artTag, replaced.artTag);
+  assert.ok(!Object.hasOwn(JSON.parse(fs.readFileSync(cacheFile, 'utf8')).files, extra));
+  fs.writeFileSync(cacheFile, '{broken');
+  assert.equal(make().tag, replaced.tag, 'a corrupt cache falls back to content hashing');
+  const invalid = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+  invalid.files[art][1] = 'invalid digest';
+  fs.writeFileSync(cacheFile, JSON.stringify(invalid));
+  assert.equal(make().tag, replaced.tag);
+  assert.equal(createAssetVersion(mounts, 'shim', undefined, { cacheFile: null }).tag, replaced.tag);
+});
+
+test('release cache is optional and mount filters do not reuse excluded files', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-release-filters-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'a.js'), 'code'); fs.writeFileSync(path.join(root, 'b.css'), 'style');
+  const cacheFile = path.join(root, '.cache/digests.json');
+  const mounts = [{ dir: root, prefix: '/' }];
+  const full = createAssetVersion(mounts, 'shim', undefined, { cacheFile });
+  const filtered = [{ ...mounts[0], only: new Set(['.js']) }];
+  assert.notEqual(createAssetVersion(filtered, 'shim', undefined, { cacheFile }).tag, full.tag);
+  assert.equal(createAssetVersion(mounts, 'shim', undefined, { cacheFile }).tag, full.tag);
+  const blocked = path.join(root, '.blocked'); fs.mkdirSync(blocked);
+  assert.equal(createAssetVersion(mounts, 'shim', undefined, { cacheFile: blocked }).tag, full.tag, 'unwritable cache is nonfatal');
+});
 
 test('release content is stable across mtimes and executable URLs survive art/CDN updates', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-content-release-'));

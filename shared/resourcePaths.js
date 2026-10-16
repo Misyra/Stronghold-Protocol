@@ -1,10 +1,11 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later), commit a94c720.
-// Board descriptions can retain their original bytes across local and CDN hosts.
-export function isBoardResourceJson(url) {
+// Extracted render descriptions use asset names/relative paths resolved by the renderer, not host URLs.
+// Preserve their bytes across local/CDN hosts so ZIP imports can verify their content hashes.
+export function isRawResourceJson(url) {
   let pathname;
   try { pathname = new URL(String(url), 'https://resources.invalid').pathname; } catch { return false; }
   if (pathname.startsWith('/build/')) return false;
-  return /\/assets\/local\/map\/(?:fx\/(?:materials|prefab)|autochess\/(?:materials|tiles))\.json$/.test(pathname);
+  return /\/assets\/local\/(?:fx|map|mesh|scene)\/[^?#]+\.json$/.test(pathname);
 }
 
 /** Match renderer paths without encoding CDN hosts or existing escapes again. */

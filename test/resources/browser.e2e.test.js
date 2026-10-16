@@ -671,7 +671,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.deepEqual(problems, []);
   });
 
-  test('Chrome import supplements host-rewritten CSS/JSON only, and repeating the import needs no downloads', async (t) => {
+  test('Chrome imports render JSON and host-rewritten font CSS without downloads, including repeated imports', async (t) => {
     const { startServer } = await import('../../server/index.js');
     const install = makeInstall({ dynamic: true });
     const local = await startServer({ port: 0, host: '127.0.0.1', quiet: true, publicDir: install.publicDir,
@@ -694,17 +694,15 @@ describe('offline resources in headless Chrome', { skip }, () => {
       return { imported: outcome.imported, skipped: outcome.skippedPackage, fingerprint: outcome.skipReasons.fingerprint };
     });
     await page.waitForFunction('window.__res.state().complete && window.__res.state().phase === "ready"');
-    assert.deepEqual(result, { imported: 3, skipped: 2, fingerprint: 2 });
-    assert.equal(requested.length, 2);
-    assert.ok(requested.some((url) => url.endsWith('/fonts/fonts.css')));
-    assert.ok(requested.some((url) => url.endsWith('/assets/local/map/common/materials.json')));
+    assert.deepEqual(result, { imported: 5, skipped: 0, fingerprint: 0 });
+    assert.deepEqual(requested, []);
     requested.length = 0;
     const repeat = await page.evaluate(async () => {
       const outcome = await window.__res.importResources(window.__package);
       return { imported: outcome.imported, already: outcome.already, skipped: outcome.skippedPackage };
     });
     await page.waitForFunction('window.__res.state().complete && window.__res.state().phase === "ready"');
-    assert.deepEqual(repeat, { imported: 0, already: 3, skipped: 2 });
+    assert.deepEqual(repeat, { imported: 0, already: 5, skipped: 0 });
     assert.deepEqual(requested, []); assert.deepEqual(problems, []);
   });
 

@@ -31,6 +31,16 @@ const INDEX_FLUSH_EVERY = 64;
 const SMALL_IMPORT_BYTES = 256 * 1024;
 const IMPORT_BUFFER_BYTES = 4 * SMALL_IMPORT_BYTES;
 
+/** Large metadata scans share the page with input/animation; workers and Node have no page to yield to. */
+function scanBudget() {
+  const interactive = typeof document !== 'undefined';
+  let deadline = performance.now() + 8, steps = 0;
+  return () => {
+    if (!interactive || ++steps % 256 || performance.now() < deadline) return null;
+    return new Promise((resolve) => setTimeout(resolve, 0)).then(() => { deadline = performance.now() + 8; });
+  };
+}
+
 /**
  * The 干员皮肤 selection: the `charId/skinId` keys the player has equipped in this browser. An empty set means no skin
  * is preloaded, which is the default (a full install is ~328 MiB, docs/SKINS.md). Accepts a list, a Set, `{ keys }` or
@@ -90,6 +100,8 @@ export class ResourceStore {
   /** Key → recorded hash across every card, as of the last `status()`: `#download` reads that snapshot instead of
    *  opening and parsing four indexes again (only `#status()` writes it). */
   #indexSnapshot = new Map();
+  /** Stable URL parsing is shared by status, progress and cache writes for the lifetime of this manifest. */
+  #absoluteUrls = new Map();
 
   /**
    * @param {{ files: { url: string, tier: number, size?: number, hash?: string }[], version: string, totalBytes?: number|null }} manifest
@@ -202,7 +214,58 @@ export class ResourceStore {
 
   /** Cache key (absolute URL) of a manifest entry. */
   keyOf(url) {
-    return absoluteUrl(url, this.origin) || String(url);
+    let key = this.#absoluteUrls.get(url);
+    if (!key) { key = absoluteUrl(url, this.origin) || String(url); this.#absoluteUrls.set(url, key); }
+    return key;
+  }
+
+  /** Build once per run; each completed cache key updates only its own rows, never rescans the full catalog. */
+  async #progressCounters(status) {
+    const current = { ...status, present: new Set(status.present),
+      groups: status.groups.map((row) => ({ ...row })), scopes: status.scopes.map((row) => ({ ...row })),
+      skins: status.skins.map((row) => ({ ...row })) };
+    const groups = new Map(current.groups.map((row) => [row.id, row]));
+    const scopes = new Map(current.scopes.map((row) => [row.id, row]));
+    const skins = new Map(current.skins.map((row) => [row.id, row]));
+    const selected = new Set(this.selectedFiles);
+    const byKey = new Map();
+    const checkpoint = scanBudget();
+    for (const file of this.files) {
+      const pause = checkpoint(); if (pause) await pause;
+      const key = this.keyOf(file.url);
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push(file);
+    }
+    return {
+      mark: (key) => {
+        if (current.present.has(key)) return;
+        current.present.add(key);
+        for (const file of byKey.get(key) || []) {
+          const size = Number.isSafeInteger(file.size) ? file.size : 0;
+          const skin = skins.get(file.skin);
+          if (skin) { skin.present++; skin.bytes += size; }
+          if (file.fx) current.fxPresent++;
+          if (this.languageOk(file)) {
+            const group = groups.get(resourceGroup(file));
+            const scope = scopes.get(resourceScope(file));
+            group.allPresent++; group.allCached += size;
+            scope.cached++; scope.bytes += size;
+          }
+          if (!selected.has(file) || !this.eligible(file)) continue;
+          const group = groups.get(resourceGroup(file));
+          group.present++; group.bytes += size;
+          current.count++; current.bytes += size;
+          if (Number.isSafeInteger(file.size)) current.sized++;
+          if (file.tier === TIER_ESSENTIAL) current.tier1Present++; else current.tier2Present++;
+        }
+        current.complete = current.wanted > 0 && current.count >= current.wanted;
+      },
+      snapshot: () => {
+        const { present: _present, ...snapshot } = current;
+        return { ...snapshot, groups: current.groups.map((row) => ({ ...row })),
+          scopes: current.scopes.map((row) => ({ ...row })), skins: current.skins.map((row) => ({ ...row })) };
+      },
+    };
   }
 
   /** read(file) returns bytes or a locally verified resource. Callers own the download lock. */
@@ -242,14 +305,7 @@ export class ResourceStore {
     };
     const before = await this.status();
     const allowed = new Set(this.files);
-    const groups = new Map(before.groups.map((group) => [group.id, group]));
-    const byKey = new Map();
-    for (const file of this.selectedFiles) {
-      if (!this.eligible(file)) continue;
-      const key = this.keyOf(file.url);
-      if (!byKey.has(key)) byKey.set(key, []);
-      byKey.get(key).push(file);
-    }
+    const progress = await this.#progressCounters(before);
     let imported = 0;
     let already = 0;
     let processed = 0;
@@ -268,23 +324,10 @@ export class ResourceStore {
       finally { timings.indexWriteMs += performance.now() - start; }
     };
     // Update counters per completed key; publishing copies only the small category list, not the whole manifest.
-    const getStatus = () => {
-      const { present: _present, ...status } = before;
-      return { ...status, groups: before.groups.map((group) => ({ ...group })) };
-    };
+    const getStatus = () => progress.snapshot();
     const markPresent = (key) => {
-      if (before.present.has(key)) return;
+      progress.mark(key);
       before.present.add(key);
-      for (const file of byKey.get(key) || []) {
-        before.count++;
-        if (file.tier === TIER_ESSENTIAL) before.tier1Present++; else before.tier2Present++;
-        const group = groups.get(resourceGroup(file));
-        group.allPresent++;
-        if (Number.isSafeInteger(file.size)) group.allCached += file.size;
-        group.present++;
-        if (Number.isSafeInteger(file.size)) { before.bytes += file.size; before.sized++; group.bytes += file.size; }
-      }
-      before.complete = before.wanted > 0 && before.count >= before.wanted;
     };
     const one = async (entry) => {
       check();
@@ -536,7 +579,12 @@ export class ResourceStore {
     // What every manifest entry is called and which card it belongs in: a listing can then tell whether some card holds
     // an entry that belongs elsewhere (#tidy) or one the manifest no longer wants (prune), instead of both passes
     // enumerating every card again on a run that changes nothing.
-    const byKey = new Map(this.files.map((f) => [this.keyOf(f.url), f]));
+    const checkpoint = scanBudget();
+    const byKey = new Map();
+    for (const file of this.files) {
+      const pause = checkpoint(); if (pause) await pause;
+      byKey.set(this.keyOf(file.url), file);
+    }
     await Promise.all((await this.#shards()).map(async ({ name, cache }) => {
       // One query for the keys and one index read, started together: the pair is what makes a status check a
       // single round of cache metadata reads, and a refused enumeration must not delay the index by a whole query.
@@ -549,6 +597,7 @@ export class ResourceStore {
       const [keys, index] = await Promise.all([keysRead, indexRead]);
       if (this.#keysRefused.has(name)) refused = true;
       for (const key of keys) {
+        const pause = checkpoint(); if (pause) await pause;
         cached.add(key);
         if (key === indexKey) continue; // the index document is not an asset of the manifest
         const file = byKey.get(key);
@@ -556,6 +605,7 @@ export class ResourceStore {
         else if (this.shardName(file) !== name) misplaced = true;
       }
       for (const [key, hash] of Object.entries(index.files)) {
+        const pause = checkpoint(); if (pause) await pause;
         files.set(key, hash);
         if (!byKey.has(key)) stale = true; // a record of a file the manifest dropped
       }
@@ -566,7 +616,7 @@ export class ResourceStore {
     // A refused listing answers from the index, which says nothing about where an entry actually sits: the run has to
     // look for itself.
     if (refused) misplaced = true;
-    return { ...this.#tally(fresh), present: fresh, scan: refused ? 'index' : 'keys', misplaced, stale,
+    return { ...await this.#tally(fresh), present: fresh, scan: refused ? 'index' : 'keys', misplaced, stale,
       checkTimings: { statusMs: performance.now() - started, cacheKeysMs: keysMs, indexReadMs: indexMs } };
   }
 
@@ -631,7 +681,7 @@ export class ResourceStore {
   }
 
   /** Counters for a set of cached URLs (shared by status() and clear(), which must not re-create a cache). */
-  #tally(present) {
+  async #tally(present) {
     const selected = this.selectedFiles;
     const total = selected.length;
     const scopedSizes = this.voiceScope ? selected.filter((f) => Number.isSafeInteger(f.size)) : null;
@@ -648,7 +698,9 @@ export class ResourceStore {
     const groups = Object.fromEntries(Object.entries(RESOURCE_GROUPS).map(([id, group]) => [id,
       { id, ...group, total: 0, wanted: 0, present: 0, bytes: 0, totalBytes: 0, unknownSize: 0,
         allTotal: 0, allPresent: 0, allBytes: 0, allCached: 0, allUnknown: 0 }]));
+    const checkpoint = scanBudget();
     for (const f of selected) {
+      const pause = checkpoint(); if (pause) await pause;
       const hit = present.has(this.keyOf(f.url));
       const group = groups[resourceGroup(f)];
       group.total++;
@@ -670,6 +722,7 @@ export class ResourceStore {
     // single pass over `this.files` that the groups need.
     const skins = new Map();
     for (const f of this.files) {
+      const pause = checkpoint(); if (pause) await pause;
       if (!isSkinKey(f.skin)) continue;
       let entry = skins.get(f.skin);
       if (!entry) {
@@ -694,6 +747,7 @@ export class ResourceStore {
     let fxFiles = 0;
     let fxPresent = 0;
     for (const f of this.files) {
+      const pause = checkpoint(); if (pause) await pause;
       if (!f.fx) continue;
       fxFiles++;
       if (present.has(this.keyOf(f.url))) fxPresent++;
@@ -705,6 +759,7 @@ export class ResourceStore {
     // while a switch is toggled (docs/ASSETS.md). The catch-all card is the whole tree minus the other three.
     const scopes = new Map(RESOURCE_SCOPES.map((id) => [id, { id, total: 0, cached: 0, bytes: 0, totalBytes: 0 }]));
     for (const f of this.files) {
+      const pause = checkpoint(); if (pause) await pause;
       if (!this.languageOk(f)) continue;
       const group = groups[resourceGroup(f)];
       const scope = scopes.get(resourceScope(f));
@@ -852,6 +907,8 @@ export class ResourceStore {
     };
     const start = await this.status();
     checkAbort(signal);
+    const progressCounters = await this.#progressCounters(start);
+    checkAbort(signal);
     const work = this.selectedFiles.filter((f) => wanted.has(f.tier) && this.eligible(f) && !start.present.has(this.keyOf(f.url)));
     let done = start.count;
     let bytes = start.bytes;
@@ -868,9 +925,9 @@ export class ResourceStore {
     let lastEmit = 0;
     // Exactly the counters of status(): the UI maps one shape for both, so a field can never be missing mid-run.
     const progress = (current = null) => {
-      const tally = this.#tally(start.present);
+      const tally = progressCounters.snapshot();
       return {
-        phase: 'download', count: done, total: start.total, wanted: start.wanted, skipped: start.skipped,
+        ...tally, phase: 'download', count: done, total: start.total, wanted: start.wanted, skipped: start.skipped,
         bytes, totalBytes: start.totalBytes, sized, sizedTotal: start.sizedTotal,
         tier1: start.tier1, tier1Present: tier1Done, tier2: start.tier2, tier2Present: tier2Done,
         tier1Wanted: start.tier1Wanted, tier2Wanted: start.tier2Wanted,
@@ -881,7 +938,7 @@ export class ResourceStore {
     const emit = (current = null, force = false) => {
       if (!onProgress) return;
       const t = this.now();
-      if (!force && t - lastEmit < 120) return;
+      if (!force && t - lastEmit < 250) return;
       lastEmit = t;
       onProgress(progress(current));
     };
@@ -942,6 +999,7 @@ export class ResourceStore {
             if (++pendingFlush >= INDEX_FLUSH_EVERY) { pendingFlush = 0; await flushIndexes(); }
           }
           done++;
+          progressCounters.mark(key);
           start.present.add(key);
           if (file.tier === TIER_ESSENTIAL) tier1Done++; else tier2Done++;
           if (Number.isSafeInteger(file.size)) { bytes += file.size; sized++; }
@@ -1038,7 +1096,7 @@ export class ResourceStore {
     }
     this.#keysRefused.clear();
     this.statusPromise = null;
-    return { ...this.#tally(new Set()), present: new Set(), scan: 'keys' };
+    return { ...await this.#tally(new Set()), present: new Set(), scan: 'keys' };
   }
 
   /** Drop the caches of other versions (a new asset manifest frees the files of the previous one). */

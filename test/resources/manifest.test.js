@@ -264,6 +264,33 @@ describe('resource manifest building', () => {
 });
 
 describe('the served resource manifest', () => {
+  test('render JSON stays byte-identical and transformed font CSS hashes the served bytes for ZIP import', async (t) => {
+    const raw = ['/assets/local/fx/index.json', '/assets/local/fx/textures.json', '/assets/local/fx/mesh/a.json',
+      '/assets/local/fx/prefabs/a.json', '/assets/local/map/autochesssand/materials.json',
+      '/assets/local/mesh/trap_110/prefab.json', '/assets/local/scene/stage/scene.json'];
+    const css = '/fonts/fonts.css', font = '/fonts/a.woff2', config = '/assets/config.json';
+    const inst = install({ assets: { files: [...raw, css, font, config] }, localDoc: null,
+      files: [...raw, css, font, config].map((url) => url.slice(1)) });
+    const body = JSON.stringify({ texture: '/assets/local/fx/tex/a.webp', value: [0, 1, 2] }, null, 2) + '\n';
+    for (const url of [...raw, config]) fs.writeFileSync(path.join(inst.publicDir, url), body);
+    fs.writeFileSync(path.join(inst.publicDir, css), "@font-face { src: url('/fonts/a.woff2'); }\n");
+    const srv = await serve(inst);
+    t.after(() => { srv.close(); inst.cleanup(); });
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    const manifest = await (await fetch(base + '/data/resource-manifest.json')).json();
+    for (const url of [...raw, css, config]) {
+      const file = manifest.files.find((f) => f.url.endsWith(url));
+      assert.ok(file, url);
+      const response = await fetch(base + file.url);
+      assert.equal(response.status, 200);
+      const served = await response.text();
+      assert.equal(file.hash, createHash('sha1').update(served).digest('hex').slice(0, 12), url);
+      assert.equal(file.size, Buffer.byteLength(served), url);
+      if (raw.includes(url)) assert.equal(served, body, 'render JSON preserves whitespace and raw asset references');
+      else assert.match(served, /\/_v\/[a-f0-9]{16}\//, 'host-dependent CSS/JSON still rewrites its references');
+    }
+  });
+
   test('versioned board JSON keeps raw bytes and content hashes, including crops beside a WebP atlas', async (t) => {
     const atlas = '/assets/local/map/autochess/TX_autochessi_D.webp';
     const sidecars = ['/assets/local/map/autochess/tiles.json', '/assets/local/map/autochess/materials.json',
@@ -311,11 +338,14 @@ describe('the served resource manifest', () => {
     const m = await (await fetch(base + '/data/resource-manifest.json')).json();
     assert.equal(m.count, 2);
     const material = m.files.find((f) => f.url.endsWith('material.json'));
-    assert.match(material.hash, /^syn-/);
+    assert.match(material.hash, /^[a-f0-9]{12}$/);
     assert.match(material.url, /^\/_v\/[a-f0-9]{16}\/assets\//);
     const res = await fetch(base + material.url);
     assert.equal(res.status, 200);
-    assert.match((await res.json()).texture, /^\/_v\/[a-f0-9]{16}\/assets\/map\/texture.png$/);
+    const body = await res.text();
+    assert.equal(material.hash, createHash('sha1').update(body).digest('hex').slice(0, 12));
+    assert.equal(material.size, Buffer.byteLength(body));
+    assert.match(JSON.parse(body).texture, /^\/_v\/[a-f0-9]{16}\/assets\/map\/texture.png$/);
   });
 
   test('lists the files, marks the ones on disk with their size and reports the manifest version', async (t) => {

@@ -5,13 +5,28 @@ import { startAnnouncementPolling } from './announcementClient.js';
 import { createAnnouncementDisplay } from './announcementDisplay.js';
 import { t } from '../../../shared/i18n.js';
 
-const announcementUi = createStore({ open: false });
+const announcementUi = createStore({ open: false, notice: null });
 const openAnnouncement = () => announcementUi.set({ open: true });
 
 export function AnnouncementButton({ class: cls, square = false, variant = 'ghost' }) {
   return html`<${Button} class=${cls} size="sm" variant=${variant} square=${square} icon="info"
     title=${t('服务器公告')} aria-label=${t('服务器公告')} onKeyDown=${(e) => e.stopPropagation()}
     onClick=${openAnnouncement}>${square ? null : t('公告')}<//>`;
+}
+
+// The lobby preview shares the banner's polling host, including expiry and withdrawal.
+export function AnnouncementCard() {
+  const notice = useStore((s) => s.notice, Object.is, announcementUi);
+  const active = notice && performance.now() < notice.deadline;
+  useTicker(active ? 1000 : 0);
+  return html`<button type="button" class="hub-notice" aria-label=${t('查看完整公告')}
+    onKeyDown=${(e) => e.stopPropagation()} onClick=${openAnnouncement}>
+    <span class="hub-notice__head"><span class="hub-notice__label">${t('公告')}<small>NOTICE</small></span>
+      <span class="hub-notice__view">${t('查看')}<${Icon} name="chevronRight" /></span></span>
+    ${active ? html`<strong class="hub-notice__title">${notice.title}</strong>
+      <span class="hub-notice__text">${notice.text}</span>`
+      : html`<span class="hub-notice__text hub-notice__text--empty">${t('当前暂无公告')}</span>`}
+  </button>`;
 }
 
 function AnnouncementStrip({ notice, onClose }) {
@@ -45,16 +60,15 @@ function AnnouncementStrip({ notice, onClose }) {
   </aside>`;
 }
 
-// One polling host supplies both the strip and the manually opened viewer on every screen.
+// One polling host supplies the strip, lobby preview and manually opened viewer on every screen.
 export function AnnouncementBanner() {
-  const [notice, setNotice] = useState(null);
-  const { open } = useStore((s) => s, Object.is, announcementUi);
+  const { open, notice } = useStore((s) => s, Object.is, announcementUi);
   const [display] = useState(() => {
     let storage; try { storage = globalThis.localStorage; } catch { storage = null; }
     return createAnnouncementDisplay({ storage });
   });
   const [, setDismissed] = useState(0);
-  useEffect(() => startAnnouncementPolling({ onChange: setNotice }), []);
+  useEffect(() => startAnnouncementPolling({ onChange: (notice) => announcementUi.set({ notice }) }), []);
   const active = notice && performance.now() < notice.deadline;
   useTicker(active ? 1000 : 0);
   const dismiss = () => {

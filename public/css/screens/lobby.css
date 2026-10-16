@@ -682,7 +682,7 @@
   mask-image: radial-gradient(circle, transparent 0 17%, #000 18%); -webkit-mask-image: radial-gradient(circle, transparent 0 17%, #000 18%);
   animation: hub-sweep 9s linear infinite; }
 
-/* left column — top: the bottom-left corner belongs to the lobby chat (ui/communityChat.js) */
+/* Left column: shortcuts at the top, design credit and repository at the bottom. */
 .hub-side { grid-column: 1; grid-row: 1 / -1; position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: flex-start;
   gap: .14rem; min-width: 0; padding-top: .3rem; }
 .hub-tile { display: flex !important; align-items: center; gap: .14rem; width: 100%; min-height: .74rem; padding: .1rem .16rem;
@@ -695,9 +695,35 @@
 .hub-tile__en { font: 600 .1rem/1 ui-monospace, Consolas, monospace; letter-spacing: .18em; color: var(--text-dim); }
 .hub-side .tips { margin-top: .04rem; background: rgba(8, 14, 13, .72); }
 
+.hub-credits { margin-top: auto; width: min(100%, 2.8rem); padding: .06rem .08rem; color: var(--text-dim);
+  font-size: calc(.1 * var(--utility-text, var(--t))); line-height: 1.45; overflow-wrap: anywhere; }
+.hub-credits p { margin: 0; }
+.hub-credits p + p { margin-top: .02rem; }
+.hub-credits strong { color: var(--text-hi); font-weight: 700; }
+.hub-credits__group strong { color: var(--mint-400); }
+.hub-credits a { display: inline-flex; align-items: center; gap: .05rem; min-height: 24px; color: var(--mint-400); }
+.hub-credits a:hover { color: var(--text-hi); }
+.hub-credits a:focus-visible, .hub-notice:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
+
 /* right column: the S.W.E.E.P.报告 and 干员调配 plates, above the entries (the 缺人同盟 card was removed with the rest of
    the public room directory — see screens/lobby.js) */
 .hub-right { grid-column: 3; grid-row: 1; position: relative; z-index: 1; display: flex; flex-direction: column; gap: .16rem; min-width: 0; min-height: 0; padding-top: .06rem; }
+
+.hub-notice { display: flex; flex-direction: column; gap: .08rem; width: 100%; min-width: 0; padding: .12rem .14rem;
+  border: 1px solid rgba(223, 230, 226, .16); border-top: 2px solid var(--mint-500);
+  background: rgba(4, 10, 9, .88); color: var(--text-hi); text-align: left; cursor: pointer; }
+.hub-notice:hover { background: rgba(16, 28, 24, .94); border-color: var(--mint-a35); }
+.hub-notice__head { display: flex; align-items: center; justify-content: space-between; gap: .12rem;
+  padding-bottom: .08rem; border-bottom: 1px solid rgba(223, 230, 226, .1); }
+.hub-notice__label { display: flex; align-items: center; gap: .08rem; font-size: calc(.17 * var(--utility-text, var(--t))); font-weight: 800; }
+.hub-notice__label::before { content: ''; width: .06rem; height: .06rem; border-radius: 50%; background: var(--mint-400); }
+.hub-notice__label small { font-size: calc(.09 * var(--utility-text, var(--t))); letter-spacing: .18em; color: var(--mint-400); }
+.hub-notice__view { display: flex; align-items: center; gap: .03rem; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.hub-notice__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  font-size: calc(.16 * var(--utility-text, var(--t))); line-height: 1.4; overflow-wrap: anywhere; }
+.hub-notice__text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  font-size: calc(.13 * var(--utility-text, var(--t))); line-height: 1.5; color: var(--text-dim); white-space: pre-line; overflow-wrap: anywhere; }
+.hub-notice__text--empty { padding: .06rem 0; }
 
 /* light plates with bracket marks (S.W.E.E.P.报告 opens screens/sweep.js, 干员调配 is loadout.js's LoadoutButton) */
 .hub-right__plates { display: flex; flex-direction: column; gap: .12rem; }

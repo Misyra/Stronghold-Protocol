@@ -28,7 +28,7 @@ import { useHubBackdrop, HubBackdrop, HubRadar, BackdropSettings, BackdropGlyph,
 
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
-import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, MAX_SPECTATORS, modeIdFor, ERR, ERR_TEXT } from '../../../shared/constants.js';
+import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, MAX_SPECTATORS, modeIdFor, ERR, ERR_TEXT, REPOSITORY_URL, APP_VERSION } from '../../../shared/constants.js';
 import { RANDOM_MODE } from '../../../shared/randomMode.js';
 import { html, Button, Icon, MicroLabel, Panel, TextField, PingPill, AvatarFrame, Tooltip, Spinner, DifficultyIcon, doctorNo } from '../ui/components.js';
 import { toast, toastError } from '../ui/toasts.js';
@@ -36,7 +36,7 @@ import { GuideButton, openGuide } from '../ui/guide.js';
 import { openStats } from './stats.js';
 import { AchievementEntry, AchievementPanel } from '../ui/achievements.js';
 import { FriendsTile } from '../ui/friends.js';
-import { AnnouncementButton } from '../ui/announcement.js';
+import { AnnouncementButton, AnnouncementCard } from '../ui/announcement.js';
 import { SettingsButton } from '../ui/settings.js';
 import { PwaInstallButton, fullscreen } from '../ui/device.js';
 import { LoadoutButton } from './loadout.js';
@@ -776,9 +776,16 @@ export function LobbyScreen() {
         <${HubTile} icon="key" label=${t('密钥加入')} en="JOIN WITH KEY" onClick=${() => setJoinOpen(true)} />
         <${FriendsTile} />
         <${TipsPanel} />
+        <footer class="hub-credits">
+          <p class="hub-credits__group">${t('交流群')} <strong class="num">709955459</strong></p>
+          <p>${t('界面设计')} <strong>Bilibili@雨千代chiyo</strong></p>
+          <p>${t('非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有')}</p>
+          <p><a href=${REPOSITORY_URL} target="_blank" rel="noopener noreferrer">${t('项目仓库')}<${Icon} name="chevronRight" /></a><span> · v${APP_VERSION}</span></p>
+        </footer>
       </aside>
 
       <aside class="hub-right">
+        <${AnnouncementCard} />
         <div class="hub-right__plates">
           <${SweepPlate} onClick=${() => setSweepOpen(true)} />
           <${LoadoutButton} from="lobby" size="lg" class="hub-plate hub-plate--loadout" label=${t('干员调配')} />

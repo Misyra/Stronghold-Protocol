@@ -860,7 +860,7 @@ export class Network {
         resumed = true;
       }
       const ip = normalizeIp(conn.ip);
-      const admission = this.foreignSessions.prepare(ip && !isLocalIp(ip) ? ip : '', session);
+      const admission = this.foreignSessions.prepare(ip, session);
       if (!admission.ok) {
         if (admission.suppressed !== null) this.log.info('[audit] ' + JSON.stringify({ at: new Date(now).toISOString(),
           action: 'session.foreignLimit.denied', ip: conn.ip, network: conn.key, country: admission.country,

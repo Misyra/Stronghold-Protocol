@@ -1813,7 +1813,7 @@
   "由于你的ip属于海外，当前AI队友达到上限，如果你开了代理请关闭代理，或者前往联机大厅匹配队友": "Your IP is outside mainland China and the AI teammate limit has been reached. Disable your proxy if you are using one, or find teammates through matchmaking in the online lobby.",
   "AI 队友已禁用": "AI teammates disabled",
   "本服务器暂时仅对中国大陆服务": "This server is temporarily available only in mainland China.",
-  "当前海外 IP 已有在线玩家，请关闭原窗口或关闭代理后重试": "This overseas IP already has an online player. Close the original window or disable your proxy and try again.",
+  "当前 IP 已有在线玩家，请关闭原窗口后重试": "This IP already has an online player. Close the original window and try again.",
   "帧率上限": "Frame Rate Limit",
   "不限": "Uncapped",
   "不限帧率": "Unlimited frame rate",

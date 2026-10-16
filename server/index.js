@@ -186,7 +186,7 @@ export async function startServer(opts = {}) {
     lobbyOptions.allowForeignConnections = savedRoomConfig.allowForeignConnections;
   if (opts.maxForeignSessionsPerIp == null && Number.isSafeInteger(savedRoomConfig?.maxForeignSessionsPerIp))
     lobbyOptions.maxForeignSessionsPerIp = savedRoomConfig.maxForeignSessionsPerIp;
-  log.info(`[sessions] foreign per-IP limit: ${lobbyOptions.limitForeignSessions ? lobbyOptions.maxForeignSessionsPerIp : 'off'}, GeoIP ${countryLookup ? 'ready' : 'unavailable'}`);
+  log.info(`[sessions] all-IP limit: ${lobbyOptions.limitForeignSessions ? lobbyOptions.maxForeignSessionsPerIp : 'off'}, GeoIP ${countryLookup ? 'ready' : 'unavailable'}`);
   log.info(`[connections] foreign access: ${lobbyOptions.allowForeignConnections ? 'allowed' : 'blocked when GeoIP identifies a foreign source'}`);
   // 分享模式的启动自述：排障的第一件事就是「这个站点是哪种模式、往哪里发」，而这两件事都只来自启动配置。
   log.info(`[portal] site ${siteId ?? 'unset'} · room share ${portalRoom.mode}` +

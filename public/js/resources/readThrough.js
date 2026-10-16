@@ -1,7 +1,7 @@
 import { cachedResourceHash, markResourceHeaders } from './cacheMetadata.js';
 import { resourceIdentity } from '../../../shared/resourcePaths.js';
 // Manifest-whitelisted read-through cache. The worker owns in-flight sharing; the page remains the sole index writer.
-import { CACHE_NAME, CONTENT_HASH_RE, MAX_FILE_BYTES, absoluteUrl, mediaCandidates, rangeResponse } from './common.js';
+import { CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, absoluteUrl, cacheNameForScope, mediaCandidates, rangeResponse, resourceScope } from './common.js';
 import { resourceDigests } from './integrity.js';
 import { fetchResource } from './network.js';
 import { handleResourceRequest } from './service.js';
@@ -54,8 +54,20 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
 
   async function load(file, key, generation) {
     let openError;
-    const cache = await caches.open(CACHE_NAME).catch((error) => { openError = error; return null; });
-    const cached = await cache?.match(key).catch(() => null);
+    const own = cacheNameForScope(resourceScope(file));
+    const cache = await caches.open(own).catch((error) => { openError = error; return null; });
+    // The file's own card first, then any other cache this app owns: an install from before the cards were split still
+    // holds these bytes in the catch-all cache (the page's tidy pass moves them), and they must not be fetched again.
+    let owner = cache;
+    let cached = await cache?.match(key).catch(() => null);
+    if (!cached) {
+      for (const name of (await caches.keys().catch(() => [])) || []) {
+        if (name === own || !name.startsWith(CACHE_PREFIX)) continue;
+        const other = await caches.open(name).catch(() => null);
+        const hit = await other?.match(key).catch(() => null);
+        if (hit) { owner = other; cached = hit; break; }
+      }
+    }
     if (cachedResourceHash(cached) === file.hash) return { response: cached, stored: true, downloaded: false };
     if (cached) {
       try {
@@ -66,6 +78,8 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
           return { response: marked, ...await persist(cache, key, marked, generation), downloaded: false };
         }
       } catch { /* unreadable cache entries must not prevent normal game loading */ }
+      // A stale copy in another card must not shadow the fresh bytes stored below.
+      if (owner !== cache) await owner.delete(key).catch(() => {});
     }
     const response = await fetchResource(key, { ...network, fetcher });
     const bytes = await response.arrayBuffer();
@@ -100,7 +114,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     if (!enabled || generation !== epoch) return null;
     let result;
     if (cachedOnly) {
-      const cache = await caches.open(CACHE_NAME);
+      const cache = await caches.open(cacheNameForScope(resourceScope(file)));
       const cached = await cache.match(url);
       // Only local writers issue this marker after verification. Raw network headers cannot reach this branch.
       if (cachedResourceHash(cached) !== hash) return null;

@@ -1,6 +1,4 @@
 {
-  "界面设计": "Interface design",
-  "防失联群": "Stay connected group",
   "_meta": {
     "type": "lang",
     "lang": "en",
@@ -16,6 +14,8 @@
     "complete": true
   },
   "_about": "English UI strings: Chinese msgid → English (shared/i18n.js t(); docs/I18N.md). Placeholders {name} and {n|one|other} as in the msgid; a 'context::msgid' key is a tc() variant. Seeded from GitHub PR #70 (branch en-translation) by @YuriRestia, reused with credit (NOTICE.md). Game texts are not here: data/i18n/en.json (tools/build-i18n.mjs).",
+  "界面设计": "Interface design",
+  "防失联群": "Stay connected group",
   "你已在其他同盟中，请先离开当前同盟": "You are already in another Alliance. Leave it first.",
   "你已不在该同盟中": "You are no longer in this Alliance",
   "创建者已离开，同盟已解散": "The host left. The Alliance has been disbanded.",
@@ -1949,9 +1949,9 @@
   "额外资源": "Extra resources",
   "地图、干员图片与 Spine 等画面资源": "Maps, operator images, Spine models and other visuals",
   "角色语音、音效、背景音乐、特效与玩法说明图片": "Character voices, sound effects, music, effects and tutorial images",
-"资源清单共 {files} 个文件 · {size}（中日语音、皮肤与全部特效都算上）": "The manifest totals {files} files · {size} (both voice languages, every outfit and all effects).",
-"预载范围": "Preload scope",
-"未预载": "Not preloaded",
+  "资源清单共 {files} 个文件 · {size}（中日语音、皮肤与全部特效都算上）": "The manifest totals {files} files · {size} (both voice languages, every outfit and all effects).",
+  "预载范围": "Preload scope",
+  "未预载": "Not preloaded",
   "同时预载": "Preload these too",
   "{done} / {total} 个文件": "{done} / {total} files",
   "部分大小未知": "Some sizes are unknown",
@@ -2512,5 +2512,11 @@
   "官方战斗特效素材；是否显示仍跟随画质设置。": "Official battle effect assets; display follows your graphics settings.",
   "提前缓存，减少战斗中首次加载。": "Cache in advance to reduce first-time loading during battle.",
   "关闭面板后，下载仍会在后台继续。": "Downloads continue in the background after closing this panel.",
-  "导入、导出与下载": "Import, export and download"
+  "导入、导出与下载": "Import, export and download",
+  "全部资源": "All resources",
+  "已导出 {count} 个资源文件（{0}）。": "Exported {count} resource files ({0}).",
+  "导出范围": "Export scope",
+  "{n} 个文件 · {size}": "{n} files · {size}",
+  "尚未缓存任何资源": "Nothing is cached yet",
+  "浏览器未授予持久化存储：空间紧张时可能自动清理已预载的资源。": "Persistent storage was not granted: the browser may clear preloaded resources when space runs low."
 }

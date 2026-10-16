@@ -95,7 +95,7 @@ describe('resource manifest validation', () => {
     assert.equal(resourceType('/assets/x.json'), 'application/json; charset=utf-8');
     assert.equal(cacheName('deadbeef'), `${CACHE_PREFIX}deadbeef`);
     assert.equal(cacheName(undefined), `${CACHE_PREFIX}none`);
-    assert.equal(CACHE_NAME.startsWith(CACHE_PREFIX), true, 'the store uses one cache of this app');
+    assert.equal(CACHE_NAME.startsWith(CACHE_PREFIX), true, 'the essential card keeps the legacy cache name');
     assert.equal(INDEX_PATH.startsWith('/assets'), false, 'the index is not a resource path the worker would answer');
     assert.equal(isResourcePath(INDEX_PATH), false);
     assert.equal(indexUrl('https://site.example'), `https://site.example${INDEX_PATH}`);

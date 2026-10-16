@@ -40,6 +40,11 @@ export function skipReasonText(reasons = {}) {
   ].filter(Boolean).join('；');
 }
 
+/** One preload card's name; the ZIP card exports one card at a time, so it needs the same words (docs/ASSETS.md). */
+const SCOPE_TEXT = { essential: () => t('必备资源'), voice: () => t('干员语音'), skin: () => t('干员皮肤'), fx: () => t('官方特效') };
+
+export const scopeText = (id) => (SCOPE_TEXT[id] ? SCOPE_TEXT[id]() : t('全部资源'));
+
 export function storageText(storage) {
   if (!storage) return '';
   const parts = [];
@@ -239,6 +244,11 @@ export function ResourceHost({ enabled, optional, voices = optional, allVoices, 
   const fileInput = useRef(null);
   useEffect(() => { if (open) void inspectResources().catch(() => {}); }, [open]);
   const archiveBusy = !!st.archive || !!st.clearing;
+  // Which card the export writes (必备 / 语音 / 时装 / 特效): one package per card keeps a single blob — and the
+  // 2 GiB package limit — within what a phone holds. Defaults to the first card that actually has bytes.
+  const scopes = st.scopes || [];
+  const [exportScope, setExportScope] = useState('');
+  const chosenScope = scopes.find((s) => s.id === exportScope && s.cached) || scopes.find((s) => s.cached) || null;
   const preferences = { preloadOptional: !!optional, preloadVoices: !!voices, preloadAllVoices: !!allVoices,
     preloadSkins: !!skinPreload, preloadSkinsAll: !!skinPreloadAll, preloadFx: !!fxPreload };
   const pause = () => { pauseResources(); if (!archiveBusy) onChange(false); };
@@ -262,11 +272,12 @@ export function ResourceHost({ enabled, optional, voices = optional, allVoices, 
   };
   const exportFile = async () => {
     try {
-      const { blob, version } = await exportResources();
+      const scope = chosenScope?.id;
+      const { blob, version } = await exportResources(scope);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `stronghold-resources-${version.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64)}.zip`;
+      link.download = `stronghold-resources${scope ? `-${scope}` : ''}-${version.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64)}.zip`;
       document.body.append(link);
       link.click();
       link.remove();
@@ -310,6 +321,14 @@ export function ResourceHost({ enabled, optional, voices = optional, allVoices, 
               onClick=${() => window.open(RESOURCE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer')}>${t('前往下载')}<//>
           </div>
         </div>
+        <div class="resource-archive__scope">
+          <span class="resource-archive__scope-label">${t('导出范围')}</span>
+          <div class="resource-presets" role="group" aria-label=${t('导出范围')}>
+            ${scopes.map((s) => html`<button type="button" key=${s.id} aria-pressed=${chosenScope?.id === s.id}
+              disabled=${archiveBusy || !s.cached} onClick=${() => setExportScope(s.id)}>${scopeText(s.id)}</button>`)}
+          </div>
+          <span class="resource-archive__scope-size num">${chosenScope ? t('{n} 个文件 · {size}', { n: chosenScope.cached, size: formatBytes(chosenScope.bytes) }) : t('尚未缓存任何资源')}</span>
+        </div>
         <details class="resource-archive__help">
           <summary>${t('资源包说明')}</summary>
           <p>${t('点击「前往下载」查看资源包链接。lite 仅含基础画面资源，full 还包含中日语音、音效、音乐等；也可导出已缓存资源分享。')}</p>
@@ -324,6 +343,7 @@ export function ResourceHost({ enabled, optional, voices = optional, allVoices, 
         <input ref=${fileInput} type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden onChange=${importFile} />
       </details>
       ${st.storage?.low ? html`<p class="resource-manager__warn">${t('预计可用空间可能不足。可先清理可选资源；浏览器仍可能因存储限制而停止处理，已保存进度会保留。')}</p>` : null}
+      ${st.persistence && st.persistence.supported && !st.persistence.granted ? html`<p class="resource-manager__warn">${t('浏览器未授予持久化存储：空间紧张时可能自动清理已预载的资源。')}</p>` : null}
       <details class="resource-cache">
         <summary><span class="resource-cache__title">${t('缓存清理')}</span><span class="resource-cache__storage">${storageText(st.storage)}</span></summary>
         <div class="resource-cache__body">

@@ -651,7 +651,11 @@ waiter without cancelling a shared game request. Worker writes are suspended/dra
 operations or cache deletion, and in-flight downloads from an earlier generation cannot write after cleanup.
 Disabling bulk preloading keeps cached resources usable; resources actually requested by the game may still be saved.
 
-The manager displays per-category counts and sizes and supports ZIP export/import. Export includes only cached files,
+The manager displays per-category counts and sizes and supports ZIP export/import. ZIP export is per card: the ZIP section
+offers 导出范围 with the four cards and their cached sizes (default: the first card with cached files), because a whole
+install is ~1.8 GiB against the 2 GiB package cap and a single blob of that size is a phone OOM. Import is unchanged and
+takes the package of any card, any subset of the manifest and packages from older versions.
+Export includes only cached files,
 including verified game-loaded files not yet adopted into the preload index. Unindexed stale bytes are excluded;
 indexed current files with damaged contents fail export. Equivalent CDN aliases are exported once per canonical path,
 and conflicting contents for that path fail export instead of producing an unimportable package.
@@ -685,20 +689,42 @@ ZIP and CRC code are loaded on demand from the locally vendored zip.js library, 
 Chromium refuses a single `Cache.keys()` whose result exceeds a fixed query budget (10 MiB,
 `kMaxQueryCacheResultBytes` in `content/browser/cache_storage/cache_storage_cache.cc`), rejecting it with
 `AbortError: Operation too large.` Measured on Chrome 155 the budget is spent as ≈474 bytes per entry (462–498) plus the
-request URL, which puts the ceiling near 18 200 entries at 89-byte keys and near 19 400 at this manifest's 72-byte mean;
-a full selection (voices + every installed outfit + 官方特效) reaches ~22 500, and a seeded 22 493-entry cache in these
-`?v=` URLs is refused exactly as reported. A complete cache is therefore the one case the browser will not enumerate. Every full listing therefore goes through `ResourceStore#keyUrls`
-(`store.js`): it tries `cache.keys()` once, and on `AbortError` records the cache name in `#keysRefused` and answers
-from the index record the page itself writes (`/__sp-resource-index__`), which costs one entry regardless of catalog
-size. Status counting, 清理可选资源 (`clear({ optionalOnly })`), stale pruning and ZIP export
-(`ResourceStore#cachedKeys`, used by `archive.js`) keep working, and `status().scan` reports `'index'` instead of
-`'keys'`. Only `isCacheQueryLimit` (`common.js`) falls back — `AbortError`, or a message mentioning the limit —
-so a genuine cache failure still surfaces as `无法访问资源缓存`. An optional-only cleanup drops the flag once the cache
-is small enough to enumerate again. `pruneOld` deliberately keeps indexing out of it: a legacy cache has no index, and
-an empty listing must never be read as "this language is disposable". Because the browser raises `AbortError` for this
-limit too, a download pause is judged by `signal.aborted` (`index.js`), never by the DOMException name — otherwise a
-query-budget failure looked like the player cancelling, which is how 「资源包处理已取消，已保存的资源保留。」 could
-appear for a cache the browser simply refused to list.
+request URL, which puts the ceiling near 18 200 entries at 89-byte keys and near 19 400 at the 72-byte mean of this
+manifest, while a full selection (all voices + every installed outfit + 官方特效) reaches ~22 500 entries: a complete
+install is the one case the browser will not enumerate in a single query. Preload therefore keeps one cache **per card**
+(`resourceScope` / `cacheNameForScope`, `resources/common.js`): `stronghold-resources-v1-all` holds the essential card —
+maps, portraits, Spine, UI, sound, music, guides — and `stronghold-resources-v1-voice` / `-skin` / `-fx` hold the three
+optional cards. The name of the essential card is the pre-split one on purpose, so every byte cached before the split
+stays where it is; the largest card (特效, ~12 500 entries ≈ 6.8 MiB of keys) sits under the budget, so cards enumerate
+normally. `status()` lists the four cards, never the caches of earlier builds — those are still migrated file by file
+through `#adopt` — and merges them into the single count the manager shows. Before the network phase of a run, `#tidy`
+moves any file that sits in the wrong card (an install older than the split keeps its voice and effect bytes inside
+`-all`) with a per-file `put` + `delete`, so nothing is downloaded again and peak usage grows by one file.
+
+`ResourceStore#keyUrls` stays as the safety net for a card that ever exceeds the budget anyway (a longer URL lowers the
+ceiling): it tries `cache.keys()` once, and on `AbortError` records that card in `#keysRefused` and answers from the index
+record the page itself writes (`/__sp-resource-index__`, one per card), which costs one entry regardless of catalog size.
+Status counting, 清理可选资源 (`clear({ optionalOnly })`), stale pruning and ZIP export (`ResourceStore#cachedKeys` /
+`cachedResponse`, used by `archive.js`) keep working, and `status().scan` reports `index` while any card is refused. Only
+`isCacheQueryLimit` (`common.js`) falls back — `AbortError`, or a message mentioning the limit — so a genuine cache
+failure still surfaces as `无法访问资源缓存`. An optional-only cleanup drops the flag once the cache is small enough to
+enumerate again. `pruneOld` deliberately keeps indexing out of it: a legacy cache has no index, and an empty listing must
+never be read as "this language is disposable". Because the browser raises `AbortError` for this limit too, a download
+pause is judged by `signal.aborted` (`index.js`), never by the DOMException name — otherwise a query-budget failure looked
+like the player cancelling, which is how 「资源包处理已取消，已保存的资源保留。」 could appear for a cache the browser simply
+refused to list.
+
+The read paths discover cards dynamically: `public/js/resources/service.js` answers from any `stronghold-resources-v1-*`
+cache (cards of the current build first, then earlier ones), and `readThrough.js` opens the card of the file and then
+looks for the key in the remaining preload caches, so an unmoved copy still serves and cannot shadow the write that
+follows. Each card keeps an index record of its own, written when a download or an import verified a file and flushed in
+batches of 64 (the page remains the sole index writer).
+
+Preload also asks for persistent storage once per visit (`ensurePersistence`, `resources/storage.js`: `persisted()` →
+`persist()`, memoized per storage object, failures ignored) before a download or an import starts: without it a
+0.75–1.8 GiB cache is evictable at the discretion of the browser. When the API reports the request was not granted, the
+manager says so (浏览器未授予持久化存储：空间紧张时可能自动清理已预载的资源。); the existing `storageEstimate` pre-check
+keeps only advising.
 
 The implementation is adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later, resource manager commit
 `234dc52b`, v2 ZIP optimization `5d8e91e`, and subsequent resource updates). This fork retains streaming download limits, strict content verification,
@@ -757,7 +783,8 @@ manifest validation and offline metadata publishing without changing CDN keys.
 read-through integrity, in-flight sharing and cleanup races. `test/resources/worker-cache.test.js` also compares digest
 and resource write counts, exercises private receipts, forged headers, old-worker fallback, retries and quota failures.
 `RESOURCE_E2E=1 node --test test/resources/browser.e2e.test.js`
-also checks voice switching, retained language caches, game-loaded offline resources and the mobile manager layout.
+also checks voice switching, retained language caches (each card in a cache of its own), per-card ZIP export,
+game-loaded offline resources and the mobile manager layout.
 
 `test/feedback1d-models.test.js` (enemies) and `test/local-token-models.test.js` (tokens) check the local-client overlays: the plan, the committed metadata, the manifest without `/assets/local/` URLs, the client's choice of model; `test/local-extract.test.js` the extractor's job table and helpers.
 

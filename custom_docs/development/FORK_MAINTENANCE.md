@@ -37,7 +37,7 @@ CDN、资源预载、Redis 持久化与后台 Worker 四块按「照抄对方」
 | 部分 | 照搬（逐字或仅改路径） | 只做接入适配 |
 | --- | --- | --- |
 | CDN | `shared/cdn.js`、`public/js/asset-cdn.js`、`server/http/files.js`、`server/packs.js`、`shared/resourcePackRoutes.js` | `server/http/static.js`（同一层要服务本地素材、`/_v/<tag>/` 与 CDN 基址）、`server/http/config.js`（`parseAssetCdn` 合入本分支配置）、`server/index.js`（启动时解析基址交给静态层） |
-| 资源预载 | `public/js/resources/{transport,sha1Stream,integrity,workerCache,workerManifest,readThrough}.js`、`server/workers/manifestEncode.js` | `public/js/resources/{index,store,archive,common}.js`（本分支的皮肤/特效/三开关/必备+额外分层）、`server/resources.js`（`skinKeyForPath`、`fx` 标记、站点自带表情） |
+| 资源预载 | `public/js/resources/{transport,sha1Stream,integrity,workerCache,workerManifest,readThrough}.js`、`server/workers/manifestEncode.js`、`tools/resource_packs.py`、`tools/resource_delta.py` | `public/js/resources/{index,store,archive,common}.js`（本分支的皮肤/特效/三开关/必备+额外分层）、`server/resources.js`（`skinKeyForPath`、`fx` 标记、站点自带表情） |
 | Redis 持久化 | `server/redis.js` | `server/redisState.js`（`saveSharded` → 单文档 `save`，供本分支分片存储复用）、`server/index.js`（Redis > `SP_STATE_FILE` > 内存的优先级） |
 | Worker | `server/workers/{backgroundClient,stateEncoder,pluginScan,manifestEncode,matchPool,matchWorker}.js`、`server/workers/{persistence,persistenceClient,memory,pool,roomPool,simulation}.js` | `server/stateTransport.js`（`attachWorkerState`：worker 发来的状态帧带回归属）、`server/plugins/registry.js`（后台扫描）、`server/persist.js`（线程池对局用线程往返的 `capture` 拍档）、`server/lobby.js` 与 `server/matchRestore.js`（`SP_MATCH_WORKERS`：开局与重启恢复都进 lane） |
 

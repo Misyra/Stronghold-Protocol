@@ -76,6 +76,28 @@ git pull
 重启服务器
 ```
 
+### 3.2 生成资源分包
+
+预载的分包是**部署产物**，不进 Git：`tools/resource_packs.py`（取自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol)，只用 Python 标准库）把清单按分类切成每个不超过 16 MB 的 stored ZIP，再写一份索引给服务器。先让磁盘上有一份清单 —— 它平时是 `/data/resource-manifest.json` 动态生成的，落地成文件即可：
+
+```powershell
+# 1) 把当前清单落地（用你自己的域名 / 端口）
+Invoke-WebRequest "http://127.0.0.1:3000/data/resource-manifest.json" -OutFile data/resource-manifest.json
+# 2) 切包：素材在 public/ 下，产物放 public/resource-packs（静态层按 /resource-packs/… 直接服务）
+python tools/resource_packs.py --manifest data/resource-manifest.json --assets-root public `
+  --output public/resource-packs --index data/resource-packs.json
+# 3) 重启服务器：/data/resource-packs.json 变成这份索引（客户端预载开始用分包）
+```
+
+脚本会逐个文件核对 `hash`（清单里的 12 位 SHA-1 前缀）与 `size`，任何不一致直接失败、不留半个包 —— 所以**清单里每个文件都必须有真实的内容指纹**，跑之前先 `node tools/asset-hashes.mjs`（未生成指纹的文件用的是 `syn-…` 合成值，脚本会拒绝）。本机实测：27,083 个文件 / 约 1.2 GiB 素材，`asset-hashes` 8.7 s，切包 92 s，产出 81 个包共 1.15 GiB（约等于素材体积，stored ZIP 不再压缩）。分类是 `spine` / `character` / `ui` / `map`（必备层）与 `voice_cn`、`voice_jp`、`sfx`、`bgm`、`fx`、`other`（额外层），包名 `<组>-<序号>`、文件名带整包 SHA-1 前缀。部署机器上需要有对应的素材文件（CDN-only 的安装请先 `node tools/fetch-assets.mjs`），清单里 `syn-…` 这类合成指纹的文件不能进包 —— 先跑 `node tools/asset-hashes.mjs` 生成真指纹。
+
+**只发增量**（可选）：`tools/resource_delta.py` 比较两份已经是 v2 格式的资源 ZIP（全量导出或分包都行），产出一份只含新增/改动文件的小 ZIP 和一份 JSON 报告，浏览器的手动导入可以直接吃它。
+
+```powershell
+python tools/resource_delta.py --base <旧.zip> --target <新.zip> --output <delta.zip>
+```
+
+报告里 `summary.added / changed / unchanged / absentFromTarget / delta` 分别给出条数与字节数，`--analyze-only` 只比对不产出。客户端没有自动吃增量包的入口：它是给「手动导入」和 CDN 分发决策用的。
 ### 3.2 资源分包的镜像线路（SP_RESOURCE_PACK_ROUTES）
 
 预载用的资源分包是整包 ZIP（见 [预载说明](#4-浏览器预载)）。`SP_RESOURCE_PACK_ROUTES` 让游戏服务器把**镜像地址**写进清单：客户端按顺序试，失败就换下一条，**当前地址永远留一个在最后**，所以镜像挂了不会让预载整体失败。

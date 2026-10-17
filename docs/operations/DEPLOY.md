@@ -143,11 +143,42 @@ macOS 临时运行可用 `scripts/start.sh`；Windows 自启见 [HOME_SERVER.md]
 
 <a id="24-反向代理与-https有域名时"></a>
 
+## 内核层封禁（可选，公网开服建议开）
+
+`ops/` 里是这台机器用的永久封禁名单和加载器。它们不进玩家包，理由同 `geoip/`：
+只属于部署机。
+
+```bash
+sudo install -m 0644 ops/banned-ips.txt     /etc/stronghold/banned-ips.txt
+sudo install -m 0755 ops/sp-syn-ban-load    /usr/local/sbin/sp-syn-ban-load
+sudo install -m 0644 ops/sp-syn-ban.service /etc/systemd/system/sp-syn-ban.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now sp-syn-ban
+```
+
+两件事它做：
+
+- **永久名单**（`perm4`，无 timeout）：名单里的 IP 在 `input` 链最先被 drop，连
+  conntrack 之后的后续处理都到不了。
+- **SYN 速率自动封**（`auto4`，24 小时）：同一 IP 超过 20 SYN/s（burst 40）就进集合。
+  阈值是按实测定的——真实玩家峰值 0.3 SYN/s，洪水最低 6/s，中间隔 20 倍。
+
+名单的维护方式和表结构见 [`ops/README.md`](../../ops/README.md)。
+
+```bash
+sudo nft list table inet sp_syn_ban          # 看计数器
+sudo systemctl status sp-syn-ban             # 是否加载过
+```
+
+**不要指望 `/etc/nftables.conf`**：很多发行版上 `nftables.service` 是 `enabled`
+但 `inactive`，而且那份 conf 里的 `flush ruleset` 会顺手清掉 ufw 的
+`table ip filter`。这个 unit 是独立加载的。
+
 ## 反向代理
 
 游戏必须在域名根路径运行；转发 WebSocket `/ws`，其余请求交给同一个 Node 实例。完整 nginx 配置使用 [scripts/nginx.conf.example](../../scripts/nginx.conf.example)，替换域名、证书及 Node 端口。`worker_processes auto;` 放在主配置顶层；`map` 放在 `http` 中。
 
-首次采用或升级到该 nginx 示例时，必须先将 [nginx-log-format.conf.example](../../scripts/nginx-log-format.conf.example) 安装为 `/etc/nginx/conf.d/sp-log-format.conf`，并确保只在 `http` 级加载一次（已有 `conf.d/*.conf` 通配 include 时不要重复 include）。缺少此文件会导致 `nginx -t` 和启动失败；安装及检查命令见下节迁移步骤。
+首次采用或升级到该 nginx 示例时，先安装 GeoIP2 模块与 HTTP 级片段：`sp-business-limit-map.conf`、`sp-log-format.conf`、`sp-public-api-map.conf`、`sp-health-cache-map.conf`、`sp-geoip-country.conf`，每份只加载一次（已有 `conf.d/*.conf` 通配 include 时不要重复 include）。完整独立示例显式 load_module；Debian 已经通过 `modules-enabled` 加载时不要重复。缺少模块、国家库或片段会导致 `nginx -t` 失败。当前示例仅允许国家库命中 CN 的公网来源，关闭可选公开 API（昵称 HTTP 预检临时停用，原实现保留），保留 5 秒源站缓存的健康接口；本机监控绕过缓存。详见[接口防护](HTTP_PROTECTION.md)和[主机加固](HOST_HARDENING.md)。
 
 Caddy 的最小配置：
 
@@ -159,7 +190,9 @@ game.example.com {
 
 nginx 修改后先 `sudo nginx -t`，通过后再 reload。Node 只监听本机时不必对公网开放 3000；公网入口使用 HTTPS。不要让多个 Node 实例共享一个状态目录。
 
-`/api/announcement` 转发到游戏 Node；面板公开 feed `/api/announce/v1/<siteId>` 由 sp-portal 提供，两者是不同接口。公告 API 共享缓存设为 30 秒；普通 API 不缓存。资源预载的 `/resource-sw.js`、`/js/resources/`、`/data/resource-manifest.json` 必须指向当前 Node，不能套用素材一年缓存规则。清单共享缓存的例外见下节，Worker 和普通 JS/CSS 继续遵循源站复验规则。
+完整 Nginx 示例支持将限流、永久封禁、海外 API 拦截转换为 444 静默断开，并拒绝 `/ws` 的普通 HTTP 请求。需要连同 Node 代码、回源 opt-in 请求头和内部 drop location 一起部署；配置和回滚见 [公开接口防护](HTTP_PROTECTION.md#444-静默拒绝)。正常错误与本机探针仍保留可读响应。
+
+`/api/announcement` 转发到游戏 Node；面板公开 feed `/api/announce/v1/<siteId>` 由 sp-portal 提供，两者是不同接口。所有公开 API（含公告）不共享缓存，每次请求都进入限流和永久封禁计数。新增的 Nginx 缓存前封禁检查、Nginx 全业务 300 次／分钟与 Node API 600 次／分钟阈值和持久名单配置见 [公开接口防护](HTTP_PROTECTION.md)。资源预载的 `/resource-sw.js`、`/js/resources/`、`/data/resource-manifest.json` 必须指向当前 Node，不能套用素材一年缓存规则。清单共享缓存的例外见下节，Worker 和普通 JS/CSS 继续遵循源站复验规则。
 
 ### 清单性能修复与 nginx 一次性更新
 
@@ -172,7 +205,7 @@ nginx 修改后先 `sudo nginx -t`，通过后再 reload。Node 只监听本机�
 | `/data/resource-manifest.json?v=<页面发布版本>` | nginx 缓存 12 小时，查询参数参与 key；Node 校验版本，错误版本返回不缓存的 404 |
 | 不带版本的 `/data/resource-manifest.json` | 兼容旧客户端和 Worker 后备读取，仅缓存 15 秒 |
 | `/assets-manifest.json?v=<素材版本>` | nginx 缓存 30 天；浏览器保留源站不可变缓存头；只缓存 200 |
-| `/api/announcement` | 缓存 30 秒，源站失败不继续返回过期公告 |
+| `/api/announcement` | 不缓存，每次回源参与限流和永久封禁计数 |
 | `/icons/` | nginx 直接读取图标，缓存 1 小时；未配置直出时 Node 同样缓存 1 小时；文件名无版本，更新图标最多延迟 1 小时 |
 | `/manifest.json` | Node 提供，浏览器缓存 1 小时，过期后通过 ETag 复验 |
 
@@ -191,7 +224,12 @@ npm ci --omit=dev
 sudo install -d /etc/nginx/snippets
 sudo install -m 644 scripts/nginx-game-cache.conf.example /etc/nginx/snippets/stronghold-game-cache.conf
 sudo install -d /etc/nginx/conf.d
+sudo install -m 644 scripts/hardening/sp-business-limit-map.conf /etc/nginx/conf.d/sp-business-limit-map.conf
 sudo install -m 644 scripts/nginx-log-format.conf.example /etc/nginx/conf.d/sp-log-format.conf
+sudo install -m 644 scripts/hardening/sp-public-api-map.conf /etc/nginx/conf.d/sp-public-api-map.conf
+sudo apt-get install libnginx-mod-http-geoip2
+sudo install -m 644 scripts/hardening/sp-health-cache-map.conf /etc/nginx/conf.d/sp-health-cache-map.conf
+sudo install -m 644 scripts/hardening/sp-geoip-country.conf.example /etc/nginx/conf.d/sp-geoip-country.conf
 # 编辑片段的端口、图标 root，并合入上面的 server include 后：
 sudo nginx -t
 # 检查通过再依次执行；重启会短暂断连，恢复边界见 PERSISTENCE.md。
@@ -201,11 +239,11 @@ sudo systemctl reload nginx
 
 资源清单使用新的缓存键前缀，不需删除整个 nginx 缓存。不要修改状态目录、公告目录或审核密钥。重启同时会关闭本次临时开启的 inspector；若启动参数本身包含 `--inspect`/`NODE_OPTIONS=--inspect`，需先去掉该选项。
 
-公告缓存 30 秒，浏览器也每 30 秒轮询，发布或撤销后还需等待缓存过期与下次轮询。缓存响应中的 `serverTime` 也会延迟，因此客户端到期显示最多存在约 30 秒偏差；这是本部署接受的取舍，不缓存错误响应，也不在源站失败时继续使用过期缓存。
+公告 API 明确开放时不再使用 Nginx 共享缓存，浏览器仍每 30 秒轮询；发布或撤销后等待下一次轮询，不再额外等待代理缓存。当前默认关闭公开公告 API，客户端轮询失败且不再接收公告更新。旧的公告缓存 location 应一并更新，否则重新开放后攻击请求会绕过 Node 的频率计数。
 
-验证时使用游戏首页注入的 `__spAssetVersion` 拼出 `/data/resource-manifest.json?v=<版本>`，连续请求应从 `X-Resource-Cache: MISS` 变成 `HIT`；带原 ETag 请求应返回 304。素材清单看 `X-Asset-Manifest-Cache`，公告看 `X-Announcement-Cache`。`/api/ping` 不应有共享缓存，普通 JS/CSS 不应被新增长 TTL。nginx 缓存减少 Node 回源和处理开销，不减少同样响应向玩家发送的字节；首次填充较大清单时仍可能产生正常的缓存文件写入。
+验证时使用游戏首页注入的 `__spAssetVersion` 拼出 `/data/resource-manifest.json?v=<版本>`，连续请求应从 `X-Resource-Cache: MISS` 变成 `HIT`；带原 ETag 请求应返回 304。素材清单看 `X-Asset-Manifest-Cache`；公告和 `/api/ping` 不应有共享缓存，公告也不再返回 `X-Announcement-Cache: HIT`。普通 JS/CSS 不应被新增长 TTL。nginx 缓存减少 Node 回源和处理开销，不减少同样响应向玩家发送的字节；首次填充较大清单时仍可能产生正常的缓存文件写入。
 
-完整示例中的 `/healthz` 已禁用共享缓存：探针读取实时样本，玩家使用 `/healthz?build=1` 读取小型版本响应。进程性能数据在 `/metrics`（只对本机回环 / 私网应答），它走通用 `location /`（同样 `proxy_cache off`），不需要单独的 location。合入时删除旧的 healthz `proxy_ignore_headers Cache-Control` 与 5 秒共享缓存配置。缓存 location 显式 `proxy_buffering on`，避免继承 WebSocket 的关闭缓冲配置导致缓存不生效；不要全站覆盖 `X-Accel-Buffering: no`。`/_v/` 缓存键使用新命名空间并隔离 Host、端口、上游与完整 URI，只缓存 200，保留 Vary。Range 可由缓存完整响应切片，不能据此把 206 单独长期缓存。
+完整示例的 `/healthz` 使用 5 秒 Nginx 源站缓存，公开完整响应与 `build=1` 分开规范化缓存键。回环探针完全绕过缓存；进程性能数据 `/metrics` 也不缓存且不对公网开放。浏览器响应仍是 `Cache-Control: no-store`；入口总限流、缓存填充锁和永久封禁计数不能省略，详见[接口防护](HTTP_PROTECTION.md)。缓存 location 显式 `proxy_buffering on`，避免继承 WebSocket 的关闭缓冲配置导致缓存不生效；不要全站覆盖 `X-Accel-Buffering: no`。`/_v/` 缓存键仍隔离 Host、端口、上游与完整 URI，只缓存 200，保留 Vary。Range 可由缓存完整素材切片，不能据此把 206 单独长期缓存；健康接口禁止 Range 分段。
 
 <a id="3-docker"></a>
 
@@ -314,6 +352,8 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 发行包制作移至 [PACKAGING.md](PACKAGING.md)。
 
 ## 昵称审查
+
+**临时停用 HTTP 预检（2026-10-17）**：`public/js/screens/title.js` 的 `NICKNAME_PREFLIGHT_ENABLED=false`；Nginx 注释 `/api/nickname/validate` 放行项，并对该精确路径返回 444。原 HTTP 实现、代理配置和以下说明保留，WebSocket 最终审查照常。恢复时同步打开前端开关、恢复放行并移除临时 return，重新构建部署。
 
 点击“开始”后，浏览器先向同源 `POST /api/nickname/validate` 提交 `{"name":"博士代号"}`，服务器通过才保存昵称并进入游戏。拒绝只回固定错误码，客户端显示“代号包含不适宜内容，请更换昵称”，并提示“如果你认为昵称没有问题，可以前往 GitHub 反馈”，提供本站仓库的 Bug 反馈链接；网络失败停留标题页，可重试。WebSocket `hello` 在创建会话、重连接管和改名前再次检查，不能靠跳过 HTTP 预检绕过。
 

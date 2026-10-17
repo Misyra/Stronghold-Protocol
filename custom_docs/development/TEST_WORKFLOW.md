@@ -19,6 +19,19 @@ npm run test:client                          # 临时构建生产包，验证启
 - `npm run test:browser` 的 10 条（21 条里 11 条绿）：headless Chrome 在这个环境里取不到临时 fixture 的素材（`Failed to fetch`），CDN 源与 ZIP 导入那几条连带失败。在 `d809fd17` 的干净工作树上同样是 11 绿 / 10 红，用例名一致 —— 与「CDN / 预载 / Redis / Worker」这批移植无关。绿的部分仍覆盖关键路径：保存的预载偏好与断点续传、干员皮肤 273 套、官方特效、四张卡片的预设、双标签页 Web Locks 去重、第二次访问直接命中缓存。
 - 部分插件/工作台测试需要 Windows 的符号链接权限，普通用户身份下会跳过或失败。
 - 默认 1000 房上限的回收用例（test/room-reclamation）与 `/sim/` 只读目录用例（test/match/simServe）在本机也是红的，同样在干净工作树上复现。
+### 各套件当前基线（本机、`--test-concurrency=4`）
+
+| 套件 | 结果 | 剩下的红是什么 |
+| --- | --- | --- |
+| `test/sim/**` | 927 条，924 绿 / 3 跳过 | — |
+| `test/match/**` | 932 条，929 绿 / 2 跳过 | `/sim/` 只读目录用例（环境） |
+| `test/ui/**` | 987 条，964 绿 / 21 跳过 | 2 条 `tools/local-extract/extract.py`（Python 取不到 HOME） |
+| `test/resources/**` | 257 条，256 绿 / 1 跳过 | — |
+| `test/plugins/**` | 299 条，290 绿 / 3 跳过 | symlink/平台类 1 条；既有的 merged-data / DSL battle / wire 用例 |
+| `test/studio/**` | 91 条，70 绿 / 2 跳过 | 全部是 Windows 建符号链接 `EPERM` |
+| 根目录 `test/*.test.js` | 1857 条，1822 绿 / 15 跳过 | extract.py 一族、i18n 未包裹、packs 索引、房回收、traffic 的 loopback 判定、`the real build` |
+
+判断一条红是不是自己弄出来的：先看它是否在上面这张表的「剩下的红」里，再不行用 `git worktree add .tmp-base <提交>` + `mklink /J .tmp-base\node_modules node_modules` 在旧提交上跑同一条用例对比。
 ## 源码与生产包隔离
 
 - `test/helpers/test-setup.js` 只在测试命令中显式预加载，复用现有 `--source-client` 开关；生产服务器启动行为不变。

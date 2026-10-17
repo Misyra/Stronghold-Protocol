@@ -21,7 +21,7 @@ import { serveFile } from './files.js';
  * @param {object | null} [release] the release versioning (server/assetVersion.js); a versioned request whose bytes changed answers 503
  * @param {boolean} [versioned] the request came in through the validated `/_v/<tag>/` namespace
  */
-export async function serveMedia(req, res, rest, publicDir, gzipCache, log, release = null, versioned = false) {
+export async function serveMedia(req, res, rest, publicDir, gzipCache, log, release = null, versioned = false, query = '') {
   const root = path.join(path.resolve(publicDir), 'assets', 'audio');
   const segments = String(rest || '').split('/').filter((s) => s.length > 0);
   if (!segments.length || rest.endsWith('/')) { sendError(req, res, 404, '页面不存在 · Not found'); return; }
@@ -54,7 +54,10 @@ export async function serveMedia(req, res, rest, publicDir, gzipCache, log, rele
     // serveFile decides Content-Type from the resolved name (`.mp3` → audio/mpeg) — Range/ETag handling is shared.
     // Cache policy is that of the public path the client would otherwise have asked for (`/assets/audio/…`, 1 day),
     // or immutable for a validated release path.
-    await serveFile(req, res, absPath, stat, 'public', ['assets', 'audio', ...segments], gzipCache, log, { variant: versioned ? release.tag : '', versioned });
+    // serveFile 的第 7 个参数是 query：漏掉它会把 gzipCache 当成 query、log 当成 gzipCache、opts 整个丢掉
+    // （版本化地址因此拿不到 immutable，Range/ETag 也只剩默认路径）。
+    await serveFile(req, res, absPath, stat, 'public', ['assets', 'audio', ...segments], query, gzipCache, log,
+      { variant: versioned ? release.tag : '', versioned });
     return;
   }
   sendError(req, res, 404, '页面不存在 · Not found');

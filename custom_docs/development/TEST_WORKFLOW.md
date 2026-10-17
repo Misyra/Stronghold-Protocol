@@ -11,6 +11,14 @@ npm run test:client                          # 临时构建生产包，验证启
 
 浏览器入口自动设置所需的测试开关，查找常见安装路径；找不到 Chrome 时明确失败，请设置 `CHROME_PATH`。CDN 美术测试仍需要本机已下载的素材和 `.assets-manifest.json`，缺失时只跳过该素材用例。离线资源使用临时假素材，不依赖官方资源。
 
+## 本机已知的红（环境相关，与本分支功能无关）
+
+下面这些在开发机上常年是红的，改动前先用 `git worktree` 取出上一个提交对比一次再判断，不要直接当成回归：
+
+- `tools/local-extract/*.py` 的用例（test/ui 里的几条、extract.py 相关）：Python 在本机拿不到 HOME，脚本在启动阶段就失败。
+- `npm run test:browser` 的 10 条（21 条里 11 条绿）：headless Chrome 在这个环境里取不到临时 fixture 的素材（`Failed to fetch`），CDN 源与 ZIP 导入那几条连带失败。在 `d809fd17` 的干净工作树上同样是 11 绿 / 10 红，用例名一致 —— 与「CDN / 预载 / Redis / Worker」这批移植无关。绿的部分仍覆盖关键路径：保存的预载偏好与断点续传、干员皮肤 273 套、官方特效、四张卡片的预设、双标签页 Web Locks 去重、第二次访问直接命中缓存。
+- 部分插件/工作台测试需要 Windows 的符号链接权限，普通用户身份下会跳过或失败。
+- 默认 1000 房上限的回收用例（test/room-reclamation）与 `/sim/` 只读目录用例（test/match/simServe）在本机也是红的，同样在干净工作树上复现。
 ## 源码与生产包隔离
 
 - `test/helpers/test-setup.js` 只在测试命令中显式预加载，复用现有 `--source-client` 开关；生产服务器启动行为不变。

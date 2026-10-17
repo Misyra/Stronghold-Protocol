@@ -234,6 +234,7 @@ export function buildResourceManifest({ files, sizes = null, version = 'none', h
     const size = sizes ? sizes.get(f.url) : undefined;
     const entry = { url: f.url, tier: f.tier };
     if (f.skin) entry.skin = f.skin;   // 皮肤文件带上 charId/skinId（本仓库的预载 scope 依赖它）
+    if (f.fx) entry.fx = true;         // 官方特效标记（预载面板的「官方特效」开关按它分组）
     const hash = (hashes ? hashes.get(f.url) : f.hash) || null;
     if (hash) entry.hash = hash;
     if (Number.isSafeInteger(size) && size >= 0) {
@@ -398,6 +399,9 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resource
       try { const st = await statFile(abs); if (!st.isFile()) continue; } catch { continue; }
       collected.push({ url, tier: TIER_ESSENTIAL, source: 'local' });
     }
+    // 官方特效（data/local-fx.json）在本仓库的清单里带 `fx: true` 标记：预载面板的第三个开关按它分组。
+    // xinhai 把这些组并进 local 后没有标记，客户端就分不出「官方特效」这一类。
+    for (const f of collected) if (/\/assets\/local\/fx\//.test(f.url)) { f.fx = true; f.tier = TIER_REST; }
     const tileFiles = collected.filter((f) => /\/assets\/local\/map\/autochess\/tiles\.json$/.test(f.url));
     const tiles = await tileSources(tileFiles);
     const key = [sourceKey, ...tiles.map((f) => f?.stamp || '-')].join('|');

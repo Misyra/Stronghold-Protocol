@@ -55,6 +55,9 @@ class RemoteMatch {
   onDisconnect(...args) { return this.invoke('onDisconnect', ...args); }
   onReconnect(...args) { return this.invoke('onReconnect', ...args); }
   onLeave(...args) { return this.invoke('onLeave', ...args); }
+  // 本仓库追加：Match 的主机迁移钩子（DESIGN §14）与停机前的停转（server/lobby.js beginDrain）
+  setHost(...args) { return this.invoke('setHost', ...args); }
+  suspendWork() { return this.invoke('suspendWork'); }
   addSpectator(...args) { return this.invoke('addSpectator', ...args); }
   removeSpectator(...args) { return this.invoke('removeSpectator', ...args); }
   requestSetupReroll(...args) { return this.invoke('requestSetupReroll', ...args); }

@@ -34,9 +34,16 @@ const sentMetadata = new WeakMap();
 const PLAYER_META_KEYS = ['playerId', 'seat', 'name', 'isBot', 'left', 'connected'];
 let sharedData = null;
 let Match, createRngFromState, captureMatch, restoreMatch, snapshotMatch;
+// 本仓库追加：主线程用到的只读元数据（server/workers/matchPool.js 的 RemoteMatch 字段、server/persist.js 的存档判定）
+let canSnapshot, persistVersion;
 
 const metaOf = (match) => ({
   roomCode: match.roomCode,
+  // 本仓库追加：主线程据此判断「能不能存档」「存档版本有没有变」以及 /metrics 的 offlinePaused，
+  // 否则每个存档轮次都要为三个标量多跑一趟线程往返
+  snapshotable: !!canSnapshot?.(match),
+  persistVersion: persistVersion?.(match) ?? '',
+  offlinePaused: !!match.offlinePaused,
   seed: match.seed,
   battlePrefix: match.battlePrefix,
   phase: match.phase,
@@ -123,7 +130,9 @@ async function call(key, instanceId, requestId, method, args = []) {
   const match = matchFor(key, instanceId);
   let value;
   let transfer = [];
-  if (method === 'snapshot') value = snapshotMatch(match);
+  // 本仓库追加：停转（server/lobby.js beginDrain —— 停机前的最后一次存盘要在一个静止的对局上拍快照）
+  if (method === 'suspendWork') { match.sched?.suspend?.(); for (const task of match._workerTasks) task.suspend(); value = null; }
+  else if (method === 'snapshot') value = snapshotMatch(match);
   else if (method === 'capture') value = captureMatch(match);
   else if (method === 'captureBytes') {
     const capture = captureMatch(match);
@@ -152,7 +161,7 @@ parentPort.on('message', async (message) => {
       setData(message.data && typeof message.data === 'object' ? message.data : {});
       sharedData = getData();
       // Content modules and the Node simulation default must see this snapshot before they are imported.
-      [{ Match }, { createRngFromState }, { captureMatch, restoreMatch, snapshotMatch }] = await Promise.all([
+      [{ Match }, { createRngFromState }, { captureMatch, restoreMatch, snapshotMatch, canSnapshot, persistVersion }] = await Promise.all([
         import('../match/Match.js'), import('../sim/rng.js'), import('../match/snapshot.js'),
       ]);
       emit({ type: 'configured', requestId: message.requestId });

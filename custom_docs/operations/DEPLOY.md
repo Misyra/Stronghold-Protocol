@@ -365,6 +365,10 @@ sudo systemctl start stronghold
 
 `SP_ROOM_WORKERS`（默认 0，可选 1 到 SP_WORKERS，不得超过 SP_WORKERS，否则拒绝启动）启用按房间分组的模拟泳道：每个房间的模拟任务固定排进同一泳道的独立队列，不同房间的任务互不插队；对局本身仍留在主线程。开启后 `/metrics` 的 `workers.kind` 变为 `room-lanes`，并逐泳道给出房间数与任务明细。它只改变排队方式（队列隔离），不承诺任何性能收益；是否开启请结合 `/metrics` 的实测数据决定，变量修改需重启。
 
+`SP_MATCH_WORKERS`（默认 0，可选 1 到 32）把**无插件对局整局搬进独立线程**（`server/workers/matchPool.js`，取自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol)）：计时器、AI、战场模拟与房间状态都留在那条 lane 里，主线程只转发帧、拍存档、回收泳道。0 时完全保持原样（对局在主线程）。开启后启动日志出现 `[workers] N match lanes`，`/metrics` 的 `matchWorkers` 给出每条泳道的房间数、排队与负载。
+
+三条边界：带**玩法插件**（`cs` 非原版）的房间仍在它自己的 match host 里跑；**从存档恢复**（`snapshot` 检查点）的房间先回到主线程，之后重开的对局才进 lane；lane 线程崩溃时该泳道上的对局立即失效（最后一份存档保留，房间退回大厅）。变量修改需重启。
+
 <!-- 保留旧文档锚点，外部链接继续到达对应说明。 -->
 <a id="16-维护公告"></a>
 公告完整流程移至 [ANNOUNCEMENTS.md](ANNOUNCEMENTS.md)。

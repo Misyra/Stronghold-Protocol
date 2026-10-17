@@ -29,7 +29,7 @@
 // Reconnect expiry includes downtime. Incompatible document/checkpoint schemas are refused before any state write.
 
 import { splitClocks, mergeClocks } from './stateClocks.js';
-import { captureMatch, canSnapshot, matchClocks, persistVersion, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
+import { captureMatch, canSnapshot, encodeMatchCapture, matchClocks, persistVersion, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
 import { PersistenceWorker } from './workers/persistenceClient.js';
 import { N_ } from '../shared/i18n.js';
 import { chatRetentionUntil } from './moderation/chatState.js';
@@ -352,16 +352,20 @@ export class Persister {
    * @returns {Promise<boolean>} true when a checkpoint of the room's current match was committed
    */
   async encodeRoom(code, match) {
-    if (!canSnapshot(match)) return false;           // unsafe phase: keep the last checkpoint
-    const version = persistVersion(match);
+    // A match in a lane Worker (server/workers/matchPool.js) keeps its state in that thread: its phase is known from the
+    // pool's metadata and a capture is one round trip away. The version skip therefore does not apply to it — every save
+    // round asks for a capture, which stalls neither the game loop here nor the match loop there.
+    const remote = match?.remote === true;
+    if (remote ? match.snapshotable === false : !canSnapshot(match)) return false; // unsafe phase: keep the last checkpoint
+    const version = remote ? match.persistVersion ?? '' : persistVersion(match);
     const stored = this.matchVersions.get(code);
-    const unchanged = !!(stored && stored.match === match && stored.version === version);
+    const unchanged = !remote && !!(stored && stored.match === match && stored.version === version);
     if (unchanged && !this.verifyVersion) {
       this.matchClocks.set(code, matchClocks(match));
       this.versionStats.skipped++;
       return false;
     }
-    const capture = captureMatch(match);
+    const capture = remote ? await match.captureSnapshot() : captureMatch(match);
     if (!capture) return false;
     let clocks, body;
     try {
@@ -369,7 +373,9 @@ export class Persister {
       this._workerHealthy = true;
     } catch (err) {
       // Re-capture synchronously: the posted capture held references that may have moved on while the Worker died.
-      const doc = snapshotMatch(match);
+      // A lane Worker's match cannot be recaptured here (its state is not on this thread): its own capture is already
+      // a consistent, thread-crossed snapshot, so it is encoded inline instead.
+      const doc = remote ? encodeMatchCapture(capture) : snapshotMatch(match);
       if (!doc) return false;
       const split = splitClocks(doc);
       clocks = split.clocks;

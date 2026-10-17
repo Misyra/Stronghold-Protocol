@@ -212,6 +212,16 @@ const matchAnswer = (res) => (res && typeof res === 'object' && res.error
   ? fail(isErrCode(res.error) ? res.error : ERR.INTERNAL, typeof res.detail === 'string' ? res.detail : undefined)
   : OK);
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
+/**
+ * The Match options a lane Worker can be given (startRemoteMatch): everything but the closures — a thread boundary
+ * cannot carry them and the pool supplies its own (send / broadcast / onEnd). `data` is configured once per lane by the
+ * pool, so it is dropped here as well; `rehearsalPressure` is a live object whose methods would not survive the copy.
+ */
+function workerMatchOptions(opts) {
+  const { send: _send, broadcast: _broadcast, onEnd: _onEnd, onCheckpoint: _onCheckpoint, onAudit: _onAudit,
+    log: _log, now: _now, rehearsalPressure: _pressure, workerPool: _workerPool, data: _data, ...rest } = opts;
+  return rest;
+}
 
 /**
  * @typedef {{ seat: number, playerId: string, name: string, isBot: boolean, ready: boolean,
@@ -416,6 +426,7 @@ export class Lobby {
    *   hosts?: { create: (cs: string, opts: object) => any, stats?: () => object } | null,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    *   workerPool?: object | null,
+   *   matchWorkerPool?: { create: Function, release?: Function } | null,
    *   chatLog?: import('./chatLog.js').ChatLog | null,
    *   rehearsalPressure?: import('./rehearsalPressure.js').RehearsalPressure | null,
    *   countryLookup?: ((ip: string) => string | null) | null,
@@ -425,7 +436,7 @@ export class Lobby {
    *   plugins", "Gameplay plugins"); hosts: the match hosts a room with gameplay plugins runs its match in
    *   (server/match/host/index.js; none: such a match runs here, unit tests)
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, content = null, plugins = null, hosts = null, options = {}, workerPool = null, chatLog = null, countryLookup = null, rehearsalPressure = null }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, content = null, plugins = null, hosts = null, options = {}, workerPool = null, matchWorkerPool = null, chatLog = null, countryLookup = null, rehearsalPressure = null }) {
     this.registry = registry;
     /** the vanilla content set every room plays (header "Content identity"), or null */
     this.vanilla = content && isContentHash(content.cs) ? Object.freeze({ cs: content.cs, vanilla: true, plugins: Object.freeze([]) }) : null;
@@ -437,6 +448,8 @@ export class Lobby {
     this.MatchClass = MatchClass;
     this.getData = getData;
     this.workerPool = workerPool;
+    /** 对局线程池（server/workers/matchPool.js，SP_MATCH_WORKERS）：无插件的对局在 lane 线程里跑；null 时全在主线程 */
+    this.matchWorkerPool = matchWorkerPool;
     this.rehearsalPressure = rehearsalPressure;
     this.chatLog = chatLog;
     this.now = now;
@@ -854,6 +867,8 @@ export class Lobby {
     for (const timer of this.resyncTimers.values()) clearTimeout(timer);
     this.resyncTimers.clear();
     for (const room of this.rooms.values()) {
+      // 对局在 lane 线程里时，冻结的是那个线程里的对局（server/workers/matchPool.js）
+      if (room.match?.remote) { room.match.suspendWork().catch(() => {}); continue; }
       room.match?.sched?.suspend?.();
       for (const task of room.match?.workerTasks || []) task.suspend();
     }
@@ -1385,10 +1400,9 @@ export class Lobby {
       this.log.error(`[lobby] ${room.code} match.setSkins threw`, e);
       return fail(ERR.INTERNAL);
     }
-    if (r && typeof r === 'object' && r.error) {
-      return fail(isErrCode(r.error) ? r.error : ERR.INTERNAL, typeof r.detail === 'string' ? r.detail : undefined);
-    }
-    return OK;
+    // a match in a match host answers later (header "Gameplay plugins"); so does one in a lane Worker
+    if (r && typeof r.then === 'function') return Promise.resolve(r).then(matchAnswer, () => fail(ERR.INTERNAL));
+    return matchAnswer(r);
   }
 
   /**
@@ -1556,6 +1570,61 @@ export class Lobby {
     return this.workerPool?.assign ? this.workerPool.assign(key) : this.workerPool;
   }
 
+  /**
+   * The room takes a match it now owns (a fresh one, local or from a lane Worker): it leaves the lobby, the previous
+   * replay is dropped and the match number advances. The caller announces it (log / audit / broadcastState).
+   * @param {Room} room @param {object} ctx @param {string | null} key @param {object} match
+   */
+  attachMatch(room, ctx, key, match) {
+    ctx.match = match;
+    room.match = match;
+    room.matchCtx = ctx;
+    room.matchKey = key;
+    room.replay = null;
+    room.matchCount++;
+    room.chatMessages = [];
+  }
+
+  /**
+   * A match hosted by a lane Worker (server/workers/matchPool.js): the pool answers with a RemoteMatch — every method of
+   * it is a call into that thread, so all of them return a Promise. A Match's closures cannot cross a thread boundary,
+   * so the pool's own hooks carry them; what arrives here is routed exactly like a local match's frames (matchSend /
+   * matchBroadcast / onMatchEnd).
+   *
+   * A failure before the match is ready answers like the local path does (a fail() the starter reads), so the caller
+   * never sees a half-started room.
+   * @param {Room} room @param {object} ctx @param {string | null} key @param {object} opts Match options (startMatchWith)
+   * @returns {Promise<{ ok: true } | { error: string, detail?: string }>}
+   */
+  async startRemoteMatch(room, ctx, key, opts) {
+    const starter = this.registry.byId(room.hostId);
+    try {
+      const match = await this.matchWorkerPool.create(room.code, workerMatchOptions(opts), {
+        // the room sees the match from the moment its lane reserved it: a disconnect during the initialization queues
+        // behind it (the room's queue)
+        created: (m) => { ctx.match = m; room.match = m; room.matchCtx = ctx; room.matchKey = key; },
+        send: (playerId, msg) => { if (ctx.live) this.matchSend(room, ctx, playerId, msg); },
+        broadcast: (msg) => { if (ctx.live) this.matchBroadcast(room, ctx, msg); },
+        end: (summary) => this.onMatchEnd(room, ctx, summary),
+      });
+      this.attachMatch(room, ctx, key, match);
+      this.log.info(`[lobby] ${room.code} match #${room.matchCount} starting in a worker (${room.mode}/${room.difficulty}, ${opts.seats.length} seats, seed ${opts.seed})`);
+      this.audit('match.started', starter, room, { matchCount: room.matchCount, mode: room.mode, difficulty: room.difficulty,
+        bots: opts.seats.filter((s) => s.isBot).length, worker: true });
+      this.broadcastState(room);
+      // its start is a call into that thread: the reply waits for it, so a failing start reaches the starter
+      await match.start();
+      this.checkpoint(room.code, match);
+    } catch (e) {
+      this.log.error(`[lobby] ${room.code} match failed to start in a worker`, e);
+      if (room.matchCtx === ctx) { room.match = null; room.matchCtx = null; room.matchKey = null; }
+      this.disposeMatchCtx(ctx);
+      this.broadcastState(room);
+      return fail(e && isErrCode(e.code) ? e.code : ERR.INTERNAL, 'match failed to start');
+    }
+    return OK;
+  }
+
   /** Rebuild the lobby's rooms from a persisted document (server/matchRestore.js; `Room` is injected). */
   restoreRooms(docs, options) { return restoreLobbyRooms(this, docs, { Room, ...options }); }
 
@@ -1636,16 +1705,15 @@ export class Lobby {
         onCheckpoint: (m) => this.checkpoint(room.code, m),
         onAudit: (action, extra) => this.audit(action, this.registry.byId(room.hostId), room, extra),
       };
-      // a room with gameplay plugins plays in its content set's match host; every other room here, as always
+      // a room with gameplay plugins plays in its content set's match host; every other room here, as always — and, with
+      // the match worker pool on (SP_MATCH_WORKERS), a fresh match of a plain room runs in a lane Worker instead
+      // (server/workers/matchPool.js): that thread owns the timers, the AI and the state, this one routes its frames.
+      // It answers later (every call into a lane is a Promise), so it takes over from here.
+      if (!modded && !checkpoint && this.matchWorkerPool) return this.startRemoteMatch(room, ctx, key, opts);
       const match = modded && this.hosts ? this.hosts.create(room.content.cs, opts) : new this.MatchClass(opts);
       ctx.match = match;
       if (checkpoint) return adoptRestoredMatch(this, room, { match, ctx, key, starter, checkpoint });
-      room.match = match;
-      room.matchCtx = ctx;
-      room.matchKey = key;
-      room.replay = null;
-      room.matchCount++;
-      room.chatMessages = [];
+      this.attachMatch(room, ctx, key, match);
       this.log.info(`[lobby] ${room.code} match #${room.matchCount} starting (${room.mode}/${room.difficulty}, ${seats.length} seats, seed ${seed}${modded ? `, content ${room.content.cs.slice(0, 8)}${match.hosted ? ' in its match host' : ''}` : ''})`);
       this.audit('match.started', starter, room, { matchCount: room.matchCount,
         mode: room.mode, difficulty: room.difficulty, bots: seats.filter((s) => s.isBot).length });
@@ -1872,8 +1940,9 @@ export class Lobby {
       return fail(ERR.INTERNAL);
     }
     if (res && typeof res.then === 'function') {
-      // a match in a match host answers later (header "Gameplay plugins"): the reply waits for it
-      if (room.match?.hosted === true) {
+      // a match in a match host answers later (header "Gameplay plugins"); so does one in a lane Worker (the pool's
+      // RemoteMatch methods are calls into that thread)
+      if (room.match?.hosted === true || room.match?.remote === true) {
         return Promise.resolve(res).then((r) => matchAnswer(r), (e) => {
           this.log.error(`[lobby] ${room.code} match.handle(${msg.t}) rejected`, e);
           return fail(ERR.INTERNAL);
@@ -1911,6 +1980,8 @@ export class Lobby {
     // release and stays a no-op; an unknown key is ignored too.
     const key = ctx.workerPoolKey || ctx.match?.roomCode;
     if (key) this.workerPool?.release?.(key);
+    // 对局线程池：把这条 lane 上的位置还回去（server/workers/matchPool.js；dispose 已经发过，这里只清账）
+    if (key) this.matchWorkerPool?.release?.(key, ctx.match);
   }
 
   safeData() {

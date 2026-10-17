@@ -1,8 +1,7 @@
-// Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
 // server/resources.js — the optional preload manifest (docs/ASSETS.md「Preload」).
 //
 // The client can preload every file a match may need into Cache Storage (Service Worker, public/js/resources/*), so
-// cached art can be read locally and reduces download waits when entering a battle.
+// entering a battle never waits on a download: the art comes from the browser cache.
 // That list needs no extra build step: it is derived from the asset manifests this server already serves, and it is
 // rewritten exactly like /data/assets.json (SP_ASSETS_CDN, docs/ASSETS.md「CDN」) — so the client preloads from the
 // CDN. Local file sizes are added when this install has the files on disk (a CDN-only install simply omits them).
@@ -11,29 +10,23 @@
 // changes, so an asset update only re-downloads what really changed (docs/ASSETS.md「Preload」) instead of the whole
 // ~310 MiB. Hashes come from the manifests themselves — `local-assets.json` entries (written by extract.py) and
 // `asset-hashes.json` (tools/asset-hashes.mjs over public/assets + public/fonts). A file without one keeps the old
-// local files are hashed lazily on the first manifest request. Missing/CDN-only files fall back to the source stamp.
+// set-level rule through a synthetic hash of its source stamp, so a manifest that predates hashing still invalidates.
 //
 // /data/resource-manifest.json:
 //   { format: 1, version: '<digest of every url|hash>', count, tier1, sized, totalBytes,
-//     files: [ { url, tier, size?, hash?, skin?, fx? } … ] }   // sorted: essential tier first, then by URL
-//   `skin` (`<charId>/<skinId>`) marks the 干员皮肤 files: they are the one optional group the panel scopes by item
-//   rather than by tier, and a full install of them is ~328 MiB (custom_docs/SKINS.md).
-//   `fx` marks the official battle effects of `data/local-fx.json` (docs/design/vfx-format.md): optional like every
-//   other tier-2 group, but with a preload switch of its own — ~185 MiB, the largest optional set after skins.
+//     files: [ { url, tier, size?, hash } … ] }   // sorted: essential tier first, then by URL
 
-import { hashFile } from './fileHash.js';
 import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { canonicalResourceUrl, isRawResourceJson } from '../shared/resourcePaths.js';
-import { CUSTOM_EMOTE_THEME, emoteArtPath } from '../shared/constants.js';
+import { canonicalResourceUrl, isBoardResourceJson } from '../shared/resourcePaths.js';
+import { routeResourcePacks } from '../shared/resourcePackRoutes.js';
 
 export const RESOURCE_MANIFEST_FILE = 'resource-manifest.json';
+export const RESOURCE_PACK_MANIFEST_FILE = 'resource-packs.json';
 /** Per-file content hashes of the fetched assets, written by tools/asset-hashes.mjs (optional). */
 export const ASSET_HASHES_FILE = 'asset-hashes.json';
-/** The official battle-effect extraction (docs/design/vfx-format.md): an optional art tree of its own. */
-export const LOCAL_FX_FILE = 'local-fx.json';
 export const RESOURCES_FORMAT = 1;
 /** A hash as the client accepts it (hex digests, the `syn-` fallback, a plain `sha1-…` label). */
 export const HASH_RE = /^[A-Za-z0-9._:-]{1,64}$/;
@@ -46,25 +39,11 @@ export function shortHash(text) {
 export const MAX_FILE_BYTES = 24 * 1024 * 1024;
 /** Required visuals: maps/meshes, portraits, Spine, fonts, UI and icons. */
 export const TIER_ESSENTIAL = 1;
-/** Optional: voices, sound effects, music, tutorial illustrations, 干员皮肤 and 官方特效 (see tierForPath). */
+/** Optional: voices, official battle effects, sound effects, music and tutorial illustrations. */
 export const TIER_REST = 2;
-
-/**
- * `charId/skinId` of a manifest key path that runs through `chars.<charId>.skins.<skinId>…`, else null. The ids live in
- * `data/assets.json` keyed per operator, and a skin id only ever holds `@` / `#` / `_` — never a dot — so a dotted
- * key path is unambiguous. The client groups and scopes skins by this value (public/js/resources/common.js).
- */
-export function skinKeyForPath(keyPath) {
-  const m = /(?:^|\.)([^.]+)\.skins\.([^.]+)(?:\.|$)/.exec(String(keyPath || ''));
-  return m ? `${m[1]}/${m[2]}` : null;
-}
 
 /** Extension → MIME type. Mirrored by the client (public/js/resources/common.js) for URL validation. */
 export const RESOURCE_MIME = Object.freeze({
-  json: 'application/json; charset=utf-8',
-  aac: 'audio/aac',
-  oga: 'audio/ogg',
-  opus: 'audio/ogg',
   png: 'image/png',
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
@@ -89,28 +68,29 @@ export const RESOURCE_MIME = Object.freeze({
 
 /** MIME type of a resource URL, or null when the extension is not a resource type. */
 export function resourceType(url) {
+  if (isBoardResourceJson(url)) return 'application/json; charset=utf-8';
   const m = /\.([A-Za-z0-9]+)$/.exec(String(url || ''));
   return m ? RESOURCE_MIME[m[1].toLowerCase()] || null : null;
 }
 
 /** Whether a URL path is served from the asset trees the preload may cache. */
 export function isResourcePath(pathname) {
-  return /\/(?:assets|fonts)\//.test(String(pathname || ''));
+  const p = String(pathname || '');
+  if (p.startsWith('/build/')) return false;
+  return /\/(?:assets|fonts)\//.test(p);
 }
 
 /**
  * Whether a manifest string is a file the client may request: a site path (`/assets/…`, `/fonts/…`) or an absolute
- * http(s) URL (the CDN shape), with a known resource extension and no query/control characters — except the one
- * query manifest mode itself appends, the per-file `?v=<16 hex>` cache-bust.
+ * http(s) URL (the CDN shape), with a known resource extension and no query/control characters.
  */
 export function validateResourceUrl(url) {
   if (typeof url !== 'string' || url.length === 0 || url.length > 512) return false;
-  const bare = String(url).replace(/\?v=[0-9a-f]{16}$/, '');
-  if (/[\s?#\\"'<>\u0000-\u001f]/.test(bare)) return false;
-  let pathname = bare;
-  if (!bare.startsWith('/') || bare.startsWith('//')) {
-    if (!/^https?:\/\//i.test(bare)) return false;
-    try { pathname = new URL(bare).pathname; } catch { return false; }
+  if (/[\s?#\\"'<>\u0000-\u001f]/.test(url)) return false;
+  let pathname = url;
+  if (!url.startsWith('/') || url.startsWith('//')) {
+    if (!/^https?:\/\//i.test(url)) return false;
+    try { pathname = new URL(url).pathname; } catch { return false; }
   }
   return isResourcePath(pathname) && !!resourceType(pathname);
 }
@@ -119,17 +99,15 @@ const TIER_ESSENTIAL_SECTIONS = new Set(['ui', 'prof', 'bonds', 'items', 'bands'
 
 /**
  * Preload tier of a manifest entry, from its key path (`chars.char_002_amiya.spine.front.skel`). Operators, tokens and
- * images, Spine and map geometry are all required. Audio and tutorial illustrations are optional. Local groups use
+ * images, base Spine and map geometry are required. Audio, official FX and tutorial illustrations are optional. Local groups use
  * slash-containing names (map/autochess, spine/enemy/…), so classification must handle both '/' and '.'.
  */
 export function tierForPath(keyPath) {
   const p = String(keyPath || '');
   const segments = p.split(/[./]/);
   const head = segments[0];
-  if (segments.some((s) => ['audio', 'voice', 'voices', 'sfx', 'bgm', 'guide'].includes(s))) return TIER_REST;
-  // 干员皮肤 is optional by design: a full install is ~328 MiB (custom_docs/SKINS.md), a third of the whole cache, for models
-  // a given player may never equip — so it never rides the required set. The panel gives it its own switch instead.
-  if (segments.includes('skins')) return TIER_REST;
+  if (head === 'local' && segments[1] === 'groups' && segments[2] === 'fx') return TIER_REST;
+  if (segments.some((s) => ['audio', 'voice', 'voices', 'sfx', 'bgm', 'guide', 'skins'].includes(s))) return TIER_REST;
   if (head === 'local') return TIER_ESSENTIAL;
   return TIER_ESSENTIAL_SECTIONS.has(head) ? TIER_ESSENTIAL : TIER_REST;
 }
@@ -148,17 +126,14 @@ export function collectResourceFiles(assets, local) {
   const walk = (node, keyPath, source) => {
     if (typeof node === 'string') {
       if (!validateResourceUrl(node)) return;
-      // Audio is optional even when a new manifest nests it inside an otherwise required character/map section.
-      const tier = resourceType(node)?.startsWith('audio/') ? TIER_REST : tierForPath(keyPath);
+      // Audio and official battle FX stay optional even under otherwise required character/map sections.
+      const tier = resourceType(node)?.startsWith('audio/') || /\/assets\/local\/fx\//.test(pathKey(node))
+        ? TIER_REST : tierForPath(keyPath);
       const url = canonicalResourceUrl(node);
-      const skin = skinKeyForPath(keyPath);
       const prev = byUrl.get(url);
-      // A file that two entries name keeps its lowest tier, and the skin key of either one (the same file is never
-      // two different skins' — an avatar that two outfits share still belongs to whichever listed it first).
-      if (prev == null || tier < prev.tier) byUrl.set(url, { tier, source, skin: skin || prev?.skin || null });
-      else if (skin && !prev.skin) prev.skin = skin;
-      // The crop table sits beside the atlas and is not listed in local-assets.json.
-      if (source === 'local' && /\/assets\/local\/map\/autochess\/TX_autochessi_D\.(?:png|webp)(?:\?v=[0-9a-f]{16})?$/.test(url)) {
+      if (prev == null || tier < prev.tier) byUrl.set(url, { tier, source });
+      // The crop tool writes this companion beside the board atlas, outside local-assets.json.
+      if (source === 'local' && /\/assets\/local\/map\/autochess\/TX_autochessi_D\.(?:png|webp)$/.test(url)) {
         byUrl.set(url.replace(/[^/]+$/, 'tiles.json'), { tier: TIER_ESSENTIAL, source });
       }
       return;
@@ -175,49 +150,15 @@ export function collectResourceFiles(assets, local) {
   }
   if (local && typeof local === 'object') walk(local, 'local', 'local');
   return [...byUrl]
-    .map(([url, e]) => ({ url, tier: e.tier, source: e.source, ...(e.skin ? { skin: e.skin } : {}) }))
+    .map(([url, e]) => ({ url, tier: e.tier, source: e.source }))
     .sort((a, b) => a.tier - b.tier || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
 }
 
-/** The official battle-effect tree — `data/local-fx.json` only ever names files below this prefix. */
-const FX_PATH_PREFIX = '/assets/local/fx/';
-
-/**
- * Every file named by `data/local-fx.json` (docs/design/vfx-format.md): effect prefabs, meshes and their textures
- * (each texture also has a `half` variant of its own). That manifest is a plain index of the extraction tree — no
- * hashes, no tiers — so this walks every `/assets/local/fx/…` string it meets, deduplicated and sorted, as optional.
- * Sizes and hashes come from the same place every other file's do: measure() on an install that has the files on disk,
- * the published asset manifest on a CDN-only install (createResourceIndex).
- * @param {any} fx parsed data/local-fx.json, optional
- * @param {string} [cdnBase] strip a CDN base path before recognizing the extraction tree
- * @returns {{ url: string, tier: number, source: 'fx', fx: true }[]}
- */
-export function collectFxFiles(fx, cdnBase = '') {
-  const byUrl = new Map();
-  const walk = (node) => {
-    if (typeof node === 'string') {
-      if (!validateResourceUrl(node) || !pathKey(node, cdnBase).startsWith(FX_PATH_PREFIX)) return;
-      const url = canonicalResourceUrl(node);
-      if (!byUrl.has(url)) byUrl.set(url, { url, tier: TIER_REST, source: 'fx', fx: true });
-      return;
-    }
-    if (Array.isArray(node)) { for (const item of node) walk(item); return; }
-    if (node && typeof node === 'object') for (const value of Object.values(node)) walk(value);
-  };
-  walk(fx);
-  return [...byUrl.values()].sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
-}
-
-/** The per-file cache-bust query manifest mode appends (`?v=<16 hex>`): part of the URL, never of the file it names. */
-const BUST_QUERY = /\?v=[0-9a-f]{16}$/;
-
 /** Path part of a URL — the key real hashes are matched by (a CDN install rewrites the URLs, not the hash file). */
-export function pathKey(url, cdnBase = '') {
-  let s = canonicalResourceUrl(url || '').replace(BUST_QUERY, '');
-  if (cdnBase && s.startsWith(cdnBase + '/')) s = s.slice(cdnBase.length);
-  let p = s;
-  if (!s.startsWith('/') || s.startsWith('//')) { try { p = new URL(s).pathname; } catch { return s; } }
-  return p.replace(/\/_v\/[a-f0-9]{16}(?=\/)/, '');
+export function pathKey(url) {
+  const s = canonicalResourceUrl(url || '');
+  if (s.startsWith('/') && !s.startsWith('//')) return s;
+  try { return new URL(s).pathname; } catch { return s; }
 }
 
 /**
@@ -227,11 +168,11 @@ export function pathKey(url, cdnBase = '') {
  * @param {any} hashesDoc parsed asset-hashes.json, optional
  * @returns {Map<string, string>}
  */
-export function collectRealHashes(localDoc, hashesDoc, cdnBase = '') {
+export function collectRealHashes(localDoc, hashesDoc) {
   /** @type {Map<string, string>} */
   const map = new Map();
   const put = (url, hash) => {
-    if (typeof url === 'string' && validateResourceUrl(url) && typeof hash === 'string' && HASH_RE.test(hash)) map.set(pathKey(url, cdnBase), hash);
+    if (typeof url === 'string' && validateResourceUrl(url) && typeof hash === 'string' && HASH_RE.test(hash)) map.set(pathKey(url), hash);
   };
   const groups = localDoc && typeof localDoc === 'object' ? localDoc.groups : null;
   if (groups && typeof groups === 'object') {
@@ -250,14 +191,16 @@ export function collectRealHashes(localDoc, hashesDoc, cdnBase = '') {
  * (any change to the source manifest's own hash/mtime invalidates everything of that source).
  * @param {{ url: string, source: string }[]} files
  * @param {Map<string, string>} real
- * @param {{ web: string, local: string, fx: string }} stamps
+ * @param {{ web: string, local: string }} stamps
+ * @param {string} cdnBase serving prefix removed before looking up site-path hash keys
  * @returns {Map<string, string>}
  */
 export function resolveHashes(files, real, stamps, cdnBase = '') {
   /** @type {Map<string, string>} */
   const out = new Map();
   for (const f of files) {
-    const known = real.get(pathKey(f.url, cdnBase));
+    const siteUrl = cdnBase && f.url.startsWith(cdnBase + '/') ? f.url.slice(cdnBase.length) : f.url;
+    const known = real.get(pathKey(siteUrl)) || real.get(pathKey(f.url));
     out.set(f.url, typeof known === 'string' && known ? known : `syn-${shortHash(`${f.source}|${stamps[f.source] || ''}|${f.url}`)}`);
   }
   return out;
@@ -277,10 +220,6 @@ export function buildResourceManifest({ files, sizes = null, version = 'none', h
     const entry = { url: f.url, tier: f.tier };
     const hash = (hashes ? hashes.get(f.url) : f.hash) || null;
     if (hash) entry.hash = hash;
-    // 干员皮肤 only: `charId/skinId`, what the client scopes preloading by (public/js/resources/store.js).
-    if (f.skin) entry.skin = f.skin;
-    // 官方特效 only: the preload panel's third switch (public/js/resources/common.js `resourceGroup`).
-    if (f.fx) entry.fx = true;
     if (Number.isSafeInteger(size) && size >= 0) {
       entry.size = size;
       totalBytes += size;
@@ -305,10 +244,9 @@ export function buildResourceManifest({ files, sizes = null, version = 'none', h
  * A CDN URL maps back to the same tree (`https://cdn/assets/x.png` → `<publicDir>/assets/x.png`).
  */
 export function localPathFor(url, publicDir, cdnBase = '') {
-  let p = String(url || '').replace(/\?v=[0-9a-f]{16}$/, '');
-  if (cdnBase && p.startsWith(cdnBase + '/')) p = p.slice(cdnBase.length) || '/';
-  if (!p.startsWith('/') || p.startsWith('//')) return null;
-  p = p.replace(/^\/_v\/[a-f0-9]{16}(?=\/)/, '');
+  let p = String(url || '');
+  if (cdnBase && p.startsWith(cdnBase)) p = p.slice(cdnBase.length) || '/';
+  if (!p.startsWith('/')) return null;
   try { p = decodeURIComponent(p); } catch { return null; }
   if (/[\\\u0000-\u001f]/.test(p)) return null;
   const root = path.resolve(publicDir);
@@ -320,72 +258,63 @@ export function localPathFor(url, publicDir, cdnBase = '') {
 
 /**
  * The served resource manifest, built from the data directory and cached until one of its sources changes.
- * @param {{ dataDir: string, publicDir: string, cdnBase?: string, rewrite?: (v: any) => any,
- *           statFile?: (p: string) => Promise<{ isFile(): boolean, size: number }>, readFile?: typeof fsp.readFile, log?: any,
- *           transformResource?: (source: string, ext: string) => string,
- *           assetsManifest?: { hashes: Record<string, string>, preload?: Record<string, { hash: string, size: number }> } | null }} opts
+ * @param {{ dataDir: string, publicDir: string, cdnBase?: string, resourcePackRoutes?: string[], rewrite?: (v: any) => any,
+ *           statFile?: (p: string) => Promise<{ isFile(): boolean, size: number, mtimeMs: number }>,
+ *           readFile?: typeof fsp.readFile, log?: any }} opts
  */
-export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite = (v) => v, statFile = (p) => fsp.stat(p),
-  readFile = (p, opts) => fsp.readFile(p, opts), log = null, assetsManifest = null, transformResource = null } = {}) {
-  /** @type {{ key: string, sourceKey: string, tileFiles: any[], body: Buffer, gzip: Buffer, etag: string, mtimeMs: number, manifest: any } | null} */
+export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resourcePackRoutes = [], rewrite = (v) => v,
+  statFile = (p) => fsp.stat(p), readFile = fsp.readFile, log = null } = {}) {
+  /** @type {{ key: string, sourceKey: string, tileFiles: { url: string }[], body: Buffer, gzip: Buffer,
+   *   etag: string, mtimeMs: number, manifest: any } | null} */
   let cache = null;
   let pending = null, generation = 0;
-  const contentHashes = new Map();
 
-  async function sourceStat(name) {
+  async function sourceFile(name) {
     const file = path.join(dataDir, name);
     try {
       const stat = await statFile(file);
       if (!stat.isFile()) return null;
-      return { mtimeMs: stat.mtimeMs, size: stat.size };
+      return { file, mtimeMs: stat.mtimeMs, size: stat.size };
     } catch (e) {
       if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) return null;
       throw e;
     }
   }
 
-  async function readJson(name, stat) {
-    return stat ? { ...stat, doc: JSON.parse(await readFile(path.join(dataDir, name), 'utf8')) } : null;
+  const stamp = (source) => source ? `${source.mtimeMs}:${source.size}` : '-';
+  async function readJson(source) {
+    if (!source) return null;
+    try { return { ...source, doc: JSON.parse(await readFile(source.file, 'utf8')) }; }
+    catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
+      throw error;
+    }
   }
-
   async function tileSources(files) {
     return Promise.all(files.map(async (file) => {
       const abs = localPathFor(file.url, publicDir, cdnBase);
       try {
         const stat = abs && await statFile(abs);
-        return stat?.isFile() ? { url: file.url, abs, stamp: `${stat.mtimeMs}:${stat.size}`, size: stat.size } : null;
+        return stat?.isFile() ? { url: file.url, abs, stamp: stamp(stat) } : null;
       } catch (error) {
-        // Like the source manifests: only absence is a negative lookup; any other error must not drop a remembered dependency.
-        if (error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return null;
+        if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
         throw error;
       }
     }));
   }
 
   /** File sizes of the files present on disk (bounded concurrency: ~4 000 stats of a real install). */
-  async function measure(files, real, publishedSizes) {
-    const sizes = new Map(publishedSizes);
+  async function measure(files) {
+    const sizes = new Map();
     let next = 0;
-    const lanes = Math.min(4, files.length);
+    const lanes = Math.min(24, files.length);
     await Promise.all(Array.from({ length: lanes }, async () => {
       for (let i = next++; i < files.length; i = next++) {
         const abs = localPathFor(files[i].url, publicDir, cdnBase);
         if (!abs) continue;
         try {
           const stat = await statFile(abs);
-          if (!stat.isFile()) continue;
-          const f = files[i];
-          if (!sizes.has(f.url)) sizes.set(f.url, stat.size);
-          const canonical = pathKey(f.url, cdnBase);
-          if (stat.size <= MAX_FILE_BYTES && !real.has(canonical)) {
-            const signature = abs + ':' + stat.size + ':' + stat.mtimeMs;
-            let hash = contentHashes.get(signature);
-            if (!hash) {
-              hash = (await hashFile(abs)).hash;
-              contentHashes.set(signature, hash);
-            }
-            real.set(canonical, hash);
-          }
+          if (stat.isFile()) sizes.set(files[i].url, stat.size);
         } catch { /* not on disk (CDN-only install) — the client preloads it without a size */ }
       }
     }));
@@ -393,108 +322,55 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
   }
 
   async function build(epoch) {
-    // Check only cheap source metadata on the hot path, including 304 revalidation. JSON reads/parsing,
-    // CDN rewriting and traversal must all stay behind this gate, not just the final body/gzip generation.
-    const [assetsStat, localStat, hashesStat, fxStat] = await Promise.all([
-      sourceStat('assets.json'), sourceStat('local-assets.json'), sourceStat(ASSET_HASHES_FILE), sourceStat(LOCAL_FX_FILE),
-    ]);
-    // Small site-owned emotes ship with the code, independently of the optional official extraction manifest.
-    const custom = await Promise.all(CUSTOM_EMOTE_THEME.emotes.map(async (emote) => {
-      const url = emoteArtPath(emote.id);
-      try {
-        const stat = await statFile(localPathFor(url, publicDir));
-        return stat.isFile() ? { url, stamp: `${stat.mtimeMs}:${stat.size}` } : null;
-      } catch { return null; }
-    }));
-    const sourceKey = [assetsStat ? `${assetsStat.mtimeMs}:${assetsStat.size}` : '-', localStat ? `${localStat.mtimeMs}:${localStat.size}` : '-',
-      hashesStat ? `${hashesStat.mtimeMs}:${hashesStat.size}` : '-', fxStat ? `${fxStat.mtimeMs}:${fxStat.size}` : '-',
-      cdnBase, ...custom.map(f => f?.stamp || '-')].join('|');
-    let tiles;
-    if (cache && cache.sourceKey === sourceKey) {
-      // Remember dependencies even when tiles.json is absent: creation/deletion must invalidate the cached list.
-      tiles = await tileSources(cache.tileFiles);
-      if (cache.key === [sourceKey, ...tiles.map(f => f?.stamp || '-')].join('|')) return cache;
+    const previous = cache;
+    const sources = await Promise.all(['assets.json', 'local-assets.json', ASSET_HASHES_FILE, 'local-fx.json'].map(sourceFile));
+    // The optional pack index is probed only when it exists. Keeping it out of
+    // the normal source stat set preserves the cheap three-manifest startup
+    // path for installs that publish packs nowhere.
+    let packSource = null;
+    try {
+      const file = path.join(dataDir, RESOURCE_PACK_MANIFEST_FILE);
+      const stat = await fsp.stat(file);
+      if (stat.isFile()) packSource = { file, mtimeMs: stat.mtimeMs, size: stat.size };
+    } catch { /* optional deployment artifact */ }
+    const sourceKey = [...sources.map(stamp), stamp(packSource), cdnBase].join('|');
+    // Cache hits only stat the source files and the already-discovered board companions.
+    // Keep missing companions in tileFiles so creation, not just edits/deletion, invalidates the cache.
+    if (previous && previous.sourceKey === sourceKey) {
+      const tiles = await tileSources(previous.tileFiles);
+      const key = [sourceKey, ...tiles.map((file) => file?.stamp || '-')].join('|');
+      if (previous.key === key) return previous;
     }
-    const t0 = Date.now();
-    const [assets, local, hashesDoc, fx] = await Promise.all([
-      readJson('assets.json', assetsStat), readJson('local-assets.json', localStat), readJson(ASSET_HASHES_FILE, hashesStat),
-      readJson(LOCAL_FX_FILE, fxStat),
-    ]);
+    const [assets, local, hashesDoc, fx] = await Promise.all(sources.map(readJson));
+    const packsDoc = await readJson(packSource);
     const assetsDoc = assets ? rewrite(assets.doc) : null;
-    const localDoc = local ? rewrite(local.doc) : null;
-    const fxDoc = fx ? rewrite(fx.doc) : null;
+    const localDoc = local || fx ? rewrite({ ...(local?.doc || {}), groups: { ...(local?.doc?.groups || {}), ...(fx?.doc?.groups || {}) } }) : null;
     const collected = collectResourceFiles(assetsDoc, localDoc);
-    for (const file of custom) if (file && !collected.some(f => f.url === file.url)) {
-      collected.push({ url: file.url, tier: TIER_ESSENTIAL, source: 'local' });
-    }
-    // 官方特效 (data/local-fx.json) is its own extraction tree — no asset manifest mentions it — so it is merged in
-    // here and gets the same hashes/sizes as the rest of the list. ~12.5 k files, one entry each (a texture's `half`
-    // variant is a path of its own). Still optional; the panel just groups and switches it separately.
-    const seenUrls = new Set(collected.map((f) => f.url));
-    for (const file of collectFxFiles(fxDoc, cdnBase)) {
-      if (seenUrls.has(file.url)) continue;
-      seenUrls.add(file.url);
-      collected.push(file);
-    }
-
-    collected.sort((a, b) => a.tier - b.tier || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
     const tileFiles = collected.filter((f) => /\/assets\/local\/map\/autochess\/tiles\.json$/.test(f.url));
-    tiles ??= await tileSources(tileFiles);
-    const key = [sourceKey, ...tiles.map(f => f?.stamp || '-')].join('|');
-    const real = collectRealHashes(localDoc, hashesDoc ? hashesDoc.doc : null, cdnBase);
-    const publishedSizes = new Map();
-    if (cdnBase && assetsManifest?.preload) {
-      const published = new Map(Object.entries(assetsManifest.preload).map(([p, entry]) =>
-        [pathKey(p), { ...entry, version: assetsManifest.hashes[p] }]));
-      for (const f of collected) {
-        const entry = published.get(pathKey(f.url, cdnBase));
-        // The URL must name exactly the bytes the publisher fingerprinted, including its per-file version.
-        if (entry && f.url.startsWith(cdnBase + '/') && /^[a-f0-9]{12}$/.test(entry.hash)
-          && /^[a-f0-9]{16}$/.test(entry.version) && f.url.endsWith('?v=' + entry.version)
-          && Number.isSafeInteger(entry.size) && entry.size >= 0) {
-          real.set(pathKey(f.url, cdnBase), entry.hash);
-          publishedSizes.set(f.url, entry.size);
-        }
-      }
-    }
-    for (const tile of tiles) if (tile && tile.size <= MAX_FILE_BYTES && !publishedSizes.has(tile.url)) {
-      real.set(pathKey(tile.url, cdnBase), (await hashFile(tile.abs)).hash);
-    }
-    const files = collected.filter((f) => !tileFiles.includes(f) || real.has(pathKey(f.url, cdnBase)));
+    const tiles = await tileSources(tileFiles);
+    const key = [sourceKey, ...tiles.map((f) => f?.stamp || '-')].join('|');
+    const t0 = Date.now();
+    const real = collectRealHashes(localDoc, hashesDoc ? hashesDoc.doc : null);
+    for (const tile of tiles) if (tile) real.set(pathKey(tile.url), crypto.createHash('sha1').update(await readFile(tile.abs)).digest('hex').slice(0, 12));
+    const files = collected.filter((f) => !tileFiles.includes(f) || real.has(pathKey(f.url))
+      || (cdnBase && real.has(pathKey(f.url.slice(cdnBase.length)))));
     const stamps = {
       web: assetsDoc && assetsDoc.hash ? assetsDoc.hash : assets ? `m${Math.floor(assets.mtimeMs)}` : 'none',
       local: localDoc && localDoc.hash ? localDoc.hash : local ? `l${Math.floor(local.mtimeMs)}` : 'none',
-      fx: fxDoc && fxDoc.hash ? fxDoc.hash : fx ? `x${Math.floor(fx.mtimeMs)}` : 'none',
     };
-    const sizes = await measure(files, real, publishedSizes);
     const fileHashes = resolveHashes(files, real, stamps, cdnBase);
-    // Extracted render JSON is served verbatim. Host-rewritten CSS/JSON must instead describe the actual response
-    // bytes (including their size), so a ZIP exported on this host is also fully importable on it.
-    for (const f of files) if (/\.(?:css|json)(?:\?v=[0-9a-f]{16})?$/.test(f.url) && !isRawResourceJson(f.url)) {
-      const own = f.url.startsWith('/') && !f.url.startsWith('//');
-      const abs = own && localPathFor(f.url, publicDir);
-      if (transformResource && abs) {
-        try {
-          const ext = path.extname(pathKey(f.url));
-          const body = Buffer.from(transformResource(await readFile(abs, 'utf8'), ext));
-          fileHashes.set(f.url, crypto.createHash('sha1').update(body).digest('hex').slice(0, 12));
-          sizes.set(f.url, body.length);
-          continue;
-        } catch { /* absent local file: retain the namespace-bound fallback */ }
-      }
-      fileHashes.set(f.url, 'syn-' + shortHash(fileHashes.get(f.url) + '|' + f.url));
-    }
     // The version is informational now (the client keys its cache per file), but it must still change whenever the set
     // or any hash does — the settings panel and the /healthz-style diagnostics read it.
     const version = shortHash([cdnBase, ...files.map((f) => `${f.url}|${fileHashes.get(f.url)}|${f.tier}`)].join('\n'));
-    const manifest = buildResourceManifest({ files, sizes, version, hashes: fileHashes });
+    const manifest = buildResourceManifest({ files, sizes: await measure(files), version, hashes: fileHashes });
+    const packs = packsDoc?.doc;
+    if (packs && packs.format === 'stronghold-resource-pack-index' && packs.version === 1) {
+      manifest.packs = routeResourcePacks(packs.packs, cdnBase, resourcePackRoutes);
+    }
     const body = Buffer.from(JSON.stringify(manifest));
-    // Strong validator over the complete response: an unchanged rebuild or restart keeps it (the client revalidates
-    // with cache: 'no-cache'), while any content change — sizes included — produces a fresh one.
+    // Hash the complete response (including tiers and sizes), so unchanged rebuilds/restarts keep their validator.
     const etag = `"resources-${crypto.createHash('sha256').update(body).digest('hex')}"`;
     const result = { key, sourceKey, tileFiles, body, gzip: zlib.gzipSync(body), etag, mtimeMs: Date.now(), manifest };
-    // A reset() during this build starts a new generation: the stale result still answers its own callers,
-    // but must not replace a cache that a newer build already installed.
     if (epoch === generation) cache = result;
     log?.info?.(`[resources] ${manifest.count} file(s), ${manifest.tier1} essential, ${manifest.sized} sized`
       + `${manifest.totalBytes ? `, ${(manifest.totalBytes / 1048576).toFixed(1)} MiB` : ''}, `
@@ -511,7 +387,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', rewrite 
       pending = work;
       return work;
     },
-    /** Drop the cache (tests). A build already in flight finishes for its callers but cannot repopulate the cache. */
+    /** Drop the cache (tests). */
     reset() { cache = null; pending = null; generation++; },
   };
 }

@@ -25,7 +25,7 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { canonicalResourceUrl } from '../shared/resourcePaths.js';
+import { canonicalResourceUrl, isBoardResourceJson } from '../shared/resourcePaths.js';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const HASHES_VERSION = 1;
@@ -46,7 +46,10 @@ export async function listResourceFiles(dir, { root = ROOT } = {}) {
       if (!e.isFile()) continue;
       const ext = path.extname(e.name).slice(1).toLowerCase();
       if (!EXTENSIONS.has(ext)) continue;
-      out.push(canonicalResourceUrl('/' + path.relative(path.join(root, 'public'), child).split(path.sep).join('/')));
+      const url = canonicalResourceUrl('/' + path.relative(path.join(root, 'public'), child).split(path.sep).join('/'));
+      // JSON 只收棋盘/特效描述侧车（与 server/resources.js 生成清单时同一个判定，server/resources.js 取自 xinhai）
+      if (ext === 'json' && !isBoardResourceJson(url)) continue;
+      out.push(url);
     }
   };
   await walk(path.resolve(root, dir));

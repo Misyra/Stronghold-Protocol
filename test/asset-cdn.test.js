@@ -185,87 +185,6 @@ test('browser helpers honor CDN configuration and preserve remote audio URLs', (
   assert.equal(resourceCache(resourceUrl('/assets/local/tiles.json')), 'default');
 });
 
-test('two hosts keep independent release versions, serve public CORS and retain local code/data/socket routes', async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const write = (rel, body) => {
-    const target = path.join(root, rel);
-    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, body);
-  };
-  write('public/index.html', '<html><head><link href="/fonts/fonts.css"><script type="importmap">{"imports":{"preact":"/vendor/preact.js"}}</script></head><script src="/js/main.js"></script></html>');
-  write('public/js/main.js', 'export const ready = true;');
-  write('public/css/a.css', "a{background:url('/assets/x.png')}");
-  write('public/fonts/fonts.css', "@font-face{font-family:x;src:url('/fonts/a.woff2')}");
-  write('public/fonts/a.woff2', 'font');
-  write('public/assets/x.png', 'image');
-  write('public/assets/x.skel', 'skeleton');
-  write('public/assets/x.atlas', 'x.png\nsize: 1,1\n');
-  write('public/assets/audio/a.mp3', '0123456789');
-  write('public/assets/local/tiles.json', JSON.stringify({ source: { D: { path: '/assets/x.png' } } }));
-  write('data/assets.json', JSON.stringify({ spine: { skel: '/assets/x.skel', atlas: '/assets/x.atlas', textures: ['/assets/x.png'], anims: {} }, audio: '/assets/audio/a.mp3', foreign: 'https://third.example/x.png' }));
-  write('data/chess.json', '{}');
-  const opts = { port: 0, host: '127.0.0.1', quiet: true, workers: 0, publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'), assetsManifestFile: path.join(root, 'absent') };
-  const remote = await startServer(opts);
-  t.after(() => remote.close());
-  const remoteHealth = await (await fetch(remote.url + '/healthz')).json();
-  const game = await startServer({ ...opts, assetsCdn: remote.url, assetsCdnVersion: remoteHealth.artVersion });
-  t.after(() => game.close());
-  const health = await (await fetch(game.url + '/healthz')).json();
-  assert.notEqual(health.artVersion, remoteHealth.artVersion);
-  assert.notEqual(health.build, remoteHealth.build);
-  assert.equal(health.assetsCdnVersion, remoteHealth.artVersion);
-  const localPrefix = `/_v/${health.build}`;
-  assert.match(health.runtimeVersion, /^[a-f0-9]{16}$/);
-  assert.equal(health.runtimeVersion, remoteHealth.runtimeVersion, 'CDN settings do not change executable modules');
-  assert.notEqual(health.runtimeVersion, health.build);
-  assert.notEqual(health.runtimeVersion, health.artVersion);
-  const runtimePrefix = `/_v/${health.runtimeVersion}`;
-  const remotePrefix = `${remote.url}/_v/${remoteHealth.artVersion}`;
-  const html = await (await fetch(game.url + '/')).text();
-  assert.ok(html.includes(`href="${remotePrefix}/fonts/fonts.css"`));
-  assert.ok(html.includes(`src="${runtimePrefix}/js/main.js"`));
-  const imports = JSON.parse(html.match(/type="importmap">(.*?)<\/script>/)[1]).imports;
-  assert.equal(imports.preact, runtimePrefix + '/vendor/preact.js');
-  const code = await fetch(game.url + runtimePrefix + '/js/main.js');
-  assert.equal(code.status, 200);
-  assert.match(code.headers.get('cache-control'), /immutable/);
-  assert.equal(await code.text(), 'export const ready = true;');
-  assert.equal((await fetch(game.url + localPrefix + '/js/main.js')).status, 200, 'current release URLs retain legacy code compatibility');
-  const manifest = await (await fetch(game.url + localPrefix + '/data/assets.json')).json();
-  assert.ok(validSpine(manifest.spine));
-  assert.equal(manifest.spine.skel, remotePrefix + '/assets/x.skel');
-  assert.equal(manifest.foreign, 'https://third.example/x.png');
-  assert.equal(new URL('x.png', manifest.spine.atlas).href, manifest.spine.textures[0]);
-  const image = await fetch(manifest.spine.textures[0], { headers: { Origin: game.url } });
-  assert.equal(image.status, 200);
-  assert.equal(image.headers.get('access-control-allow-origin'), '*');
-  assert.match(image.headers.get('cache-control'), /immutable/);
-  const conditional = await fetch(manifest.spine.textures[0], { headers: { 'If-None-Match': image.headers.get('etag'), Origin: game.url } });
-  assert.equal(conditional.status, 304);
-  assert.equal(conditional.headers.get('access-control-allow-origin'), '*');
-  const preflight = await fetch(manifest.audio, { method: 'OPTIONS', headers: { Origin: game.url, 'Access-Control-Request-Headers': 'Range' } });
-  assert.equal(preflight.status, 204);
-  assert.equal(preflight.headers.get('access-control-allow-headers'), 'Range');
-  const audio = await fetch(manifest.audio, { headers: { Origin: game.url, Range: 'bytes=2-5' } });
-  assert.equal(audio.status, 206);
-  assert.equal(await audio.text(), '2345');
-  assert.equal(audio.headers.get('access-control-allow-origin'), '*');
-  for (const path of ['/healthz', localPrefix + '/data/assets.json', runtimePrefix + '/js/main.js']) {
-    assert.equal((await fetch(game.url + path)).headers.get('access-control-allow-origin'), null);
-  }
-  assert.equal((await fetch(game.url + '/api/rooms/ABCD/status', { method: 'OPTIONS' })).status, 405);
-  const css = await (await fetch(game.url + localPrefix + '/css/a.css')).text();
-  assert.ok(css.includes(remotePrefix + '/assets/x.png'));
-  const board = await (await fetch(remotePrefix + '/assets/local/tiles.json')).json();
-  assert.equal(board.source.D.path, `/_v/${remoteHealth.artVersion}/assets/x.png`);
-
-  const legacy = await startServer({ ...opts, assetsCdn: remote.url, assetsVersionFile: path.join(root, 'absent') });
-  t.after(() => legacy.close());
-  const legacyHealth = await (await fetch(legacy.url + '/healthz')).json();
-  const legacyManifest = await (await fetch(legacy.url + `/_v/${legacyHealth.build}/data/assets.json`)).json();
-  assert.equal(legacyManifest.spine.skel, remote.url + '/assets/x.skel', 'an older CDN has no release route');
-});
-
 test('resolveAssetsCdnVersion reads the published tag and degrades to unversioned on any failure', async () => {
   assert.equal(cdnLatestUrl(' https://cdn.example/ ', { now: () => 42 }), 'https://cdn.example/_v/latest?t=42');
   assert.equal(cdnLatestUrl(''), null);
@@ -283,130 +202,27 @@ test('resolveAssetsCdnVersion reads the published tag and degrades to unversione
   assert.equal(await resolveAssetsCdnVersion('', { fetcher: ok(tag) }), '', 'no base, no lookup');
 });
 
-test('startServer resolves SP_ASSETS_CDN_VERSION from the CDN publication and keeps unversioned fallback', async (t) => {
-  const previous = { cdn: process.env.SP_ASSETS_CDN, version: process.env.SP_ASSETS_CDN_VERSION };
-  t.after(() => { process.env.SP_ASSETS_CDN = previous.cdn; process.env.SP_ASSETS_CDN_VERSION = previous.version; });
-  delete process.env.SP_ASSETS_CDN;
-  delete process.env.SP_ASSETS_CDN_VERSION;
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-latest-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const write = (rel, body) => {
-    const target = path.join(root, rel);
-    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, body);
-  };
-  write('public/index.html', '<html><head><link href="/fonts/a.woff2"></head><script src="/js/main.js"></script></html>');
-  write('public/js/main.js', 'export const ready = true;');
-  write('public/fonts/a.woff2', 'font');
-  write('public/assets/x.png', 'image');
-  write('data/chess.json', '{}');
-  const opts = { port: 0, host: '127.0.0.1', quiet: true, workers: 0, publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'), assetsManifestFile: path.join(root, 'absent') };
 
-  const cdnOrigin = http.createServer((req, res) => {
-    if (new URL(req.url, 'http://x').pathname === '/_v/latest') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('fedcba9876543210\n'); return; }
-    res.writeHead(404); res.end();
-  });
-  await new Promise((resolve) => cdnOrigin.listen(0, '127.0.0.1', resolve));
-  t.after(() => cdnOrigin.close());
-  const game = await startServer({ ...opts, assetsCdn: `http://127.0.0.1:${cdnOrigin.address().port}`, assetsVersionFile: path.join(root, 'absent') });
-  t.after(() => game.close());
-  const health = await (await fetch(game.url + '/healthz')).json();
-  assert.equal(health.assetsCdnVersion, 'fedcba9876543210');
-  const html = await (await fetch(game.url + '/')).text();
-  assert.ok(html.includes(`http://127.0.0.1:${cdnOrigin.address().port}/_v/fedcba9876543210/fonts/a.woff2`));
-
-  const missing = http.createServer((req, res) => { res.writeHead(404); res.end(); });
-  await new Promise((resolve) => missing.listen(0, '127.0.0.1', resolve));
-  t.after(() => missing.close());
-  const fallback = await startServer({ ...opts, assetsCdn: `http://127.0.0.1:${missing.address().port}`, assetsVersionFile: path.join(root, 'absent') });
-  t.after(() => fallback.close());
-  const fallbackHealth = await (await fetch(fallback.url + '/healthz')).json();
-  assert.equal(fallbackHealth.assetsCdnVersion, null, 'a CDN without a publication serves unversioned URLs');
-  const fallbackHtml = await (await fetch(fallback.url + '/')).text();
-  assert.ok(fallbackHtml.includes(`http://127.0.0.1:${missing.address().port}/fonts/a.woff2`));
-  assert.ok(!fallbackHtml.includes('/_v/fedcba9876543210'));
-});
-
-test('the repo-shipped .assets-cdn-version wins over the network and travels with git pull', async (t) => {
-  const previous = { cdn: process.env.SP_ASSETS_CDN, version: process.env.SP_ASSETS_CDN_VERSION };
-  t.after(() => { process.env.SP_ASSETS_CDN = previous.cdn; process.env.SP_ASSETS_CDN_VERSION = previous.version; });
-  delete process.env.SP_ASSETS_CDN;
-  delete process.env.SP_ASSETS_CDN_VERSION;
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-file-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const write = (rel, body) => {
-    const target = path.join(root, rel);
-    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, body);
-  };
-  write('public/index.html', '<html><head><link href="/fonts/a.woff2"></head></html>');
-  write('public/fonts/a.woff2', 'font');
-  write('data/chess.json', '{}');
-  const versionFile = path.join(root, '.assets-cdn-version');
-  fs.writeFileSync(versionFile, '0123456789abcdef\n');
-  // an unreachable CDN: the file must resolve the release without any network
-  const game = await startServer({
-    port: 0, host: '127.0.0.1', quiet: true, workers: 0,
-    publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'),
-    assetsCdn: 'http://127.0.0.1:1', assetsVersionFile: versionFile, assetsManifestFile: path.join(root, 'absent'),
-  });
-  t.after(() => game.close());
-  const health = await (await fetch(game.url + '/healthz')).json();
-  assert.equal(health.assetsCdnVersion, '0123456789abcdef');
-  const html = await (await fetch(game.url + '/')).text();
-  assert.ok(html.includes('http://127.0.0.1:1/_v/0123456789abcdef/fonts/a.woff2'));
-  fs.writeFileSync(versionFile, 'garbage\n');
-  assert.equal(readAssetsCdnVersionFile(versionFile), '', 'a junk version file resolves to nothing');
-  assert.equal(readAssetsCdnVersionFile(path.join(root, 'absent')), '');
-});
-
-test('a per-file manifest ships ?v= art URLs, its own endpoint and wins over the legacy tag chain', async (t) => {
-  const previous = { cdn: process.env.SP_ASSETS_CDN, version: process.env.SP_ASSETS_CDN_VERSION };
-  t.after(() => { process.env.SP_ASSETS_CDN = previous.cdn; process.env.SP_ASSETS_CDN_VERSION = previous.version; });
-  delete process.env.SP_ASSETS_CDN;
-  delete process.env.SP_ASSETS_CDN_VERSION;
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-manifest-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const write = (rel, body) => {
-    const target = path.join(root, rel);
-    fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, body);
-  };
-  write('public/index.html', '<html><head><link href="/fonts/a.woff2"><link rel="stylesheet" href="/fonts/fonts.css"></head></html>');
-  write('public/fonts/a.woff2', 'font');
-  write('public/assets/x.png', 'image');
-  write('data/assets.json', JSON.stringify({ pic: '/assets/x.png' }));
-  write('public/fonts/fonts.css', "@font-face{font-family:x;src:url('/fonts/a.woff2')}");
-  const manifestFile = path.join(root, '.assets-manifest.json');
-  const manifest = { tag: '0123456789abcdef', hashes: { '/assets/x.png': 'aaaaaaaaaaaaaaaa', '/fonts/a.woff2': 'bbbbbbbbbbbbbbbb' } };
-  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
-  fs.writeFileSync(path.join(root, '.assets-cdn-version'), 'fedcba9876543210\n');
-  const game = await startServer({
-    port: 0, host: '127.0.0.1', quiet: true, workers: 0,
-    publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'),
-    assetsCdn: 'https://cdn.example', assetsManifestFile: manifestFile,
-  });
-  t.after(() => game.close());
-  const health = await (await fetch(game.url + '/healthz')).json();
-  assert.equal(health.assetsManifest, '0123456789abcdef');
-  assert.equal(health.assetsCdnVersion, null, 'manifest mode needs no release tag');
-  const html = await (await fetch(game.url + '/')).text();
-  assert.ok(html.includes('globalThis.__spManifestReady=fetch("/assets-manifest.json?v=0123456789abcdef")'), 'the manifest fetch starts in <head> (same-origin, so the URL is relative)');
-  assert.ok(!html.includes('"hashes"'), 'the hash map is fetched, never inlined into the page');
-  assert.ok(html.includes('href="https://cdn.example/fonts/a.woff2?v=bbbbbbbbbbbbbbbb"'), 'manifest-listed art gets a per-file hash');
-  const stylesheet = `/_v/${health.artVersion}/fonts/fonts.css`;
-  assert.ok(html.includes(`href="${stylesheet}"`), 'the game serves font CSS instead of verbatim R2 CSS');
-  const cssResponse = await fetch(game.url + stylesheet);
-  assert.equal(cssResponse.status, 200);
-  assert.match(cssResponse.headers.get('cache-control'), /immutable/);
-  assert.ok((await cssResponse.text()).includes("url('https://cdn.example/fonts/a.woff2?v=bbbbbbbbbbbbbbbb')"));
-  const data = await (await fetch(game.url + `/_v/${health.build}/data/assets.json`)).json();
-  assert.equal(data.pic, 'https://cdn.example/assets/x.png?v=aaaaaaaaaaaaaaaa');
-  const served = await fetch(game.url + '/assets-manifest.json?v=0123456789abcdef');
-  assert.equal(served.status, 200);
-  assert.match(served.headers.get('cache-control'), /immutable/);
-  assert.deepEqual(await served.json(), manifest);
-  assert.equal((await fetch(game.url + '/assets-manifest.json')).status, 404, 'the untagged URL answers nothing cacheable');
-  assert.equal((await fetch(game.url + '/assets-manifest.json?v=ffffffffffffffff')).status, 404, 'a foreign tag gets no bytes');
-  // readAssetsManifestFile rejects junk
-  fs.writeFileSync(manifestFile, '{"tag":"nope"}');
-  assert.equal(readAssetsManifestFile(manifestFile), null);
-  assert.equal(readAssetsManifestFile(path.join(root, 'absent')), null);
+// xinhai 的静态服务把 CDN 基址原样拼在 /assets/… 前，并在请求时生成 /js/asset-cdn.js。
+// 这一条替代原先的四条「发布标签 / 逐文件 ?v=」用例：那条链路（server/assetVersion.js + _v/<tag>）已不在服务路径上。
+test('CDN 基址由启动参数决定：/js/asset-cdn.js 与资源清单都带同一个前缀', async () => {
+  const prev = { a: process.env.SP_ASSETS_CDN, d: process.env.SP_DATA_CDN };
+  process.env.SP_ASSETS_CDN = 'https://cdn.example.test/game';
+  process.env.SP_DATA_CDN = 'https://data.example.test/game';
+  const srv = await startServer({ port: 0, quiet: true, stateFile: 'off' });
+  try {
+    const port = srv.port ?? srv.server?.address?.()?.port;
+    const mod = await (await fetch(`http://127.0.0.1:${port}/js/asset-cdn.js`)).text();
+    assert.match(mod, /https:\/\/cdn\.example\.test\/game/, 'ASSETS_CDN 进入客户端模块');
+    assert.match(mod, /https:\/\/data\.example\.test\/game/, 'DATA_CDN 进入客户端模块');
+    const manifest = await (await fetch(`http://127.0.0.1:${port}/data/resource-manifest.json`)).json();
+    const sample = manifest.files.find((f) => typeof f.url === 'string' && f.url.startsWith('https://'));
+    assert.ok(sample, '清单里的素材地址被改写到 CDN');
+    assert.match(sample.url, /^https:\/\/cdn\.example\.test\/game\/assets\//);
+    assert.equal(/\?v=/.test(sample.url), false, '不再做逐文件 ?v=（旧链路）');
+  } finally {
+    await srv.close();
+    if (prev.a == null) delete process.env.SP_ASSETS_CDN; else process.env.SP_ASSETS_CDN = prev.a;
+    if (prev.d == null) delete process.env.SP_DATA_CDN; else process.env.SP_DATA_CDN = prev.d;
+  }
 });

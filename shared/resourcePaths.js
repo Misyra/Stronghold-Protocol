@@ -30,3 +30,14 @@ export function resourceIdentity(value) {
     return match ? decoded.slice(match.index) : decoded;
   } catch { return null; }
 }
+
+// 取自 xinhai 的 shared/resourcePaths.js：他们的清单生成（server/resources.js）按这个名字判断「棋盘/特效描述 JSON」。
+// 本仓库另有更宽的 isRawResourceJson（assets/local 下任意 JSON），两者并存，互不替代。
+export function isBoardResourceJson(url) {
+  let pathname;
+  try { pathname = new URL(String(url), 'https://resources.invalid').pathname; } catch { return false; }
+  if (pathname.startsWith('/build/')) return false;
+  return /\/assets\/local\/map\/(?:fx\/(?:materials|prefab)|autochess\/(?:materials|tiles))\.json$/.test(pathname)
+    || /\/assets\/local\/fx\/(?:(?:index|textures)|prefabs\/[A-Za-z0-9_.-]+|mesh\/[A-Za-z0-9_.-]+)\.json$/.test(pathname)
+    || /\/assets\/local\/scene\/(?:act1autochess_m0[1-7]|act2autochess_m0[1-4])\/scene\.json$/.test(pathname);
+}

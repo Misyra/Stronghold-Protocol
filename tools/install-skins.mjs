@@ -1,5 +1,5 @@
-// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
-// tools/install-skins.mjs — 按需安装干员皮肤 (docs/SKINS.md).
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in custom_docs/SKINS.md.
+// tools/install-skins.mjs — 按需安装干员皮肤 (custom_docs/SKINS.md).
 //
 // Why this exists instead of just re-running tools/fetch-assets.mjs: a full run takes ~80 s even with a warm
 // skeleton-parse cache (it walks every planned file and validates the whole spine cache). That is fine once at
@@ -50,10 +50,28 @@ const readJson = async (p) => JSON.parse(await readFile(p, 'utf8'));
  * player quits, the server is stopped), and a half-written data/assets.json is not a cosmetic problem — the
  * client reads it to resolve every model and avatar, so a truncated file means nothing renders at all.
  */
-async function writeJsonAtomic(file, value) {
+/**
+ * Write text through a temp file + rename, but leave the file completely alone when the bytes are already identical.
+ *
+ * That last part is not an optimisation. data/assets.json and data/skins-installed.json are versioned JSON: the
+ * release layer signs them at startup and answers 503 for a byte that moved underneath it
+ * (custom_docs/operations/HOME_SERVER.md), so a no-op rewrite takes the whole site down for every client until the next
+ * restart. Re-installing an already-installed skin produces exactly the same bytes and must not touch the file.
+ */
+async function writeFileIfChanged(file, text) {
+  try {
+    if ((await readFile(file, 'utf8')) === text) return false;
+  } catch {
+    // missing or unreadable: fall through and write it
+  }
   const tmp = `${file}.tmp`;
-  await writeFile(tmp, JSON.stringify(value));
+  await writeFile(tmp, text);
   await rename(tmp, file);
+  return true;
+}
+
+async function writeJsonAtomic(file, value) {
+  return writeFileIfChanged(file, JSON.stringify(value));
 }
 
 /**
@@ -80,7 +98,7 @@ async function writeInstalled(ids) {
   const sel = (await readJson(SELECTION).catch(() => null)) || { version: 1 };
   sel.version = sel.version || 1;
   sel.installed = [...ids].sort();
-  await writeFile(SELECTION, JSON.stringify(sel, null, 1));
+  await writeFileIfChanged(SELECTION, JSON.stringify(sel, null, 1));
 }
 
 /**
@@ -169,6 +187,15 @@ export async function installSkins(ids, { log = console.log, force = false, onPr
     const hit = catalog.get(id);
     if (!hit) { failed.push({ id, why: '不在 docs/research/08-skins.json 里' }); continue; }
     const { charId, skin } = hit;
+    // Already installed — the files are on disk and the manifest already carries the entry, so there is nothing to
+    // download and nothing worth writing. The rewrite would be byte-identical, and even that breaks the running
+    // release signature (new inode, new mtime) → 503 for every client until the next restart. A half-finished
+    // install is unaffected: its entry is missing from the manifest, so it falls through to the normal path below.
+    if (installed.has(id) && manifest.chars?.[charId]?.skins?.[id]) {
+      ok.push(id);
+      log(`[skins] · ${id} 已安装，跳过`);
+      continue;
+    }
     current = id;
     // Seed with the count we EXPECT (Front 3 files, Back 3 when the skin ships one, plus the avatar and the 立绘) so
     // the bar starts at 0/8 instead of 0/0 and never shrinks: the downloader's own total can be higher when an atlas

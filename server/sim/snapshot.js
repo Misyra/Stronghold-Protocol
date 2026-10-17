@@ -35,9 +35,9 @@ export function unitInfo(u) {
     tier: d.tier ?? (d.rank === 'BOSS' ? 3 : d.rank === 'ELITE' ? 2 : 1),
     golden: !!d.golden,
     spine: d.spine ?? d.charId ?? u.defId,
-    // 干员皮肤 (custom_docs/SKINS.md): the owning player's chosen skinId. `undefined` (not null) on purpose — JSON.stringify
-    // drops it, so an install with no skins produces the exact same wire format as before; the key only appears
-    // where a skin is actually in play.
+    // 皮肤 (docs/SKINS.md): the owning player's chosen skinId. `undefined` (not null) on purpose — JSON.stringify
+    // drops it, so an install with no skins produces the exact same wire format as before and the §8.2 contract
+    // holds; the key only appears where a skin is actually in play.
     skin: u.skin ?? undefined,
     avatar: d.avatar ?? d.charId ?? u.defId,
     x: r2(u.x),

@@ -44,15 +44,13 @@ function rngFromState(s) {
   };
   /** current internal state (for debugging / hashing) */
   rng.state = () => s;
-  /** Restore an internal position (zero is a valid state, unlike the public zero seed). */
-  rng.setState = (state) => { s = Number(state) >>> 0; return rng; };
   /** Independent stream at the same position, including internal state zero. */
   rng.clone = () => rngFromState(s);
+  rng.setState = (v) => { s = Number(v) >>> 0; };
   return rng;
 }
 
-/** Continue a saved RNG stream without re-seeding it (checkpoint recovery). */
-export const createRngFromState = (state) => createRng(1).setState(state);
+export function createRngFromState(state) { return rngFromState(Number(state) >>> 0); }
 
 /** Derive a child seed deterministically (e.g. per field). */
 export function deriveSeed(seed, salt) {

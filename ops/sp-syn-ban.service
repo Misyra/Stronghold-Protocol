@@ -1,0 +1,12 @@
+[Unit]
+Description=Stronghold SYN flood ban (permanent list + per-IP SYN rate auto-ban)
+After=network.target
+Before=nginx.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/sp-syn-ban-load
+
+[Install]
+WantedBy=multi-user.target

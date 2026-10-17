@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# sp-syn-ban-load —— 内核层封禁：永久名单 + SYN 速率自动封
+# perm4: 永久（无 timeout），来自 /etc/stronghold/banned-ips.txt
+# auto4: 自动封 24h，链内 meter 触发（>20 SYN/s，burst 40）
+set -euo pipefail
+LIST=/etc/stronghold/banned-ips.txt
+TMP=$(mktemp /run/sp-syn-ban.XXXXXX.nft)
+trap 'rm -f "$TMP"' EXIT
+
+{
+  echo 'table inet sp_syn_ban {'
+  echo '  set perm4 {'
+  echo '    type ipv4_addr'
+  echo '    flags interval'
+  echo '    size 65536'
+  if [ -s "$LIST" ] && grep -qvE '^[[:space:]]*(#|$)' "$LIST"; then
+    echo '    elements = {'
+    grep -vE '^[[:space:]]*(#|$)' "$LIST" | awk '{print $1}' | awk '{printf "      %s,\n", $1}' | sed '$ s/,$//'
+    echo '    }'
+  fi
+  echo '  }'
+  echo '  set auto4 {'
+  echo '    type ipv4_addr'
+  echo '    flags timeout'
+  echo '    size 262144'
+  echo '    timeout 24h'
+  echo '  }'
+  echo '  chain input {'
+  echo '    type filter hook input priority -6; policy accept;'
+  echo '    ip saddr @perm4 counter drop comment "permanent_ban"'
+  echo '    ip saddr @auto4 counter drop comment "syn_autoban"'
+  echo '    tcp dport { 80, 443, 8080 } tcp flags & (syn|ack) == syn jump syn'
+  echo '  }'
+  echo '  chain syn {'
+  echo '    meter synrate size 65536 { ip saddr limit rate over 20/second burst 40 packets } update @auto4 { ip saddr } counter drop comment "syn_flood_detect"'
+  echo '    limit rate over 500/second burst 1000 packets counter drop comment "global_syn_drop"'
+  echo '    counter comment "syn_pass"'
+  echo '  }'
+  echo '}'
+} > "$TMP"
+
+nft -c -f "$TMP"
+if nft list table inet sp_syn_ban >/dev/null 2>&1; then
+  nft delete table inet sp_syn_ban
+fi
+nft -f "$TMP"
+echo "sp-syn-ban applied: $(grep -cvE '^[[:space:]]*(#|$)' "$LIST") permanent IPs; auto-ban >20 SYN/s -> 24h"

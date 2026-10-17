@@ -51,6 +51,8 @@ import { createHash } from 'node:crypto';
 import { rewriteAssetPaths } from '../../shared/cdn.js';
 import { createResourceIndex, RESOURCE_MANIFEST_FILE, RESOURCE_PACK_MANIFEST_FILE } from '../resources.js';
 import { createAssetVersion, VERSION_PREFIX } from '../assetVersion.js';
+import { SIM_WORKER_CSP } from './csp.js';
+import { UI_FRAME_CSP } from '../../shared/plugins/ui.js';
 import { routeResourcePacks } from '../../shared/resourcePackRoutes.js';
 import path from 'node:path';
 import { MEDIA_PREFIX } from '../../shared/media.js';
@@ -186,7 +188,9 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       versioned = true;
     }
     if (useBuiltClient && (decoded === '/' || decoded === '/index.html')) {
-      await serveFile(req, res, builtIndex, await fsp.stat(builtIndex), 'public', ['build', 'index.html'], query, gzipCache, log);
+      // 打包页同样要带上发布标签（内联脚本、importmap 的 CDN 改写），CSP 会把这段内联脚本算进 script-src
+      await serveFile(req, res, builtIndex, await fsp.stat(builtIndex), 'public', ['build', 'index.html'], query, gzipCache, log,
+        { transform: transformFor('.html', versioned) });
       return;
     }
     // 每文件指纹清单：只有本次发布的 `?v=<tag>` 能取到，别的 tag 一律 404 —— 一份清单的指纹不能被挂到另一次发布的
@@ -329,6 +333,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       const same = sameIdentity(statIdentity(st), f);
       if (!same) sets.noteChanged();
       await serveFile(req, res, f.abs, st, 'plugins', segments, query, gzipCache, log, {
+        // ui 插件的 frame 文件带自己的策略（shared/plugins/ui.js UI_FRAME_CSP），装饰性素材不带
+        ...(f.frame ? { headers: { 'Content-Security-Policy': UI_FRAME_CSP } } : {}),
         // the ETag: the content hash of the bytes the scan hashed — of a changed file, its stat identity (size and mtime
         // alone would revalidate a rewrite that kept them: a 304 for other bytes)
         contentHash: same ? f.sha256.slice(0, 16) : `${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}-${st.ino.toString(16)}-${Math.floor(st.ctimeMs * 1000).toString(16)}`,
@@ -410,6 +416,16 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       }
       return;
     }
+    // 模拟 worker 要 eval 编译 DSL，策略和页面不同（server/http/csp.js SIM_WORKER_CSP）。按真实路径判定，
+    // 编码/大小写别名指到同一个文件时也算 —— 上游的 static.js 在这里 setHeader，新静态层没有这段。
+    const workerHeaders = {};
+    if (mount.name === 'public' && path.basename(absPath).toLowerCase() === 'simworker.js') {
+      const [real, worker] = await Promise.all([
+        fsp.realpath(absPath).catch(() => null),
+        fsp.realpath(path.join(publicDir, 'js', 'battle', 'simWorker.js')).catch(() => null),
+      ]);
+      if (real && worker && real === worker) workerHeaders['Content-Security-Policy'] = SIM_WORKER_CSP;
+    }
     // 一次发布的 URL 下必须是那一次发布的字节：文件在进程启动后被改过，就不能再按旧 tag 发出去
     // （否则浏览器/代理会把新字节永久缓存成旧 URL）。宁可 503 让运维重启。
     if (versioned && !release.matchesFile(absPath, stat)) {
@@ -449,11 +465,14 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     }
     const ext = path.extname(absPath).toLowerCase();
     await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log, {
+      ...(Object.keys(workerHeaders).length ? { headers: workerHeaders } : {}),
       transform: transformFor(ext, versioned),
       ...(versioned ? { cacheControl: IMMUTABLE_CACHE } : {}),
     });
   };
   // 发布版本（server/assetVersion.js）：调试与测试读它判断「这个 URL 属于哪次发布」
+  /** 页面改写入口（server/http/csp.js 用它把「本服务写入的内联脚本」逐个算进 script-src 的哈希里）。 */
+  serveStatic.transformPage = (text, ext) => release.transform(text, ext);
   serveStatic.version = release.tag;
   serveStatic.artVersion = release.artTag;
   serveStatic.runtimeVersion = release.runtimeTag;

@@ -1,4 +1,4 @@
-// test/package.test.js — tools/package.mjs, the player release zips (docs/operations/PACKAGING.md). No network, no npm install, no
+// test/package.test.js — tools/package.mjs, the player release zips (custom_docs/operations/PACKAGING.md). No network, no npm install, no
 // zip of the repository: the selection rules on sample paths and on the real `git ls-files`, then the packager itself
 // (--dry-run, the scans and guards, one --no-install build) on a small temporary git checkout with fake art.
 // Run: node --test test/package.test.js
@@ -43,7 +43,7 @@ test('selection: runtime files in; tests, maintainer tools, other docs, dev page
     'tools/crop-board-atlas.mjs', 'tools/assets/plan.mjs', 'tools/assets/local-enemy-spines.json', 'tools/assets/local-token-spines.json',
     'tools/local-extract/extract.py',
     'tools/local-extract/LICENSE-Ark-Unpacker.txt', 'scripts/start.sh', 'scripts/start-windows.bat', 'scripts/start-windows-sandbox.bat', 'scripts/launch.mjs',
-    'scripts/install-service-windows.ps1', 'docs/PLAYING.md', 'docs/DEPLOY.md', 'docs/operations/DEPLOY.md', ...RUNTIME_RESEARCH, 'package.json',
+    'scripts/install-service-windows.ps1', 'docs/PLAYING.md', 'docs/DEPLOY.md', 'custom_docs/operations/DEPLOY.md', ...RUNTIME_RESEARCH, 'package.json',
     'package-lock.json', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'CHANGELOG.md',
     // out
     'test/version.test.js', 'tools/golden.mjs', 'tools/build-data.mjs', 'tools/check-imports.mjs', 'tools/package.mjs',
@@ -62,7 +62,7 @@ test('selection: runtime files in; tests, maintainer tools, other docs, dev page
   }
   // 38: 36 through 0.2.6 (docs/research/08-skins.json included — tools/install-skins.mjs validates every install against it,
   // and the in-game 安装 button runs that tool on the server), plus the v0.3.0 merge: docs/DEPLOY.md (an upstream player doc this
-  // fork did not have — our own guide stays at docs/operations/DEPLOY.md) and scripts/start-windows-sandbox.bat (the plugin
+  // fork did not have — our own guide stays at custom_docs/operations/DEPLOY.md) and scripts/start-windows-sandbox.bat (the plugin
   // sandbox launcher upstream ships and setup.mjs starts).
   assert.equal(keep.length, 38, keep.join(' '));
   assert.equal(drop.length, 40, drop.join(' '));
@@ -84,7 +84,7 @@ test('the real tracked tree: runtime in, the rest out; every shipped import, npm
   const p = plan(ROOT, { lite: true, allowDirty: true, scan: false, measure: false });
   assert.deepEqual(p.problems, []);
   const got = new Set(p.files);
-  for (const f of ['server/index.js', 'tools/setup.mjs', 'tools/fetch-assets.mjs', 'scripts/start.sh', 'docs/PLAYING.md', 'docs/operations/DEPLOY.md',
+  for (const f of ['server/index.js', 'tools/setup.mjs', 'tools/fetch-assets.mjs', 'scripts/start.sh', 'docs/PLAYING.md', 'custom_docs/operations/DEPLOY.md',
     'package-lock.json', 'NOTICE.md', ...RUNTIME_RESEARCH]) assert.ok(got.has(f), f);
   for (const f of ['tools/golden.mjs', 'tools/package.mjs', 'scripts/make-windows-bundle.mjs', 'docs/DESIGN.md', 'eslint.config.js', 'Dockerfile']) {
     assert.ok(!got.has(f), f);
@@ -158,7 +158,7 @@ function fakeCheckout() {
     'Dockerfile', 'AGENTS.md', 'review/notes.md', 'docs/DESIGN.md', 'docs/research/00-INDEX.md', 'docs/research/10-networking-hosting.md']) put(f);
   put('scripts/start.sh', '#!/usr/bin/env bash\nexec node scripts/launch.mjs\n');
   fs.chmodSync(path.join(dir, 'scripts/start.sh'), 0o755);
-  for (const f of ['README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'docs/PLAYING.md', 'docs/operations/DEPLOY.md']) put(f, `# ${f}\n`);
+  for (const f of ['README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'docs/PLAYING.md', 'custom_docs/operations/DEPLOY.md']) put(f, `# ${f}\n`);
   for (const f of [...RUNTIME_RESEARCH, 'docs/research/01-core-data.json']) put(f, '{}\n');
   put('docs/img/x.jpg', PNG);
   put('.gitignore', 'public/assets/\npublic/fonts/\npublic/vendor/\ndata/local-assets.json\n.cache/\npv/\n');
@@ -204,7 +204,7 @@ test('tracked local art is packaged and measured once, while distinct case colli
 const listed = (stdout) => stdout.split('\n').filter((l) => l.startsWith('file ')).map((l) => l.slice(5));
 
 const SHIPPED_TRACKED = ['CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'README.md', 'THIRD-PARTY-NOTICES.md', 'data/assets.json', 'data/chess.json',
-  'docs/operations/DEPLOY.md', 'docs/PLAYING.md', ...RUNTIME_RESEARCH, 'package-lock.json', 'package.json', 'public/index.html', 'public/js/main.js',
+  'custom_docs/operations/DEPLOY.md', 'docs/PLAYING.md', ...RUNTIME_RESEARCH, 'package-lock.json', 'package.json', 'public/index.html', 'public/js/main.js',
   'public/js/util.js', 'scripts/launch.mjs', 'scripts/start.sh', 'server/index.js', 'server/sim/rng.js', 'shared/constants.js',
   'tools/assets/network.mjs', 'tools/crop-board-atlas.mjs', 'tools/doctor.mjs', 'tools/fetch-assets.mjs', 'tools/local-extract/extract.py',
   'tools/setup.mjs', 'tools/vendor.mjs'].sort();
@@ -340,9 +340,9 @@ test('the stage drops dishonest npm scripts and rewrites unshipped doc links', {
   const readme = '# r\n\n[design](docs/DESIGN.md)\n[play](docs/PLAYING.md)\n[rel](../../releases/latest)\n![shot](docs/img/x.jpg)\n';
   try {
     put('README.md', readme);
-    // The docs this fork ships sit at the mainline paths (docs/PLAYING.md, docs/operations/DEPLOY.md) so the layout matches upstream.
+    // The docs this fork ships sit at the mainline paths (docs/PLAYING.md, custom_docs/operations/DEPLOY.md) so the layout matches upstream.
     put('docs/PLAYING.md', '# p\n\n[idx](research/00-INDEX.md)\n[home](../README.md#操作)\n');
-    put('docs/operations/DEPLOY.md', '# d\n\n[packs](PACKS.md)\n[win](WINDOWS.md)\n[notice](../../NOTICE.md)\n');
+    put('custom_docs/operations/DEPLOY.md', '# d\n\n[packs](PACKS.md)\n[win](WINDOWS.md)\n[notice](../../NOTICE.md)\n');
     const r = runTool(['--root', dir, '--out', out, '--no-install', '--allow-dirty', '--lite', '--keep-stage']);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const stage = path.join(out, `${FOLDER}-v9.9.9-lite`, FOLDER);
@@ -356,9 +356,9 @@ test('the stage drops dishonest npm scripts and rewrites unshipped doc links', {
     const playing = fs.readFileSync(path.join(stage, 'docs/PLAYING.md'), 'utf8');
     assert.match(playing, new RegExp(`\\(${host}/blob/v9.9.9/docs/research/00-INDEX.md\\)`));
     assert.match(playing, /\(\.\.\/README\.md#操作\)/);
-    const deploy = fs.readFileSync(path.join(stage, 'docs/operations/DEPLOY.md'), 'utf8');
-    assert.match(deploy, new RegExp(`\\(${host}/blob/v9.9.9/docs/operations/PACKS.md\\)`));
-    assert.match(deploy, new RegExp(`\\(${host}/blob/v9.9.9/docs/operations/WINDOWS.md\\)`));
+    const deploy = fs.readFileSync(path.join(stage, 'custom_docs/operations/DEPLOY.md'), 'utf8');
+    assert.match(deploy, new RegExp(`\\(${host}/blob/v9.9.9/custom_docs/operations/PACKS.md\\)`));
+    assert.match(deploy, new RegExp(`\\(${host}/blob/v9.9.9/custom_docs/operations/WINDOWS.md\\)`));
     assert.match(deploy, /\(\.\.\/\.\.\/NOTICE\.md\)/);
     const shipped = new Set(plan(dir, { lite: true, allowDirty: true, scan: false, measure: false }).tracked);
     assert.equal(rewritePlayerDoc(readme, 'README.md', shipped, '9.9.9'), got);

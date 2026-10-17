@@ -278,7 +278,7 @@
 ### T25 统一探针源码、部署记录和发布核验
 
 - [ ] 后续探针修改从门户源码同步，并建立逐站部署清单。
-- 本轮已按门户源码同步并通过 --check，探针版本会随最终文档/源码校验更新；三台主机发布核验未执行，因此不勾选整项。逐站验收表见 `docs/operations/OPTIMIZATION-ROLLOUT.md`。
+- 本轮已按门户源码同步并通过 --check，探针版本会随最终文档/源码校验更新；三台主机发布核验未执行，因此不勾选整项。逐站验收表见 `custom_docs/operations/OPTIMIZATION-ROLLOUT.md`。
 - 状态：**本地同步检查通过**，版本 `sp-ops-8b6a48451657`。
 - 做法：在 `sp-portal` 修改 collector/共享库，运行 `npm run sync:agent` 生成为该仓库的 `ops/` 产物树（**2026-10-12 起探针不再同步进本仓库**，本仓库那份 vendored `ops/` 已移除），`npm run check:agent` 校验（`npm test` 里也有一条用例守着），再整份拷到服务器 `/opt/stronghold-ops`。记录各站探针版本、启用配置、验证结果及回滚文件，不盲目覆盖报告中已生效的改动。
 - 验收：探针只有一处来源（sp-portal 的 `ops/` 产物树），各站版本可追踪；历史库、密钥不随源码替换而丢失。
@@ -312,7 +312,7 @@
 - 完整探针同步检查再次通过，版本 sp-ops-8b6a48451657；Agent/安装器/历史/Linux/日志专项 51/51 通过。
 - 修正 nginx 主示例：healthz 不再共享缓存；接通 sp_game 计时日志；缓存路径显式 buffering on；版本资源缓存键隔离端口/上游并采用新命名空间；更正 Range 语义。
 - 新增本机真实 nginx 1.26.3 集成验证，涵盖配置检查、清单 MISS/HIT/304/HEAD、编码/Host/query 隔离、并发填充、错误不缓存、过期不回退、实时 health、Agent 指标与历史脱敏转发、日志字段。T07/T08/T18 仍保留线上待验收状态。
-- 复查与更新注意事项见 docs/operations/NGINX-AGENT-REVIEW.md；本轮修正已提交，尚未推送或部署。资源清单缓存回归 8/8、真实 nginx 集成复测 4/4 通过。
+- 复查与更新注意事项见 custom_docs/operations/NGINX-AGENT-REVIEW.md；本轮修正已提交，尚未推送或部署。资源清单缓存回归 8/8、真实 nginx 集成复测 4/4 通过。
 
 ### 公告配置优化（2026-10-11）
 
@@ -322,4 +322,4 @@
 - [x] 探针已同步，版本 sp-ops-5d30b4f176f0，双仓库一致性检查通过。
 - [x] 游戏专项 14/14、面板公告专项 18/18（含真实浏览器发布和 panel→probe→game 链路）通过；精确截止时间修改后推送专项再测 7/7 通过。游戏真实 Chrome 公告/关闭/刷新/到期/撤下/对局保持回归 1/1 通过，ESLint 与语法检查通过。
 - 测试环境禁止访问 Google Fonts，浏览器测试仅排除该外部字体的网络拒绝记录，仍断言应用错误为空；关闭键盘行为沿用原有覆盖，新模式单独验证关闭及刷新语义。
-- 本轮功能已提交；尚未推送或部署。部署须更新中央面板、各站探针及游戏，配置说明见 docs/operations/ANNOUNCEMENTS.md。
+- 本轮功能已提交；尚未推送或部署。部署须更新中央面板、各站探针及游戏，配置说明见 custom_docs/operations/ANNOUNCEMENTS.md。

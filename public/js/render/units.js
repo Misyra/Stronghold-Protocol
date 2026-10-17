@@ -774,7 +774,7 @@ export class UnitView {
    *  owner's face — assets.js tokenAvatarUrl). */
   _pictureUrl() {
     const a = this.ctx.assets;
-    // 干员皮肤 (docs/SKINS.md): an installed skin may ship its own avatar, so the fallback diamond asks for it too
+    // 干员皮肤 (custom_docs/SKINS.md): an installed skin may ship its own avatar, so the fallback diamond asks for it too
     const skinOpt = this.info.skin ? { skin: this.info.skin } : undefined;
     return ICE_TOKENS.has(this.info.defId) ? null : a && (a.picture ? a.picture(this.info.avatar, skinOpt) || a.picture(this.info.defId, skinOpt) || a.picture(this.info.spine, skinOpt) : null) || null;
   }
@@ -784,7 +784,7 @@ export class UnitView {
     const a = this.ctx.assets;
     const url = this._pictureUrl();
     const old = replace && this._pic && this._pic.state === 'img' ? this._pic : null;
-    // 干员皮肤 (docs/SKINS.md): the cache key carries the skinId, else switching skins would keep the previous portrait
+    // 干员皮肤 (custom_docs/SKINS.md): the cache key carries the skinId, else switching skins would keep the previous portrait
     this._pic = { key: String(this.info.avatar || this.info.defId || 'unknown') + (this.info.skin ? '|' + this.info.skin : ''), color: this._frameColor(), img: null, state: 'none', shown: null, t0: nowMs(), url, prev: !!old };
     if (!url || !a.image) return;
     const cached = typeof a.imageNow === 'function' ? a.imageNow(url) : null;
@@ -848,7 +848,7 @@ export class UnitView {
   _modelEntry(back = this._wantsBack()) {
     const a = this.ctx.assets;
     const id = this.info.spine || this.info.defId;
-    // 干员皮肤 (docs/SKINS.md): `info.skin` is the owner's chosen skinId; spineEntry falls back to the default model
+    // 干员皮肤 (custom_docs/SKINS.md): `info.skin` is the owner's chosen skinId; spineEntry falls back to the default model
     return a && a.spineEntry && id ? a.spineEntry(id, { back, skin: this.info.skin }) || null : null;
   }
 
@@ -1212,7 +1212,7 @@ export class UnitView {
   _wantsBack() {
     const a = this.ctx.assets;
     const id = this.info.spine || this.info.defId;
-    // 干员皮肤 (docs/SKINS.md): a skin may ship its own Front/Back pair, so both questions are asked of the skin
+    // 干员皮肤 (custom_docs/SKINS.md): a skin may ship its own Front/Back pair, so both questions are asked of the skin
     if (this.isEnemy || this.dir !== 'UP' || !id || !a || typeof a.hasBack !== 'function' || !a.hasBack(id, this.info.skin)) return false;
     return this.alive || dieClipDur(typeof a.spineEntry === 'function' ? a.spineEntry(id, { back: true, skin: this.info.skin }) : null) > 0;
   }

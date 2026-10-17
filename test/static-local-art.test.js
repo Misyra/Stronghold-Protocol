@@ -79,7 +79,7 @@ test('present data/local-assets.json is served as-is', async () => {
 test('docs and messages say what falls back without the local art and how a server without the client gets it (GitHub issue #42)', async () => {
   const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
   const { LOCAL_ART_FALLBACK, LOCAL_ART_COPY_HINT } = await import('../tools/setup.mjs');
-  for (const f of ['README.md', 'docs/operations/DEPLOY.md', 'tools/setup.mjs', 'tools/doctor.mjs']) {
+  for (const f of ['README.md', 'custom_docs/operations/DEPLOY.md', 'tools/setup.mjs', 'tools/doctor.mjs']) {
     assert.ok(!/不影响游戏|其他功能不受影响|游戏不受影响/.test(read(f)), `${f}: never "the local art does not matter"`);
   }
   for (const re of [/3D 棋盘/, /界面图标/, /源石虫/]) assert.match(LOCAL_ART_FALLBACK, re);

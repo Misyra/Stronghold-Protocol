@@ -1,5 +1,5 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (20524bb), GPL-3.0-or-later.
-// server/match/snapshot.js — running-match checkpoints (docs/operations/PERSISTENCE.md).
+// server/match/snapshot.js — running-match checkpoints (custom_docs/operations/PERSISTENCE.md).
 //
 // WHY A CHECKPOINT AND NOT A REPLAY: the match engine is deterministic in virtual time (tests run whole matches on a
 // VirtualScheduler), but a *live* match is not: bot rehearsals and server-run fields are sliced by wall-clock budgets
@@ -242,7 +242,7 @@ export const PLAYER_FIELDS = Object.freeze([
   '_tempDue', 'board', 'layers', 'pendingLayerGains', 'bondCountBonus', 'effects', 'bounties', 'counters', 'round',
   'deployCapBonus', 'deployCapMin', 'deviceOverrides', 'tileOverrides', 'stats', 'eliminatedRound', 'lpAtFinal',
   'lastResult', 'diy', 'diyStock', 'diyBanned',
-  // 干员皮肤 (docs/SKINS.md): the per-chess model choice, carried in by the seat and public on the wire. Persisted
+  // 干员皮肤 (custom_docs/SKINS.md): the per-chess model choice, carried in by the seat and public on the wire. Persisted
   // like the loadout — a restored match would otherwise silently revert every player to the default model.
   'skins',
   // 0.3.0 kill credit (PR #509, DESIGN §32.14.16): an accumulated per-player counter reported by server/match/results.js

@@ -956,7 +956,7 @@
   .lo, .lo *, .own *, .diy * { animation-delay: 0ms !important; }
 }
 
-/* ---- 干员皮肤 (docs/SKINS.md, ui/skinPicker.js) --------------------------------------------------------------
+/* ---- 干员皮肤 (custom_docs/SKINS.md, ui/skinPicker.js) --------------------------------------------------------------
    The module tiles layout, with a square 180x180 avatar in place of the glyph. A skin whose files are not on this
    server is dimmed but still clickable — clicking it is what installs it — and shows 未安装 · 点击安装 where an
    installed one shows its series. */

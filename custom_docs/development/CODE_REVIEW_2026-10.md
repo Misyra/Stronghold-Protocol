@@ -205,7 +205,7 @@ rehearsalPressure 特别值得在意：lobby.js 全文件仅 :1106 一处读，�
 - ✅ **r2-sync.mjs:58,251 上传无门槛**：`BUCKET = flag('--bucket', 'weishu')`、`ACCOUNT = flag('--account', CONFIG_ACCOUNT || '66c7c5b7…')`——无参数就是真上传，失败模式是往线上 CDN 发布错误字节。脚本已为"未知 flag"设防（:45-53），未为"参数缺失"设同类防线。--bucket 去掉默认值、缺失即报错。
 - **r2-sync.mjs:66**：wrangler 配置路径写死 AppData\Roaming\xdg.config\...，不看 XDG_CONFIG_HOME/WRANGLER_HOME、无 CLI 覆盖；失败先抛裸 ENOENT，把"跑 npx wrangler login"的真指引埋掉。（可移植性缺口，非现存故障。）
 - **r2-sync.mjs:218**：每次发布对约 1.4 万文件从头 SHA-256，await 在 for 里同时只有 1 个在算——上一份 .assets-manifest.json 已存每路径 hash。同仓 tools/asset-hashes.mjs:83-98 已有并发 lane 写法。
-- **tools/ 无共享层**：8 个 bench/压测脚本各抄骨架；✅ `const distribution` 在 bench-state-delta.mjs:68 与 persist-sim.mjs 逐字重复（核对）；--name value 解析 5 份且行为不一致；fork+IPC 收发 2 份；停顿探针 2 份；目录遍历 3 份。输出去向是 docs/development/ 的发布依据，口径分叉结论不可比。建议加 tools/lib/bench.mjs（纯本地模块），先迁重复度最高的两个。
+- **tools/ 无共享层**：8 个 bench/压测脚本各抄骨架；✅ `const distribution` 在 bench-state-delta.mjs:68 与 persist-sim.mjs 逐字重复（核对）；--name value 解析 5 份且行为不一致；fork+IPC 收发 2 份；停顿探针 2 份；目录遍历 3 份。输出去向是 custom_docs/development/ 的发布依据，口径分叉结论不可比。建议加 tools/lib/bench.mjs（纯本地模块），先迁重复度最高的两个。
 - ✅ **persist-sim.mjs:376-381 两阶段并发**（逐行核对）：phaseMultiUser() 与 phaseScale() 在 push 前已调用，两个 async 各自跑到第一个 await → Promise.all 下并发。B 阶段报的 maxLag/ms 是在 A 持续制造负载时读的，文档当规模结论引用。改串行 for…await。
 - ✅ **bench-state-delta.mjs:78 键名拼错**（核对）：`announcementsFile: null` 而 server/http/config.js:47 只认 `announcementFile`——静默丢弃回落 SP_ANNOUNCEMENT_SOURCE。钉死 `announcementSource: 'file'` + tmp 路径。
 - **tools/README.md:12 与 scripts/README.md:7-13 与实际入口不符**：check:imports 实际入口已是 check-fork-boundaries.mjs；漏登 state-pressure-bench.mjs、encrypt-lexicon.mjs、network-probe.ps1、两个 nginx 片段（nginx.conf.example 两个 include 的目标，照 README 装完 nginx -t 缺文件）。加"目录下每个 .mjs/.ps1 必须在 README 表格出现"断言。
@@ -248,7 +248,7 @@ rehearsalPressure 特别值得在意：lobby.js 全文件仅 :1106 一处读，�
 - **stateFile.js 崩溃一致性真想过**：分片→index→runtime 写入顺序 + revision + matchCount 双戳，`envelope.matchCount !== room.matchCount` 能挡"新分片配旧 index"；写入失败 return false 不提交时钟。"崩在分片写与 index 写之间""崩在 index 写与 runtime 写之间"逐条推演过，均可自洽恢复。
 - **net.js 三处是踩过坑的**：OutboundQueue 不可变帧共享 + 队列链独占 + remove() 节点回收重挂尾；stateTransport seq 入队预留、baseline 成功后 commit；_pumpOutbound 用 delete+set 让 Map 插入序轮转实现公平。
 - **/_v/\<tag\>/ 内容寻址 + per-file ?v= 是这类服务器里少见的正解。**
-- **tools/check-fork-boundaries.mjs 真接进 CI**（check:imports + ci.yml:95），登记 server/sim/nodeData.js 三个 Node 内建例外、不许整文件豁免；docs/development/FORK_MAINTENANCE.md 是真在执行的模块归属契约。
+- **tools/check-fork-boundaries.mjs 真接进 CI**（check:imports + ci.yml:95），登记 server/sim/nodeData.js 三个 Node 内建例外、不许整文件豁免；custom_docs/development/FORK_MAINTENANCE.md 是真在执行的模块归属契约。
 - **tools/ci.mjs 步骤表与 ci.yml、package.json 三方对齐**，test/ci.test.js 钉住。
 - **AGENTS.md 两条硬契约确实遵守**（自查）：utility-mobile.css 里 .combat-metrics 规则块读 --utility-text 为 0 处；px 字号下限 `max(calc(.2 * var(--t)), 16px)` / (.14→12px) / (.1→10px) 与 game.css 一致；477 行无 !important。
 - 全部自写行只有 1 个空 catch（r2-sync.mjs）；环境变量读取基本统一在 server/index.js 组合根 `opts.x ?? process.env.X` 注入。

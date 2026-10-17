@@ -1,6 +1,6 @@
 {
  "version": 1,
- "source": "ported from sganggs/Stronghold-Protocol PR #652 (upstream 0.2.7-dev); this checkout ships the full set, installed with tools/install-skins.mjs — see docs/SKINS.md",
+ "source": "ported from sganggs/Stronghold-Protocol PR #652 (upstream 0.2.7-dev); this checkout ships the full set, installed with tools/install-skins.mjs — see custom_docs/SKINS.md",
  "installed": [
   "char_003_kalts@boc#6",
   "char_003_kalts@sale#14",

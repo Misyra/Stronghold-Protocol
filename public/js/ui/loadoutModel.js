@@ -168,7 +168,7 @@ export const LOADOUT_IMPORT_MAX_BYTES = 256 * 1024;
 
 /**
  * Portable payload of a loadout, as downloaded / copied by 导出 — with the per-operator 潜能 / 练度 (`ops`, 0.2.2; an
- * older build reading it ignores the field) and the 皮肤 choices (`skins` / `portraits`, docs/SKINS.md: the battle
+ * older build reading it ignores the field) and the 皮肤 choices (`skins` / `portraits`, custom_docs/SKINS.md: the battle
  * model is public, the 商店立绘 is local; an older build reading them ignores the fields).
  * @param {Record<string, any>} entries `room.loadout.entries`
  * @param {{ now?: number, ops?: Record<string, any>, skins?: Record<string, string>, portraits?: Record<string, string> }} [o]
@@ -227,7 +227,7 @@ export function parseImport(input) {
   const entries = parseStored(raw);
   const ops = isObj(raw.ops) ? parseStoredOps(raw) : null;
   if (!Object.keys(entries).length && !(ops && Object.keys(ops).length)) return { ok: false, error: t('里面没有有效的调配条目') };
-  // 皮肤 / 商店立绘 (docs/SKINS.md), carried like `ops`: present (empty included) = the file's choice replaces the
+  // 皮肤 / 商店立绘 (custom_docs/SKINS.md), carried like `ops`: present (empty included) = the file's choice replaces the
   // current one, absent = an older export, the current settings stay. Structural only — a chessId this build does
   // not know resolves to nothing in spineEntry(), exactly as the server's freezeSkins treats it.
   const skinMap = (m) => {

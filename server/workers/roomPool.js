@@ -1,4 +1,4 @@
-// Adapted from xinhai-ai/Stronghold-Protocol commit 40d4505f (GPL-3.0-or-later); see docs/development/PERFORMANCE.md.
+// Adapted from xinhai-ai/Stronghold-Protocol commit 40d4505f (GPL-3.0-or-later); see custom_docs/development/PERFORMANCE.md.
 // Room-pinned simulation lanes (opt-in SP_ROOM_WORKERS): every lane is a full SimulationPool and a room key always
 // lands on the same lane, so a room's battle / rehearsal tasks queue behind their own room, not the whole server.
 import { SimulationPool } from './pool.js';

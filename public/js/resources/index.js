@@ -62,7 +62,7 @@ const stateStore = createResourceState({
   voiceLang: 'cn',
   voiceLanguages: [],
   allVoices: false,
-  // 干员皮肤: the per-item selection and the counters the panel's skin list renders (docs/SKINS.md).
+  // 干员皮肤: the per-item selection and the counters the panel's skin list renders (custom_docs/SKINS.md).
   skins: [],
   skinScope: { keys: [], all: false },
   /** Whole-manifest file count and byte total — every scope, whatever is switched on. */
@@ -91,7 +91,7 @@ let voiceLang = 'cn';
 let allVoices = false;
 /** @type {string[]} the equipped 干员皮肤 (`charId/skinId`) the preload follows — empty when the switch is off. */
 let skinKeys = [];
-/** @type {boolean} 全部皮肤: preload every outfit the manifest offers instead of the equipped ones (docs/SKINS.md). */
+/** @type {boolean} 全部皮肤: preload every outfit the manifest offers instead of the equipped ones (custom_docs/SKINS.md). */
 let allSkins = false;
 /** @type {boolean} 官方特效: its own preload switch, kept apart from 「额外资源」 (docs/design/vfx-format.md). */
 let fx = true;
@@ -185,7 +185,7 @@ const counters = (s) => ({
 /** Required (tier 1) files of the selection are cached — the store's counters already exclude everything out of scope. */
 const requiredComplete = (s) => s.tier1 === 0 || s.tier1Present >= (s.tier1Wanted ?? s.tier1);
 
-/** The 干员皮肤 scope, sorted: the equipped keys, and whether 全部皮肤 asked for every outfit (docs/SKINS.md). */
+/** The 干员皮肤 scope, sorted: the equipped keys, and whether 全部皮肤 asked for every outfit (custom_docs/SKINS.md). */
 const skinScopeOf = (raw) => {
   const scope = normalizeSkinScope(raw);
   return { keys: [...scope.keys].sort(), all: scope.all };
@@ -287,7 +287,7 @@ async function dropWorker() {
  * @param {string} [language] voice language kept in the selection
  * @param {boolean} [includeAllVoices]
  * @param {Iterable<string>|{ keys?: Iterable<string>, all?: boolean, fx?: boolean, voices?: boolean }|'all'|'off'|null} [selection]
- *   干员皮肤: the equipped `charId/skinId` keys to follow, or every outfit with `{ all: true }` (docs/SKINS.md).
+ *   干员皮肤: the equipped `charId/skinId` keys to follow, or every outfit with `{ all: true }` (custom_docs/SKINS.md).
  *   官方特效: `{ fx }` — its own switch (tier 2, ~185 MiB, docs/design/vfx-format.md), unaffected by `includeOptional`.
  */
 export async function syncResources(enabled, includeOptional = optional, language = voiceLang, includeAllVoices = allVoices, selection = { keys: skinKeys, all: allSkins }) {

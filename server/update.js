@@ -1,4 +1,4 @@
-// server/update.js — the update package (docs/operations/DEPLOY.md §1.5 and §7): the boot step that finishes an update extracted
+// server/update.js — the update package (custom_docs/operations/DEPLOY.md §1.5 and §7): the boot step that finishes an update extracted
 // over an install, and the install check `npm run doctor` shows. Node builtins only, so it loads whatever else the
 // install holds.
 //

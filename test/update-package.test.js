@@ -1,5 +1,5 @@
 // test/update-package.test.js — the update package's packaging side (tools/package.mjs --update, tools/package-update.mjs,
-// docs/operations/DEPLOY.md §7): the comparison with the bases, reading a base (full zip or folder) and refusing what cannot be one,
+// custom_docs/operations/DEPLOY.md §7): the comparison with the bases, reading a base (full zip or folder) and refusing what cannot be one,
 // the zip reader, MANIFEST.json / UPDATE.json in the personal-info scan, MANIFEST.json in every zip and a whole update
 // round trip on a small temporary checkout (--no-install), finished by the boot step. No network, no npm install.
 // Run: node --test test/update-package.test.js (the player's side: test/update-boot.test.js)

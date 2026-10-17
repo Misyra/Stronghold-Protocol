@@ -1,6 +1,6 @@
 // test/persist-version.test.js — the persistence version (server/match/snapshot.js persistVersion + server/persist.js):
 // an unchanged match is not captured, cloned and encoded again, and the version is *proved* not to miss a change
-// instead of trusted. The invariant under test is the one docs/development/STATE_SYNC_BENCHMARK.md names: a skipped
+// instead of trusted. The invariant under test is the one custom_docs/development/STATE_SYNC_BENCHMARK.md names: a skipped
 // checkpoint must still be the checkpoint the live match would have produced.
 
 import { test } from 'node:test';

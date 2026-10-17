@@ -154,7 +154,7 @@ export class PlayerRound {
         // 干员调配 settings, 潜能 6 / 精英2 Lv.60 by default and for bots; never a stand-in's nor a prototype pick's)
         const cv = u.standIn ? null : this.cultivationFor(this.gd.chess(piece.id));
         if (cv) { u.potential = cv.potential; u.cultivate = cv.cultivate; }
-        // 干员皮肤 (docs/SKINS.md): this player's choice for this chess, carried the same way the loadout is so it
+        // 干员皮肤 (custom_docs/SKINS.md): this player's choice for this chess, carried the same way the loadout is so it
         // reaches the sim, the snapshot and every teammate's renderer. Absent = the operator's default model. setSkins
         // stores only BASE chess ids, so a merged (golden) piece — whose id is its own — is looked up by baseId: a
         // skin chosen before the merge survives it instead of silently reverting to the default model.

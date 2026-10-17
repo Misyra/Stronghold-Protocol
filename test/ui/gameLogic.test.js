@@ -767,7 +767,7 @@ describe('keyboard & settings', () => {
     assert.equal(sanitizeSettings({ preloadOptional: false, preloadVoices: true }).preloadVoices, true, 'voice preload is independent');
     assert.equal(sanitizeSettings({ preloadOptional: true, preloadVoices: false }).preloadVoices, false);
     assert.equal(sanitizeSettings({ preloadOptional: 'true' }).preloadOptional, true, 'invalid values fall back to the default');
-    // 干员皮肤预载 (docs/SKINS.md): the outfits equipped in 干员调配 are what the preload follows, so there is no id
+    // 干员皮肤预载 (custom_docs/SKINS.md): the outfits equipped in 干员调配 are what the preload follows, so there is no id
     // list in the settings to validate. The box sits in the optional tier's header; 默认全预载, so it defaults to on.
     assert.equal(DEFAULT_SETTINGS.preloadSkins, true);
     assert.equal(sanitizeSettings({ preloadSkins: true }).preloadSkins, true);
@@ -780,7 +780,7 @@ describe('keyboard & settings', () => {
     assert.equal(sanitizeSettings({ preloadFx: false }).preloadFx, false, 'an explicit saved opt-out is preserved');
     for (const bad of ['all', 'true', 1, null, []]) assert.equal(sanitizeSettings({ preloadFx: bad }).preloadFx, DEFAULT_SETTINGS.preloadFx, String(bad));
     assert.equal(sanitizeSettings({ bgm: 0.5 }).preloadFx, true, 'a profile saved before 官方特效 preloads it');
-    // 全部皮肤 (docs/SKINS.md): a second switch — the master still gates it, and it is never saved as a key list.
+    // 全部皮肤 (custom_docs/SKINS.md): a second switch — the master still gates it, and it is never saved as a key list.
     assert.equal(DEFAULT_SETTINGS.preloadSkinsAll, false);
     assert.equal(sanitizeSettings({ preloadSkinsAll: true }).preloadSkinsAll, true);
     assert.equal(sanitizeSettings({ preloadSkinsAll: false }).preloadSkinsAll, false);

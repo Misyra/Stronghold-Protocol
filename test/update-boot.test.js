@@ -1,4 +1,4 @@
-// test/update-boot.test.js — the update package on the player's machine (server/update.js, docs/operations/DEPLOY.md §1.5): the
+// test/update-boot.test.js — the update package on the player's machine (server/update.js, custom_docs/operations/DEPLOY.md §1.5): the
 // paths UPDATE.json may name, the boot step that finishes an update (deletes, renames, refuses a mismatched install,
 // skips a malformed file), and the MANIFEST.json check `npm run doctor` shows. Temporary folders only.
 // Run: node --test test/update-boot.test.js (the packaging side: test/update-package.test.js)
@@ -329,7 +329,7 @@ test('what MANIFEST.json lists and what stops an update', () => {
     'node_modules/ws/package.json', 'node_modules/ws/lib/websocket.js', 'node_modules/x/license.js', 'docs/research/03-operators.json', 'package.json']) {
     assert.ok(affectsRuntime(f), `${f} stops an update`);
   }
-  for (const f of ['README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'docs/operations/DEPLOY.md', 'node_modules/ws/README.md', 'node_modules/three/LICENSE',
+  for (const f of ['README.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE.md', 'custom_docs/operations/DEPLOY.md', 'node_modules/ws/README.md', 'node_modules/three/LICENSE',
     'node_modules/preact/src/index.d.ts', 'node_modules/x/dist/x.js.map', 'scripts/start-windows.bat', 'tools/setup.mjs',
     'tools/local-extract/LICENSE-Ark-Unpacker.txt', 'package-lock.json', 'node_modules/.package-lock.json']) {
     assert.ok(!affectsRuntime(f), `${f} only warns`);

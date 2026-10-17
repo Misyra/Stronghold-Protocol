@@ -11,7 +11,7 @@
 | 素材 R2 发布、预载和清理缓存 | [CDN.md](CDN.md) |
 | 对局检查点与备份恢复 | [PERSISTENCE.md](PERSISTENCE.md) |
 | 监控探针与管理面板的分工 | [MONITORING.md](MONITORING.md) |
-| 制作发行包 / Windows 便携包 | [PACKAGING.md](PACKAGING.md) / [WINDOWS.md](../WINDOWS.md) |
+| 制作发行包 / Windows 便携包 | [PACKAGING.md](PACKAGING.md) / [WINDOWS.md](../../docs/WINDOWS.md) |
 
 ## 安装
 
@@ -43,7 +43,7 @@ npm run build
 - 本机提供素材：运行 `node tools/setup.mjs`，下载失败可重跑续传；缺失明细和环境诊断用 `node tools/doctor.mjs`。
 - 使用已发布的本站 CDN：配置 `SP_ASSETS_CDN=https://assets.misyra.com`，保留随代码发布的 `.assets-manifest.json`，无需在服务器下载整套素材。新建自己的 CDN 先按 [CDN.md](CDN.md) 配置和发布。
 
-本分支跟踪的 `public/assets/local/` 随 Git 下载；资源来源、客户端提取和清单见[素材说明](../ASSETS.md)。源码部署不要混用上游发行包中的程序文件。
+本分支跟踪的 `public/assets/local/` 随 Git 下载；资源来源、客户端提取和清单见[素材说明](../../docs/ASSETS.md)。源码部署不要混用上游发行包中的程序文件。
 
 ## 配置
 
@@ -356,7 +356,7 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 <a id="2-让不在同一网络的朋友加入"></a>
 家用网络接入移至 [HOME_SERVER.md](HOME_SERVER.md#2-家用网络接入)。
 <a id="6-本地客户端素材可选"></a>
-本地客户端素材见 [ASSETS.md](../ASSETS.md)。0.2.5 的官方战场场景同样不随 Git 仓库提供（提取结果是官方文件，`public/assets/local/scene/` 不提交）：需要时在有客户端的机器上运行 `node tools/setup.mjs --scenes`（或先 `python3 tools/local-extract/fetch_scenes.py` 再用提取环境的 Python 运行 `tools/local-extract/extract.py --only scene`）；没有场景时 3D 棋盘用程序生成的金属地块。
+本地客户端素材见 [ASSETS.md](../../docs/ASSETS.md)。0.2.5 的官方战场场景同样不随 Git 仓库提供（提取结果是官方文件，`public/assets/local/scene/` 不提交）：需要时在有客户端的机器上运行 `node tools/setup.mjs --scenes`（或先 `python3 tools/local-extract/fetch_scenes.py` 再用提取环境的 Python 运行 `tools/local-extract/extract.py --only scene`）；没有场景时 3D 棋盘用程序生成的金属地块。
 <a id="7-打包发布维护者"></a>
 发行包制作移至 [PACKAGING.md](PACKAGING.md)。
 
@@ -411,4 +411,4 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 
 素材直接从 CDN 下载时不限制请求次数；静态限流只装在游戏源站。源站的构建文件、模拟模块、数据和本地素材归入独立静态预算，不挤占业务永久封禁计数。构建文件及合法版本资源可缓存，裸 `/sim/` 仍遵循上游 no-cache；完整打包另行实施。可选浏览器 gate 与公共缓存片段共享唯一资源清单 location，更新旧配置时先移除重复定义。
 
-门户延迟探测使用 GET/HEAD `/api/ping`（30/min、burst 10、免浏览器 Cookie），房间状态使用 GET/HEAD `/api/rooms/<code>/status`（20/min、burst 5、保留准入）。不要把 ping 加入永久 IP 封禁 jail。WS 入口 jail 改为只累计 `/ws` 444 拒绝，100 次/60s 封禁 1h；应用兜底允许 100 次/60s，第 101 次封禁 1h，检查旧环境变量是否仍覆盖默认值。Web SYN 新模板的 120/min、burst 120 与全局 200/s、burst 400 是待目标机器压测的初值，不能照搬旧 5/min 或把新值称为已线上验证。
+门户延迟探测使用 GET/HEAD `/api/ping`（30/min、burst 10、免浏览器 Cookie），房间状态使用 GET/HEAD `/api/rooms/<code>/status`（20/min、burst 5、保留准入）。不要把 ping 加入永久 IP 封禁 jail。WS 入口 jail 改为只累计 `/ws` 444 拒绝，100 次/60s 封禁 1h；应用兜底允许 100 次/60s，第 101 次封禁 1h，检查旧环境变量是否仍覆盖默认值。Web SYN 模板与 `ops/sp-web-syn-guard.nft` 统一为 30/min、burst 10，全局保持 50/s、burst 100；这只是仓库规范值，线上更新仍需目标机器检查。

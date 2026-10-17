@@ -17,7 +17,7 @@
 //   { format: 1, version: '<digest of every url|hash>', count, tier1, sized, totalBytes,
 //     files: [ { url, tier, size?, hash?, skin?, fx? } … ] }   // sorted: essential tier first, then by URL
 //   `skin` (`<charId>/<skinId>`) marks the 干员皮肤 files: they are the one optional group the panel scopes by item
-//   rather than by tier, and a full install of them is ~328 MiB (docs/SKINS.md).
+//   rather than by tier, and a full install of them is ~328 MiB (custom_docs/SKINS.md).
 //   `fx` marks the official battle effects of `data/local-fx.json` (docs/design/vfx-format.md): optional like every
 //   other tier-2 group, but with a preload switch of its own — ~185 MiB, the largest optional set after skins.
 
@@ -127,7 +127,7 @@ export function tierForPath(keyPath) {
   const segments = p.split(/[./]/);
   const head = segments[0];
   if (segments.some((s) => ['audio', 'voice', 'voices', 'sfx', 'bgm', 'guide'].includes(s))) return TIER_REST;
-  // 干员皮肤 is optional by design: a full install is ~328 MiB (docs/SKINS.md), a third of the whole cache, for models
+  // 干员皮肤 is optional by design: a full install is ~328 MiB (custom_docs/SKINS.md), a third of the whole cache, for models
   // a given player may never equip — so it never rides the required set. The panel gives it its own switch instead.
   if (segments.includes('skins')) return TIER_REST;
   if (head === 'local') return TIER_ESSENTIAL;

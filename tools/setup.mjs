@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tools/setup.mjs — prepare a fresh clone in one command (docs/operations/DEPLOY.md).
+// tools/setup.mjs — prepare a fresh clone in one command (custom_docs/operations/DEPLOY.md).
 //
 //   node tools/setup.mjs [options]
 //
@@ -85,7 +85,7 @@ const exists = (p) => { try { fs.accessSync(p); return true; } catch { return fa
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
 const mb = (n) => `${(n / 1048576).toFixed(0)} MB`;
 /** The art download when data/assets.json gives no size (missing, unreadable or without stats.bytes): the 0.2.2
- * manifest's stats.bytes, 548 MB (both voice dubs; 463 MB before the JP one), as README and docs/operations/DEPLOY.md quote it.
+ * manifest's stats.bytes, 548 MB (both voice dubs; 463 MB before the JP one), as README and custom_docs/operations/DEPLOY.md quote it.
  * 0.3.0 also plans the English, Korean and own-language dubs (about +180 MB; the coordinator checks after download).
  * This fallback stays the measured 0.2.2 figure until that manifest exists. */
 const ART_DOWNLOAD_FALLBACK = '720 MB';

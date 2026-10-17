@@ -1,5 +1,5 @@
-// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
-// 皮肤选择器 (docs/SKINS.md) — the 皮肤 section of the 干员调配 screen's detail panel.
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in custom_docs/SKINS.md.
+// 皮肤选择器 (custom_docs/SKINS.md) — the 皮肤 section of the 干员调配 screen's detail panel.
 //
 // Self-contained on purpose: screens/loadout.js only imports this and drops `<${SkinSection} chess=… />` into its
 // detail body, so upstream rewriting that screen (it is one of the two files most likely to change) costs one

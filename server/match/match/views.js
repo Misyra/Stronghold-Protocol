@@ -113,7 +113,7 @@ export class MatchViews {
         fieldId: this.fieldOf(ps),
         status: this.statusOf(ps),
         autoplay: ps.autoplay,
-        // 干员皮肤 (docs/SKINS.md): public on purpose — this is how a teammate sees your skin, and the reason the
+        // 干员皮肤 (custom_docs/SKINS.md): public on purpose — this is how a teammate sees your skin, and the reason the
         // renderer reads info.skin off the unit rather than off the local player. Omitted when empty, which is the
         // normal case: skins are installed one at a time, on demand, and most players install none.
         ...(Object.keys(ps.skins).length ? { skins: ps.skins } : {}),
@@ -287,7 +287,7 @@ export class MatchViews {
         area: 'board',
         name: rec ? rec.name : piece.id, tier: rec && Number.isInteger(rec.tier) ? rec.tier : 1, golden: !!(rec && rec.isGolden),
         spine: assets.spine || (rec && rec.charId) || piece.id, avatar: assets.avatar || (rec && rec.charId) || piece.id,
-        // 干员皮肤 (docs/SKINS.md): built per player (ownerId above), so a scouted teammate's board shows THEIR skin.
+        // 干员皮肤 (custom_docs/SKINS.md): built per player (ownerId above), so a scouted teammate's board shows THEIR skin.
         // baseId first: setSkins stores base chess ids only, and a scouted board can field the merged (golden) piece
         skin: piece.kind === 'chess' ? (ps.skins?.[rec?.baseId || piece.id] || ps.skins?.[piece.id]) : undefined,
         x: c, y: r, dir: pieceDir(piece), facing: pieceDir(piece) === 'LEFT' ? -1 : 1, maxHp: rec && rec.stats && Number.isFinite(rec.stats.maxHp) ? rec.stats.maxHp : 1,

@@ -33,7 +33,7 @@ export function seatEntries(room, checkpoint) {
       ops: p.isBot ? null : (p.ops || null),
       notOwned: p.isBot ? null : (p.notOwned || null),
       diy: p.isBot ? null : (p.diy || null),
-      // 干员皮肤 (docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
+      // 干员皮肤 (custom_docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
       skins: p.isBot ? null : (p.skins || null),
     }));
   }
@@ -46,7 +46,7 @@ export function seatEntries(room, checkpoint) {
     notOwned: s.isBot ? null : s.notOwned || null,
     // 0.2.0 自选编队: the human's checked DIY picks (bots field no 自选 piece [ASSUMED])
     diy: s.isBot ? null : s.diy || null,
-    // 干员皮肤 (docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
+    // 干员皮肤 (custom_docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
     skins: s.isBot ? null : s.skins || null,
   }));
 }

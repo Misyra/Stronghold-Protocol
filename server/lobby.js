@@ -242,7 +242,7 @@ function freezeOps(ops) {
 }
 
 /**
- * Frozen copy of a skin selection (干员皮肤, docs/SKINS.md), keeping only entries whose chess the game data knows.
+ * Frozen copy of a skin selection (干员皮肤, custom_docs/SKINS.md), keeping only entries whose chess the game data knows.
  *
  * Deliberately not a `checkLoadout`-style validator: nothing here can be abused. A skinId the client made up, or one
  * belonging to a different operator, simply fails to resolve in `spineEntry()` and the unit draws its default model
@@ -1361,7 +1361,7 @@ export class Lobby {
   }
 
   /**
-   * room.skins (docs/SKINS.md): store the player's chosen operator skins on the session and the seat, and hand them
+   * room.skins (custom_docs/SKINS.md): store the player's chosen operator skins on the session and the seat, and hand them
    * to a running match.
    *
    * Unlike room.loadout there is no phase gate. The loadout is frozen at INFO_CHECK because it changes what a unit
@@ -1392,7 +1392,7 @@ export class Lobby {
   }
 
   /**
-   * room.skin.install (docs/SKINS.md): install one skin's files on this server, on demand.
+   * room.skin.install (custom_docs/SKINS.md): install one skin's files on this server, on demand.
    *
    * Answers at once and reports the outcome later — an install is tens of seconds and the client gives up after 8
    * (server/skinInstall.js explains the queue and why it is not awaited here). The id is NOT checked against a
@@ -1574,7 +1574,7 @@ export class Lobby {
     if (host && !checkpoint) host.ready = true;
     // the room's data: its content set's in a room with gameplay plugins (header "Gameplay plugins")
     const data = this.dataFor(room);
-    // a restored checkpoint carries the seats as the match left them (skins included, docs/SKINS.md); a live room takes its
+    // a restored checkpoint carries the seats as the match left them (skins included, custom_docs/SKINS.md); a live room takes its
     // own seats, a setting checked for another content filtered to this room's data (header "Gameplay plugins")
     const seats = checkpoint ? seatEntries(room, checkpoint) : room.seats.filter(Boolean).map((s) => {
       // a setting checked for another content is filtered to this room's data (header "Gameplay plugins")
@@ -1588,7 +1588,7 @@ export class Lobby {
         notOwned: own ? own.notOwned : null,
         // 0.2.0 自选编队: the human's checked DIY picks (bots field no 自选 piece [ASSUMED])
         diy: own ? own.diy : null,
-        // 干员皮肤 (docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
+        // 干员皮肤 (custom_docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
         skins: s.isBot ? null : (s.skins || null),
       };
     });
@@ -1947,7 +1947,7 @@ export class Lobby {
       ops: session.ops || null,
       notOwned: session.notOwned || null,
       diy: session.diy || null,
-      // 干员皮肤 (docs/SKINS.md): a seat carries the player's choice into the room and on into Match (PlayerState)
+      // 干员皮肤 (custom_docs/SKINS.md): a seat carries the player's choice into the room and on into Match (PlayerState)
       skins: session.skins || null,
       // the content each was checked for (header "Gameplay plugins": filtered at the match start when it is another)
       loadoutCs: session.loadoutCs ?? null,

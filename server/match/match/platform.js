@@ -79,7 +79,7 @@ export class MatchPlatform {
   }
 
   /**
-   * room.skins during the match (docs/SKINS.md): replace a player's chosen operator skins.
+   * room.skins during the match (custom_docs/SKINS.md): replace a player's chosen operator skins.
    *
    * Accepted in ANY phase, unlike the loadout directly above. The loadout is locked at INFO_CHECK / ready because it
    * changes what a unit *does*; a skin changes only what it looks like, and it is public — a teammate picking a

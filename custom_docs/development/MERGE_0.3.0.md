@@ -16,7 +16,7 @@
 | 界面与操作（`public/js/screens/**`、`public/css/**`、快捷键） | **收**上游；本分支的 CSS 契约（`--t` / `--utility-text` 分工）与移动端紧凑层保留 |
 | 干员皮肤（`public/js/ui/skins.js`、`ui/skinPicker.js`、`server/skinInstall.js`） | **保留本分支**版本（上游没有这两个前端文件） |
 | 作战统计面板（`public/js/battle/metrics.js`、`ui/combatMetrics.js`） | **保留本分支**实现：与上游同一 xinhai 血统，两个前端文件与 metrics 取我方，`test/match/combat-metrics.test.js` 取上游那份 |
-| 文档 | 位置跟随主线；本分支自己的文档（`docs/operations/DEPLOY.md`、`docs/SKINS.md`、`docs/development/**` 等）一个都没删 |
+| 文档 | 位置跟随主线；本分支自己的文档（`custom_docs/operations/DEPLOY.md`、`custom_docs/SKINS.md`、`custom_docs/development/**` 等）一个都没删 |
 
 ## 1. 推迟清单（要恢复就成对恢复）
 
@@ -44,7 +44,7 @@
 | `server/http/routes.js` | 保本分支 health 面（`/healthz?build=1|traffic=1`、`/metrics`、`/api/ping`、`/api/rooms/<code>/status`、`/api/announcement`、`/api/portal-room`），收上游的 `/x/`（trustedRuntime）与 `/studio` 分发、`Content-Security-Policy` 头、health 里的 `content`／`trusted` 字段 |
 | `public/i18n/*.json`（4 个） | 并集：上游键序在前，本分支独有键追加；同名不同值 33 处一律取上游；`_meta` 逐字节相同 |
 | `data/assets.json` | 取本分支（288,335 文件 / 41.3 GB；上游那份是 16,705 / 758 MB 的旧子集）。**日后要重新生成** |
-| `docs/DEPLOY.md`（modify/delete） | 收上游那份（本分支原本删除它）。本分支自己的部署文档仍在 `docs/operations/DEPLOY.md`，一字未动 |
+| `docs/DEPLOY.md`（modify/delete） | 收上游那份（本分支原本删除它）。本分支自己的部署文档仍在 `custom_docs/operations/DEPLOY.md`，一字未动 |
 | `server/http/assetViews.js`、`test/asset-index.test.js`（modify/delete） | 继续删除（索引层不接） |
 | `public/js/battle/metrics.js`、`public/js/ui/combatMetrics.js`（add/add） | 取本分支（同一 xinhai 血统） |
 | `package-lock.json` | 取本分支锁（带 `@zip.js/zip.js`、`maxmind`、平台二进制），再 `npm install` 补上游新增的 `ses` / `@endo/*`；`acorn` 两侧都有 |
@@ -58,8 +58,8 @@
 - `server/lobby.js` 的 `seatEntries` 来自 `server/matchRestore.js`（不是 lobby 内部函数）；`dataFor`／`seatSettings` 是 lobby 的方法（活房间用）。
 - `test/client-static.test.js`：合并后同时带着两侧互斥的断言，删掉过时那三条 —— 内联 `<script nomodule>`、`devices.css` 必须最后（本分支最后一张是 `utility-mobile.css`）、内联 `onerror="window.__spBootFail"`（上游把这块挪进 `public/js/boot.js`，靠 `id="sp-main"` 判来源，并断言 CSP 下没有内联事件处理器）。
 - `test/plugins/visualSet.test.js`：去掉 `createAssetIndex`／`createManifestViews` 接线；overlay 那条不再断言服务出的 manifest 带 `~hash` 段（本分支不发），改断言「没被插件改的条目保持页面加载到的那个 URL」。
-- `tools/package.mjs`：`PLAYER_DOCS` 是本分支与上游的并集（多了 `docs/DEPLOY.md` 与 `docs/PLUGIN-*.md` 等上游玩家文档，同时保留 `docs/SKINS.md` 与 `docs/operations/{DEPLOY,HOME_SERVER,ANNOUNCEMENTS,CDN,PERSISTENCE,MONITORING}.md`）；`RUNTIME_RESEARCH` 多 `docs/research/08-skins.json`；**删掉** `--assets`／`mainAssets()`／`rewriteManifest`／`planFromManifests`。`test/package.test.js` 的发货集合计数随之从 36 改成 38（+`docs/DEPLOY.md`、+`scripts/start-windows-sandbox.bat`）。
-- 文档分区编号：0.3.0 拿走了 DESIGN 的 §32（插件系统，`docs/history/0.3.0.md`）与 §33（特效格式，`docs/design/vfx-format.md`），而本分支那份未入库草稿 `docs/design/portal-agent-wss.md` 原本占 §32–§51。合并时把它整块 **+2 顺延为 §34–§53**（`test/helpers/designDocs.js` 对同一节号出现两次直接抛 `§N appears twice`）。连草稿一起改的引用共 116 处 / 21 个文件（`portal-agent-wss.md` 的 h1 与全部 `## N.` / `### N.x` 标题，加上 `docs/operations/PORTAL_ROOMS.md`、`public/js/screens/room.js`、`public/js/ui/roomShare.js`、`server/{announcement,http/config,http/portalRoom,http/routes,index,lobby,roomAdmin,roomConfig}.js`、`test/{bot-policy,foreign-sessions,portal-room*,room-config-v2,ui/room-share}.test.js`、`AGENTS.md`）。**别挪到 §52–§71**：`test/docs-paths.test.js:101` 要求 §0..max 连续无洞（`for (let n = 0; n <= max; n++) assert.ok(where.has(n))`），留空洞必红。`docs/DESIGN.md` 的索引行也重写成测试认得的 `| §N, §M | [file](file) |` 形状——旧行以中文「草稿（编号与 §32 / §33 撞号…」开头，那条正则根本解析不到它。
+- `tools/package.mjs`：`PLAYER_DOCS` 是本分支与上游的并集（多了 `docs/DEPLOY.md` 与 `docs/PLUGIN-*.md` 等上游玩家文档，同时保留 `custom_docs/SKINS.md` 与 `custom_docs/operations/{DEPLOY,HOME_SERVER,ANNOUNCEMENTS,CDN,PERSISTENCE,MONITORING}.md`）；`RUNTIME_RESEARCH` 多 `docs/research/08-skins.json`；**删掉** `--assets`／`mainAssets()`／`rewriteManifest`／`planFromManifests`。`test/package.test.js` 的发货集合计数随之从 36 改成 38（+`docs/DEPLOY.md`、+`scripts/start-windows-sandbox.bat`）。
+- 文档分区编号：0.3.0 拿走了 DESIGN 的 §32（插件系统，`docs/history/0.3.0.md`）与 §33（特效格式，`docs/design/vfx-format.md`），而本分支那份未入库草稿 `docs/design/portal-agent-wss.md` 原本占 §32–§51。合并时把它整块 **+2 顺延为 §34–§53**（`test/helpers/designDocs.js` 对同一节号出现两次直接抛 `§N appears twice`）。连草稿一起改的引用共 116 处 / 21 个文件（`portal-agent-wss.md` 的 h1 与全部 `## N.` / `### N.x` 标题，加上 `custom_docs/operations/PORTAL_ROOMS.md`、`public/js/screens/room.js`、`public/js/ui/roomShare.js`、`server/{announcement,http/config,http/portalRoom,http/routes,index,lobby,roomAdmin,roomConfig}.js`、`test/{bot-policy,foreign-sessions,portal-room*,room-config-v2,ui/room-share}.test.js`、`AGENTS.md`）。**别挪到 §52–§71**：`test/docs-paths.test.js:101` 要求 §0..max 连续无洞（`for (let n = 0; n <= max; n++) assert.ok(where.has(n))`），留空洞必红。`docs/DESIGN.md` 的索引行也重写成测试认得的 `| §N, §M | [file](file) |` 形状——旧行以中文「草稿（编号与 §32 / §33 撞号…」开头，那条正则根本解析不到它。
 
 - **本分支侧偏离（验证阶段补记）**：
   1. shared/plugins/scriptLoad.js 第 29 行上游写的是 `(...args) => globalThis.fetch(...args)` 形式，在本分支会报 TS2556（spread 参数需要元组或 rest 形参）——因为本分支 jsconfig.json 的 lib 是 [ES2022, DOM]（上游只有 [ES2022]），有 DOM 才有 fetch 的重载签名。改成两参直呼 `(url, init) => globalThis.fetch(url, init)`（调用处就是 fetchFn(url, { cache: … })），语义不变，typecheck 干净。

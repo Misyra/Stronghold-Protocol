@@ -96,7 +96,7 @@ function makeInstall({ voices = false, dynamic = false, skins = false, fx = fals
   const voiceFiles = voices ? ['cn', 'jp'].map((lang) => ({ url: `/assets/audio/voice/${lang}/char_e2e/test.mp3`, body: `${lang}-voice` })) : [];
   const dynamicFiles = dynamic ? [{ url: '/fonts/fonts.css', body: 'body { color: white; }' },
     { url: '/assets/local/map/common/materials.json', body: '{ "material": true }' }] : [];
-  // One installed 干员皮肤 (docs/SKINS.md): two files under a `chars.<charId>.skins.<skinId>…` key path, which is what
+  // One installed 干员皮肤 (custom_docs/SKINS.md): two files under a `chars.<charId>.skins.<skinId>…` key path, which is what
   // the resource manifest marks `skin: '<charId>/<skinId>'`.
   const skinFiles = skins ? [{ url: '/assets/e2e/skin/boc.skel', body: 'skin-skel-bytes' },
     { url: '/assets/e2e/skin/boc.png', body: 'skin-art-bytes' }] : [];

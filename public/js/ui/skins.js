@@ -1,5 +1,5 @@
-// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
-// 干员皮肤：客户端状态与同步 (docs/SKINS.md).
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in custom_docs/SKINS.md.
+// 干员皮肤：客户端状态与同步 (custom_docs/SKINS.md).
 //
 // Two different things live here, and keeping them apart is what makes 「按需安装」 work:
 //
@@ -51,7 +51,7 @@ export const skinsStore = createStore({
 });
 
 /**
- * Ask the server to install a skin's files (docs/SKINS.md).
+ * Ask the server to install a skin's files (custom_docs/SKINS.md).
  *
  * The reply is only an acknowledgement — an install takes tens of seconds, far longer than the 8 s a request is
  * allowed (net.js REQUEST_TIMEOUT_MS) — so the outcome arrives as `skins.changed`, which installSkinsSync()
@@ -94,7 +94,7 @@ function applySkins(entries) {
 
 /**
  * Choose an outfit for one operator. One pick is enough: the battle model (public, synced) and the shop art (local) are
- * set together, so a player who wants an outfit does not have to make the same choice twice (docs/SKINS.md). The art row
+ * set together, so a player who wants an outfit does not have to make the same choice twice (custom_docs/SKINS.md). The art row
  * still offers 原始立绘 / 精英二立绘, and selecting either restores the default battle model.
  */
 export function setSkin(chessId, skinId) {
@@ -113,7 +113,7 @@ export function clearSkin(chessId) {
 export const skinFor = (chessId) => skinsStore.get().entries[chessId] || null;
 
 /**
- * The outfits this browser has equipped, as the `<charId>/<skinId>` keys the 资源预载 follows (docs/SKINS.md). The
+ * The outfits this browser has equipped, as the `<charId>/<skinId>` keys the 资源预载 follows (custom_docs/SKINS.md). The
  * choice is stored per chess and the asset manifest (hence the preload) is keyed per operator, so the chess table has
  * to be in for this to return anything: `loadEquippedSkinKeys()` waits for it.
  *
@@ -157,7 +157,7 @@ function applyPortraits(entries) {
 
 /**
  * Pick what an operator's shop card shows. A real outfit also becomes that operator's battle model — otherwise the same
- * choice would have to be made again in the model group (docs/SKINS.md). `PORTRAIT_E2` ('e2') and `''` (原始立绘)
+ * choice would have to be made again in the model group (custom_docs/SKINS.md). `PORTRAIT_E2` ('e2') and `''` (原始立绘)
  * restore the default battle model; the battlefield still chooses its normal or elite form from the piece itself.
  */
 export function setPortrait(chessId, skinId) {

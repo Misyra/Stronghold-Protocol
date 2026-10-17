@@ -90,7 +90,7 @@ export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free
   const si = c0 && !dr ? ownStandIn(c0, priv, data.get('backups')) : null;
   const c = dr || si || c0;
   const m = data.get('assets');
-  // 商店立绘 (docs/SKINS.md, local to this browser): the card's 180×360 art follows this player's choice for the
+  // 商店立绘 (custom_docs/SKINS.md, local to this browser): the card's 180×360 art follows this player's choice for the
   // operator (independent of the battle model), falling back to the operator's own portrait. Read straight from the
   // store rather than with a hook: the UI tests render cards by calling them as plain functions, and the card
   // repaints with the next shop state push anyway (the choice never goes through the server).

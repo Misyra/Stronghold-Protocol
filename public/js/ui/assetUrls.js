@@ -64,7 +64,7 @@ export function chessOwnPortraitUrl(m, chess, e2 = false) {
 }
 
 /**
- * 商店立绘 (docs/SKINS.md): the 180×360 art the shop card and the operator detail card draw for `chess` under this
+ * 商店立绘 (custom_docs/SKINS.md): the 180×360 art the shop card and the operator detail card draw for `chess` under this
  * browser's choice —
  *   * absent / `''` → the operator's own portrait, exactly as before the feature (`chessPortraitUrl`: E2 for an
  *     elite chess, which is what the card has always shown);
@@ -89,7 +89,7 @@ export function shopPortraitUrl(m, chess, choice) {
 export const PORTRAIT_E2 = 'e2';
 
 /**
- * 干员皮肤 (docs/SKINS.md): the tall 立绘 (180×360 — the same frame `chessPortraitUrl` fills) of a chosen skin, or
+ * 干员皮肤 (custom_docs/SKINS.md): the tall 立绘 (180×360 — the same frame `chessPortraitUrl` fills) of a chosen skin, or
  * null when nothing is chosen / this install has no 立绘 for that skin. The skin is looked up through the operator
  * (`chars[charId].skins[skinId]`), so a portrait chosen for one chess shows for every chess of that operator.
  * @param {any} m manifest @param {any} chess chess record @param {string|null} skinId

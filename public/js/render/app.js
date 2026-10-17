@@ -777,7 +777,7 @@ export async function createFieldView(host, options = {}) {
     return {
       kind: 'op', side: 'ally', defId: piece.id,
       spine: rec?.assets?.spine || rec?.charId || null, avatar: rec?.assets?.avatar || rec?.charId || null,
-      // 干员皮肤 (docs/SKINS.md): present when the prep unit came from the server (Match.prepView / the snapshot); a
+      // 干员皮肤 (custom_docs/SKINS.md): present when the prep unit came from the server (Match.prepView / the snapshot); a
       // golden piece's own id is not a skin key (setSkins only accepts base chess ids), so fall back to this client's
       // own choice
       skin: piece.skin ?? skinFor(baseId) ?? skinFor(piece.id) ?? null,
@@ -866,7 +866,7 @@ export async function createFieldView(host, options = {}) {
       const info = pieceInfo(e.piece, e.area);
       // (the model is part of it: a piece whose body changes — a merge, an own 补位 / 自选 setting arriving — is rebuilt)
       const sig = `${info.kind}|${info.defId}|${info.golden ? 1 : 0}|${info.spine || ''}`;
-      // 干员皮肤 (docs/SKINS.md): the chosen skin is part of the model too — swapping it rebuilds the prep piece.
+      // 干员皮肤 (custom_docs/SKINS.md): the chosen skin is part of the model too — swapping it rebuilds the prep piece.
       // Derived on its own line on purpose: test/ui/standin-ui.test.js pins the `sig` line above verbatim.
       const viewSig = `${sig}|${info.skin || ''}`;
       let v = views.get(key);

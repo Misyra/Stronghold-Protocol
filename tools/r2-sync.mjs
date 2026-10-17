@@ -10,7 +10,7 @@
  * every path + hash, so it only changes when art actually changes. Servers commit the
  * manifest with the release and hand it to clients (server/index.js), which turn it into a
  * per-file `?v=<hash>` query on every CDN URL: immutable per URL, and a release re-busts
- * only the files it changed (see docs/operations/CDN.md). Server-only `preload` metadata
+ * only the files it changed (see custom_docs/operations/CDN.md). Server-only `preload` metadata
  * holds SHA-1 fingerprints and sizes of the same bytes for cache import verification.
  * `--metadata-only` refreshes it offline, refusing any unpublished file changes.
  *

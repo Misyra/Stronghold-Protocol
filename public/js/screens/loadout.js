@@ -40,7 +40,7 @@ import {
   opsOf, setOps, resetOps, moduleRecord,
 } from '../ui/loadoutModel.js';
 import { loadoutStore, openLoadout, closeLoadout, setEntries, setOpsMap, applyLoadoutEntries, setNotOwned, applyOwnershipImport, setDiyPicks, applyDiyImport } from '../ui/loadoutSync.js';
-// 干员皮肤 (docs/SKINS.md): a self-contained section — everything it does lives in ui/skinPicker.js, so this screen
+// 干员皮肤 (custom_docs/SKINS.md): a self-contained section — everything it does lives in ui/skinPicker.js, so this screen
 // only names it. That matters because this file is one upstream is likely to rewrite.
 import { SkinSection } from '../ui/skinPicker.js';
 import { OperatorVoice } from '../ui/operatorVoice.js';
@@ -872,7 +872,7 @@ function LoadoutScreen({ st, leaving = false }) {
   };
 
   // 导出 / 导入 the loadout (or, on the 干员持有 tab, the not-owned list) as the versioned payload (a downloaded file,
-  // the clipboard, or the textarea); `io.kind` says which. The 皮肤 / 商店立绘 choices ride along (docs/SKINS.md):
+  // the clipboard, or the textarea); `io.kind` says which. The 皮肤 / 商店立绘 choices ride along (custom_docs/SKINS.md):
   // a 调配 export carries the ROSTER chess keys and a 自选 export the SLOT ids — the two files describe different
   // pieces, so neither ever claims the other's keys (an import then leaves the other half alone).
   const diySlotIds = new Set(diySlotList(diyData()).map((s) => s.slotId));

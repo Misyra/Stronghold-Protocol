@@ -37,7 +37,7 @@ export function spineEntry(m, id, opts) {
   if (!s) return null;
   const ch = get(get(m, 'chars'), s) || get(get(m, 'chars'), baseCharId(s));
   if (ch) {
-    // 干员皮肤 (docs/SKINS.md): an installed skin replaces the operator's own model. `opts.skin` is a skinId; when it
+    // 干员皮肤 (custom_docs/SKINS.md): an installed skin replaces the operator's own model. `opts.skin` is a skinId; when it
     // is absent — or names a skin this install does not have — the operator's default model is used, so a client
     // meeting a manifest without that skin still works.
     const skin = opts && str(opts.skin) ? get(get(ch, 'skins'), opts.skin) : null;
@@ -90,11 +90,11 @@ export function localSpineEntry(sl, local, web) {
   return entry;
 }
 
-/** Whether an operator/token/enemy has a Back model. `skinId` asks about an installed skin (docs/SKINS.md). */
+/** Whether an operator/token/enemy has a Back model. `skinId` asks about an installed skin (custom_docs/SKINS.md). */
 export function hasBackSpine(m, id, skinId) {
   const ch = get(get(m, 'chars'), str(id) || '') || get(get(m, 'chars'), baseCharId(id) || '');
   if (!ch) return false;
-  // 干员皮肤 (docs/SKINS.md): a skin may ship its own Front/Back pair, so both questions are asked of the skin
+  // 干员皮肤 (custom_docs/SKINS.md): a skin may ship its own Front/Back pair, so both questions are asked of the skin
   const skin = str(skinId) ? get(get(ch, 'skins'), skinId) : null;
   const src = (skin && isObj(skin.spine)) ? skin.spine : ch.spine;
   return !!(isObj(src) && validSpine(src.back));

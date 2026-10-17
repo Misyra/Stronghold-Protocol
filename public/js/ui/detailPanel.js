@@ -397,7 +397,7 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
   // still apply (the owner's recall of the official mode, 2026-10-06)
   const si = standIn && standIn.standInFor ? standIn : null;
   const body = si || chess;
-  // 商店立绘 (docs/SKINS.md, local): the same 180×360 art the shop card shows, so tapping a card opens its own
+  // 商店立绘 (custom_docs/SKINS.md, local): the same 180×360 art the shop card shows, so tapping a card opens its own
   // portrait instead of the operator's default one. A stand-in shows its own operator, never the skin. Read without
   // a hook — the UI tests call this component as a plain function.
   const portraitSkin = si ? null : (skinsStore.get().portraits[chess?.baseId || chess?.chessId] || null);

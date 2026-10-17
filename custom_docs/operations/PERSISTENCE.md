@@ -4,6 +4,24 @@
 
 与浏览器本地战绩不同，这个功能保存正在进行的服务端对局。检查点与恢复逻辑移植自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol/tree/20524bb07dff68743980ec8e6b4a8e458f3720b6)，遵循 GPL-3.0-or-later；本仓库增加原子文件存储、独占写入锁、开战前检查点、关服写入等待、观战与结算补推恢复，以及持久化 Worker 与分片存储（见下）。
 
+## Redis（可选持久化）
+
+状态除了 `SP_STATE_FILE` 之外还能放在 Redis 里；这部分取自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) 的 `server/redis.js`（逐字），本分支另加了 `server/redisState.js` 这层适配（分片文档 → 单个键）。优先级是：**Redis → `SP_STATE_FILE` → 内存**；只要配了 Redis URL 就不再写文件。
+
+| 变量 | 默认 | 含义 |
+| --- | --- | --- |
+| `SP_REDIS_URL` / `REDIS_URL` | （空，不启用） | 只有 `rediss://`、`redis://`、`unix:` 会被接受；其他值当作未配置 |
+| `SP_REDIS_PREFIX` | `stronghold:` | 键前缀，键名是 `<前缀>state` |
+| `SP_REDIS_TTL` | `90000`（25 小时） | 每次写都刷新过期时间，单位秒；小于 60 的值忽略。25 小时是「最长重连窗口」的下限 |
+| `SP_REDIS_CONNECT_TIMEOUT` | `3000` | 连接超时（毫秒），0 表示不限 |
+| `SP_REDIS_COMMAND_TIMEOUT` | `4000` | 单条命令超时（毫秒），0 表示不限 |
+
+启动时会读一次（4 次尝试、间隔 750 ms，给「Redis 比游戏服晚起来」留余量）。**读不出来就不写**：Redis 连不上或内容不是状态文档时，`Persister` 进入 `deferLoad` 状态，之后每轮写之前重读一次，读到才恢复（房间、身份、对局，含线程池里的对局）并继续写 —— 这样一盏起不来的 Redis 不会让第一次存档把真正的存档覆盖掉。`/metrics.persist` 的 `pendingLoad` / `deferredSkips` 就是这件事的状态与计数。
+
+存档是「一个键一份 JSON 文档」：本分支的分片布局（索引 + 房间分片）在 Redis 里合并成单个键值，写一次、读一次，不做增量。写入失败（命令超时、键被别的实例占用）不会中断游戏，下一轮再写；`state` 键只由当前进程刷新 TTL，两个进程连同一个前缀会互相覆盖，因此**一个 Redis 前缀只给一个游戏服**。
+
+- 对局跑在 lane 线程里时，存档是跨线程 `capture` 拍的，且不做版本跳过：[性能说明](../development/PERFORMANCE.md)。
+
 ## 启用与升级
 
 `npm start` 默认开启，保存于仓库 `.state/server-3000`（端口不同则目录名不同）。每 10 秒刷新一次，在开局和开战前额外检查保存，正常关服先等待已有写入，再写最后一次状态，然后关闭房间。

@@ -134,6 +134,9 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
       checkpointsSkipped: persister.versionStats?.skipped ?? null,
       versionChecks: persister.versionStats?.verified ?? null,
       versionHoles: persister.versionStats?.holes ?? null,
+      // 启动读失败时拒绝写的轮次（Persister.deferLoad / retryLoad）：>0 且在涨说明存档一直没读到，写被挡住了
+      deferredSkips: persister.deferredSkips ?? 0,
+      pendingLoad: persister.pendingLoad === true,
       workerMemory: persister.encoder?.memory || null } : null,
   };
   // The traffic counters are the host's own figures (upstream 0.2.6): the caller gates them on isLocalIp, and they

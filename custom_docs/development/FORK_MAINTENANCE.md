@@ -45,8 +45,6 @@ Worker 池在本分支的开关是 `SP_MATCH_WORKERS`（默认 0），细节见 
 
 刻意没有采用的三处，以及原因：
 
-**已知未接回**：本分支自己的 `/_v/<tag>/` 发布命名空间（`server/assetVersion.js`）在换用 xinhai 的 `static.js` 之后没有接回去 —— 现在靠「HTML 不缓存 + 每文件 `?v=<哈希>`」达到同样的目的，`/_v/` 只剩 `assetVersion.js` 自己的单测（`test/asset-version.test.js` 里那一条因此是红的）。要么把它接回静态层，要么把这套机制连同测试一起退役，二者选一，别留着半套。
-
 - `public/js/resources/runtimeIndex.js`（运行期写缓存的旁路索引）。对方用它记下 Service Worker 运行期写进缓存的条目，省掉一次整文件哈希。本分支的 `store` 在 `#status` 里本来就把「已缓存但未入索引」的条目交给 `#adopt` 现算哈希后再复用，正确性相同，只是每次多算一遍；引入第二套索引会让「索引坏了就重算」这条退路变成两套可能不一致的退路。
 - `public/js/resourceNetwork.js`（运行期素材下载器 + PIXI parser 钩子）。它绑的是对方的渲染取图路径；本分支走自己的 `public/js/image.js` 与 `public/js/cdnSpine.js`（含皮肤 273 套的图集与纹理页适配）。换过去等于重写取图链路，收益只有请求去重。
 - `public/js/resources/combat.js`（战斗期暂停批量预载）。功能有，实现不同：本分支的 `public/js/resources/schedule.js` 按比赛状态排队（战斗期间只停 `TIER_REST` 与低优先级 lane，正在跑的请求允许收尾），由 `main.js` 的 `updateResourcePriority` 驱动。

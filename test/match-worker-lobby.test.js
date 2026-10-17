@@ -82,6 +82,25 @@ describe('对局线程池：lobby 侧接线', () => {
     }
   });
 
+  test('room.skins / 对局消息在 lane 里也照常应答（Promise 转成平台的回复）', async () => {
+    const { registry, lobby } = lobbyWithLane();
+    try {
+      const { session, room } = await startedSolo(lobby, registry);
+      // 皮肤：远端 setSkins 是往线程里的调用，应答晚到一拍
+      const answer = lobby.skins(session, { skins: {} });
+      assert.equal(typeof answer?.then, 'function', 'a remote match answers later');
+      assert.deepEqual(await answer, { ok: true });
+      assert.deepEqual(room.seatOf(session.playerId).skins, {}, 'the seat still took the choice');
+      // 对局消息：routeGameNow 认领远端对局的 Promise，不再当成「违反同步契约」
+      const reply = lobby.onMessage(session, { t: 'g.pause', on: true });
+      assert.equal(typeof reply?.then, 'function', 'the reply waits for the lane');
+      const settled = await reply;
+      assert.ok(settled && (settled.ok === true || typeof settled.error === 'string'), 'and settles into an answer');
+    } finally {
+      lobby.shutdown('test');
+    }
+  });
+
   test('房间结束时 lane 被还回去（池子不再记着这个房间）', async () => {
     const { registry, lobby } = lobbyWithLane();
     try {

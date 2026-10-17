@@ -1,9 +1,10 @@
 # ops/ — 内核层封禁（仅服务器侧，不进玩家包）
 
 ```
-ops/banned-ips.txt       永久封禁名单（source of truth）
-ops/sp-syn-ban-load      读名单 + 建 nft 表，脚本本身可以重复跑
-ops/sp-syn-ban.service   开机/手动加载用的 oneshot unit
+ops/banned-ips.txt        永久封禁名单（source of truth）
+ops/sp-syn-ban-load       读名单 + 建 nft 表，脚本本身可以重复跑
+ops/sp-syn-ban.service    开机/手动加载用的 oneshot unit
+ops/sp-web-syn-guard.nft  每 IP 的 SYN 速率闸（规范值，见下）
 ```
 
 这三件只属于部署机。`tools/package.mjs` 的 `RUNTIME_DIRS` 不包含 `ops/`，所以
@@ -23,6 +24,28 @@ systemctl enable --now sp-syn-ban
 
 加一行 IP 到 `ops/banned-ips.txt`，部署后 `systemctl restart sp-syn-ban`。
 脚本会先 `nft -c -f` 校验再替换表，写坏了不会把现有规则搞丢。
+
+## sp-web-syn-guard.nft
+
+`sp_syn_ban` 管**已知**的洪水源（名单 + 20 SYN/s 自动封），这份表管**每 IP 的连接速率**，
+两者叠加：`sp_syn_ban` 在 `priority filter - 6`，本表在 `- 5`，所以名单里的 IP
+先被丢掉，到不了这里。
+
+```bash
+sudo nft -f ops/sp-web-syn-guard.nft     # 幂等：同名表会先被删掉再建
+```
+
+**注意**：`nft -f` 一个已经存在的同名表会报 `File exists`。要替换就写在一个文件里：
+
+```bash
+{ echo 'delete table inet sp_web_syn_guard'; cat ops/sp-web-syn-guard.nft; } | sudo nft -f -
+```
+
+（nft 把整份输入当一个事务，所以 delete + add 之间没有窗口。）
+
+替换会清空 `web_syn4 / web_syn6` 里的实时元素和计数器——对误伤的 IP 来说这是好事。
+
+阈值怎么来的、为什么是 30，写在文件头的注释里。
 
 ## 表结构
 

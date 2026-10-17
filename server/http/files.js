@@ -4,6 +4,7 @@
 
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { promisify } from 'node:util';
@@ -70,6 +71,8 @@ const GZIP_CACHE_MAX_TOTAL = 96 << 20;    // both encodings together
 export const BROTLI_QUALITY = 5;
 // Plain art may be rewritten in place, so its existing one-day cache policy stays.
 export const LONG_CACHE = 'public, max-age=86400';          // 1 day
+/** Unversioned installation icons/manifest: 1 hour (本仓库的旧策略，asset-version 的用例按它断言) */
+const INSTALL_CACHE = 'public, max-age=3600';
 export const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const LONG_CACHE_DIRS = ['assets', 'fonts', 'vendor']; // first path segment under public/
 
@@ -257,13 +260,19 @@ function ifRangeMatches(req, etag, lastModified) {
   return s === lastModified;
 }
 
-function cacheControlFor(ext, mountName, segments, query) {
+function cacheControlFor(ext, mountName, segments, query, versioned = false) {
   if (ext === '.html' || ext === '.htm') return 'no-cache';
+  // 只有经过校验的发布地址（/_v/<tag>/，见 static.js）才是 immutable：一个随便写的 ?v= 钉不住任何东西，
+  // 它没法对照磁盘上的字节。素材的每文件 ?v=<哈希> 是 CDN 的缓存键，源站按 LONG_CACHE 处理即可。
+  if (versioned) return IMMUTABLE_CACHE;
+  // Vite 的内容寻址产物与带整包指纹的资源分包：文件名里就有内容哈希。
   if (mountName === 'public' && segments.length === 3 && segments[0] === 'build' && segments[1] === 'assets'
     && /-[A-Za-z0-9_-]{8,}\.(js|css|json|webmanifest|svg|png|ico)$/.test(segments[2])) return IMMUTABLE_CACHE;
-  if (/(^|&)v=/.test(query)) return IMMUTABLE_CACHE;
   if (mountName === 'public' && segments.length === 2 && segments[0] === 'resource-packs'
     && /^[A-Za-z0-9._-]+-[0-9a-f]{12}\.zip$/i.test(segments[1])) return IMMUTABLE_CACHE;
+  // 安装图标与 manifest（无版本、可变）：1 小时
+  if (mountName === 'public' && ((segments.length > 1 && segments[0] === 'icons')
+    || (segments.length === 1 && segments[0] === 'manifest.json'))) return INSTALL_CACHE;
   if (mountName === 'public' && segments.length > 1 && LONG_CACHE_DIRS.includes(segments[0])) return LONG_CACHE;
   return 'no-cache';
 }
@@ -287,9 +296,19 @@ async function compressedSibling(absPath, stat, encoding) {
   }
 }
 
+/** 可以就地改写的文本类型（本仓库的版本/CDN 改写只碰这些） */
+const TRANSFORMABLE = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json']);
+
 export async function serveFile(req, res, absPath, stat, mountName, segments, query, gzipCache, log, opts = {}) {
   const ext = path.extname(absPath).toLowerCase();
   const type = MIME[ext] || 'application/octet-stream';
+  // 本仓库追加：`opts.transform(source, ext)` —— 服务端把 CDN 基址与版本前缀写进 html/css/js/json。
+  // 改写后的字节与源文件不同（同一次发布里相同），所以 ETag 必须用改写结果的哈希，不能用 size+mtime。
+  let transformed = null;
+  if (typeof opts.transform === 'function' && TRANSFORMABLE.has(ext)) {
+    const source = await fsp.readFile(absPath, 'utf8');
+    transformed = Buffer.from(opts.transform(source, ext), 'utf8');
+  }
   const compressible = COMPRESSIBLE.has(ext);
   // RFC 9110 §14.2: Range is defined only for GET; other methods ignore it, including for encoding selection.
   const rangeHeader = req.method === 'GET' ? req.headers.range : undefined;
@@ -298,7 +317,8 @@ export async function serveFile(req, res, absPath, stat, mountName, segments, qu
   // can opt into static precompression; nonselected encodings are never served.
   const sibling = encoding && mountName === 'public' && ['assets', 'fonts'].includes(segments[0])
     ? await compressedSibling(absPath, stat, encoding) : null;
-  const baseTag = opts.contentHash || `${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}`;
+  const baseTag = opts.contentHash
+    || (transformed ? `t${createHash('sha256').update(transformed).digest('hex').slice(0, 16)}` : `${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}`);
   const sideTag = sibling ? `-static-${sibling.stat.size.toString(16)}-${sibling.stat.mtimeMs}` : '';
   const etag = `"${baseTag}${encoding === 'br' ? '-br' : encoding === 'gzip' ? '-gz' : ''}${sideTag}"`;
   const lastModified = stat.mtime.toUTCString();
@@ -306,7 +326,7 @@ export async function serveFile(req, res, absPath, stat, mountName, segments, qu
 
   const headers = {
     'Content-Type': type,
-    'Cache-Control': opts.cacheControl || cacheControlFor(ext, mountName, segments, query),
+    'Cache-Control': opts.cacheControl || cacheControlFor(ext, mountName, segments, query, opts.versioned === true),
     ETag: etag,
     'Last-Modified': lastModified,
   };
@@ -318,6 +338,19 @@ export async function serveFile(req, res, absPath, stat, mountName, segments, qu
   if (isNotModified(req, etag, modified)) {
     res.writeHead(304, headers);
     res.end();
+    return;
+  }
+
+  if (transformed) {
+    // no Range and no precompressed sibling: the bytes exist only after the rewrite
+    headers['Accept-Ranges'] = 'none';
+    if (encoding) headers['Content-Encoding'] = encoding;
+    const out = encoding
+      ? await gzipCache.compressed(`${absPath}\0${etag}`, async () => transformed, encoding, ext)
+      : transformed;
+    headers['Content-Length'] = out.length;
+    res.writeHead(200, headers);
+    res.end(isHead ? undefined : out);
     return;
   }
 

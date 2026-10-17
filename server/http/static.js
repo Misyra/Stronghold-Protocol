@@ -50,6 +50,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { rewriteAssetPaths } from '../../shared/cdn.js';
 import { createResourceIndex, RESOURCE_MANIFEST_FILE, RESOURCE_PACK_MANIFEST_FILE } from '../resources.js';
+import { createAssetVersion, VERSION_PREFIX } from '../assetVersion.js';
 import { routeResourcePacks } from '../../shared/resourcePackRoutes.js';
 import path from 'node:path';
 import { MEDIA_PREFIX } from '../../shared/media.js';
@@ -138,6 +139,21 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   /** 每文件指纹清单的响应体（一次构建，按 tag 重建时随进程重启） */
   let manifestBody = null;
 
+  // 本仓库追加：发布版本层（server/assetVersion.js）—— 代码走 /_v/<runtimeTag>/（immutable），
+  // 素材走 CDN 的每文件 ?v=<哈希>；两者都由下面同一个 release 决定，所以一次发布只 re-bust 变了的文件。
+  const release = createAssetVersion(mounts, DATA_SHIM_JS, { base: cdn, version: '', manifest: assetsManifest?.tag && cdn ? `/assets-manifest.json?v=${assetsManifest.tag}` : '', hashes: assetsManifest?.hashes || null });
+  /**
+   * 哪些响应要就地改写：HTML 与 CSS 一律（页面要拿到版本前缀与 __sp* 全局，CSS 要改写 url()），
+   * JSON 只在版本化地址下改写（/_v/<tag>/data/assets.json）—— 普通 /data/*.json 必须原样送出，
+   * 它们已经被 CDN 改写层（rewriteAssetPaths / manifestEncode）处理过，游戏数据也不该带版本前缀。
+   * JS 不改写：release.transform 对 .js 本来就不动手，跳过省一次读文件。
+   */
+  const transformFor = (ext, versioned) => {
+    if (ext === '.html' || ext === '.htm' || ext === '.css') return (source, e) => release.transform(source, e);
+    if (ext === '.json' && versioned) return (source, e) => release.transform(source, e);
+    return null;
+  };
+
   // 本仓库追加：每文件指纹清单（.assets-manifest.json，tools/r2-sync.mjs 产出）。它把艺术素材的 URL 变成
   // `<cdn>/assets/x.png?v=<文件哈希>`：内容不变 URL 不变，CDN 缓存键天然带版本。只有配了 CDN 基址时才有意义。
   const assetsManifestPath = assetsManifest?.tag && cdn ? `/assets-manifest.json?v=${assetsManifest.tag}` : '';
@@ -151,6 +167,23 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     if (!decoded.startsWith('/') || decoded.includes('\0') || decoded.includes('\\')) {
       sendError(req, res, 400, '请求地址无效 · Bad request');
       return;
+    }
+    // 版本化地址（server/assetVersion.js）：/_v/<tag>/js/… 之类只认本次发布算出来的 tag，
+    // 旧页面的 URL 在发版后一律 404（宁可让页面重载，也不能把新字节挂在旧 URL 上被永久缓存）。
+    let versioned = false;
+    if (decoded.startsWith(VERSION_PREFIX)) {
+      const match = /^\/_v\/([a-f0-9]{16})(\/.*)$/.exec(decoded);
+      if (!match || !/^\/(?:js|css|fonts|vendor|assets|data|shared|sim|media)\//.test(match[2])) {
+        sendError(req, res, 404, '页面不存在 · Not found');
+        return;
+      }
+      const legacyCode = /^\/(?:js|vendor|shared|sim)\//.test(match[2]);
+      if (match[1] !== release.expectedTag(match[2]) && !(legacyCode && match[1] === release.tag)) {
+        sendError(req, res, 404, '资源版本已更新 · Reload required');
+        return;
+      }
+      decoded = match[2];
+      versioned = true;
     }
     if (useBuiltClient && (decoded === '/' || decoded === '/index.html')) {
       await serveFile(req, res, builtIndex, await fsp.stat(builtIndex), 'public', ['build', 'index.html'], query, gzipCache, log);
@@ -315,7 +348,9 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     }
     // Extension-less audio (download-manager avoidance): /media/bgm/act1 → /assets/audio/bgm/act1.mp3
     if (decoded.startsWith(MEDIA_PREFIX)) {
-      await serveMedia(req, res, decoded.slice(MEDIA_PREFIX.length), query, publicDir, gzipCache, log);
+      // 本仓库的 serveMedia 签名没有 query（上游的 static.js 传了）：第 4 个参数就是 publicDir，错位会让整条
+      // /media/… 音频路由去找 <cwd>/assets/audio —— 浏览器里表现为 BGM/语音静默 404。
+      await serveMedia(req, res, decoded.slice(MEDIA_PREFIX.length), publicDir, gzipCache, log, release, versioned);
       return;
     }
     // Bare mount paths (e.g. "/data") → treat as the mount directory.
@@ -375,6 +410,12 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       }
       return;
     }
+    // 一次发布的 URL 下必须是那一次发布的字节：文件在进程启动后被改过，就不能再按旧 tag 发出去
+    // （否则浏览器/代理会把新字节永久缓存成旧 URL）。宁可 503 让运维重启。
+    if (versioned && !release.matchesFile(absPath, stat)) {
+      sendError(req, res, 503, '资源文件已变更，请重启服务器 · Restart required');
+      return;
+    }
     const first = segments[0] || '';
     if (mount.name === 'public' && (first.toLowerCase().startsWith('studio') || /[^\x00-\x7f]/.test(first))) {
       const studio = await studioRealPath();
@@ -406,8 +447,16 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       serveBuffer(req, res, body, stat, MIME['.json'], 'no-cache', cdn);
       return;
     }
-    await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log);
+    const ext = path.extname(absPath).toLowerCase();
+    await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log, {
+      transform: transformFor(ext, versioned),
+      ...(versioned ? { cacheControl: IMMUTABLE_CACHE } : {}),
+    });
   };
+  // 发布版本（server/assetVersion.js）：调试与测试读它判断「这个 URL 属于哪次发布」
+  serveStatic.version = release.tag;
+  serveStatic.artVersion = release.artTag;
+  serveStatic.runtimeVersion = release.runtimeTag;
   serveStatic.close = () => manifestEncoder.close();
   serveStatic.cacheStats = () => ({ gzipBytes: gzipCache.total, gzipEntries: gzipCache.map.size, gzipLimitBytes: gzipCache.maxTotal, gzipInflight: gzipCache.inflight.size });
   return serveStatic;

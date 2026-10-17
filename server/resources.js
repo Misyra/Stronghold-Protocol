@@ -22,6 +22,8 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { canonicalResourceUrl, isBoardResourceJson } from '../shared/resourcePaths.js';
 import { routeResourcePacks } from '../shared/resourcePackRoutes.js';
+import { CUSTOM_EMOTE_THEME, emoteArtPath } from '../shared/constants.js';
+import { hashFile } from './fileHash.js';
 
 export const RESOURCE_MANIFEST_FILE = 'resource-manifest.json';
 export const RESOURCE_PACK_MANIFEST_FILE = 'resource-packs.json';
@@ -278,6 +280,32 @@ export function localPathFor(url, publicDir, cdnBase = '') {
  */
 export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resourcePackRoutes = [], rewrite = (v) => v,
   statFile = (p) => fsp.stat(p), readFile = fsp.readFile, log = null } = {}) {
+
+  /**
+   * 本仓库新增（xinhai 的清单只信清单里给的哈希）：清单没给哈希、但文件就在本机的（离线安装、站点自带表情），
+   * 按内容现算一次 —— 客户端才能拿真实哈希判断缓存是否还新鲜。
+   */
+  async function hashLocalFiles(files, real) {
+    // 只给站点自带的几个表情现算（几十个文件）。整棵素材树在部署机上有 data/asset-hashes.json 与
+    // data/local-assets.json 的哈希，逐文件哈希 27k 个文件会让首次清单请求变成十几秒。
+    const own = new Set(CUSTOM_EMOTE_THEME.emotes.map((emote) => emoteArtPath(emote.id)));
+    const lanes = Math.min(4, files.length);
+    let next = 0;
+    await Promise.all(Array.from({ length: lanes }, async () => {
+      for (let i = next++; i < files.length; i = next++) {
+        if (!own.has(files[i].url)) continue;
+        const canonical = pathKey(files[i].url);
+        if (real.has(canonical)) continue;
+        const abs = localPathFor(files[i].url, publicDir, cdnBase);
+        if (!abs) continue;
+        try {
+          const st = await fsp.stat(abs);
+          if (!st.isFile() || st.size > MAX_FILE_BYTES) continue;
+          real.set(canonical, (await hashFile(abs)).hash);
+        } catch { /* 不在本机（CDN-only）：客户端按清单里的兜底哈希处理 */ }
+      }
+    }));
+  }
   /** @type {{ key: string, sourceKey: string, tileFiles: { url: string }[], body: Buffer, gzip: Buffer,
    *   etag: string, mtimeMs: number, manifest: any } | null} */
   let cache = null;
@@ -360,6 +388,16 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resource
     const assetsDoc = assets ? rewrite(assets.doc) : null;
     const localDoc = local || fx ? rewrite({ ...(local?.doc || {}), groups: { ...(local?.doc?.groups || {}), ...(fx?.doc?.groups || {}) } }) : null;
     const collected = collectResourceFiles(assetsDoc, localDoc);
+    // 站点自带的 Ciallo 表情随代码发布，不写进任何素材清单（本仓库新增；xinhai 的清单没有这一段）。
+    // 只有文件真在 publicDir 里才算进来：夹具目录、CDN-only 安装不该凭空多出六个文件。
+    for (const emote of CUSTOM_EMOTE_THEME.emotes) {
+      const url = emoteArtPath(emote.id);
+      if (collected.some((f) => f.url === url)) continue;
+      const abs = localPathFor(url, publicDir, cdnBase);
+      if (!abs) continue;
+      try { const st = await statFile(abs); if (!st.isFile()) continue; } catch { continue; }
+      collected.push({ url, tier: TIER_ESSENTIAL, source: 'local' });
+    }
     const tileFiles = collected.filter((f) => /\/assets\/local\/map\/autochess\/tiles\.json$/.test(f.url));
     const tiles = await tileSources(tileFiles);
     const key = [sourceKey, ...tiles.map((f) => f?.stamp || '-')].join('|');
@@ -372,6 +410,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resource
       web: assetsDoc && assetsDoc.hash ? assetsDoc.hash : assets ? `m${Math.floor(assets.mtimeMs)}` : 'none',
       local: localDoc && localDoc.hash ? localDoc.hash : local ? `l${Math.floor(local.mtimeMs)}` : 'none',
     };
+    await hashLocalFiles(files, real);
     const fileHashes = resolveHashes(files, real, stamps, cdnBase);
     // The version is informational now (the client keys its cache per file), but it must still change whenever the set
     // or any hash does — the settings panel and the /healthz-style diagnostics read it.

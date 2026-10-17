@@ -22,6 +22,16 @@ export function resourceReady(timeoutMs = 3000) {
 void resourceReady();
 
 /** Release paths keep Spine's relative atlas/page references in the same cache namespace. */
+/**
+ * 游戏数据 JSON 的根路径：配了数据 CDN（SP_DATA_CDN）就走它，否则留在本站 /data/。
+ * 取自 xinhai 的 asset-cdn.js / simLoader.js 默认值 —— 本仓库此前只导出了 DATA_CDN，没人消费它。
+ * @returns {string}
+ */
+export function dataBasePath() {
+  const base = globalThis.__spAssetCdn?.dataBase;
+  return base ? String(base).replace(/\/+$/, '') + '/data/' : '/data/';
+}
+
 export function resourceUrl(url, version = /^\/(?:assets|fonts|media)\//.test(url) ? globalThis.__spArtVersion :
   /^\/(?:js|vendor|shared|sim)\//.test(url) ? (globalThis.__spRuntimeVersion || globalThis.__spAssetVersion) : globalThis.__spAssetVersion) {
   const remote = assetCdnUrl(url, globalThis.__spAssetCdn);

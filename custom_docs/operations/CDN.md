@@ -118,6 +118,20 @@ npm start
 不配置时行为不变：清单里没有 ${B}urls${B} 字段，客户端直接用当前地址。
 **可选的回源优化**：[Smart Tiered Cache](https://developers.cloudflare.com/smart-shield/configuration/smart-tiered-cache/) 让多个边缘节点未命中时先查询上层缓存，减少各自直接读取 R2。实际节省取决于流量分布与缓存命中情况，应根据 R2 的 Class B 用量验证；不能仅凭 TTL 或单个 URL 的 HIT 推算月费用。
 
+### 3.3 数据也放 CDN（SP_DATA_CDN）
+
+把与游戏服同一版本的 `data/` 整个目录传到 CDN 根下，然后设 `SP_DATA_CDN`：
+
+```powershell
+$env:SP_DATA_CDN = 'https://data.example.com/stronghold'
+npm start
+```
+
+服务端把它写进运行时模块 `/js/asset-cdn.js` 的 `DATA_CDN`；客户端 `main.js` 挂到 `__spAssetCdn.dataBase`，游戏 JSON 的加载器（`public/js/data.js`）与浏览器战斗模拟（`public/js/battle/simLoader.js` 的 `dataBase` 默认值）都从 `dataBasePath()` 取根路径，于是请求变成 `<SP_DATA_CDN>/data/chess.json`。**显式传入的 `base` / `dataBase` 永远优先**（房间的内容集、内容插件、测试都是这样显式指定的），所以这个开关不会覆盖任何按房间来的数据来源。
+
+没配时一切照旧（同源 `/data/`）。Node 自己的 `/data/*.json` 仍然读本机文件、仍然 200/304，不做跳转 —— CDN 只影响浏览器从哪儿取数据。
+
+注意两点：`data/` 里只有静态 JSON 会被搬走，`/data/resource-manifest.json` 与 `/data/resource-packs.json` 仍是本服务动态生成的（素材清单依赖本机装了哪些素材与插件）；语言包文本走 `/packs/<id>/…`，仍由本服务提供（`shared/cdn.js` 里上游的 `i18nUrl()` 本分支没有使用）。
 ## 4. 浏览器预载
 
 首页右下角或对局设置中的「预载资源」打开共用资源管理窗口。预载默认关闭；开启后随个人设置保存，之后进入页面会在后台继续。窗口按**必备资源、干员语音、干员皮肤、额外特效**四张卡片展示，各自集中显示开关、缓存进度和大小。音效、音乐与玩法说明在必备资源卡片内独立选择，与干员语音互不绑定；旧设置里的语音选择从 `preloadOptional` 迁移到 `preloadVoices`。语音按钮按服务器已提供的中、日、英、韩资源显示，也可选择全部语言。皮肤默认跟随干员调配，主进度按本次选择的套数计算，另列服务器已安装与本机已缓存的总套数；勾选「全部皮肤」后才下载完整目录。特效是独立范围，缓存不会改变画质设置。没有安装皮肤或特效的部署不显示对应卡片。上方汇总**本次预载、已缓存、还需下载**，并提供「仅必备」「日常推荐」「完整预载」三个快捷方案；选择方案不会启动已暂停的下载。关闭窗口后已开启的下载继续，**暂停下载会保存关闭状态，刷新后仍暂停**；已有缓存保留。ZIP 导入导出与清理操作收在折叠区。清理可选资源会同步关闭所有可选范围，清理全部资源后暂停下载。需要 HTTPS 或 localhost。

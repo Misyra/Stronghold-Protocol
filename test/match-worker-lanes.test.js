@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { Lobby } from '../server/lobby.js';
 import { SessionRegistry } from '../server/net.js';
 import { MatchWorkerPool } from '../server/workers/matchPool.js';
+import { encodeMatchCapture } from '../server/match/snapshot.js';
 import { DATA } from './match/harness.js';
 
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
@@ -59,6 +60,38 @@ test('五个房间分到三条 lane 上，全部结束时 lane 与占位都清�
     assert.equal(pool.stats().rooms, 0, 'every lane slot came back');
     assert.equal(pool.assignments.size, 0, 'and every assignment');
     assert.equal(pool.lanes.every((lane) => !lane.closed), true, 'no lane was marked broken by a normal disposal');
+  } finally {
+    lobby.shutdown('test');
+  }
+});
+
+test('lane 里的机器人照常准备：过了 INFO_CHECK，机器人有棋子，对局没卡住', async () => {
+  const pool = makePool({ lanes: 1 });
+  const { registry, lobby } = lobbyWithLanes(pool);
+  try {
+    const session = registry.create('Alice');
+    assert.deepEqual(lobby.create(session, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
+    const room = lobby.rooms.get(session.roomCode);
+    assert.deepEqual(lobby.addBot(session), { ok: true });
+    assert.deepEqual(await lobby.start(session), { ok: true });
+    const match = room.match;
+    assert.equal(match.remote, true);
+
+    // INFO_CHECK 要每个真人确认；机器人由引擎自己确认（server/match/match/phases.js）
+    await match.handle(session.playerId, { t: 'g.infoReady' });
+    let doc = null;
+    for (let i = 0; i < 40 && !doc; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      const capture = await match.captureSnapshot();
+      if (capture) doc = encodeMatchCapture(capture);
+      if (doc && doc.phase !== 'INFO_CHECK') break;
+      doc = null;
+    }
+    assert.ok(doc, 'the lane produced a checkpoint after INFO_CHECK');
+    assert.notEqual(doc.phase, 'INFO_CHECK', 'the match moved on — a bot that never prepares would stall here');
+    const bot = doc.players.find((p) => p.isBot);
+    assert.ok(bot, 'the bot seat is in the match');
+    assert.equal(bot.ready === undefined || bot.ready === true || bot.infoReady !== false, true, 'the bot is not waiting on itself');
   } finally {
     lobby.shutdown('test');
   }

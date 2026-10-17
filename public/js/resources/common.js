@@ -25,6 +25,7 @@ export const CONTENT_HASH_RE = /^[0-9a-f]{12}$/;
 export const RESOURCES_FORMAT = 1;
 /** Never store a single file bigger than this (mirrors server/resources.js). */
 export const MAX_FILE_BYTES = 24 * 1024 * 1024;
+export const RESOURCE_PACK_MAX_BYTES = 16_000_000;
 /** Required visuals: maps, portraits, Spine, fonts, UI and icons. */
 export const TIER_ESSENTIAL = 1;
 /** Optional: voices, sound effects, music and tutorial illustrations. */
@@ -309,4 +310,28 @@ export async function rangeResponse(response, range) {
   headers.set('Content-Range', `bytes ${start}-${end}/${length}`);
   headers.set('Content-Length', String(end - start + 1));
   return new Response(data.slice(start, end + 1), { status: 206, statusText: 'Partial Content', headers });
+}
+
+// 取自 xinhai 的 common.js：部署端分包索引（/data/resource-packs.json 或清单里的 packs 数组）的校验。
+import { isResourcePackUrl } from '../../../shared/resourcePackRoutes.js';
+
+export function validateResourcePacks(doc) {
+  // The standalone deployment index has an envelope, while /data/resource-manifest.json
+  // embeds only its already-validated `packs` array. Accept both wire shapes.
+  const packs = Array.isArray(doc) ? doc
+    : doc?.format === 'stronghold-resource-pack-index' && doc.version === 1
+      && doc.maxBytes === RESOURCE_PACK_MAX_BYTES && Array.isArray(doc.packs) ? doc.packs : [];
+  return packs.filter((pack) => {
+    if (!pack || typeof pack.id !== 'string' || typeof pack.url !== 'string') return false;
+    let parsed;
+    try { parsed = new URL(pack.url, globalThis.location?.origin || 'https://resources.invalid'); } catch { return false; }
+    if (!isResourcePackUrl(pack.url)
+      || !/\/resource-packs\/[A-Za-z0-9._-]+\.zip$/.test(parsed.pathname)
+      || parsed.username || parsed.password || parsed.search || parsed.hash
+      || !Number.isSafeInteger(pack.size) || pack.size <= 0 || pack.size > RESOURCE_PACK_MAX_BYTES
+      || !Array.isArray(pack.files) || pack.files.length === 0) return false;
+    return /^[0-9a-f]{40}$/.test(pack.sha1 || '')
+      && pack.files.every((file) => file && typeof file.url === 'string' && CONTENT_HASH_RE.test(file.hash)
+        && Number.isSafeInteger(file.size) && file.size >= 0);
+  });
 }

@@ -22,7 +22,13 @@ import('/js/asset-cdn.js').then((m) => {
   if (globalThis.__spAssetCdn) return;
   const base = String(m.ASSETS_CDN || '').replace(/\/+$/, '');
   const dataBase = String(m.DATA_CDN || '').replace(/\/+$/, '');
-  if (base || dataBase) globalThis.__spAssetCdn = { base, dataBase, version: globalThis.__spAssetVersion || '' };
+  // 每文件指纹清单（服务端给的 `?v=<tag>`）：落地后 resourceUrl 会给每个素材补 `?v=<哈希>`，
+  // 内容不变 URL 不变，CDN 与浏览器都按文件缓存。取不到就一直用不带版本的同源地址。
+  const manifest = String(m.ASSETS_MANIFEST || '');
+  if (base || dataBase || manifest) globalThis.__spAssetCdn = { base, dataBase, version: globalThis.__spAssetVersion || '', manifest };
+  if (manifest && !globalThis.__spManifestReady) {
+    globalThis.__spManifestReady = fetch(manifest).then((r) => (r.ok ? r.json() : null), () => null);
+  }
 }).catch(() => { /* 没有该模块（静态托管）时保持同源路径 */ });
 
 // Shared modules are imported relatively ('../../shared/…' resolves to /shared/… in the browser).

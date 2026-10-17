@@ -332,6 +332,7 @@ export async function startServer(opts = {}) {
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, visual, contents, log,
     cdnBase: parseAssetCdn(cdn.base || cdnBase), dataCdnBase: parseAssetCdn(opts.dataCdn ?? process.env.SP_DATA_CDN),
     resourcePackRoutes: parseResourcePackRoutes(opts.resourcePackRoutes ?? process.env.SP_RESOURCE_PACK_ROUTES),
+    assetsManifest,
     clientBuild: opts.clientBuild ?? !process.argv.includes('--source-client') });
 
   // Persistence: SP_STATE_FILE (a directory → the sharded layout, a .json path → the single file, 'off' → memory only).

@@ -104,7 +104,7 @@ const CS_FILE = /^\/cs\/([0-9a-f]{16})\/([A-Za-z0-9._\/-]{1,200})$/;
  *   packs: the server pack registry; runtime CDN and Vite behavior remain branch-owned.
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, rawPath: string, query: string) => Promise<void>}
  */
-export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'), pluginsDir = path.join(path.dirname(path.resolve(packsDir)), 'plugins'), packs = null, content = null, visual = null, contents = null, log = noopLog, cdnBase = '', dataCdnBase = '', resourcePackRoutes = [], clientBuild = true }) {
+export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'), pluginsDir = path.join(path.dirname(path.resolve(packsDir)), 'plugins'), packs = null, content = null, visual = null, contents = null, log = noopLog, cdnBase = '', dataCdnBase = '', resourcePackRoutes = [], assetsManifest = null, clientBuild = true }) {
   const registry = packs || createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log: /** @type {any} */ (log) });
   const cdn = typeof cdnBase === 'string' ? cdnBase : '';
   const builtIndex = path.join(publicDir, 'build', 'index.html');
@@ -135,9 +135,14 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   const shimBody = Buffer.from(DATA_SHIM_JS);
   const shimTag = `"shim-${shimBody.length.toString(16)}"`;
   const gzipCache = new CompressCache(); // brotli and gzip bodies (files.js)
+  /** 每文件指纹清单的响应体（一次构建，按 tag 重建时随进程重启） */
+  let manifestBody = null;
 
+  // 本仓库追加：每文件指纹清单（.assets-manifest.json，tools/r2-sync.mjs 产出）。它把艺术素材的 URL 变成
+  // `<cdn>/assets/x.png?v=<文件哈希>`：内容不变 URL 不变，CDN 缓存键天然带版本。只有配了 CDN 基址时才有意义。
+  const assetsManifestPath = assetsManifest?.tag && cdn ? `/assets-manifest.json?v=${assetsManifest.tag}` : '';
   // A small runtime module supplies the base before client data/asset loaders run; no separate config fetch needed.
-  const cdnConfigBody = Buffer.from(`export const ASSETS_CDN = ${JSON.stringify(cdn)};\nexport const DATA_CDN = ${JSON.stringify(dataCdnBase)};\n`);
+  const cdnConfigBody = Buffer.from(`export const ASSETS_CDN = ${JSON.stringify(cdn)};\nexport const DATA_CDN = ${JSON.stringify(dataCdnBase)};\nexport const ASSETS_MANIFEST = ${JSON.stringify(assetsManifestPath)};\n`);
   const cdnConfigTag = `"asset-cdn-${createHash('sha256').update(cdnConfigBody).digest('hex')}"`;
 
   const serveStatic = async function (req, res, rawPath, query) {
@@ -149,6 +154,22 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     }
     if (useBuiltClient && (decoded === '/' || decoded === '/index.html')) {
       await serveFile(req, res, builtIndex, await fsp.stat(builtIndex), 'public', ['build', 'index.html'], query, gzipCache, log);
+      return;
+    }
+    // 每文件指纹清单：只有本次发布的 `?v=<tag>` 能取到，别的 tag 一律 404 —— 一份清单的指纹不能被挂到另一次发布的
+    // URL 上长期缓存。内容只由 tag 决定，所以可以直接 immutable。
+    if (decoded === '/assets-manifest.json') {
+      if (!assetsManifest || query !== `v=${assetsManifest.tag}`) { sendError(req, res, 404, '页面不存在 · Not found'); return; }
+      if (!manifestBody) manifestBody = Buffer.from(JSON.stringify({ tag: assetsManifest.tag, hashes: assetsManifest.hashes }));
+      const gz = acceptsGzip(req.headers['accept-encoding']);
+      const body = gz ? await gzipCache.compressed('/__assets-manifest__' + assetsManifest.tag, () => Promise.resolve(manifestBody), 'gzip', '.json') : manifestBody;
+      const etag = `"assets-${assetsManifest.tag}${gz ? '-gz' : ''}"`;
+      const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': IMMUTABLE_CACHE, Vary: 'Accept-Encoding', ETag: etag };
+      if (gz) headers['Content-Encoding'] = 'gzip';
+      if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); res.end(); return; }
+      headers['Content-Length'] = body.length;
+      res.writeHead(200, headers);
+      res.end(req.method === 'HEAD' ? undefined : body);
       return;
     }
     // The runtime CDN setting is served by the game origin, independent of the data CDN.

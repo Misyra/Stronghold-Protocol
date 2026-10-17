@@ -59,7 +59,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom, roomAdminTokenFrom, lobbyOptionsFrom, portalRoomOptionsFrom, siteIdFrom } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, parseAssetCdn, announcementOptionsFrom, roomAdminTokenFrom, lobbyOptionsFrom, portalRoomOptionsFrom, siteIdFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket, parseWsOrigins } from './http/websocket.js';
 import { siteCsp } from './http/csp.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
@@ -324,12 +324,11 @@ export async function startServer(opts = {}) {
   const cdn = assetCdnSettings(cdnBase, cdnVersion);
   if (assetsManifest) log.info(`assets CDN ${cdnBase} manifest ${assetsManifest.tag} (${Object.keys(assetsManifest.hashes).length} files, per-file ?v= busting)`);
 
-  // xinhai 的 static.js 只认「原样拼在 /assets/ 前的 CDN 基址」：取走尾斜杠，非 http(s)/根路径的值当作未配置。
-  const cdnBaseOf = (v) => { const s = String(v ?? '').trim(); return /^(https?:\/\/|\/)/i.test(s) ? s.replace(/\/+$/, '') : ''; };
+  // xinhai 的 static.js 只认「原样拼在 /assets/ 前的 CDN 基址」，与其 parseAssetCdn 同一套语义（本分支直接复用）
   // 静态服务与 CDN 由 server/http/static.js（取自 xinhai 分支）负责：它按 cdnBase / dataCdnBase 改写数据与清单里的素材地址，
   // 并在请求时生成 /js/asset-cdn.js（客户端 CDN 模块）。我们自己的 cdn/assetsManifest 只留给 /metrics 与日志。
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, visual, contents, log,
-    cdnBase: cdnBaseOf(cdn.base || cdnBase), dataCdnBase: cdnBaseOf(opts.dataCdn ?? process.env.SP_DATA_CDN),
+    cdnBase: parseAssetCdn(cdn.base || cdnBase), dataCdnBase: parseAssetCdn(opts.dataCdn ?? process.env.SP_DATA_CDN),
     resourcePackRoutes: parseResourcePackRoutes(opts.resourcePackRoutes ?? process.env.SP_RESOURCE_PACK_ROUTES),
     clientBuild: opts.clientBuild ?? !process.argv.includes('--source-client') });
 
@@ -353,6 +352,12 @@ export async function startServer(opts = {}) {
   try {
     if (store) {
       const doc = await store.load();
+      // 启动读失败（Redis 没起来 / 内容不是状态文档）：先别写，否则会把没读回来的那份覆盖掉。
+      // 之后每轮写之前都会重读一次（Persister.retryLoad），读到了再恢复、再写。
+      if (!doc && opts.resume !== false && ['unavailable', 'invalid'].includes(store.loadState)) {
+        persister.deferLoad();
+        log.warn(`[persist] 存档未能读取（${store.loadState}）：在读到之前不会写回，避免覆盖`);
+      }
       if (doc && opts.resume !== false) {
         // 对局在线程池里（SP_MATCH_WORKERS）时，恢复也算在后台线程里做完再监听端口
         const stats = await restoreServerForBoot({ doc, registry, lobby, log });

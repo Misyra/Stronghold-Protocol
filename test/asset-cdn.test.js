@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { startServer } from '../server/index.js';
 import { readAssetsCdnVersionFile, readAssetsManifestFile } from '../server/assetVersion.js';
+import { parseAssetCdn } from '../server/http/config.js';
 import { assetCdnSettings, assetCdnUrl, cdnLatestUrl, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { resourceUrl, resourceCache, resourceReady } from '../public/js/resourceUrl.js';
 import { mediaUrl } from '../public/js/media.js';
@@ -225,4 +226,19 @@ test('CDN 基址由启动参数决定：/js/asset-cdn.js 与资源清单都带�
     if (prev.a == null) delete process.env.SP_ASSETS_CDN; else process.env.SP_ASSETS_CDN = prev.a;
     if (prev.d == null) delete process.env.SP_DATA_CDN; else process.env.SP_DATA_CDN = prev.d;
   }
+});
+
+test('parseAssetCdn: 静态层接受的基址就是 xinhai 接受的那一组（尾斜杠、根路径、非法值）', () => {
+  assert.equal(parseAssetCdn('https://cdn.example/'), 'https://cdn.example', 'trailing slashes are trimmed');
+  assert.equal(parseAssetCdn('  http://cdn.example/static//  '), 'http://cdn.example/static', 'and only those');
+  assert.equal(parseAssetCdn('/cdn'), '/cdn', 'a same-origin root path is a base too');
+  assert.equal(parseAssetCdn(''), '', 'nothing configured');
+  assert.equal(parseAssetCdn(undefined), '');
+  assert.equal(parseAssetCdn(null), '');
+  for (const bad of ['javascript:alert(1)', 'cdn.example', 'ftp://cdn.example', 'cdn.example:443']) {
+    assert.equal(parseAssetCdn(bad), '', `${bad} is not a base`);
+  }
+  // their parser stops at「scheme or root path」: a protocol-relative host or a query string is assetCdnSettings' job
+  assert.equal(parseAssetCdn('//cdn.example'), '//cdn.example');
+  assert.equal(parseAssetCdn('https://cdn.example/?v=1/x'), 'https://cdn.example/?v=1/x');
 });

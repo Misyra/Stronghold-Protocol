@@ -305,6 +305,15 @@ export class Persister {
     this.versionStats = { encodes: 0, skipped: 0, verified: 0, holes: 0 };
     this.encoder = new PersistenceWorker();
     this.checkpointPending = new Set();
+    /**
+     * True while the startup read has not succeeded (Redis down, or the document is not a state document): no write may
+     * run, or it would replace a state document that was never recovered. deferLoad / retryLoad, as in xinhai.
+     */
+    this.pendingLoad = false;
+    /** Save rounds refused while pendingLoad held (diagnostics). */
+    this.deferredSkips = 0;
+    /** @type {Promise<boolean> | null} one recovery attempt at a time */
+    this._loadRetry = null;
     /** False while the Worker is failing and checkpoints encode inline (warned once per streak). */
     this._workerHealthy = true;
     /** @type {NodeJS.Timeout | null} */
@@ -371,6 +380,65 @@ export class Persister {
     for (const [code, room] of this.lobby.rooms) {
       if (room.disposed || !room.match) continue;
       await this.encodeRoom(code, room.match);
+    }
+  }
+
+  /**
+   * The startup read failed (Redis unreachable, or the document is not a state document): refuse to write until it can
+   * be read. Same contract as xinhai-ai/Stronghold-Protocol's Persister.deferLoad — a save here would overwrite a state
+   * document this process never saw.
+   */
+  deferLoad() {
+    this.pendingLoad = true;
+  }
+
+  /**
+   * Re-read the document the startup read missed: when it arrives, restore it (matches included — including one in a
+   * lane Worker, server/index.js boot path) and keep its checkpoints, so the first save of this run cannot drop them.
+   * @returns {Promise<boolean>} true when writes may proceed
+   */
+  retryLoad() {
+    if (!this.pendingLoad) return Promise.resolve(true);
+    if (this._loadRetry) return this._loadRetry;
+    this._loadRetry = (async () => {
+      let doc = null;
+      try { doc = await this.store.load({ attempts: 1 }); }
+      catch (e) { this.log.warn?.('[persist] the deferred state read failed again', e); }
+      // Still unreadable (or still not a document): keep refusing. An empty store is a fresh start.
+      if (!doc && ['unavailable', 'invalid'].includes(this.store.loadState)) return false;
+      if (doc) {
+        const stats = await restoreServerForBoot({ doc, registry: this.registry, lobby: this.lobby, now: this.now(), log: this.log });
+        if (!stats.ok) return false;
+        this.seedMatches(doc);
+        this.log.info?.(
+          '[persist] deferred state recovered (' + stats.sessions + ' sessions, ' + stats.rooms + ' rooms, '
+          + stats.matches + ' matches)');
+      }
+      this.pendingLoad = false;
+      return true;
+    })().finally(() => { this._loadRetry = null; });
+    return this._loadRetry;
+  }
+
+  /**
+   * Keep a recovered document's checkpoints: they are already the clock-free bodies the shards hold (commit / flush),
+   * and their clocks live in the document envelope.
+   * @param {object} doc a state document (snapshotServer shape)
+   */
+  seedMatches(doc) {
+    const matches = doc?.matches && typeof doc.matches === 'object' ? doc.matches : {};
+    const clocks = doc?.clocks && typeof doc.clocks === 'object' ? doc.clocks : {};
+    for (const [code, checkpoint] of Object.entries(matches)) {
+      if (!checkpoint || typeof checkpoint !== 'object') continue;
+      const { deadlineRemainingMs, startedAtAgoMs, ...body } = checkpoint;
+      try { this.matchDocs.set(code, JSON.stringify(body)); }
+      catch { continue; }                      // an unusable checkpoint is dropped, never saved as text
+      const c = clocks[code];
+      const remaining = c && typeof c === 'object' ? c.deadlineRemainingMs : deadlineRemainingMs;
+      const started = c && typeof c === 'object' ? c.startedAtAgoMs : startedAtAgoMs;
+      if (Number.isFinite(remaining) || Number.isFinite(started)) {
+        this.matchClocks.set(code, { deadlineRemainingMs: Number(remaining) || 0, startedAtAgoMs: Number(started) || 0 });
+      }
     }
   }
 
@@ -463,6 +531,9 @@ export class Persister {
   /** One save round (never throws). Rounds run at most once per minFlushMs; shutdown/test bypass the gap. */
   flush(reason = 'tick') {
     if (!this.store) return Promise.resolve(false);
+    // A save may not run while the startup read is outstanding: recover first, then save with fresh metadata (the
+    // restore adds sessions and rooms, so a document captured before it would be missing them).
+    if (this.pendingLoad) return this._flushAfterLoad(reason);
     if (this._busy) return this._pending || Promise.resolve(false);
     // Checkpoint events arrive far faster than saves are useful; an immediate re-run here (queueMicrotask) kept the
     // loop hot forever under load. Defer into the next free slot instead — the saveMs contract bounds everything.
@@ -504,6 +575,14 @@ export class Persister {
     return this._pending;
   }
 
+  /** flush() while the startup read is outstanding: retry it, then save normally — or refuse this round. */
+  async _flushAfterLoad(reason) {
+    // A shutdown does not wait out a slow read: the store is unreachable, and the document on its side is untouched.
+    if (reason !== 'shutdown' && await this.retryLoad()) return this.flush(reason);
+    this.deferredSkips++;
+    this.log.warn?.(`[persist] 启动时的存档还没读到（${this.store.loadState || 'unknown'}），本轮不写，以免覆盖它`);
+    return false;
+  }
   /** Schedule the deferred flush slot (coalesced; a flush that starts first clears it). */
   _armCooldown(delayMs) {
     if (this._cooldownTimer || !this.running) return;

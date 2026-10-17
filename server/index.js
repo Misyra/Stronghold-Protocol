@@ -295,6 +295,8 @@ export async function startServer(opts = {}) {
   if (!Number.isInteger(matchWorkers) || matchWorkers < 0 || matchWorkers > 32) throw new RangeError('matchWorkers must be 0..32');
   const matchWorkerPool = matchWorkers > 0 ? new MatchWorkerPool({ data, lanes: matchWorkers, log }) : null;
   const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, ipSessionScope, countryLookup, workerPool, matchWorkerPool, netBlock }, { data, log, chatLog, content, plugins: roomSets, hosts });
+  // 一条对局线程挂了：让 lobby 把它手上的对局结束掉（房间回大厅），而不是留一个不会应答的对局
+  if (matchWorkerPool) matchWorkerPool.onLaneFailure = (error, lost) => lobby.handleLaneFailure(error, lost);
   // the plugin studio (DESIGN §32.9): its page and API for this machine and the local network; it watches plugins/ only
   // once it is used (hot reload), and rooms whose host is the author or alone follow a plugin's changes by themselves
   const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log, fetch: opts.fetch });

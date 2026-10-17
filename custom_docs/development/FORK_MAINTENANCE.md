@@ -41,7 +41,7 @@ CDN、资源预载、Redis 持久化与后台 Worker 四块按「照抄对方」
 | Redis 持久化 | `server/redis.js` | `server/redisState.js`（`saveSharded` → 单文档 `save`，供本分支分片存储复用）、`server/index.js`（Redis > `SP_STATE_FILE` > 内存的优先级） |
 | Worker | `server/workers/{backgroundClient,stateEncoder,pluginScan,manifestEncode,matchPool,matchWorker}.js`、`server/workers/{persistence,persistenceClient,memory,pool,roomPool,simulation}.js` | `server/stateTransport.js`（`attachWorkerState`：worker 发来的状态帧带回归属）、`server/plugins/registry.js`（后台扫描）、`server/persist.js`（线程池对局用线程往返的 `capture` 拍档）、`server/lobby.js` 与 `server/matchRestore.js`（`SP_MATCH_WORKERS`：开局与重启恢复都进 lane） |
 
-Worker 池在本分支的开关是 `SP_MATCH_WORKERS`（默认 0），细节见 [性能说明](PERFORMANCE.md) 与 [部署说明](../operations/DEPLOY.md)。状态增量（`server/stateTransport.js`）本来就是共用件，worker 侧新增的只有帧归属，压缩与校验语义未改。
+Worker 池在本分支的开关是 `SP_MATCH_WORKERS`（默认 0），细节见 [性能说明](PERFORMANCE.md) 与 [部署说明](../operations/DEPLOY.md)。池子唯一的对外行为差异是 `onLaneFailure`：上游在 Worker 报错时只留一行日志，房间会挂着一个不会应答的对局；本分支据此结束那几条对局（房间回大厅、存档保留）、把死泳道从分配表里摘掉（`test/match-worker-lanes.test.js`）。状态增量（`server/stateTransport.js`）本来就是共用件，worker 侧新增的只有帧归属，压缩与校验语义未改。
 
 刻意没有采用的三处，以及原因：
 

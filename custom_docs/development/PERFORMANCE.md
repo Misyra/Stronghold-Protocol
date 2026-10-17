@@ -87,7 +87,7 @@
 - 已移植 [40d4505f](https://github.com/xinhai-ai/Stronghold-Protocol/commit/40d4505ff7530f1e7a1d1c0d79f4b3709e05ded0) 的按房间泳道线程分组（`SP_ROOM_WORKERS`，默认关闭，且不得超过 SP_WORKERS）：同一房间的模拟任务固定到一条泳道队列。它解决的是队列隔离而非正确性——同一房间内战斗结果的先后安全已由现有的结果把关（clientCombat / prep / reports 的 valid() 校验与任务取消）保证，开启与否不影响结果。
 - WebSocket 压缩当前已经存在，无须重复移植。容量限制原项目已有；这些限制用于保护服务，不会让单次模拟变快。
 - 后续已移植资源预载：逐文件 hash、Cache Storage、Service Worker、首页入口与设置面板，适配版本路径、CDN、音频 Range 和空间不足时的续传。默认关闭；跨素材版本复用未改变的二进制文件，避免因全站版本变化重下载所有素材。
-- 已移植对局线程池（`server/workers/matchPool.js` + `matchWorker.js`，源分支的文件名相同）与 `SP_MATCH_WORKERS`（默认 0）：无插件的对局整局跑在 lane 线程里 —— 计时器、AI、战场模拟和房间状态都在那条线程，主线程只做帧转发（含状态增量帧的归属）、存档捕获与泳道回收。存档走线程往返的 `capture`，因此不做版本跳过：每轮存档都重新拍一次，两端都不阻塞。带玩法插件的房间仍用 match host；重启恢复（`restoreServerForBoot`）同样在 lane 里完成，启动流程等它。
+- 已移植对局线程池（`server/workers/matchPool.js` + `matchWorker.js`，源分支的文件名相同）与 `SP_MATCH_WORKERS`（默认 0）：无插件的对局整局跑在 lane 线程里 —— 计时器、AI、战场模拟和房间状态都在那条线程，主线程只做帧转发（含状态增量帧的归属）、存档捕获与泳道回收。存档走线程往返的 `capture`，因此不做版本跳过：每轮存档都重新拍一次，两端都不阻塞。带玩法插件的房间仍用 match host；重启恢复（`restoreServerForBoot`）同样在 lane 里完成，启动流程等它。本分支还给池子补了一个上游没有的 `onLaneFailure` 钩子：上游在 Worker 报错时只写一行日志，房间会一直挂着一个不会应答的对局；这里由 lobby 把它正常结束并把泳道从分配表里摘掉。
 - Redis 恢复未作为性能补丁引入。CDN 在后续请求中单独接入：素材外移 Cloudflare R2（逐文件 `?v=` 哈希穿透）及跨域响应，见 [CDN.md](../operations/CDN.md)。
 
 新增 worker 专项回归覆盖结果 / 时间线一致、布局评分一致、记录动画开关不影响选择、失败的本地预演回退、队列上限与优先级、取消 / 超时 / 崩溃替换、过期结果、严格 / 抽样校验、暂停以及真实 WebSocket 响应。

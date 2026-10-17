@@ -1746,8 +1746,33 @@ export class Lobby {
     return OK;
   }
 
-  /** onEnd callback: return the room to LOBBY and dispose the match on the next macrotask. */
-  onMatchEnd(room, ctx, summary) {
+  /**
+   * A lane Worker died (server/workers/matchPool.js, onLaneFailure): its matches will never answer again, so each one is
+   * ended the way a normal end would — the room returns to its lobby, players stay, the last checkpoint stays on disk.
+   * @param {Error} error @param {object[]} matches the proxied matches that lane owned
+   * @returns {number} how many rooms were freed
+   */
+  handleLaneFailure(error, matches) {
+    const lost = new Set(matches || []);
+    let freed = 0;
+    for (const room of [...this.rooms.values()]) {
+      const ctx = room.matchCtx;
+      if (!ctx || ctx.disposed || !lost.has(ctx.match)) continue;
+      this.log.error(`[lobby] ${room.code} 对局线程失效：${error?.message || error}`);
+      // 空 summary：玩家看到的就是「这一局结束了」，而不是一张伪造的战绩页；存档留着，重启还能接回去
+      this.onMatchEnd(room, ctx, null, { keepCheckpoint: true });
+      freed++;
+    }
+    return freed;
+  }
+
+  /**
+   * onEnd callback: return the room to LOBBY and dispose the match on the next macrotask.
+   * `options.keepCheckpoint`: the match is over through no fault of its own (a lane Worker died) — keep the last
+   * checkpoint on disk, so a restart can still resume it instead of losing the round.
+   * @param {Room} room @param {object} ctx @param {object | null} summary @param {{ keepCheckpoint?: boolean } | null} [options]
+   */
+  onMatchEnd(room, ctx, summary, options = null) {
     if (ctx.ended || !ctx.live || room.matchCtx !== ctx || room.disposed) return;
     ctx.ended = true;
     room.lastSummary = summary ?? null;
@@ -1757,7 +1782,7 @@ export class Lobby {
     room.replay = this.buildReplay(room, ctx);
     setImmediate(() => this.disposeMatchCtx(ctx));
     // a match of gameplay plugins whose match host stopped (header "Gameplay plugins"; its members were told: proxy.js)
-    const why = summary && typeof summary.reason === 'string' && summary.reason.startsWith('plugin-') ? ` (${summary.reason}${summary.detail ? `: ${summary.detail}` : ''})` : '';
+    const why = summary && typeof summary.reason === 'string' && /^(?:plugin|worker)-/.test(summary.reason) ? ` (${summary.reason}${summary.detail ? `: ${summary.detail}` : ''})` : '';
     this.log.info(`[lobby] ${room.code} match #${room.matchCount} ended${why}`);
     this.audit('match.ended', this.registry.byId(room.hostId), room);
     for (let i = 0; i < room.seats.length; i++) {
@@ -1776,7 +1801,7 @@ export class Lobby {
       // its plugins changed on disk during the match: the host can apply them again now
       if (room.pluginsChanged) this.tellPluginsChanged(room);
     }
-    this.checkpoint(room.code, null);
+    if (!options?.keepCheckpoint) this.checkpoint(room.code, null);
   }
 
   /** Match unicast; m.result frames are also kept for the replay. */

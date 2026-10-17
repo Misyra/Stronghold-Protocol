@@ -350,7 +350,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     if (decoded.startsWith(MEDIA_PREFIX)) {
       // 本仓库的 serveMedia 签名没有 query（上游的 static.js 传了）：第 4 个参数就是 publicDir，错位会让整条
       // /media/… 音频路由去找 <cwd>/assets/audio —— 浏览器里表现为 BGM/语音静默 404。
-      await serveMedia(req, res, decoded.slice(MEDIA_PREFIX.length), publicDir, gzipCache, log, release, versioned);
+      await serveMedia(req, res, decoded.slice(MEDIA_PREFIX.length), publicDir, gzipCache, log, release, versioned, query);
       return;
     }
     // Bare mount paths (e.g. "/data") → treat as the mount directory.

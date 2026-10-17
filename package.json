@@ -50,15 +50,16 @@
   },
   "dependencies": {
     "@zip.js/zip.js": "^2.23.0",
+    "acorn": "8.18.0",
     "htm": "^3.1.1",
     "maxmind": "^5.0.7",
     "pixi-spine": "^4.0.6",
     "pixi.js": "^7.4.2",
     "preact": "^10.29.8",
+    "redis": "^6.3.0",
     "ses": "2.3.0",
     "three": "^0.186.1",
-    "ws": "^8.22.0",
-    "acorn": "8.18.0"
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

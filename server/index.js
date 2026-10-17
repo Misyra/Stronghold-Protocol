@@ -84,6 +84,7 @@ import { answerClientError } from './http/common.js';
 import { lanUrls, displayHost, isProcessEntry, runMain } from './http/boot.js';
 import { Persister, restoreServer } from './persist.js';
 import { FileStateStore } from './stateFile.js';
+import { createRedisStore } from './redisState.js';
 import { createStatusLimiter } from './roomStatus.js';
 import { createAnnouncementReader } from './announcement.js';
 import { ChatLog } from './chatLog.js';
@@ -327,8 +328,11 @@ export async function startServer(opts = {}) {
       }
     }
   }
-  const store = opts.store !== undefined ? opts.store : stateFile && stateFile !== 'off'
-    ? new FileStateStore({ file: stateFile, log }) : null;
+  // Redis（SP_REDIS_URL / REDIS_URL）优先于文件：它在 xinhai 那边是「可选持久化」，连不上就退回内存运行。
+  const redisStore = opts.store === undefined ? createRedisStore({ env: opts.env ?? process.env, log }) : null;
+  const store = opts.store !== undefined ? opts.store : redisStore ?? (stateFile && stateFile !== 'off'
+    ? new FileStateStore({ file: stateFile, log }) : null);
+  if (redisStore) log.info(`[persist] Redis 存储 ${redisStore.label}（键 ${redisStore.key}）`);
   const persister = store ? new Persister({ store, registry, lobby, log, saveMs: opts.saveMs ?? process.env.SP_STATE_SAVE_MS }) : null;
   try {
     if (store) {

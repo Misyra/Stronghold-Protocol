@@ -694,7 +694,7 @@ function kitSpring(ab, e) {
             c.dmg.mul *= scale;
             // the counter "对来源造成…无来源物理附加伤害" picks its attacker directly — no selection, so an airborne 起飞
             // attacker takes it too (PRTS 异常效果 无法选择: "'直接选中'的能力…不受这些仅在选择时生效的异常效果制约")
-            const s = c.source, o = { ignoreSelect: true, tags: ['springCounter'] };
+            const s = c.source, o = { ignoreSelect: true, sourceless: true, tags: ['springCounter'] };
             if (s && s.side === 'ally' && s.alive) { hurt(b, e2, s, e2.s.atk * (T(ab, '1.atk_scale') ?? 0), 'phys', o); elem(b, e2, s, 'erosion', e2.s.atk * (T(ab, '1.ep_damage_ratio') ?? 0), o); }
           }
         } else if (kind === 'element') {                 // 元素护盾: phys/arts heavily reduced
@@ -782,7 +782,7 @@ export function setEchoForm(b, echo, form) {
 
 /** An echo takes a strike/hit: pulse around it (PRTS “余音” "受到伤害时对半径1.6范围内的我方单位造成…": an area selection of the
  *  echo — no unblocking 隐匿 operator) and count towards the form switch. */
-export function echoHit(b, echo) {
+export function echoHit(b, echo, reactive = false) {
   const ab = echo.mem.ab;
   if (!ab || !echo.alive) return;
   // [ASSUMED] Resolve recursively earned pulses FIFO after the current pulse. A counter can remove dozens of
@@ -811,7 +811,7 @@ function kitEcho(ab, e) {
   return [
     {
       spawn(b, e2) { setHits(e2, e2.base.maxHp); hitCount(b, e2, true); e2.blockWeight = ECHO_BLOCK_WEIGHT; setEchoForm(b, e2, 'dark'); }, // hits × the round's HP (summonMods)
-      taken(c, b, e2) { const s = c.source || c.credit; if (s && s.side === 'ally') echoHit(b, e2); }, // 受到伤害时以自身为中心造成一次范围伤害 (a 无来源 burst too)
+      taken(c, b, e2) { const s = c.source || c.credit; if (s && s.side === 'ally') echoHit(b, e2, true); }, // 受到伤害时以自身为中心造成一次范围伤害 (a 无来源 burst too)
     },
     s && {
       cd: s.cd, icd: s.icd, sk: s,

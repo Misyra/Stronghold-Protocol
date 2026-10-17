@@ -82,7 +82,7 @@ import { wsUpgradeLimitsFrom } from './http/wsUpgradeLimit.js';
 import { createTrafficCounter } from './http/traffic.js';
 import { answerClientError } from './http/common.js';
 import { lanUrls, displayHost, isProcessEntry, runMain } from './http/boot.js';
-import { Persister, restoreServer } from './persist.js';
+import { Persister, restoreServerForBoot } from './persist.js';
 import { FileStateStore } from './stateFile.js';
 import { createRedisStore } from './redisState.js';
 import { createStatusLimiter } from './roomStatus.js';
@@ -354,7 +354,8 @@ export async function startServer(opts = {}) {
     if (store) {
       const doc = await store.load();
       if (doc && opts.resume !== false) {
-        const stats = restoreServer({ doc, registry, lobby, log });
+        // 对局在线程池里（SP_MATCH_WORKERS）时，恢复也算在后台线程里做完再监听端口
+        const stats = await restoreServerForBoot({ doc, registry, lobby, log });
         if (!stats.ok) throw new Error(`状态格式不兼容 (${stats.reason})，已保留状态文件，请恢复备份或显式选择新的 SP_STATE_FILE`);
         log.info(`[persist] restored ${stats.sessions} sessions, ${stats.rooms} rooms, ${stats.matches} matches`);
       }

@@ -119,8 +119,10 @@ export function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() } = {})
 /**
  * Rebuild a running match from a checkpoint (server/match/snapshot.js). Every seat of the checkpoint must still be in
  * the room; otherwise nothing is restored and the room stays in the lobby (the players simply start a new match).
+ * A room whose matches play in a lane Worker (server/workers/matchPool.js) answers with a Promise here: its match is
+ * constructed and restored in that thread before it is ready.
  * @param {object} lobby @param {object} room @param {object} checkpoint
- * @returns {boolean} true when the match runs again
+ * @returns {boolean | Promise<boolean>} true when the match runs again
  */
 export function restoreLobbyMatch(lobby, room, checkpoint) {
   if (!room || room.disposed || room.match || !checkpoint || typeof checkpoint !== 'object') return false;
@@ -131,6 +133,8 @@ export function restoreLobbyMatch(lobby, room, checkpoint) {
     if (!room.seatOf(p.playerId)) return false;
   }
   const res = lobby.startMatchWith(room, room.matchKey, checkpoint);
+  // a lane answers later (startRemoteMatch); the local path stays synchronous, as every caller up to now expects
+  if (res && typeof res.then === 'function') return res.then((r) => !(r && r.error), () => false);
   return !(res && res.error);
 }
 

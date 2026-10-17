@@ -34,3 +34,6 @@ public/assets/local/** -text
 # Keep the merged dictionary and upstream license identical to SOURCE.json checksums.
 server/moderation/lexicon/words.enc binary
 server/moderation/lexicon/LICENSE -text
+# ops/ ships to a Linux box; these two have no extension, so * text=auto is not enough.
+ops/sp-syn-ban-load text eol=lf
+ops/banned-ips.txt text eol=lf

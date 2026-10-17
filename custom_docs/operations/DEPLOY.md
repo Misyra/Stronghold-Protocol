@@ -367,7 +367,7 @@ sudo systemctl start stronghold
 
 `SP_MATCH_WORKERS`（默认 0，可选 1 到 32）把**无插件对局整局搬进独立线程**（`server/workers/matchPool.js`，取自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol)）：计时器、AI、战场模拟与房间状态都留在那条 lane 里，主线程只转发帧、拍存档、回收泳道。0 时完全保持原样（对局在主线程）。开启后启动日志出现 `[workers] N match lanes`，`/metrics` 的 `matchWorkers` 给出每条泳道的房间数、排队与负载。
 
-两条边界：带**玩法插件**（`cs` 非原版）的房间仍在它自己的 match host 里跑（插件内容集有自己的进程/线程）；lane 线程崩掉时，那条泳道上的对局**结束**——房间回到大厅（玩家还在，最后一份存档留在盘上，不会写出半张战绩页），该泳道不再接新房间。只剩死泳道时开局会明确报错，重启即恢复。变量修改需重启。
+两条边界：带**玩法插件**（`cs` 非原版）的房间仍在它自己的 match host 里跑（插件内容集有自己的进程/线程）；lane 线程崩掉时，那条泳道上的对局**结束**——房间回到大厅，玩家还在，最后一份存档留在盘上（重启后还能把这一局接回去），不会写出半张战绩页；该泳道不再接新房间。只剩死泳道时开局会明确报错，重启即恢复。变量修改需重启。
 
 重启后的对局也在 lane 里恢复：启动时 `restoreServerForBoot` 会等每条 lane 把检查点应用完再监听端口，所以「服务器被杀 → 重启」之后，房间和它那局仍然在后台线程里继续，而不是掉回主线程。启动日志会写明 `match #N restored in a worker`。
 

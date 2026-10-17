@@ -39,3 +39,19 @@ test('BackgroundClient: 关闭后拒绝新任务，不抛到调用方之外', as
   await client.close();
   await assert.rejects(() => client.request({}), /closed/);
 });
+
+test('manifestEncode worker: 把清单文件里的 /assets/ 地址改写到 CDN 基址', async (t) => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const fs = await import('node:fs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-manifest-'));
+  const file = path.join(dir, 'm.json');
+  fs.writeFileSync(file, JSON.stringify({ files: [{ url: '/assets/x.png' }, { url: '/data/x.json' }] }), 'utf8');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const client = new BackgroundClient(new URL('../server/workers/manifestEncode.js', import.meta.url), {}, 5000);
+  t.after(() => client.close());
+  const bytes = await client.request({ file, cdn: 'https://cdn.example.test/game' });
+  const doc = JSON.parse(new TextDecoder().decode(bytes));
+  assert.equal(doc.files[0].url, 'https://cdn.example.test/game/assets/x.png', '素材地址被改写');
+  assert.equal(doc.files[1].url, '/data/x.json', '数据地址不动');
+});

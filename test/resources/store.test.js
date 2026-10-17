@@ -771,8 +771,7 @@ describe('干员皮肤 selection', () => {
     assert.equal((await s.status()).skins.find((x) => x.id === KALTS).present, 0, 'skins are optional resources too');
   });
 
-  // 停用：清单生成改为 xinhai 的 server/resources.js 后不再带 skin 键（皮肤预载 scope 需要把 skinKeyForPath 加回清单）
-test.skip('a skin listed twice keeps its key and the lowest tier', () => {
+  test('a skin listed twice keeps its key and the lowest tier', () => {
     const shared = '/assets/char/avatar/skin/shared.png';
     const files = collectResourceFiles({ chars: { c: { avatar: shared, skins: { 'c@x#1': { avatar: shared } } } } }, null);
     assert.equal(files[0].skin, 'c/c@x#1');

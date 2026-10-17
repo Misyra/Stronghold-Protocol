@@ -42,6 +42,16 @@ export const TIER_ESSENTIAL = 1;
 /** Optional: voices, official battle effects, sound effects, music and tutorial illustrations. */
 export const TIER_REST = 2;
 
+/**
+ * 本仓库新增（xinhai 的 resources.js 没有这一项）：清单键路径经过 `chars.<charId>.skins.<skinId>…` 时返回
+ * `charId/skinId`，否则 null。皮肤 id 只含 @ / # / _，不含点，所以带点的键路径无歧义。客户端按这个值分组与
+ * 决定「预载哪些皮肤 / 全部皮肤」（public/js/resources/common.js、store.js）。
+ */
+export function skinKeyForPath(keyPath) {
+  const m = /(?:^|\.)([^.]+)\.skins\.([^.]+)(?:\.|$)/.exec(String(keyPath || ''));
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+
 /** Extension → MIME type. Mirrored by the client (public/js/resources/common.js) for URL validation. */
 export const RESOURCE_MIME = Object.freeze({
   png: 'image/png',
@@ -130,8 +140,11 @@ export function collectResourceFiles(assets, local) {
       const tier = resourceType(node)?.startsWith('audio/') || /\/assets\/local\/fx\//.test(pathKey(node))
         ? TIER_REST : tierForPath(keyPath);
       const url = canonicalResourceUrl(node);
+      const skin = skinKeyForPath(keyPath);
       const prev = byUrl.get(url);
-      if (prev == null || tier < prev.tier) byUrl.set(url, { tier, source });
+      // 同一文件被两处点名时保留更低 tier，皮肤键取任一处（同一文件不会属于两套皮肤）
+      if (prev == null || tier < prev.tier) byUrl.set(url, { tier, source, skin: skin || prev?.skin || null });
+      else if (skin && !prev.skin) prev.skin = skin;
       // The crop tool writes this companion beside the board atlas, outside local-assets.json.
       if (source === 'local' && /\/assets\/local\/map\/autochess\/TX_autochessi_D\.(?:png|webp)$/.test(url)) {
         byUrl.set(url.replace(/[^/]+$/, 'tiles.json'), { tier: TIER_ESSENTIAL, source });
@@ -150,7 +163,7 @@ export function collectResourceFiles(assets, local) {
   }
   if (local && typeof local === 'object') walk(local, 'local', 'local');
   return [...byUrl]
-    .map(([url, e]) => ({ url, tier: e.tier, source: e.source }))
+    .map(([url, e]) => ({ url, tier: e.tier, source: e.source, ...(e.skin ? { skin: e.skin } : {}) }))
     .sort((a, b) => a.tier - b.tier || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
 }
 
@@ -218,6 +231,7 @@ export function buildResourceManifest({ files, sizes = null, version = 'none', h
   for (const f of files) {
     const size = sizes ? sizes.get(f.url) : undefined;
     const entry = { url: f.url, tier: f.tier };
+    if (f.skin) entry.skin = f.skin;   // 皮肤文件带上 charId/skinId（本仓库的预载 scope 依赖它）
     const hash = (hashes ? hashes.get(f.url) : f.hash) || null;
     if (hash) entry.hash = hash;
     if (Number.isSafeInteger(size) && size >= 0) {

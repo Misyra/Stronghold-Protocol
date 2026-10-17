@@ -270,7 +270,7 @@ test('private room enumeration authenticates, paginates and correlates IP/name/i
   assert.ok(!JSON.stringify(body).includes(welcome.token));
   assert.equal((await fetch(`${srv.url}/api/rooms?limit=1`, { headers: { Authorization: `Bearer ${token}` } })).status, 404);
   const config = await (await query('/api/room-config', token)).json();
-  assert.equal(config.maxRooms, 1000);
+  assert.equal(config.maxRooms, 1600);
   const changed = await fetch(`${srv.roomAdminUrl}/api/room-config`, { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ maxRooms: 700 }) });
   assert.equal(changed.status, 200);
   assert.equal((await changed.json()).persisted, true);

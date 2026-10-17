@@ -10,12 +10,13 @@
 # 页面一次要建十几条连接，burst 10 用完就丢，浏览器重试再被丢 —— 表现是
 # 「页面加载怪、要点两次」，而且**不会出现在 nginx 日志里**（包在 SYN 阶段就没了）。
 #
-# 所以这里定 30/分钟：比真人峰值高 1.7 倍，比洪水下限（6/s = 360/分钟）低 12 倍。
-# burst 保持 10 不动 —— 调 burst 是另一个决定，见文末。
+# 所以这里定 120/分钟、burst 40、timeout 2m（2026-10-17 线上再调）：比真人峰值高 6.7 倍，
+# 仍远低于洪水下限；burst 40 让一次页面加载的并发连接不再被丢。
 #
-# 装法见 ops/README.md。改完要盯两个数：
-#   nft list table inet sp_web_syn_guard | grep ipv4_syn_drop   增长速率应显著下降
-#   nft list set   inet sp_web_syn_guard web_syn4 | grep -c .   集合里应看不到活跃玩家
+# 装法见 ops/README.md。改完只盯一个数：
+#   nft list table inet sp_web_syn_guard | grep ipv4_syn_drop
+# 它的增长速率应归零或显著下降。web_syn4 里会有活跃 IP，那是正常的跟踪项，
+# 不代表被丢；只有 ipv4_syn_drop 增长才说明有源超过 120/分钟。
 #
 # 顺序：sp_syn_ban 在 `priority filter - 6`，本表在 `- 5`，所以已知洪水源
 # 先被 perm4 丢掉，根本到不了这里 —— 放宽这条不会把封禁名单放回来。
@@ -37,17 +38,17 @@ table inet sp_web_syn_guard {
 		type filter hook input priority filter - 5; policy accept;
 		iifname "lo" return
 		ct state established,related return
-		tcp dport { 80, 443, 8080 } tcp flags & (syn | ack) == syn jump web_syn
+		tcp dport { 80, 443, 3000, 8080 } tcp flags & (syn | ack) == syn jump web_syn
 	}
 
 	chain web_syn {
-		update @web_syn4 { ip saddr timeout 5m limit rate over 30/minute burst 10 packets } counter drop comment "ipv4_syn_drop"
-		update @web_syn6 { ip6 saddr & ffff:ffff:ffff:ffff:: timeout 5m limit rate over 30/minute burst 10 packets } counter drop comment "ipv6_prefix_syn_drop"
+		update @web_syn4 { ip saddr timeout 2m limit rate over 120/minute burst 40 packets } counter drop comment "ipv4_syn_drop"
+		update @web_syn6 { ip6 saddr & ffff:ffff:ffff:ffff:: timeout 2m limit rate over 120/minute burst 40 packets } counter drop comment "ipv6_prefix_syn_drop"
 		limit rate over 50/second burst 100 packets counter drop comment "global_syn_drop"
 		counter comment "web_syn_pass"
 	}
 }
 
-# 待定：burst 10 意味着一次页面加载里超过 10 条的并发连接会有一半被丢。
-# HTTP/2 下同源只走一条连接，所以实际影响有限；如果放宽到 30/分钟后仍看到
-# 大量 ipv4_syn_drop，下一步再动 burst（20–40），一次只改一个变量。
+# 2026-10-17 实测：30/分钟 + burst 10 时，web_syn4 里长期挂着 12 个真实玩家 IP，
+# 累计丢 696 个 SYN；改成 120/分钟 + burst 40 + timeout 2m 后 ipv4_syn_drop 归零（集合仍跟踪活跃 IP）。
+# 再放宽要看 ipv4_syn_drop 的增长速率，不要一次动多个变量。

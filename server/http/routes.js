@@ -314,10 +314,19 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
     // Refuse the game document itself: overseas visitors see only the message, not the game UI.
     let entryPath = parts.rawPath;
     try { entryPath = decodeURIComponent(entryPath); } catch { /* static handler validates malformed paths */ }
-    if ((entryPath.endsWith('/') || /\.html$/i.test(entryPath)) &&
-      health.network?.foreignConnectionDenied?.(clientAddress(req, trustProxy))) {
-      sendJson(req, res, 403, { code: ERR.FOREIGN_CONNECTIONS_DISABLED, msg: ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED });
-      return;
+    if (entryPath.endsWith('/') || /\.html$/i.test(entryPath)) {
+      const address = clientAddress(req, trustProxy);
+      // 明确名单先于国家门禁：名单命中时不去查库，也不因 SP_ALLOW_FOREIGN_CONNECTIONS=on 而放行。
+      const netBlocked = health.network?.networkBlocked?.(address);
+      if (netBlocked?.blocked) {
+        // 响应体与既有的海外门禁完全一致（客户端不需要认识第四种拒绝）；原因只进审计日志。
+        sendJson(req, res, 403, { code: ERR.FOREIGN_CONNECTIONS_DISABLED, msg: ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED });
+        return;
+      }
+      if (health.network?.foreignConnectionDenied?.(address)) {
+        sendJson(req, res, 403, { code: ERR.FOREIGN_CONNECTIONS_DISABLED, msg: ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED });
+        return;
+      }
     }
     await serveStatic(req, res, parts.rawPath, parts.query);
   }

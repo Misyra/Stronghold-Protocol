@@ -191,7 +191,7 @@ export const LOBBY_DEFAULTS = Object.freeze({
   chatEnabled: false,
   allowBots: true,
   lobbyGraceMs: 60_000,   // disconnected humans keep their lobby seat this long
-  maxRooms: 1000,
+  maxRooms: 1600,          // 1200 online solo players plus bounded reconnect/lobby headroom
   maxRoomsPerAddr: 16,    // rooms created from one client network that may exist at once (0 = unlimited)
   maxMatchesPerAddr: 8,   // matches started from one client network that may run at once (0 = unlimited)
   ...ROOM_PROTECTION_DEFAULTS,

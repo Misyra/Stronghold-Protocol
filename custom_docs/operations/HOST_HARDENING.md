@@ -12,7 +12,7 @@
 
 当前选择是在内核阻止所有非 CN 或未知来源的新入站，**SSH 也受限制**，没有 CF、普通私网或 ACME 入站例外。回环与必要的本地 IPv6 邻居发现保留；对服务器主动发起出站连接的回复使用 `ct direction reply ct state established,related` 放行，DNS、HTTPS、证书申请仍能工作。不能简单把所有 established 放在国别判断之前，否则已有海外入站连接还能继续。目标机器是静态地址、`ip_forward=0` 的服务端；DHCP、路由或容器转发机器须另行适配，不能照抄。
 
-`render-country-firewall.py` 依赖 Debian `python3-maxminddb`，从仓库全球 `GeoLite2-Country.mmdb` 提取 `country.iso_code == CN` 的 IPv4/IPv6 网络，合并 CIDR，验证国内/海外/未知样本与每个网段边界，再渲染 `sp-country-input.nft.example`。不使用独立第三方 CN 段表；不把 `registered_country` 或国家未知当成 CN。当前库得到 8204 个 IPv4 与 44283 个 IPv6 网段。维护出口通过 `--require-ip` 验证，生成失败保留已部署文件。
+`render-country-firewall.py` 依赖 Debian `python3-maxminddb`，从仓库全球 `GeoLite2-Country.mmdb` 提取 `country.iso_code == CN` 的 IPv4/IPv6 网络，合并 CIDR，验证国内/海外/未知样本与每个网段边界，再渲染 `sp-country-input.nft.example`。不使用独立第三方 CN 段表；不把 `registered_country` 或国家未知当成 CN。当前库得到 8104 个 IPv4 与 43885 个 IPv6 网段；集合按 512 条一批用 `add element` 写入，避免 Debian 11 的 nft 0.9.8 在单个 `elements` 报文过大时报 `No buffer space available`。维护出口通过 `--require-ip` 验证，生成失败保留已部署文件。
 
 ```sh
 apt-get install python3-maxminddb libnginx-mod-http-geoip2

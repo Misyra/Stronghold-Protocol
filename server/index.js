@@ -51,10 +51,12 @@
 // Programmatic use (tests): `const srv = await startServer({ port: 0, quiet: true }); … await srv.close();`
 // The server only auto-listens when this file is the process entry point.
 
+import { LOBBY_DEFAULTS } from './lobby.js';
 import { within } from './pathSafety.js';
 import { initializeModeration } from './moderation/nickname.js';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
 import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom, roomAdminTokenFrom, lobbyOptionsFrom, portalRoomOptionsFrom, siteIdFrom } from './http/config.js';
@@ -92,6 +94,8 @@ import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js
 import { listenRoomAdmin, loadRoomConfigDocument } from './roomAdmin.js';
 import { saveRoomConfigDocument } from './roomConfig.js';
 import { openCountryLookup, parseGeoipMode } from './geoip.js';
+import { openAsnLookup } from './geoipAsn.js';
+import { createNetBlock, parseNetBlockMode } from './netBlock.js';
 import { parseIpSessionScope } from './foreignSessions.js';
 import { cleanupRuntime } from './runtimeCleanup.js';
 
@@ -159,6 +163,9 @@ export async function startServer(opts = {}) {
   const lobbyOptions = lobbyOptionsFrom(opts);
   const geoLiteFile = opts.geoLiteCountryFile ?? process.env.SP_GEOLITE_COUNTRY_DB;
   const geoipMode = parseGeoipMode(opts.geoipMode ?? process.env.SP_GEOIP_MODE);
+  const netBlockMode = opts.netBlockMode ?? process.env.SP_NET_BLOCK;
+  // Parse once here: an unset variable means "on" (the default), and the ASN database is only worth opening then.
+  const netBlockEnabled = typeof netBlockMode === 'boolean' ? netBlockMode : parseNetBlockMode(netBlockMode);
   let countryLookup = opts.countryLookup ?? null;
   if (countryLookup !== null && typeof countryLookup !== 'function') throw new TypeError('countryLookup must be a function');
   if (!countryLookup && geoLiteFile) {
@@ -171,6 +178,20 @@ export async function startServer(opts = {}) {
     log.info(`[geoip] country database loaded in ${geoipMode} mode`);
     if (geoipMode === 'cn-only') log.warn('[geoip] mainland-only IPv4 mode: unmatched IPv6 addresses remain unknown and are not restricted as foreign');
   }
+  // 明确名单（server/netBlock.js）：默认开启，只用 ASN + 国家两份数据。ASN 库缺失时 ASN 那一层降级并警告，
+  // 不让一次 `git pull` 把服务器起不来；要彻底关掉用 SP_NET_BLOCK=off。
+  let asnLookup = opts.asnLookup ?? null;
+  if (asnLookup === null && netBlockEnabled) {
+    const asnFile = path.resolve(opts.geoLiteAsnFile ?? process.env.SP_GEOLITE_ASN_DB ?? path.join(ROOT, 'geoip', 'GeoLite2-ASN.mmdb'));
+    for (const root of [publicDir, dataDir, sharedDir, packsDir]) {
+      if (within(root, asnFile)) throw new Error('SP_GEOLITE_ASN_DB cannot be in a public static directory');
+    }
+    if (fs.existsSync(asnFile)) {
+      try { asnLookup = await openAsnLookup(asnFile); log.info('[geoip] ASN database loaded'); }
+      catch (error) { log.error('[geoip] ASN database failed to load', error); }
+    }
+  }
+  const netBlock = createNetBlock({ mode: opts.netBlockMode ?? process.env.SP_NET_BLOCK, asnLookup, countryLookup, log });
   // API-only default: use the bundled global database without enabling/changing gameplay GeoIP gates.
   let apiCountryLookup = countryLookup;
   if (apiMainlandOnly && !apiCountryLookup) {
@@ -199,7 +220,7 @@ export async function startServer(opts = {}) {
     }
   }
   const savedRoomConfig = roomConfig?.values ?? null;
-  lobbyOptions.maxRooms = opts.maxRooms ?? savedRoomConfig?.maxRooms ?? lobbyOptions.maxRooms ?? 1000;
+  lobbyOptions.maxRooms = opts.maxRooms ?? savedRoomConfig?.maxRooms ?? lobbyOptions.maxRooms ?? LOBBY_DEFAULTS.maxRooms;
   if (opts.allowBots == null && typeof savedRoomConfig?.allowBots === 'boolean') lobbyOptions.allowBots = savedRoomConfig.allowBots;
   if (opts.limitForeignSessions == null && typeof savedRoomConfig?.limitForeignSessions === 'boolean')
     lobbyOptions.limitForeignSessions = savedRoomConfig.limitForeignSessions;
@@ -261,7 +282,7 @@ export async function startServer(opts = {}) {
   // an out-of-memory abort in a worker thread ends the whole server)
   const transport = String(process.env.SP_MATCH_HOST || '').trim().toLowerCase() === 'worker' ? 'worker' : 'process';
   const hosts = createMatchHosts({ contents, log, options: { transport, maxWorkers: Math.max(1, policy.get().maxSets), ...(opts.matchHost || {}) } });
-  const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, ipSessionScope, countryLookup, workerPool }, { data, log, chatLog, content, plugins: roomSets, hosts });
+  const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, ipSessionScope, countryLookup, workerPool, netBlock }, { data, log, chatLog, content, plugins: roomSets, hosts });
   // the plugin studio (DESIGN §32.9): its page and API for this machine and the local network; it watches plugins/ only
   // once it is used (hot reload), and rooms whose host is the author or alone follow a plugin's changes by themselves
   const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log, fetch: opts.fetch });

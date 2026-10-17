@@ -64,6 +64,18 @@ SP_MODERATION_KEY_FILE=/etc/stronghold/moderation.key
 
 默认开启服务端检查点；保留状态目录可恢复最近的安全阶段，作战进行中重启可能重打该回合。状态目录包含私有重连身份，必须随配置一起备份。具体恢复边界见 [PERSISTENCE.md](PERSISTENCE.md)。
 
+### 明确屏蔽名单（ASN + 国家 + IP，默认开启）
+
+`server/netBlock.js` 里有一份枚举名单：133 个机房 / 云 / 廉价 VPS / 防弹主机的 ASN、TW/VE/EC 三个地区、
+84 个逐条来源 IP。命中任一条，游戏文档与 WebSocket 升级都返回 403（与既有海外门禁同一个响应体）。
+默认 **on**，用 `SP_NET_BLOCK=off` 关闭。
+
+ASN 库走 `SP_GEOLITE_ASN_DB`（默认 `geoip/GeoLite2-ASN.mmdb`）。这个文件不在仓库里，需要自己下载放到
+`geoip/`；**没有它时 ASN 那 133 条不生效，只降级不拦启动**，日志会打 `[netblock] ASN 库不可用`。
+启动日志 `[netblock] on: 133 ASN / 3 地区 / 84 IP` 表示三层齐全。名单里混着两个运营商号码
+（AS6871 英国电信、AS4773 新加坡移动），启动时会点名警告——要留人就把它们删掉。
+详见[机房来源分级](IDC_PROTECTION.md)，Cloudflare 侧的同一份表达式在 `ops/cloudflare-net-block.rules`。
+
 ### 国家库（GeoLite，可选）
 
 海外 AI 席位上限、连接准入与 `foreign` 人群的单 IP 会话配额都要先识别来源国家，需要一个 Country `.mmdb`。本仓库把全球库放在 `geoip/GeoLite2-Country.mmdb`，随 `git pull` 到服务器（不进玩家发行包）：
@@ -150,16 +162,23 @@ macOS 临时运行可用 `scripts/start.sh`；Windows 自启见 [HOME_SERVER.md]
 
 ```bash
 sudo install -m 0644 ops/banned-ips.txt     /etc/stronghold/banned-ips.txt
+sudo install -m 0644 ops/blocked-ipv4.txt   /etc/stronghold/blocked-ipv4.txt
+sudo install -m 0644 ops/blocked-ipv6.txt   /etc/stronghold/blocked-ipv6.txt
 sudo install -m 0755 ops/sp-syn-ban-load    /usr/local/sbin/sp-syn-ban-load
 sudo install -m 0644 ops/sp-syn-ban.service /etc/systemd/system/sp-syn-ban.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now sp-syn-ban
 ```
 
+`blocked-ipv{4,6}.txt` 由 `node tools/net-ban.mjs` 从 `server/netBlock.js` 的逐条 IP 生成，不要手改；
+应用层名单一变就跑一遍再 `systemctl restart sp-syn-ban`（原子替换，不断流，但会清空 `auto4` 的 24h 自动封）。
+`node tools/net-ban.mjs --check` 可以在部署前确认没有漂移。ASN 与地区不进内核层——nft 没有 ASN 概念。
+
 两件事它做：
 
-- **永久名单**（`perm4`，无 timeout）：名单里的 IP 在 `input` 链最先被 drop，连
-  conntrack 之后的后续处理都到不了。
+- **永久名单**（`perm4` / `perm6`，无 timeout）：名单里的 IP 在 `input` 链最先被 drop，连
+  conntrack 之后的后续处理都到不了。IPv4 与 IPv6 分成两个集合——nft 不替你按地址族分流，
+  混在一起整份表都会校验失败。
 - **SYN 速率自动封**（`auto4`，24 小时）：同一 IP 超过 20 SYN/s（burst 40）就进集合。
   阈值是按实测定的——真实玩家峰值 0.3 SYN/s，洪水最低 6/s，中间隔 20 倍。
 

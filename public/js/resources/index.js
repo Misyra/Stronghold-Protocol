@@ -10,7 +10,7 @@
 // The settings panel (public/js/ui/resourcePanel.js) renders `resourceState()`; main.js calls `syncResources()` with the
 // persisted setting at boot and on every settings change.
 
-import { CACHE_PREFIX, MANIFEST_URL, resourceWorkerUrl, isResourceWorker, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest } from './common.js';
+import { CACHE_PREFIX, MANIFEST_URL, resourceWorkerUrl, isResourceWorker, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest, validateResourcePacks } from './common.js';
 import { ResourceStore, normalizeSkinScope } from './store.js';
 import { createWorkerCache } from './workerCache.js';
 import { ResourceSchedule } from './schedule.js';
@@ -408,6 +408,54 @@ function start() {
   });
 }
 
+/**
+ * 部署端分包（取自 xinhai 的 resources/transport.js 与 archive.js 的 readTransportPack）：某个分包的已选文件
+ * 有 25% 以上还没缓存时整包拉取，省掉成百上千次单文件请求。整包 SHA-1 通过后才写缓存；任何失败都由调用方
+ * 退回逐文件下载，不影响正确性。
+ * @param {any} store 资源 store（files / keyOf / importEntries）
+ * @param {any} packs 清单里的 packs 数组（validateResourcePacks 会再筛一次）
+ * @param {number[]} tiers 只取这些档位的包
+ * @param {any} status 已知的 store.status() 结果（用它的 present 集合）
+ * @param {AbortSignal} signal
+ */
+export async function preloadTransportPacks(store, packs, tiers, status, signal) {
+  const list = validateResourcePacks(packs);
+  if (!list.length) return { imported: 0 };
+  const present = status?.present instanceof Set ? status.present : new Set(status?.present || []);
+  const byKey = new Map(store.files.map((file) => [store.keyOf(file.url), file]));
+  const plans = [];
+  for (const pack of list) {
+    checkAbort(signal);
+    if (!tiers.includes(pack.tier)) continue;
+    const candidates = [];
+    for (const entry of pack.files) {
+      const file = byKey.get(store.keyOf(entry.url));
+      if (file && file.hash === entry.hash && (file.size == null || file.size === entry.size) && file.tier === pack.tier) candidates.push(file);
+    }
+    if (!candidates.length) continue;
+    const selected = candidates.reduce((sum, file) => sum + (file.size || 0), 0);
+    const missing = candidates.reduce((sum, file) => present.has(store.keyOf(file.url)) ? sum : sum + (file.size || 0), 0);
+    if (!selected || missing < selected * 0.25) continue;   // 缺得少就逐文件补，别为几个文件拉整包
+    plans.push({ pack, candidates });
+  }
+  if (!plans.length) return { imported: 0 };
+  const { fetchTransportPack } = await import('./transport.js');   // 它内部已经调用 readTransportPack
+  let imported = 0;
+  for (const { pack, candidates } of plans) {
+    checkAbort(signal);
+    const byUrl = new Map(candidates.map((file) => [file.url, file]));
+    const selectedPaths = new Set(candidates.map((file) => file.url));
+    const entries = await fetchTransportPack(pack, { signal, selectedPaths });
+    const rows = entries.map(({ row, bytes }) => ({ file: byUrl.get(row.url), bytes })).filter((r) => r.file);
+    if (!rows.length) continue;
+    const result = await store.importEntries((async function* () {
+      for (const { file, bytes } of rows) yield { files: [file], size: bytes.byteLength, read: () => bytes };
+    })(), { signal });
+    imported += result?.imported ?? rows.length;
+  }
+  return { imported };
+}
+
 async function startDownload(task) {
   const { signal } = task;
   const set = task.publish(stateStore.set);
@@ -461,7 +509,14 @@ async function startDownload(task) {
     // Required visuals first, then the optional set (额外资源 / 干员皮肤 / 官方特效 — whichever switches are on).
     const outcome = await withDownloadLock(async () => {
       checkAbort(signal);
+      // 分包优先（只有部署端配了 SP_RESOURCE_PACK_ROUTES 且清单带 packs 时才有内容）；失败就退回逐文件。
+      try { await preloadTransportPacks(store, store.manifest?.packs, [TIER_ESSENTIAL], before, signal); }
+      catch (err) { if (signal.aborted) throw err; console.warn('[resources] 分包预载失败，退回逐文件下载', err); }
       const essential = await store.download({ tiers: [TIER_ESSENTIAL], signal, onProgress });
+      if (restWanted) {
+        try { await preloadTransportPacks(store, store.manifest?.packs, [TIER_REST], null, signal); }
+        catch (err) { if (signal.aborted) throw err; console.warn('[resources] 分包预载失败，退回逐文件下载', err); }
+      }
       const rest = restWanted ? await store.download({ tiers: [TIER_REST], signal,
         onProgress: (p) => onProgress({ ...p, failed: p.failed + essential.failed, failures: [...essential.failures, ...p.failures].slice(0, 10) }) }) : { failed: 0, failures: [] };
       return { busy: false, failed: essential.failed + rest.failed, failures: [...essential.failures, ...rest.failures].slice(0, 10),

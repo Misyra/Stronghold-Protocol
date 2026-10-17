@@ -131,7 +131,7 @@ export function createSessionStack(opts, { data, log, chatLog, content = null, p
   const lobbyOptions = { ...lobbyOptionsFrom(opts), chatEnabled: enabled };
   const diagnostics = new NetDiagnostics();
   try {
-    const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, content, plugins, hosts, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog, countryLookup: opts.countryLookup, rehearsalPressure: diagnostics.rehearsalPressure });
+    const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, content, plugins, hosts, options: lobbyOptions, workerPool: opts.workerPool ?? null, matchWorkerPool: opts.matchWorkerPool ?? null, chatLog, countryLookup: opts.countryLookup, rehearsalPressure: diagnostics.rehearsalPressure });
     const network = new Network({ registry, handler: lobby, log, options: netOptions, diagnostics, countryLookup: opts.countryLookup,
       ipSessionScope, netBlock: opts.netBlock ?? null,
       foreignSessionsEnabled: () => lobby.opts.limitForeignSessions,

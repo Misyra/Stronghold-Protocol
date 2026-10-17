@@ -99,18 +99,20 @@ export function publicHealthReport({ startedAt, network, registry, lobby, serveS
  * The GET /metrics body: the public snapshot plus every process diagnostic this fork adds. Served to a loopback
  * or private-network client only (`withTraffic`: plus the traffic counters, the loopback-only `?traffic=1`).
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
- *           lobby: import('../lobby.js').Lobby, workerPool: object | null, persister: object | null, store: object | null,
+ *           lobby: import('../lobby.js').Lobby, workerPool: object | null, matchWorkers?: object | null, persister: object | null, store: object | null,
  *           serveStatic: object, cdn: { base: string, version: string }, assetsManifest: object | null, content?: { cs: string } | null, trusted?: object | null,
  *           traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter>,
  *           chatLog?: import('../chatLog.js').ChatLog }} health
  * @param {boolean} [withTraffic] plus the traffic counters (the loopback/private-network-only `?traffic=1`)
  */
-export function healthReport({ startedAt, network, registry, lobby, content = null, trusted = null, workerPool = null, persister = null, store = null, serveStatic = null, cdn = null, assetsManifest = null, traffic = null, chatLog = null }, withTraffic = false) {
+export function healthReport({ startedAt, network, registry, lobby, content = null, trusted = null, workerPool = null, matchWorkers = null, persister = null, store = null, serveStatic = null, cdn = null, assetsManifest = null, traffic = null, chatLog = null }, withTraffic = false) {
   const report = {
     ...publicHealthReport({ startedAt, network, registry, lobby, serveStatic, cdn, assetsManifest, content }),
     ...(serveStatic ? { staticCache: serveStatic.cacheStats() } : {}),
     rehearsalPressure: network.diagnostics?.rehearsalPressure?.stats() || null,
     workers: workerPool?.stats() || null,
+    // 对局线程池（server/workers/matchPool.js，SP_MATCH_WORKERS）：每条 lane 的负载与它手上的房间；null 时对局全在主线程
+    matchWorkers: matchWorkers?.stats() || null,
     // rss is process-wide (all Workers); other memory counters describe this main thread, in bytes.
     memory: process.memoryUsage(),
     socketBuffers: network.bufferedBytes?.() || null,

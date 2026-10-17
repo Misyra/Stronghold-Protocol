@@ -91,6 +91,7 @@ import { ChatLog } from './chatLog.js';
 import { readAssetsCdnVersionFile, readAssetsManifestFile, VERSION_PREFIX } from './assetVersion.js';
 import { SimulationPool, workerSettings } from './workers/pool.js';
 import { RoomWorkerPool } from './workers/roomPool.js';
+import { MatchWorkerPool } from './workers/matchPool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { parseResourcePackRoutes } from '../shared/resourcePackRoutes.js';
 import { listenRoomAdmin, loadRoomConfigDocument } from './roomAdmin.js';
@@ -287,13 +288,19 @@ export async function startServer(opts = {}) {
   // an out-of-memory abort in a worker thread ends the whole server)
   const transport = String(process.env.SP_MATCH_HOST || '').trim().toLowerCase() === 'worker' ? 'worker' : 'process';
   const hosts = createMatchHosts({ contents, log, options: { transport, maxWorkers: Math.max(1, policy.get().maxSets), ...(opts.matchHost || {}) } });
-  const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, ipSessionScope, countryLookup, workerPool, netBlock }, { data, log, chatLog, content, plugins: roomSets, hosts });
+  // 对局线程池（server/workers/matchPool.js，取自 xinhai）：SP_MATCH_WORKERS / opts.matchWorkers，默认 0 —— 0 时对局
+  // 仍全部在主线程，行为与以前完全一致；>0 时无插件的对局整局跑在 lane 线程里（含计时器、AI、状态），主线程只转发帧。
+  const rawMatchWorkers = opts.matchWorkers ?? process.env.SP_MATCH_WORKERS;
+  const matchWorkers = rawMatchWorkers == null || String(rawMatchWorkers).trim() === '' ? 0 : Number(rawMatchWorkers);
+  if (!Number.isInteger(matchWorkers) || matchWorkers < 0 || matchWorkers > 32) throw new RangeError('matchWorkers must be 0..32');
+  const matchWorkerPool = matchWorkers > 0 ? new MatchWorkerPool({ data, lanes: matchWorkers, log }) : null;
+  const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, ipSessionScope, countryLookup, workerPool, matchWorkerPool, netBlock }, { data, log, chatLog, content, plugins: roomSets, hosts });
   // the plugin studio (DESIGN §32.9): its page and API for this machine and the local network; it watches plugins/ only
   // once it is used (hot reload), and rooms whose host is the author or alone follow a plugin's changes by themselves
   const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log, fetch: opts.fetch });
   const trustedRuntime = await createTrustedRuntime({registry:packs,log});
   lobby.trustedRuntime = trustedRuntime;
-  const release = (extra = {}) => cleanupRuntime({ lobby, network, chatLog, workerPool, ownsWorkerPool, log, ...extra });
+  const release = (extra = {}) => cleanupRuntime({ lobby, network, chatLog, workerPool, ownsWorkerPool, matchWorkerPool, log, ...extra });
 
   // The per-file art manifest (`.assets-manifest.json`, shipped by tools/r2-sync.mjs and committed
   // with the release) supersedes the release-tag lookup: with it, art URLs carry a per-file `?v=`
@@ -374,7 +381,7 @@ export async function startServer(opts = {}) {
   const traffic = createTrafficCounter();
   const server = http.createServer(createRequestHandler({
     serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base),
-    health: { startedAt, gameBootId, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic, content, trusted: trustedRuntime?.health },
+    health: { startedAt, gameBootId, network, registry, lobby, workerPool, matchWorkers: matchWorkerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic, content, trusted: trustedRuntime?.health },
     log, allowStatus, allowNickname, publicApiLimits, ipBans, apiMainlandOnly, apiCountryLookup,
     readAnnouncement, announcementSource: announcementOptions.source,
     portalRoom, studio, trustedRuntime, trustProxy: network.opts.trustProxy,
@@ -442,6 +449,9 @@ export async function startServer(opts = {}) {
   } else if (workerPool) {
     log.info(`[workers] ${workerPool.size} threads, queue ${workerPool.maxQueue}, timeout ${workerPool.timeoutMs} ms (lazy start)`);
   }
+  if (matchWorkerPool) {
+    log.info(`[workers] ${matchWorkers} match lanes: 无插件的对局整局跑在线程里，应答超时 ${matchWorkerPool.timeoutMs} ms`);
+  }
 
   const addr = server.address();
   const actualPort = typeof addr === 'object' && addr ? addr.port : port;
@@ -467,7 +477,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, roomAdminUrl: roomAdmin?.url || null, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, studio, workerPool, store, persister, chatLog, traffic, close };
+  return { port: actualPort, host: boundHost, url, roomAdminUrl: roomAdmin?.url || null, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, studio, workerPool, matchWorkerPool, store, persister, chatLog, traffic, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

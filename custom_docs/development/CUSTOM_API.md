@@ -387,6 +387,8 @@ HEAD /metrics
 | `memory` | 每线程 `{ threadId, busy, sample }` 数组；`sample` 为该线程最近一次回包携带的堆采样（`heapUsed` / `heapTotal` / `external` / `arrayBuffers` / `sampledAt`），尚未回包时为 `null` |
 | `lanes` | 仅 `SP_ROOM_WORKERS` 房间泳道池：每条泳道的 `{ id, rooms, ... }` |
 
+`matchWorkers` 对象（仅 `SP_MATCH_WORKERS` > 0 时非 null；对局线程池，见 [DEPLOY.md](../operations/DEPLOY.md)）：`kind: "match-workers"`、`size`（泳道数）、`threads`（存活线程数）、`failedLanes`、`busy`（有请求在途的泳道数）、`queued`、`rooms`（当前跑在池里的对局数），以及逐泳道的 `lanes: [{ id, rooms, pending, failed, load, loadAgeMs, score }]` —— `load` 是该线程自报的 `{ utilization, delayP99Ms, workQueued, serverFields }`。
+
 `persist` 对象字段：`enabled: true`、`backend`（例如 `file`，未声明存储类型时为 `custom`）、`writes`（成功写入次数）、`failures`（失败次数）、`checkpoints`（当前对局检查点数量）、`workerMemory`（持久化 Worker 最近一次回包的堆采样，尚未回包为 `null`）。`persist: null` 表示未启用，不能按 `persist.enabled: false` 读取。成功持久化不代表保存了战斗的精确帧，恢复边界见 [PERSISTENCE.md](../operations/PERSISTENCE.md)。
 
 | 字段 | 含义 |

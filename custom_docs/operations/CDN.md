@@ -41,6 +41,8 @@ node tools/r2-sync.mjs --bucket <bucket> --metadata-only  # 只补齐已发布�
 
 服务器侧只需设置 `SP_ASSETS_CDN=https://assets.example.com` 并保证仓库里有 `.assets-manifest.json`（随发布提交）。服务器启动时读取它，把每个美术文件的 CDN URL 改写成 `https://assets.example.com/assets/…?v=<文件哈希>`：查询串参与 CDN 缓存键，内容不变则 URL 不变，可复用已有缓存，文件更新时只有它的 URL 变化。缓存仍可能被浏览器或边缘节点提前清理。清单本身由游戏服务器在 `/assets-manifest.json?v=<tag>` 同源提供（不可变缓存，页面在 `<head>` 里就开始拉取）。
 
+发布层（本分支自己的 `/_v/<tag>/`，`server/assetVersion.js`）与每文件 `?v=<哈希>` 一起工作：页面和 CSS 被就地改写，代码与 CSS 走 `/_v/<runtimeTag>/…`（immutable；发版后旧 URL 一律 404，文件在进程内被改过则 503），素材走 CDN 的每文件 `?v=`。页面里只注入 `__spAssetVersion` / `__spRuntimeVersion` / `__spArtVersion`；CDN 基址与清单地址由 `/js/asset-cdn.js` 模块提供。
+
 实现上：`server/http/static.js` 用 `assetsManifest`（`.assets-manifest.json`）生成这个响应，只认本次发布的 `?v=<tag>`（别的 tag 一律 404，免得一份清单的指纹被挂到另一个发布的 URL 上长期缓存），gzip + ETag/304 + `immutable`；同一次请求里生成的 `/js/asset-cdn.js` 会带上 `ASSETS_MANIFEST`，客户端（`public/js/main.js`）据此在模块图加载的同时开始拉哈希。没有清单或没配 CDN 时该值为空串，客户端保持不带版本的同源地址。清单不存在时回退为无版本 URL。
 
 ### 3.1 本站配置

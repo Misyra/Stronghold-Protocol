@@ -84,6 +84,23 @@ function deviceInfo() {
   };
 }
 
+/**
+ * 设置「官方特效」的实时读数 (render/vfx): the tier in force and what the layer is drawing right now — the counts
+ * are system.js's own (`tier` / `available` / `effects` / `particles` / `pending` / `dropped`), `绘制` the GL draw
+ * calls of the last frame, so a tier that is on but draws nothing (no WebGL2, files missing) reads differently from
+ * one with effects running. `关`/`未提取` say the layer is off by the setting, or that no effects were extracted.
+ */
+function fxText(o) {
+  if (!o) return '–';
+  if (!o.available) return '未提取';
+  if (o.tier === 'off') return '关';
+  const tier = o.tier === 'lite' ? '精简' : '完整';
+  const bits = [`特效 ${o.effects ?? 0}`, `粒子 ${o.particles ?? 0}`, `绘制 ${o.draws ?? 0}`];
+  if (o.pending) bits.push(`待载 ${o.pending}`);
+  if (o.dropped) bits.push(`丢 ${o.dropped}`);
+  return `${tier} · ${bits.join(' · ')}`;
+}
+
 /** The copyable report: one item per line, the panel's terms and units (pasted into feedback as is). */
 function report(spec, title, quality, s) {
   const d = deviceInfo();
@@ -91,6 +108,7 @@ function report(spec, title, quality, s) {
     '战斗性能测试报告（/dev/battle-perf.html）',
     `场景：${title}（${spec}）`,
     `画质：${QUALITY_NAME[quality] || quality}；棋盘：${s.board === '3d' ? '3D' : '2D'}`,
+    ...(s.fxText ? [`官方特效：${s.fxText}`] : []),
     `帧率：${s.fps} FPS`,
     `帧耗时：P50 ${s.p50} ms，P95 ${s.p95} ms，P99 ${s.p99} ms`,
     `卡顿帧占比（单帧 > 33.3 ms）：${s.over33}%`,
@@ -262,6 +280,7 @@ async function main() {
     $('f-frame').textContent = `${v.frameMs.toFixed(1)} ms`;
     $('f-view').textContent = `${v.cpuMs.toFixed(1)} ms`;
     $('f-sim').textContent = `${simMs.toFixed(2)} ms`;
+    $('f-fx').textContent = fxText(v.officialFx);
     $('chip-fps').textContent = fps;
     $('chip-ms').textContent = `FPS / ${v.frameMs.toFixed(1)} ms`;
     const st = runner.state();
@@ -305,7 +324,7 @@ async function main() {
     $('r-fps').textContent = s.fps;
     $('r-p95').textContent = `${s.p95} ms`;
     $('r-over').textContent = `${s.over33}%`;
-    const text = report(specName, index.find((x) => x.name === specName)?.title || specName, quality, s);
+    const text = report(specName, index.find((x) => x.name === specName)?.title || specName, quality, { ...s, fxText: fxText(view.stats().officialFx) });
     $('out').textContent = text;
     $('result').hidden = false;
     const copy = $('copy');

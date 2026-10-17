@@ -12,9 +12,9 @@ import { FX_BINDINGS, FX_COVER, BOUND_BY_SKILL, coverOf, bindingEffects, binding
 
 const LOOPING = new Set(['tinman_skill_01_range_01', 'tinman_skill_01_token_01', 'mostma_skill_02_buff']);
 const KEYS = ['quiet_hit', 'silent_attack_01_trail', 'tinman_attack_hit_01', 'tinman_skill_01_start_03', 'tinman_skill_01_range_01', 'tinman_skill_01_token_01',
-  'tinman_skill_01_start_01', 'mostma_skill_02_buff', 'reed2_attack_hit', 'reed2_skill_02_hit', 'g_birth', 'tok_birth', 'g_hit'];
+  'tinman_skill_01_start_01', 'mostma_skill_02_buff', 'reed2_attack_hit', 'reed2_skill_02_hit', 'lemuen_skill_03_hit_01', 'g_birth', 'tok_birth', 'g_hit'];
 
-function makeIndex({ installed = KEYS } = {}) {
+function makeIndex({ installed = KEYS, unloaded = [] } = {}) {
   const prefabs = Object.fromEntries(installed.map((k) => [k, { file: `prefabs/${k}.json`, looping: LOOPING.has(k) }]));
   const mode = (hit) => [{ name: 'Default', attack: { class: 'MeleeAttack', cast: [], hit: [{ effects: [hit], directionType: 0 }] } }];
   const unit = (modes, skills, o = {}) => ({ kind: 'char', modes, skills, startEffect: null, deadEffect: null, ...o });
@@ -31,6 +31,8 @@ function makeIndex({ installed = KEYS } = {}) {
         { role: 'loop', keys: ['mostma_skill_02_buff'], from: 'BuffDuringSkill._buffs', node: 'sk', on: 'owner' },
       ] } }),
       char_1020_reed2: unit(mode('reed2_attack_hit'), { skchr_reed2_2: { mode: null, projectiles: ['projectile_chr_reed2_fire'], uses: [] } }),
+      // 蕾缪安 S3: the bombardment's own prefab is the attack projectile's reached effect (no cast rows)
+      char_4193_lemuen: unit(mode('lemuen_skill_03_hit_01'), { skchr_lemuen_3: { mode: null, projectiles: ['projectile_chr_lemuen_s3_attack'], uses: [] } }),
       char_900_carrier: unit(mode('g_hit'), {}),
       token_1_own: unit(mode('g_hit'), {}, { kind: 'token', startEffect: 'tok_birth' }),
       token_2_plain: unit(mode('g_hit'), {}, { kind: 'token' }),
@@ -40,6 +42,7 @@ function makeIndex({ installed = KEYS } = {}) {
     projectiles: {
       projectile_chr_tinman_s1: { main: 'tinman_skill_01_trail_01', onReached: ['tinman_skill_01_range_01', 'tinman_skill_01_start_01', 'tinman_skill_01_token_01'], effects: [] },
       projectile_chr_reed2_fire: { main: null, onHit: ['reed2_skill_02_hit'], effects: [] },
+      projectile_chr_lemuen_s3_attack: { main: null, onReached: ['lemuen_skill_03_hit_01'], effects: [] },
     },
     skins: {},
     generic: { hit: { phys: 'g_hit', arts: 'g_hit', enemy: 'g_hit', heal: 'g_hit' }, die: {}, birth: { char: 'g_birth' }, status: {} },
@@ -54,16 +57,20 @@ const RECS = {
   char_4151_tinman: rec('skchr_tinman_1'),
   char_213_mostma: rec('skchr_mostma_2', { duration: 20 }),
   char_1020_reed2: rec('skchr_reed2_2', { duration: 20 }),
+  char_4193_lemuen: rec('skchr_lemuen_3', { duration: 0 }),
 };
 
-async function setup({ active = true, installed } = {}) {
-  const index = makeIndex({ installed });
+async function setup({ active = true, installed, unloaded } = {}) {
+  const index = makeIndex({ installed, unloaded });
+  const missing = new Set(unloaded || []);
   const spawned = [];
   const handles = [];
   const ofx = {
     active, time: 0, lite: false, tier: active ? 'full' : 'off', timers: [],
     lib: {
-      has: (k) => !!index.prefabs[k], def: (k) => (index.prefabs[k] ? { isLoop: index.prefabs[k].looping, spawn: 2 } : null),
+      has: (k) => !!index.prefabs[k],
+      // a listed prefab whose descriptor is still loading: `has` true, `def` null (library.js def())
+      def: (k) => (index.prefabs[k] && !missing.has(k) ? { isLoop: index.prefabs[k].looping, spawn: 2 } : null),
       index: async () => index, preload: async (keys) => keys.length, defs: new Map(),
     },
     spawn(key, place, opts) {
@@ -204,6 +211,39 @@ describe('R11: FX_BINDINGS — the official prefab the client plays at the kit f
     assert.equal(w.simFx('strike', 7, 10, { id: 3, src: 2 }), true);
     assert.ok(handles.some((x) => x.key === 'reed2_skill_02_hit'), 'the official hit');
     e.alive = false;
+  });
+
+  test('蕾缪安 S3: the bombard plays its official prefab for the whole shell window, not COVER_AFTER_S', async () => {
+    // the kit fires one shell every 0.3 s after the skill ends (0.3 s × the locks: 1.5 s with 5, 9.9 s with 33), so the
+    // last shells land past COVER_AFTER_S — the binding carries its own `after` (skills.js) or they exploded in the
+    // kit's own look while the first ones used the official one
+    const { w, ofx, view, frame, spawned } = await setup();
+    const l = view(1, 'char_4193_lemuen', 3);
+    frame();
+    w.skill(l, true);
+    w.skill(l, false);
+    ofx.time += COVER_AFTER_S + 0.5;                                   // the 4th shell of a 5-lock S3
+    frame();
+    const n = spawned.length;
+    assert.equal(w.simFx('bombard', 5, 10, { id: 1, r: 1.5 }), true, 'a shell landing after 1 s still is the skill\'s');
+    assert.equal(spawned.length, n + 1);
+    assert.equal(spawned[n], 'lemuen_skill_03_hit_01');
+    ofx.time += FX_BINDINGS.skchr_lemuen_3.bombard.after;            // past the 10 s shell window: nothing left in the air
+    frame();
+    assert.equal(w.simFx('bombard', 6, 10, { id: 1, r: 1.5 }), false);
+  });
+
+  test('蕾缪安 S3: a bombard prefab still loading leaves the kit\'s own blast (\`loaded\`)', async () => {
+    // the placeholder a half-loaded prefab gets is placed but draws nothing until it arrives, so an instant fx bound to
+    // it would put the damage number up with no look at all — the procedural blast stays until the prefab is compiled
+    const { w, view, frame, spawned } = await setup({ unloaded: ['lemuen_skill_03_hit_01'] });
+    const l = view(1, 'char_4193_lemuen', 3);
+    frame();
+    w.skill(l, true);
+    w.skill(l, false);
+    const n = spawned.length;
+    assert.equal(w.simFx('bombard', 5, 10, { id: 1, r: 1.5 }), false, 'not the official one yet');
+    assert.equal(spawned.length, n);
   });
 
   test('the table: owner fields, keys, the owner-less kinds, preloading', () => {

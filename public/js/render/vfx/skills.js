@@ -1240,6 +1240,10 @@ export function chargeKeys(plan) {
  *   cover       fx kinds of the same owner at that tile that the reached effect draws (skipped while it plays)
  *   during      only while the skill lasts (SkillFx._lasts: on, its activation frame, COVER_AFTER_S after its end, or a
  *               binding of its owner still held — a lasting area's strikes); another fx of that kind is the kit's own
+ *   after       that window for this binding, in battle seconds (default COVER_AFTER_S): an instant skill whose kit keeps
+ *               landing hits long after the 0 (蕾缪安 S3's shells, 10 s) keeps its official look for that long
+ *   loaded      the prefab has to be compiled already, not merely listed: an instant fx (a blast) bound to a prefab
+ *               still loading would show its damage and no look, so the procedural one stays until it is there
  * or, instead of a projectile (history §32.14.43):
  *   attack      the node of the plan attack the fx stands for: its cast / range rows play on the owner at the fx, its hit
  *               groups and aims on the damage the fx's frame deals after it (SkillFx kit hits)
@@ -1287,10 +1291,15 @@ export const FX_BINDINGS = Object.freeze({
   // 蕾缪安 S3: a 'lock' (id = the enemy, src = her, hold) is the aim projectile on it (projectile_chr_lemuen_s3_aim: its
   // main lemuen_skill_03_crosshair_range and lemuen_skill_03_crosshair_02), held for the lock [ASSUMED 1.5 s without
   // one]; a 'bombard' (id = her, its point) is projectile_chr_lemuen_s3_attack's reached lemuen_skill_03_hit_01. The
-  // falling shell ('bombardShell': the attack projectile's flight, not flown here) stays procedural
+  // falling shell ('bombardShell': the attack projectile's flight, not flown here) stays procedural. The bombard's
+  // `after` is the kit's own shell window (10 s, server/sim/content/kits/ops/chess_char_6_01-lemuen.js): the shells go
+  // on landing 0.3 s apart long after the skill ended (1.5 s with 5 locks, 9.9 s with 33), and COVER_AFTER_S (1 s) left
+  // the last ones exploding in the kit's own look instead of the official one — the same S3 drew two different blasts.
+  // `loaded`: the shell's blast is an instant, so the prefab has to be there — a placeholder still loading drew nothing
+  // while the damage number went up (the kit's own blast stays until it is)
   skchr_lemuen_3: Object.freeze({
     lock: binding({ owner: 'src', keys: ['lemuen_skill_03_crosshair_range', 'lemuen_skill_03_crosshair_02'], hold: 'fx', holdS: 1.5, during: true }),
-    bombard: binding({ owner: 'id', projectile: 'projectile_chr_lemuen_s3_attack', at: 'point', holdS: 2, during: true }),
+    bombard: binding({ owner: 'id', projectile: 'projectile_chr_lemuen_s3_attack', at: 'point', holdS: 2, during: true, after: 10, loaded: true }),
   }),
   // 泡泡 S2 (chess_char_2_08-bubble.js): she makes no attack; every damage instance she takes strikes back at its source
   // ('counter': id = her, target = the attacker). The client's bubble_s_2 does it at ON_TAKE_DAMAGE — DamageViaAttr and

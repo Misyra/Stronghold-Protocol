@@ -13,6 +13,75 @@ import { createRequestHandler } from '../server/http/routes.js';
 import { createIpBanStore } from '../server/http/ipBans.js';
 
 const binary = process.env.NGINX_PATH;
+
+test('real nginx: build polling shares neither the bare-health bucket nor other IP budgets, but remains bounded',
+  { skip: !binary, timeout: 20000 }, async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-build-budget-'));
+    const prefix = dir.replaceAll('\\', '/') + '/';
+    fs.mkdirSync(path.join(dir, 'logs'));
+    fs.mkdirSync(path.join(dir, 'temp'));
+    const reserve = http.createServer(); const port = await listen(reserve);
+    await new Promise((resolve) => reserve.close(resolve));
+    let child;
+    t.after(async () => {
+      if (child) {
+        spawnSync(binary, ['-p', prefix, '-c', 'nginx.conf', '-s', 'quit'], { windowsHide: true, timeout: 3000 });
+        if (child.exitCode === null) await Promise.race([new Promise((resolve) => child.once('exit', resolve)), delay(1000)]);
+        if (child.exitCode === null) child.kill();
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    const template = read('nginx.conf.example');
+    const perIpHealth = template.match(/map \$sp_health_global_key \$sp_health_key[^\n]+/)[0];
+    const healthZone = template.match(/limit_req_zone \$sp_health_key[^\n]+/)[0];
+    const limits = template.match(/limit_req zone=sp_(?:health|build)(?:_global)? burst=\d+ nodelay;/g).join('\n');
+    // Static files still pass through nginx's preaccess limiter; return/rewrite would bypass it.
+    fs.writeFileSync(path.join(dir, 'healthz'), 'ok');
+    fs.writeFileSync(path.join(dir, 'nginx.conf'), `pid nginx.pid;
+events { worker_connections 256; }
+http {
+map $remote_addr $sp_local_api_monitor { default 0; }
+${read('hardening/sp-health-cache-map.conf')}
+${perIpHealth}
+${healthZone}
+server {
+listen 127.0.0.1:${port};
+set_real_ip_from 127.0.0.1;
+real_ip_header X-Test-IP;
+limit_req_status 429;
+${limits}
+location = /healthz { root "${prefix}"; }
+location = /ready { return 200 'ready'; }
+}}
+`);
+    const checked = spawnSync(binary, ['-p', prefix, '-c', 'nginx.conf', '-t'], { encoding: 'utf8', windowsHide: true });
+    assert.equal(checked.status, 0, checked.stderr);
+    child = spawn(binary, ['-p', prefix, '-c', 'nginx.conf', '-g', 'daemon off; master_process off;'], { windowsHide: true, stdio: 'ignore' });
+    const request = async (query, ip = '203.0.113.1') => {
+      const response = await fetch(`http://127.0.0.1:${port}/healthz${query}`, { headers: { 'X-Test-IP': ip } });
+      await response.text(); return response.status;
+    };
+    let ready = false;
+    for (let i = 0; i < 50; i++) {
+      try { const r = await fetch(`http://127.0.0.1:${port}/ready`); await r.text(); ready = true; break; }
+      catch { await delay(25); }
+    }
+    assert.ok(ready);
+    // Four bare requests fit the initial burst. The fifth is blocked, but four players can still poll.
+    for (let i = 0; i < 4; i++) assert.equal(await request(''), 200);
+    assert.equal(await request('?nonce=bare'), 429);
+    for (let i = 0; i < 4; i++) assert.equal(await request(`?build=1&nonce=${i}`), 200);
+    // Changing query arguments cannot buy another build burst; another source retains its own tokens.
+    const flood = [];
+    for (let i = 0; i < 30; i++) flood.push(await request(`?build=1&random=${i}`));
+    assert.ok(flood.includes(429));
+    assert.equal(await request('?build=1', '203.0.113.2'), 200);
+    assert.equal(await request('', '203.0.113.2'), 200);
+    // Even independent IPs are subject to the shared build ceiling.
+    const distributed = [];
+    for (let i = 0; i < 200; i++) distributed.push(await request('?build=1', `198.51.100.${i + 1}`));
+    assert.ok(distributed.includes(429), 'global build flood is bounded');
+  });
 async function fetch(input, init) {
   try { return await globalThis.fetch(input, init); }
   catch (cause) { throw new Error(`${init?.method || 'GET'} ${input} failed`, { cause }); }

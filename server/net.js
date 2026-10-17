@@ -645,10 +645,12 @@ export class Network {
    *   foreignSessionsMaxPerIp?: () => number,
    *   allowForeignConnections?: () => boolean,
    *   ipSessionScope?: string,
+   *   netBlock?: import('./netBlock.js').NetBlock | null,
    * }} opts
    */
   constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, diagnostics = new NetDiagnostics(), countryLookup = null,
-    foreignSessionsEnabled = () => true, allowForeignConnections = () => true, foreignSessionsMaxPerIp = undefined, ipSessionScope = 'all' }) {
+    foreignSessionsEnabled = () => true, allowForeignConnections = () => true, foreignSessionsMaxPerIp = undefined, ipSessionScope = 'all',
+    netBlock = null }) {
     this.registry = registry;
     this.handler = handler;
     this.log = log;
@@ -661,6 +663,8 @@ export class Network {
     this.closed = false;
     this.diagnostics = diagnostics;
     this.draining = false;
+    this.netBlock = netBlock;
+    this.blockLog = { at: -Infinity, suppressed: 0 };
     this.foreignSessions = new ForeignSessions({ registry, countryLookup, now, isEnabled: foreignSessionsEnabled,
       allowConnections: allowForeignConnections, maxPerIp: foreignSessionsMaxPerIp, scope: ipSessionScope });
     // Frame scheduling and connection fanout live in their own module; Network keeps only the seams.
@@ -730,6 +734,25 @@ export class Network {
 
   /** @param {Connection} conn @param {object} msg */
   reply(conn, msg) { return send(conn.ws, msg); }
+
+  /**
+   * 明确名单（ASN / 国家 / 逐条 IP）命中与否。Shared by the HTTP entry and the WebSocket upgrade, like
+   * foreignConnectionDenied; the deny lists are enumerated, so this is a table lookup, not an inference.
+   * @param {{ ip?: string | null, key?: string | null } | null | undefined} address
+   * @returns {{ blocked: boolean, reason: 'ip' | 'country' | 'asn' | null, ip: string | null, asn: number | null, country: string | null } | null}
+   */
+  networkBlocked(address) {
+    if (!this.netBlock) return null;
+    const verdict = this.netBlock.check(address?.ip ?? null);
+    if (!verdict.blocked) return verdict;
+    if (this.now() - this.blockLog.at >= 10000) {
+      this.log.info('[audit] ' + JSON.stringify({ at: new Date(this.now()).toISOString(), action: 'connection.netBlock.denied',
+        ip: verdict.ip, network: address?.key ?? null, reason: verdict.reason, asn: verdict.asn, country: verdict.country,
+        suppressed: this.blockLog.suppressed }));
+      this.blockLog = { at: this.now(), suppressed: 0 };
+    } else this.blockLog.suppressed++;
+    return verdict;
+  }
 
   /** Shared by HTTP entry and pre-upgrade admission; never allocates a gameplay connection. */
   foreignConnectionDenied(address) {

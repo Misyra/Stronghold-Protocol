@@ -6,7 +6,7 @@
 
 | 文件 | 库类型 | 大小 | 构建时间 | sha256 |
 |---|---|---|---|---|
-| `GeoLite2-Country.mmdb` | `GeoLite2-Country`（全球，含 IPv6 记录） | 3.25 MiB（3410978 字节） | 2026-10-09 | `635078e412c4443a2950c2e3f775ccdc400e0a1fea5ffd32e5489e5401a9e51d` |
+| `GeoLite2-Country.mmdb` | `GeoLite2-Country`（全球，含 IPv6 记录） | 3.25 MiB（3408573 字节） | 2026-10-16 | `55fb913b4a5ab69fb0bbe11f86242b8a3f64061205227f4c1efceef7e14e5dbc` |
 
 配置（变量含义与判定规则见 [房间与连接保护](../custom_docs/operations/ROOM_PROTECTION.md)，部署步骤见
 [部署指南](../custom_docs/operations/DEPLOY.md)）：
@@ -29,10 +29,7 @@ Hackl0us/GeoIP2-CN）也不能按 `country` 模式用，否则海外来源会被
 
 - 数据由 [MaxMind](https://www.maxmind.com/) 以 GeoLite2 形式发布，采用
   [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) 许可。从 MaxMind 官方下载需要注册账户并接受
-  GeoLite2 EULA，该 EULA 对再分发有额外限制；当前文件取自社区镜像
-  [P3TERX/GeoLite.mmdb](https://github.com/P3TERX/GeoLite.mmdb) 的 `2026.10.13` 发布：
-  `https://github.com/P3TERX/GeoLite.mmdb/releases/download/2026.10.13/GeoLite2-Country.mmdb`
-  （入库时间 2026-10-16）。署名见 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。
+  GeoLite2 EULA，该 EULA 对再分发有额外限制；当前文件于 2026-10-17 使用账户授权从 [MaxMind 官方下载接口](https://dev.maxmind.com/geoip/updating-databases/#directly-downloading-databases)下载，数据库构建时间为 2026-10-16。署名见 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。
 - 再分发本仓库（或基于它的镜像）前请自行确认这些条款。不想带这个约束时，换成
   [DB-IP Lite](https://db-ip.com/db/download/ip-to-country-lite)（CC BY 4.0，可再分发，同样含 IPv6）即可，
   读取路径、`country` 模式和启动校验都不变，只需改掉本文件里的来源与 sha256。
@@ -69,3 +66,24 @@ sudo systemctl restart stronghold
 # 只验这一个库而不启动服务器
 SP_GEOIP_TEST_DB=geoip/GeoLite2-Country.mmdb SP_GEOIP_TEST_MODE=country node --test test/geoip.test.js
 ```
+
+## 本地可选数据库
+
+2026-10-17 同时从 MaxMind 官方下载了 ASN 与 City 两库，只供本地分析，已忽略、不随仓库提交；游戏运行时仍只读 Country 库。
+
+| 文件 | 库类型 | 大小 | 构建时间 | sha256 |
+|---|---|---|---|---|
+| `GeoLite2-ASN.mmdb` | `GeoLite2-ASN`（IPv4/IPv6） | 8.56 MiB（8977215 字节） | 2026-10-17 | `358da21ba0a945f4bbc1152d02f98acff291c08e0ea1a6820e3fd6e0361e97bd` |
+| `GeoLite2-City.mmdb` | `GeoLite2-City`（IPv4/IPv6） | 48.5 MiB（50901339 字节） | 2026-10-16 | `fd112e5b13ca19e8bb0bf2e1902fb0694f6ba1940bef916e0d8d9d9346f4e029` |
+
+ASN 库用来把地址粗分成 cloud / isp / unknown：`server/geoipAsn.js` 读库、`server/netClass.js` 分类、
+`tools/geoip-classify.mjs` 出报告。它只在本地跑，不进玩家发行包，也没有接进任何准入判定。
+
+```bash
+node tools/geoip-classify.mjs 8.8.8.8 202.96.128.86 154.219.110.142
+node tools/geoip-classify.mjs --sample 300000        # 桶分布 + 命中的机房 ASN
+SP_ASN_TEST_DB=geoip/GeoLite2-ASN.mmdb node --test test/net-class.test.js
+```
+
+ASN 仍不是住宅/机房标签（同一条运营商 ASN 里同时坐着家宽、企业专线和中小机房），规则与实测精度见
+[机房来源分级](../custom_docs/operations/IDC_PROTECTION.md)。

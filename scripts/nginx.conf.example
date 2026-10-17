@@ -25,7 +25,7 @@ http {
     }
 
     # Layered per-client budgets. Internal ban checks must not count as user requests.
-    map $uri $sp_health_key { default ""; /healthz $binary_remote_addr; }
+    map $sp_health_global_key $sp_health_key { default ""; healthz $binary_remote_addr; }
     map $uri $sp_page_key {
         default "";
         / $binary_remote_addr;
@@ -81,13 +81,17 @@ http {
         # Access logs supply fail2ban; avoid duplicating every refusal in the error log.
         limit_req_log_level notice;
         limit_conn_log_level notice;
-        limit_conn sp_conn_all 3000;
+        limit_conn sp_conn_all 4000;
+        limit_conn sp_business_conn 64;
+        limit_conn sp_static_conn 256;
         limit_req zone=sp_health burst=3 nodelay;
         limit_req zone=sp_page burst=10 nodelay;
         limit_req zone=sp_page_global burst=40 nodelay;
         limit_req zone=sp_business burst=30 nodelay;
         limit_req zone=sp_static burst=1024 nodelay;
         limit_req zone=sp_health_global burst=10 nodelay;
+        limit_req zone=sp_build burst=3 nodelay;
+        limit_req zone=sp_build_global burst=120 nodelay;
 
         # Check bans before cached responses and direct files too (requires http_auth_request_module).
         # Restore $remote_addr from trusted upstreams first; never trust arbitrary forwarding headers.
@@ -151,7 +155,7 @@ http {
             max_ranges 0;
             limit_conn sp_health_conn_global 32;
             # Child limit_conn replaces the parent list.
-            limit_conn sp_conn_all 3000;
+            limit_conn sp_conn_all 4000;
             proxy_connect_timeout 1s;
             proxy_read_timeout 2s;
             proxy_send_timeout 2s;
@@ -245,8 +249,8 @@ http {
             limit_req zone=sp_business burst=30 nodelay;
             limit_req zone=sp_ws_rate burst=3 nodelay;
             limit_conn sp_ws_conn 4;
-            limit_conn sp_ws_conn_all 800;
-            limit_conn sp_conn_all 3000;
+            limit_conn sp_ws_conn_all 1600;
+            limit_conn sp_conn_all 4000;
             proxy_pass http://127.0.0.1:3000;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;

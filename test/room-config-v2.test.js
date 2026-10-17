@@ -19,7 +19,7 @@ process.env.SP_FOREIGN_SESSION_LIMIT = 'on';
 const TOKEN = 'room-config-v2-test-token-0123456789';
 const OP_A = '11111111-1111-4111-8111-111111111111';
 const OP_B = '22222222-2222-4222-8222-222222222222';
-const VALUES = Object.freeze({ maxRooms: 1000, allowBots: true, limitForeignSessions: true,
+const VALUES = Object.freeze({ maxRooms: 1600, allowBots: true, limitForeignSessions: true,
   allowForeignConnections: true, maxForeignSessionsPerIp: 1 });
 
 async function lab(t, { stateFile = true, options = {} } = {}) {
@@ -104,7 +104,7 @@ test('版本化写：正确的 revision 落盘并递增，落盘失败不改运�
   assert.equal(before.status, 200);
   assert.equal(before.body.revision, 1, '全新安装：内存里的当前值就是第 1 版');
   assert.deepEqual(before.body.values, VALUES);
-  assert.equal(before.body.maxRooms, 1000, '过渡期：旧字段仍然平铺在顶层');
+  assert.equal(before.body.maxRooms, 1600, '过渡期：旧字段仍然平铺在顶层');
   assert.equal(before.body.persisted, undefined, '读响应不说「写落没落地」');
 
   const written = await f.call({ expectedRevision: 1, opId: OP_A, patch: { maxRooms: 700 } });
@@ -207,7 +207,7 @@ test('落盘成功但应用失败：如实分开报 persisted/applied', async (t
   assert.equal(response.body.persisted, true);
   assert.equal(response.body.applied, false);
   assert.equal(response.body.revision, 2);
-  assert.equal(f.srv.lobby.opts.maxRooms, 1000, '运行值没变，但磁盘上已经是新值');
+  assert.equal(f.srv.lobby.opts.maxRooms, 1600, '运行值没变，但磁盘上已经是新值');
   assert.equal((await f.read()).values.maxRooms, 600);
 });
 

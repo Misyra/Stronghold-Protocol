@@ -21,4 +21,6 @@
 
 数据生成、素材下载和诊断工具在 [`tools/`](../tools/README.md)。临时脚本与执行日志放入 `.cache/`。
 
-2026-10-17 的默认值调整与 CDN 不限次数边界见 [事故记录](../custom_docs/operations/INCIDENT-2026-10-17.md)：Nginx 每 worker 16384 连接、源站总并发 3000、WS 总并发 800；修改配置前检查服务的文件描述符限制。门户 ping 30/min（burst 10、免浏览器 Cookie），房间查询 20/min（burst 5、保留准入）。静态预算只应用在游戏源站，不能把同一套次数限制装到素材 CDN。
+2026-10-17 的默认值调整与 CDN 不限次数边界见 [事故记录](../custom_docs/operations/INCIDENT-2026-10-17.md)：Nginx 每 worker 16384 连接、源站总并发 4000、WS 总并发 1600（面向至少 1200 人在线）；每 IP WS 并发 4、握手 5/min（burst 3）；修改配置前检查服务的文件描述符限制。门户 ping 30/min（burst 10、免浏览器 Cookie），房间查询 20/min（burst 5、保留准入）。静态预算只应用在游戏源站，不能把同一套次数限制装到素材 CDN。
+
+版本检查 `/healthz?build=1` 与裸 healthz 分桶：每 IP 12/min（burst 3）、全站 40/s（burst 120），共用最多 32 个健康请求并发及原有 5 秒缓存，保留准入检查。裸 healthz 仍为每 IP 12/min（burst 3）、全站 5/s（burst 10）。Node 总连接仍为 2000，房间默认上限 1600；这是配置容量，运行承载能力需压测。

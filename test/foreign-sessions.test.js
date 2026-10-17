@@ -200,7 +200,8 @@ test('mapped IPv4 and equivalent IPv6 spellings cannot bypass the per-IP cap', a
   await (await f.connect('2001:db8::1')).hello('IPv6');
   assert.equal((await (await f.connect('2001:0db8:0:0:0:0:0:1')).request({ t: 'hello', name: 'Expanded' })).code, 'FOREIGN_SESSION_LIMIT');
   // A different address, unlike the existing room-frequency /64 budget, is a separate session quota.
-  const g = await fixture(t, () => 'TW');
+  // HK, not TW: TW 现在在 server/netBlock.js 的明确名单里，会在升级时先被拒（见下一条测试）。
+  const g = await fixture(t, () => 'HK');
   await (await g.connect('2001:db8::2')).hello('One');
   assert.equal((await (await g.connect('2001:db8::3')).hello('Two')).t, 'welcome');
 });
@@ -435,7 +436,8 @@ test('foreign connection environment defaults to allowed and accepts explicit ov
 });
 
 test('known overseas sources receive HTTP 403 and never complete a WebSocket upgrade', async (t) => {
-  for (const country of ['HK', 'MO', 'TW', 'US']) {
+  // TW 走的是明确名单（server/netBlock.js），不走国家门禁，所以它的拒绝另有一条断言。
+  for (const country of ['HK', 'MO', 'US']) {
     const f = await fixture(t, () => country, { allowForeignConnections: false });
     const refusal = await refusedUpgrade(f.srv);
     assert.equal(refusal.status, 403);
@@ -444,6 +446,11 @@ test('known overseas sources receive HTTP 403 and never complete a WebSocket upg
     assert.equal(f.srv.network.foreignSessions.stats().connectionDenied, 1);
     assert.ok(f.logs.some(line => line.includes('connection.foreignPolicy.denied')));
   }
+  const tw = await fixture(t, () => 'TW', { allowForeignConnections: true });
+  assert.equal((await refusedUpgrade(tw.srv)).status, 403, 'TW 即使放开海外也被明确名单拒绝');
+  assert.equal(tw.srv.network.foreignSessions.stats().connectionDenied, 0);
+  assert.equal(tw.srv.network.netBlock.stats().byCountry, 1);
+  assert.ok(tw.logs.some(line => line.includes('connection.netBlock.denied')));
 });
 
 test('blocking new connections keeps authenticated players but rejects reconnect and pre-hello sockets', async (t) => {

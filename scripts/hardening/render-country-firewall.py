@@ -57,9 +57,16 @@ def render(database, template, required_ip=None):
                     raise ValueError(f'Country prefix boundary validation failed: {network}')
     sha = hashlib.sha256(database.read_bytes()).hexdigest()
     output = '# MMDB sha256: ' + sha + '\n' + template.read_text()
-    output = output.replace('__CN4__', ', '.join(map(str, v4))).replace('__CN6__', ', '.join(map(str, v6)))
     if '__CN' in output:
         raise ValueError('Unrendered country set')
+    # One elements = { ... } netlink message for ~50k prefixes overflows the
+    # kernel receive buffer on Debian 11 (nft 0.9.8). Emit the table with empty
+    # interval sets, then add elements in bounded batches. nft -f keeps the
+    # whole file in one transaction, so the table still replaces atomically.
+    for set_name, nets in (('mainland4', v4), ('mainland6', v6)):
+        for start in range(0, len(nets), 512):
+            batch = nets[start:start + 512]
+            output += 'add element inet sp_foreign_cap ' + set_name + ' { ' + ', '.join(map(str, batch)) + ' }\n'
     return output, {'sha256': sha, 'ipv4_networks': len(v4), 'ipv6_networks': len(v6)}
 
 

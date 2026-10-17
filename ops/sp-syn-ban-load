@@ -1,11 +1,40 @@
 #!/usr/bin/env bash
 # sp-syn-ban-load —— 内核层封禁：永久名单 + SYN 速率自动封
-# perm4: 永久（无 timeout），来自 /etc/stronghold/banned-ips.txt
+#
+# perm4: 手工名单（/etc/stronghold/banned-ips.txt）+ 生成名单（/etc/stronghold/blocked-ipv4.txt）
+# perm6: 生成名单（/etc/stronghold/blocked-ipv6.txt），v6 没有自动封，只有永久名单
 # auto4: 自动封 24h，链内 meter 触发（>20 SYN/s，burst 40）
+#
+# 生成名单来自仓库的 `node tools/net-ban.mjs`（读 server/netBlock.js 的 BLOCK_IPS），不要手改；
+# 手工名单照旧一行一个，支持 CIDR 与 # 注释。两份可以同时存在，重复条目在渲染前 sort -u 掉。
+#
+# 升级 = 重新生成 → 装到 /etc/stronghold → 重跑本脚本。nft -c 先校验、delete+add 在同一份输入里
+# 一个事务完成，所以替换期间不丢包、不出现"先删后建"的空窗。代价：整表替换会清空 auto4 里
+# 已经积累的 24h 自动封（只保留永久名单），需要保留时见 README 的增量用法。
+#
+# loopback 永远放行：否则本机探测/浏览器并发会把 127.0.0.1 写进 auto4，
+# 连带掐死 nginx -> sp-browser-gate（127.0.0.1:3101）和本机健康检查。
 set -euo pipefail
 LIST=/etc/stronghold/banned-ips.txt
+GEN4=/etc/stronghold/blocked-ipv4.txt
+GEN6=/etc/stronghold/blocked-ipv6.txt
 TMP=$(mktemp /run/sp-syn-ban.XXXXXX.nft)
-trap 'rm -f "$TMP"' EXIT
+CHECK="$TMP.check"
+trap 'rm -f "$TMP" "$CHECK"' EXIT
+
+# 注释行、空行、行尾备注一律丢掉，剩下的按字面排序去重（nft 的 interval 集合不接受重复元素）。
+elements() {
+  local f
+  for f in "$@"; do
+    [ -s "$f" ] || continue
+    grep -vE '^[[:space:]]*(#|$)' "$f" | awk '{print $1}' || true
+  done | LC_ALL=C sort -u   # 固定排序：生成物要能逐字比对，locale 会改变标点顺序
+}
+
+V4=$(elements "$LIST" "$GEN4")
+V6=$(elements "$GEN6")
+V4_COUNT=$(printf '%s' "$V4" | grep -c . || true)
+V6_COUNT=$(printf '%s' "$V6" | grep -c . || true)
 
 {
   echo 'table inet sp_syn_ban {'
@@ -13,9 +42,20 @@ trap 'rm -f "$TMP"' EXIT
   echo '    type ipv4_addr'
   echo '    flags interval'
   echo '    size 65536'
-  if [ -s "$LIST" ] && grep -qvE '^[[:space:]]*(#|$)' "$LIST"; then
+  if [ "$V4_COUNT" -gt 0 ]; then
     echo '    elements = {'
-    grep -vE '^[[:space:]]*(#|$)' "$LIST" | awk '{print $1}' | awk '{printf "      %s,\n", $1}' | sed '$ s/,$//'
+    printf '%s\n' "$V4" | awk '{printf "      %s,\n", $1}' | sed '$ s/,$//'
+    echo '    }'
+  fi
+  echo '  }'
+  # v6 单独一个集合：nft 不会按地址族自动分流，混在 perm4 里整份表都会校验失败。
+  echo '  set perm6 {'
+  echo '    type ipv6_addr'
+  echo '    flags interval'
+  echo '    size 65536'
+  if [ "$V6_COUNT" -gt 0 ]; then
+    echo '    elements = {'
+    printf '%s\n' "$V6" | awk '{printf "      %s,\n", $1}' | sed '$ s/,$//'
     echo '    }'
   fi
   echo '  }'
@@ -27,9 +67,11 @@ trap 'rm -f "$TMP"' EXIT
   echo '  }'
   echo '  chain input {'
   echo '    type filter hook input priority -6; policy accept;'
+  echo '    iifname "lo" return'
   echo '    ip saddr @perm4 counter drop comment "permanent_ban"'
+  echo '    ip6 saddr @perm6 counter drop comment "permanent_ban_v6"'
   echo '    ip saddr @auto4 counter drop comment "syn_autoban"'
-  echo '    tcp dport { 80, 443, 8080 } tcp flags & (syn|ack) == syn jump syn'
+  echo '    tcp dport { 80, 443, 3000, 8080 } tcp flags & (syn|ack) == syn jump syn'
   echo '  }'
   echo '  chain syn {'
   echo '    meter synrate size 65536 { ip saddr limit rate over 20/second burst 40 packets } update @auto4 { ip saddr } counter drop comment "syn_flood_detect"'
@@ -39,9 +81,14 @@ trap 'rm -f "$TMP"' EXIT
   echo '}'
 } > "$TMP"
 
-nft -c -f "$TMP"
+# Validate and replace in one transaction. The old table must be deleted in the
+# same input, otherwise nft -c sees a duplicate table and the loader is not
+# repeatable (the first run works, every later restart fails).
 if nft list table inet sp_syn_ban >/dev/null 2>&1; then
-  nft delete table inet sp_syn_ban
+  { echo 'delete table inet sp_syn_ban'; cat "$TMP"; } > "$CHECK"
+else
+  cp "$TMP" "$CHECK"
 fi
-nft -f "$TMP"
-echo "sp-syn-ban applied: $(grep -cvE '^[[:space:]]*(#|$)' "$LIST") permanent IPs; auto-ban >20 SYN/s -> 24h"
+nft -c -f "$CHECK"
+nft -f "$CHECK"
+echo "sp-syn-ban applied: $V4_COUNT IPv4 + $V6_COUNT IPv6 permanent; auto-ban >20 SYN/s -> 24h"

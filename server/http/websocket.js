@@ -133,7 +133,7 @@ export function createSessionStack(opts, { data, log, chatLog, content = null, p
   try {
     const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, content, plugins, hosts, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog, countryLookup: opts.countryLookup, rehearsalPressure: diagnostics.rehearsalPressure });
     const network = new Network({ registry, handler: lobby, log, options: netOptions, diagnostics, countryLookup: opts.countryLookup,
-      ipSessionScope,
+      ipSessionScope, netBlock: opts.netBlock ?? null,
       foreignSessionsEnabled: () => lobby.opts.limitForeignSessions,
       foreignSessionsMaxPerIp: () => lobby.opts.maxForeignSessionsPerIp,
       allowForeignConnections: () => lobby.opts.allowForeignConnections });
@@ -190,7 +190,15 @@ export function attachWebSocket(server, { network, log, wsCompression, wsOrigins
     if (isIpBanned(req)) { reject(403, 'Forbidden'); return; }
     if (!allowUpgrade(req)) { reject(403, 'Forbidden'); return; }
     if (!parts || parts.rawPath !== '/ws') { reject(404, 'Not Found'); return; }
-    if (network.foreignConnectionDenied(clientAddress(req, network.opts.trustProxy))) {
+    const address = clientAddress(req, network.opts.trustProxy);
+    const netBlocked = network.networkBlocked(address);
+    if (netBlocked?.blocked) {
+      // 明确名单（ASN / 地区 / 逐条 IP）：响应体与既有海外门禁一字不差，原因只进审计日志。
+      const body = JSON.stringify({ code: ERR.FOREIGN_CONNECTIONS_DISABLED, msg: ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED });
+      socket.end(`HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+      return;
+    }
+    if (network.foreignConnectionDenied(address)) {
       const body = JSON.stringify({ code: ERR.FOREIGN_CONNECTIONS_DISABLED, msg: ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED });
       socket.end(`HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
       return;

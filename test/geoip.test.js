@@ -98,7 +98,8 @@ test(`a real ${realMode} database blocks an overseas entry but allows a mainland
   const blocked = await fetch(srv.url, { headers: { 'X-Real-IP': '8.8.8.8' } });
   assert.equal(blocked.status, 403);
   assert.equal((await blocked.json()).msg, '本服务器暂时仅对中国大陆服务');
-  assert.equal((await fetch(srv.url, { headers: { 'X-Real-IP': '114.114.114.114' } })).status, 200);
-  client = await TestClient.connect(srv.url.replace('http:', 'ws:') + '/ws', { wsOptions: { headers: { 'X-Real-IP': '114.114.114.114' } } });
+  // 114.114.114.114 是 Zenlayer（AS21859），已在 server/netBlock.js 的明确名单里；用普通家宽样本验"大陆放行"。
+  assert.equal((await fetch(srv.url, { headers: { 'X-Real-IP': '202.96.128.86' } })).status, 200);
+  client = await TestClient.connect(srv.url.replace('http:', 'ws:') + '/ws', { wsOptions: { headers: { 'X-Real-IP': '202.96.128.86' } } });
   assert.equal((await client.hello('Mainland')).t, 'welcome');
 });

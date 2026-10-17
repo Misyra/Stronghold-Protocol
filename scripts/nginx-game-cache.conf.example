@@ -57,6 +57,8 @@ location = /data/resource-manifest.json {
 }
 
 location = /assets-manifest.json {
+    # Public art manifest, fetched by the page and service worker before the gate cookie is ready.
+    auth_request off;
     proxy_pass http://127.0.0.1:3000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;

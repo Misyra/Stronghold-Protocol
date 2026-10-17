@@ -131,10 +131,16 @@ class Lane {
 }
 
 export class MatchWorkerPool {
-  constructor({ data, lanes = 1, log = null, timeoutMs = 120000, workerUrl = new URL('./matchWorker.js', import.meta.url) } = {}) {
+  constructor({ data, lanes = 1, log = null, timeoutMs = 120000, workerUrl = new URL('./matchWorker.js', import.meta.url), onLaneFailure = null } = {}) {
     if (!Number.isInteger(lanes) || lanes < 1 || lanes > 32) throw new RangeError('match worker lanes must be 1..32');
     this.data = data;
     this.log = log;
+    /**
+     * 本仓库追加：一条 lane 失效时的通知（server/lobby.js 据此结束那条线程上的对局，把房间放回大厅）。
+     * 上游只在日志里留一句，房间会一直挂着一个不会应答的对局。
+     * @type {((error: Error, matches: object[]) => void) | null}
+     */
+    this.onLaneFailure = onLaneFailure;
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new RangeError('match worker timeout must be positive');
     this.timeoutMs = timeoutMs;
     this.nextInstance = 0;
@@ -250,6 +256,13 @@ export class MatchWorkerPool {
     this.log?.error?.(`[match-worker:${lane.id}] ${error.message}`);
     for (const requestId of [...lane.pending.keys()]) lane.settle(requestId, null, error);
     // Keep proxies and their persistence generations: last safe checkpoints must not be pruned after a crash.
+    // 本仓库追加：把这条 lane 上的对局报给调用方（它们已经不会应答了，只能结束）。
+    const lost = [...lane.matches.values()];
+    lane.matches.clear();
+    // 这条 lane 不再接房间：它的占位一起清掉，否则同一个房间号以后会被分回一条死 lane 上
+    for (const [key, laneId] of [...this.assignments]) if (laneId === lane.id) this.assignments.delete(key);
+    try { this.onLaneFailure?.(error, lost); }
+    catch (e) { this.log?.error?.(`[match-worker:${lane.id}] lane failure handler threw: ${e?.message || e}`); }
   }
 
   stats() {

@@ -165,6 +165,15 @@ sudo systemctl enable --now sp-syn-ban
 
 名单的维护方式和表结构见 [`ops/README.md`](../../ops/README.md)。
 
+另有一份 **每 IP 的 SYN 速率闸**：
+
+```bash
+{ echo 'delete table inet sp_web_syn_guard'; cat ops/sp-web-syn-guard.nft; } | sudo nft -f -
+```
+
+它管的是「一个 IP 建连接的速率」，与上面的永久名单互补。默认值 30 次/分钟
+（真玩家实测峰值 18 次/分钟，洪水下限 360 次/分钟）。阈值依据写在文件头。
+
 ```bash
 sudo nft list table inet sp_syn_ban          # 看计数器
 sudo systemctl status sp-syn-ban             # 是否加载过
@@ -395,3 +404,11 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 ## 同盟房间收录到联机站
 
 可选的一键提交入口与两端鉴权、限流配置见 [PORTAL_ROOMS.md](PORTAL_ROOMS.md)。未配置时不启用。
+
+## 2026-10-17 事故后的模板默认值
+
+依据 [排查记录](INCIDENT-2026-10-17.md#七据此调整的仓库默认值待部署)，Nginx 模板使用每 worker 16384 连接、源站总并发 3000、WS 总并发 800。部署前确认 systemd 的 `LimitNOFILE` 与系统上限足够（例如 65536），否则配置中的容量不等于实际可用容量。
+
+素材直接从 CDN 下载时不限制请求次数；静态限流只装在游戏源站。源站的构建文件、模拟模块、数据和本地素材归入独立静态预算，不挤占业务永久封禁计数。构建文件及合法版本资源可缓存，裸 `/sim/` 仍遵循上游 no-cache；完整打包另行实施。可选浏览器 gate 与公共缓存片段共享唯一资源清单 location，更新旧配置时先移除重复定义。
+
+门户延迟探测使用 GET/HEAD `/api/ping`（30/min、burst 10、免浏览器 Cookie），房间状态使用 GET/HEAD `/api/rooms/<code>/status`（20/min、burst 5、保留准入）。不要把 ping 加入永久 IP 封禁 jail。WS 入口 jail 改为只累计 `/ws` 444 拒绝，100 次/60s 封禁 1h；应用兜底允许 100 次/60s，第 101 次封禁 1h，检查旧环境变量是否仍覆盖默认值。Web SYN 新模板的 120/min、burst 120 与全局 200/s、burst 400 是待目标机器压测的初值，不能照搬旧 5/min 或把新值称为已线上验证。

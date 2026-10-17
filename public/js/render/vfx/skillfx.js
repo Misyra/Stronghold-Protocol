@@ -89,8 +89,9 @@ import { UF, ANIM } from '../../../../shared/constants.js';
 export const SKILL_CAST_S = 0.6;
 /**
  * Battle seconds after a skill's end in which a kit fx still belongs to it (FX_COVER, FX_BINDINGS `during`): an instant
- * skill's kit lands its blast or shells a moment after the 0 (蕾缪安 S3's last shells 0.3–0.7 s, 溯光星源 S2's link
- * 0.1 s in the audit) [ASSUMED].
+ * skill's kit lands its blast or shells a moment after the 0 (溯光星源 S2's link 0.1 s in the audit) [ASSUMED]. 蕾缪安
+ * S3's shells land up to 0.3 s × the locks (1.5 s with 5, 9.9 s with all 33) after the end — its `bombard` binding
+ * carries its own `after` (skills.js), so the 1 s here is never what ends her bombardment's official explosion.
  */
 export const COVER_AFTER_S = 1;
 /** Kit fx kinds of a token's arrival (server/sim/content/tokens.js burst(), 沙之碑): its own birth effect is that look. */
@@ -544,11 +545,14 @@ export class SkillFx {
     return U.planOk;
   }
 
-  /** A kit fx of the unit belongs to its skill (rule 5, `during` bindings): on, its activation frame, just ended, or held. */
-  _lasts(U) {
+  /**
+   * A kit fx of the unit belongs to its skill (rule 5, `during` bindings): on, its activation frame, just ended, or held.
+   * `after` (a binding's own window) replaces COVER_AFTER_S — 蕾缪安 S3's shells keep landing for up to 10 s after the end.
+   */
+  _lasts(U, after = COVER_AFTER_S) {
     if (!U || !U.plan) return false;
     const now = this.w.ofx.time;
-    return this._on(U) || U.startFrame === this.frame || now - U.offAt <= COVER_AFTER_S || this.marks.some((m) => m.owner === U.id && m.until > now);
+    return this._on(U) || U.startFrame === this.frame || now - U.offAt <= after || this.marks.some((m) => m.owner === U.id && m.until > now);
   }
 
   /** The unit's official birth effect (FxWiring.deploy's key: its mode's override, its own, else the generic one). */
@@ -937,7 +941,7 @@ export class SkillFx {
     for (const field of ['src', 'id']) {
       const U = extra[field] != null ? this.units.get(extra[field]) : null;
       const bind = U ? FX_BINDINGS[U.skillId]?.[kind] : null;
-      if (bind && bind.owner === field && (!bind.during || this._lasts(U))) return bind.attack ? this._boundAttack(U, bind) : this._bound(U, bind, x, y, extra);
+      if (bind && bind.owner === field && (!bind.during || this._lasts(U, bind.after))) return bind.attack ? this._boundAttack(U, bind) : this._bound(U, bind, x, y, extra);
     }
     // a binding whose fx names no owner: the unit whose skill of that id lasts
     for (const sid of BOUND_BY_SKILL[kind] || []) {
@@ -994,10 +998,13 @@ export class SkillFx {
 
   /**
    * An FX_BINDINGS entry: the projectile's reached effects (or its keys) where the fx happens, held as the binding
-   * says; a binding's own `keys` at 'target' once on the unit the fx names.
+   * says; a binding's own `keys` at 'target' once on the unit the fx names. `loaded` bindings need the prefab itself
+   * (not just its file): one still loading is placed by index.json's summary and draws nothing until it arrives, so an
+   * instant fx bound to it would show its damage with no look at all (蕾缪安 S3's bombard) — the procedural one stays
+   * until the prefab is there.
    */
   _bound(U, bind, x, y, extra) {
-    const keys = bindingEffects(this.w.idx, bind).filter((k) => this.w.ofx.lib.has(k));
+    const keys = bindingEffects(this.w.idx, bind).filter((k) => this.w.ofx.lib.has(k) && (!bind.loaded || this.w.ofx.lib.def(k)));
     if (!keys.length) return false;
     if (bind.at === 'target') {
       // once on the unit the fx names (泡泡's attacker), else where it happens; turned by the owner's side

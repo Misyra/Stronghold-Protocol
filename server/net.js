@@ -40,7 +40,7 @@
 //   onDisconnect(session)                  the session's socket closed (session kept for the reconnect window)
 //   onExpire(session)                      the session was purged (disconnected longer than the window)
 
-import { STRIP_RE, LONE_SURROGATE_RE } from './moderation/characters.js';
+import { STRIP_RE, LONE_SURROGATE_RE, isConfusableName } from './moderation/characters.js';
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { NetDiagnostics, socketDiagnostics } from './netDiagnostics.js';
@@ -137,7 +137,7 @@ export class Session {
     this.notOwned = null;
     /** @type {Readonly<Record<string, { charId: string, skillIndex: number, uniEquipId: string|null }>> | null} checked 自选 picks (lobby-owned, 0.2.0 自选编队) */
     this.diy = null;
-    /** @type {Record<string, string> | null} chosen operator skins (lobby-owned, docs/SKINS.md): PUBLIC, unlike the loadout */
+    /** @type {Record<string, string> | null} chosen operator skins (lobby-owned, custom_docs/SKINS.md): PUBLIC, unlike the loadout */
     this.skins = null;
     /** @type {string} client address of the latest connection (logging) */
     this.addr = '?';
@@ -475,14 +475,15 @@ export function errorMsg(code, rid, detail) {
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * Normalize a nickname: strip control/invisible characters and lone surrogates, collapse whitespace,
- * trim, cap at NAME_MAX_LEN code points. Returns null when nothing printable remains.
+ * Normalize a nickname: fold compatibility forms (NFKC, so ＹＧ and Ⅴ become YG and V instead of look-alikes of
+ * another player), strip control/invisible characters and lone surrogates, collapse whitespace, trim, cap at
+ * NAME_MAX_LEN code points. Returns null when nothing printable remains.
  * @param {unknown} raw
  * @returns {string | null}
  */
 export function sanitizeName(raw) {
   if (typeof raw !== 'string') return null;
-  let s = raw.normalize('NFC').replace(LONE_SURROGATE_RE, '').replace(/\s+/g, ' ').replace(STRIP_RE, '').replace(/ {2,}/g, ' ').trim();
+  let s = raw.normalize('NFKC').replace(LONE_SURROGATE_RE, '').replace(/\s+/g, ' ').replace(STRIP_RE, '').replace(/ {2,}/g, ' ').trim();
   s = [...s].slice(0, NAME_MAX_LEN).join('').trim();
   return s.length > 0 ? s : null;
 }
@@ -643,10 +644,11 @@ export class Network {
    *   foreignSessionsEnabled?: () => boolean,
    *   foreignSessionsMaxPerIp?: () => number,
    *   allowForeignConnections?: () => boolean,
+   *   ipSessionScope?: string,
    * }} opts
    */
   constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, diagnostics = new NetDiagnostics(), countryLookup = null,
-    foreignSessionsEnabled = () => true, allowForeignConnections = () => true, foreignSessionsMaxPerIp = undefined }) {
+    foreignSessionsEnabled = () => true, allowForeignConnections = () => true, foreignSessionsMaxPerIp = undefined, ipSessionScope = 'all' }) {
     this.registry = registry;
     this.handler = handler;
     this.log = log;
@@ -660,7 +662,7 @@ export class Network {
     this.diagnostics = diagnostics;
     this.draining = false;
     this.foreignSessions = new ForeignSessions({ registry, countryLookup, now, isEnabled: foreignSessionsEnabled,
-      allowConnections: allowForeignConnections, maxPerIp: foreignSessionsMaxPerIp });
+      allowConnections: allowForeignConnections, maxPerIp: foreignSessionsMaxPerIp, scope: ipSessionScope });
     // Frame scheduling and connection fanout live in their own module; Network keeps only the seams.
     this.outbound = new OutboundPump({ conns: this.conns, opts: this.opts, diagnostics, defaults: NET_DEFAULTS,
       isClosed: () => this.closed, writeFrame, writeMessage, encode, send });
@@ -844,6 +846,9 @@ export class Network {
     if (!name) { this.reply(conn, errorMsg(ERR.BAD_MSG, rid, 'bad field name')); return; }
     // Check before creating, renaming or taking over a session, including token-based reconnects.
     if (hasSensitiveNickname(name)) { this.reply(conn, errorMsg(ERR.NICKNAME_SENSITIVE, rid)); return; }
+    // Same code and text as the sensitive-nickname refusal (it exists in all four language packs): from the
+    // player's side this is "this name is not allowed, pick another one", whatever the reason was.
+    if (isConfusableName(name)) { this.reply(conn, errorMsg(ERR.NICKNAME_SENSITIVE, rid)); return; }
     if (!conn.session && this.refuseForeignConnection(conn.ws, conn, rid)) { conn.closing = true; return; }
 
     let session = conn.session;

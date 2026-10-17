@@ -37,6 +37,23 @@ test('HTTP preflight only returns approval or a generic code; never creates a se
   assert.equal(server.registry.size, 0);
 });
 
+test('HTTP preflight refuses a nickname that swaps Latin letters for look-alike Cyrillic or Greek ones', async t => {
+  const server = await boot(t);
+  // УG copies YG, Vеnus copies Venus (Cyrillic е), Αlex copies Alex (Greek Alpha): refused rather than folded.
+  for (const name of ['УG', 'Vеnus', 'Αlex']) {
+    const response = await post(server, name);
+    assert.equal(response.status, 422);
+    assert.deepEqual(await response.json(), { ok: false, code: 'NICKNAME_SENSITIVE' });
+  }
+  // A name that stays inside one script is not impersonation, and CJK beside Latin is not confusable with it.
+  for (const name of ['Катя', 'Αρης', '甲YG']) {
+    const response = await post(server, name);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true });
+  }
+  assert.equal(server.registry.size, 0);
+});
+
 test('HTTP validation rejects methods, cross-site requests, malformed and oversized inputs', async t => {
   const server = await boot(t), url = server.url + '/api/nickname/validate';
   const cases = [

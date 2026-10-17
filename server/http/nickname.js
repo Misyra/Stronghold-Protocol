@@ -1,8 +1,10 @@
 // Server-only nickname preflight; no matched terms, names or dictionary metadata in responses.
 import { NAME_MAX_LEN, ERR } from '../../shared/constants.js';
 import { sanitizeName } from '../net.js';
+import { isConfusableName } from '../moderation/characters.js';
 import { hasSensitiveNickname } from '../moderation/nickname.js';
 import { sendJson } from './common.js';
+import { markHttpRejection } from './rejection.js';
 import { readJsonBody } from './readJson.js';
 
 export async function validateNickname(req, res, allow) {
@@ -10,7 +12,10 @@ export async function validateNickname(req, res, allow) {
     if (!req.complete) { res.setHeader('Connection', 'close'); req.resume(); }
     sendJson(req, res, status, { ok: false, code });
   };
-  if (allow && !allow(req)) { res.setHeader('Retry-After', '1'); reject(429, 'RATE_LIMITED'); return; }
+  if (allow && !allow(req)) {
+    markHttpRejection(req, res, 'RATE_LIMITED');
+    res.setHeader('Retry-After', '1'); reject(429, 'RATE_LIMITED'); return;
+  }
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); reject(405, 'METHOD_NOT_ALLOWED'); return; }
   // JSON requires a CORS preflight; deliberately expose no CORS permission.
   if (req.headers['sec-fetch-site'] === 'cross-site') { reject(403, 'FORBIDDEN'); return; }
@@ -24,6 +29,6 @@ export async function validateNickname(req, res, allow) {
   if (typeof raw !== 'string' || !raw.length || [...raw].length > NAME_MAX_LEN) { reject(400, 'INVALID_NAME'); return; }
   const name = sanitizeName(raw);
   if (!name) { reject(400, 'INVALID_NAME'); return; }
-  if (hasSensitiveNickname(name)) { reject(422, ERR.NICKNAME_SENSITIVE); return; }
+  if (hasSensitiveNickname(name) || isConfusableName(name)) { reject(422, ERR.NICKNAME_SENSITIVE); return; }
   sendJson(req, res, 200, { ok: true });
 }

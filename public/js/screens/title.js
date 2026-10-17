@@ -2,7 +2,7 @@
 // (中文 | English | every pack in public/i18n/, ui/lang.js; a title in an alphabetic script — English — is the big one and
 // the small wordmark above it hides).
 //
-// Pressing 开始 first POSTs the nickname for server approval (no dictionary is delivered), then stores it,
+// Pressing 开始 optionally POSTs the nickname for server approval (no dictionary is delivered), then stores it,
 // marks this tab as "entered" (so reloads skip the title) and hands the name to net.js, which
 // sends `hello` (now, or as soon as the socket is open). The router then shows the lobby.
 //
@@ -88,13 +88,17 @@ export function nameError(raw) {
 /** @param {any} raw @returns {boolean} */
 export const isValidName = (raw) => nameError(raw) === null;
 
+// Temporary suspension (2026-10-17): restore true together with the Nginx API exception.
+// Keep the HTTP implementation for re-enabling; WebSocket hello still validates names on the server.
+export const NICKNAME_PREFLIGHT_ENABLED = false;
+
 /**
- * Persist and enter only after server approval. A stale/unmounted attempt cannot commit.
+ * Optional HTTP approval before entering. A stale/unmounted attempt cannot commit.
  * @param {string} rawName
- * @param {{ signal?: AbortSignal, isCurrent?: () => boolean }} options
+ * @param {{ signal?: AbortSignal, isCurrent?: () => boolean, preflight?: boolean }} options
  * @returns {Promise<boolean>}
  */
-export async function enterSession(rawName, { signal, isCurrent = () => true } = {}) {
+export async function enterSession(rawName, { signal, isCurrent = () => true, preflight = NICKNAME_PREFLIGHT_ENABLED } = {}) {
   const name = sanitizeName(rawName);
   if (!isValidName(name)) return false;
   const controller = new AbortController();
@@ -103,16 +107,19 @@ export async function enterSession(rawName, { signal, isCurrent = () => true } =
   signal?.addEventListener('abort', abort, { once: true });
   const timer = setTimeout(abort, 8000);
   try {
-    const response = await fetch('/api/nickname/validate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }), cache: 'no-store', credentials: 'same-origin', signal: controller.signal,
-    });
-    const result = await response.json();
-    if (controller.signal.aborted || !isCurrent()) return false;
-    if (!response.ok || result?.ok !== true) {
-      // Only known codes are interpreted; never display arbitrary response data.
-      throw new Error(result?.code === ERR.NICKNAME_SENSITIVE ? ERR_TEXT.NICKNAME_SENSITIVE : N_('昵称校验失败，请稍后重试'));
+    if (preflight) {
+      const response = await fetch('/api/nickname/validate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }), cache: 'no-store', credentials: 'same-origin', signal: controller.signal,
+      });
+      const result = await response.json();
+      if (controller.signal.aborted || !isCurrent()) return false;
+      if (!response.ok || result?.ok !== true) {
+        // Only known codes are interpreted; never display arbitrary response data.
+        throw new Error(result?.code === ERR.NICKNAME_SENSITIVE ? ERR_TEXT.NICKNAME_SENSITIVE : N_('昵称校验失败，请稍后重试'));
+      }
     }
+    if (controller.signal.aborted || !isCurrent()) return false;
     identity.saveName(name);
     identity.setEntered(true);
     store.set((s) => ({ me: { ...s.me, name }, session: { ...s.session, entered: true } }));

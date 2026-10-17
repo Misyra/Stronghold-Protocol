@@ -30,7 +30,7 @@ before(async () => {
   await build({ configFile: path.join(root, 'vite.config.js'), logLevel: 'silent', build: { outDir } });
   manifest = JSON.parse(await fs.readFile(path.join(outDir, '.vite/manifest.json'), 'utf8'));
   const handler = createStaticHandler({ publicDir, dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'),
-    assetsCdn: 'https://art.example/game', assetsCdnVersion: '0123456789abcdef' });
+    cdnBase: 'https://art.example/game' });
   server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
     handler(req, res, url.pathname, url.search.slice(1)).catch((err) => { res.statusCode = 500; res.end(String(err)); });
@@ -74,9 +74,11 @@ test('built pages preserve runtime CDN/version injection and serve immutable com
     const html = await response.text();
     assert.match(html, /src="\/build\/assets\/index-[\w-]+\.js"/);
     assert.match(html, /onerror="window\.__spBootFail/);
-    assert.match(html, /globalThis\.__spAssetCdn=/);
-    assert.match(html, /globalThis\.__spRuntimeVersion=/);
-    assert.match(html, /https:\/\/art\.example\/game/);
+    // CDN 配置不再内联进页面：xinhai 的静态服务在请求时生成 /js/asset-cdn.js（构建里保持外部同源 URL）
+    assert.doesNotMatch(html, /globalThis\.__spAssetCdn=/);
+    const cdnModule = await fetch(origin + '/js/asset-cdn.js');
+    assert.equal(cdnModule.status, 200);
+    assert.match(await cdnModule.text(), /https:\/\/art\.example\/game/);
     assert.doesNotMatch(html, /type="importmap"|href="\/css\//);
     for (const [, url] of html.matchAll(/(?:src|href)="(\/build\/assets\/[^" ]+)"/g)) {
       const asset = await fetch(origin + url);

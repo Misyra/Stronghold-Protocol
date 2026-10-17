@@ -108,6 +108,10 @@ export default defineConfig({
     assetsInlineLimit: 0,
     manifest: true,
     rollupOptions: {
+      // 服务端在请求时生成 /js/asset-cdn.js（Xinhai 的 static.js 按 SP_ASSETS_CDN / SP_DATA_CDN 写）：
+      // 构建必须把它留成同源外部 URL，否则会把磁盘上的空配置打进包。
+      external: [/^\/js\/asset-cdn\.js$/],
+      makeAbsoluteExternalsRelative: false,
       output: {
         onlyExplicitManualChunks: true,
         manualChunks(id) {

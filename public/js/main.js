@@ -16,6 +16,15 @@
 // A `welcome` with a NEW playerId (the server restarted / the session expired) while a room or match was on screen:
 // toast 「服务器会话已重置，上一局模拟已结束」 (store.js sessionResetNotice) and return to the lobby with nothing stale.
 //
+// CDN 配置由服务端在请求时生成（/js/asset-cdn.js，取 SP_ASSETS_CDN / SP_DATA_CDN）。这里先把它挂到
+// globalThis.__spAssetCdn 上，resourceUrl / 资源预载 / 渲染层再读；构建时该模块由 vite external 保持外部同源 URL。
+import('/js/asset-cdn.js').then((m) => {
+  if (globalThis.__spAssetCdn) return;
+  const base = String(m.ASSETS_CDN || '').replace(/\/+$/, '');
+  const dataBase = String(m.DATA_CDN || '').replace(/\/+$/, '');
+  if (base || dataBase) globalThis.__spAssetCdn = { base, dataBase, version: globalThis.__spAssetVersion || '' };
+}).catch(() => { /* 没有该模块（静态托管）时保持同源路径 */ });
+
 // Shared modules are imported relatively ('../../shared/…' resolves to /shared/… in the browser).
 // Multi-device support (ui/device.js + css/devices.css): feature classes on <html>, no page zoom, safe areas, rotation
 // re-layout; ui/compat.js polyfills are imported before anything else.

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { startServer } from '../server/index.js';
 import { readAssetsCdnVersionFile, readAssetsManifestFile } from '../server/assetVersion.js';
 import { parseAssetCdn } from '../server/http/config.js';
+import { createStaticHandler } from '../server/http/static.js';
 import { assetCdnSettings, assetCdnUrl, cdnLatestUrl, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { resourceUrl, resourceCache, resourceReady } from '../public/js/resourceUrl.js';
 import { mediaUrl } from '../public/js/media.js';
@@ -241,4 +242,37 @@ test('parseAssetCdn: 静态层接受的基址就是 xinhai 接受的那一组（
   // their parser stops at「scheme or root path」: a protocol-relative host or a query string is assetCdnSettings' job
   assert.equal(parseAssetCdn('//cdn.example'), '//cdn.example');
   assert.equal(parseAssetCdn('https://cdn.example/?v=1/x'), 'https://cdn.example/?v=1/x');
+});
+
+test('每文件指纹清单：/assets-manifest.json?v=<tag> 只服务本次发布，并告诉客户端去哪儿取', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-data-'));
+  const publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-pub-'));
+  const log = { info() {}, warn() {}, error() {}, debug() {} };
+  const serve = async (assetsManifest) => {
+    const handler = createStaticHandler({ publicDir, dataDir, sharedDir: path.resolve('shared'), cdnBase: 'https://cdn.example', assetsManifest, log });
+    const srv = http.createServer((req, res) => { const [p, q] = (req.url || '/').split('?'); handler(req, res, p, q || ''); });
+    await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    return { base: 'http://127.0.0.1:' + srv.address().port, close: () => new Promise((r) => srv.close(r)) };
+  };
+  const manifest = { tag: '0123456789abcdef', hashes: { '/assets/x.png': 'aaaaaaaaaaaaaaaa' } };
+  const withManifest = await serve(manifest);
+  try {
+    const config = await (await fetch(withManifest.base + '/js/asset-cdn.js')).text();
+    assert.match(config, /export const ASSETS_CDN = "https:\/\/cdn\.example";/);
+    assert.match(config, /ASSETS_MANIFEST = "\/assets-manifest\.json\?v=0123456789abcdef"/, 'the client is told the release URL');
+    const url = withManifest.base + '/assets-manifest.json?v=' + manifest.tag;
+    const res = await fetch(url);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('cache-control'), /immutable/, 'a tag identifies one release: it may be cached forever');
+    assert.deepEqual(await res.json(), manifest, 'tag and per-file hashes');
+    assert.equal((await fetch(url, { headers: { 'if-none-match': res.headers.get('etag') } })).status, 304, 'revalidation works');
+    assert.equal((await fetch(withManifest.base + '/assets-manifest.json?v=ffffffffffffffff')).status, 404, 'another release\'s tag is refused');
+    assert.equal((await fetch(withManifest.base + '/assets-manifest.json')).status, 404, 'no tag, no manifest');
+  } finally { await withManifest.close(); }
+  const without = await serve(null);
+  try {
+    const config = await (await fetch(without.base + '/js/asset-cdn.js')).text();
+    assert.match(config, /ASSETS_MANIFEST = ""/, 'without a manifest the client keeps bare URLs');
+  } finally { await without.close(); }
+  fs.rmSync(dataDir, { recursive: true, force: true }); fs.rmSync(publicDir, { recursive: true, force: true });
 });

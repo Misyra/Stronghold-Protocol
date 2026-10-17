@@ -1604,8 +1604,10 @@ export class Lobby {
         // the room sees the match from the moment its lane reserved it: a disconnect during the initialization queues
         // behind it (the room's queue)
         created: (m) => { ctx.match = m; room.match = m; room.matchCtx = ctx; room.matchKey = key; },
-        send: (playerId, msg) => { if (ctx.live) this.matchSend(room, ctx, playerId, msg); },
-        broadcast: (msg) => { if (ctx.live) this.matchBroadcast(room, ctx, msg); },
+        // the pool hands over the worker's own encoded bytes and, for state frames, the delta frame it already
+        // computed (stateTransport.attachWorkerState) — carrying both through is what makes the lane cheap
+        send: (playerId, msg, encoded) => { if (ctx.live) this.matchSend(room, ctx, playerId, msg, encoded); },
+        broadcast: (msg, encoded) => { if (ctx.live) this.matchBroadcast(room, ctx, msg, encoded); },
         end: (summary) => this.onMatchEnd(room, ctx, summary),
       }, checkpoint || null);
       // a restored match keeps the room's match number: the same match, now in a thread (adoptRestoredMatch locally)
@@ -1804,18 +1806,23 @@ export class Lobby {
     if (!options?.keepCheckpoint) this.checkpoint(room.code, null);
   }
 
-  /** Match unicast; m.result frames are also kept for the replay. */
-  matchSend(room, ctx, playerId, msg) {
+  /**
+   * Match unicast; m.result frames are also kept for the replay.
+   * `encoded`: the bytes the lane already produced for this frame. Re-encoding here would cost a JSON.stringify per
+   * frame AND drop the worker's delta frame (stateTransport.attachedWorkerFrame only matches the same string).
+   */
+  matchSend(room, ctx, playerId, msg, encoded = null) {
+    let data = encoded;
     if (msg && msg.t === 'm.result') {
-      const data = encode(msg);
+      data ??= encode(msg);
       if (data != null) ctx.results.set(playerId, data);
     }
-    return this.sendToPlayer(room, playerId, msg);
+    return this.sendToPlayer(room, playerId, msg, data ?? undefined);
   }
 
   /** Match broadcast; the latest m.public and a broadcast m.result are also kept for the replay. */
-  matchBroadcast(room, ctx, msg) {
-    const data = this.broadcastRoom(room, msg);
+  matchBroadcast(room, ctx, msg, encoded = null) {
+    const data = this.broadcastRoom(room, msg, encoded);
     if (data == null) return;
     if (msg.t === 'm.public') { ctx.lastPublic = data; ctx.status = matchStatus(msg); }
     else if (msg.t === 'm.result') ctx.sharedResult = data;
@@ -2233,21 +2240,21 @@ export class Lobby {
   }
 
   /** Match broadcast: encode once; Network slices member sends across rooms. @returns {string | null} the encoded frame */
-  broadcastRoom(room, msg) {
+  broadcastRoom(room, msg, encoded = null) {
     if (room.disposed) return null;
-    const data = encode(msg);
+    const data = encoded ?? encode(msg);
     if (data == null) { this.log.error(`[lobby] ${room.code} unserializable broadcast ${msg && msg.t}`); return null; }
     for (const session of this.memberSessions(room)) sendSession(session, msg, data);
     return data;
   }
 
   /** Match unicast. @returns {boolean} */
-  sendToPlayer(room, playerId, msg) {
+  sendToPlayer(room, playerId, msg, encoded = null) {
     if (room.disposed) return false;
     const seat = room.seatOf(playerId) || room.spectatorOf(playerId);
     if (!seat || seat.isBot || seat.left) return false;
     const session = this.registry.byId(playerId);
     if (!session || session.roomCode !== room.code) return false;
-    return sendSession(session, msg);
+    return sendSession(session, msg, encoded);
   }
 }

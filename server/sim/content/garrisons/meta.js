@@ -239,7 +239,9 @@ H.SERVER_GAIN_EQUIP = {
   run(ctx) {
     const { bb, bbStr } = ctx.source;
     if (!ctx.gd.item(bbStr.chess)) return;
-    for (let i = 0; i < Math.min(10, num(bb.count, 1)); i++) ctx.grantItem(bbStr.chess);
+    // 本仓库保留上游 0.3.0 的库存模型（YG 2026-10-13 拍板）：固定赠品照常占普通/精英 1/2 份、允许顶破上限，
+    // 但 requirePool:false 让它们不受共享池限制。xinhai 分支这一行还是旧模型（完全不占份数），不要改回去。
+    for (let i = 0; i < Math.min(10, num(bb.count, 1)); i++) ctx.grantItem(bbStr.chess, { requirePool: false });
   },
 };
 

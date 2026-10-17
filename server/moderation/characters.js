@@ -6,4 +6,15 @@ export const STRIP_RE = new RegExp('[' + STRIP_RANGES.map(([a, b]) => (a === b ?
 export const LONE_SURROGATE_RE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
 
 
+// Letters that are visually interchangeable with Latin ones. A nickname mixing Latin letters with Cyrillic or
+// Greek ones is the cheap way to impersonate another player (УG for YG), so it is refused rather than normalized.
+// CJK mixed with Latin — 甲YG — stays fine: those scripts are not confusable with Latin.
+const HAS_LATIN = /\p{Script=Latin}/u;
+const HAS_CONFUSABLE = /[\p{Script=Cyrillic}\p{Script=Greek}]/u;
+/** @param {unknown} name @returns {boolean} true when the name mixes look-alike scripts */
+export function isConfusableName(name) {
+  const s = String(name ?? '');
+  return HAS_LATIN.test(s) && HAS_CONFUSABLE.test(s);
+}
+
 export const CHAT_FORBIDDEN_RE = /[\p{Cc}\p{Cs}\u200b\u200e\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u;

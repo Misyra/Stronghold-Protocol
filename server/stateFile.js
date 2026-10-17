@@ -1,6 +1,6 @@
 // Atomic, single-process state storage. Kept outside every HTTP static mount.
 //
-// Two on-disk layouts, chosen by the state path (docs/operations/PERSISTENCE.md):
+// Two on-disk layouts, chosen by the state path (custom_docs/operations/PERSISTENCE.md):
 //   * file — one JSON document (a path ending in .json, or an existing plain file). The classic layout: rewritten
 //            atomically (tmp → fsync → rename) on every save. Right for the usual handful of rooms.
 //   * dir  — index.json holds sessions/rooms; runtime.json holds clocks and the last durable heartbeat. Each match

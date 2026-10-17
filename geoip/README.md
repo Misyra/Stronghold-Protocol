@@ -8,8 +8,8 @@
 |---|---|---|---|---|
 | `GeoLite2-Country.mmdb` | `GeoLite2-Country`（全球，含 IPv6 记录） | 3.25 MiB（3410978 字节） | 2026-10-09 | `635078e412c4443a2950c2e3f775ccdc400e0a1fea5ffd32e5489e5401a9e51d` |
 
-配置（变量含义与判定规则见 [房间与连接保护](../docs/operations/ROOM_PROTECTION.md)，部署步骤见
-[部署指南](../docs/operations/DEPLOY.md)）：
+配置（变量含义与判定规则见 [房间与连接保护](../custom_docs/operations/ROOM_PROTECTION.md)，部署步骤见
+[部署指南](../custom_docs/operations/DEPLOY.md)）：
 
 ```ini
 SP_GEOLITE_COUNTRY_DB=/opt/Stronghold-Protocol/geoip/GeoLite2-Country.mmdb
@@ -38,6 +38,8 @@ Hackl0us/GeoIP2-CN）也不能按 `country` 模式用，否则海外来源会被
   读取路径、`country` 模式和启动校验都不变，只需改掉本文件里的来源与 sha256。
 
 ## 更新
+
+本次部署也由 Nginx GeoIP2 直接读取此全球库，并用 `scripts/hardening/render-country-firewall.py` 从同一文件生成 nftables 国内来源集合。严格入口仅允许 `country.iso_code == CN`，含命中的 IPv6；未知也拒绝，与应用层的未知放行规则不同。库更新后须重新生成和校验内核集合、reload Nginx，再按下文重启应用，三层不会自动同步。详情见[主机加固](../custom_docs/operations/HOST_HARDENING.md)。
 
 先下到临时文件（不要直接覆盖正在用的库），校验通过再原子替换，最后重启游戏：
 

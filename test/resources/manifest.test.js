@@ -167,7 +167,7 @@ describe('resource manifest building', () => {
   });
 
   test('干员皮肤: optional by design and marked with the key the client scopes by', () => {
-    // A full install is ~328 MiB (docs/SKINS.md) — never part of the required set the panel starts with.
+    // A full install is ~328 MiB (custom_docs/SKINS.md) — never part of the required set the panel starts with.
     assert.equal(tierForPath('chars.char_003_kalts.skins.char_003_kalts@boc#6.spine.front.skel'), TIER_REST);
     assert.equal(tierForPath('chars.char_003_kalts.skins.char_003_kalts@boc#6.avatar'), TIER_REST);
     assert.equal(skinKeyForPath('chars.char_003_kalts.skins.char_003_kalts@boc#6.spine.front.textures.0'), 'char_003_kalts/char_003_kalts@boc#6');

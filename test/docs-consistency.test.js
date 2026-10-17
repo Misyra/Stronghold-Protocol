@@ -68,7 +68,7 @@ const META = doc('docs/META.md');
 const DATA_MD = doc('docs/DATA.md');
 const SIM = doc('docs/SIM.md');
 const README = doc('README.md');
-const DEPLOY = doc('docs/operations/DEPLOY.md');
+const DEPLOY = doc('custom_docs/operations/DEPLOY.md');
 const PLAYING = doc('docs/PLAYING.md');
 /** The table row of DATA.md whose first cell is `key` (backticked), or ''. */
 const dataRow = (key, from = 0) => {
@@ -919,7 +919,7 @@ test('干员战斗语音 (DESIGN §21.30): the manifest data, the official prior
   assert.equal(Object.keys(manifest.audio?.voiceJp ?? {}).length, charIds.length, 'every voiced operator has its JP tree');
   assert.equal(manifest.stats.voiceJpChars, charIds.length);
   assert.match(doc('docs/ASSETS.md'), /voiceJp: \{ \[charId\]: \{ …the slots of `voice` \} \}/);
-  assert.match(doc('docs/operations/PACKAGING.md'), /`FULL_ZIP_JP_VOICE` 改成 `false` 时/);
+  assert.match(doc('custom_docs/operations/PACKAGING.md'), /`FULL_ZIP_JP_VOICE` 改成 `false` 时/);
   // 0.3.0: the English and Korean dubs joined the Chinese and Japanese ones, so the 2-language line this fork had
   // (「语音语言」选 **中文 / 日本語**) is the 4-language one below — the setting and the doc grew, nothing was dropped
   assert.match(doc('docs/DEPLOY.md'), /`FULL_ZIP_JP_VOICE` 改成 `false` 时/);

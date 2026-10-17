@@ -110,7 +110,7 @@ git merge --no-commit --no-ff v0.2.6
 | `server/sim/content/kits/ops/op-wisdel.js` | 收 #557（`battle.onFieldBoard`）；`test/content/op_wisdel.test.js` 同批 |
 | `docs/history/0.2.6.md` | 收（五个测试引用 §31.8/§31.9，`test/docs-paths.test.js` 会管） |
 | `docs/DESIGN.md` 的 §31 索引行 | 搬进 `docs/DESIGN.md`，href 用 `../history/0.2.6.md` |
-| `docs/DEPLOY.md` | 保持删除；六段内容搬进 `docs/operations/*`（§9） |
+| `docs/DEPLOY.md` | 保持删除；六段内容搬进 `custom_docs/operations/*`（§9） |
 | 其余平铺文档 | 按 §9 搬进我们的目录结构 |
 | 版本号四方 | `package.json` + `package-lock.json` 两处 + `shared/constants.js` 的 `APP_VERSION` 同批改成 `0.2.6` |
 | `public/i18n/{en,ja,ko,zh-TW}.json` | **只合增量**：每个文件本次只多两个弹药键（`弹药数量` + 含 `13/14` 的说明）。上游这一批没有 `_about`／`_meta.credits` 的改动，不需要整份选边，我们自己的键全部保留 |
@@ -158,7 +158,7 @@ i18n ×4（只合 2 个键的增量）、`package.json`（我们的 + 版本）�
 |---|---|
 | `CHANGELOG.md` | 自动合并 |
 | `README.md` **（冲突）** | 用我们的 `**Run:**` 那行，把上游的 `~560 MB / ~790 MB` 并进去；`已同步至 v0.2.5` 改成 `v0.2.6`；**不收 `SP_ASSET_INDEX` 那一行**（本次不接索引层，不要给不存在的功能写文档） |
-| `docs/DEPLOY.md` **（modify/delete）** | 保持删除，六段内容搬进 `docs/operations/*` |
+| `docs/DEPLOY.md` **（modify/delete）** | 保持删除，六段内容搬进 `custom_docs/operations/*` |
 | `docs/design/client.md` **（冲突）** | 两个 bullet 拼接；收 §31.8/§31.9 与素材地址段；`SCENE_LIGHT` 改成 1/1；`docs/ASSETS.md` → `docs/ASSETS.md`；补一句我们的 CDN 形态，免得读成"只有 `~<hash>`" |
 | `docs/design/geometry-time.md` | 自动合并 |
 | `docs/design/network.md` | 自动合并，但 WS 参数要跟实际代码对齐（我们保留开关/level/并发/双向无上下文接管 + window 11） |
@@ -202,7 +202,7 @@ i18n ×4（只合 2 个键的增量）、`package.json`（我们的 + 版本）�
 | `test/asset-index.test.js` | 整块依赖不引入的索引层 → **删**，理由记在本文档 |
 | `test/render/browser.test.js` | 读 `srv.assetIndex` → 该用例自跳过 |
 | `test/render/{deploy-replay,hud-readouts,impostor-bounds*,playtest6-promote}.test.js`、`test/ui/{deploy-replay*,ammo-count}.test.js` | 断言的是**我们改过的文件**里的新 hunk，源码不 graft 就红（无 skip 门）。它们同时也是最好的"接线完成"验收器 |
-| `docs/{ASSETS,ARCHITECTURE,DESIGN,SIM,PLAYING}.md` | 搬进我们的布局；`ASSETS.md` 的新段会撞我们的 `## Preload` 锚点，且其 `~hash`/"never ?v="/`.cache/asset-hashes.json` 说法与我们已上线的形态矛盾 → 改写或引到 `docs/operations/CDN.md`；`ARCHITECTURE.md` 点名三个我们不放的文件 → 必须删掉那几行，否则 `test/docs-paths.test.js` 红 |
+| `docs/{ASSETS,ARCHITECTURE,DESIGN,SIM,PLAYING}.md` | 搬进我们的布局；`ASSETS.md` 的新段会撞我们的 `## Preload` 锚点，且其 `~hash`/"never ?v="/`.cache/asset-hashes.json` 说法与我们已上线的形态矛盾 → 改写或引到 `custom_docs/operations/CDN.md`；`ARCHITECTURE.md` 点名三个我们不放的文件 → 必须删掉那几行，否则 `test/docs-paths.test.js` 红 |
 
 ## 5. 接缝与陷阱
 
@@ -269,12 +269,12 @@ SP_E2E=1       CHROME_PATH=<chrome> node --test test/ui/deploy-replay.e2e.test.j
 
 `docs/DEPLOY.md` 的六段 → 我们的布局：
 
-1. 网络/磁盘两行（WS 压缩数据、`完整包解压后约 790 MB`）→ `docs/operations/HOME_SERVER.md`（顺手把过时的 505/710 MB 改成 560/790 MB）。
-2. 「固定访问地址能省很多流量」整段 → `docs/operations/HOME_SERVER.md` 隧道小节旁。
-3. 压缩（brotli）与 Cloudflare 缓存规则两段 → `docs/operations/DEPLOY.md` 反向代理节 + `docs/operations/CDN.md`。
-4. 两条排查行（哈希段、`/healthz?traffic=1`）→ `docs/operations/DEPLOY.md` 排错表 + `docs/operations/MONITORING.md`。
-5. 教程图 WebP 说明 → `docs/ASSETS.md` + `docs/operations/PACKAGING.md`。
-6. 平铺文档并入：`ARCHITECTURE/ASSETS/DESIGN/META/SIM → docs/development/`、`PLAYING → docs/guides/`、`history/0.2.6.md → docs/history/`。
+1. 网络/磁盘两行（WS 压缩数据、`完整包解压后约 790 MB`）→ `custom_docs/operations/HOME_SERVER.md`（顺手把过时的 505/710 MB 改成 560/790 MB）。
+2. 「固定访问地址能省很多流量」整段 → `custom_docs/operations/HOME_SERVER.md` 隧道小节旁。
+3. 压缩（brotli）与 Cloudflare 缓存规则两段 → `custom_docs/operations/DEPLOY.md` 反向代理节 + `custom_docs/operations/CDN.md`。
+4. 两条排查行（哈希段、`/healthz?traffic=1`）→ `custom_docs/operations/DEPLOY.md` 排错表 + `custom_docs/operations/MONITORING.md`。
+5. 教程图 WebP 说明 → `docs/ASSETS.md` + `custom_docs/operations/PACKAGING.md`。
+6. 平铺文档并入：`ARCHITECTURE/ASSETS/DESIGN/META/SIM → custom_docs/development/`、`PLAYING → custom_docs/guides/`、`history/0.2.6.md → docs/history/`。
 
 搬迁时用**我们实际的 URL 形态**写（CDN `<base>/assets/…?v=<hash>`、本机 `/_v/<artTag>/…`），不要照抄"`~<hash>` 是唯一形态"。
 

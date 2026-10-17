@@ -1,5 +1,5 @@
-// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
-// test/skins-diy.test.js — 自选编队 × 皮肤 (docs/SKINS.md): the picks of the 自选 slots can wear skins too, and
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in custom_docs/SKINS.md.
+// test/skins-diy.test.js — 自选编队 × 皮肤 (custom_docs/SKINS.md): the picks of the 自选 slots can wear skins too, and
 // the choices travel with the exports.
 //
 // Three halves:

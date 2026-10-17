@@ -1,5 +1,5 @@
-// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
-// 干员皮肤 (docs/SKINS.md) on the wire: `room.skins { skins }`.
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in custom_docs/SKINS.md.
+// 干员皮肤 (custom_docs/SKINS.md) on the wire: `room.skins { skins }`.
 //
 // The shape check is the only gate on the message itself, so it has to be right in both directions: it must
 // accept the real skin ids (which carry `@` and `#`, so the generic `isId` would reject them) and it must reject

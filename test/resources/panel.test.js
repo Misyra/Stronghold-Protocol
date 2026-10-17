@@ -115,7 +115,7 @@ describe('where the preload is reachable', () => {
 });
 
 /**
- * 干员皮肤 / 官方特效 in the manager (docs/SKINS.md, docs/design/vfx-format.md): 预载范围 is one row above the counters
+ * 干员皮肤 / 官方特效 in the manager (custom_docs/SKINS.md, docs/design/vfx-format.md): 预载范围 is one row above the counters
  * holding three boxes — 额外资源, 皮肤 and 特效, 默认全预载 — while the outfit choice itself still lives in 干员调配, where
  * equipping starts its download.
  */

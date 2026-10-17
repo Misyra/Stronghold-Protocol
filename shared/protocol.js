@@ -72,7 +72,7 @@ export function isBattleResult(v) {
     && optional((x) => isInt(x, 0, 1e9))(v.errors) && optional((x) => isNum(x, 0, BIG))(v.bossHpLeft);
 }
 
-// ---- 干员皮肤 (docs/SKINS.md): room.skins { skins } -----------------------------------------------------------
+// ---- 干员皮肤 (custom_docs/SKINS.md): room.skins { skins } -----------------------------------------------------------
 
 /**
  * `room.skins { skins }`: `skins` = `{ [baseChessId]: skinId }` — which installed skin each operator wears. The ids
@@ -455,9 +455,9 @@ export const C2S = {
   // operator loadout (DESIGN §16): stored per session/seat; accepted until the match leaves INFO_CHECK — `ops` (0.2.2):
   // the per-operator 潜能 / 练度 (absent = none set: every operator at 潜能 6, 精英2 Lv.60)
   'room.loadout': { entries: isLoadoutEntries, ops: isLoadoutOps, $optional: ['ops'] },
-  // 干员皮肤 (docs/SKINS.md): public, so it is accepted in any room phase — no need to freeze it at INFO_CHECK
+  // 干员皮肤 (custom_docs/SKINS.md): public, so it is accepted in any room phase — no need to freeze it at INFO_CHECK
   'room.skins': { skins: isSkinSelection },
-  // install one skin's files on this server, on demand (docs/SKINS.md). The server answers at once and reports the
+  // install one skin's files on this server, on demand (custom_docs/SKINS.md). The server answers at once and reports the
   // outcome later, as `skins.changed` — an install is tens of seconds and the client gives up after 8 (net.js).
   'room.skin.install': { skinId: isSkinId },
   // operator ownership (干员持有, 0.2.0 补位): stored per session / seat; a match takes the list its seat had when it

@@ -1,4 +1,4 @@
-// tools/persist-sim.mjs — local simulation for the persistence pipeline (docs/operations/PERSISTENCE.md).
+// tools/persist-sim.mjs — local simulation for the persistence pipeline (custom_docs/operations/PERSISTENCE.md).
 //
 // Phase A "multi-user hard kill": boots a real server in a child process, connects real WebSocket clients (four in a
 // co-op room, one solo), drives the matches into a checkpointable PREP with purchases, flushes, SIGKILLs the child,

@@ -56,7 +56,7 @@ export const RESOURCE_GROUPS = Object.freeze({
   sfx: { name: N_('音效'), tier: TIER_REST },
   music: { name: N_('背景音乐'), tier: TIER_REST },
   other: { name: N_('玩法说明与其他资源'), tier: TIER_REST },
-  // 干员皮肤 is optional like the rest, but it is the one group the player picks item by item (docs/SKINS.md):
+  // 干员皮肤 is optional like the rest, but it is the one group the player picks item by item (custom_docs/SKINS.md):
   // the manifest marks those entries with `skin`, and the store keeps only the chosen skins in its selection.
   skin: { name: N_('干员皮肤'), tier: TIER_REST },
   // 官方特效 (`data/local-fx.json`, docs/design/vfx-format.md) is the second group with a preload switch of its own:

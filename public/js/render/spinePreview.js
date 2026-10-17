@@ -1,5 +1,5 @@
-// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
-// public/js/render/spinePreview.js — 干员小人预览 (docs/SKINS.md).
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in custom_docs/SKINS.md.
+// public/js/render/spinePreview.js — 干员小人预览 (custom_docs/SKINS.md).
 //
 // Two things live here, both for the 皮肤 section's preview frame (ui/skinPicker.js):
 //
@@ -107,7 +107,7 @@ async function pump() {
         const url = await renderOne(job.assetId, job.skinId);
         cache.set(job.key, { status: 'ready', url });
       } catch {
-        // deliberately silent: a model missing upstream is a known case (2 of the 174 skins, docs/SKINS.md) and the
+        // deliberately silent: a model missing upstream is a known case (2 of the 174 skins, custom_docs/SKINS.md) and the
         // frame falls back to the avatar, so a console warning per miss would only be noise
         cache.set(job.key, { status: 'failed', url: null });
       }

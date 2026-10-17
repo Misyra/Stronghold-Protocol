@@ -1,7 +1,7 @@
 # Windows 便携包（零安装方案）
 
 本文说明怎么打一份「目标机器什么都不用装」的 Windows 便携包，包里放了什么、没放什么，以及发出去之前要确认的授权。
-普通 Windows 安装、自启和更新见 [HOME_SERVER.md](operations/HOME_SERVER.md)；本文专讲制作自带 Node 的便携包。
+普通 Windows 安装、自启和更新见 [HOME_SERVER.md](../custom_docs/operations/HOME_SERVER.md)；本文专讲制作自带 Node 的便携包。
 
 相关代码：`scripts/make-windows-bundle.mjs`（打包）、`scripts/launch.mjs`（准备 + 起服务器 + 打开浏览器）。
 
@@ -110,7 +110,7 @@ Linux 上是这一档）→ Windows 自带的 `Expand-Archive`。
 | 提示找不到 node | 便携包应含 `node\node.exe`；没有就用 `--no-node` 的包，并自行安装 Node 22/24 LTS |
 | 端口被占用 | 关掉占用 3000 的程序（`node tools/doctor.mjs` 会指出是谁），或在启动命令后加 `--port 3001` |
 | 浏览器没自动打开 | 手动访问 `http://127.0.0.1:<端口>`；`--no-open` / `SP_NO_BROWSER=1` 会禁用自动打开 |
-| 朋友连不上 | 防火墙专用网络未放行、或不在同一网段；用 `node tools/doctor.mjs` 诊断（源仓库里见 [DEPLOY.md](operations/DEPLOY.md) 的防火墙一节） |
+| 朋友连不上 | 防火墙专用网络未放行、或不在同一网段；用 `node tools/doctor.mjs` 诊断（源仓库里见 [DEPLOY.md](../custom_docs/operations/DEPLOY.md) 的防火墙一节） |
 | 进游戏时弹出「下载文件信息」 | 那是 IDM / 迅雷这类下载管理器在嗅探音频地址，不是游戏在下载。新版本已经改走不带扩展名的 `/media/…` 路由（见 [PR #28](https://github.com/sganggs/Stronghold-Protocol/pull/28)），**应该不会再弹**；如果还弹，把弹出的地址贴到 Issue，或在下载器里加例外（如 `http://127.0.0.1:3000/*`）、玩游戏时先退出它 |
 | 首次进游戏很慢 | 每位玩家要下载几十 MB 素材（本机开服时是本机读盘），之后走浏览器缓存 |
 | 在 Linux 上打包报解压失败 | GNU tar 不认 zip：装一个 `unzip`（或在文档允许的范围内改用 macOS / Windows 打包） |
@@ -123,4 +123,4 @@ Linux 上是这一档）→ Windows 自带的 `Expand-Archive`。
   （`.env`、`.claude/`、`scripts/service.env.cmd` 等）不会进包。
 * 游戏不写注册表、不装服务；`启动游戏.bat` 内容只有几行（切到 UTF-8 代码页 → 找 `node\node.exe` →
   跑 `app\scripts\launch.mjs --no-setup`）。
-* 想做成随开机启动的 Windows 服务，用仓库自带的 `scripts/install-service-windows.ps1`（面向整合包/源码部署，见 [DEPLOY.md](operations/DEPLOY.md)）。
+* 想做成随开机启动的 Windows 服务，用仓库自带的 `scripts/install-service-windows.ps1`（面向整合包/源码部署，见 [DEPLOY.md](../custom_docs/operations/DEPLOY.md)）。

@@ -655,7 +655,7 @@ test('versioned media routes resolve cached audio and preserve range responses',
 });
 
 /**
- * 干员皮肤 in the preload selection (docs/SKINS.md): a full install is ~328 MiB, so it has a box of its own in the
+ * 干员皮肤 in the preload selection (custom_docs/SKINS.md): a full install is ~328 MiB, so it has a box of its own in the
  * optional tier's header — 默认全预载, and the outfits equipped in 干员调配 decide which of them are cached.
  */
 describe('干员皮肤 selection', () => {

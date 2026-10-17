@@ -4,6 +4,8 @@
 
 美术（图片 / Spine / 音频 / 字体）可以放到 Cloudflare R2，由绑定的自定义域名经边缘缓存对外服务，游戏服务器不再承担素材的出网带宽与磁盘读。服务器设置一个环境变量即可启用；代码、游戏数据、API 与 WebSocket 仍由游戏服务器直出，`/js/`、`/vendor/`、`/data/`、`/api/`、`/ws` 不上 R2，`public/dev/` 不上传。
 
+**CDN 素材不设置请求次数或下载文件总数限制。** 游戏源站的静态 `limit_req` / 业务封禁预算不应用到 `assets.misyra.com`，也不在浏览器按 CDN 下载次数累计封禁。浏览器为带宽、内存与失败退避保留的下载并发预算不等于次数限制。未启用 CDN 时由游戏主机实际发出的素材，仍执行源站的静态额度。
+
 ## 1. 一次性准备（Wrangler）
 
 管理操作全部可用 Wrangler CLI 完成（上传走 [S3 兼容 API](https://developers.cloudflare.com/r2/api/s3/api/) 的批量脚本，见下）：

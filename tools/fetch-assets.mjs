@@ -312,7 +312,7 @@ function tidyManifest(m) {
   }
   for (const c of Object.values(m.chars || {})) {
     if (c.spine && !Object.keys(c.spine).length) delete c.spine;
-    // 干员皮肤 (docs/SKINS.md): a skin whose Front model failed to download has no usable spine — drop it entirely,
+    // 干员皮肤 (custom_docs/SKINS.md): a skin whose Front model failed to download has no usable spine — drop it entirely,
     // and drop the whole `skins` object when nothing is left (resolveTemplate already dropped its file leaves).
     if (c.skins) {
       for (const [skinId, s] of Object.entries(c.skins)) if (!s.spine) delete c.skins[skinId];
@@ -355,7 +355,7 @@ function countStats(m, bytes, files) {
     tokens: Object.keys(m.tokens || {}).length,
     tokensWithSpine: vals(m.tokens).filter((t) => t.spine).length,
     spineModels: spines.size,
-    // 干员皮肤 (docs/SKINS.md): how many are actually installed, and on how many operators
+    // 干员皮肤 (custom_docs/SKINS.md): how many are actually installed, and on how many operators
     skins: vals(m.chars).reduce((n, c) => n + vals(c.skins).length, 0),
     charsWithSkins: vals(m.chars).filter((c) => c.skins).length,
     bonds: Object.keys(m.bonds || {}).length,
@@ -428,10 +428,10 @@ async function main() {
     readJson('docs/research/03-operators.json'),
     readJson('docs/research/05-enemies.json'),
     readJson('docs/research/05-maps.json'),
-    // 干员皮肤 (docs/SKINS.md). Optional: without the file the manifest simply carries no skins.
+    // 干员皮肤 (custom_docs/SKINS.md). Optional: without the file the manifest simply carries no skins.
     readJson('docs/research/08-skins.json').catch(() => null),
   ]);
-  // Which of them to build. Empty by default (docs/SKINS.md): tools/install-skins.mjs adds ids here when a player
+  // Which of them to build. Empty by default (custom_docs/SKINS.md): tools/install-skins.mjs adds ids here when a player
   // installs one, so a normal `npm run assets` never pulls the whole ~190 MB set.
   const installedSkins = await readJson('data/skins-installed.json').catch(() => null);
   const skinsInstalled = new Set(Array.isArray(installedSkins?.installed) ? installedSkins.installed : []);

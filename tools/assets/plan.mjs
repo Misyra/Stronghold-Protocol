@@ -210,7 +210,7 @@ function skelStem(urlOrName) {
 /**
  * The `plan.models` definition for one fexli source record (skel + atlas + page PNGs, all under `dir`).
  *
- * Exported because tools/install-skins.mjs (干员皮肤, docs/SKINS.md) builds a skin model exactly the way the full plan
+ * Exported because tools/install-skins.mjs (干员皮肤, custom_docs/SKINS.md) builds a skin model exactly the way the full plan
  * does — if the two ever drifted, an installed skin would download a different file set than a rebuilt manifest
  * expects. @param {string} key unique model key @param {string} kind 'op'|'enemy'|'token' @param {string} dir local
  * directory under public/assets (trailing slash) @param {{skel?:any, atlas?:any, png?:any}} rec research record
@@ -234,7 +234,7 @@ export function fexliModelDef(key, kind, dir, rec, skillIndices) {
 }
 
 /**
- * The tall 立绘 of a skin (干员皮肤, docs/SKINS.md), derived from its 180×180 avatar URL: the same file name in the
+ * The tall 立绘 of a skin (干员皮肤, custom_docs/SKINS.md), derived from its 180×180 avatar URL: the same file name in the
  * source's `portrait/` folder (`…/avatar/char_x_kitchen#2.png` → `…/portrait/char_x_kitchen#2.png`). The shop card
  * shows this one — its frame is the 180×360 portrait, not the square avatar. Exported so tools/install-skins.mjs
  * derives exactly the same URL as a full plan run.
@@ -390,7 +390,7 @@ export function collectEnemyIds({ assets07, enemies05, maps05, ops03 }) {
  */
 export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsData, charword = null, voiceLang = 'cn',
   voiceJp = true, voiceSlots = VOICE_BATTLE_SLOTS, optionalVoice = false,
-  // 干员皮肤 (docs/SKINS.md): the operator skin catalogue, and which of them this install actually has
+  // 干员皮肤 (custom_docs/SKINS.md): the operator skin catalogue, and which of them this install actually has
   // (data/skins-installed.json). Only these are planned, so the manifest never points at a skin whose files were
   // never fetched; absent / null = none installed (the default).
   skins08 = null, skinsInstalled = null,
@@ -435,7 +435,7 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
     const back = fexliModel(`op:${id}:back`, 'op', `spine/op/${id}/back/`, o.battleSpine?.back, idx);
     if (back) c.spine.back = back;
     chars[id] = c;
-    // 干员皮肤 (docs/SKINS.md): per operator, keyed by the official skinId — a Front/Back Spine pair plus the 180×180
+    // 干员皮肤 (custom_docs/SKINS.md): per operator, keyed by the official skinId — a Front/Back Spine pair plus the 180×180
     // avatar. Every skin model is registered in `models` on purpose: tools/assets/spine.mjs resolves its animation
     // roles offline there (resolveRoles) and the client's validSpine() requires `anims`. A skin model that skipped
     // that step would fail to load and silently leave the unit on its placeholder avatar — a failure invisible
@@ -444,7 +444,7 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
     if (skinList?.length) {
       const skins = {};
       for (const sk of skinList) {
-        // 默认不装皮肤 (docs/SKINS.md): only what data/skins-installed.json lists is built, so a fresh install
+        // 默认不装皮肤 (custom_docs/SKINS.md): only what data/skins-installed.json lists is built, so a fresh install
         // downloads no skins at all (~1.1 MB each, ~190 MB for the whole set). The rest stay available in
         // docs/research/08-skins.json and tools/install-skins.mjs installs them on demand. `null` means "none".
         if (!skinsInstalled || !skinsInstalled.has(sk.skinId)) continue;

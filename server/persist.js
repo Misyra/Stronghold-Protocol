@@ -1,5 +1,5 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (20524bb), GPL-3.0-or-later.
-// server/persist.js — server state/checkpoints; storage backends live in server/stateFile.js (docs/operations/PERSISTENCE.md).
+// server/persist.js — server state/checkpoints; storage backends live in server/stateFile.js (custom_docs/operations/PERSISTENCE.md).
 //
 // WHAT SURVIVES A RESTART
 //   * Sessions — playerId, secret token, nickname, operator loadout, the room they are in and their reconnect window.

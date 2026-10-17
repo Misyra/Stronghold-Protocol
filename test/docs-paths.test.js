@@ -1,3 +1,4 @@
+// Docs live in two trees: docs/ is upstream's, custom_docs/ is this fork's (see docs/README.md).
 // The newcomer docs name only paths that exist: every repository path in docs/ARCHITECTURE.md and CONTRIBUTING.md
 // (inline code, the diagrams and commands in fenced blocks) and every relative Markdown link. A path with a
 // placeholder (`<codename>`, `{a,b}`) or a glob (`*`) is checked up to its last fixed directory; a path ending in `/`
@@ -18,7 +19,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 /** Each document with the least number of paths it names (a guard against an extraction that finds nothing). */
 const DOCS = [['docs/ARCHITECTURE.md', 100], ['CONTRIBUTING.md', 15], ['docs/README.md', 0]];
 /** A repository path starts with one of these top-level directories … */
-const TOP = /^(?:server|shared|public|data|tools|test|docs|types|scripts|\.github)\//;
+const TOP = /^(?:server|shared|public|data|tools|test|docs|custom_docs|types|scripts|\.github)\//;
 /** … or is one of these root files (README.md is left out: a bare `README.md` often means a folder's own). */
 const ROOT_FILES = new Set(['package.json', 'eslint.config.js', 'jsconfig.json', 'CHANGELOG.md', 'CONTRIBUTING.md']);
 /** Git-ignored or made at install time. */
@@ -80,6 +81,34 @@ for (const [docPath, least] of DOCS) {
     assert.deepEqual(bad, [], `broken links in ${docPath}`);
   });
 }
+
+/**
+ * Markdown with fenced blocks and inline code taken out: a doc may quote link syntax as an example
+ * (custom_docs/development/MERGE_0.3.0.md quotes DESIGN.md's index row), and that is not a link.
+ */
+const proseOf = (md) => md.replace(/^```[\s\S]*?^```/gm, '').replace(/`[^`\n]*`/g, '');
+
+/** Every .md under a directory tree, as posix paths from the root. */
+const markdownFiles = (dir) => readdirSync(join(ROOT, dir), { recursive: true }).map((p) => `${dir}/${String(p).split('\\').join('/')}`.replace(/\/+/g, '/'))
+  .filter((p) => p.endsWith('.md'));
+
+test('docs/ and custom_docs/: every relative Markdown link resolves', () => {
+  const bad = [];
+  for (const dir of ['docs', 'custom_docs']) {
+    for (const file of markdownFiles(dir)) {
+      const md = readFileSync(join(ROOT, file), 'utf8');
+      for (const m of proseOf(md).matchAll(/\]\(([^)\s]+)\)/g)) {
+        const target = m[1];
+        if (/^(?:[a-z][a-z0-9+.-]*:|#|\/)/i.test(target)) continue;
+        const raw = target.replace(/#.*$/, '');
+        if (!raw || /[<>{}*]/.test(raw)) continue;
+        const resolved = normalize(join(dirname(file), raw));
+        if (!existsSync(join(ROOT, resolved))) bad.push(`${file} → ${target}`);
+      }
+    }
+  }
+  assert.deepEqual(bad, [], 'a relative link points at nothing');
+});
 
 test('the path extraction: placeholders, globs, directories and the exemptions', () => {
   const md = 'a `server/sim/content/kits/ops/op-<codename>.js` b `data/*.json` c `node tools/golden.mjs --update`\n'

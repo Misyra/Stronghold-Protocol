@@ -581,7 +581,7 @@ The title screen and settings open one resource manager. Preloading is off by de
 background preloading only when the saved `preload` setting is enabled, and a saved pause survives page reloads.
 It downloads required
 visuals (maps, portraits, Spine models, UI, icons and fonts). Four cards place choices beside their cache progress:
-必备资源, 干员语音 (`preloadVoices`), 干员皮肤 (`preloadSkins`, docs/SKINS.md), and 额外特效 (`preloadFx`,
+必备资源, 干员语音 (`preloadVoices`), 干员皮肤 (`preloadSkins`, custom_docs/SKINS.md), and 额外特效 (`preloadFx`,
 docs/design/vfx-format.md). The required card's expandable details also expose 音效、音乐与玩法说明 (`preloadOptional`).
 Voices and other audio now have independent switches; older profiles inherit `preloadVoices` from their saved
 `preloadOptional` value. Skins and effects are only shown when the server provides them. Defaults are unchanged,
@@ -608,7 +608,7 @@ so later page visits stay paused until it is enabled again. When the setting is
 enabled, the next page visit resumes automatically and reuses verified files. Cache clearing waits
 for active downloads and archive transfers, and uses the same cross-tab Web Lock as downloads.
 
-干员皮肤 (`docs/SKINS.md`) is the first of two optional groups that keep a switch of their own rather than a place in
+干员皮肤 (`custom_docs/SKINS.md`) is the first of two optional groups that keep a switch of their own rather than a place in
 额外资源. A full
 install is ~328 MiB across ~2 000 files, so the resource manifest marks those entries `skin: '<charId>/<skinId>'`
 (`server/resources.js` `skinKeyForPath`, tier 2) and the client keeps only the equipped skins in its selection
@@ -756,7 +756,7 @@ keeps only advising.
 The implementation is adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later, resource manager commit
 `234dc52b`, v2 ZIP optimization `5d8e91e`, and subsequent resource updates). This fork retains streaming download limits, strict content verification,
 versioned CDN cache reuse and pause/resume hardening. Resources alone do not provide offline gameplay.
-See [CDN.md](operations/CDN.md) for deployment and cache behavior.
+See [CDN.md](../custom_docs/operations/CDN.md) for deployment and cache behavior.
 ## Manifest URLs and cache busting (this fork)
 
 `data/assets.json` in git (and as `tools/fetch-assets.mjs` writes it), `data/local-assets.json` (as
@@ -770,7 +770,7 @@ manifest every page loads stays small; DESIGN §33.1) hold plain URLs. How they 
   start over the same trees the asset tools rewrite in place). A restart, a re-extraction or a Docker rebuild with
   unchanged bytes keeps the tag, so the browser reuses its year-long cache; changing any art file moves the tag and the
   art is fetched again. The two manifests themselves are served `no-cache`.
-- **CDN install** (`SP_ASSETS_CDN`, [CDN.md](operations/CDN.md)). The client takes each file's own hash from
+- **CDN install** (`SP_ASSETS_CDN`, [CDN.md](../custom_docs/operations/CDN.md)). The client takes each file's own hash from
   `/assets-manifest.json?v=<tag>` (the committed `.assets-manifest.json`, written by `tools/r2-sync.mjs`) and asks the
   CDN for `<base>/assets/…?v=<file hash>` (`shared/assetCdn.js`), so a release re-busts only the files it changed.
 - A Spine model keeps its `{ skel, atlas, textures }` folder together (hash of the model's files, `tools/r2-sync.mjs`
@@ -778,7 +778,7 @@ manifest every page loads stays small; DESIGN §33.1) hold plain URLs. How they 
   page's URL must stay in its atlas's folder.
 - Upstream's **content-hash path segment** (`/assets/~<hash>/…`: a background index in `server/http/assetIndex.js` and
   `assetViews.js`, added in 0.2.6 and kept in 0.3.0) is deliberately **not** served here: `?v=<file hash>` (CDN) and
-  `/_v/<tag>/` (local) are this fork's two forms. See [MERGE_0.2.6.md](development/MERGE_0.2.6.md) and [MERGE_0.3.0.md](development/MERGE_0.3.0.md)
+  `/_v/<tag>/` (local) are this fork's two forms. See [MERGE_0.2.6.md](../custom_docs/development/MERGE_0.2.6.md) and [MERGE_0.3.0.md](../custom_docs/development/MERGE_0.3.0.md)
   for the reason, and for what a future per-file improvement for local installs would have to do (strip `/_v/` first, then the segment; gate the manifest views on `!cdn.base`).
 - **Cosmetic plugins** (0.3.0, [PLUGINS.md](PLUGINS.md) §9, DESIGN §32) use neither form: a room whose host switched them
   on draws with the served `data/assets.json` above and the room's visual set over it, composed by the page itself

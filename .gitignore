@@ -16,7 +16,7 @@ public/assets/*
 /public/assets/local/scene/
 public/fonts/
 # tools/local-extract/extract.py → public/assets/local/** and this per-machine manifest
-# (optional: the client and the tests work without it; docs/operations/DEPLOY.md §6 lists what falls back)
+# (optional: the client and the tests work without it; custom_docs/operations/DEPLOY.md §6 lists what falls back)
 # Battlefield scenes (0.2.5): extracted files live under public/assets/local/scene/ (re-ignored just above).
 # Downloaded bundles live in .cache/official-scenes/ (already ignored by .cache/ below).
 # This fork tracks the extracted files and the manifest in Git (README 本分支差异): data/local-assets.json is a tracked file here, not an ignored one.
@@ -78,7 +78,7 @@ docs/dev/
 
 # Local development suite artifacts and drafts --------------------------------------------------
 /.playwright-mcp/
-/docs/operations/NGINX-RELIEF.md
+/custom_docs/operations/NGINX-RELIEF.md
 /sp-nginx-optimization-plan.md
 /stronghold-resources-9fea2761d427.zip
 /test/build-size.test.js

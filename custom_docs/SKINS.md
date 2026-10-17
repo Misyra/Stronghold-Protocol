@@ -287,14 +287,14 @@ before it — none of them is a preference.
 | `public/css/screens/loadout.css` | the section's font sizes are `max(calc(N * var(--utility-text, var(--t))), Mpx)` | this fork's compact-layer text contract (`test/ui/utility-mobile.test.js`); upstream's rules read `--t` alone |
 | `server/match/snapshot.js` | `skins` is classified in `PLAYER_FIELDS` (persisted), not with the transient fields | `test/match/snapshot.test.js` requires every new Match / PlayerState field to declare a persistence policy, and a transient `skins` would drop the choice on every restore |
 | `public/js/ui/skinPicker.js` | the two `<img>` templates take `crossorigin="anonymous"` before `src` + `recoverImageError` | this fork's DOM image rule (`test/ui/image-policy.test.js`); the frame keeps ONE constant child shape, or Preact re-diffs the box and takes the live canvas with it |
-| `tools/README.md`, `tools/package.mjs` | both new tools listed in the tools README; `docs/SKINS.md` in `PLAYER_DOCS`, `docs/research/08-skins.json` in `RUNTIME_RESEARCH` | this fork ships its docs under `docs/guides/` + `docs/operations/` and has no `docs/DEPLOY.md` (upstream's lists name it) |
+| `tools/README.md`, `tools/package.mjs` | both new tools listed in the tools README; `custom_docs/SKINS.md` in `PLAYER_DOCS`, `docs/research/08-skins.json` in `RUNTIME_RESEARCH` | this fork ships its docs under `custom_docs/guides/` + `custom_docs/operations/` and has no `docs/DEPLOY.md` (upstream's lists name it) |
 | `public/i18n/{ja,ko,zh-TW}.json` | the 35 new msgids translated | this fork ships four language packs and the three non-English ones declare themselves complete |
 | `test/skins-lifecycle.test.js` | the lobby fixture builds a real `SessionRegistry` | this fork's lobby calls `registry.byId()` and the room limiter reads `session.limitKey`, so upstream's `{ byId: new Map() }` stub throws |
 | `test/ui/skins.e2e.test.js` | dismisses the 全屏游玩 prompt, and opens 干员调配 only while the overlay is closed | a fork-only entry overlay sits above the lobby and swallows the first physical click; the entry button is hidden while the overlay is open |
 
 Data side: `data/skins-installed.json` is the list of installed outfits and the build's single source of truth.
 **This fork's checkout ships the full set** — 273 outfits over 174 operators, with the regenerated `data/assets.json`
-carrying every `chars[charId].skins[skinId]` entry and the art published to R2 (`docs/operations/CDN.md`), so a
+carrying every `chars[charId].skins[skinId]` entry and the art published to R2 (`custom_docs/operations/CDN.md`), so a
 deployment that pulls this repository has the outfits and their models/立绘 available without running the installer.
 A deployment that wants a smaller set still is one command: `node tools/install-skins.mjs add <skinId…>` /
 `add-char <charId…>` / `remove <skinId…>`, then `npm run assets` and commit the two files.

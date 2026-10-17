@@ -43,7 +43,7 @@ function scanBudget() {
 
 /**
  * The 干员皮肤 selection: the `charId/skinId` keys the player has equipped in this browser. An empty set means no skin
- * is preloaded, which is the default (a full install is ~328 MiB, docs/SKINS.md). Accepts a list, a Set, `{ keys }` or
+ * is preloaded, which is the default (a full install is ~328 MiB, custom_docs/SKINS.md). Accepts a list, a Set, `{ keys }` or
  * `'off'`/null; anything that is not a skin key is dropped, so a hand-edited settings blob cannot widen the selection.
  * @param {Iterable<string>|{ keys?: Iterable<string> }|'off'|null} [raw]
  * @returns {Set<string>}
@@ -58,7 +58,7 @@ export function normalizeSkinKeys(raw = null) {
 /**
  * The 干员皮肤 scope: the equipped keys to follow, or every outfit the manifest offers (`all`). A full install is
  * ~328 MiB, so 全部皮肤 is always an explicit choice (设置 ▸ 预载资源 ▸ 全部皮肤): it never rides 额外资源,
- * and an install without skins has nothing for it to widen (docs/SKINS.md).
+ * and an install without skins has nothing for it to widen (custom_docs/SKINS.md).
  * @param {Iterable<string>|{ keys?: Iterable<string>, all?: boolean }|'all'|'off'|null} [raw]
  * @returns {{ keys: Set<string>, all: boolean }}
  */
@@ -132,7 +132,7 @@ export class ResourceStore {
     /** @type {boolean} whether the optional (tier 2) set is part of the selection at all. */
     this.optional = true;
     this.voices = true;
-    /** @type {Set<string>} the 干员皮肤 (`charId/skinId`) this browser has equipped (docs/SKINS.md). */
+    /** @type {Set<string>} the 干员皮肤 (`charId/skinId`) this browser has equipped (custom_docs/SKINS.md). */
     this.skins = normalizeSkinKeys('off');
     /** @type {boolean} 全部皮肤: want every outfit the manifest offers, whatever 干员调配 has equipped. */
     this.allSkins = false;

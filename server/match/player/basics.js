@@ -112,7 +112,7 @@ export class PlayerBasics {
   }
 
   /**
-   * 干员皮肤 (docs/SKINS.md): replace this player's skin choices. `{ [chessId]: skinId }`; the ids come from
+   * 干员皮肤 (custom_docs/SKINS.md): replace this player's skin choices. `{ [chessId]: skinId }`; the ids come from
    * data/skins.json on the client. Validation is deliberately light — an unknown or mismatched skinId cannot do
    * anything but fall back to the operator's default model in spineEntry() — so only the shape and the chess id are
    * checked here, and a malformed entry is dropped rather than rejecting the whole selection.

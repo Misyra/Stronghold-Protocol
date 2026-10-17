@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# 卫戍协议：盟约 · production image (server + static client). Docs: docs/operations/DEPLOY.md「Docker」.
+# 卫戍协议：盟约 · production image (server + static client). Docs: custom_docs/operations/DEPLOY.md「Docker」.
 #
 # Code: GPL-3.0-or-later (LICENSE). Game art/audio is © Hypergryph / Yostar, not covered by the GPL, non-commercial use
 # only (NOTICE.md). This fork includes local-client art; two ways to add the remaining downloaded art:
@@ -12,7 +12,7 @@
 #      (public/fonts, data/assets.json, data/local-assets.json and data/local-fx.json are copied from the build context when present)
 # Without any art the game still runs with placeholder visuals.
 #
-# Run:  see docs/operations/DEPLOY.md for CDN, probe announcement directory and persistent state mounts.
+# Run:  see custom_docs/operations/DEPLOY.md for CDN, probe announcement directory and persistent state mounts.
 # Env:  PORT (3000), HOST (0.0.0.0), SP_COMBAT (client|server), SP_VERIFY (off|sample|all), TRUST_PROXY (auto|1|0), DEBUG
 #       SP_GEOLITE_COUNTRY_DB (geoip/GeoLite2-Country.mmdb), SP_GEOIP_MODE (country) — optional GeoIP limits
 

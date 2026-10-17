@@ -57,7 +57,7 @@ server/
   assetVersion.js          the release namespace: /_v/<artTag|runtimeTag>/… (SHA-256 over the art / code trees), validated per request (a
                            changed byte behind a validated path answers 503); the served manifests and HTML/CSS/JSON carry its URLs
   ../shared/assetCdn.js     when SP_ASSETS_CDN is set: art/model/audio URLs become <base>/assets/…?v=<file hash> (per-file cache busting;
-                           the API and /ws never leave the game host) — docs/operations/CDN.md
+                           the API and /ws never leave the game host) — custom_docs/operations/CDN.md
   net.js                   session registry, send helpers, per-connection rate limit, message validation (uses shared/protocol.js)
   lobby.js                 rooms (4-letter codes), seats, host, AI seats, ready/start, reconnect tokens, room→Match wiring
   data.js                  loads data/*.json once, builds indexes (getChess, getBond, …); frozen objects

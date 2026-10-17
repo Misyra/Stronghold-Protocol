@@ -21,7 +21,7 @@ npm run dev        # 启动服务器（node --watch，改了服务器代码自�
 
 只跑和改动相关的测试，提交 PR 前再跑一次全部：
 
-本分支使用 `npm test -- <文件>` 或 `node --import ./test/helpers/test-setup.js --test <文件>` 运行定向测试。测试预加载器固定源码客户端，并提供独立的测试词库；不会因为本机残留 `public/build` 而切换到旧生产包。`clientBuild: true` 的生产包用例仍可显式覆盖。常用入口与隔离规则见 [本分支测试流程](docs/development/TEST_WORKFLOW.md)。
+本分支使用 `npm test -- <文件>` 或 `node --import ./test/helpers/test-setup.js --test <文件>` 运行定向测试。测试预加载器固定源码客户端，并提供独立的测试词库；不会因为本机残留 `public/build` 而切换到旧生产包。`clientBuild: true` 的生产包用例仍可显式覆盖。常用入口与隔离规则见 [本分支测试流程](custom_docs/development/TEST_WORKFLOW.md)。
 
 ```bash
 npm test -- test/content/op_siege.test.js                        # 一个文件

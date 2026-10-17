@@ -1,5 +1,5 @@
-// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in docs/SKINS.md.
-// Browser E2E for 干员皮肤 (docs/SKINS.md) in headless Chrome. Opt-in, like the other E2E files.
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in custom_docs/SKINS.md.
+// Browser E2E for 干员皮肤 (custom_docs/SKINS.md) in headless Chrome. Opt-in, like the other E2E files.
 //
 //   SP_E2E=1 node --test test/ui/skins.e2e.test.js
 //
@@ -249,7 +249,7 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
     assert.match(hints.join(' '), /点击安装/, 'an uninstalled tile says how to get it');
   });
 
-  // 干员小人预览 (docs/SKINS.md): the 战斗模型 tiles are TEXT ONLY and the model itself is rendered by
+  // 干员小人预览 (custom_docs/SKINS.md): the 战斗模型 tiles are TEXT ONLY and the model itself is rendered by
   // render/spinePreview.js into the preview box under them; the 商店立绘 group (now first) offers the operator's own
   // 原始 / 精英二 立绘 next to each skin's. This is the only place the real rasterisation runs — it needs pixi, a
   // WebGL context and the model files — so it is also the test that catches a pixi/pixi-spine API drift.

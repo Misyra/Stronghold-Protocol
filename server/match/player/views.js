@@ -27,7 +27,7 @@ export class PlayerViews {
 
   pieceView(p, rc = null) {
     const rec = p.kind === 'item' ? this.gd.item(p.id) : p.kind === 'token' ? this.gd.token(p.id) : this.gd.chess(p.id);
-    // 干员皮肤 (docs/SKINS.md): the prep board / hand / temp views carry the skin too, so a piece shows it before it
+    // 干员皮肤 (custom_docs/SKINS.md): the prep board / hand / temp views carry the skin too, so a piece shows it before it
     // is deployed; baseId again, for a golden piece (setSkins keeps base ids only)
     const baseId = (rec && rec.baseId) || p.id;
     const skin = p.kind === 'chess' ? (this.skins[baseId] || this.skins[p.id] || null) : null;

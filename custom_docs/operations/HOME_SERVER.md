@@ -16,7 +16,7 @@
    装完**关闭并重新打开**终端，`node -v` 应显示 v22 或更高（winget 的 LTS 目前是 v24.x，同样可用）。没有 winget 时从 <https://nodejs.org/zh-cn/download> 和 <https://git-scm.com/download/win> 下载安装。
 2. 下载，三选一。建议放在一个固定、短、**不在 OneDrive 同步范围内**的目录，例如 `C:\Stronghold-Protocol`：
    - **完整包（推荐）**：在仓库的 [Releases](https://github.com/sganggs/Stronghold-Protocol/releases) 页面下载最新版本的 `Stronghold-Protocol-v<版本>.zip`（约 560 MB，解压后约 790 MB；已含运行依赖、前端库和全部素材，包括中文、日文两套干员语音和官方 3D 棋盘等本地客户端素材），解压后把里面的 `Stronghold-Protocol` 文件夹放到上述位置。不需要 Git，首次启动也不用再下载素材。素材版权归上海鹰角网络 / Yostar，仅限非商业使用，见 [NOTICE.md](../../NOTICE.md)。
-   - **精简包**：同一页面的 `Stronghold-Protocol-v<版本>-lite.zip`（约 22 MB）。代码、运行依赖和前端库与完整包相同，但不带素材：美术、Spine 模型、音频（含两套干员语音）、字体、表情和「玩法说明」教程图在首次启动时由 setup 从公开镜像下载（约 550 MB，显示进度，可中断续传；镜像设置见下面的「国内镜像下载」）。官方 3D 棋盘等本地客户端素材需要用本机客户端提取，或从同一版本的完整包复制（见[素材说明](../ASSETS.md)）。适合下载大文件不方便、或想先下一个小包的情况；放置方式同完整包。
+   - **精简包**：同一页面的 `Stronghold-Protocol-v<版本>-lite.zip`（约 22 MB）。代码、运行依赖和前端库与完整包相同，但不带素材：美术、Spine 模型、音频（含两套干员语音）、字体、表情和「玩法说明」教程图在首次启动时由 setup 从公开镜像下载（约 550 MB，显示进度，可中断续传；镜像设置见下面的「国内镜像下载」）。官方 3D 棋盘等本地客户端素材需要用本机客户端提取，或从同一版本的完整包复制（见[素材说明](../../docs/ASSETS.md)）。适合下载大文件不方便、或想先下一个小包的情况；放置方式同完整包。
    - **源码**：
      ```powershell
      git clone https://github.com/Misyra/Stronghold-Protocol.git C:\Stronghold-Protocol
@@ -137,7 +137,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Re
 
 - **文件夹不是更新包对应的版本**（例如 0.1.x、只解压了一部分、程序文件被改过）：服务器**不启动**，提示「这个更新包只能覆盖在 v0.2.0 … 的整合包安装上（检测到 N 个文件与 v<版本> 不一致或缺失）」并举出几个文件（开机自启的，`-Status` 显示的日志里能看到）。新旧文件混在一起运行，容易出现看起来像游戏 bug 的错误，所以宁可不启动。下载完整包重新安装，或把更新包重新完整解压一遍再启动（`UPDATE.json` 还在，会重新检查；在此之前什么都不删）。
 - 只有说明文档、`scripts\`、`tools\` 里的文件不一致：照常启动，日志里列出是哪些文件。`UPDATE.json` 损坏：跳过并提示，按现有文件启动。
-- **精简包装的也能用**：程序部分与完整包完全相同；更新包带着完整包里改动过的素材，其余素材仍由 setup 补齐。如果更新包带来了新的本地客户端素材清单（`data/local-assets.json`）而这台电脑没有对应的素材，启动时会提示：从同一版本的完整包复制 `public/assets/local/`（见[素材说明](../ASSETS.md)），或运行 `node tools/setup.mjs --local` 提取，不需要时删掉 `data/local-assets.json` 即可。
+- **精简包装的也能用**：程序部分与完整包完全相同；更新包带着完整包里改动过的素材，其余素材仍由 setup 补齐。如果更新包带来了新的本地客户端素材清单（`data/local-assets.json`）而这台电脑没有对应的素材，启动时会提示：从同一版本的完整包复制 `public/assets/local/`（见[素材说明](../../docs/ASSETS.md)），或运行 `node tools/setup.mjs --local` 提取，不需要时删掉 `data/local-assets.json` 即可。
 - 更新包不联网、不会自动更新，和完整包一样从 Releases 手动下载。`npm run doctor` 的「文件校验 MANIFEST.json」一行随时显示全部程序文件是否与这个版本一致（源码目录没有这个文件，不做校验）。
 
 不用更新包也可以：停止服务器，把新版本的整合包解压到新目录后从那里启动（完整包已含素材；装了开机自启的，在新目录重新运行一次 `install-service-windows.ps1`）。用精简包或 GitHub「Download ZIP」源码包的：解压新版本后，把旧目录里的 `public\assets`、`public\fonts`、`.cache` 和 `data\local-assets.json`（若有）复制过去，可避免重新下载（setup 只补下新增的素材）。

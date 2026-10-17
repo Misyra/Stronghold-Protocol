@@ -77,7 +77,7 @@ export function avatarUrl(m, id, opts) {
     if (rec && /_2$/.test(s)) e2 = true;
   }
   if (rec) {
-    // 干员皮肤 (docs/SKINS.md): an installed skin may ship its own avatar; `opts.skin` is a skinId, and an unknown
+    // 干员皮肤 (custom_docs/SKINS.md): an installed skin may ship its own avatar; `opts.skin` is a skinId, and an unknown
     // one (this install does not have it) falls back to the operator's own avatar rather than failing
     if (opts && str(opts.skin)) {
       const skin = get(get(rec, 'skins'), opts.skin);

@@ -210,7 +210,7 @@ export function parseDiyImport(input) {
   const kind = typeof raw.kind === 'string' ? raw.kind : null;
   if (kind && kind !== DIY_EXPORT_KIND) return { ok: false, error: N_('这不是自选编队的数据') };
   if (!isObj(raw.picks)) return { ok: false, error: N_('里面没有自选编队的数据') };
-  // the slot 皮肤 / 商店立绘 choices (docs/SKINS.md), when the file carries them; structural only — the caller
+  // the slot 皮肤 / 商店立绘 choices (custom_docs/SKINS.md), when the file carries them; structural only — the caller
   // applies them for the slots whose pick survived its own sanitising
   const slotMap = (m) => {
     const out = {};

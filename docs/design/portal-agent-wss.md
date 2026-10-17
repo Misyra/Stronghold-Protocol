@@ -585,7 +585,7 @@ WSS 能力不能继续用 `!!writer` 代替全部管理权限。公告写入、�
 | `server/announcement.js` / `server/http/routes.js` | 读到的公告 revision 投影；保持 announcement.id/展示策略 |
 | `public/js/screens/room.js` | enabled/available/提交中/待确认/已登记/到期状态 |
 | `public/i18n/` | 新提示文案全部语言和扫描检查 |
-| `docs/operations/` / `docs/development/CUSTOM_API.md` | 部署、公告、管理/分享 API 和排错说明 |
+| `custom_docs/operations/` / `custom_docs/development/CUSTOM_API.md` | 部署、公告、管理/分享 API 和排错说明 |
 
 游戏本机新增端点建议：
 

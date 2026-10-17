@@ -64,10 +64,10 @@ test('packaged copies of the shipped docs point unshipped relative links at the 
   const version = pkg.version;
   const tag = releaseTag(version);
   const host = 'https://github.com/sganggs/Stronghold-Protocol';
-  // This fork ships docs/PLAYING.md and docs/operations/DEPLOY.md (upstream keeps its own docs/DEPLOY.md).
-  const focus = new Set(['README.md', 'docs/PLAYING.md', 'docs/operations/DEPLOY.md']);
+  // This fork ships docs/PLAYING.md and custom_docs/operations/DEPLOY.md (upstream keeps its own docs/DEPLOY.md).
+  const focus = new Set(['README.md', 'docs/PLAYING.md', 'custom_docs/operations/DEPLOY.md']);
   let fileRewrites = 0;
-  assert.ok(PLAYER_MARKDOWN.includes('README.md') && PLAYER_MARKDOWN.includes('docs/PLAYING.md') && PLAYER_MARKDOWN.includes('docs/operations/DEPLOY.md'));
+  assert.ok(PLAYER_MARKDOWN.includes('README.md') && PLAYER_MARKDOWN.includes('docs/PLAYING.md') && PLAYER_MARKDOWN.includes('custom_docs/operations/DEPLOY.md'));
   for (const rel of PLAYER_MARKDOWN) {
     const md = readFileSync(path.join(ROOT, rel), 'utf8');
     for (const m of md.matchAll(/\]\(([^)\s]+)\)/g)) {

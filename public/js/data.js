@@ -40,7 +40,7 @@
 // subscribers of every file that changed hands are told. One content set at a time: the next one replaces it.
 
 import { useEffect, useReducer } from '../vendor/hooks.module.js';
-import { resourceUrl, resourceCache } from './resourceUrl.js';
+import { resourceUrl, resourceCache, dataBasePath } from './resourceUrl.js';
 import { applyFileOverlay } from '../../shared/i18nData.js';
 import { canonicalLang } from '../../shared/i18nPacks.js';
 
@@ -140,7 +140,8 @@ const transientFailure = (err) => {
  *   `timeoutMs` 0 turns the art-manifest clock off. `setTimeout` / `clearTimeout` let a test fire that clock.
  */
 export function createDataStore(opts = {}) {
-  const base = opts.base ?? '/data/';
+  // 显式 base 优先；否则跟随运行时数据 CDN（public/js/resourceUrl.js dataBasePath）
+  const base = opts.base ?? dataBasePath();
   const doFetch = opts.fetch || ((...a) => globalThis.fetch(...a));
   const retryDelays = Array.isArray(opts.retryDelays) ? opts.retryDelays : RETRY_DELAYS_MS;
   const wait = opts.wait || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));

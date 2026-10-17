@@ -1,5 +1,5 @@
 // Browser/Worker engine loader. Workers receive data and never fetch it (DESIGN §32.11).
-import { resourceUrl, resourceCache } from '../resourceUrl.js';
+import { resourceUrl, resourceCache, dataBasePath } from '../resourceUrl.js';
 
 export const SIM_DATA_FILES = Object.freeze(['chess', 'enemies', 'tokens', 'stages', 'waves', 'bonds', 'items', 'garrisons', 'bands', 'effects', 'backups']);
 
@@ -22,7 +22,7 @@ function deepFreeze(root) {
  * /data/; `cs` names what was loaded; `bounds` its official-bounds snapshot (installSimBounds).
  */
 let loadedScripts = false;
-export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null,
+export async function loadBrowserSim({ base = '/sim/', dataBase = dataBasePath(), fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null,
   scripts = [], hashInput = null, nativeVerified = false, deferScripts = false } = {}) {
   const [spec, simdata, support] = await Promise.all([
     import(`${base}spec.js`), import(`${base}simdata.js`), import(`${base}content/support/index.js`),

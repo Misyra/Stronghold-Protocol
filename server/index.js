@@ -92,6 +92,7 @@ import { readAssetsCdnVersionFile, readAssetsManifestFile, VERSION_PREFIX } from
 import { SimulationPool, workerSettings } from './workers/pool.js';
 import { RoomWorkerPool } from './workers/roomPool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
+import { parseResourcePackRoutes } from '../shared/resourcePackRoutes.js';
 import { listenRoomAdmin, loadRoomConfigDocument } from './roomAdmin.js';
 import { saveRoomConfigDocument } from './roomConfig.js';
 import { openCountryLookup, parseGeoipMode } from './geoip.js';
@@ -313,8 +314,13 @@ export async function startServer(opts = {}) {
   const cdn = assetCdnSettings(cdnBase, cdnVersion);
   if (assetsManifest) log.info(`assets CDN ${cdnBase} manifest ${assetsManifest.tag} (${Object.keys(assetsManifest.hashes).length} files, per-file ?v= busting)`);
 
+  // xinhai 的 static.js 只认「原样拼在 /assets/ 前的 CDN 基址」：取走尾斜杠，非 http(s)/根路径的值当作未配置。
+  const cdnBaseOf = (v) => { const s = String(v ?? '').trim(); return /^(https?:\/\/|\/)/i.test(s) ? s.replace(/\/+$/, '') : ''; };
+  // 静态服务与 CDN 由 server/http/static.js（取自 xinhai 分支）负责：它按 cdnBase / dataCdnBase 改写数据与清单里的素材地址，
+  // 并在请求时生成 /js/asset-cdn.js（客户端 CDN 模块）。我们自己的 cdn/assetsManifest 只留给 /metrics 与日志。
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, visual, contents, log,
-    assetsCdn: cdn.base, assetsCdnVersion: cdn.version, assetsManifest,
+    cdnBase: cdnBaseOf(cdn.base || cdnBase), dataCdnBase: cdnBaseOf(opts.dataCdn ?? process.env.SP_DATA_CDN),
+    resourcePackRoutes: parseResourcePackRoutes(opts.resourcePackRoutes ?? process.env.SP_RESOURCE_PACK_ROUTES),
     clientBuild: opts.clientBuild ?? !process.argv.includes('--source-client') });
 
   // Persistence: SP_STATE_FILE (a directory → the sharded layout, a .json path → the single file, 'off' → memory only).

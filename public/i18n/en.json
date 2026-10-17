@@ -437,6 +437,7 @@
   "当前延迟 {ms}ms": "Current latency: {ms}ms",
   "未连接": "Not connected",
   "正在同步同盟状态…": "Syncing Alliance state…",
+  "浏览器验证已失效，需要刷新页面": "Browser verification expired. Refresh the page to continue",
   "服务器已更新，本局结束后刷新": "The server was updated. The page will refresh after this match",
   "刷新页面": "Refresh Page",
   "与服务器的连接已中断，正在重连": "Connection to the server was lost. Reconnecting",

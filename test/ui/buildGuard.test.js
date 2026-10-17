@@ -6,7 +6,8 @@
 // in a row agree, and a match on screen is never thrown away — the guard waits for it (and its settlement) to end.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkBuildOnce, startBuildGuard, fetchBuild, BUILD_CHECK_MS, BUILD_FETCH_TIMEOUT_MS } from '../../public/js/ui/buildGuard.js';
+import { checkBuildOnce, startBuildGuard, fetchBuild, probeUnlocked, BUILD_CHECK_MS, BUILD_FETCH_TIMEOUT_MS,
+  GATE_PROBE_URL, GATE_RELOAD_KEY } from '../../public/js/ui/buildGuard.js';
 
 /** A fake fetch answering /healthz with `build` (null → the frame carries none). */
 const fetchOf = (build) => async (url, init) => {
@@ -205,4 +206,119 @@ test('onHealth: told every /healthz body a check reads — what else the page re
   assert.equal(bodies.length, 3, 'the guard\'s first check hands it over');
   const main = (await import('node:fs')).readFileSync(new URL('../../public/js/main.js', import.meta.url), 'utf8');
   assert.match(main, /onHealth: \(h\) => \{ const n = pluginCount\(h\.content\); if \(n !== store\.get\(\)\.installedPlugins\) store\.set\(\{ installedPlugins: n \}\); \}/);
+});
+
+
+// ---------------------------------------------------------------------------------------------------------------
+// A page the browser gate stopped admitting. nginx answers `return 444` (socket closed, no headers), so a client
+// cannot see WHY `/healthz` failed — a restarting server looks identical. `/manifest.json` is auth_request off, so the
+// guard can ask it instead: an answer means the server is up and THIS page is what is being refused.
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A guard whose /healthz and ungated probe fail independently. */
+function gated({ inMatch = false, storage = null, now = () => Date.now() } = {}) {
+  const ticks = [];
+  const calls = { reload: 0, gate: [], recovered: [] };
+  let build = 'aaa';
+  let healthUp = true;
+  let probeUp = true;
+  let busy = inMatch;
+  const guard = startBuildGuard({
+    fetchFn: async (url) => {
+      if (url === GATE_PROBE_URL) {
+        if (!probeUp) throw new Error('offline');
+        return { ok: true, status: 200, json: async () => ({ name: 'Stronghold' }) };
+      }
+      assert.equal(url, '/healthz?build=1');
+      if (!healthUp) throw new Error('connection closed without a response (nginx 444)');
+      return { ok: true, status: 200, json: async () => ({ build }) };
+    },
+    reload: () => { calls.reload++; },
+    inMatch: () => busy,
+    storage,
+    now,
+    setInterval: (fn) => { ticks.push(fn); return ticks.length; },
+    clearInterval: () => {},
+    onStale: () => {},
+    onGateLost: (info) => calls.gate.push(info),
+    onGateRecovered: () => calls.recovered.push(1),
+  });
+  return {
+    calls, guard,
+    setHealthUp: (v) => { healthUp = v; },
+    setProbeUp: (v) => { probeUp = v; },
+    setInMatch: (v) => { busy = v; },
+    tick: async () => { for (const fn of ticks) fn(); await new Promise((r) => setTimeout(r, 0)); },
+  };
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
+test('probeUnlocked: an ungated path answering means the SERVER is up (whatever the gate says about this page)', async () => {
+  assert.equal(await probeUnlocked(async (url) => { assert.equal(url, GATE_PROBE_URL); return { ok: true }; }), true);
+  assert.equal(await probeUnlocked(async () => ({ ok: false, status: 444 })), false);
+  assert.equal(await probeUnlocked(async () => { throw new Error('offline'); }), false);
+  assert.equal(await probeUnlocked(() => new Promise(() => {}), { timeoutMs: 20 }), false, 'a hanging probe is not an answer');
+});
+
+test('a lapsed gate cookie reloads the page after two agreeing refusals — the probe proves the server is up', async () => {
+  const g = gated();
+  await settle();                                     // the immediate first check
+  assert.equal(g.guard.known(), 'aaa');
+  assert.equal(g.guard.gateLost(), false);
+  g.setHealthUp(false);
+  await g.tick();
+  assert.equal(g.calls.reload, 0, 'one refusal is not enough');
+  assert.equal(g.guard.gateLost(), false);
+  await g.tick();
+  assert.equal(g.calls.reload, 1, 'the server answers an ungated path, so the refusal is about this page: reload');
+  assert.deepEqual(g.calls.gate, [{ waiting: false, exhausted: false }]);
+  assert.equal(g.guard.gateLost(), true);
+});
+
+test('a server that is actually down never reloads — the ungated probe fails too', async () => {
+  const g = gated();
+  await settle();
+  g.setHealthUp(false); g.setProbeUp(false);          // restarting / off the air
+  await g.tick(); await g.tick(); await g.tick();
+  assert.equal(g.calls.reload, 0, 'a failed check stays silent, exactly as before');
+  assert.equal(g.guard.gateLost(), false);
+  assert.deepEqual(g.calls.gate, []);
+});
+
+test('a lapsed gate cookie during a match waits for the match, and the banner is told to offer the reload', async () => {
+  const g = gated({ inMatch: true });
+  await settle();
+  g.setHealthUp(false);
+  await g.tick(); await g.tick();
+  assert.equal(g.calls.reload, 0, 'a running game is never thrown away');
+  assert.deepEqual(g.calls.gate, [{ waiting: true, exhausted: false }]);
+  assert.equal(g.guard.gateLost(), true);
+  g.setInMatch(false);                                // the match is over
+  await g.tick();
+  assert.equal(g.calls.reload, 1, 'once nothing is at stake the page reloads itself');
+});
+
+test('the automatic gate reload happens once per backoff window; after that the banner owns it', async () => {
+  const store = new Map([[GATE_RELOAD_KEY, String(Date.now())]]);
+  const storage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v) };
+  const g = gated({ storage });
+  await settle();
+  g.setHealthUp(false);
+  await g.tick(); await g.tick();
+  assert.equal(g.calls.reload, 0, 'this page already reloaded itself inside the window');
+  assert.deepEqual(g.calls.gate, [{ waiting: false, exhausted: true }], 'so it hands the button to the player');
+});
+
+test('a refusal that clears up by itself never reloads, and clears the gate-lost flag', async () => {
+  const g = gated({ inMatch: true });
+  await settle();
+  g.setHealthUp(false);
+  await g.tick(); await g.tick();
+  assert.equal(g.guard.gateLost(), true);
+  g.setHealthUp(true);
+  await g.tick();
+  assert.equal(g.guard.gateLost(), false);
+  assert.deepEqual(g.calls.recovered, [1]);
+  assert.equal(g.calls.reload, 0);
 });

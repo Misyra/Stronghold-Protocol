@@ -89,7 +89,7 @@ export const initialState = Object.freeze({
   emotes: [],
   chat: { enabled: false, messages: [], mutedUntil: 0, deadline: 0 },
   clock: { offset: 0, rtt: null, synced: false },
-  ui: { pendingJoin: null, restoring: false, buildStale: false },
+  ui: { pendingJoin: null, restoring: false, buildStale: false, gateLost: false },
 });
 
 /** The app-wide store singleton. */

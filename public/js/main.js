@@ -356,7 +356,7 @@ function ScreenCrashed({ error, reset }) {
 
 function ResourceManagerHost() {
   const settings = useSettings();
-  // 干员皮肤 is two switches (docs/SKINS.md): the master follows whatever 干员调配 has equipped — the choice list lives
+  // 干员皮肤 is two switches (custom_docs/SKINS.md): the master follows whatever 干员调配 has equipped — the choice list lives
   // there, not here — and 「全部皮肤」 widens that to every outfit the manifest offers. 官方特效 has one switch of its
   // own (docs/ASSETS.md): ~185 MiB of effect prefabs, textures and meshes, never implied by 额外资源.
   return html`<${ResourceHost} enabled=${settings.preload} optional=${settings.preloadOptional} voices=${settings.preloadVoices} allVoices=${settings.preloadAllVoices}
@@ -450,7 +450,7 @@ async function boot() {
   installLoadoutSync({ net });
   installOwnershipSync({ net });
   installDiySync({ net });
-  // 干员皮肤 (docs/SKINS.md): keeps the server's copy of this browser's 战斗模型 choices current (PUBLIC — teammates
+  // 干员皮肤 (custom_docs/SKINS.md): keeps the server's copy of this browser's 战斗模型 choices current (PUBLIC — teammates
   // see them) and reloads the asset manifest when anyone on this server installs a skin. The section itself is
   // rendered by screens/loadout.js through ui/skinPicker.js; the 商店立绘 choice stays local and needs no sync.
   installSkinsSync({ net });
@@ -501,6 +501,11 @@ async function boot() {
     startBuildGuard({
       inMatch: () => selectRoute(store.get()) === 'game',
       onStale: ({ waiting }) => { if (waiting) store.patch('ui', { buildStale: true }); },
+      // A refused /healthz whose ungated probe still answers is a lapsed browser-gate cookie, not a dead server
+      // (ui/buildGuard.js): outside a match the guard reloads the page into the proof page by itself, during a match it
+      // says so here and the connection banner offers 刷新页面 — the same "never throw a running game away" rule.
+      onGateLost: () => store.patch('ui', { gateLost: true }),
+      onGateRecovered: () => { if (store.get().ui.gateLost) store.patch('ui', { gateLost: false }); },
       // the same /healthz names how many plugins the server has: the title screen shows it before any hello
       onHealth: (h) => { const n = pluginCount(h.content); if (n !== store.get().installedPlugins) store.set({ installedPlugins: n }); },
     });
@@ -513,7 +518,7 @@ function installResourcePreload() {
   // Resume only when the player enabled preload; a saved pause survives page reloads.
   import('./resources/index.js').then((r) => {
     // 干员皮肤: with `preloadSkins` on, the preload follows the outfits equipped in this browser — picking one in
-    // 干员调配 is what starts its download (docs/SKINS.md) — and `preloadSkinsAll` replaces that scope with every outfit
+    // 干员调配 is what starts its download (custom_docs/SKINS.md) — and `preloadSkinsAll` replaces that scope with every outfit
     // in the manifest. The chess table resolves chessId → charId, so an equipped choice has no manifest key to follow
     // until it is in; that one load re-applies the scope below.
     const apply = (s) => {

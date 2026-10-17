@@ -1594,9 +1594,10 @@ export class Lobby {
    * A failure before the match is ready answers like the local path does (a fail() the starter reads), so the caller
    * never sees a half-started room.
    * @param {Room} room @param {object} ctx @param {string | null} key @param {object} opts Match options (startMatchWith)
+   * @param {object | null} [checkpoint] a restart's checkpoint (server/match/snapshot.js), applied in the lane
    * @returns {Promise<{ ok: true } | { error: string, detail?: string }>}
    */
-  async startRemoteMatch(room, ctx, key, opts) {
+  async startRemoteMatch(room, ctx, key, opts, checkpoint = null) {
     const starter = this.registry.byId(room.hostId);
     try {
       const match = await this.matchWorkerPool.create(room.code, workerMatchOptions(opts), {
@@ -1606,7 +1607,20 @@ export class Lobby {
         send: (playerId, msg) => { if (ctx.live) this.matchSend(room, ctx, playerId, msg); },
         broadcast: (msg) => { if (ctx.live) this.matchBroadcast(room, ctx, msg); },
         end: (summary) => this.onMatchEnd(room, ctx, summary),
-      });
+      }, checkpoint || null);
+      // a restored match keeps the room's match number: the same match, now in a thread (adoptRestoredMatch locally)
+      if (checkpoint) {
+        room.match = match;
+        room.matchCtx = ctx;
+        room.matchKey = key;
+        room.replay = null;
+        match.syncOfflinePause?.();
+        this.audit('match.restored', starter, room, { round: match.round, phase: match.phase, worker: true });
+        this.log.info(`[lobby] ${room.code} match #${room.matchCount} restored in a worker (round ${match.round}, ${match.phase})`);
+        this.broadcastState(room);
+        this.checkpoint(room.code, match);
+        return OK;
+      }
       this.attachMatch(room, ctx, key, match);
       this.log.info(`[lobby] ${room.code} match #${room.matchCount} starting in a worker (${room.mode}/${room.difficulty}, ${opts.seats.length} seats, seed ${opts.seed})`);
       this.audit('match.started', starter, room, { matchCount: room.matchCount, mode: room.mode, difficulty: room.difficulty,
@@ -1708,8 +1722,9 @@ export class Lobby {
       // a room with gameplay plugins plays in its content set's match host; every other room here, as always — and, with
       // the match worker pool on (SP_MATCH_WORKERS), a fresh match of a plain room runs in a lane Worker instead
       // (server/workers/matchPool.js): that thread owns the timers, the AI and the state, this one routes its frames.
-      // It answers later (every call into a lane is a Promise), so it takes over from here.
-      if (!modded && !checkpoint && this.matchWorkerPool) return this.startRemoteMatch(room, ctx, key, opts);
+      // It answers later (every call into a lane is a Promise), so it takes over from here — a restart's checkpoint
+      // included: the lane applies it before it answers ready (server/workers/matchWorker.js init).
+      if (!modded && this.matchWorkerPool) return this.startRemoteMatch(room, ctx, key, opts, checkpoint);
       const match = modded && this.hosts ? this.hosts.create(room.content.cs, opts) : new this.MatchClass(opts);
       ctx.match = match;
       if (checkpoint) return adoptRestoredMatch(this, room, { match, ctx, key, starter, checkpoint });

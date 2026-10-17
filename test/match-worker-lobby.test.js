@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { Lobby } from '../server/lobby.js';
 import { SessionRegistry } from '../server/net.js';
 import { MatchWorkerPool } from '../server/workers/matchPool.js';
-import { Persister } from '../server/persist.js';
+import { Persister, snapshotServer, restoreServerForBoot } from '../server/persist.js';
 import { canSnapshot } from '../server/match/snapshot.js';
 import { DATA } from './match/harness.js';
 
@@ -96,6 +96,39 @@ describe('对局线程池：lobby 侧接线', () => {
       assert.equal(typeof reply?.then, 'function', 'the reply waits for the lane');
       const settled = await reply;
       assert.ok(settled && (settled.ok === true || typeof settled.error === 'string'), 'and settles into an answer');
+    } finally {
+      lobby.shutdown('test');
+    }
+  });
+
+  test('重启的检查点也在 lane 里恢复（restoreMatch 答应晚一点，restoreServerForBoot 会等它）', async () => {
+    // a process that is about to die: one solo match running, in a lane
+    const first = lobbyWithLane();
+    const { room } = await startedSolo(first.lobby, first.registry);
+    const code = room.code;
+    const shot = await room.match.captureSnapshot();
+    const doc = snapshotServer({ registry: first.registry, lobby: first.lobby });
+    doc.matches = { [code]: { ...shot.doc, ...shot.clocks } };
+    doc.clocks = {};
+    first.lobby.shutdown('test');
+    await tick();
+
+    // the fresh process reads that document back: its running match must come back in a lane too
+    const registry = new SessionRegistry();
+    const lobby = new Lobby({ registry, log: quietLog, getData: () => DATA, matchWorkerPool: pool });
+    lobby.broadcastState = () => {};
+    try {
+      const stats = await restoreServerForBoot({ doc, registry, lobby, log: quietLog });
+      assert.equal(stats.ok, true, 'the document was accepted');
+      assert.equal(stats.rooms, 1, 'its room came back');
+      assert.equal(stats.matches, 1, 'and its running match — restored in a lane');
+      const back = lobby.rooms.get(code);
+      assert.equal(back?.match?.remote, true, 'the restored match lives in a lane Worker');
+      assert.equal(back.match.phase, shot.doc.phase, 'in the phase the checkpoint was taken in');
+      assert.equal(back.match.round, shot.doc.round, 'and in the round');
+      const again = await back.match.captureSnapshot();
+      assert.deepEqual(again.doc.players.map((p) => ({ id: p.playerId, seat: p.seat })),
+        shot.doc.players.map((p) => ({ id: p.playerId, seat: p.seat })), 'with the seats the checkpoint carried');
     } finally {
       lobby.shutdown('test');
     }

@@ -160,11 +160,35 @@ export function snapshotServer({ registry, lobby, now = Date.now() }) {
  * }} args
  * @returns {{ ok: boolean, reason?: string, sessions: number, expired: number, rooms: number, matches: number, droppedSeats: number }}
  */
-export function restoreServer({ doc, registry, lobby, now = Date.now(), log = noopLog }) {
+export function restoreServer(args) {
+  return restoreServerCore(args, false).stats;
+}
+
+/**
+ * The boot path (server/index.js): the same restore, but a room whose match plays in a lane Worker
+ * (server/workers/matchPool.js) is awaited — that thread builds and applies the checkpoint before the server listens.
+ * The synchronous restoreServer stays for every caller that owns no Worker (tests, a stub lobby).
+ * @param {Parameters<typeof restoreServer>[0]} args
+ * @returns {Promise<ReturnType<typeof restoreServer>>}
+ */
+export async function restoreServerForBoot(args) {
+  const { stats, pending } = restoreServerCore(args, true);
+  await Promise.all(pending);
+  return stats;
+}
+
+/**
+ * @param {{ doc: object, registry: import('./net.js').SessionRegistry, lobby: import('./lobby.js').Lobby,
+ *   now?: number, log?: object }} args
+ * @param {boolean} lanes true: a Promise from lobby.restoreMatch (a lane Worker) is collected instead of dropped
+ */
+function restoreServerCore({ doc, registry, lobby, now = Date.now(), log = noopLog }, lanes) {
+  /** @type {Promise<void>[]} restores a lane Worker still owes this restore */
+  const pending = [];
   const stats = { ok: false, sessions: 0, expired: 0, rooms: 0, matches: 0, droppedSeats: 0 };
-  if (!doc || typeof doc !== 'object') return { ...stats, reason: 'empty' };
-  if (doc.v !== PERSIST_VERSION) return { ...stats, reason: `version ${doc.v}` };
-  if (doc.snapshot != null && doc.snapshot !== SNAPSHOT_VERSION) return { ...stats, reason: `snapshot ${doc.snapshot}` };
+  if (!doc || typeof doc !== 'object') return { stats: { ...stats, reason: 'empty' }, pending };
+  if (doc.v !== PERSIST_VERSION) return { stats: { ...stats, reason: `version ${doc.v}` }, pending };
+  if (doc.snapshot != null && doc.snapshot !== SNAPSHOT_VERSION) return { stats: { ...stats, reason: `snapshot ${doc.snapshot}` }, pending };
 
   for (const s of Array.isArray(doc.sessions) ? doc.sessions : []) {
     if (!s || typeof s.playerId !== 'string' || typeof s.token !== 'string' || !s.token) continue;
@@ -214,11 +238,19 @@ export function restoreServer({ doc, registry, lobby, now = Date.now(), log = no
     if (restored !== checkpoint) {
       Object.assign(restored, mergeClocks(restored, c));
     }
-    if (lobby.restoreMatch(room, restored)) stats.matches++;
+    const resumed = lobby.restoreMatch(room, restored);
+    if (resumed && typeof resumed.then === 'function') {
+      // a lane Worker's match (server/workers/matchPool.js): it is restored in that thread; the caller awaits it
+      if (!lanes) { stats.matches++; continue; }   // a synchronous caller cannot wait: the lane applies it anyway
+      pending.push(resumed.then((ok) => {
+        if (ok) stats.matches++;
+        else log.warn?.(`[persist] ${room.code}: the running match could not be resumed — room kept in the lobby`);
+      }, () => log.warn?.(`[persist] ${room.code}: the running match could not be resumed — room kept in the lobby`)));
+    } else if (resumed === true) stats.matches++;
     else log.warn?.(`[persist] ${room.code}: the running match could not be resumed — room kept in the lobby`);
   }
   stats.ok = true;
-  return stats;
+  return { stats, pending };
 }
 
 // ---------------------------------------------------------------------------------------------------

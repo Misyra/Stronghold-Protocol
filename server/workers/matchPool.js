@@ -57,6 +57,8 @@ class RemoteMatch {
   onLeave(...args) { return this.invoke('onLeave', ...args); }
   // 本仓库追加：Match 的主机迁移钩子（DESIGN §14）与停机前的停转（server/lobby.js beginDrain）
   setHost(...args) { return this.invoke('setHost', ...args); }
+  // 本仓库追加：恢复后的对局立即按「无人连接」冻结（server/matchRestore.js adoptRestoredMatch 的同一个调用）
+  syncOfflinePause() { return this.invoke('syncOfflinePause'); }
   suspendWork() { return this.invoke('suspendWork'); }
   addSpectator(...args) { return this.invoke('addSpectator', ...args); }
   removeSpectator(...args) { return this.invoke('removeSpectator', ...args); }

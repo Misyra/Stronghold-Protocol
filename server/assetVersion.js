@@ -116,14 +116,9 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
       }
       return open + JSON.stringify(map).replace(/</g, '\\u003c') + close;
     });
-  const settings = JSON.stringify({ base: cdn.base, version: cdn.version, manifest: cdn.manifest || '' }).replace(/</g, '\\u003c');
-  // Start the manifest fetch in <head> so it races the module graph: by the time any resourceUrl()
-  // call builds a CDN URL, the per-file hashes have usually landed (they turn bare URLs into
-  // per-file `?v=` ones). The page passes the promise through; resourceUrl.js consumes it.
-  const manifestFetch = cdn.manifest
-    ? `fetch(${JSON.stringify(cdn.manifest)}).then((r) => r.ok ? r.json() : null, () => null)`
-    : 'null';
-  return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spRuntimeVersion=${JSON.stringify(runtimeTag)};globalThis.__spArtVersion=${JSON.stringify(artTag)};globalThis.__spAssetCdn=${settings};globalThis.__spManifestReady=${manifestFetch};</script>`);
+  // 页面只带版本标签；CDN 基址与每文件指纹清单由 /js/asset-cdn.js 这个模块提供（public/js/main.js 读它），
+  // 页面里不再重复一份 __spAssetCdn / __spManifestReady。
+  return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spRuntimeVersion=${JSON.stringify(runtimeTag)};globalThis.__spArtVersion=${JSON.stringify(artTag)};</script>`);
   }
   return { tag, artTag, runtimeTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === fileIdentity(stat) };
 }

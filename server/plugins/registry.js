@@ -772,6 +772,18 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
   }) : null;
   let scanning = null;
   let closed = false;
+  function refresh(force = false) {
+    if (scanner && !state) {
+      log.warn?.('[plugins] background scan has not produced a snapshot yet — scanning synchronously');
+      return scanNow(force);
+    }
+    if (scanner) {
+      const now = Date.now();
+      if (!closed && (force || now - checkedAt >= recheckMs)) refreshAsync(force).catch((e) => log.warn?.(`[plugins] background scan failed: ${e.message}`));
+      return state;
+    }
+    return scanNow(force);
+  }
   function refreshAsync(force = false, host = undefined) {
     if (!scanner) { refresh(force); return Promise.resolve(); }
     if (closed) return Promise.reject(new Error('plugin registry closed'));
@@ -789,13 +801,13 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     return scanning;
   }
 
-  function refresh(force = false) {
+  /**
+   * The synchronous scan (no background scanner). Also the fallback when a background scan has not produced a
+   * snapshot yet: server startup reaches an accessor before the worker answers, and that must not fail with
+   * "await refreshAsync()" — which hides the real reason the scan did not land.
+   */
+  function scanNow(force = false) {
     const now = Date.now();
-    if (scanner) {
-      if (!state) throw new Error('await registry.refreshAsync() before using a background registry');
-      if (!closed && (force || now - checkedAt >= recheckMs)) refreshAsync(force).catch((e) => log.warn?.(`[plugins] background scan failed: ${e.message}`));
-      return state;
-    }
     if (state && !force && now - checkedAt < recheckMs) return state;
     checkedAt = now;
     const s = signature(dirs);
@@ -833,7 +845,7 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
       if (state) applyTrust(state.plugins, { pluginsDir:dirs.pluginsDir, host:scriptHost, mode:scriptMode, log });
     },
     /** Re-read the folders now if they changed (force: even within recheckMs). */
-    refresh: (force = false) => (scanner ? refreshAsync(force) : refresh(force)),
+    refresh: (force = false) => (scanner && state ? refreshAsync(force) : Promise.resolve(refresh(force))),
     refreshAsync,
     /**
      * Re-read the folders now even when their names, sizes and times look unchanged: a served file was found changed

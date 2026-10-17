@@ -1,0 +1,23 @@
+# Render __SSH_PORTS__ from actual sshd listener ports, not an external NAT mapping.
+# Own table only: do not flush ruleset or change any forwarding/NAT chain.
+table inet sp_lockdown {
+    set banned4 { type ipv4_addr; flags interval; }
+    set banned6 { type ipv6_addr; flags interval; }
+    chain input {
+        type filter hook input priority 10; policy drop;
+        iifname "lo" accept
+        # Ban checks precede established so banned direct clients cannot continue an old flow.
+        ip saddr @banned4 counter drop
+        ip6 saddr @banned6 counter drop
+        ct state invalid drop
+        ct state established,related accept
+        tcp dport { __SSH_PORTS__ } accept
+        tcp dport { 80, 443 } accept
+        udp dport 443 accept
+        ip protocol icmp icmp type { destination-unreachable, time-exceeded, parameter-problem } accept
+        ip protocol icmp icmp type echo-request limit rate 10/second burst 20 packets accept
+        meta l4proto ipv6-icmp icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } accept
+        meta l4proto ipv6-icmp icmpv6 type echo-request limit rate 10/second burst 20 packets accept
+        counter drop
+    }
+}

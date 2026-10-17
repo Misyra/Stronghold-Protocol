@@ -1,0 +1,19 @@
+# Source classification is generated from country.iso_code == CN in the repository MMDB.
+# Replace only this table atomically; never flush unrelated firewall or fail2ban tables.
+table inet sp_foreign_cap {
+    set mainland4 { type ipv4_addr; flags interval; auto-merge; elements = { __CN4__ }; }
+    set mainland6 { type ipv6_addr; flags interval; auto-merge; elements = { __CN6__ }; }
+    chain input {
+        type filter hook input priority -10; policy drop;
+        iifname "lo" accept
+        ct state invalid drop
+        # Replies to this host's outbound DNS/HTTPS/ACME connections are not new inbound access.
+        ct direction reply ct state established,related accept
+        # Essential local IPv6 discovery only; no blanket private-network or SSH exception.
+        ip6 saddr fe80::/10 ip6 hoplimit 255 icmpv6 type nd-router-advert accept
+        ip6 hoplimit 255 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert } accept
+        ip saddr @mainland4 accept
+        ip6 saddr @mainland6 accept
+        counter drop
+    }
+}

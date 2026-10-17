@@ -1,11 +1,22 @@
 # Install in an http-level include, e.g. /etc/nginx/conf.d/sp-log-format.conf.
 # Keep the complete combined prefix, including User-Agent. Do not put log_format
 # inside server/location. This defines a format; it does not change other sites.
+map $uri $sp_log_public_api {
+    default 0;
+    ~^/(healthz|metrics)(/|$) 1;
+    ~^/api(/|$) 1;
+}
+map $http_upgrade $sp_log_ws_upgrade {
+    default 0;
+    ~*^websocket$ 1;
+}
 log_format sp_game '$remote_addr - $remote_user [$time_local] "$request" '
                    '$status $body_bytes_sent "$http_referer" "$http_user_agent" '
                    'rt=$request_time urt=$upstream_response_time '
                    'cache=$upstream_cache_status host=$host '
-                   'reason=$upstream_http_x_portal_reason';
+                   'reason=$upstream_http_x_portal_reason http_reject=$upstream_http_x_sp_http_reject '
+                   'peer=$realip_remote_addr req_limit=$limit_req_status conn_limit=$limit_conn_status '
+                   'public_api=$sp_log_public_api business=$sp_log_business ws_upgrade=$sp_log_ws_upgrade';
 
 # In the target server/location, replace the existing access_log format only:
 # access_log /var/log/nginx/sp/stronghold.access.log sp_game buffer=64k flush=5s;

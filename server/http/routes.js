@@ -38,6 +38,9 @@
 
 // Health snapshot reuse adapted from xinhai 23d0a929; retain this fork's detailed fields.
 import { validateNickname } from './nickname.js';
+import { createPublicApiLimiter, isPublicApiPath, publicApiCountryStatus } from './publicApiLimit.js';
+import { createIpBanStore } from './ipBans.js';
+import { markHttpRejection } from './rejection.js';
 import { createPortalRoomHandler, PORTAL_ROOM_STATUS_PATH } from './portalRoom.js';
 import { performance } from 'node:perf_hooks';
 import { PROTOCOL_VERSION, APP_VERSION, ROOM_CODE_LEN, ERR, ERR_TEXT } from '../../shared/constants.js';
@@ -181,7 +184,8 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  *           allowStatus?: (req: import('node:http').IncomingMessage) => boolean,
  *           readAnnouncement?: () => Promise<object | null>, announcementSource?: { mode: string, siteId: string | null },
  *           portalRoom?: object, trustProxy?: 'auto' | boolean,
- *           csp?: string | null,
+ *           publicApiLimits?: object, ipBans?: ReturnType<typeof createIpBanStore>, apiMainlandOnly?: boolean,
+ *           apiCountryLookup?: ((ip: string) => string | null) | null, csp?: string | null,
  *           studio?: { handles: (rawPath: string) => boolean, handle: (req: any, res: any, rawPath: string, query: string) => Promise<void> } | null }} deps
  *   trustProxy: whose forwarding headers name the client (net.js clientAddress; the server's TRUST_PROXY) — the gate
  *   on the `?traffic=1` figures
@@ -190,8 +194,9 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  *   (server/studio/index.js), or none
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, allowNickname = null, allowStatus = null, readAnnouncement = null, announcementSource = null, portalRoom = null, trustProxy = 'auto', studio = null, csp = null, trustedRuntime = null }) {
+export function createRequestHandler({ serveStatic, health, log, allowNickname = null, allowStatus = null, readAnnouncement = null, announcementSource = null, portalRoom = null, trustProxy = 'auto', studio = null, csp = null, trustedRuntime = null, publicApiLimits = {}, ipBans = createIpBanStore({ log }), apiMainlandOnly = false, apiCountryLookup = null }) {
   const healthBody = createHealthBody(health);
+  const allowPublicApi = createPublicApiLimiter({ ...publicApiLimits, trustProxy, banStore: ipBans });
   const portalRoomHandler = createPortalRoomHandler({ ...(portalRoom ?? {}),
     registry: health.registry, lobby: health.lobby, log,
     trustProxy: health.network?.opts?.trustProxy ?? 'auto' });
@@ -228,6 +233,11 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
     if (!parts) { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
+    // nginx auth_request: a ban-only check, so subrequests never consume API request counts.
+    // nginx exposes this location as internal; direct internet callers get the normal 404.
+    if (parts.rawPath === '/_sp/ip-check' && isLocalIp(clientAddress(req, false).ip)) {
+      res.writeHead(204, { 'Cache-Control': 'no-store' }); res.end(); return;
+    }
     if (parts.rawPath === '/api/portal-room' || parts.rawPath === PORTAL_ROOM_STATUS_PATH) { await portalRoomHandler(req, res); return; }
     if (parts.rawPath === '/api/nickname/validate') {
       await validateNickname(req, res, allowNickname);
@@ -260,6 +270,7 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
     if (parts.rawPath === '/api/rooms' || parts.rawPath.startsWith('/api/rooms/')) {
       res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
       if (allowStatus && !allowStatus(req)) {
+        markHttpRejection(req, res, 'RATE_LIMITED');
         res.setHeader('Retry-After', '1');
         sendJson(req, res, 429, { error: 'RATE_LIMITED' });
         return;
@@ -314,9 +325,34 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
   return (req, res) => {
     setSecurityHeaders(res);
     // Every response's body bytes count in the traffic counters, the synchronous /healthz fast path included.
-    if (csp) res.setHeader('Content-Security-Policy', csp);
     if (health.traffic) health.traffic.meter(res, splitUrl(req.url || '/')?.rawPath || '/');
     const url = req.url || '/';
+    const rawPath = splitUrl(url)?.rawPath;
+    let apiPath = rawPath;
+    try { apiPath = decodeURIComponent(apiPath).replace(/\/{2,}/g, '/'); } catch { /* routing rejects malformed URLs */ }
+    // Before both the synchronous health fast path and async dispatch: no query/method bypass,
+    // no status collection, announcement read, request-body parsing or portal I/O after rejection.
+    try {
+      const api = apiPath && isPublicApiPath(apiPath);
+      const alreadyBanned = ipBans.isBanned(req, trustProxy);
+      const countryStatus = api && !alreadyBanned ? publicApiCountryStatus(req, {
+        enabled: apiMainlandOnly, countryLookup: apiCountryLookup, trustProxy,
+      }) : 0;
+      if (alreadyBanned || (api && !allowPublicApi(req, apiPath, !countryStatus))) {
+        const banned = ipBans.isBanned(req, trustProxy);
+        const status = banned ? 403 : countryStatus || 429;
+        if (status !== 403) res.setHeader('Retry-After', '1');
+        res.setHeader('Connection', 'close');
+        if (rawPath === '/api/ping') res.setHeader('Access-Control-Allow-Origin', '*');
+        if (banned || countryStatus !== 503) markHttpRejection(req, res,
+          banned ? 'IP_BANNED' : countryStatus === 403 ? 'FOREIGN_IP_BLOCKED' : 'RATE_LIMITED');
+        sendJson(req, res, status, { error: banned ? 'IP_BANNED' : countryStatus === 403 ? 'FOREIGN_IP_BLOCKED' :
+          countryStatus === 503 ? 'GEOIP_UNAVAILABLE' : 'RATE_LIMITED' });
+        return;
+      }
+    } catch (error) { failed(req, res, error); return; }
+    // Rejections are tiny JSON, not documents: do not amplify them with the full page CSP.
+    if (csp) res.setHeader('Content-Security-Policy', csp);
     if (url.length <= MAX_URL_LENGTH && (url === '/healthz' || url.startsWith('/healthz?') || url.startsWith('/healthz#'))) {
       try { serveHealth(req, res); } catch (e) { failed(req, res, e); }
       return;

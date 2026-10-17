@@ -147,14 +147,16 @@ export function lobbyOptionsFrom(opts, env = process.env) {
     if (opts[k] != null) lobbyOptions[k] = opts[k];
   }
   for (const [key, [name, fallback, min, max]] of Object.entries(ROOM_LIMIT_OPTIONS)) {
-    const value = Number(opts[key] ?? env[name] ?? fallback);
-    if (!Number.isSafeInteger(value) || value < min || value > max) throw new RangeError(`${name} must be ${min}..${max}`);
+    const primary = key === 'maxForeignSessionsPerIp' ? 'SP_IP_MAX_SESSIONS_PER_IP' : name;
+    const value = Number(opts[key] ?? env[primary] ?? env[name] ?? fallback);
+    if (!Number.isSafeInteger(value) || value < min || value > max) throw new RangeError(`${primary} must be ${min}..${max}`);
     lobbyOptions[key] = value;
   }
   for (const [key, name] of [['allowBots', 'SP_ALLOW_BOTS'], ['limitForeignSessions', 'SP_FOREIGN_SESSION_LIMIT'],
     ['allowForeignConnections', 'SP_ALLOW_FOREIGN_CONNECTIONS']]) {
-    const value = String(opts[key] ?? env[name] ?? 'on').trim().toLowerCase();
-    if (!['1', 'true', 'on', '0', 'false', 'off'].includes(value)) throw new RangeError(`${name} must be on or off`);
+    const primary = key === 'limitForeignSessions' ? 'SP_IP_SESSION_LIMIT' : name;
+    const value = String(opts[key] ?? env[primary] ?? env[name] ?? 'on').trim().toLowerCase();
+    if (!['1', 'true', 'on', '0', 'false', 'off'].includes(value)) throw new RangeError(`${primary} must be on or off`);
     lobbyOptions[key] = ['1', 'true', 'on'].includes(value);
   }
   return lobbyOptions;

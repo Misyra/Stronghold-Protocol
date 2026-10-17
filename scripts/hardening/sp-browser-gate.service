@@ -1,0 +1,23 @@
+[Unit]
+Description=Stronghold browser proof admission service
+After=network.target stronghold.service
+
+[Service]
+Type=simple
+DynamicUser=yes
+EnvironmentFile=/etc/stronghold/browser-gate.env
+ExecStart=/usr/bin/node /usr/local/lib/stronghold-browser-gate/gate.mjs
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=128M
+TasksMax=32
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

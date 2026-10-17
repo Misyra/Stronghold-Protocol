@@ -1,0 +1,20 @@
+# Incident 2026-10-17: real players reached 18 SYN/minute; 5/minute dropped legitimate reconnects.
+# Match the normative ops/sp-web-syn-guard.nft: 30/minute, keeping burst 10 unchanged.
+# This is a token bucket, not a hard per-minute quota; tune from SYN measurements, not HTTP requests.
+# Meter expiration 300s exceeds the 20s needed to refill an empty source bucket.
+# Only new web SYN packets; retransmissions also consume the budget.
+# Independent drop-only table: does not override country/firewall decisions.
+table inet sp_web_syn_guard {
+ chain input {
+  type filter hook input priority -5; policy accept;
+  iifname "lo" return
+  ct state established,related return
+  tcp dport { 80, 443, 8080 } tcp flags & (syn | ack) == syn jump web_syn
+ }
+ chain web_syn {
+  meta nfproto ipv4 meter web_syn4 size 65536 { ip saddr timeout 300s limit rate over 30/minute burst 10 packets } counter drop comment "ipv4_syn_drop"
+  meta nfproto ipv6 meter web_syn6 size 65536 { ip6 saddr & ffff:ffff:ffff:ffff:: timeout 300s limit rate over 30/minute burst 10 packets } counter drop comment "ipv6_prefix_syn_drop"
+  limit rate over 50/second burst 100 packets counter drop comment "global_syn_drop"
+  counter comment "web_syn_pass"
+ }
+}

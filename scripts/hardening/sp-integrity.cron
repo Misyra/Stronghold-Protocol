@@ -1,0 +1,3 @@
+# Install as /etc/cron.d/sp-integrity (root:root 0644), not a user crontab.
+# 04:17 uses the server's configured timezone. Alerts go to local syslog/journal.
+17 4 * * * root /usr/local/sbin/sp-integrity-check.sh

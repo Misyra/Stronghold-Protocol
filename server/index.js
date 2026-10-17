@@ -58,7 +58,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { getData, loadData } from './data.js';
 import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, announcementOptionsFrom, roomAdminTokenFrom, lobbyOptionsFrom, portalRoomOptionsFrom, siteIdFrom } from './http/config.js';
-import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
+import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket, parseWsOrigins } from './http/websocket.js';
 import { siteCsp } from './http/csp.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPluginRegistry } from './plugins/registry.js';
@@ -74,6 +74,9 @@ import { createStudio } from './studio/index.js';
 import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
+import { publicApiLimitsFrom, apiMainlandOnlyFrom } from './http/publicApiLimit.js';
+import { createIpBanStore } from './http/ipBans.js';
+import { wsUpgradeLimitsFrom } from './http/wsUpgradeLimit.js';
 import { createTrafficCounter } from './http/traffic.js';
 import { answerClientError } from './http/common.js';
 import { lanUrls, displayHost, isProcessEntry, runMain } from './http/boot.js';
@@ -89,6 +92,7 @@ import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js
 import { listenRoomAdmin, loadRoomConfigDocument } from './roomAdmin.js';
 import { saveRoomConfigDocument } from './roomConfig.js';
 import { openCountryLookup, parseGeoipMode } from './geoip.js';
+import { parseIpSessionScope } from './foreignSessions.js';
 import { cleanupRuntime } from './runtimeCleanup.js';
 
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
@@ -114,7 +118,7 @@ export {
  *   workerPool?: SimulationPool | import('./workers/roomPool.js').RoomWorkerPool | null,
  *   roomAdminToken?: string, roomAdminPort?: number, roomAdminStateFile?: string, allowBots?: boolean, roomCreateBurst?: number, roomCreateRefillMs?: number,
  *   matchStartBurst?: number, matchStartRefillMs?: number,
- *   geoLiteCountryFile?: string, geoipMode?: 'country' | 'cn-only', countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number, limitForeignSessions?: boolean, allowForeignConnections?: boolean, maxForeignSessionsPerIp?: number,
+ *   geoLiteCountryFile?: string, geoipMode?: 'country' | 'cn-only', countryLookup?: (ip: string) => string | null, maxBots?: number, maxForeignBots?: number, limitForeignSessions?: boolean, allowForeignConnections?: boolean, maxForeignSessionsPerIp?: number, ipSessionScope?: 'all' | 'foreign',
  *   assetsCdn?: string, assetsCdnVersion?: string, assetsVersionFile?: string, assetsManifestFile?: string,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  *   studio?: boolean,
@@ -133,8 +137,12 @@ export {
  *                     close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
+  const publicApiLimits = publicApiLimitsFrom(opts.publicApiLimits);
+  const wsUpgradeLimits = wsUpgradeLimitsFrom(opts.wsUpgradeLimits);
+  const apiMainlandOnly = apiMainlandOnlyFrom(opts.httpApiMainlandOnly ?? process.env.SP_HTTP_API_CN_ONLY);
   initializeModeration();
   const { port, host } = listenAddress(opts);
+  const ipSessionScope = parseIpSessionScope(opts.ipSessionScope ?? process.env.SP_IP_SESSION_SCOPE);
   const log = opts.log || makeLogger(!!opts.quiet);
   const announcementOptions = announcementOptionsFrom(opts);
   const roomAdminToken = roomAdminTokenFrom(opts);
@@ -142,6 +150,11 @@ export async function startServer(opts = {}) {
   const portalRoom = portalRoomOptionsFrom(opts);
   const siteId = siteIdFrom(opts);
   const { publicDir, dataDir, sharedDir, packsDir, pluginsDir } = serveDirs(opts);
+  const ipBanFile = path.resolve(opts.ipBanFile ?? process.env.SP_HTTP_BAN_FILE ?? path.join(ROOT, '.state', 'http-ip-bans.jsonl'));
+  for (const root of [publicDir, dataDir, sharedDir, packsDir]) {
+    if (within(root, ipBanFile)) throw new Error('SP_HTTP_BAN_FILE cannot be in a public static directory');
+  }
+  const ipBans = createIpBanStore({ file: ipBanFile, log });
   const simDir = path.join(ROOT, 'server', 'sim');
   const lobbyOptions = lobbyOptionsFrom(opts);
   const geoLiteFile = opts.geoLiteCountryFile ?? process.env.SP_GEOLITE_COUNTRY_DB;
@@ -158,6 +171,14 @@ export async function startServer(opts = {}) {
     log.info(`[geoip] country database loaded in ${geoipMode} mode`);
     if (geoipMode === 'cn-only') log.warn('[geoip] mainland-only IPv4 mode: unmatched IPv6 addresses remain unknown and are not restricted as foreign');
   }
+  // API-only default: use the bundled global database without enabling/changing gameplay GeoIP gates.
+  let apiCountryLookup = countryLookup;
+  if (apiMainlandOnly && !apiCountryLookup) {
+    try { apiCountryLookup = await openCountryLookup(path.join(ROOT, 'geoip', 'GeoLite2-Country.mmdb')); }
+    catch (error) { log.error('[http] API mainland-only database unavailable; public API requests will return 503', error); }
+  }
+  log.info(`[http] API mainland-only: ${apiMainlandOnly ? (apiCountryLookup ? 'on' : 'database unavailable') : 'off'}; permanent ban after ${publicApiLimits.banThreshold} requests/${publicApiLimits.banWindowMs}ms`);
+  log.info(`[ws] upgrade ban: after ${wsUpgradeLimits.threshold} attempts/${wsUpgradeLimits.windowMs}ms, ban for ${wsUpgradeLimits.banMs}ms`);
   log.info(`[bots] total AI population limit: ${lobbyOptions.maxBots}`);
   if (countryLookup) log.info(`[geoip] foreign AI population limit enabled: ${lobbyOptions.maxForeignBots}`);
   else log.warn('[geoip] no country database configured; foreign AI limit is disabled, total AI limit remains active');
@@ -186,7 +207,9 @@ export async function startServer(opts = {}) {
     lobbyOptions.allowForeignConnections = savedRoomConfig.allowForeignConnections;
   if (opts.maxForeignSessionsPerIp == null && Number.isSafeInteger(savedRoomConfig?.maxForeignSessionsPerIp))
     lobbyOptions.maxForeignSessionsPerIp = savedRoomConfig.maxForeignSessionsPerIp;
-  log.info(`[sessions] all-IP limit: ${lobbyOptions.limitForeignSessions ? lobbyOptions.maxForeignSessionsPerIp : 'off'}, GeoIP ${countryLookup ? 'ready' : 'unavailable'}`);
+  log.info(`[sessions] ${ipSessionScope} IP limit: ${lobbyOptions.limitForeignSessions ? lobbyOptions.maxForeignSessionsPerIp : 'off'}, GeoIP ${countryLookup ? 'ready' : 'unavailable'}`);
+  if (lobbyOptions.limitForeignSessions && ipSessionScope === 'foreign' && !countryLookup)
+    log.warn('[sessions] foreign scope needs a GeoIP country database; session quota is inactive until configured');
   log.info(`[connections] foreign access: ${lobbyOptions.allowForeignConnections ? 'allowed' : 'blocked when GeoIP identifies a foreign source'}`);
   // 分享模式的启动自述：排障的第一件事就是「这个站点是哪种模式、往哪里发」，而这两件事都只来自启动配置。
   log.info(`[portal] site ${siteId ?? 'unset'} · room share ${portalRoom.mode}` +
@@ -238,7 +261,7 @@ export async function startServer(opts = {}) {
   // an out-of-memory abort in a worker thread ends the whole server)
   const transport = String(process.env.SP_MATCH_HOST || '').trim().toLowerCase() === 'worker' ? 'worker' : 'process';
   const hosts = createMatchHosts({ contents, log, options: { transport, maxWorkers: Math.max(1, policy.get().maxSets), ...(opts.matchHost || {}) } });
-  const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, countryLookup, workerPool }, { data, log, chatLog, content, plugins: roomSets, hosts });
+  const { registry, lobby, network } = createSessionStack({ ...opts, ...lobbyOptions, ipSessionScope, countryLookup, workerPool }, { data, log, chatLog, content, plugins: roomSets, hosts });
   // the plugin studio (DESIGN §32.9): its page and API for this machine and the local network; it watches plugins/ only
   // once it is used (hot reload), and rooms whose host is the author or alone follow a plugin's changes by themselves
   const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log, fetch: opts.fetch });
@@ -318,11 +341,15 @@ export async function startServer(opts = {}) {
   const server = http.createServer(createRequestHandler({
     serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base),
     health: { startedAt, gameBootId, network, registry, lobby, workerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic, content, trusted: trustedRuntime?.health },
-    log, allowStatus, allowNickname, readAnnouncement, announcementSource: announcementOptions.source,
+    log, allowStatus, allowNickname, publicApiLimits, ipBans, apiMainlandOnly, apiCountryLookup,
+    readAnnouncement, announcementSource: announcementOptions.source,
     portalRoom, studio, trustedRuntime, trustProxy: network.opts.trustProxy,
   }));
   server.on('clientError', answerClientError);
-  const wss = attachWebSocket(server, { network, log, traffic, wsCompression: opts.wsCompression ?? process.env.SP_WS_COMPRESSION });
+  const wss = attachWebSocket(server, { network, log, traffic, ipBans, wsUpgradeLimits,
+    isIpBanned: (req) => ipBans.isBanned(req, network.opts.trustProxy),
+    wsCompression: opts.wsCompression ?? process.env.SP_WS_COMPRESSION,
+    wsOrigins: parseWsOrigins(opts.wsOrigins ?? process.env.SP_WS_ORIGINS) });
 
   // The address actually bound. The default may fall back to IPv4; the returned host and url follow that.
   let boundHost, roomAdmin = null;

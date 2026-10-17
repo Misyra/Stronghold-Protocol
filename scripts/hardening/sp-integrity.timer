@@ -1,0 +1,10 @@
+[Unit]
+Description=Stronghold integrity check at 04:17 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 04:17:00 Asia/Shanghai
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

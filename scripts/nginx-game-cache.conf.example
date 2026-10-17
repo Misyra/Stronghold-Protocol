@@ -5,12 +5,39 @@
 # This file's add_header directives replace inherited add_header directives on older nginx;
 # retain any site-required security headers in these locations or a shared header include.
 # Cached locations explicitly enable buffering even if the parent disables it for WebSockets.
+# This snippet belongs to the game origin, never the art CDN (CDN downloads have no request-count cap).
 
-location = /data/resource-manifest.json {
+# Built file hashes are validated by Node. Bare source paths keep upstream no-cache;
+# never override it just to cache /sim/ across releases. Existing exact/^~ routes take priority.
+location ~ ^/(?:build/assets/|(?:js|css|i18n|vendor|shared|sim|data)/|data\.js$) {
     proxy_pass http://127.0.0.1:3000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header CF-Connecting-IP $remote_addr;
+    proxy_set_header X-SP-Drop-Rejections 1;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header Connection "";
+    proxy_cache sp_assets;
+    proxy_buffering on;
+    proxy_cache_key "sp-origin-static-v1|$scheme|$host|$server_port|$proxy_host|$request_uri";
+    proxy_cache_valid 200 30d;
+    proxy_cache_lock on;
+    proxy_cache_use_stale off;
+    add_header X-Static-Cache $upstream_cache_status;
+}
+
+location = /data/resource-manifest.json {
+    # Explicit public offline-preload bootstrap, shared with optional browser-gate installation.
+    # GeoIP and the origin static budgets still apply, including cache HITs.
+    auth_request off;
+    if ($request_method !~ ^(GET|HEAD)$) { return 444; }
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header CF-Connecting-IP $remote_addr;
+    proxy_set_header X-SP-Drop-Rejections 1;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 20s;
@@ -33,6 +60,10 @@ location = /assets-manifest.json {
     proxy_pass http://127.0.0.1:3000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header CF-Connecting-IP $remote_addr;
+    proxy_set_header X-SP-Drop-Rejections 1;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_read_timeout 20s;
 
     proxy_cache sp_assets;
@@ -52,19 +83,15 @@ location = /api/announcement {
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header CF-Connecting-IP $remote_addr;
+    proxy_set_header X-SP-Drop-Rejections 1;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 20s;
 
-    proxy_cache sp_assets;
-    proxy_buffering on;
-    proxy_cache_key "sp-game-cache-v1|$scheme|$host|$server_port|$proxy_host|$request_uri";
-    proxy_ignore_headers Cache-Control Expires;
-    proxy_cache_valid 200 30s;
-    proxy_cache_lock on;
-    proxy_cache_background_update off;
-    proxy_cache_use_stale off;
-    add_header X-Announcement-Cache $upstream_cache_status;
+    # Every public API request must reach admission accounting, including repeated announcements.
+    proxy_cache off;
+    proxy_ignore_headers X-Accel-Expires;
 }
 
 location ^~ /icons/ {

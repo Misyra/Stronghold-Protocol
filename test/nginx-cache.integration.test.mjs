@@ -41,6 +41,7 @@ test('real nginx examples: manifest caching, current health, log metadata and au
     const backend = await listen(async (req, res) => {
       const url = new URL(req.url, 'http://localhost');
       hits.set(req.url, (hits.get(req.url) || 0) + 1);
+      if (url.pathname === '/_sp/ip-check') { res.writeHead(204); res.end(); return; }
       if (url.pathname === '/healthz') {
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify(url.searchParams.get('build') === '1' ? { build: 'release' } : { build: 'release', seq: ++healthSequence })); return;
@@ -50,7 +51,7 @@ test('real nginx examples: manifest caching, current health, log metadata and au
       }
       if (url.pathname === '/api/announcement') {
         if (fail) { res.writeHead(503, { 'Cache-Control': 'no-store' }); res.end('{}'); return; }
-        // Shorten only this fixture's TTL so stale-on-error is tested without a 30s wait.
+        // Even an upstream acceleration header must not bypass public API admission accounting.
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Accel-Expires': '1' }); res.end('{"announcement":null}'); return;
       }
       if (url.searchParams.get('v') === 'old' || /nodedata\.js$/i.test(url.pathname)) {
@@ -60,7 +61,8 @@ test('real nginx examples: manifest caching, current health, log metadata and au
       if (url.searchParams.get('lock')) await delay(100);
       const gz = /gzip/.test(req.headers['accept-encoding'] || '');
       const etag = gz ? '"manifest-gz"' : '"manifest"';
-      const headers = { 'Content-Type': 'application/json', 'Cache-Control': url.pathname.startsWith('/_v/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+      const immutable = url.pathname.startsWith('/_v/') || url.pathname.startsWith('/build/assets/');
+      const headers = { 'Content-Type': 'application/json', 'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
         'Accept-Ranges': 'bytes', Vary: 'Accept-Encoding', ETag: etag,
         'X-Accel-Expires': url.pathname === '/data/resource-manifest.json' ? (url.searchParams.has('v') ? '43200' : '1') : '0' };
       // Static version/asset manifest uses normal Cache-Control, not X-Accel-Expires.
@@ -89,8 +91,19 @@ test('real nginx examples: manifest caching, current health, log metadata and au
     const fragment = read('scripts/nginx-game-cache.conf.example').replaceAll('127.0.0.1:3000', `127.0.0.1:${backend.port}`).replaceAll('/opt/sp-public', normalized(path.join(dir, 'public')));
     fs.writeFileSync(path.join(dir, 'game.conf'), fragment);
     fs.writeFileSync(path.join(dir, 'log.conf'), read('scripts/nginx-log-format.conf.example'));
+    fs.writeFileSync(path.join(dir, 'api-map.conf'), read('scripts/hardening/sp-public-api-map.conf'));
+    fs.writeFileSync(path.join(dir, 'health-map.conf'), read('scripts/hardening/sp-health-cache-map.conf'));
+    fs.writeFileSync(path.join(dir, 'business-map.conf'), read('scripts/hardening/sp-business-limit-map.conf'));
+    fs.writeFileSync(path.join(dir, 'page-global.conf'), read('scripts/hardening/sp-page-global.conf'));
     let config = read('scripts/nginx.conf.example')
+      .replace('load_module /usr/lib/nginx/modules/ngx_http_geoip2_module.so;', '')
+      .replace('include /etc/nginx/conf.d/sp-geoip-country.conf;', '')
+      .replace('if ($sp_geoip_denied) { return 444; }', '')
       .replace('include /etc/nginx/conf.d/sp-log-format.conf;', `include "${prefix}log.conf";`)
+      .replace('include /etc/nginx/conf.d/sp-business-limit-map.conf;', `include "${prefix}business-map.conf";`)
+      .replace('include /etc/nginx/conf.d/sp-page-global.conf;', `include "${prefix}page-global.conf";`)
+      .replace('include /etc/nginx/conf.d/sp-public-api-map.conf;', `include "${prefix}api-map.conf";`)
+      .replace('include /etc/nginx/conf.d/sp-health-cache-map.conf;', `include "${prefix}health-map.conf";`)
       .replace('include /etc/nginx/snippets/stronghold-game-cache.conf;', `include "${prefix}game.conf";`)
       .replace('/var/cache/nginx/sp_assets', 'cache').replace('/var/log/nginx/sp/stronghold.access.log', 'logs/access.log')
       .replace('listen 443 ssl;', `listen 127.0.0.1:${port};`)
@@ -141,11 +154,11 @@ test('real nginx examples: manifest caching, current health, log metadata and au
       const plain = await get('/data/resource-manifest.json'); assert.equal(plain.headers.get('x-resource-cache'), 'MISS');
       assert.equal((await get('/data/resource-manifest.json')).headers.get('x-resource-cache'), 'HIT');
       await (await get('/api/announcement')).text();
-      assert.equal((await get('/api/announcement')).headers.get('x-announcement-cache'), 'HIT');
+      assert.equal((await get('/api/announcement')).headers.get('x-announcement-cache'), null);
       await delay(2200); fail = true;
       try {
         assert.equal((await get('/data/resource-manifest.json')).status, 500, 'expired plain manifests cannot mask failures');
-        assert.equal((await get('/api/announcement')).status, 503, 'expired announcements cannot mask failures');
+        assert.equal((await get('/api/announcement')).status, 503, 'uncached announcements cannot mask failures');
         assert.equal((await get(url)).headers.get('x-resource-cache'), 'HIT', 'versioned upstream TTL overrides the short default');
       }
       finally { fail = false; }
@@ -161,6 +174,18 @@ test('real nginx examples: manifest caching, current health, log metadata and au
       }
       const range = await get('/_v/0123456789abcdef/js/main.js', { headers: { Range: 'bytes=0-3' } });
       assert.equal(range.status, 206); assert.equal(await range.text(), body.slice(0, 4));
+    });
+    await t.test('built assets share origin cache while bare simulation still revalidates', async () => {
+      const built = '/build/assets/index-0123456789.js';
+      await (await get(built)).text();
+      const cached = await get(built); assert.equal(cached.headers.get('x-static-cache'), 'HIT'); await cached.text();
+      assert.equal(hits.get(built), 1);
+      const source = '/sim/spec.js';
+      for (let i = 0; i < 2; i++) {
+        const result = await get(source); assert.equal(result.headers.get('x-static-cache'), 'MISS');
+        assert.equal(result.headers.get('cache-control'), 'no-cache'); await result.text();
+      }
+      assert.equal(hits.get(source), 2);
     });
     await t.test('health and admin stay uncached; Agent forwards new metrics, enforces Bearer and strips private fields', async () => {
       const a = await (await get('/healthz')).json(), b = await (await get('/healthz')).json(); assert.notEqual(a.seq, b.seq);
@@ -178,7 +203,7 @@ test('real nginx examples: manifest caching, current health, log metadata and au
       assert.equal((await get(url)).status, 403, 'authorized response must not leak through shared cache');
       assert.equal((await get('/internal/admin/test')).status, 404);
       assert.equal((await get('/icons/app.svg')).status, 200);
-      await (await get('/api/rooms/random', { method: 'POST' })).text();
+      await (await get('/api/rooms/random')).text();
       await delay(5500);
       const log = fs.readFileSync(path.join(dir, 'logs/access.log'), 'utf8');
       assert.match(log, /rt=\d+\.\d+ urt=/); assert.match(log, /cache=HIT/); assert.match(log, /reason=ROOM_CHECK_BUSY/);

@@ -1,20 +1,53 @@
 # Main nginx configuration; customize the domain and certificate paths before use.
+# Full standalone config: Debian's package normally loads this via modules-enabled instead.
+# When merging into an existing nginx.conf, load the module exactly once.
+load_module /usr/lib/nginx/modules/ngx_http_geoip2_module.so;
 worker_processes auto;
 
 events {
-    worker_connections 512;
+    # Includes clients AND upstream/auth sockets; keep the service's open-file limit sufficient.
+    worker_connections 16384;
 }
 
 http {
+    # Explicitly fit the public API/bootstrap map keys on platforms with 32-byte defaults too.
+    map_hash_bucket_size 64;
     # Install scripts/nginx-log-format.conf.example at this http-level path first.
     include /etc/nginx/conf.d/sp-log-format.conf;
+    include /etc/nginx/conf.d/sp-business-limit-map.conf;
+    include /etc/nginx/conf.d/sp-public-api-map.conf;
+    include /etc/nginx/conf.d/sp-health-cache-map.conf;
+    include /etc/nginx/conf.d/sp-page-global.conf;
+    include /etc/nginx/conf.d/sp-geoip-country.conf;
     map $http_upgrade $connection_upgrade {
         default upgrade;
         ''      close;
     }
 
+    # Layered per-client budgets. Internal ban checks must not count as user requests.
+    map $uri $sp_health_key { default ""; /healthz $binary_remote_addr; }
+    map $uri $sp_page_key {
+        default "";
+        / $binary_remote_addr;
+        /index.html $binary_remote_addr;
+    }
+    limit_req_zone $sp_health_key zone=sp_health:10m rate=12r/m;
+    limit_req_zone $sp_page_key zone=sp_page:10m rate=120r/m;
+    limit_req_zone $binary_remote_addr zone=sp_ws_rate:10m rate=5r/m;
+    limit_conn_zone $binary_remote_addr zone=sp_ws_conn:10m;
+    # Exclude internal auth subrequests from the public connection budget.
+    map $uri $sp_conn_all_key {
+        default game;
+        /_sp/ip-check "";
+        /_sp/gate-check "";
+        /_sp/http-drop "";
+    }
+    map $uri $sp_ws_all_key { default ""; /ws game; }
+    limit_conn_zone $sp_conn_all_key zone=sp_conn_all:1m;
+    limit_conn_zone $sp_ws_all_key zone=sp_ws_conn_all:1m;
+
     # ---- 版本化静态资源 /_v/<tag>/... 的共享缓存（2026-10-05 线上验证过的形态）----
-    # 坑位备忘（完整清单见 docs/operations/DEPLOY.md「Nginx 运维备忘」）：
+    # 坑位备忘（完整清单见 custom_docs/operations/DEPLOY.md「Nginx 运维备忘」）：
     #   * /_v/<tag>/ 是 Node 按启动时内容哈希解析的虚拟路径，磁盘上没有 public/_v：
     #     不能用 root/alias 直出，必须 proxy_pass 回 Node；
     #   * 只缓存 200：Node 对运行中被改动的版本资源返回不缓存的 503；
@@ -29,11 +62,63 @@ http {
 
     server {
         listen 443 ssl;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+    ssl_prefer_server_ciphers off;
+    ssl_session_tickets off;
         server_name game.example.com;
+        # The global Country DB must positively identify CN; covers assets and WS too.
+        if ($sp_geoip_denied) { return 444; }
+        # Close unused public APIs before auth_request, cache lookup or Node work.
+        # Nickname HTTP preflight is temporarily suspended; localhost monitoring survives.
+        if ($sp_close_public_api) { return 444; }
         ssl_certificate     /etc/letsencrypt/live/game.example.com/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/game.example.com/privkey.pem;
         # Keep the actual log path/rotation and grant the collector read access.
         access_log /var/log/nginx/sp/stronghold.access.log sp_game buffer=64k flush=5s;
+        limit_req_status 444;
+        limit_conn_status 444;
+        # Access logs supply fail2ban; avoid duplicating every refusal in the error log.
+        limit_req_log_level notice;
+        limit_conn_log_level notice;
+        limit_conn sp_conn_all 3000;
+        limit_req zone=sp_health burst=3 nodelay;
+        limit_req zone=sp_page burst=10 nodelay;
+        limit_req zone=sp_page_global burst=40 nodelay;
+        limit_req zone=sp_business burst=30 nodelay;
+        limit_req zone=sp_static burst=1024 nodelay;
+        limit_req zone=sp_health_global burst=10 nodelay;
+
+        # Check bans before cached responses and direct files too (requires http_auth_request_module).
+        # Restore $remote_addr from trusted upstreams first; never trust arbitrary forwarding headers.
+        auth_request /_sp/ip-check;
+        error_page 403 = @sp_ip_banned;
+        location @sp_ip_banned {
+            auth_request off;
+            # Inherit access_log: status 444/body 0 remains available to audit/fail2ban.
+            return 444;
+        }
+        # Only the trusted game backend can redirect a protection rejection here.
+        # Ordinary 403/404/500/503 responses are not globally intercepted.
+        location = /_sp/http-drop {
+            internal;
+            auth_request off;
+            return 444;
+        }
+        location = /_sp/ip-check {
+            internal;
+            auth_request off;
+            proxy_pass http://127.0.0.1:3000/_sp/ip-check;
+            proxy_pass_request_body off;
+            proxy_set_header Content-Length "";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header CF-Connecting-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-SP-Drop-Rejections "";
+            proxy_ignore_headers X-Accel-Redirect;
+            proxy_cache off;
+        }
 
         # 版本化资源：命中走本机缓存，未命中仍回源 Node（Node 始终是唯一权威）。
         location ^~ /_v/ {
@@ -43,6 +128,8 @@ http {
             proxy_set_header Connection $connection_upgrade;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header CF-Connecting-IP $remote_addr;
+            proxy_set_header X-SP-Drop-Rejections 1;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_read_timeout 1h;
@@ -57,32 +144,123 @@ http {
             add_header X-Asset-Cache $upstream_cache_status;
         }
 
-        # Collectors need current samples; the browser uses the tiny ?build=1 response.
-        # Never override no-store or share a cached full/compact health response.
+        # Public health has a 5-second source cache; loopback diagnostics remain uncached.
         location = /healthz {
-            proxy_pass http://127.0.0.1:3000;
+            if ($request_method !~ ^(GET|HEAD)$) { return 444; }
+            if ($http_authorization != "") { return 444; }
+            max_ranges 0;
+            limit_conn sp_health_conn_global 32;
+            # Child limit_conn replaces the parent list.
+            limit_conn sp_conn_all 3000;
+            proxy_connect_timeout 1s;
+            proxy_read_timeout 2s;
+            proxy_send_timeout 2s;
+            proxy_pass http://127.0.0.1:3000$sp_health_cache_uri;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header CF-Connecting-IP $remote_addr;
+            proxy_set_header X-SP-Drop-Rejections 1;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Range "";
+            proxy_set_header If-Range "";
 
-            proxy_cache off;
+            proxy_cache sp_assets;
+            proxy_cache_key "sp-health-public-v1|$server_addr|$server_port|$proxy_host|$sp_health_cache_variant";
+            proxy_buffering on;
+            proxy_cache_convert_head on;
+            proxy_cache_valid 200 5s;
+            proxy_cache_lock on;
+            proxy_cache_lock_timeout 2s;
+            proxy_cache_lock_age 2s;
+            proxy_cache_use_stale off;
+            proxy_cache_background_update off;
+            proxy_cache_bypass $sp_local_api_monitor;
+            proxy_no_cache $sp_local_api_monitor;
+            proxy_ignore_headers Cache-Control Expires;
+            proxy_hide_header Cache-Control;
+            proxy_hide_header Expires;
+            add_header Cache-Control "no-store" always;
+            add_header X-Health-Cache $upstream_cache_status always;
         }
 
-        # 清单共享缓存、公告 30s 缓存和图标直出。先安装并修正片段里的端口、图标目录：
+        # 清单共享缓存、公告回源计数和图标直出。先安装并修正片段里的端口、图标目录：
         # scripts/nginx-game-cache.conf.example -> /etc/nginx/snippets/stronghold-game-cache.conf
         # 已有同路径 location 时先替换/移除，不能再重复定义。
         include /etc/nginx/snippets/stronghold-game-cache.conf;
 
+        # Portal latency checks are GET/HEAD, not a browser session. Do not add a ping IP-ban jail.
+        location = /api/ping {
+            auth_request off;
+            if ($request_method !~ ^(GET|HEAD)$) { return 444; }
+            limit_req zone=sp_ping_ip burst=10 nodelay;
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header CF-Connecting-IP $remote_addr;
+            proxy_set_header X-SP-Drop-Rejections 1;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Connection "";
+            proxy_cache off;
+        }
+
+        # The game supports GET/HEAD /api/rooms/<code>/status; no public room enumeration API.
+        location ~ ^/api/rooms(?:/|$) {
+            if ($request_method !~ ^(GET|HEAD)$) { return 444; }
+            # Keep inherited auth_request: room codes are enumerable.
+            limit_req zone=sp_business burst=30 nodelay;
+            limit_req zone=sp_rooms_ip burst=5 nodelay;
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header CF-Connecting-IP $remote_addr;
+            proxy_set_header X-SP-Drop-Rejections 1;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Connection "";
+            proxy_cache off;
+        }
+
         # Nickname preflight belongs to the game, including on hosts where /api/ serves the portal.
         location = /api/nickname/validate {
+            # Temporary suspension (2026-10-17). Remove with the API map/client switch to re-enable.
+            return 444;
             proxy_pass http://127.0.0.1:3000;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header CF-Connecting-IP $remote_addr;
+            proxy_set_header X-SP-Drop-Rejections 1;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_cache off;
             client_max_body_size 1k;
+        }
+
+        # /ws is only a GET WebSocket handshake, never a normal downloadable resource.
+        location = /ws {
+            if ($request_method != GET) { return 444; }
+            if ($http_upgrade !~* "^websocket$") { return 444; }
+            # Child limit_req replaces parent directives: repeat the all-path fallback here.
+            limit_req zone=sp_business burst=30 nodelay;
+            limit_req zone=sp_ws_rate burst=3 nodelay;
+            limit_conn sp_ws_conn 4;
+            limit_conn sp_ws_conn_all 800;
+            limit_conn sp_conn_all 3000;
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header CF-Connecting-IP $remote_addr;
+            proxy_set_header X-SP-Drop-Rejections 1;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache off;
+            proxy_connect_timeout 3s;
+            proxy_read_timeout 120s;
+            proxy_send_timeout 30s;
         }
 
         location / {
@@ -93,6 +271,8 @@ http {
             proxy_set_header Connection $connection_upgrade;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header CF-Connecting-IP $remote_addr;
+            proxy_set_header X-SP-Drop-Rejections 1;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_read_timeout 1h;      # WebSocket 长连接

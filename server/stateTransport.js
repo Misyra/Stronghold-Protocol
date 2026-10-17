@@ -18,6 +18,8 @@
 import { applyStatePatch, diffState, isStateKind, STATE_DELTA_VERSION } from '../shared/stateDelta.js';
 
 const connections = new WeakMap();
+/** 取自 xinhai 的 stateTransport：worker 里算好的增量帧，按键（消息对象）挂在这里，主线程发送时可直接取用。 */
+const workerFrames = new WeakMap();
 const snapshots = new WeakMap();
 let sequence = 0;
 /** Read per transition (not at module load) so a test or a canary can switch it on in-process. */
@@ -37,6 +39,22 @@ export function negotiateStateDelta(ws, version) {
 export function resetStateDelta(ws) { connections.get(ws)?.clear(); }
 
 /** Reserve a shared state's sequence in enqueue order; parse/diff work stays in the send slice. */
+/**
+ * 登记一个「worker 已经算好增量」的状态帧（xinhai 的 API）。主线程照常走 prepareStateFrame：它自己的基线
+ * 与 worker 的 frame.base 对得上时用 worker 的增量，否则退回本地计算 —— 两条路径都不会发出不一致的帧。
+ * @param {any} msg @param {string} encoded @param {{ seq: number, base?: number, delta: string|null }} frame @param {any} [owner]
+ */
+export function attachWorkerState(msg, encoded, frame, owner = null) {
+  if (frame) workerFrames.set(msg, { encoded, frame, owner });
+  return msg;
+}
+
+/** The frame attached by attachWorkerState, when it still matches this encoding (used by prepareStateFrame). */
+export function attachedWorkerFrame(msg, encoded) {
+  const entry = workerFrames.get(msg);
+  return entry && entry.encoded === encoded ? entry.frame : null;
+}
+
 export function reserveStateFrame(msg, encoded) {
   if (isStateKind(msg?.t)) snapshotFor(msg, encoded);
 }

@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { BackgroundClient } from '../server/workers/backgroundClient.js';
+import { attachWorkerState, attachedWorkerFrame } from '../server/stateTransport.js';
 import { WorkerStateEncoder } from '../server/workers/stateEncoder.js';
 
 test('WorkerStateEncoder: 首帧全量、增量带基线、未变化复用同一帧、私人流按玩家隔离', () => {
@@ -54,4 +55,14 @@ test('manifestEncode worker: 把清单文件里的 /assets/ 地址改写到 CDN 
   const doc = JSON.parse(new TextDecoder().decode(bytes));
   assert.equal(doc.files[0].url, 'https://cdn.example.test/game/assets/x.png', '素材地址被改写');
   assert.equal(doc.files[1].url, '/data/x.json', '数据地址不动');
+});
+
+test('attachWorkerState: worker 算好的增量帧挂在消息上，编码一致才认', () => {
+  const msg = { t: 'm.public' };
+  const frame = { seq: 3, base: 2, delta: '{"x":1}' };
+  assert.equal(attachWorkerState(msg, '{"a":1}', frame), msg, '返回原消息，便于链式调用');
+  assert.deepEqual(attachedWorkerFrame(msg, '{"a":1}'), frame);
+  assert.equal(attachedWorkerFrame(msg, '{"a":2}'), null, '编码变了（另一份快照）就不认');
+  assert.equal(attachedWorkerFrame({ t: 'm.public' }, '{"a":1}'), null, '没登记过的消息没有帧');
+  assert.equal(attachedWorkerFrame(msg, '{"a":1}'), frame, '一次登记、多次取用（多个连接各自发）');
 });

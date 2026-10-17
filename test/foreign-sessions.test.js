@@ -6,7 +6,7 @@ import path from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { startServer } from '../server/index.js';
 import { SessionRegistry } from '../server/net.js';
-import { ForeignSessions } from '../server/foreignSessions.js';
+import { ForeignSessions, parseIpSessionScope } from '../server/foreignSessions.js';
 import { snapshotServer } from '../server/persist.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { TestClient } from './helpers/wsClient.js';
@@ -19,6 +19,72 @@ const lookup = (ip) => ip === domestic ? 'CN' : ['203.0.113.1', '203.0.113.2', '
 const adminToken = 'foreign-policy-test-token-01234567890123456789';
 const putPolicy = (srv, body, token = adminToken) => fetch(srv.roomAdminUrl + '/api/room-config', {
   method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+});
+
+test('IP session environment settings support canonical names, legacy names and explicit overrides', () => {
+  const env = { SP_IP_SESSION_LIMIT: 'on', SP_IP_MAX_SESSIONS_PER_IP: '2',
+    SP_FOREIGN_SESSION_LIMIT: 'off', SP_FOREIGN_MAX_SESSIONS_PER_IP: '7' };
+  const options = lobbyOptionsFrom({}, env);
+  assert.equal(options.limitForeignSessions, true);
+  assert.equal(options.maxForeignSessionsPerIp, 2);
+  assert.equal(lobbyOptionsFrom({}, { SP_IP_SESSION_LIMIT: 'off' }).limitForeignSessions, false);
+  const explicit = lobbyOptionsFrom({ limitForeignSessions: false, maxForeignSessionsPerIp: 3 }, env);
+  assert.equal(explicit.limitForeignSessions, false);
+  assert.equal(explicit.maxForeignSessionsPerIp, 3);
+  for (const value of ['0', '-1', '101', '1.5', 'NaN', ''])
+    assert.throws(() => lobbyOptionsFrom({}, { SP_IP_MAX_SESSIONS_PER_IP: value }), /SP_IP_MAX_SESSIONS_PER_IP/);
+  assert.throws(() => lobbyOptionsFrom({}, { SP_IP_SESSION_LIMIT: 'maybe' }), /SP_IP_SESSION_LIMIT/);
+  assert.equal(parseIpSessionScope(), 'all');
+  assert.equal(parseIpSessionScope(' FOREIGN '), 'foreign');
+  assert.throws(() => parseIpSessionScope('domestic'), /SP_IP_SESSION_SCOPE/);
+});
+
+test('foreign scope caps foreign identities at the configured count while domestic and unknown identities remain free', async (t) => {
+  const f = await fixture(t, lookup, { ipSessionScope: 'foreign', maxForeignSessionsPerIp: 2 });
+  const a = await f.connect(), wa = await a.hello('ForeignA');
+  await (await f.connect()).hello('ForeignB');
+  const third = await f.connect();
+  assert.equal((await third.request({ t: 'hello', name: 'ForeignC' })).code, 'FOREIGN_SESSION_LIMIT');
+  assert.equal((await third.hello('ForeignA', wa.token)).resumed, true);
+  for (const ip of [domestic, '203.0.113.99', '127.0.0.2']) {
+    for (let i = 0; i < 3; i++) await (await f.connect(ip)).hello('Free' + i);
+  }
+  assert.equal(f.srv.network.foreignSessions.stats().scope, 'foreign');
+  assert.equal(f.srv.network.foreignSessions.stats().enabled, true);
+  const health = await (await fetch(f.srv.url + '/healthz')).json();
+  assert.equal(health.foreignSessions.scope, 'foreign');
+  assert.equal(health.foreignSessions.maxPerIp, 2);
+});
+
+test('foreign scope uses non-CN country results and reports inactive when no country database is configured', () => {
+  for (const country of ['CN', 'US', 'HK', 'MO', 'TW', null]) {
+    const gate = new ForeignSessions({ registry: new SessionRegistry(), scope: 'foreign', countryLookup: () => country });
+    assert.equal(!!gate.prepare(foreign).key, country !== null && country !== 'CN', String(country));
+  }
+  const missing = new ForeignSessions({ registry: new SessionRegistry(), scope: 'foreign' });
+  assert.equal(missing.prepare(foreign).key, null);
+  assert.equal(missing.stats().configured, true);
+  assert.equal(missing.stats().enabled, false);
+  assert.equal(missing.stats().geoipAvailable, false);
+});
+
+test('server reads the IP session scope and count from its environment', async (t) => {
+  const values = { SP_IP_SESSION_SCOPE: 'foreign', SP_IP_SESSION_LIMIT: 'on', SP_IP_MAX_SESSIONS_PER_IP: '2' };
+  const saved = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
+  t.after(() => { for (const [key, value] of Object.entries(saved)) {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  } });
+  Object.assign(process.env, values);
+  const f = await fixture(t);
+  assert.equal(f.srv.network.foreignSessions.stats().scope, 'foreign');
+  assert.equal(f.srv.network.foreignSessions.stats().maxPerIp, 2);
+  await (await f.connect()).hello('One');
+  await (await f.connect()).hello('Two');
+  const third = await f.connect();
+  assert.equal((await third.request({ t: 'hello', name: 'Three' })).code, 'FOREIGN_SESSION_LIMIT');
+  await (await f.connect(domestic)).hello('CNOne');
+  await (await f.connect(domestic)).hello('CNTwo');
+  await (await f.connect(domestic)).hello('CNThree');
 });
 
 function refusedUpgrade(srv, ip = foreign) {
@@ -412,18 +478,27 @@ test('blocking new connections keeps authenticated players but rejects reconnect
   assert.ok(f.logs.some(line => line.includes('connection.foreignPolicy.changed')));
 });
 
-test('connection policy fails open for domestic, unknown, private and unavailable country lookup', async (t) => {
-  for (const [countryLookup, ip] of [[lookup, domestic], [lookup, '203.0.113.99'], [() => 'HK', '127.0.0.2'],
-    [null, foreign], [() => { throw new Error('lookup failed'); }, foreign]]) {
+test('connection policy refuses overseas AND unplaceable addresses, while domestic, local and database faults pass', async (t) => {
+  // 2026-10-17: an address the database cannot place is treated as overseas. Local/private peers (the caller
+  // blanks their address), a box without a database and a lookup that threw keep the old fail-open.
+  for (const [countryLookup, ip] of [[lookup, domestic], [() => 'HK', '127.0.0.2'], [null, foreign],
+    [() => { throw new Error('lookup failed'); }, foreign]]) {
     const f = await fixture(t, countryLookup, { allowForeignConnections: false });
-    assert.equal((await (await f.connect(ip)).hello('Allowed')).t, 'welcome');
+    assert.equal((await (await f.connect(ip)).hello('Allowed')).t, 'welcome', String(ip));
     assert.equal(f.srv.network.foreignSessions.stats().connectionDenied, 0);
     assert.equal(f.srv.network.foreignSessions.stats().foreignConnectionsBlocked, !!countryLookup);
+  }
+  for (const [countryLookup, ip] of [[lookup, '203.0.113.99'], [lookup, foreign], [() => 'HK', '203.0.113.98']]) {
+    const f = await fixture(t, countryLookup, { allowForeignConnections: false });
+    // Refused at the upgrade, before any gameplay socket or session exists.
+    await assert.rejects(f.connect(ip), /403/, String(ip));
+    assert.ok(f.srv.network.foreignSessions.stats().connectionDenied >= 1);
   }
 });
 
 test('overseas game documents return only the refusal message without blocking assets or monitoring', async (t) => {
-  const f = await fixture(t, lookup, { allowForeignConnections: false });
+  // Exercise the document gate independently from the separate, default-on public API country policy.
+  const f = await fixture(t, lookup, { allowForeignConnections: false, httpApiMainlandOnly: false });
   const headers = { 'X-Real-IP': foreign };
   for (const entry of ['/', '/index.html', '/%69ndex.html', '/build/index.html', '/dev/', '/dev/spine.html']) {
     const response = await fetch(f.srv.url + entry, { headers });

@@ -1036,18 +1036,44 @@ describe('screen helpers', () => {
         assert.equal(store.get(), before);
         return { ok: false, json: async () => ({ ok: false, code: 'NICKNAME_SENSITIVE' }) };
       };
-      await assert.rejects(enterSession('傻·逼'), { message: ERR_TEXT.NICKNAME_SENSITIVE });
+      await assert.rejects(enterSession('傻·逼', { preflight: true }), { message: ERR_TEXT.NICKNAME_SENSITIVE });
       assert.equal(store.get(), before);
       globalThis.fetch = async () => { throw new Error('offline'); };
-      await assert.rejects(enterSession('正常博士'), { message: '昵称校验失败，请稍后重试' });
+      await assert.rejects(enterSession('正常博士', { preflight: true }), { message: '昵称校验失败，请稍后重试' });
       assert.equal(store.get(), before);
       globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: true }) });
+      assert.equal(await enterSession('正常博士', { preflight: true, isCurrent: () => false }), false);
+      const controller = new AbortController(); controller.abort();
+      assert.equal(await enterSession('正常博士', { preflight: true, signal: controller.signal }), false);
+      assert.equal(store.get(), before);
+      assert.equal(nameError('傻·逼'), null, 'no dictionary on the client');
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
+  test('title temporary preflight suspension enters without HTTP and still ignores cancelled attempts', async () => {
+    const { enterSession, NICKNAME_PREFLIGHT_ENABLED } = await mod('screens/title.js');
+    const { store } = await mod('store.js');
+    const { identity, net } = await mod('net.js');
+    const before = store.get(), previousName = identity.loadName(), originalFetch = globalThis.fetch, originalSetName = net.setName;
+    let requests = 0;
+    try {
+      assert.equal(NICKNAME_PREFLIGHT_ENABLED, false);
+      net.setName = (name) => { assert.equal(name, '正常博士'); };
+      globalThis.fetch = async () => { requests++; throw new Error('preflight disabled'); };
       assert.equal(await enterSession('正常博士', { isCurrent: () => false }), false);
       const controller = new AbortController(); controller.abort();
       assert.equal(await enterSession('正常博士', { signal: controller.signal }), false);
       assert.equal(store.get(), before);
-      assert.equal(nameError('傻·逼'), null, 'no dictionary on the client');
-    } finally { globalThis.fetch = originalFetch; }
+      assert.equal(await enterSession('正常博士'), true);
+      assert.equal(store.get().me.name, '正常博士');
+      assert.equal(store.get().session.entered, true);
+      assert.equal(requests, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+      net.setName = originalSetName;
+      identity.saveName(previousName); identity.setEntered(before.session.entered);
+      store.set(before);
+    }
   });
 
   test('title exposes the shared settings modal', () => {

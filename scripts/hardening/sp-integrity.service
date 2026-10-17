@@ -1,0 +1,10 @@
+[Unit]
+Description=Stronghold daily host integrity comparison
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/sp-integrity-check.sh
+Nice=10
+IOSchedulingClass=idle
+UMask=0077

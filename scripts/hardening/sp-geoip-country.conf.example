@@ -1,0 +1,17 @@
+# Install at HTTP level as /etc/nginx/conf.d/sp-geoip-country.conf.
+# Requires ngx_http_geoip2_module, the global Country database, and a server-level
+# if ($sp_geoip_denied) { return 444; }
+# Explicit source ignores GeoIP proxy headers; restore remote_addr only from trusted ingress.
+geoip2 /opt/Stronghold-Protocol/geoip/GeoLite2-Country.mmdb {
+    $sp_geoip_country default=ZZ source=$remote_addr country iso_code;
+}
+geo $sp_geoip_loopback {
+    default 0;
+    127.0.0.0/8 1;
+    ::1/128 1;
+}
+map "$sp_geoip_loopback:$sp_geoip_country" $sp_geoip_denied {
+    default 1;
+    "0:CN" 0;
+    ~^1: 0;
+}

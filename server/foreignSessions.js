@@ -5,16 +5,23 @@ import { ROOM_PROTECTION_DEFAULTS } from './roomConfig.js';
 
 export const foreignSessionKey = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) ? value : null;
 
+export function parseIpSessionScope(value = 'all') {
+  const scope = String(value).trim().toLowerCase();
+  if (!['all', 'foreign'].includes(scope)) throw new RangeError('SP_IP_SESSION_SCOPE must be all or foreign');
+  return scope;
+}
+
 /** A live-configured gameplay identity cap per IP; legacy config/field names remain compatible. */
 export class ForeignSessions {
   constructor({ registry, countryLookup = null, now = Date.now, isEnabled = () => true, allowConnections = () => true,
-    maxPerIp = () => ROOM_PROTECTION_DEFAULTS.maxForeignSessionsPerIp }) {
+    maxPerIp = () => ROOM_PROTECTION_DEFAULTS.maxForeignSessionsPerIp, scope = 'all' }) {
     this.registry = registry;
     this.countryLookup = countryLookup;
     this.now = now;
     this.isEnabled = isEnabled;
     this.maxPerIp = maxPerIp;
     this.allowConnections = allowConnections;
+    this.scope = parseIpSessionScope(scope);
     this.connectionLog = { at: -Infinity, suppressed: 0 };
     this.byIp = new Map();
     this.initialized = false;
@@ -25,7 +32,7 @@ export class ForeignSessions {
     if (!this.countryLookup || !isIP(ip)) return null;
     let country;
     try { country = this.countryLookup(ip); }
-    catch { this.counts.lookupErrors++; return null; }
+    catch { this.counts.lookupErrors++; return undefined; }   // undefined = the lookup itself failed
     if (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country)) { this.counts.lookupMisses++; return null; }
     return country;
   }
@@ -33,8 +40,12 @@ export class ForeignSessions {
   connectionAdmission(ip) {
     const result = { ok: true, country: null, suppressed: null };
     if (this.allowConnections()) return result;
+    // Local/private peers arrive with an empty address, and a box without a database keeps the old fail-open;
+    // a lookup that threw is a fault, not a verdict. Everything else has to be positively CN (2026-10-17):
+    // an address the database cannot place counts as overseas, exactly like the kernel country set and nginx's map.
+    if (!ip || !this.countryLookup) return result;
     const country = this.countryOf(ip);
-    if (!country || country === 'CN') return result;
+    if (country === 'CN' || country === undefined) return result;
     this.counts.connectionDenied++;
     result.ok = false; result.country = country;
     if (this.now() - this.connectionLog.at >= 10000) {
@@ -65,11 +76,12 @@ export class ForeignSessions {
       if (this.registry.byId(session.playerId) !== session) this.forget(session);
   }
 
-  /** `ip` is normalized by the existing trusted-proxy resolver; every valid source IP shares this policy. */
+  /** `ip` is normalized by the trusted-proxy resolver; GeoLite selects sources only in foreign mode. */
   prepare(ip, current = null) {
     const plan = { ok: true, key: null, country: null, stale: [], penalties: [], suppressed: null };
     const country = this.countryOf(ip);
     if (!isIP(ip)) return plan;
+    if (this.scope === 'foreign' && (!country || country === 'CN')) return plan;
     // Canonicalize equivalent IPv6 spellings, but do not merge distinct IPs into a /64 here.
     const address = isIP(ip) === 6 ? new URL(`http://[${ip}]/`).hostname : ip;
     plan.key = createHash('sha256').update(address).digest('hex');
@@ -132,7 +144,8 @@ export class ForeignSessions {
 
   stats() {
     const configured = this.isEnabled(), allowForeignConnections = this.allowConnections();
-    return { configured, geoipAvailable: !!this.countryLookup, enabled: configured, scope: 'all',
+    return { configured, geoipAvailable: !!this.countryLookup,
+      enabled: configured && (this.scope === 'all' || !!this.countryLookup), scope: this.scope,
       allowForeignConnections, foreignConnectionsBlocked: !allowForeignConnections && !!this.countryLookup,
       maxPerIp: this.maxPerIp(), ...this.counts };
   }

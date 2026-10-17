@@ -18,9 +18,38 @@ import { NetDiagnostics } from '../netDiagnostics.js';
 import { Lobby } from '../lobby.js';
 import { splitUrl } from './common.js';
 import { netOptionsFrom, lobbyOptionsFrom } from './config.js';
+import { parseIpSessionScope } from '../foreignSessions.js';
+import { createWsUpgradeLimiter } from './wsUpgradeLimit.js';
 
 /** Inbound WebSocket frame limit (DESIGN §8). */
 export const WS_MAX_PAYLOAD = 64 * 1024;
+
+/** SP_WS_ORIGINS: extra `host[:port]` values a browser may open the socket from (comma separated). */
+export function parseWsOrigins(value) {
+  return String(value ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
+/**
+ * Browser origin gate for /ws (the address limits cannot see this: a foreign page spends its *visitor's* address).
+ * A request without an Origin header is not a browser (a game client, a probe, a test) and is left to the limits
+ * below. A browser must name this very host, or one SP_WS_ORIGINS allowlists; 'Origin: null' is refused.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {string[]} extra allowlisted `host[:port]` values
+ * @returns {boolean}
+ */
+export function wsOriginAllowed(req, extra = []) {
+  const origin = req.headers.origin;
+  if (origin == null || origin === '') return true;
+  let host;
+  try { host = new URL(origin).host.toLowerCase(); } catch { return false; }
+  if (!host) return false;
+  // The upgrade is forwarded with `Host $host`, which drops the port the browser typed (`wss://host:16657` →
+  // `host: "host"`), so compare host names: another port on this very host is the same site, another name is not.
+  const target = String(req.headers.host || '').toLowerCase();
+  const bare = (h) => h.replace(/:\d+$/, '');
+  if (host === target || bare(host) === bare(target)) return true;
+  return extra.includes(host) || extra.includes(bare(host));
+}
 
 /** SP_WS_COMPRESSION env (or a boolean option) → enabled; reject typos before starting timers. */
 export function parseWsCompression(v) {
@@ -97,12 +126,14 @@ export function narrowDeflateOffer(header, serverMaxWindowBits = WS_DEFLATE.serv
 export function createSessionStack(opts, { data, log, chatLog, content = null, plugins = null, hosts = null }) {
   const enabled = chatEnabled(opts.chatEnabled ?? process.env.SP_CHAT_ENABLED);
   const netOptions = netOptionsFrom(opts);
+  const ipSessionScope = parseIpSessionScope(opts.ipSessionScope ?? process.env.SP_IP_SESSION_SCOPE);
   const registry = new SessionRegistry({ reconnectWindowMs: netOptions.reconnectWindowMs ?? NET_DEFAULTS.reconnectWindowMs });
   const lobbyOptions = { ...lobbyOptionsFrom(opts), chatEnabled: enabled };
   const diagnostics = new NetDiagnostics();
   try {
     const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, content, plugins, hosts, options: lobbyOptions, workerPool: opts.workerPool ?? null, chatLog, countryLookup: opts.countryLookup, rehearsalPressure: diagnostics.rehearsalPressure });
     const network = new Network({ registry, handler: lobby, log, options: netOptions, diagnostics, countryLookup: opts.countryLookup,
+      ipSessionScope,
       foreignSessionsEnabled: () => lobby.opts.limitForeignSessions,
       foreignSessionsMaxPerIp: () => lobby.opts.maxForeignSessionsPerIp,
       allowForeignConnections: () => lobby.opts.allowForeignConnections });
@@ -135,10 +166,12 @@ function meterSocket(ws, req, traffic) {
 /**
  * Serve the WebSocket endpoint /ws on `server` (its 'upgrade' event).
  * @param {import('node:http').Server} server
- * @param {{ network: Network, log: object, wsCompression?: boolean | string, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter> }} deps
+ * @param {{ network: Network, log: object, wsCompression?: boolean | string, wsOrigins?: string[], isIpBanned?: (req: import('node:http').IncomingMessage) => boolean, ipBans?: ReturnType<typeof import('./ipBans.js').createIpBanStore>, wsUpgradeLimits?: object, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter> }} deps
  * @returns {WebSocketServer}
  */
-export function attachWebSocket(server, { network, log, wsCompression, traffic = null }) {
+export function attachWebSocket(server, { network, log, wsCompression, wsOrigins = [], traffic = null, isIpBanned = () => false, ipBans, wsUpgradeLimits = {} }) {
+  const allowUpgrade = createWsUpgradeLimiter({ ...wsUpgradeLimits, trustProxy: network.opts.trustProxy,
+    ...(ipBans ? { banStore: ipBans } : {}) });
   // Small frames bypass zlib; reset dictionaries between messages and cap each connection's deflate window.
   const deflate = perMessageDeflateFor(wsCompression);
   const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD, perMessageDeflate: deflate, clientTracking: false });
@@ -154,12 +187,15 @@ export function attachWebSocket(server, { network, log, wsCompression, traffic =
     const reject = (status, text) => {
       try { socket.end(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); } catch { socket.destroy(); }
     };
+    if (isIpBanned(req)) { reject(403, 'Forbidden'); return; }
+    if (!allowUpgrade(req)) { reject(403, 'Forbidden'); return; }
     if (!parts || parts.rawPath !== '/ws') { reject(404, 'Not Found'); return; }
     if (network.foreignConnectionDenied(clientAddress(req, network.opts.trustProxy))) {
       const body = JSON.stringify({ code: ERR.FOREIGN_CONNECTIONS_DISABLED, msg: ERR_TEXT.FOREIGN_CONNECTIONS_DISABLED });
       socket.end(`HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
       return;
     }
+    if (!wsOriginAllowed(req, wsOrigins)) { reject(403, 'Forbidden'); return; }
     const refused = network.admission(req);
     if (refused === 'per-address') { reject(429, 'Too Many Requests'); return; }
     if (refused) { reject(503, 'Service Unavailable'); return; }

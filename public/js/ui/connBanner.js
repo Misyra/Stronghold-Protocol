@@ -13,8 +13,9 @@ import { t } from '../../../shared/i18n.js';
 import { ERR } from '../../../shared/constants.js';
 
 /** Whether the banner shows for this connection state (mirrors the early returns below). */
-export function bannerVisible(conn, entered, restoring, buildStale = false) {
+export function bannerVisible(conn, entered, restoring, buildStale = false, gateLost = false) {
   if (!entered || !conn) return false;
+  if (gateLost) return true;
   if (conn.status === 'online') return !!restoring || !!buildStale;
   if (!conn.everOnline && (conn.status === 'connecting' || conn.status === 'handshaking' || conn.status === 'idle')) return false;
   return true;
@@ -25,9 +26,19 @@ export function ConnectionBanner() {
   const entered = useStore((s) => s.session.entered);
   const restoring = useStore((s) => s.ui.restoring);
   const buildStale = useStore((s) => !!s.ui.buildStale);
+  const gateLost = useStore((s) => !!s.ui.gateLost);
   useTicker(conn.status === 'reconnecting' ? 500 : 0);
-  useDocClass('sp-conn', bannerVisible(conn, entered, restoring, buildStale));
+  useDocClass('sp-conn', bannerVisible(conn, entered, restoring, buildStale, gateLost));
   if (!entered) return null;
+  if (gateLost) {
+    // the browser gate stopped admitting this page (ui/buildGuard.js): the cookie lapsed and only a navigation — i.e. a
+    // reload, which gets the proof page — can mint a new one. The guard does this by itself outside a match.
+    return html`<div class="conn-banner" role="alert">
+      <${Icon} name="refresh" />
+      <span>${t('浏览器验证已失效，需要刷新页面')}</span>
+      <${Button} size="sm" variant="secondary" icon="refresh" onClick=${() => location.reload()}>${t('刷新页面')}<//>
+    </div>`;
+  }
   if (conn.status === 'online' && !restoring && !buildStale) return null;
   if (conn.status === 'online' && restoring) {
     return html`<div class="conn-banner" role="status"><${Icon} name="refresh" /><span>${t('正在同步同盟状态…')}</span></div>`;

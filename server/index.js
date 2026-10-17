@@ -271,7 +271,10 @@ export async function startServer(opts = {}) {
   // language packs and plugins (docs/PACKS.md, docs/PLUGINS.md): scanned now — the start log names them — and again
   // whenever their folders change
   const scriptMode = process.env.SP_PLUGIN_SCRIPTS;
-  const packs = createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log, scriptHost:host, scriptMode });
+  // 生产侧插件/语言包扫描在后台线程里做（服务器/workers/pluginScan.js，取自 xinhai）；首次扫描在这里等一次，
+  // 之后所有同步 refresh() 都读快照并在过期时触发后台重扫。
+  const packs = createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log, scriptHost:host, scriptMode, background: true });
+  try { await packs.refreshAsync(true); } catch (e) { log.warn?.(`[packs] 首次后台扫描失败：${e?.message || e}`); }
   packs.refresh(true);
   // the visual sets of the cosmetic plugins (DESIGN §32 P1a): what a room's host switches on, served at /vs/ and /p/
   const visual = createVisualSets({ registry: packs, log });

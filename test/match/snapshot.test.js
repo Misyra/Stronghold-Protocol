@@ -77,6 +77,10 @@ function norm(state, { seqGap = 0 } = {}) {
   for (const p of Object.values(out.players)) {
     p.connected = true;
     p.ready = true;
+    // 掉线由 AI 接管: a restored seat starts offline (the lobby rebinds on hello) and is counted offline at the next
+    // prep end until then — the same reconciliation as `connected`
+    p.offlineRounds = 0;
+    p.offlineAutoplay = false;
     delete p.lastEmoteAt;
   }
   return out;
@@ -301,8 +305,9 @@ test('0.2.2 operator settings and a personal bounty choice survive a checkpoint,
   } finally { a.m.dispose(); b.m.dispose(); }
 });
 
-// 0.2.3 opening votes share the fork's checkpoint/reconnect path.
-test('opening rerolls keep their revision and a pending vote across checkpoint recovery', () => {
+// 0.3.1 opening votes: the revision survives a checkpoint, a pending vote does not (setupVote.js: transient) — the
+// restore gives the paused confirmation countdown back and the proposal marks go with the vote.
+test('a pending reroll vote is dropped by a checkpoint restore; the revision and its sequence survive', () => {
   const { a, b } = pair(7);
   a.m.start();
   assert.equal(a.m.phase, PHASE.INFO_CHECK);
@@ -314,14 +319,17 @@ test('opening rerolls keep their revision and a pending vote across checkpoint r
   const doc = snapshotMatch(a.m);
   assert.equal(restoreMatch(b.m, doc, DEPS), true);
   assert.equal(b.m.setupRevision, 1);
-  assert.deepEqual(b.m.setupVote, a.m.setupVote);
-  assert.equal(b.m.deadline, 0, 'the info clock stays paused during the vote');
+  assert.equal(b.m.setupVote, null, 'the vote does not survive a restart');
   assert.equal(b.m._setupVoteSeq, a.m._setupVoteSeq);
-  assert.equal(b.m.players.get('p_1').connected, false);
+  assert.ok(b.m.deadline > 0, 'the confirmation countdown is back');
+  assert.equal(b.m.handle('p_0', { t: 'g.rerollVote', voteId: 1, agree: true }).error, 'WRONG_PHASE');
+  // the proposal marks went with it: the same player may propose again at the restored revision
+  b.m.players.get('p_0').connected = true;
   b.m.players.get('p_1').connected = true;
+  b.sched.advance(1000); // past the 300 ms proposal guard (a's clock ran on while b's stood still)
+  assert.deepEqual(b.m.requestSetupReroll('p_0', 1), { ok: true });
   assert.deepEqual(b.m.voteSetupReroll(b.m.players.get('p_1'), b.m.setupVote.id, true), { ok: true });
   assert.equal(b.m.setupRevision, 2);
-  assert.equal(b.m.setupVote, null);
   assert.equal(b.m.handle('p_1', { t: 'g.infoReady', setupRevision: 1 }).error, 'BAD_TARGET');
   assert.deepEqual(b.m.handle('p_1', { t: 'g.infoReady', setupRevision: 2 }), { ok: true });
 });

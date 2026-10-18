@@ -1649,6 +1649,24 @@ button.ally-card:disabled { filter: grayscale(.7) brightness(.7); cursor: defaul
 .rs-proto__list { flex: 1 1 auto; }
 .rs-proto__ok.proto-start { flex: none; margin-left: .5rem; width: calc(100% - .5rem); }
 
+/* 队友已集结 — the offer/accept step (2026-10-19, the 0.3.1 queue): every queued player must confirm inside the accept
+   window, so it sits above 搜寻中 (lobby) / beside it (room) and disappears the moment the queue moves on. */
+.proto-offer, .rs-offer { display: flex; flex-direction: column; align-items: center; gap: .1rem; text-align: center; color: #eafff8;
+  background: radial-gradient(80% 60% at 50% 0%, rgba(90, 255, 205, .22), transparent 72%), linear-gradient(180deg, #17362e, #0c1a17);
+  box-shadow: inset 0 0 0 1px rgba(120, 255, 215, .35); animation: mf-found-in 200ms var(--ease-out) backwards; }
+.proto-offer { width: 100%; padding: .22rem .24rem .26rem; }
+.proto-offer h3, .rs-offer h2 { margin: 0; font-family: var(--font-display); font-weight: 900; letter-spacing: .1em; text-shadow: 0 0 .2rem rgba(0, 0, 0, .35); }
+.proto-offer h3 { font-size:max(calc(.3 * var(--t)), 16px); }
+.proto-offer p, .rs-offer p { margin: 0; font-size:max(calc(.16 * var(--t)), 11px); line-height: 1.45; color: #bfd8d0; }
+.proto-offer p { max-width: 4.4rem; }
+.proto-offer .btn, .rs-offer .btn { width: 100%; }
+.proto-offer .btn { margin-top: .06rem; }
+.rs-offer { position: absolute; right: 0; top: 0; bottom: 0; z-index: 6; justify-content: center; width: min(6.2rem, 46vw); padding: .3rem;
+  background: radial-gradient(80% 60% at 50% 20%, rgba(90, 255, 205, .2), transparent 72%), linear-gradient(90deg, transparent, rgba(6, 7, 7, .92) 16%, rgba(6, 7, 7, .97)); }
+.rs-offer__head { display: flex; flex-direction: column; align-items: center; gap: .06rem; }
+.rs-offer h2 { font-size:max(calc(.42 * var(--t)), 20px); }
+.rs-offer p { max-width: 4.6rem; }
+
 @media (max-height: 520px) {
   .rs-top { padding-top: 6px; }
   .rs-seats { padding-top: 14px; gap: 12px; }
@@ -1684,6 +1702,7 @@ button.ally-card:disabled { filter: grayscale(.7) brightness(.7); cursor: defaul
   .rs-seats { justify-content: flex-start; }
   .rseat { --w: max(1.8rem, 42vw); }
   .rs-searchpanel.mf-search, .rs > .mf-found { width: 100%; background: rgba(6, 7, 7, .94); }
+  .rs-offer { width: 100%; background: rgba(6, 7, 7, .94); }
   .rs-proto { grid-template-columns: minmax(0, 1fr); }
   .rs-proto__scene { display: none; }
 }

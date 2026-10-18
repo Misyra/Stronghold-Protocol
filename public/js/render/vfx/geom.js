@@ -14,11 +14,11 @@
 // set it in Y and 9 in X (plain billboards: 405 / 379), and of the 2,449 stretched systems with unequal X / Y sizes 2,130
 // make Y the long one. Mesh particles: the mesh × the 3D size, turned by the particle's Euler rotation
 // inside the alignment frame. A particle's size is × the scaling mode's scale per axis — x across, y up the particle, z
-// through a mesh — whether or not its system sets size3D (0.3.1, history §34.6: the remake drew a uniform size at the x
+// through a mesh — whether or not its system sets size3D (0.3.1, history §54.6: the remake drew a uniform size at the x
 // scale; 1,318 systems of 462 prefabs sit on unevenly scaled nodes: 荒芜拉普兰德 S3's seal tips (1, 0.7) are flat spikes,
 // 娜仁图亚 S3's hit glow (2.4, 0.29) a streak along the cut, not a round glow). A renderer's pivot (m_Pivot, in particle sizes) moves a billboard or mesh particle off its
 // position by pivot × size along the particle's own axes — it turns with the particle's roll about the position (0.3.1,
-// history §34.6: the remake moved it the other way; the client's data settle it — 荒芜拉普兰德 S3's seal tips, quads with a
+// history §54.6: the remake moved it the other way; the client's data settle it — 荒芜拉普兰德 S3's seal tips, quads with a
 // pivot of −0.5 / −0.81 placed left of the centre and their mirrored twins right of it, point outward only so, and of
 // the used set's view billboards with a Y pivot 210 lift the quad (+) against 22, 34 against 1 of those spawned on the
 // ground: 艾雅法拉 S2's range flames rise from the ground). A stretched billboard adds the same pivot after the head

@@ -942,7 +942,7 @@ export class UnitView {
         actor.setSkillIndex(this.skillIndex ?? undefined);
         // Query at attack time: late index loads, skill slots and facing changes need no new model or request.
         actor.skillAttackMode = () => {
-          // [ASSUMED] §34.31's cast heuristic is for operators; enemy abilities and token controllers keep their roles.
+          // [ASSUMED] §54.31's cast heuristic is for operators; enemy abilities and token controllers keep their roles.
           if (this.info.kind !== 'op') return { preserve: true };
           const mode = skillAttackMode(this.ctx.skillAttackIndex?.(), {
             info: this.info, rec: this.ctx.lookupDef?.(this.info), skillIndex: this.skillIndex,
@@ -1110,7 +1110,7 @@ export class UnitView {
   /** Equipped item pips (prep): list of item icon URLs. */
   setItems(urls) {
     const P = this.P;
-    // morphPairing plus can carry two ordinary items and one zero-slot morph (DESIGN §34.15).
+    // morphPairing plus can carry two ordinary items and one zero-slot morph (DESIGN §54.15).
     const list = Array.isArray(urls) ? urls.slice(0, 3) : [];
     while (this.itemPips.length > list.length) this.itemPips.pop().destroy(); // loop-cap: at most three item pips
     list.forEach((u, i) => {

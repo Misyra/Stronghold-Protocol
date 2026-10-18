@@ -393,6 +393,21 @@ export function nativeVoiceDirs(charword) {
 }
 
 /** Official `placeType` → the manifest's voice slot (public/js/audio.js VOICE_PRIORITY / VOICE_COOLDOWN_MS). */
+/** Validate and deduplicate a language list; an unknown dump is never a guessed source path. */
+export function normalizeVoiceLangs(value) {
+  const values = typeof value === 'string' ? [value] : Array.from(value || []);
+  const out = [];
+  for (const item of values) {
+    if (typeof item !== 'string') throw new Error('voice languages must be strings');
+    for (const lang of item.split(',').map((s) => s.trim())) {
+      if (!Object.hasOwn(VOICE_DIRS, lang)) throw new Error(`unknown voice language ${lang || '(empty)'} (cn | jp | en | kr)`);
+      if (!out.includes(lang)) out.push(lang);
+    }
+  }
+  if (!out.length) throw new Error('voice languages must not be empty');
+  return out;
+}
+
 export const VOICE_SLOTS = Object.freeze({
   BATTLE_START: 'start',            // 行动出发: 开战
   BATTLE_FACE_ENEMY: 'faceEnemy',   // 行动开始: 首次接敌

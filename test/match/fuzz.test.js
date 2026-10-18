@@ -39,6 +39,9 @@ function randomIntent(rng, m, ps) {
     case 'g.watch': return { t, fieldId: rng.pick(['n:p_0', 'n:p_1', 'n:ai_0', 'u', 'b1', 'b2', 'zz', '']) };
     case 'g.autoplay': return { t, on: rng() < 0.05 };
     case 'g.pause': return { t, on: rng() < 0.5 };
+    // Developer console: refused unless the room opted in (this fuzz match never does) — the shape still has to be valid.
+    case 'g.console': return { t, kind: rng.pick(['chess', 'item', 'bond']), id: rng.pick(['chess_char_5_02_a', 'chess_item_5_02_e_a', 'bond_1', 'nope']),
+      ...(rng() < 0.5 ? { amount: 1 + rng.int(20) } : {}) };
     default: return { t };
   }
 }

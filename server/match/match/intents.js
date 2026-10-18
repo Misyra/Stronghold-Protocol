@@ -5,7 +5,8 @@
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
 
 import { unitStatsEntry } from '../../../shared/protocol.js';
-import { PHASE, ERR, EMOTES, EMOTE_COOLDOWN_MS, GEO } from '../../../shared/constants.js';
+import { PHASE, ERR, EMOTES, EMOTE_COOLDOWN_MS, GEO, CONSOLE_ROUND_LIMIT, CONSOLE_TOTAL_LIMIT } from '../../../shared/constants.js';
+import { msg } from '../../../shared/i18n.js';
 import { deriveSeed } from '../../sim/rng.js';
 import { OK, fail } from './common.js';
 import { onHumanEmote } from '../botEmotes.js';
@@ -46,6 +47,7 @@ export class MatchIntents {
       case 'g.pause': return this.setPause(ps, !!msg.on);
       // the stats the board's units start their next battle with (the detail card in prep, user playtest #4 item 7)
       case 'g.unitStats': return this.unitStats(ps, msg.seq ?? null);
+      case 'g.console': return this.consoleGrant(ps, msg.kind, msg.id, msg.amount);
       case 'g.leave': this.onLeave(ps.playerId); return OK;
       case 'b.progress': return this._onProgress(ps, msg);
       case 'b.result': return this._onResult(ps, msg);
@@ -133,5 +135,57 @@ export class MatchIntents {
     } catch (e) { this.reportError('unitStats', e); }
     this._unitStatsCache.set(ps, { key, units });
     return units;
+  }
+
+  /**
+   * The in-match developer console (room.console.enable): one grant intent at a time. The server stays authoritative —
+   * a disabled match, a refused id, the quota and the preparation area's room all decide here, and the components only
+   * search the data the client already has. Quota: CONSOLE_ROUND_LIMIT per round, CONSOLE_TOTAL_LIMIT for the match.
+   */
+  consoleGrant(ps, kind, id, amount) {
+    if (!this.consoleEnabled) return fail(ERR.BAD_MSG, 'console is disabled for this match');
+    if (!ps || ps.isBot || ps.left || !ps.alive) return fail(ERR.ELIMINATED);
+    if (this.phase === PHASE.LOBBY || this.phase === PHASE.RESULT || this.ended || this.disposed) return fail(ERR.WRONG_PHASE);
+    if (ps.consoleTotalUses >= CONSOLE_TOTAL_LIMIT) return fail(ERR.RATE, 'console total limit reached');
+    if (ps.consoleRoundUses >= CONSOLE_ROUND_LIMIT) return fail(ERR.RATE, 'console round limit reached');
+    let piece = null;
+    let grantedName = id;
+    let grantedAmount = null;
+    let granted = false;
+    if (kind === 'bond') {
+      if (!this.gd.bond(id) || !Number.isInteger(amount) || amount <= 0) return fail(ERR.BAD_TARGET, 'bond amount must be a positive integer');
+      const added = ps.addLayers(id, amount, { reason: 'console' });
+      if (!(added > 0)) return fail(ERR.BAD_TARGET, 'bond is already at the layer limit');
+      grantedName = this.gd.bond(id).name || id;
+      grantedAmount = added;
+      granted = true;
+    } else if (kind === 'chess') {
+      const rec = ps.gd.chess(id);
+      // A filled DIY slot resolves through this player's view; empty slots have no body to grant.
+      const base = rec && ps.gd.chess(ps.gd.baseIdOf(id));
+      if (!rec || rec.isHidden || !base || base.isHidden
+        || (rec.isDiy ? !rec.diyFor || !base.diyFor : !(rec.visible || rec.isGolden) || base.isDiy || !base.visible)) {
+        return fail(ERR.BAD_TARGET, 'unknown operator');
+      }
+      grantedName = rec.name || id;
+      piece = ps.acquireChess(id, { source: 'console', fromPool: false });
+      granted = !!piece;
+    } else if (kind === 'item') {
+      const rec = this.gd.item(id);
+      if (!rec || rec.isDiy || rec.isHidden) return fail(ERR.BAD_TARGET, 'unknown equipment');
+      grantedName = rec.name || id;
+      if (!ps.hand.some(p => !p) && !ps.temp.some(p => !p)) return fail(ERR.HAND_FULL);
+      piece = ps.acquireItem(id, { source: 'console', fromPool: false });
+      granted = !!piece;
+    } else return fail(ERR.BAD_MSG);
+    if (!granted) return fail(ERR.HAND_FULL, 'console grant could not fit in the preparation area');
+    ps.consoleRoundUses++;
+    ps.consoleTotalUses++;
+    // The in-match ticker, explicitly: every teammate and spectator sees that a console grant happened.
+    this.tickerText(grantedAmount == null
+      ? msg('{name}博士通过控制台获得了{item}', { name: ps.name, item: grantedName })
+      : msg('{name}博士通过控制台获得了{item} {n} 层', { name: ps.name, item: grantedName, n: grantedAmount }), 2);
+    ps.dirty();
+    return OK;
   }
 }

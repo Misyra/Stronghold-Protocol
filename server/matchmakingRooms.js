@@ -46,6 +46,7 @@ export function queuePartyMatchmaking(lobby, session) {
   if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
   if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
   if (room.match) return fail(ERR.ROOM_STARTED);
+  if (room.consoleEnabled) return fail(ERR.MATCHING, 'console and matchmaking are mutually exclusive');
   if (room.mode !== 'coop' || room.seats.some((s) => s?.isBot) || room.freeSeat() < 0) return fail(ERR.BAD_MSG);
   if (room.activeHumans().some((s) => !s.connected || (s.playerId !== room.hostId && !s.ready))) return fail(ERR.NOT_READY);
   return lobby.matchmaking.joinParty(room);

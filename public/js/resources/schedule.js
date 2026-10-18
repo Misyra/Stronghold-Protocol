@@ -13,7 +13,15 @@ export class ResourceSchedule {
 
   wake() { for (const wake of [...this.listeners]) wake(); }
 
-  update({ active = false, combat = false, urls = [] } = {}) {
+  /** The combat gate alone (resources/combat.js): queued optional work waits, the lanes are woken on the way out. */
+  setCombat(combat) {
+    if (this.combat === !!combat) return false;
+    this.combat = !!combat; this.revision++;
+    this.wake();
+    return true;
+  }
+
+  update({ active = false, combat = this.combat, urls = [] } = {}) {
     const selected = new Set(urls.map(identity).filter(Boolean));
     const changed = this.active !== active || this.combat !== combat || selected.size !== this.urls.size
       || [...selected].some((url) => !this.urls.has(url));

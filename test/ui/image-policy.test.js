@@ -25,7 +25,11 @@ test('DOM game images use CORS before src and recover legacy cache entries befor
       assert.ok(image.includes('onError=') && image.includes('recoverImageError'), file);
       count++;
     }
-    if (source.includes('new Image()')) assert.equal(path.relative(root, file), 'image.js');
+    // Only the two image loaders may construct an <img> themselves: the per-URL repair loader and the runtime art
+    // transport that decodes a downloaded blob (public/js/resourceNetwork.js).
+    if (source.includes('new Image()')) {
+      assert.ok(['image.js', 'resourceNetwork.js'].includes(path.relative(root, file)), path.relative(root, file));
+    }
   }
   assert.ok(count >= 16, `only ${count} image templates checked`);
 });

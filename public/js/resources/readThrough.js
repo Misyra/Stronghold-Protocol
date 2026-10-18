@@ -4,6 +4,7 @@ import { resourceIdentity } from '../../../shared/resourcePaths.js';
 import { CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, absoluteUrl, cacheNameForScope, mediaCandidates, rangeResponse, resourceScope } from './common.js';
 import { resourceDigests } from './integrity.js';
 import { fetchResource } from './network.js';
+import { queueRuntimeIndexEntry } from './runtimeIndex.js';
 import { handleResourceRequest } from './service.js';
 
 export function createResourceResponder({ caches = globalThis.caches, fetcher = globalThis.fetch?.bind(globalThis),
@@ -52,6 +53,14 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     finally { writes.delete(write); }
   }
 
+  /** Store a verified body and record it as a runtime entry: the next status() then knows it exists without a body
+   *  read, and a sweep of the cache cannot mistake that record for a stale asset (resources/runtimeIndex.js). */
+  async function keep(cache, key, response, generation) {
+    const result = await persist(cache, key, response, generation);
+    if (result.stored) void queueRuntimeIndexEntry(cache, origin, key).catch(() => {});
+    return result;
+  }
+
   async function load(file, key, generation) {
     let openError;
     const own = cacheNameForScope(resourceScope(file));
@@ -75,7 +84,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
         if (bytes.byteLength <= MAX_FILE_BYTES && (await resourceDigests(bytes)).hash === file.hash) {
           const headers = new Headers(cached.headers); markResourceHeaders(headers, file.hash);
           const marked = new Response(bytes, { headers });
-          return { response: marked, ...await persist(cache, key, marked, generation), downloaded: false };
+          return { response: marked, ...await keep(cache, key, marked, generation), downloaded: false };
         }
       } catch { /* unreadable cache entries must not prevent normal game loading */ }
       // A stale copy in another card must not shadow the fresh bytes stored below.
@@ -91,7 +100,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     const headers = new Headers(response.headers);
     markResourceHeaders(headers, file.hash);
     const stored = new Response(bytes, { headers });
-    return { response: stored, error: openError, ...await persist(cache, key, stored, generation), downloaded: true };
+    return { response: stored, error: openError, ...await keep(cache, key, stored, generation), downloaded: true };
   }
 
   function sharedLoad(file, key) {

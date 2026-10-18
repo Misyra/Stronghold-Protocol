@@ -103,6 +103,15 @@ export function updateResourcePriority(context) {
   set({ combat: schedule.combat });
 }
 
+/**
+ * The combat gate (public/js/resources/combat.js): while a fight is on screen the optional tiers wait instead of
+ * competing with the battle for bandwidth. Separate from updateResourcePriority so a match-state update cannot
+ * clear it, and it never pauses the simulation, runtime art or ZIP work.
+ */
+export function syncResourceCombat(active) {
+  if (schedule.setCombat(active)) set({ combat: schedule.combat });
+}
+
 /** Suspend worker writes before imports/deletes, including writes already started in another tab. */
 async function workerWrites(enabled) {
   const registration = await workerPromise;

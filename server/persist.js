@@ -113,6 +113,7 @@ export function roomDoc(room) {
     mode: room.mode,
     difficulty: room.difficulty,
     aiPicksLast: room.aiPicksLast === true,
+    consoleEnabled: room.consoleEnabled === true,
     hostId: room.hostId || null,
     ownerKey: room.ownerKey || null,
     matchKey: room.matchKey || null,

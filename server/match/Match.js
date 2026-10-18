@@ -296,6 +296,8 @@ export class Match {
     this.isSolo = this.mode === 'solo' || this.gd.isSolo;
     /** 「AI 队友最后选择」 (opts.aiPicksLast, GitHub #338): humans draft before AI seats (MatchPhases.humansFirst) */
     this.aiPicksLast = !this.isSolo && opts.aiPicksLast === true;
+    /** Developer console (room.console.enable): only a lobby-created private room can opt in; public matchmaking passes false. */
+    this.consoleEnabled = opts.consoleEnabled === true;
     this.ownsScheduler = !opts.scheduler;
     this.sched = new SuspendableScheduler(opts.scheduler || new RealScheduler({ now: opts.now || Date.now, onError: (e) => this.reportError('timer', e) }), { ownsBase: this.ownsScheduler });
     this.onAudit = opts.onAudit || null;

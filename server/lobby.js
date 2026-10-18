@@ -318,6 +318,11 @@ export class Room {
      * put every human seat before every AI seat (Match opts.aiPicksLast). Kept across the room's matches.
      */
     this.aiPicksLast = false;
+    /**
+     * Developer console (room.console.enable, private rooms only): the match's grants are authorized by this room flag,
+     * fixed when the match starts. Off by default and never available to a matchmaking room.
+     */
+    this.consoleEnabled = false;
     /** @type {string | null} */
     this.hostId = null;
     /** @type {(Seat | null)[]} */
@@ -393,6 +398,7 @@ export class Room {
       mode: this.mode,
       difficulty: this.difficulty,
       aiPicksLast: this.aiPicksLast,
+      consoleEnabled: !!this.consoleEnabled,
       allowBots,
       inMatch: !!this.match,
       matchmaking: !!this.matchmaking,
@@ -761,6 +767,8 @@ export class Lobby {
       case 'room.ready': return this.ready(session, msg);
       case 'room.setDifficulty': return this.setDifficulty(session, msg);
       case 'room.setAiPicksLast': return this.setAiPicksLast(session, msg);
+      case 'room.console.enable': return this.enableConsole(session);
+      case 'room.console.disable': return this.disableConsole(session);
       case 'room.addBot': return this.addBot(session);
       case 'room.removeBot': return this.removeBot(session, msg);
       case 'room.kick': return this.kick(session, msg);
@@ -1044,6 +1052,41 @@ export class Lobby {
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
       this.broadcastState(room);
     }
+    return OK;
+  }
+
+  /**
+   * Developer console (in-match grants: server/match/match/intents.js consoleGrant). The browser owns the warning
+   * countdown; the server decides who may switch it on, and a matchmaking room can never use it. A solo room's own
+   * seat may toggle it; every other room needs its host.
+   */
+  enableConsole(session) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    if (room.matching) return fail(ERR.MATCHING, 'console and matchmaking are mutually exclusive');
+    if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
+    const personal = room.mode === 'solo' && !!room.seatOf(session.playerId);
+    if (!personal && room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.consoleEnabled) return fail(ERR.ALREADY);
+    room.consoleEnabled = true;
+    this.broadcastState(room);
+    this.log.info(`[lobby] ${room.code} console enabled by ${session.name}`);
+    return OK;
+  }
+
+  /** The opt-out while the room is still in its lobby: a running match keeps the authorization it started with. */
+  disableConsole(session) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
+    const personal = room.mode === 'solo' && !!room.seatOf(session.playerId);
+    if (!personal && room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (!room.consoleEnabled) return fail(ERR.ALREADY);
+    room.consoleEnabled = false;
+    this.broadcastState(room);
+    this.log.info(`[lobby] ${room.code} console disabled by ${session.name}`);
     return OK;
   }
 
@@ -1696,6 +1739,8 @@ export class Lobby {
         modeId: room.content?.modeId || modeIdFor(room.mode, room.difficulty),
         // 「AI 队友最后选择」 (GitHub #338): fixed for the match
         aiPicksLast: room.mode !== 'solo' && room.aiPicksLast === true,
+        // Developer console: the room's opt-in, fixed for the whole match (server/match/match/intents.js consoleGrant)
+        consoleEnabled: room.consoleEnabled === true,
         seats,
         // the spectator seats (header): watched like eliminated players, never players
         spectators: room.spectators.map((s) => s.playerId),

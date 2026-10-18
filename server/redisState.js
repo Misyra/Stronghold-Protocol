@@ -133,7 +133,7 @@ export class RedisStateStore extends StateStore {
       if (!doc || typeof doc !== 'object' || Array.isArray(doc)) throw new Error('not an object');
     } catch (e) {
       this.loadState = 'invalid';
-      this.warn('旧版单键文档不是合法的状态文档，已跳过', e);
+      this.warn('the single-key document is not a state document, skipped', e);
       return null;
     }
     // The next save writes the new layout in full: this document never becomes a dirty-check baseline.
@@ -141,7 +141,7 @@ export class RedisStateStore extends StateStore {
     this.runtimeCommit = null;
     this.loadState = 'loaded';
     this.loadedAt = Date.now();
-    this.log.info?.('[redis] 旧版单键文档已读入，下次保存起改用 index/runtime/cp:<code> 布局');
+    this.log.info?.('[redis] the single-key document was read; the next save writes index/runtime/cp:<code>');
     return doc;
   }
 
@@ -153,17 +153,17 @@ export class RedisStateStore extends StateStore {
       if (!index || typeof index !== 'object' || Array.isArray(index)) throw new Error('not an object');
     } catch (e) {
       this.loadState = 'invalid';
-      this.warn('索引键不是合法的状态文档，已保留原键', e);
+      this.warn('the index key is not a state document, kept as it is', e);
       return null;
     }
     if (index.layout != null && index.layout !== this.layout) {
       this.loadState = 'invalid';
-      this.warn(`索引布局 ${index.layout} 与本程序（${this.layout}）不兼容，已保留原键`);
+      this.warn(`index layout ${index.layout} is not this build's (${this.layout}), kept as it is`);
       return null;
     }
     if (typeof index.revision !== 'string' || !index.revision) {
       this.loadState = 'invalid';
-      this.warn('索引缺少版本标记，已保留原键');
+      this.warn('the index has no revision, kept as it is');
       return null;
     }
     let runtime = null;
@@ -176,7 +176,7 @@ export class RedisStateStore extends StateStore {
         runtime = parsed;
       } catch (e) {
         // A crash after the index write but before the first runtime write is recoverable from the shard envelopes.
-        this.warn('运行时键不可读，改用分片信封里的时钟', e);
+        this.warn('the runtime key is unreadable, using the clocks inside the checkpoint envelopes', e);
       }
     }
     const runtimeMatches = !!runtime && runtime.indexRevision === index.revision;
@@ -201,7 +201,7 @@ export class RedisStateStore extends StateStore {
         parsed = JSON.parse(await decodeValue(raw));
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
       } catch (e) {
-        this.warn(`${code}: 检查点不可读，该房间不带对局恢复`, e);
+        this.warn(`${code}: the checkpoint is unreadable, the room restores without its match`, e);
         continue;
       }
       let c = legacyClocks[code];
@@ -209,7 +209,7 @@ export class RedisStateStore extends StateStore {
         const envelope = parsed;
         const body = envelope.checkpoint;
         if (!body || typeof body !== 'object' || Array.isArray(body) || typeof envelope.revision !== 'string') {
-          this.warn(`${code}: 检查点信封不合法，该房间不带对局恢复`);
+          this.warn(`${code}: invalid checkpoint envelope, the room restores without its match`);
           continue;
         }
         // An index write may not have committed the start of a new match in the same room yet.
@@ -306,7 +306,7 @@ export class RedisStateStore extends StateStore {
     const matches = doc.matches && typeof doc.matches === 'object' ? doc.matches : {};
     const shards = new Map();
     for (const [code, body] of Object.entries(matches)) {
-      try { shards.set(code, JSON.stringify(body)); } catch (e) { this.warn(`${code}: 检查点无法序列化`, e); return false; }
+      try { shards.set(code, JSON.stringify(body)); } catch (e) { this.warn(`${code}: the checkpoint does not serialize`, e); return false; }
     }
     const index = { ...doc };
     delete index.matches;

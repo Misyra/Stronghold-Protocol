@@ -2660,5 +2660,7 @@
   "重刷投票已取消": "Reroll vote cancelled",
   "重刷投票超时，未通过": "Reroll vote timed out and did not pass",
   "重刷投票未通过": "Reroll vote did not pass",
-  "重刷投票通过，开局信息已重新随机": "Reroll vote passed; the opening was rerolled"
+  "重刷投票通过，开局信息已重新随机": "Reroll vote passed; the opening was rerolled",
+  "显示弹药与能量数量": "Ammo and Energy Counts",
+  "弹药类技能开启时，在弹药条下方显示剩余弹药 / 总弹药数（如 13/14）；秘术师的血条下方显示储存的攻击能量 / 上限（如 2/3）。官方界面没有这些数字。": "While an ammo skill runs, shows the rounds left / in total under its ammo bar (e.g. 13/14). A Mystic Caster's stored attack energy / its maximum shows under the HP bar (e.g. 2/3). The official interface has neither number."
 }

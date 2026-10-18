@@ -16,6 +16,8 @@
 | `SP_REDIS_CONNECT_TIMEOUT` | `3000` | 连接超时（毫秒），0 表示不限；启动读重试 4 次、间隔 750 ms |
 | `SP_REDIS_COMMAND_TIMEOUT` | `4000` | 单条命令超时（毫秒），0 表示不限 |
 
+现成的 compose 与 `redis.conf` 在 [`deploy/redis/`](../../deploy/redis/README.md)：`docker compose -f deploy/redis/docker-compose.yml up -d` 起一台 Valkey，游戏侧只加 `SP_REDIS_URL` 与 `SP_REDIS_PREFIX` 两个变量。
+
 ### 键布局：和文件目录布局一一对应
 
 一个文件一个键，所以两种后端读回的形状完全相同，`restoreServer` 不需要分支：

@@ -50,8 +50,9 @@
   照抄只会得到一批 import 不存在的导出的文件（`readOffers` / `initializeGameData` / `REVIVAL_COST` …）。
 - **未接线的 UI 副本**，抄进来就删：`testConsole`、`testAudit`、`testDock`、`offerOverlay`、`protocolBoot`、`bossPlates`、
   `downedPlate`、`turnBanner`、`turnPopup`、`notices`、`pluginSkinPicker`、`public/studio/js/console`、5 个没挂上的 CSS。
-- **combat worker 池**：`server/match/combat/{data,engine,pool,rehearsal,trial,worker}.js` 与 `match/extensions.js` 删除 ——
+- **combat worker 池**：`server/match/combat/{data,engine,pool,rehearsal,trial,worker,runner}.js` 与 `match/extensions.js` 删除 ——
   本分支的模拟走 `server/sim`，这套 0.3.1 的战斗进程池没有对应的接线点。
+  `runner.js` 是那个池的主线程适配器，一度留了下来（零 import 的死文件），2026-10-18 一并删掉，`localReplica.js` 里指向它的两处注释改成指 battle 记录。
 - **恢复本分支自己的文件**（抄过去会断静态 import 图）：`public/js/battle/simHost.js`、`public/js/ui/pluginFrame.js`、
   `shared/packs.js`、`server/plugins/pack.js`。
 - 8–20 人容量池、revival、bondPlan、unequip、cluster、`m.notice`：**不合并**，也没留半成品文件。

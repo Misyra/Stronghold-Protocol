@@ -188,18 +188,38 @@ export function createDataStore(opts = {}) {
   const urlFor = (name) => resourceUrl(base + (DATA_FILES[name] || `${name}.json`));
 
   /**
+   * The game host's own copy of a data URL. SP_DATA_CDN can sit behind the same browser challenge the asset CDN
+   * does (Cloudflare "Under Attack" refuses a fetch that carries no `cf_clearance`), and /data/ is always served
+   * by the game host — so a failed data-CDN read falls back here instead of losing the file.
+   */
+  const siteCopyOf = (url) => {
+    if (base === '/data/' || !/^https?:\/\//.test(base) || !url.startsWith(base)) return '';
+    return resourceUrl('/data/' + url.slice(base.length).split(/[?#]/)[0]);
+  };
+
+  /**
    * One attempt at a file. Art manifests reject with a transient `{ timeout: true }` when the clock fires; a response
    * that arrives after that is ignored (the retry is a new request). [ASSUMED]
    */
   function readJson(name) {
     const run = async () => {
       const url = urlFor(name);
-      const res = await doFetch(url, { cache: resourceCache(url) });
-      if (!res || !res.ok) throw Object.assign(new Error(`HTTP ${res ? res.status : '???'}`), { status: res ? res.status : null });
+      const readAt = async (target) => {
+        const res = await doFetch(target, { cache: resourceCache(target) });
+        if (!res || !res.ok) throw Object.assign(new Error(`HTTP ${res ? res.status : '???'}`), { status: res ? res.status : null });
+        try {
+          return await res.json();
+        } catch (err) {
+          throw Object.assign(err instanceof Error ? err : new Error(String(err)), { badJson: true });
+        }
+      };
       try {
-        return await res.json();
+        return await readAt(url);
       } catch (err) {
-        throw Object.assign(err instanceof Error ? err : new Error(String(err)), { badJson: true });
+        if (err?.badJson) throw err;
+        const host = siteCopyOf(url);
+        if (!host || host === url) throw err;
+        return readAt(host);
       }
     };
     if (!ART_MANIFESTS.has(name) || !(timeoutMs > 0)) return run();
@@ -329,7 +349,12 @@ export function createDataStore(opts = {}) {
       }
       for (let attempt = 0; ; attempt++) {
         try {
-          const res = await doFetch(url, { cache: 'no-cache' });
+          let target = url;
+          let res = await doFetch(target, { cache: 'no-cache' });
+          if ((!res || !res.ok) && siteCopyOf(url)) {
+            target = siteCopyOf(url);
+            res = await doFetch(target, { cache: 'no-cache' });
+          }
           if (!res || !res.ok) throw Object.assign(new Error(`HTTP ${res ? res.status : '???'}`), { status: res ? res.status : null });
           const json = await res.json();
           if (!json || typeof json !== 'object' || !json.files) throw Object.assign(new Error('not an overlay'), { badJson: true });

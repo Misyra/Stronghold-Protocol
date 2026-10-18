@@ -43,7 +43,8 @@ test('a cached non-CORS image is refreshed once before decoding the original URL
   assert.equal(env.requests.length, 1);
   const { signal, ...options } = env.requests[0].options;
   assert.equal(env.requests[0].url, url);
-  assert.deepEqual(options, { mode: 'cors', credentials: 'omit', cache: 'reload' });
+  assert.deepEqual(options, { mode: 'cors', credentials: 'same-origin', cache: 'reload' },
+    'the repair fetch keeps the host session cookie: an anonymous one is exactly what a challenged host refuses');
   assert.ok(signal instanceof AbortSignal);
 });
 
@@ -71,6 +72,56 @@ test('concurrent repairs share one fetch without changing the content-hashed URL
   assert.equal(images.length, 8);
   assert.ok(images.every(img => img.url === url));
 });
+
+test('a same-origin image asks without CORS so the host session cookie survives', async t => {
+  withLocation(t, 'https://game.example');
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'Image');
+  let seen;
+  globalThis.Image = class {
+    set src(value) { seen = { url: value, crossOrigin: this.crossOrigin }; queueMicrotask(() => this.onload?.()); }
+  };
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'Image', previous); else delete globalThis.Image; });
+  await loadImageElement('https://game.example/assets/icon.png');
+  assert.equal(seen.crossOrigin, undefined, 'a CORS request to the game host drops the very cookie a challenge needs');
+  assert.equal(seen.url, 'https://game.example/assets/icon.png');
+});
+
+test('an asset CDN that refuses the page hands the image to the game host copy', async t => {
+  withLocation(t, 'https://game.example');
+  withCdn(t, 'https://assets.example');
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'Image');
+  const requests = [];
+  let attempts = 0;
+  globalThis.Image = class {
+    set src(value) {
+      this.url = value;
+      const failed = attempts++ === 0;
+      queueMicrotask(() => failed ? this.onerror?.() : this.onload?.());
+    }
+  };
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'Image', previous); else delete globalThis.Image; });
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    requests.push(String(url));
+    return String(url).startsWith('https://assets.example') ? new Response('nope', { status: 403 }) : new Response(new ArrayBuffer(0));
+  });
+  const img = await loadImageElement('https://assets.example/assets/icon.png?v=0123456789abcdef');
+  assert.equal(img.url, '/assets/icon.png', 'the copy drops the per-file cache-buster');
+  assert.deepEqual(requests, ['https://assets.example/assets/icon.png?v=0123456789abcdef', '/assets/icon.png']);
+  const again = await loadImageElement('https://assets.example/assets/icon.png?v=0123456789abcdef');
+  assert.equal(again.url, '/assets/icon.png', 'the working copy is remembered for the session');
+});
+
+function withLocation(t, origin) {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'location');
+  Object.defineProperty(globalThis, 'location', { value: { origin, href: origin + '/' }, configurable: true, writable: true });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'location', previous); else delete globalThis.location; });
+}
+
+function withCdn(t, base) {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, '__spAssetCdn');
+  globalThis.__spAssetCdn = { base };
+  t.after(() => { if (previous) Object.defineProperty(globalThis, '__spAssetCdn', previous); else delete globalThis.__spAssetCdn; });
+}
 
 function domImage(src) {
   return { src, isConnected: true, getAttribute(name) { return name === 'src' ? this.src : null; } };

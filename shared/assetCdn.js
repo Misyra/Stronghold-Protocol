@@ -47,6 +47,39 @@ export function assetCdnUrl(url, { base = '', version = '', manifest = '', hashe
   return `${base}${version ? '/_v/' + version : ''}${path}${match[2] || ''}`;
 }
 
+/** The game host's own copy of an asset-CDN URL: the same art path, without the per-file `?v=` cache-buster
+ *  (the host answers with its own release prefix). An asset host can sit behind a browser challenge a
+ *  credentials-less fetch can never answer — Cloudflare "Under Attack" challenges every request and only hands
+ *  `cf_clearance` to a navigation — so a failed CDN attempt falls back to this twin. Same three shapes as
+ *  `assetCdnUrl`: `<base><path>`, `<base>/_v/<tag><path>` and, with no base configured, a foreign origin's art path.
+ *  @returns {string} the game host's URL, or '' when `url` is not art on this CDN. */
+export function assetSiteUrl(url, { base = '', siteOrigin = '' } = {}) {
+  if (typeof url !== 'string' || !url) return '';
+  let pathname;
+  let search = '';
+  let origin = '';
+  if (base) {
+    if (!url.startsWith(base + '/')) return '';
+    pathname = url.slice(base.length);
+  } else {
+    // No configured CDN: only a foreign http(s) copy of an art path has a host twin to answer with.
+    let parsed;
+    try { parsed = new URL(url); } catch { return ''; }
+    if (!siteOrigin || parsed.origin === siteOrigin) return '';
+    pathname = parsed.pathname;
+    search = parsed.search;
+    origin = siteOrigin;
+  }
+  const cut = pathname.search(/[?#]/);
+  if (cut >= 0) { if (!search) search = pathname.slice(cut); pathname = pathname.slice(0, cut); }
+  const match = ART_PATH.exec(pathname);
+  if (!match) return '';
+  const params = new URLSearchParams(search.replace(/^[?#]/, ''));
+  params.delete('v'); // the host's release prefix already busts its cache; keep a retry's own marker
+  const query = params.toString();
+  return `${origin}${match[1]}${query ? '?' + query : ''}`;
+}
+
 /** The CDN's published current-release tag (tools/r2-sync.mjs writes it). A timestamp query keeps the
  *  request out of every cache: the free plan's cache keys include the query string, so this always reads R2. */
 export function cdnLatestUrl(base, { now = Date.now } = {}) {

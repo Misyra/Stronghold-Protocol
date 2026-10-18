@@ -48,7 +48,7 @@ test('the host twin is the same art path without the CDN cache-buster', () => {
   assert.equal(assetSiteUrl(ORIGIN + '/assets/x.png', { base: '', siteOrigin: ORIGIN }), '');
 });
 
-test('a challenged CDN falls back to the host once, then trips a breaker instead of re-probing every file', async t => {
+test('the CDN is asked first every time; a refusal falls back to the host copy', async (t) => {
   withCdn(t);
   const calls = [];
   const fetcher = async (url) => {
@@ -60,11 +60,12 @@ test('a challenged CDN falls back to the host once, then trips a breaker instead
     const response = await fetchResource(BASE + `/assets/${name}.png?v=0123456789abcdef`, { fetcher, retries: 0, retryDelayMs: 0 });
     assert.equal(await response.text(), 'ok');
   }
-  assert.deepEqual(calls, [
-    BASE + '/assets/a.png?v=0123456789abcdef', '/assets/a.png',
-    BASE + '/assets/b.png?v=0123456789abcdef', '/assets/b.png',
-    '/assets/c.png', // the breaker already tripped: the third file never asks the CDN
-  ]);
+  // The owner's rule: the CDN comes first in every case, even while the breaker is open — a recovered CDN is used again
+  // (the breaker only spares BULK work from re-probing, see the preload test below).
+  assert.deepEqual(calls.map((url) => (url.startsWith(BASE) ? 'cdn' : 'host')),
+    ['cdn', 'host', 'cdn', 'host', 'cdn', 'host']);
+  assert.deepEqual(calls.filter((url) => url.startsWith(BASE)),
+    ['a', 'b', 'c'].map((name) => BASE + `/assets/${name}.png?v=0123456789abcdef`));
 });
 
 test('a host copy that is also missing reports its own failure rather than the CDN challenge', async t => {

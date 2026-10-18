@@ -77,11 +77,9 @@ export async function fetchResource(url, options) {
     new Error('素材 CDN 暂时不可用（被浏览器挑战或连不上）；确认素材域名没有拦住浏览器后再重试预载'),
     { status: err?.status ?? null, transient: true, fatal });
   if (!twin) return attempt(url, options);
-  if (blocked()) {
-    checkAbort(signal);
-    if (!allowOrigin) throw unavailable(null, true);
-    return fromOrigin(twin, options, signal);
-  }
+  // The CDN is asked first, always. The breaker only keeps bulk work (allowOrigin:false) from re-discovering the
+  // same refusal 27 000 times; a runtime image is one request and keeps probing it, so a recovered CDN is used again.
+  if (blocked() && !allowOrigin) { checkAbort(signal); throw unavailable(null, true); }
   try {
     const response = await attempt(url, options);
     cdnFails = 0; cdnBlockedUntil = 0;

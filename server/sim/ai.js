@@ -55,7 +55,7 @@ export function effectiveProfile(u) {
   const ov = sk ? sk.attackOverride() : null;
   const tg = sk ? sk.targetingOverride() : null;
   if (!ov && !tg) return base;
-  const p = Object.assign({}, base);
+  const p = { ...base };   // (spread: the same own enumerable copy as Object.assign({}, base), on V8's object-clone fast path)
   p.isSkill = true;
   if (ov) {
     for (const k in ov) {

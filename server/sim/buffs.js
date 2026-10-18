@@ -180,6 +180,14 @@ export function makeBuff(b) {
 }
 
 /**
+ * A unit's flag set (`u.s.flags`): nothing inherited — an absent flag (or `toString`, `constructor` …) reads undefined,
+ * as on the Object.create(null) it replaces — but a fast-mode object: V8 keeps every null-prototype object in dictionary
+ * mode, and the hot loops read these flags on every unit every tick.
+ */
+function FlagSet() {}
+FlagSet.prototype = Object.create(null);
+
+/**
  * Compute aggregated modifiers of a buff list. Returns `{ add: {k: sum}, mul: {k: product}, flags: {k: bool}, shield,
  * permRangeExtend }` — permRangeExtend = the rangeExtend of persistent never-expiring buffs (talents, modules: part of
  * the initial range, Battle._refreshRange).
@@ -187,7 +195,7 @@ export function makeBuff(b) {
 export function aggregateMods(buffs) {
   const add = Object.create(null);
   const mul = Object.create(null);
-  const flags = Object.create(null);
+  const flags = new FlagSet();
   let shield = 0;
   let permRangeExtend = 0;
   // dodge sources are independent rolls: total = 1 − Π(1 − p)^stacks (one single source keeps its exact value)

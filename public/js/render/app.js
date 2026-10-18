@@ -29,7 +29,8 @@
 //                                               mid-battle starts in the current model form)
 //   view.pushSnapshot(snap); view.pushEvents(ev | { ev, gt })  b.snap / b.ev wire frames as received (game time in
 //                                               `gt`; a numeric `t` is accepted for raw Battle snapshots / recordings)
-//                                               — 100 ms interpolation buffer; b.snap `down` keeps knocked-out
+//                                               — an interpolation buffer of 100 ms that grows with the stream's
+//                                               jitter (up to 600 ms, render/interp.js adaptive); b.snap `down` keeps knocked-out
 //                                               operators on the field under a redeploy ring and `elem` draws the
 //                                               element gauges (user playtest #4 items 8 / 9, render/units.js); a
 //                                               'die' with reason FORCED_EXIT (an operator entering 联防 knocked out,
@@ -56,10 +57,10 @@
 // clicks and hover (battleUnitAt), the pen (penUnitAt) — is render/pick.js over the tile under the pointer (groundTile:
 // raised tops first); battle enemies, which walk between tiles, by their ground position (flying ones by their drawn
 // body; a huge boss also anywhere on its hit area — data/enemies.json `hitArea`, user playtest #5). A dragged piece
-// drops on the tile under the pointer (render/drag.js). A dragged unit stands on that tile while it is a legal target
-// (a board tile or a bench slot: drag.js dragStandTile; the official deploy drag, the owner's recording of 2026-10-09,
-// PR #403's report) and is held under the pointer elsewhere — its drawn feet DRAG_HOLD_TILES below it, the pointer on
-// its body; an item plate stays centred on the pointer. An item dropped on a unit's tile equips that unit.
+// drops on the tile under the pointer (render/drag.js). A dragged unit follows the pointer smoothly, never snapped to a
+// tile (the free deploy drag, 2026-10-15) — its drawn feet DRAG_HOLD_TILES below a finger, DRAG_HOLD_MOUSE_TILES below
+// a mouse — and glides onto its tile when dropped; an item plate stays centred on the pointer. An item dropped on a
+// unit's tile equips that unit.
 //   Direction step (ui/facingWheel.js, research 09 §1.2):
 //   view.tileScreen(row, col) → { x, y, s, poly: [[x,y]×4] } (client px: tile-top centre, px per tile, corners) | null
 //   view.holdPiece(uid, {row,col} | null)       keep a dropped prep piece standing on a tile while its direction is
@@ -148,7 +149,7 @@ import { OfficialFx } from './vfx/system.js';
 import { FxWiring } from './vfx/wiring.js';
 import { PluginFxPlayer } from './vfx/pluginPlayer.js';
 import { resolveOfficialFx } from './vfx/tier.js';
-import { createDragController, pieceTile, dragStandTile } from './drag.js';
+import { createDragController, pieceTile } from './drag.js';
 import { backdropTextures, shadowTexture, refreshTierChips, refreshDownLabels, silhouetteTexture } from './textures.js';
 import { TILE_H, TIER_COLORS, COLORS } from './style.js';
 import { loadBoardArt } from './boardArt.js';
@@ -164,7 +165,7 @@ import { applyFrameRate, renderFrameBudget } from '../frameRate.js';
 import { ensurePixi, restorePixiExtensions } from './app/pixi.js';
 import { advanceEffectClock } from './app/playback.js';
 import { pieceDirOf, pickUnitOf } from './app/pick.js';
-import { CAMERA_MS, BOARD3D_STABLE_MS, BOARD3D_RETRY_MS, PEN_CAMERA_MS, RANGE_GROUPS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, CHAIN_KINDS, DROP_PENDING_MS, DEPLOY_REPLAY_MS } from './app/tune.js';
+import { CAMERA_MS, BOARD3D_STABLE_MS, BOARD3D_RETRY_MS, PEN_CAMERA_MS, RANGE_GROUPS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, DRAG_HOLD_MOUSE_TILES, DRAG_FOLLOW_RATE, CHAIN_KINDS, DROP_PENDING_MS, DEPLOY_REPLAY_MS } from './app/tune.js';
 import { boardPreference, switchableBox, bandFor, fieldRows, boardArea, viewKind, restView, flightView } from './app/view.js';
 import { renderInfo, FORCED_EXIT, showsDeathFx } from './app/info.js';
 import { skinFor } from '../ui/skins.js';
@@ -175,7 +176,7 @@ export { ensurePixi } from './app/pixi.js';
 
 /** fx.damage / fx.heal option: the official effect drew the hit (no procedural spark, slash or glow; numbers stay). */
 const NO_SPARK = Object.freeze({ noSpark: true });
-export { PEN_CAMERA_MS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, DEPLOY_REPLAY_MS } from './app/tune.js';
+export { PEN_CAMERA_MS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, DRAG_HOLD_MOUSE_TILES, DEPLOY_REPLAY_MS } from './app/tune.js';
 export { viewKind, boardArea, bandFor, fieldRows, penShown, showsPen, leaderShown, restView, flightView, boardPreference, switchableBox } from './app/view.js';
 export { FORCED_EXIT, showsDeathFx, renderInfo } from './app/info.js';
 export { releaseGl } from './app/host.js';
@@ -336,7 +337,9 @@ export async function createFieldView(host, options = {}) {
   // dead units for DIE_ANIM_TIME), which must not bring the view back; a spawn / deploy / live sample clears it
   const gone = new Set();
   const woundUp = new WeakSet(); // atk event tuples whose attack wind-up already started
-  const interp = new SnapshotBuffer({ delay: 0.1, rate: 2 });
+  // streamed fields (a spectator seat, a replica that went back to the stream): the delay follows the network's jitter
+  const interp = new SnapshotBuffer({ delay: 0.1, rate: 2, adaptive: true });
+  let streamDelay = interp.delay;
   const sample = new Map();
   const meleePending = new Map(); // target id → { src, t }
   const consumedIds = new Set();  // battle ids used up by their own effect (fx `consumed`): no death particles
@@ -551,7 +554,23 @@ export async function createFieldView(host, options = {}) {
       .finally(() => { boardRetry = null; });
   }
   // the official soft shadow sprite replaces the procedural one once loaded (may already be cached); asked again whenever
-  // the manifest names another one (it arrived late, a cosmetic plugin changed it); none named any more: the procedural one
+  // the manifest names another one (it arrived late, a cosmetic plugin changed it); none named any more: the procedural one.
+  // Material pictures load through the asset store (assets.image: the material sources and their retries)
+  const materialTextures = new Map();
+  setupCleanup.push(() => { for (const texture of materialTextures.values()) texture.destroy(true); materialTextures.clear(); });
+  function materialTexture(url) {
+    if (!url || !assets.image) return null;
+    if (!materialTextures.has(url)) {
+      const base = new P.BaseTexture();
+      const texture = new P.Texture(base);
+      materialTextures.set(url, texture);
+      assets.image(url).then(img => {
+        if (!img || destroyed || base.destroyed) return;
+        try { base.setResource(new P.ImageResource(img, { createBitmap: false })); } catch { /* optional image */ }
+      }, () => {});
+    }
+    return materialTextures.get(url);
+  }
   let shadowUrl = null;
   let offShadow = null;
   setupCleanup.push(() => offShadow?.());
@@ -568,7 +587,8 @@ export async function createFieldView(host, options = {}) {
     offShadow = null;
     if (!url) { setShadow(shadowTexture()); return; }
     try {
-      const t = P.Texture.from(url);
+      const t = materialTexture(url);
+      if (!t) return;
       const use = () => { if (!destroyed && shadowUrl === url) setShadow(t); };
       // a cosmetic plugin's sprite that will not load falls back (the manifest changes: loadShadow again)
       const failed = () => { if (!destroyed) assets.failed?.(url); };
@@ -1294,6 +1314,7 @@ export async function createFieldView(host, options = {}) {
     dragState = { uid: p.uid, key, view: v, from: p.from, home: v._home || { x: v.x, y: v.y, z: v.z } };
     v.lift = 0.3;
     v._tween = null;
+    v._follow = null;
     const t = pieceTile(p.piece);
     if (t) drawHighlight([[t.row, t.col]], 'hover', 'dragFrom');
     drawHighlight(legalTiles(p.piece), 'legal', 'legal');
@@ -1303,30 +1324,23 @@ export async function createFieldView(host, options = {}) {
     if (!dragState) return;
     const v = dragState.view;
     const item = v instanceof ItemView;
-    // a unit over a legal drop target — the tile under the pointer, on the board or the bench (render/drag.js
-    // dragStandTile) — stands on it, lifted, as in the official deploy drag (the owner's recording of 2026-10-09): the
-    // world point the drop tween goes to (boardWorld, the prep field transform applied), set at once, no tween
-    const stand = item ? null : dragStandTile(p);
-    if (stand) {
-      const w = boardWorld(stand.row, stand.col, stand.bench);
-      v.x = w.x; v.y = w.y; v.z = w.z;
-    } else {
-      // otherwise held under the pointer (the player still sees what they carry): a unit with its drawn (lifted) feet
-      // DRAG_HOLD_TILES of its own px per tile below it (the scale at the pointer's ground, refined once at the feet), an
-      // item plate centred on it
-      const g = cam.unproject(p.x, p.y, 0);
-      const hold = item ? 0 : DRAG_HOLD_TILES;
-      const s0 = g ? cam.scaleAt(g.x, g.y, 0) : cam.scale;
-      const t = pickTile(cam, p.x, p.y + hold * s0, heightAt, tiles.levels);
-      const z = t ? heightAt(t.row, t.col) : 0;
-      const up = item ? z : z + (v.lift || 0) + (v.hover || 0);
-      let w = cam.unproject(p.x, p.y + hold * s0, up);
-      if (w && hold) w = cam.unproject(p.x, p.y + hold * cam.scaleAt(w.x, w.y, up), up) || w;
-      if (w) {
-        v.x = Math.max(-1, Math.min(21, w.x));
-        v.y = Math.max(-1, Math.min(19, w.y));
-        v.z = z;
-      }
+    // held under the pointer, never snapped to a tile (the free deploy drag, 2026-10-15; the target below stays the
+    // pointer's tile): a unit with its drawn (lifted) feet DRAG_HOLD_TILES (a finger) / DRAG_HOLD_MOUSE_TILES (a mouse,
+    // a pen) of its own px per tile below it (the scale at the pointer's ground, refined once at the feet), an item plate
+    // centred on it. The point is a float world point the view follows each frame (_follow, the frame loop); the first
+    // move puts it there at once.
+    const g = cam.unproject(p.x, p.y, 0);
+    const hold = item ? 0 : p.pointerType === 'touch' ? DRAG_HOLD_TILES : DRAG_HOLD_MOUSE_TILES;
+    const s0 = g ? cam.scaleAt(g.x, g.y, 0) : cam.scale;
+    const t = pickTile(cam, p.x, p.y + hold * s0, heightAt, tiles.levels);
+    const z = t ? heightAt(t.row, t.col) : 0;
+    const up = item ? z : z + (v.lift || 0) + (v.hover || 0);
+    let w = cam.unproject(p.x, p.y + hold * s0, up);
+    if (w && hold) w = cam.unproject(p.x, p.y + hold * cam.scaleAt(w.x, w.y, up), up) || w;
+    if (w) {
+      const f = { x: Math.max(-1, Math.min(21, w.x)), y: Math.max(-1, Math.min(19, w.y)), z };
+      if (!v._follow) { v.x = f.x; v.y = f.y; v.z = f.z; }
+      v._follow = f;
     }
     // the drop target (p.target, highlighted) is the tile under the pointer
     if (p.target && p.target.area !== 'temp') {
@@ -1339,6 +1353,7 @@ export async function createFieldView(host, options = {}) {
   function dropDragVisual(p) {
     if (!dragState) return;
     const v = dragState.view;
+    v._follow = null;
     const t = p.target;
     if (t && (t.area === 'board' || t.area === 'hand')) {
       const row = t.area === 'board' ? t.row : GEO.HAND_ROW, col = t.area === 'board' ? t.col : t.idx;
@@ -1359,7 +1374,7 @@ export async function createFieldView(host, options = {}) {
       const v = dragState.view;
       const h = dragState.home;
       if (cancelled && v && !v.destroyed) v._tween = { fx: v.x, fy: v.y, fz: v.z, tx: h.x, ty: h.y, tz: h.z, t: 0 };
-      if (v) v.lift = 0;
+      if (v) { v.lift = 0; v._follow = null; }
     }
     dragState = null;
     clearHl('dragFrom'); clearHl('dragTarget'); clearHl('legal');
@@ -1501,13 +1516,22 @@ export async function createFieldView(host, options = {}) {
     if (release) { try { release(); } catch { /* ignore */ } }
   }
 
+  // `rescout`: the same scouted prep board again — the server sends the whole board on each change of the watched
+  // player's (Match._notifyPrepScouts: a move, a purchase, an effect). Rebuilding every view made all their operators
+  // vanish and fade in on each of their actions (the owner's report of 2026-10-15, 观战 flicker): the pieces whose
+  // UnitInfo did not change but for the tile keep their views (the next snapshot moves them), the others are built again.
   function enterBattle(meta) {
     if (destroyed || !meta || typeof meta !== 'object') return false;
     holdScene(true); // before the prep views go: the cache is never "quiet" across the switch
     drag.reset();
     endDragVisual(false);
     cancelReplay();  // the round start's replay is a prep-board thing: none of it reaches a battle (or a scouted board)
-    clearViews();
+    const rescout = meta.prep === true && mode === 'battle' && !!battleMeta?.prep
+      && battleMeta.fieldId === (meta.fieldId ?? null) && battleMeta.kind === (meta.kind || 'normal');
+    if (rescout) {
+      const looks = new Map((Array.isArray(meta.units) ? meta.units : []).filter((u) => u && u.id != null).map((u) => [u.id, scoutLook(u)]));
+      for (const [id, v] of [...views]) if (!v._look || looks.get(id) !== v._look) dropView(id);
+    } else clearViews();
     if (prepPieces.length) promoBase = prepPieces;
     prepPieces = [];
     prepMapChars = [];
@@ -1630,6 +1654,7 @@ export async function createFieldView(host, options = {}) {
     v.setWorld(info.x, info.y, 0);
     v._seen = false;
     v._born = performance.now();
+    v._look = info._look || null;
     views.set(id, v);
     return v;
   }
@@ -1827,7 +1852,7 @@ export async function createFieldView(host, options = {}) {
         layerPops.set(k, { t: now, n });
         const url = assets.bondIcon ? assets.bondIcon(bondId) : null;
         let tex = null;
-        if (url) { try { tex = P.Texture.from(url); } catch { tex = null; } }
+        if (url) { try { tex = materialTexture(url); } catch { tex = null; } }
         fx.pop(tex, `+${n}`, 0xffffff, layerPops.size);
         break;
       }
@@ -2030,8 +2055,8 @@ export async function createFieldView(host, options = {}) {
     try {
       const flying = !!camTo;
       stepCamera(now);
-      // a drag under a still pointer follows a camera flight — the shop-collapsed zoom of a deploy (GitHub #602) starts
-      // as the piece is picked up: the target tile and the dragged piece are judged again at the pointer
+      // a drag under a still pointer follows a camera flight: the target tile and the dragged piece are judged again at
+      // the pointer
       if (flying && mode === 'prep' && drag.dragging) drag.refresh();
       if (board3d) {
         if (board3d.lost) onBoard3dLost();
@@ -2074,6 +2099,10 @@ export async function createFieldView(host, options = {}) {
           const k = 1 - (1 - tw.t) * (1 - tw.t);
           v.x = tw.fx + (tw.tx - tw.fx) * k; v.y = tw.fy + (tw.ty - tw.fy) * k; v.z = tw.fz + (tw.tz - tw.fz) * k;
           if (tw.t >= 1) v._tween = null;
+        } else if (v._follow) {
+          // a dragged piece closing on the pointer (moveDragVisual): dt in s, the same feel at any refresh rate
+          const f = v._follow, k = 1 - Math.exp(-dt * DRAG_FOLLOW_RATE);
+          v.x += (f.x - v.x) * k; v.y += (f.y - v.y) * k; v.z += (f.z - v.z) * k;
         }
         v.update(dt, cam, clock);
         if (v.remove) { dropView(key); if (mode === 'battle') gone.add(key); }
@@ -2179,7 +2208,11 @@ export async function createFieldView(host, options = {}) {
     setLocalFeed(o) {
       const on = !!(o && o.on);
       const speed = Number(o && o.speed) > 0 ? Number(o.speed) : 2;
-      interp.delay = on ? 0.034 : 0.1;
+      // the stream's learned delay is kept for the next streamed field
+      const was = interp.adaptive;
+      if (on && was) streamDelay = interp.delay;
+      interp.adaptive = !on;
+      interp.delay = on ? 0.034 : was ? interp.delay : streamDelay;
       interp.defaultRate = on ? Math.min(20, speed) : 2;
       interp.maxRate = on ? Math.max(8, speed * 1.5) : 8;
       return true;

@@ -27,7 +27,7 @@ import { TrophyBadge } from './trophies.js';
 import { toast } from './toasts.js';
 import { Emblem } from '../screens/title.js';
 import { OpCard, levelOf } from '../screens/settle.js';
-import { t } from '../../../shared/i18n.js';
+import { t, N_ } from '../../../shared/i18n.js';
 import { recoverImageError } from '../image.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -36,6 +36,64 @@ const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
 const HARD_UP = new Set(['HARD', 'ABYSS']);
 /** The hexagon's 评语, clockwise from the top (the official order). */
 export const HEX_TITLES = ['comment_4', 'comment_5', 'comment_6', 'comment_1', 'comment_2', 'comment_3'];
+
+/**
+ * 成就 (2026-10-18, the reference's seven groups): something the account's own records already count, with the bar it
+ * fills. `value(progress)` is the raw count out of `goal` — every field comes off `achievementStats` (games / wins /
+ * hours / clears / hidden / modes / sums / bandKinds / titleKinds / trophies), so nothing is stored twice: the panel
+ * derives the whole list from the records on every sync.
+ */
+export const ACHIEVEMENT_GROUPS = [
+  ['career', N_('模拟经历'), 'hourglass'], ['victory', N_('胜利'), 'crown'], ['difficulty', N_('难度'), 'rook'],
+  ['alliance', N_('同盟'), 'users'], ['strategy', N_('策略'), 'book'], ['combat', N_('战斗'), 'sword'],
+  ['trophy', N_('奖杯'), 'crown'],
+];
+export const ACHIEVEMENTS = [
+  { id: 'games_1', group: 'career', name: N_('初次模拟'), desc: N_('完成 1 场模拟'), goal: 1, value: (p) => p.games },
+  { id: 'games_10', group: 'career', name: N_('例行演练'), desc: N_('完成 10 场模拟'), goal: 10, value: (p) => p.games },
+  { id: 'games_50', group: 'career', name: N_('久经推演'), desc: N_('完成 50 场模拟'), goal: 50, value: (p) => p.games },
+  { id: 'games_200', group: 'career', name: N_('卫戍常驻'), desc: N_('完成 200 场模拟'), goal: 200, value: (p) => p.games },
+  { id: 'hours_10', group: 'career', name: N_('长时值守'), desc: N_('累计模拟 10 小时'), goal: 10, value: (p) => Math.floor(p.hours ?? 0) },
+  { id: 'wins_1', group: 'victory', name: N_('初战告捷'), desc: N_('取得 1 场胜利'), goal: 1, value: (p) => p.wins },
+  { id: 'wins_20', group: 'victory', name: N_('屡战屡胜'), desc: N_('取得 20 场胜利'), goal: 20, value: (p) => p.wins },
+  { id: 'wins_100', group: 'victory', name: N_('百战不殆'), desc: N_('取得 100 场胜利'), goal: 100, value: (p) => p.wins },
+  { id: 'clear_FUNNY', group: 'difficulty', name: N_('标准达成'), desc: N_('在标准模拟中获胜'), goal: 1, value: (p) => p.clears?.FUNNY ?? 0 },
+  { id: 'clear_NORMAL', group: 'difficulty', name: N_('险境突破'), desc: N_('在险境模拟中获胜'), goal: 1, value: (p) => p.clears?.NORMAL ?? 0 },
+  { id: 'clear_HARD', group: 'difficulty', name: N_('绝境求生'), desc: N_('在绝境模拟中获胜'), goal: 1, value: (p) => p.clears?.HARD ?? 0 },
+  { id: 'clear_ABYSS', group: 'difficulty', name: N_('终极考验'), desc: N_('在终极模拟中获胜'), goal: 1, value: (p) => p.clears?.ABYSS ?? 0 },
+  { id: 'hidden_1', group: 'difficulty', name: N_('触及核心'), desc: N_('击破隐秘核心 1 次'), goal: 1, value: (p) => p.hidden },
+  { id: 'hidden_10', group: 'difficulty', name: N_('核心猎手'), desc: N_('击破隐秘核心 10 次'), goal: 10, value: (p) => p.hidden },
+  { id: 'hidden_abyss', group: 'difficulty', name: N_('深渊之底'), desc: N_('在终极模拟中击破隐秘核心'), goal: 1, value: (p) => p.hiddenAbyss },
+  { id: 'coop_10', group: 'alliance', name: N_('同盟战友'), desc: N_('完成 10 场同盟模拟'), goal: 10, value: (p) => p.modes?.coop?.games ?? 0 },
+  { id: 'coop_wins_10', group: 'alliance', name: N_('同盟凯歌'), desc: N_('同盟模拟获胜 10 场'), goal: 10, value: (p) => p.modes?.coop?.wins ?? 0 },
+  { id: 'solo_wins_10', group: 'alliance', name: N_('独当一面'), desc: N_('独立模拟获胜 10 场'), goal: 10, value: (p) => p.modes?.solo?.wins ?? 0 },
+  { id: 'bands_10', group: 'strategy', name: N_('博采众长'), desc: N_('使用过 10 种不同的策略'), goal: 10, value: (p) => p.bandKinds },
+  { id: 'bands_25', group: 'strategy', name: N_('运筹帷幄'), desc: N_('使用过 25 种不同的策略'), goal: 25, value: (p) => p.bandKinds },
+  { id: 'titles_6', group: 'strategy', name: N_('评语收藏家'), desc: N_('获得全部 6 种评语'), goal: 6, value: (p) => p.titleKinds },
+  { id: 'kills_1000', group: 'combat', name: N_('千军辟易'), desc: N_('累计击倒 1,000 名敌人'), goal: 1000, value: (p) => p.sums?.kills ?? 0 },
+  { id: 'kills_20000', group: 'combat', name: N_('万夫莫当'), desc: N_('累计击倒 20,000 名敌人'), goal: 20000, value: (p) => p.sums?.kills ?? 0 },
+  { id: 'boss_1m', group: 'combat', name: N_('领袖克星'), desc: N_('累计对领袖造成 1,000,000 伤害'), goal: 1000000, value: (p) => p.sums?.bossDamage ?? 0 },
+  { id: 'perfect_50', group: 'combat', name: N_('完美作战'), desc: N_('累计 50 回合完美作战'), goal: 50, value: (p) => p.sums?.perfectRounds ?? 0 },
+  { id: 'merges_200', group: 'combat', name: N_('精英集结'), desc: N_('累计晋升干员 200 次'), goal: 200, value: (p) => p.sums?.merges ?? 0 },
+  { id: 'trophy_10', group: 'trophy', name: N_('崭露头角'), desc: N_('累计获得 10 个奖杯'), goal: 10, value: (p) => p.trophies },
+  { id: 'trophy_30', group: 'trophy', name: N_('声名鹊起'), desc: N_('累计获得 30 个奖杯'), goal: 30, value: (p) => p.trophies },
+  { id: 'trophy_60', group: 'trophy', name: N_('威名远扬'), desc: N_('累计获得 60 个奖杯'), goal: 60, value: (p) => p.trophies },
+  { id: 'trophy_100', group: 'trophy', name: N_('卫戍传奇'), desc: N_('累计获得 100 个奖杯'), goal: 100, value: (p) => p.trophies },
+];
+
+/**
+ * The list with each entry's progress: `current` (clamped at the goal), `done` and `frac` (0..1 for the bar). A count
+ * that is missing or not finite reads 0 — a record set from an older version lacks some of them, never a crash.
+ * @param {any} progress the fields of `achievementStats`
+ */
+export function achievementsOf(progress) {
+  const p = progress || {};
+  return ACHIEVEMENTS.map((a) => {
+    const raw = a.value(p);
+    const value = Number.isFinite(raw) ? Math.max(0, raw) : 0;
+    return { ...a, current: Math.min(value, a.goal), done: value >= a.goal, frac: Math.min(1, value / a.goal) };
+  });
+}
 
 /**
  * Everything the panel shows, from the local records (any order). `hiddenLayers(bondId)`: a bond whose layers the game
@@ -50,6 +108,9 @@ export function achievementStats(records, { hiddenLayers = () => false } = {}) {
     modes: { solo: { games: 0, wins: 0, hard: 0 }, coop: { games: 0, wins: 0, hard: 0 } },
     titles: {}, best: null, maxima: { gold: 0, merges: 0, kills: 0 },
     topBonds: [], topBands: [], markedBands: [],
+    // the 成就 counters (ACHIEVEMENTS' `value`): counted records only, like everything below them
+    games: 0, wins: 0, hours: 0, clears: {}, hidden: 0, hiddenAbyss: 0,
+    sums: { kills: 0, bossDamage: 0, perfectRounds: 0, merges: 0 }, bandKinds: 0, titleKinds: 0, achievements: [],
   };
   const bonds = new Map();
   const bands = new Map();
@@ -63,12 +124,21 @@ export function achievementStats(records, { hiddenLayers = () => false } = {}) {
     out.bestRound = Math.max(out.bestRound, roundsOf(rec));
     const won = !!self.victory;
     const hardWin = won && HARD_UP.has(rec.difficulty);
+    out.games++;
+    out.hours += num(rec.durationMs) / 3600000;
+    if (won) {
+      out.wins++;
+      if (rec.difficulty) out.clears[rec.difficulty] = (out.clears[rec.difficulty] || 0) + 1;
+      if (rec.hiddenCleared && rec.difficulty === 'ABYSS') out.hiddenAbyss++;
+    }
+    if (rec.hiddenCleared) out.hidden++;
     const mode = out.modes[rec.roomMode];
     if (mode) { mode.games++; if (won) mode.wins++; if (hardWin) mode.hard++; }
     const tid = self.title?.id;
     if (tid) out.titles[tid] = (out.titles[tid] || 0) + 1;
     const st = self.stats || {};
     for (const k of ['gold', 'merges', 'kills']) if (num(st[k]) > out.maxima[k]) out.maxima[k] = st[k];
+    for (const k of Object.keys(out.sums)) out.sums[k] += num(st[k]);
     if (self.bandId) {
       bands.set(self.bandId, (bands.get(self.bandId) || 0) + 1);
       if (hardWin) marked.add(self.bandId);
@@ -84,6 +154,9 @@ export function achievementStats(records, { hiddenLayers = () => false } = {}) {
   out.topBonds = top(bonds).map(([bondId, games]) => ({ bondId, games }));
   out.topBands = top(bands).map(([bandId, games]) => ({ bandId, games }));
   out.markedBands = [...marked];
+  out.bandKinds = bands.size;
+  out.titleKinds = Object.keys(out.titles).length;
+  out.achievements = achievementsOf(out);
   return out;
 }
 
@@ -269,6 +342,30 @@ function GuestGate() {
   </div>`;
 }
 
+const fmtNum = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString('zh-CN') : '0');
+
+/** One 成就: the group's glyph, the name and its condition, then the bar (or 已达成). */
+export function AchievementMark({ a, icon }) {
+  return html`<div class=${cx('ach-mark ach-mark--row', a.done && 'is-done')} title=${t(a.desc)}>
+    <span class="ach-mark__frame"><${Icon} name=${icon} />${a.done ? html`<span class="ach-mark__badge"><${Icon} name="check" /></span>` : null}</span>
+    <span class="ach-mark__text">
+      <b>${t(a.name)}</b><small>${t(a.desc)}</small>
+      ${a.done ? html`<span class="ach-mark__got">${t('已达成')}</span>`
+        : html`<span class="ach-mark__bar" role="progressbar" aria-label=${t(a.name)} aria-valuenow=${a.current} aria-valuemin="0" aria-valuemax=${a.goal}>
+          <i style=${`width:${(a.frac * 100).toFixed(1)}%`}></i><em class="num">${fmtNum(a.current)} / ${fmtNum(a.goal)}</em></span>`}
+    </span>
+  </div>`;
+}
+
+/** 成就 — the seven groups of ACHIEVEMENT_GROUPS, each a list of AchievementMark rows (the reference's presentation). */
+function AchievementGroups({ list }) {
+  const rows = Array.isArray(list) ? list : [];
+  return html`${ACHIEVEMENT_GROUPS.map(([id, label, icon]) => html`<div key=${id} class="ach-list">
+    <p class="ach-sub">${t(label)}</p>
+    <div class="ach-marks ach-marks--list">${rows.filter((a) => a.group === id).map((a) => html`<${AchievementMark} key=${a.id} a=${a} icon=${icon} />`)}</div>
+  </div>`)}`;
+}
+
 function ModeTable({ modes }) {
   const row = (key, icon, label) => html`<div class="ach-modes__row">
     <span class="ach-modes__mode"><${Icon} name=${icon} /><b>${label}</b></span>
@@ -434,7 +531,9 @@ function PanelFrame({ gd, s, onClose, foot, loading, plate, extra, gate = null }
             <div class="ach-top-area__left">${plate}<${ModeTable} modes=${s.modes} /></div>
             <${TitleHex} titles=${s.titles} gd=${gd} />
           </section>
-          <${SectionBar} title=${t('卫戍成就')} micro="ACHIEVEMENTS" />
+          <${SectionBar} title=${t('成就')} micro="ACHIEVEMENTS" />
+          <${AchievementGroups} list=${s.achievements} />
+          <${SectionBar} title=${t('卫戍成就')} micro="RECORDS" />
           <${BestRecord} best=${s.best} gd=${gd} />
           <${Maxima} maxima=${s.maxima} />
           <${SectionBar} title=${t('盟约纪录')} micro="BONDS" />

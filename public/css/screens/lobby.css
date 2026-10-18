@@ -2078,6 +2078,24 @@ button.ally-card:disabled { filter: grayscale(.7) brightness(.7); cursor: defaul
   background: repeating-linear-gradient(135deg, rgba(74, 242, 196, .08) 0 .04rem, transparent .04rem .12rem), rgba(18, 40, 36, .7); box-shadow: inset 0 0 0 1px rgba(74, 242, 196, .3); }
 .ach-mark__badge { position: absolute; right: .06rem; top: .06rem; width: .3rem; height: .3rem; display: grid; place-items: center; background: #1c1206; border: 2px solid #ff9a2a; color: #ffad3a; }
 .ach-mark__badge svg { width: .2rem; height: .2rem; }
+
+/* 成就 (js/ui/achievements.js, ACHIEVEMENT_GROUPS): rows in a grid — the group's glyph, the name and its condition,
+   then the progress bar (or 已达成) */
+.ach-marks--list { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: .16rem .3rem; padding-left: .8rem; }
+.ach-mark--row { flex-direction: row; align-items: center; gap: .2rem; }
+.ach-mark--row:not(.is-done) { opacity: .78; }
+.ach-mark--row .ach-mark__frame { width: 1rem; height: 1rem; flex: none; color: rgba(74, 242, 196, .5); }
+.ach-mark--row .ach-mark__frame > .icon { width: .5rem; height: .5rem; }
+.ach-mark--row.is-done .ach-mark__frame { color: #4af2c4; box-shadow: inset 0 0 0 2px rgba(74, 242, 196, .7), 0 0 .14rem rgba(74, 242, 196, .3); }
+.ach-mark--row .ach-mark__badge { width: .22rem; height: .22rem; border-width: 1px; }
+.ach-mark--row .ach-mark__badge svg { width: .15rem; height: .15rem; }
+.ach-mark__text { display: flex; flex-direction: column; gap: .04rem; min-width: 0; }
+.ach-mark__text b { font-size: .26rem; }
+.ach-mark__text small { font-size: .2rem; color: #a9b3b0; }
+.ach-mark__got { font-size: .18rem; color: #4af2c4; }
+.ach-mark__bar { position: relative; display: block; height: .26rem; background: rgba(220, 230, 226, .1); overflow: hidden; }
+.ach-mark__bar i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(74, 242, 196, .5); }
+.ach-mark__bar em { position: relative; padding-left: .08rem; font-style: normal; font-size: .17rem; line-height: .26rem; color: #e6ecea; }
 @media (prefers-reduced-motion: reduce) {
   .ach, .ach__box, .ach-hex__seg, .ach-hex__label, .ach-top, .ach__loader i, .ach__loader b { animation: none !important; }
 }

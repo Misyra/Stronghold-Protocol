@@ -99,6 +99,23 @@ const VISUAL_DOC = new RegExp(`^${VISUAL_SETS_URL}([0-9a-f]{${VS_URL_DIGITS}})/$
 const FILE_HASH = new RegExp(`^[0-9a-f]{${FILE_URL_DIGITS}}$`);
 /** /cs/<cs16>/<path> of a content set with gameplay plugins (DESIGN §32.6). */
 const CS_FILE = /^\/cs\/([0-9a-f]{16})\/([A-Za-z0-9._\/-]{1,200})$/;
+/**
+ * The body of a pack or plugin index, taken from a scan that includes the folders as they are now. Both are served
+ * "never cached" and both are how a freshly installed pack or plugin is found (docs/PACKS.md, docs/PLUGINS.md). The
+ * registry of server/index.js scans in a worker (background: true): there a read only kicks the scan and answers with
+ * the previous snapshot, so an index route waits for the one its own request started instead of showing a pack that
+ * was installed a second ago as absent. A rescan that fails keeps the last good index — a broken folder must not
+ * take the catalogue down with it.
+ * @param {{ pending?: () => Promise<unknown> | null }} registry the pack registry, when it scans in the background
+ * @param {() => unknown} body
+ */
+async function settledIndex(registry, body) {
+  const last = body();
+  const pending = typeof registry.pending === 'function' ? registry.pending() : null;
+  if (!pending) return last;
+  try { await pending; } catch { return last; }
+  return body();
+}
 
 /**
  * Create the static request handler.
@@ -280,7 +297,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     if (decoded === `${PLUGINS_URL}index.json`) {
       const vanilla = vanillaContent().cs;
       // a registry of 0.2.0's shape (a caller's own `packs`) has no catalogue: an empty one
-      sendJson(req, res, 200, typeof registry.pluginIndex === 'function' ? registry.pluginIndex({ vanilla }) : buildPluginIndex([], { vanilla }));
+      sendJson(req, res, 200, await settledIndex(registry,
+        () => (typeof registry.pluginIndex === 'function' ? registry.pluginIndex({ vanilla }) : buildPluginIndex([], { vanilla }))));
       return;
     }
     if (decoded.startsWith('/cs/')) {
@@ -345,7 +363,10 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     // Language packs (server/plugins/registry.js): the live index, and only the files a lang manifest names
     if (decoded.startsWith(PACKS_URL)) {
       const parts = decoded.slice(PACKS_URL.length).split('/');
-      if (parts.length === 1 && parts[0] === PACK_INDEX_FILE) { sendJson(req, res, 200, registry.index()); return; }
+      if (parts.length === 1 && parts[0] === PACK_INDEX_FILE) {
+        sendJson(req, res, 200, await settledIndex(registry, () => registry.index()));
+        return;
+      }
       const abs = parts.length >= 2 && !parts.some((s) => s === '' || s === '.' || s === '..') ? registry.servable(parts[0], parts.slice(1).join('/')) : null;
       const st = abs ? await fsp.stat(abs).catch(() => null) : null;
       if (!st || !st.isFile()) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }

@@ -1,4 +1,6 @@
 // server/netBlock.js — 明确的网络屏蔽名单:ASN + 国家 + 单个 IP，默认开启（2026-10-17 用户拍板「全部默认屏蔽」）。
+// (i18n-ignore-file: the list, its labels and its startup warnings are operator diagnostics; a blocked player
+//  receives the existing foreign-gate error verbatim (server/http/websocket.js) — docs/I18N.md)
 //
 // 只用两份数据：ASN 库（地址 → 运营网络）与国家库（地址 → 国家）。不用 MaxMind 的 Connection Type /
 // Anonymous IP，也不在这里做任何"像不像机房"的推断 —— 名单是**枚举**出来的，判定就是查表。

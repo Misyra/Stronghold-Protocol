@@ -1,4 +1,6 @@
 // server/netClass.js — 粗分类:一条 GeoLite2-ASN 记录属于什么网络。
+// (i18n-ignore-file: ops-side GeoIP classification — the ASN labels and the reasons go to tools/geoip-classify.mjs
+//  and the audit log, never to a player — docs/I18N.md)
 //
 // GeoLite2-ASN 只说了两件事:这个地址由 AS 号 N 宣告,持有者叫 X。它没有说这是宽带、移动、卫星、企业专线、VPN 还是机房。
 // 下面全部是在这条记录上做的名字+号码启发式,答案刻意只有三档:

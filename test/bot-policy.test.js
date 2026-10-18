@@ -72,7 +72,9 @@ test('live bot policy is broadcast, enforced on WebSocket, and leaves existing b
 });
 
 test('partial bot configuration persists across restart and concurrent room-limit updates', async (t) => {
-  const f = await fixture(t), srv = await f.start();
+  // test-setup turns the per-IP session quota off for the socket fixtures; this test is about what gets written to
+  // the file, so it pins the quota on instead of inheriting whatever the harness left in the environment.
+  const f = await fixture(t), srv = await f.start({ limitForeignSessions: true });
   const results = await Promise.all([f.put(srv, { maxRooms: 700 }), f.put(srv, { allowBots: false })]);
   assert.ok(results.every((r) => r.status === 200));
   assert.equal(srv.lobby.opts.maxRooms, 700);

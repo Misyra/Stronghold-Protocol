@@ -183,6 +183,10 @@ export class MatchPrep {
     // Capture the final formation before onPrepEnd mutates it or constructs any battle state.
     try { this.opts.onCheckpoint?.(this); }
     catch (err) { this.log.warn?.('[persist] prep checkpoint failed', err.message); }
+    // 掉线由 AI 接管: a seat offline for OFFLINE_TAKEOVER_ROUNDS prep ends is the AI's from the next phase on
+    this._checkOffline();
+    // an open 投票移出 ends with the prep (kickVote.js)
+    this.cancelKickVote('prepEnd');
     for (const ps of this.order) { ps._botWorker?.cancel(); ps._botWorker = null; }
     // rehearsals still waiting for a host's answer die with the prep: their bots place the default layout, a late answer
     // is ignored (Match._takeOverRehearsal / MatchRehearsal) and nothing of them runs after the phase ended

@@ -129,6 +129,7 @@
 .brief-reroll__text > span { color: var(--text-lo); }
 .brief-reroll__players { display: flex; flex-wrap: wrap; gap: .08rem .2rem; color: var(--text-dim); }
 .brief-reroll__players .is-agreed { color: var(--mint-400); }
+.brief-reroll__players .is-rejected { color: var(--red-premium); }
 .brief-reroll__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .1rem; flex-shrink: 0; }
 @media (max-width: 900px) {
   .brief-reroll { margin-inline: .3rem; gap: .1rem; padding: .1rem .14rem; }

@@ -7,6 +7,8 @@
  * leader-damage lines [ASSUMED].
  */
 export const FLOW_TICKER_PRIORITY = 25;
+/** 掉线由 AI 接管: prep ends a seat spends offline before the AI plays it (MatchPlatform._checkOffline). */
+export const OFFLINE_TAKEOVER_ROUNDS = 2;
 /** Boss clock period (overtime drain, end checks, silence watchdog) in real ms. */
 export const BOSS_CLOCK_MS = 250;
 export const OK = Object.freeze({ ok: true });

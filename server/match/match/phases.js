@@ -122,6 +122,9 @@ export class MatchPhases {
       if (this.phase !== PHASE.BAND_DRAFT || token !== this._turnToken) return;
       const ps = this.players.get(this.draftTurn());
       if (!ps || !ps.botControlled) return;
+      // an AI seat the room designated a strategy for (room.setBotBand) takes it — held for it, so still free
+      const own = this.designatedBand(ps);
+      if (own) { this._applyBand(ps, own, { dedupe: true }); return; }
       // a strategy a teammate already took is not selectable (队友已选): the bot re-draws, else the first free one
       let id = botPickBand(this, ps);
       for (let k = 0; k < 8 && this.bandTaken(id, ps.playerId); k++) id = botPickBand(this, ps);
@@ -138,7 +141,32 @@ export class MatchPhases {
   bandTaken(bandId, playerId) {
     const picks = this.draft?.picks || {};
     for (const [pid, id] of Object.entries(picks)) if (pid !== playerId && id === bandId) return true;
+    // a strategy the room designated for an AI seat (room.setBotBand) counts as taken until that seat picks it
+    for (const [pid, id] of this.botBands || []) if (pid !== playerId && id === bandId && !picks[pid]) return true;
     return false;
+  }
+
+  /**
+   * The designated strategies still held (room.setBotBand): bandId → the AI seat's playerId, for every AI seat that has
+   * not picked yet; {} when the room designated nothing. m.public draft.reserved.
+   * @returns {Record<string, string>}
+   */
+  reservedBands() {
+    const out = {};
+    const picks = this.draft?.picks || {};
+    for (const [pid, id] of this.botBands || []) if (!picks[pid]) out[id] = pid;
+    return out;
+  }
+
+  /**
+   * The strategy the room designated for this AI seat (room.setBotBand) while it can take it — allowed by the mode and
+   * held by nobody else —, else null (the seat picks as without the option).
+   * @param {any} ps
+   * @returns {string | null}
+   */
+  designatedBand(ps) {
+    const id = ps && this.botBands?.get(ps.playerId);
+    return id && this.gd.bandAllowed(id) && !this.bandTaken(id, ps.playerId) ? id : null;
   }
 
   /**
@@ -235,8 +263,9 @@ export class MatchPhases {
     this._turnTimer = null;
     for (const ps of this.order) {
       if (!this.draft.picks[ps.playerId]) {
-        // one after another in seat order, so each default sees the ones assigned before it (no duplicates)
-        const id = this.defaultBand(ps.playerId);
+        // one after another in seat order, so each default sees the ones assigned before it (no duplicates); an AI seat
+        // with a designated strategy (room.setBotBand) takes that one
+        const id = this.designatedBand(ps) || this.defaultBand(ps.playerId);
         this.draft.picks[ps.playerId] = id;
         ps.bandId = id;
         ps.lp = this.gd.startLp(id);

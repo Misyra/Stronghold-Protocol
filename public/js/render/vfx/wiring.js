@@ -38,6 +38,11 @@
 // that lists none (an enemy's: `enemy`); a heal that came by no official projectile plays the generic heal hit; a
 // 领主's ranged-kind 'atk' on the enemy it blocks is its Combat blow (`_combatKind`); a sim-melee attack whose official
 // ability shoots flies its projectile for show (蒂比: `attack`); a chain's line stays CHAIN_LINE_S (`chain`).
+// Skins (feedback #22, index.json `skins[<catalogue id>]`, DESIGN §33.12): a unit whose info names a skin of its
+// operator (`info.skin`) takes that skin's points (skinOf), plays its `replace` keys instead of the defaults — on itself
+// and, for its hits, on its targets (swap: the effect's owner, `o.by` / `o.flipFrom`) — and flies its fake projectiles'
+// graphic shot from the skin's muzzle point for the origin projectile (_fakeShot) [ASSUMED from the field names, as
+// the format says]; an index without them draws every skin with the default effects.
 
 import { spawnPoint, mountPoint, unitPoint, spawnKind, mountKind, spawnRotation, mountRotation, graphicRotation } from './mounts.js';
 import { projectileParts, paracurve, arcHeight, wobble } from './flight.js';
@@ -309,7 +314,43 @@ export class FxWiring {
     return false;
   }
 
-  skinOf(u) { return u && u.skin && this.idx ? this.idx.skins[u.skin] || null : null; }
+  /**
+   * The skin a unit is drawn in (index.json skins): the catalogue skin its view's info names when the index has it for
+   * that unit's operator, else the unit's default skin.
+   */
+  skinOf(u, v = null) {
+    if (!u || !this.idx) return null;
+    const id = v?.info?.skinId;
+    const s = typeof id === 'string' && id && Object.hasOwn(this.idx.skins, id) ? this.idx.skins[id] : null;
+    if (s && s.char && this.idx.units[s.char] === u) return s;
+    return u.skin ? this.idx.skins[u.skin] || null : null;
+  }
+
+  /** The key the skin of `v` (the effect's owner) plays for `key`: its `replace` target when loaded-able, else `key`. */
+  swap(key, v) {
+    const k = lc(key);
+    if (!k || !v || !this.idx) return k;
+    const s = this.skinOf(this.unitOf(v), v);
+    const to = s && s.char && s.replace ? lc(s.replace[k]) : null;
+    return to && this.ofx.lib.has(to) ? to : k;
+  }
+
+  /** A skin's own shot for projectile `proj` of `src` (fakeProjectiles): { proj: the graphic projectile, kind: its muzzle point kind }. */
+  _fakeShot(proj, src) {
+    const s = this.skinOf(this.unitOf(src), src);
+    if (!s || !s.char || !Array.isArray(s.fakeProjectiles) || !s.fakeProjectiles.length) return null;
+    for (const f of s.fakeProjectiles) {
+      if (this.idx.projectiles[lc(f.origin)] !== proj) continue;
+      const g = this.idx.projectiles[lc(f.graphic)];
+      if (!g) return null;
+      // the graphic shot flies; the hit is the logic projectile's (its onHit / onReached: most skins keep it there)
+      const l = this.idx.projectiles[lc(f.logic)] || {};
+      const both = (a, b) => [...new Set([...(a || []), ...(b || [])])];
+      const m = typeof f.muzzle === 'string' ? f.muzzle : '';
+      return { proj: { ...g, onHit: both(g.onHit, l.onHit), onReached: both(g.onReached, l.onReached) }, kind: m.startsWith('SPECIAL_') ? 's' + m.slice(8) : 'muzzle' };
+    }
+    return null;
+  }
 
   /**
    * Where a view stands, as mounts.js reads it: board feet + facing, the view itself (its model's bones: the
@@ -362,6 +403,12 @@ export class FxWiring {
       }
       if (u.startEffect) keys.add(u.startEffect);
       if (u.deadEffect) keys.add(u.deadEffect);
+      // a catalogue skin: its swapped-in effects and its own shots
+      const s = this.skinOf(u, v);
+      if (s && s.char) {
+        for (const k of Object.values(s.replace || {})) keys.add(k);
+        for (const f of s.fakeProjectiles || []) for (const pk of [f.graphic, f.logic]) for (const k of this.idx.projectiles[lc(pk)]?.effects || []) keys.add(k);
+      }
     }
     // the skill, talent and charge effects (render/vfx/skillfx.js keys: plans, the skills' projectiles, bindings) and the
     // talents' and abilities' (render/vfx/talentfx.js, index v3)
@@ -504,7 +551,7 @@ export class FxWiring {
    * started in the battle's first frames used to sit at the HitPoint for good).
    */
   playOn(key, v, o = {}) {
-    let k = lc(key);
+    let k = this.swap(key, o.by || o.flipFrom || v);
     if (!k || !this.ofx.lib.has(k)) return null;
     if (k === YU_WALL_SOURCE) {
       const wall = new YuWall(this, v);
@@ -518,7 +565,7 @@ export class FxWiring {
       if (alt && alt !== k && this.ofx.lib.has(alt)) { k = alt; def = this.ofx.lib.def(k); }
     }
     const u = this.unitOf(v);
-    const skin = this.skinOf(u);
+    const skin = this.skinOf(u, v);
     const pose = this.pose(v);
     pose.strike = !!o.strike;
     let P = this._placing(def, def ? null : this.idx?.prefabs?.[k] || null, o);
@@ -1010,13 +1057,16 @@ export class FxWiring {
    */
   _fly(proj, src, tgt, kind, time, o = {}) {
     const su = this.unitOf(src), tu = this.unitOf(tgt);
-    const sSkin = this.skinOf(su), tSkin = this.skinOf(tu);
+    const sSkin = this.skinOf(su, src), tSkin = this.skinOf(tu, tgt);
+    // a skin's own shot for this projectile: its graphic projectile, from the skin's muzzle point
+    const fake = this._fakeShot(proj, src);
+    if (fake) proj = fake.proj;
     // the start: the mount point as the attack clip poses it at its strike frame (a follow-up shot: as it is drawn then);
     // a rope's end on the shooter follows the point as it is drawn
     const startAt = (out, strike = false) => {
       const pose = this.pose(src);
       pose.strike = strike;
-      return Number.isInteger(o.mount) ? mountPoint(sSkin, o.mount, pose, out) : unitPoint(sSkin, 'muzzle', pose, out);
+      return Number.isInteger(o.mount) ? mountPoint(sSkin, o.mount, pose, out) : unitPoint(sSkin, fake ? fake.kind : 'muzzle', pose, out);
     };
     const from = startAt([0, 0, 0], !o.later);
     const to0 = unitPoint(tSkin, 'hit', this.pose(tgt));
@@ -1029,8 +1079,9 @@ export class FxWiring {
     const parts = projectileParts(proj);
     for (const k of proj.onStart || []) this.playOn(k, src, { toward: tgt, strike: !o.later });
     const placed = this._startOnTarget(proj, src, tgt);
-    const mainKey = parts.main && this.ofx.lib.has(parts.main) ? parts.main : null;
-    const ropeKey = parts.rope && this.ofx.lib.has(parts.rope) ? parts.rope : null;
+    const main = this.swap(parts.main, src), rope = this.swap(parts.rope, src);
+    const mainKey = main && this.ofx.lib.has(main) ? main : null;
+    const ropeKey = rope && this.ofx.lib.has(rope) ? rope : null;
     // a timer (no flying effect: 溯光星源 S3): its hit when the effect it put on its target lands, at the end of its life
     let hitAt = dur;
     if (!mainKey) {
@@ -1104,6 +1155,8 @@ export class FxWiring {
     }
     if (handle || flight.rope) this.flights.add(flight);
     else this._arrive(proj, tgt, to0, t0 + hitAt, rows, src);
+    // a flying effect that ends before its flight (a skin's trail with a shorter life: 夜行烛火) still lands its hit
+    if (handle || flight.rope) setTimeout0(this.ofx, { stop: () => { if (!flight.done) finish(handle || flight.rope); } }, dur + 0.05, true);
     return hitAt;
   }
 
@@ -1250,7 +1303,7 @@ export class FxWiring {
     const go = () => {
       const now = this.ofx.time;
       if (tgt && !tgt.destroyed) {
-        for (const k of proj.onHit || []) this.playOn(k, tgt, {});
+        for (const k of proj.onHit || []) this.playOn(k, tgt, { by: src || undefined });
         if (rows) {
           const own = new Set((proj.onHit || []).map(lc));
           for (const h of rows) if (!own.has(lc(h.k))) this.playOn(h.k, tgt, { flipFrom: src || undefined, toward: h.along && src ? beyond(src, tgt) : undefined });
@@ -1420,7 +1473,7 @@ export class FxWiring {
   /** A chain's bounce lands: its line from prev to next (kept on their HitPoints while it shows), its hit on next. */
   _bounce(c, prev, next) {
     if (!next || next.destroyed) return;
-    const ps = this.skinOf(this.unitOf(prev)), ns = this.skinOf(this.unitOf(next));
+    const ps = this.skinOf(this.unitOf(prev), prev), ns = this.skinOf(this.unitOf(next), next);
     const a = unitPoint(ps, 'hit', this.pose(prev)), b = unitPoint(ns, 'hit', this.pose(next));
     if (c.line && this.ofx.lib.has(c.line)) {
       const h = this.ofx.spawn(c.line, { pos: a.slice(), groundZ: -(prev.z || 0) }, {

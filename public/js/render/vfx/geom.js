@@ -314,7 +314,8 @@ export function buildParticles(ps, r, cam, fd, frameNo) {
         const kx = sx * fx * mirror, ky = sy * fy;
         ax0 = rx0 * kx; ax1 = rx1 * kx; ax2 = rx2 * kx;
         ay0 = ry0 * ky; ay1 = ry1 * ky; ay2 = ry2 * ky;
-        if (pv && (pv[0] || pv[1])) { cx -= ax0 * pv[0] + ay0 * pv[1]; cy -= ax1 * pv[0] + ay1 * pv[1]; cz -= ax2 * pv[0] + ay2 * pv[1]; }
+        // the pivot moves the quad off the particle by pivot × size along its (rolled) axes (header)
+        if (pv && (pv[0] || pv[1])) { cx += ax0 * pv[0] + ay0 * pv[1]; cy += ax1 * pv[0] + ay1 * pv[1]; cz += ax2 * pv[0] + ay2 * pv[1]; }
       }
       buf[o] = cx; buf[o + 1] = cy; buf[o + 2] = cz;
       buf[o + 3] = ax0; buf[o + 4] = ax1; buf[o + 5] = ax2;
@@ -362,10 +363,11 @@ export function buildParticles(ps, r, cam, fd, frameNo) {
         col[2] = (F0[2] * a0 + F1[2] * a1 + F2[2] * a2) * sc;
       }
       let cx = _p[0], cy = _p[1], cz = _p[2];
+      // (+pivot·size, as for the quads above)
       if (pv && (pv[0] || pv[1] || pv[2])) {
-        cx -= _ax[0] * pv[0] + _ay[0] * pv[1] + _az[0] * pv[2];
-        cy -= _ax[1] * pv[0] + _ay[1] * pv[1] + _az[1] * pv[2];
-        cz -= _ax[2] * pv[0] + _ay[2] * pv[1] + _az[2] * pv[2];
+        cx += _ax[0] * pv[0] + _ay[0] * pv[1] + _az[0] * pv[2];
+        cy += _ax[1] * pv[0] + _ay[1] * pv[1] + _az[1] * pv[2];
+        cz += _ax[2] * pv[0] + _ay[2] * pv[1] + _az[2] * pv[2];
       }
       buf[o] = cx; buf[o + 1] = cy; buf[o + 2] = cz;
       buf[o + 3] = _ax[0]; buf[o + 4] = _ax[1]; buf[o + 5] = _ax[2];

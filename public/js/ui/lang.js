@@ -23,6 +23,7 @@ import { PACKS_URL, PACK_INDEX_FILE, readPackIndex, langMetaOf } from '../../../
 import { DEV_BUILD } from '../../../shared/constants.js';
 import { loadPref, savePref } from '../store.js';
 import { data } from '../data.js';
+import { i18nUrlFor } from '../resourceUrl.js';
 import { updateRotateHintPwaI18n } from './device.js';
 import { html } from './components.js';
 
@@ -79,7 +80,8 @@ export function loadLangIndex(doFetch = defaultFetch) {
 export function loadUiMessages(lang, doFetch = defaultFetch) {
   if (lang === DEFAULT_LANG) return Promise.resolve(true);
   if (uiLoads.has(lang)) return uiLoads.get(lang);
-  const url = langInfo(lang)?.ui || `/i18n/${lang}.json`;
+  // 界面语言文件跟着素材 CDN（resourceUrl.js i18nUrlFor）；语言包自带的 ui 地址（/packs/…）原样使用
+  const url = i18nUrlFor(langInfo(lang)?.ui || `/i18n/${lang}.json`);
   const p = (async () => {
     try {
       const res = await doFetch(url, { cache: 'no-cache' });

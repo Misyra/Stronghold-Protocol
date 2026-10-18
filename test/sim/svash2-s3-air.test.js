@@ -1,11 +1,11 @@
 // test/sim/svash2-s3-air.test.js — 凛御银灰 S3 变革已至 against air units (user playtest: the skill never cast on a wave
-// of flyers only). Cause: the data's ACTIVE_RANGE trigger asked "is there an enemy in the running range" with the unit's
-// BASE profile — his melee PIONEER one (data canHitFly false) drops every flyer, so the skill stayed ready forever while
-// his S3 range (which covers air) was full of them. Two halves of the fix:
-//   skills.js     ACTIVE_RANGE reads `_planningProfile()`: the spec's `targeting` (canHitFly / groundOnly) merged over the
-//                 unit's profile — the skill's range, not the base attack, decides whether a flyer counts;
-//   this kit      S3's `targeting` declares canHitFly (PRTS-range over air) and the on-line multi-target selection in the
-//                 beforeAttack hook picks with an air profile (`AIR`), so the same attack also hits flyers on the line.
+// of flyers only). Cause: the data's ACTIVE_RANGE trigger asks "is there an enemy in the running range" with the unit's
+// BASE attack profile — his melee PIONEER one (data canHitFly false) drops every flyer, so the skill stayed ready forever
+// while his S3 range, which covers air, was full of them.
+// The engine is left exactly as upstream has it (server/sim identical to copy/xinhai): the fix lives in the kit, where
+// content belongs — S3 casts itself once a target its range can actually hit stands in it (the automatic cast a MANUAL
+// skill may make, skills.js `opCooling`), declares canHitFly in its `targeting` so its attacks reach air, and picks the
+// other enemies on the target's line with an air profile.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

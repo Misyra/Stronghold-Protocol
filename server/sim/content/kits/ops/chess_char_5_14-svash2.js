@@ -24,12 +24,14 @@ export default {
   // The eye follows the selected skill (its overrideTokenKey: S1 eagle1 cost 16, S2 eagle2 14, S3 eagle3 19).
   // S1 周旋的谋略 (instant): +cost DP at once; the waiting op nearest to the eye gets −[deck].cost redeploy cost (same pick
   // as S2) and a barrier of [deck].shield × his max HP when it redeploys.
-  // S3 变革已至 (duration 48 s): skill range — 可对空, so a wave of flyers alone fires it (user playtest: it never cast
-  // against air-only waves, the ACTIVE_RANGE trigger read his melee PIONEER profile); enemies in it lose 隐匿; every attack
-  // hits every enemy of the range on the target's line (his facing) for bird_atk_scale × ATK phys + 脆弱 (damage_scale − 1,
-  // weak[limit] s [ASSUMED duration]); +[start_cost] DP at once, then +[cost].cost DP every [cost].interval s; the first
-  // activation of the battle swaps the base costs of the most (guard/caster/sniper first) and least expensive waiting ops.
-  // "风雪之眼变为可部署" is not modelled (nobody deploys by hand in the auto battle).
+  // S3 变革已至 (duration 48 s): skill range — 可对空, so a wave of flyers alone fires it: the data's ACTIVE_RANGE trigger
+  // is asked with his melee PIONEER profile (never a flyer), so the kit casts the skill itself (battle.every →
+  // sk.activate — the automatic cast a MANUAL skill may make; user playtest: it never cast against air-only waves);
+  // enemies in it lose 隐匿; every attack hits every enemy of the range on the target's line (his facing) for
+  // bird_atk_scale × ATK phys + 脆弱 (damage_scale − 1, weak[limit] s [ASSUMED duration]); +[start_cost] DP at once,
+  // then +[cost].cost DP every [cost].interval s; the first activation of the battle swaps the base costs of the most
+  // (guard/caster/sniper first) and least expensive waiting ops. "风雪之眼变为可部署" is not modelled (nobody deploys by
+  // hand in the auto battle).
   chess_char_5_14_a: (bb, chess, def) => {
     const t0 = talent(chess, 0), t1 = talent(chess, 1);
     const grid = skillGrid(chess, def) ?? [[0, 0], [0, 1]];
@@ -161,6 +163,16 @@ export default {
         const tok = battle.tokenDef(eyeId, unit); // the owner's skill variant (DESIGN §16)
         unit.mem.eyeCost = num(tok?.stats?.cost, 14);
         if (selectedId(chess, def) === 'skchr_svash2_3') {
+          // The data's trigger is ACTIVE_RANGE, and that condition ("an enemy in the range the skill would run with")
+          // is asked with the UNIT's own attack profile (skills.js _defaultCondition): his melee PIONEER profile drops
+          // every flyer, so a wave of them left the ready skill closed forever (user playtest). S3's range covers air
+          // (PRTS 可对空) — the kit casts it there itself, the automatic cast a MANUAL skill may make on its own
+          // (skills.js `opCooling`, as 德克萨斯2's / 缪尔赛思's kits do), so the engine stays the upstream one.
+          battle.every(AURA_IV, () => {
+            const sk = unit.skill;
+            if (!on(unit) || !sk || sk.active || !sk.ready || sk.opCooling) return;
+            if (enemiesInGrid(battle, unit, grid, 0).length) sk.activate('svash2');
+          }, { owner: unit });
           // S3: every attack hits the enemies of the skill range on the target's line (his facing frame): the line of
           // the target's position; another enemy is on it when its body is (a huge one: any tile — body.js)
           battle.on('beforeAttack', (c) => {

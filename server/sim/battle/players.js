@@ -39,6 +39,7 @@ export class BattlePlayers {
       units: [],
       input: p,
     };
+    if (this.opts.morphPairing === 'plus') ps.morphPairing = 'plus';
     this.players.push(ps);
     this._perPlayer[ps.playerId] = {
       // `killed` / `total` / `leaked` / `perfect` keep the official `counted` reading (DESIGN §5.1); `killedInTotal` /

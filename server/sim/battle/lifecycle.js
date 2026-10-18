@@ -121,6 +121,7 @@ export class BattleLifecycle {
     } finally {
       this._stepping = false;
     }
+    if (this.tickCount === 1 && this._startUnitStats == null) this.captureStartUnitStats();
     if (this._endReq && !this.finished) {
       try { this.forceEnd(this._endReq); } catch (e) { this._handlerError('internal:forceEnd', null, e); this._hardFinish(this._endReq); }
     }
@@ -221,7 +222,8 @@ export class BattleLifecycle {
       const pp = this._perPlayer[ps.playerId];
       pp.perfect = !pp.leaked.some((l) => l.counted !== false);
       // the HUD capsule's numerator of this field (DESIGN §14): this player's own scheduled enemies resolved — knocked
-      // down or leaked (`counted` keeps the LP / 完美作战 reading, runtime splits and summons included)
+      // down or leaked (`counted` keeps the LP / 完美作战 reading, runtime splits and summons included — a 联防 field
+      // tags its runtime spawns `uniteRuntime`, spawns.js, which only its billing reads)
       pp.resolved = Math.min(pp.total, pp.killedInTotal + pp.leakedInTotal);
       // Actual enemy deaths credited to this player's operators / summons, independent of the enemy's wave owner.
       // Sum the full unit list before compactBattleResult caps unitStats (long fights may spawn many summons).

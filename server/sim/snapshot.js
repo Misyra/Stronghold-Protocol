@@ -3,8 +3,9 @@
 // b.snap  = { fieldId, t, units: [[id, x, y, hp, maxHp, sp, spMax, flags, anim]], dp, killed, total, resolved }
 //   (hp of a countdown summon — unit.countdown, content/tokens.js startCountdown — is maxHp × the share of its life left)
 // UnitInfo = { id, kind, side, ownerId, defId, name, tier, golden, spine, avatar, x, y, facing, dir, maxHp, motion?, boss?, uid?,
-//   form?, skillIndex?, ammoSkill?, moduleId?, items?, standInFor?, diy? }  (ammoSkill = an ally whose skill is an ammo
-//   magazine: the HP bar shows its rounds as cells, b.snap `ammo`; standInFor = the replaced operator's charId of a 补位
+//   form?, skillIndex?, ammoSkill?, moduleId?, items?, standInFor?, diy?, skin?, potential?, cultivate? }  (ammoSkill = an
+//   ally whose skill is an ammo magazine: the HP bar shows its rounds as cells, b.snap `ammo`;
+//   standInFor = the replaced operator's charId of a 补位
 //   stand-in; diy = a 自选 piece's pick { charId, skillIndex, uniEquipId } — defId is its slot, spine / avatar the operator's;
 //   form = the unit's current model form — an enemy's, content/enemies/helpers.js setForm:
 //   掠海漂移体 'crawl', 暴鸰 'bombed', 转译基底·α's forms …; a 傀儡师 fighting as its 替身 'doll', professions.js — a view built
@@ -18,12 +19,13 @@
 import { UF, ANIM } from '../../shared/constants.js';
 import { DIE_ANIM_TIME, ATTACK_ANIM_TIME, DEPLOY_ANIM_TIME } from './constants.js';
 import { enemyStealthed } from './targeting.js';
+import { unitStatsEntry } from '../../shared/protocol.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const r1 = (v) => Math.round(v * 10) / 10;
 
-/** Static per-unit info sent on spawn / in m.field. */
-export function unitInfo(u) {
+/** Static per-unit info sent on spawn / in m.field; opening metadata may supply already-computed stats. */
+export function unitInfo(u, stats = null) {
   const d = u.def || {};
   return {
     id: u.id,
@@ -44,7 +46,7 @@ export function unitInfo(u) {
     y: r2(u.y),
     facing: u.facing ?? 1,
     dir: u.dir ?? 'RIGHT',
-    maxHp: Math.max(1, Math.round(u.s.maxHp)),
+    maxHp: Math.max(1, Math.round((stats && typeof stats === 'object' ? stats : u.s).maxHp)),
     motion: u.motion === 'FLY' ? 'FLY' : undefined,
     boss: u.isBoss ? true : undefined,
     // the unit's current model form (an enemy's content/enemies/helpers.js setForm, a 傀儡师's 替身 — render/units.js FORMS): a
@@ -210,13 +212,17 @@ export function chargeView(u) {
   return [Math.max(0, Math.min(sk.maxCharges, Math.floor(sk.charges || 0))), sk.maxCharges];
 }
 
-/** Units included in a snapshot: deployed & visible, plus recently dead ones (DIE animation). */
-export function snapshotUnits(units, t) {
+/** Units included in a snapshot: deployed & visible, plus recently dead ones (DIE animation).
+ * Optional detail DTOs follow the exact same selection, using only the stats already read by the tuple.
+ */
+export function snapshotUnits(units, t, unitStats = null) {
   const out = [];
   for (const u of units) {
     if (u.hidden) continue;
-    if (u.alive && u.deployed) out.push(unitTuple(u, t));
-    else if (!u.alive && t - u.deathAt < DIE_ANIM_TIME && u.deathAt > -Infinity) out.push(unitTuple(u, t));
+    if ((u.alive && u.deployed) || (!u.alive && t - u.deathAt < DIE_ANIM_TIME && u.deathAt > -Infinity)) {
+      out.push(unitTuple(u, t));
+      if (unitStats) unitStats.push(unitStatsEntry(u, u._s || null));
+    }
   }
   return out;
 }

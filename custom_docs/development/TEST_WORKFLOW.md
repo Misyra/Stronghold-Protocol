@@ -21,6 +21,9 @@ npm run test:client                          # 临时构建生产包，验证启
 - 默认 1000 房上限的回收用例（test/room-reclamation）与 `/sim/` 只读目录用例（test/match/simServe）在本机也是红的，同样在干净工作树上复现。
 ### 各套件当前基线（本机、`--test-concurrency=4`）
 
+性能用例（`test/sim/robustness.test.js` 的 boss field）量的是**每 tick 的 CPU 时间**（`process.cpuUsage`），不是墙钟：并行跑测试时墙钟还包含「等 CPU」的时间，四个测试进程就足以在一台本来 0.26 ms 的机器上把 0.5 ms 的线撞破。取三次最好，如果最好的一次仍然过线就再测三次（邻居的负载是一阵一阵的），连着两次都过线才判定为真的慢了。改了这里要同时更新用例头部的说明。
+
+
 | 套件 | 结果 | 剩下的红是什么 |
 | --- | --- | --- |
 | `test/sim/**` | 927 条，924 绿 / 3 跳过 | — |

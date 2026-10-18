@@ -1,6 +1,7 @@
 // Hot-loaded, read-only maintenance notice. The local configuration is never served directly.
 import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { parseAnnouncements, activeAnnouncement } from '../shared/announcements.js';
 import { N_ } from '../shared/i18n.js';
 
 const MAX_FILE_BYTES = 16 * 1024;
@@ -48,21 +49,56 @@ export function parseAnnouncement(value) {
 }
 
 /**
+ * One configuration document has two accepted shapes:
+ *  - the schedule (`{ announcements: [...] }`, shared/announcements.js): any number of scroll and popup notices, each
+ *    with an absolute start and an end, a severity level and — for popups — markdown, a link and auto-open;
+ *  - the legacy single notice (`{ enabled, title, text, expiresAt, displayMode }`) this fork shipped first.
+ * Both are validated atomically: a half-written edit never replaces the last good schedule.
+ * @returns {{ rows: object[], legacy: object|null }}
+ */
+export function parseConfiguration(value) {
+  if (value && typeof value === 'object' && Array.isArray(value.announcements)) {
+    return { rows: parseAnnouncements(value), legacy: null };
+  }
+  const legacy = parseAnnouncement(value);
+  return { rows: [], legacy };
+}
+
+/** The scroll notice in the shape the client has always read (the schedule row carries no displayMode). */
+function scrollNotice(row) {
+  return { id: row.id, title: row.title || N_('维护公告'), text: row.text, expiresAt: row.endAt };
+}
+
+/**
  * Cache file reads across players, coalesce concurrent reads, and check expiration on every request.
  * 返回的读函数带一个 `delivery()`：这份进程**实际读到**的那个版本（docs/design/portal-agent-wss.md §42.2 的第三层），供 /api/announcement
  * 投影给本机 Agent。它只前进不回退，读失败也保留上一次的值 —— 「读不到文件了」不代表「没读到过那一版」。
  */
-export function createAnnouncementReader({ filePath, announcementUrl, pollMs = POLL_MS, log, now = Date.now, cacheMs = CACHE_MS }) {
+export function createAnnouncementReader({ filePath, fallbackFilePath, announcementUrl, pollMs = POLL_MS, log, now = Date.now, cacheMs = CACHE_MS }) {
   if (announcementUrl != null && announcementUrl !== '') return createRemoteReader({ announcementUrl, pollMs, log, now });
-  let notice = null;
+  let rows = [];
+  let legacy = null;
   let delivery = { revision: null, observedAt: null };
   let nextRead = -Infinity;
   let pending = null;
   let lastError = null;
+  /** The scroll notice due right now, from whichever shape the document used. */
+  const currentScroll = () => {
+    if (legacy) return now() < legacy.expiresAt ? legacy : null;
+    const row = activeAnnouncement(rows, now(), 'scroll');
+    return row ? scrollNotice(row) : null;
+  };
+  const currentPopup = () => (legacy ? null : activeAnnouncement(rows, now(), 'popup'));
   async function load() {
     let file;
+    let target = filePath;
     try {
-      file = await fs.open(filePath, 'r');
+      // The managed file wins; the repo's default schedule answers only when nothing was written there yet.
+      file = await fs.open(target, 'r').catch(async (error) => {
+        if (error.code !== 'ENOENT' || !fallbackFilePath) throw error;
+        target = fallbackFilePath;
+        return fs.open(target, 'r').catch((again) => { if (again.code === 'ENOENT') throw error; throw again; });
+      });
       const buffer = Buffer.alloc(MAX_FILE_BYTES + 1);
       let total = 0;
       while (total < buffer.length) {
@@ -72,11 +108,14 @@ export function createAnnouncementReader({ filePath, announcementUrl, pollMs = P
       }
       if (total > MAX_FILE_BYTES) throw new Error('configuration exceeds 16 KiB');
       const parsed = JSON.parse(buffer.subarray(0, total).toString('utf8').replace(/^\uFEFF/, ''));
-      notice = parseAnnouncement(parsed);
+      const doc = parseConfiguration(parsed);
+      rows = doc.rows; legacy = doc.legacy;
       delivery = { revision: deliveryRevision(parsed), observedAt: now() };
       lastError = null;
     } catch (error) {
-      notice = null;
+      // This fork's rule (custom_docs/operations/ANNOUNCEMENTS.md): an unreadable or invalid configuration clears the
+      // notice instead of leaving a stale deadline on screen. A schedule is never published *partially* either way.
+      rows = []; legacy = null;
       const reason = error.code === 'ENOENT' ? null : error.message;
       if (reason && reason !== lastError) log?.warn?.('[announcement] invalid configuration:', reason);
       lastError = reason;
@@ -91,9 +130,11 @@ export function createAnnouncementReader({ filePath, announcementUrl, pollMs = P
       pending = load().finally(() => { pending = null; });
       await pending;
     }
-    return notice && now() < notice.expiresAt ? notice : null;
+    return currentScroll();
   };
   read.delivery = () => ({ ...delivery });
+  /** The popup due right now (schedule documents only), or null. */
+  read.popup = () => currentPopup();
   return read;
 }
 
@@ -102,12 +143,20 @@ export function createAnnouncementReader({ filePath, announcementUrl, pollMs = P
 // maintenance notice players still need to see. An explicit `enabled: false` clears it immediately.
 function createRemoteReader({ announcementUrl, pollMs, log, now }) {
   const interval = Math.max(3000, Math.min(600000, Number(pollMs) === pollMs ? pollMs : POLL_MS));
-  let notice = null;
+  let rows = [];
+  let legacy = null;
   let delivery = { revision: null, observedAt: null };
   let disabled = false;
   let nextPoll = -Infinity;
   let pending = null;
   let lastError = null;
+  const currentScroll = () => {
+    if (disabled) return null;
+    if (legacy) return now() < legacy.expiresAt ? legacy : null;
+    const row = activeAnnouncement(rows, now(), 'scroll');
+    return row ? scrollNotice(row) : null;
+  };
+  const currentPopup = () => (disabled || legacy ? null : activeAnnouncement(rows, now(), 'popup'));
   async function poll() {
     try {
       const response = await fetch(announcementUrl, { redirect: 'error', signal: AbortSignal.timeout(5000) });
@@ -125,9 +174,11 @@ function createRemoteReader({ announcementUrl, pollMs, log, now }) {
         chunks.push(value);
       }
       const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      notice = parseAnnouncement(parsed);
+      const doc = parseConfiguration(parsed);
+      rows = doc.rows; legacy = doc.legacy;
       delivery = { revision: deliveryRevision(parsed), observedAt: now() };
-      disabled = notice === null;
+      // A schedule document is never "disabled" as a whole: an empty list simply has nothing due.
+      disabled = doc.legacy === null && doc.rows.length === 0;
       lastError = null;
     } catch (error) {
       const reason = error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'source timed out' :
@@ -143,8 +194,9 @@ function createRemoteReader({ announcementUrl, pollMs, log, now }) {
       pending = poll().finally(() => { pending = null; });
       await pending;
     }
-    return disabled || !notice || now() >= notice.expiresAt ? null : notice;
+    return currentScroll();
   };
   read.delivery = () => ({ ...delivery });
+  read.popup = () => currentPopup();
   return read;
 }

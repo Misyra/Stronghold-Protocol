@@ -12,6 +12,18 @@ export function announcementSnapshot(body, now = performance.now()) {
   return { ...a, deadline: now + remaining };
 }
 
+/**
+ * The popup snapshot of the same read (shared/announcements.js): its expiry is absolute too, and a popup may legitimately
+ * have none (withdrawn by the owner instead) — that one has an `Infinity` deadline.
+ */
+export function popupSnapshot(body, now = performance.now()) {
+  const p = body?.popupAnnouncement;
+  if (!p || typeof p.id !== 'string' || !p.id || typeof p.text !== 'string' || !Number.isFinite(body.serverTime)) return null;
+  const end = Number.isFinite(p.endAt) ? p.endAt : null;
+  if (end !== null && end - body.serverTime <= 0) return null;
+  return { ...p, deadline: end === null ? Infinity : now + (end - body.serverTime) };
+}
+
 /** One in-flight request, bounded wait, immediate check on return to the tab; failures retain the previous notice. */
 export function startAnnouncementPolling({ onChange, fetchFn = globalThis.fetch,
   doc = globalThis.document, intervalMs = ANNOUNCEMENT_CHECK_MS, timeoutMs = 5000,
@@ -36,7 +48,7 @@ export function startAnnouncementPolling({ onChange, fetchFn = globalThis.fetch,
         return res.ok ? await res.json() : undefined;
       })();
       const body = await Promise.race([request, timedOut]);
-      if (!stopped && body !== undefined) onChange(announcementSnapshot(body, now()));
+      if (!stopped && body !== undefined) onChange(announcementSnapshot(body, now()), popupSnapshot(body, now()));
     } catch { /* Network outages must not interfere with an ongoing match. */ }
     finally {
       clearTimeout(timeout);

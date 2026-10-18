@@ -72,7 +72,13 @@ export function announcementOptionsFrom(opts = {}, env = process.env) {
     : opts.announcementFile ?? env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json');
   const pollMs = opts.announcementPollMs ?? Number(env.SP_ANNOUNCEMENT_POLL_MS || 10000);
   if (!Number.isFinite(pollMs)) throw new RangeError('invalid SP_ANNOUNCEMENT_POLL_MS');
-  if (source !== 'panel') return { filePath, pollMs, announcementUrl: null, source: { mode: source, siteId: null } };
+  if (source !== 'panel') {
+    // The managed file wins; `config/announcements.json` (shipped with the repo) is the default schedule it falls back to
+    // when nothing was written yet — so a fresh deployment still has somewhere to put notices (shared/announcements.js).
+    const fallbackFilePath = path.resolve(ROOT, 'config', 'announcements.json');
+    return { filePath, pollMs, announcementUrl: null, ...(fallbackFilePath === filePath ? {} : { fallbackFilePath }),
+      source: { mode: source, siteId: null } };
+  }
   let url;
   if (explicitUrl) url = new URL(explicitUrl);
   else {

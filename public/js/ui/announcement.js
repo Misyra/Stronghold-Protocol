@@ -3,9 +3,10 @@ import { html, Button, Icon, Modal, useTicker } from './components.js';
 import { createStore, useStore } from '../store.js';
 import { startAnnouncementPolling } from './announcementClient.js';
 import { createAnnouncementDisplay } from './announcementDisplay.js';
+import { AnnouncementPopup } from './announcementPopup.js';
 import { t } from '../../../shared/i18n.js';
 
-const announcementUi = createStore({ open: false, notice: null });
+const announcementUi = createStore({ open: false, notice: null, popup: null });
 const openAnnouncement = () => announcementUi.set({ open: true });
 
 export function AnnouncementButton({ class: cls, square = false, variant = 'ghost' }) {
@@ -68,7 +69,7 @@ export function AnnouncementBanner() {
     return createAnnouncementDisplay({ storage });
   });
   const [, setDismissed] = useState(0);
-  useEffect(() => startAnnouncementPolling({ onChange: (notice) => announcementUi.set({ notice }) }), []);
+  useEffect(() => startAnnouncementPolling({ onChange: (notice, popup) => announcementUi.set({ notice, popup }) }), []);
   const active = notice && performance.now() < notice.deadline;
   useTicker(active ? 1000 : 0);
   const dismiss = () => {
@@ -76,7 +77,20 @@ export function AnnouncementBanner() {
     setDismissed((count) => count + 1);
   };
   const close = () => announcementUi.set({ open: false });
+  const popup = useStore((s) => s.popup, Object.is, announcementUi);
+  const popupLive = !!popup && (popup.deadline === Infinity || performance.now() < popup.deadline);
+  const [popupDismissed, setPopupDismissed] = useState(() => ({ id: null, seen: false }));
+  const seenPopup = (id) => {
+    try { return globalThis.localStorage?.getItem('sp.announcement.popup.' + id) === '1'; } catch { return false; }
+  };
+  const closePopup = () => {
+    try { globalThis.localStorage?.setItem('sp.announcement.popup.' + popup.id, '1'); } catch { /* in-memory only */ }
+    setPopupDismissed({ id: popup.id, seen: true });
+  };
+  const showPopup = popupLive && popup.autoPopup !== false
+    && !(popupDismissed.id === popup.id && popupDismissed.seen) && !seenPopup(popup.id);
   return html`
+    ${showPopup ? html`<${AnnouncementPopup} key=${popup.id} popup=${popup} onClose=${closePopup} />` : null}
     ${active && !display.isDismissed(notice) ? html`<${AnnouncementStrip} key=${notice.id} notice=${notice} onClose=${dismiss} />` : null}
     <${Modal} open=${open} title=${t('服务器公告')} micro="ANNOUNCEMENT" tone="amber" width="7.2rem" onClose=${close} utility=${true}
       class="announcement-detail">

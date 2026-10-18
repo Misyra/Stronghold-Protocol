@@ -300,8 +300,11 @@ export function createRequestHandler({ serveStatic, health, log, allowNickname =
       // 中央据此区分「文件写好了但游戏还没读到」与「根本没写进去」。它只是版本号与时间，玩家看到的公告
       // 内容与展示策略（announcement.id）一个字都没变。顺序重要：先真的读一次，再取「读到的是哪一版」。
       const announcement = await readAnnouncement();
+      // A schedule document may also carry a popup (shared/announcements.js): the same read serves both, so the two
+      // never disagree about which notices are live at this instant.
+      const popupAnnouncement = readAnnouncement.popup?.() ?? null;
       const delivery = readAnnouncement.delivery?.() ?? { revision: null, observedAt: null };
-      sendJson(req, res, 200, { announcement, serverTime: Date.now(), source: announcementSource,
+      sendJson(req, res, 200, { announcement, popupAnnouncement, serverTime: Date.now(), source: announcementSource,
         observedRevision: delivery.revision, observedAt: delivery.observedAt });
       return;
     }

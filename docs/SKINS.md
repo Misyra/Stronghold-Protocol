@@ -1,11 +1,24 @@
 # 干员皮肤 (Operator skins)
 
-> **This fork (Stardust, 2026-10-18):** the game does not wear these plugin skins. Its 干员外观 are the built-in
-> catalogue (`shared/skins.js`, `room.skins { choices }`, `UnitInfo.skinId`; see [OPERATOR-SKINS.md](OPERATOR-SKINS.md)),
-> and the plugin path below — `room.skins { skins }`, `Match.publicView().players[].skins`, `UnitInfo.skin`, the 皮肤
-> section of `ui/skinPicker.js` — is not wired in. Upstream's helpers stay for the plugin studio and Forge import
-> (`public/js/ui/skins.js`, shared/protocol.js `isSkinSelection` …). 设置「显示其他玩家的皮肤」 was ported onto the
-> catalogue skins (render/app.js `skinOf` reads `UnitInfo.skinId`).
+> **This fork (2026-10-18, after 0.3.1):** the game wears the built-in **catalogue**, and a cosmetic plugin adds rows
+> to it. Normative for the catalogue, its ids and the wire is [OPERATOR-SKINS.md](OPERATOR-SKINS.md); what this document
+> keeps is the OVERLAY schema below and the display rules (设置「显示其他玩家的皮肤」, the picker's two rules).
+>
+> * An appearance is an outfit of `shared/skin-catalogue.js` (276 outfits over 174 operators; generated, no URLs), chosen
+>   per OPERATOR — `room.skins { choices }` = `{ [charId]: admittedSkinId }`, one entry covering a normal chess, its
+>   elite and a 自选 slot fielding that operator. The server refuses any map the catalogue does not admit
+>   (`shared/skins.js isSkinChoices`).
+> * There is **no catalogue file** and **no install message** any more: upstream's `data/skins.json` and
+>   `room.skin.install` are gone. This server's owner installs an outfit's files with `tools/install-skins.mjs`
+>   (`data/skins-installed.json` records what landed, `data/assets.json` carries the URLs). The picker lists the whole
+>   catalogue and marks the outfits this server does not have as 未安装 — they cannot be picked.
+> * A stored choice is keyed per chess in the browser (`sp.pref.skins`) because that is what the 干员调配 roster, the
+>   自选 slots and the 商店立绘 choice are keyed by; `ui/skins.js skinChoicesOf` translates it to the operator-keyed map
+>   at the wire, and nothing else does.
+> * The overlay path below is unchanged as a SCHEMA: it is what a cosmetic plugin (and the studio, and the Forge import)
+>   writes into the composed manifest for `chars[charId].illust` / `chars[charId].skins[skinId]`. That manifest is what
+>   the renderer draws from, and `shared/skins.js manifestSkinKey` translates a catalogue id to the official id it is
+>   keyed by.
 
 An operator's Spine model and its pictures can be replaced by one of its official alternative outfits (时装). This
 document is the normative reference for that feature; the art itself is **never** downloaded or written by the server —
@@ -128,6 +141,10 @@ while the record has any of the three; an operator the composed manifest does no
 exists) gets no section rather than an empty grid.
 
 ## New files
+
+> Upstream 0.3.1's port log, kept for provenance: the file list and the edit list below describe the ORIGINAL port.
+> This fork's current wiring is the note at the top and [OPERATOR-SKINS.md](OPERATOR-SKINS.md) — `data/skins.json`,
+> `room.skin.install` and `server/skinInstall.js` no longer exist.
 
 | Path | What |
 |---|---|

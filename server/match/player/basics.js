@@ -11,6 +11,7 @@ import { PHASE } from '../../../shared/constants.js';
 import { msg, dn } from '../../../shared/i18n.js';
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, resolveLoadout, charPotentialChanges } from '../../../shared/protocol.js';
 import { cultivationOf } from '../../../shared/potential.js';
+import { isSkinChoices, skinIdFor } from '../../../shared/skins.js';
 import { tileKey, boardOrder } from '../board.js';
 
 /** The charIds a player may set a potential / 练度 for, per game-data object (shared/protocol.js cultivationCharIds). */
@@ -112,37 +113,35 @@ export class PlayerBasics {
   }
 
   /**
-   * 干员皮肤 (custom_docs/SKINS.md): replace this player's skin choices. `{ [chessId]: skinId }`; the ids come from
-   * data/skins.json on the client. Validation is deliberately light — an unknown or mismatched skinId cannot do
-   * anything but fall back to the operator's default model in spineEntry() — so only the shape and the chess id are
-   * checked here, and a malformed entry is dropped rather than rejecting the whole selection.
-   * @param {Record<string, string>|null} skins
-   * @returns {boolean} whether anything was accepted
+   * 干员皮肤 (docs/SKINS.md): replace this player's appearance choices — `{ [charId]: skinId }`, one entry per
+   * OPERATOR, so the normal chess, its elite and a 自选 slot fielding that operator share one outfit.
+   *
+   * Strict whitelist (shared/skins.js isSkinChoices): every key an operator charId, every value an outfit of THAT
+   * operator in shared/skin-catalogue.js. A map that is not one is refused WHOLE and the previous choice stands — an
+   * unknown id or a made-up operator never reaches a renderer, and there is no second catalogue to keep in date.
+   * Bots always wear the default models, like the loadout.
+   * 来源: Stardust-minus/Stronghold-Protocol @ fab1b97 server/match/player/basics.js.
+   * @param {Record<string, string>|null} choices
+   * @returns {boolean} whether the map was accepted
    */
-  setSkins(skins) {
-    if (this.isBot) return false;
-    const out = {};
-    if (skins && typeof skins === 'object' && !Array.isArray(skins)) {
-      for (const [id, skinId] of Object.entries(skins)) {
-        if (typeof skinId !== 'string' || !skinId) continue;
-        // Same gate the loadout uses (checkLoadout): a base, visible chess record. The key is the CHESS id
-        // (`chess_char_1_01_a`), which is what board pieces and the prep view carry — not the operator id.
-        // A 自选 slot's base record passes too — the slot IS the chess the player fields through their picks, and
-        // pieceView / battleInput look the skin up by the piece's baseId, which for a 自选 piece is the slot id, so
-        // the entry reaches the unit without any extra plumbing. Its `visible` is false by design (a slot is never
-        // sold as itself), so it is gated on isDiy + baseId instead of the visibility flags; a stale id after the
-        // pick changed just falls back to the default model (spineEntry) — the client clears it on re-pick.
-        const rec = this.gd.chess(id);
-        const base = rec && !rec.isGolden && (!rec.baseId || rec.baseId === id)
-          && (rec.isDiy || (rec.visible !== false && !rec.isHidden));
-        if (!base) continue;
-        out[id] = skinId;
-      }
-    }
-    this.skins = Object.freeze(out);
-    // skins are PUBLIC (a teammate sees your skin): markPrivate also flags the public view, so the change goes out
+  setSkins(choices) {
+    if (this.isBot || !isSkinChoices(choices)) return false;
+    this.skins = Object.freeze({ ...choices });
+    // skins are PUBLIC (a teammate sees your skin): dirty() also flags the public view, so the change goes out
     this.dirty();
-    return Object.keys(out).length > 0;
+    return true;
+  }
+
+  /**
+   * The appearance this player's piece of chess record `rec` wears, or null (the operator's own model).
+   *
+   * Resolved through the BODY the piece fields (fieldRecord: a 补位 stand-in, a 自选 slot's pick), never through the
+   * chess the slot replaces — the whole point of keying a choice per operator, and what makes one entry cover a slot.
+   * @param {object|null} rec a chess record
+   * @returns {string|null} a catalogue skin id
+   */
+  skinIdFor(rec) {
+    return skinIdFor(this.skins, this.fieldRecord(rec)?.charId);
   }
 
   /**

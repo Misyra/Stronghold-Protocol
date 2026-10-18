@@ -581,7 +581,7 @@ The title screen and settings open one resource manager. Preloading is off by de
 background preloading only when the saved `preload` setting is enabled, and a saved pause survives page reloads.
 It downloads required
 visuals (maps, portraits, Spine models, UI, icons and fonts). Four cards place choices beside their cache progress:
-必备资源, 干员语音 (`preloadVoices`), 干员皮肤 (`preloadSkins`, custom_docs/SKINS.md), and 额外特效 (`preloadFx`,
+必备资源, 干员语音 (`preloadVoices`), 干员皮肤 (`preloadSkins`, docs/OPERATOR-SKINS.md), and 额外特效 (`preloadFx`
 docs/design/vfx-format.md). The required card's expandable details also expose 音效、音乐与玩法说明 (`preloadOptional`).
 Voices and other audio now have independent switches; older profiles inherit `preloadVoices` from their saved
 `preloadOptional` value. Skins and effects are only shown when the server provides them. Defaults are unchanged,
@@ -608,7 +608,7 @@ so later page visits stay paused until it is enabled again. When the setting is
 enabled, the next page visit resumes automatically and reuses verified files. Cache clearing waits
 for active downloads and archive transfers, and uses the same cross-tab Web Lock as downloads.
 
-干员皮肤 (`custom_docs/SKINS.md`) is the first of two optional groups that keep a switch of their own rather than a place in
+干员皮肤 (`docs/OPERATOR-SKINS.md`) is the first of two optional groups that keep a switch of their own rather than a place in
 额外资源. A full
 install is ~328 MiB across ~2 000 files, so the resource manifest marks those entries `skin: '<charId>/<skinId>'`
 (`server/resources.js` `skinKeyForPath`, tier 2) and the client keeps only the equipped skins in its selection

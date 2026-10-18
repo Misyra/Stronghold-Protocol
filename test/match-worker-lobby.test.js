@@ -87,7 +87,7 @@ describe('对局线程池：lobby 侧接线', () => {
     try {
       const { session, room } = await startedSolo(lobby, registry);
       // 皮肤：远端 setSkins 是往线程里的调用，应答晚到一拍
-      const answer = lobby.skins(session, { skins: {} });
+      const answer = lobby.skins(session, { choices: {} });
       assert.equal(typeof answer?.then, 'function', 'a remote match answers later');
       assert.deepEqual(await answer, { ok: true });
       assert.deepEqual(room.seatOf(session.playerId).skins, {}, 'the seat still took the choice');

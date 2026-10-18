@@ -27,10 +27,10 @@ export class PlayerViews {
 
   pieceView(p, rc = null) {
     const rec = p.kind === 'item' ? this.gd.item(p.id) : p.kind === 'token' ? this.gd.token(p.id) : this.gd.chess(p.id);
-    // 干员皮肤 (custom_docs/SKINS.md): the prep board / hand / temp views carry the skin too, so a piece shows it before it
-    // is deployed; baseId again, for a golden piece (setSkins keeps base ids only)
-    const baseId = (rec && rec.baseId) || p.id;
-    const skin = p.kind === 'chess' ? (this.skins[baseId] || this.skins[p.id] || null) : null;
+    // 干员皮肤 (docs/SKINS.md): the prep board / hand / temp views carry the appearance too, so a piece shows it before
+    // it is deployed. Resolved through the body the piece fields (skinIdFor): one choice per OPERATOR, so it covers
+    // the normal piece, its elite and a 自选 slot picking that operator.
+    const skin = p.kind === 'chess' ? this.skinIdFor(rec) : null;
     const v = {
       uid: p.uid,
       kind: p.kind,

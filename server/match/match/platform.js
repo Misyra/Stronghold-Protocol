@@ -79,22 +79,23 @@ export class MatchPlatform {
   }
 
   /**
-   * room.skins during the match (custom_docs/SKINS.md): replace a player's chosen operator skins.
+   * room.skins during the match (docs/SKINS.md): replace a player's appearance choices, in the briefing only.
    *
-   * Accepted in ANY phase, unlike the loadout directly above. The loadout is locked at INFO_CHECK / ready because it
-   * changes what a unit *does*; a skin changes only what it looks like, and it is public — a teammate picking a
-   * different model mid-match is harmless. `markPublic` carries it to everyone on the next broadcast.
+   * Display preferences follow the loadout's INFO_CHECK contract, not ownership / DIY's start-time lock: a match that has
+   * left the briefing keeps the choices it started with, and the lobby stores the new ones for the next match.
+   * 来源: Stardust-minus/Stronghold-Protocol @ fab1b97 server/match/match/platform.js.
    * @param {string} playerId
-   * @param {Record<string, string> | null} skins
+   * @param {Record<string, string> | null} choices `{ [charId]: skinId }`
    * @returns {{ ok: true } | { error: string, detail?: string }}
    */
-  setSkins(playerId, skins) {
+  setSkins(playerId, choices) {
     const ps = this.players.get(playerId);
     if (!ps || ps.isBot || ps.left) return fail(ERR.NOT_IN_ROOM);
+    if (this.disposed || this.ended || this.phase !== PHASE.INFO_CHECK) return fail(ERR.WRONG_PHASE, 'skins locked for this match; stored for the next match');
     let res = OK;
     this.guard(() => {
-      ps.setSkins(skins);
-      this.markPublic();
+      if (!ps.setSkins(choices)) { res = fail(ERR.BAD_MSG, 'invalid skin choices'); return; }
+      this.markPrivate(ps);
     });
     return res;
   }

@@ -18,6 +18,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { skinsFor } from '../../shared/skins.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -44,16 +45,17 @@ function chessIdWhere(want) {
   return null;
 }
 
-const CATALOG = (() => { try { return JSON.parse(readFileSync(path.join(ROOT, 'data/skins.json'), 'utf8')); } catch { return { chars: {} }; } })();
+/** The catalogue is the code module now (shared/skin-catalogue.js); only its operator grouping matters here. */
+const skinsOf = (charId) => skinsFor(charId);
 
 /** A row whose operator this install has at least one skin for — the 选中 case. Absent on a default install. */
 const installedChessId = () => chessIdWhere((_c, installed) => Object.keys(installed).length > 0);
 
-/** A row whose operator has skins in the catalogue but none installed — the 安装 case. */
-const catalogOnlyChessId = () => chessIdWhere((charId, installed) => (CATALOG.chars?.[charId] || []).length > 0 && Object.keys(installed).length === 0);
+/** A row whose operator has outfits in the catalogue but none installed — the 未安装 case. */
+const catalogOnlyChessId = () => chessIdWhere((charId, installed) => skinsOf(charId).length > 0 && Object.keys(installed).length === 0);
 
-/** A row whose operator has skins at all, installed or not — enough to assert the section renders. */
-const anySkinChessId = () => chessIdWhere((charId) => (CATALOG.chars?.[charId] || []).length > 0);
+/** A row whose operator has outfits at all, installed or not — enough to assert the section renders. */
+const anySkinChessId = () => chessIdWhere((charId) => skinsOf(charId).length > 0);
 
 const NO_SKINS = installedChessId() ? false : 'nothing installed — run: node tools/install-skins.mjs add <skinId>';
 
@@ -213,8 +215,7 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
   });
 
   test('an operator with no skins still gets the 立绘 switch and the model frame', async () => {
-    const cat = JSON.parse(readFileSync(path.join(ROOT, 'data/skins.json'), 'utf8'));
-    const bare = chessIdWhere((charId) => !(cat.chars?.[charId] || []).length);
+    const bare = chessIdWhere((charId) => skinsOf(charId).length === 0);
     if (!bare) return; // every roster operator happens to have skins — nothing to assert
     await openDetailFor(bare);
     // The section is not only about skins: 溯光星源 ships no outfit at all and still wants 原始/精英二 立绘 and the
@@ -237,16 +238,17 @@ describe('skin picker (browser)', { skip: !ENABLED }, () => {
     assert.ok(drawn, '预览框里画出了东西');
   });
 
-  test('the (uninstalled) case renders its install hint', async () => {
+  test('an outfit this server does not have is listed but not selectable', async () => {
     const bare = catalogOnlyChessId();
     if (!bare) return; // everything is installed on this machine — nothing to assert
     assert.ok(await openDetailFor(bare), `the roster has a row for ${bare}`);
     await page.waitForSelector('[data-testid="skin-section"]', { timeout: 5000 });
     // as above: wait for THIS operator's section, not the previous one's — an uninstalled tile is the marker
     await page.waitForSelector('[data-skin-group="model"] .lo-skin--missing', { timeout: 10000 });
-    const hints = await page.$$eval('[data-skin-group="model"] .lo-skin--missing', (els) => els.map((b) => b.textContent));
-    assert.ok(hints.length, 'at least one uninstalled skin is shown');
-    assert.match(hints.join(' '), /点击安装/, 'an uninstalled tile says how to get it');
+    const hints = await page.$eval('[data-skin-group="model"] .lo-skin--missing', (els) => els.map((b) => [b.textContent, b.disabled]));
+    assert.ok(hints.length, 'at least one uninstalled outfit is shown');
+    assert.match(hints.map(([text]) => text).join(' '), /未安装/, 'an uninstalled tile says so');
+    assert.ok(hints.every(([, disabled]) => disabled), 'and cannot be picked — installing is the server owner\'s job');
   });
 
   // 干员小人预览 (custom_docs/SKINS.md): the 战斗模型 tiles are TEXT ONLY and the model itself is rendered by

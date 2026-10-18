@@ -14,9 +14,10 @@ import {
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
 /** Data files the in-match screens use (`backups`: the 补位 stand-ins' bodies — cards, the board model, the detail card;
- * `skins`: the skin catalogue the 皮肤 section of the 干员调配 overlay reads — reachable during a match, custom_docs/SKINS.md). */
+ * the 皮肤 section needs no data file of its own: its catalogue is the code module shared/skin-catalogue.js, and what is
+ * installed comes out of `assets` above, docs/SKINS.md). */
 export const GAME_FILES = ['config', 'assets', 'chess', 'bonds', 'items', 'bands', 'enemies', 'bosses', 'stages', 'tokens',
-  'choices', 'effects', 'garrisons', 'factions', 'local', 'backups', 'skins'];
+  'choices', 'effects', 'garrisons', 'factions', 'local', 'backups'];
 
 /**
  * Load every in-match data file; returns lookups (sync, null until loaded).

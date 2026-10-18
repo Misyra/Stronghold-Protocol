@@ -96,7 +96,7 @@ English summary: [below](#english).
 - **精简包** `Stronghold-Protocol-v<版本>-lite.zip`（约 25 MB）：不带素材，第一次启动时自动从公开镜像下载美术、Spine 模型、音频、字体、表情和「玩法说明」教程图（约 720 MB，可中断，再次启动会续传）；官方 3D 棋盘等本地客户端素材不在其中（见下面的「本地客户端素材」；各战场的官方场景可以用 `node tools/setup.mjs --scenes` 在本机下载并提取）。适合下载大文件不方便的情况。
 - **更新包** `Stronghold-Protocol-v<版本>-update.zip`（0.2.1 起提供，大小看改动多少，通常只有几 MB）：只含比之前的 0.2.x 版本改动过的文件，用来把已经装好的 0.2.x（完整包或精简包装的都行）升级到新版本，不用重新下载整个包。用法：先停止服务器（关掉窗口；装了开机自启的运行 `scripts\install-service-windows.ps1 -Stop`），把 zip 里 `Stronghold-Protocol` 文件夹的全部内容合并到安装文件夹、覆盖同名文件（Windows 资源管理器里复制粘贴即可；macOS 不要用访达拖放，它会整个替换文件夹，请用 `unzip -o`，见 [docs/DEPLOY.md](docs/DEPLOY.md) 第 1.5 节），再照常启动。启动时会先核对全部程序文件、删除新版本不再用的旧文件，然后正常运行；如果这个文件夹不是更新包对应的版本（例如 0.1.x，或者程序文件被改过），会提示下载完整包，服务器不启动。全新安装请用完整包或精简包。
 
-两种包都包含运行和部署文件，以及插件作者需要的工具、模板、Schemas、插件文档和战斗测试助手。本分支另附 [custom_docs/SKINS.md](custom_docs/SKINS.md) 与 [custom_docs/operations/](custom_docs/operations/) 下的部署运维文档；完整开发测试与设计文档仍在源码仓库里。
+两种包都包含运行和部署文件，以及插件作者需要的工具、模板、Schemas、插件文档和战斗测试助手。本分支另附 [docs/OPERATOR-SKINS.md](docs/OPERATOR-SKINS.md)、[docs/SKINS.md](docs/SKINS.md) 与 [custom_docs/operations/](custom_docs/operations/) 下的部署运维文档；完整开发测试与设计文档仍在源码仓库里。
 
 1. **安装 Node.js 22 或 24（LTS）**
    - Windows：在 PowerShell 里运行 `winget install OpenJS.NodeJS.LTS`，或到 <https://nodejs.org/zh-cn/download> 下载安装包。
@@ -121,7 +121,7 @@ npm start          # 启动服务器：http://localhost:3000
 也可以直接运行启动脚本（Windows `scripts\start-windows.bat`，macOS / Linux `scripts/start.sh`）：首次会自动安装依赖、下载素材，然后启动服务器并打开浏览器。
 
 - **本地客户端素材**：本分支已提交上游 v0.1.3 完整包中的这部分素材和清单，git pull 后重启即可使用（3D 棋盘、部分界面图标与源石虫模型）。0.2.0 新增的 39 个召唤物官方模型与 0.3.0 的官方战斗特效不在其中：需要召唤物模型的源码部署，运行一次 `npm run setup -- --local` 提取，或从同版本完整包复制 `public/assets/local/`。以下为原始上游的提取方式：官方 3D 棋盘、部分官方界面图标（交流按钮与表情面板的边框、模组类型图标等）、灼热 / 炽焰源石虫和 39 个召唤物（多数自选召唤物）的官方模型需要从本机的《明日方舟》PC 客户端提取（Windows 原生客户端、macOS 的 CrossOver 或 PlayCover）。`npm run setup` 检测到客户端时会询问是否提取（需要 Python 3.8+，依赖装在项目内的 `.venv-extract`，不影响系统）；之后可以用 `node tools/setup.mjs --local` 重新提取，或用 `--game "<…/StreamingAssets/AB/Windows>"` 指定路径。没有客户端时游戏照常运行，这几样换成替代样式：2D 棋盘、样式相近的图标、染色的普通源石虫、召唤物头像。表情和「玩法说明」的教程图随上面的素材一起从公开镜像下载，不需要客户端。没有客户端的服务器（例如 Linux VPS）也可以从**同一版本**的整合包里复制 `public/assets/local/` 和 `data/local-assets.json`，见 [custom_docs/operations/DEPLOY.md](custom_docs/operations/DEPLOY.md) 的「本地客户端素材」。
-- **干员皮肤（可选）**：干员可以用官方时装换掉局内模型（战斗模型）和商店立绘。皮肤**不随包分发**，按需下载：在「干员调配」的干员详情里点一套「未安装」的皮肤即可（约 1 MB，装在**开服那台机器**上，所有玩家共用、也都看得见）；服务器上也可以直接跑 `node tools/install-skins.mjs list`（列出目录与已装）、`add <skinId…>`、`add-char <charId…>`、`remove <skinId…>` —— `data/skins.json` 是全部 174 套的目录，`data/skins-installed.json` 记录装了哪几套。装好后所有在线客户端会自动刷新，不用重启；一套都不装时一切照旧。设计说明见 [custom_docs/SKINS.md](custom_docs/SKINS.md)。
+- **干员皮肤（可选）**：干员可以用官方时装换掉局内模型（战斗模型）和商店立绘。目录是代码模块 `shared/skin-catalogue.js`（276 套 / 174 名干员），**美术资源不随包分发**：本仓库的素材清单里装好了 273 套，剩下的（3 套 NLC 联动）在界面里列为「未安装」。装/卸都在**开服那台机器**上做，所有玩家共用、也都看得见：`node tools/install-skins.mjs list`（列出目录与已装）、`add <skinId…>`、`add-char <charId…>`、`remove <skinId…>`（`data/skins-installed.json` 记录装了哪几套）。**游戏里没有安装按钮**——服务器不会替任何客户端去网上下载文件。装好后重启一次即可；一套都不装时一切照旧。设计说明见 [docs/OPERATOR-SKINS.md](docs/OPERATOR-SKINS.md) 与 [docs/SKINS.md](docs/SKINS.md)。
 - 素材下载优先使用 GitHub，失败时自动改用 jsDelivr 镜像。
 - `npm run doctor`（即 `node tools/doctor.mjs`）可以随时诊断：Node 版本、素材是否完整、端口占用、局域网地址和防火墙。
 

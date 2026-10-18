@@ -87,13 +87,13 @@ export const FOLDER = 'Stronghold-Protocol';
 /** Root files a player gets. */
 export const ROOT_FILES = ['package.json', 'package-lock.json', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'CHANGELOG.md'];
 /** The player docs. */
-export const PLAYER_DOCS = ['docs/PLAYING.md', 'docs/DEPLOY.md', 'custom_docs/SKINS.md', 'docs/PLUGINS.md', 'docs/PLUGIN-GUIDE.md', 'docs/PLUGIN-DSL.md', 'docs/PLUGIN-API.md', 'docs/plugin-catalog.example.json', ...['DEPLOY', 'HOME_SERVER', 'ANNOUNCEMENTS', 'CDN', 'PERSISTENCE', 'MONITORING'].map(name => `custom_docs/operations/${name}.md`)];
+export const PLAYER_DOCS = ['docs/PLAYING.md', 'docs/DEPLOY.md', 'docs/OPERATOR-SKINS.md', 'docs/SKINS.md', 'docs/PLUGINS.md', 'docs/PLUGIN-GUIDE.md', 'docs/PLUGIN-DSL.md', 'docs/PLUGIN-API.md', 'docs/plugin-catalog.example.json', ...['DEPLOY', 'HOME_SERVER', 'ANNOUNCEMENTS', 'CDN', 'PERSISTENCE', 'MONITORING'].map(name => `custom_docs/operations/${name}.md`)];
 /** The author harness has no test-only dependencies; the rest of test/ stays out. */
 export const AUTHOR_TEST_FILES = ['test/helpers/battleHarness.js'];
 /** Only these repository-owned plugin resources ship, even if an owner's plugin was accidentally tracked. */
 export const isPluginResource = (rel) => rel === 'plugins/README.md' || rel === 'plugins/AGENTS.md' || rel.startsWith('plugins/_template/');
 /** Research tables read at run time: server/sim/nodeData.js (the Node sim's fallback), tools/fetch-assets.mjs and
- * tools/install-skins.mjs (干员皮肤: the skin catalogue the installer validates against, custom_docs/SKINS.md). */
+ * tools/install-skins.mjs (干员皮肤: the skin catalogue the installer validates against, docs/OPERATOR-SKINS.md). */
 export const RUNTIME_RESEARCH = ['docs/research/03-operators.json', 'docs/research/05-enemies.json', 'docs/research/05-maps.json', 'docs/research/07-assets.json',
   'docs/research/08-skins.json'];
 /** The start scripts (scripts/make-windows-bundle.mjs is the maintainer's Windows pack, docs/WINDOWS.md). */

@@ -1,6 +1,10 @@
-// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in custom_docs/SKINS.md.
-// test/skins-lifecycle.test.js — end-to-end integration test for the skins pipeline:
-// lobby session/seats -> Match/PlayerState -> prep pieceView & prepFieldMeta -> battleInput & sim units -> public/js assets & avatarUrl.
+// test/skins-lifecycle.test.js — the skins pipeline end to end: lobby session/seats -> Match/PlayerState ->
+// prep pieceView & prepFieldMeta -> battleInput & sim units -> public/js assets & avatarUrl.
+//
+// The model is the catalogue's (docs/SKINS.md): one choice per OPERATOR (`{ [charId]: skinId }`), so a normal chess,
+// its elite and a 自选 slot fielding the same operator share one entry, and the value is the catalogue id
+// (shared/skin-catalogue.js) — data/assets.json is keyed by the official id, and shared/skins.js manifestSkinKey is the
+// one place that translates between them.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +16,9 @@ import { avatarUrl, unitPictureUrl, createAssets } from '../public/js/assets.js'
 
 const INSIDE = 'chess_char_1_01_a';
 const INSIDE_GOLDEN = 'chess_char_1_01_b';
-const SKIN_ID = 'char_498_inside@kitchen#2';
+const INSIDE_CHAR = 'char_498_inside';
+const SKIN_ID = 'char_498_inside_kitchen_2';        // 隐现 · 甜品大奖 (catalogue id)
+const SKIN_OFFICIAL = 'char_498_inside@kitchen#2';  // the same outfit as data/assets.json keys it
 
 describe('skins lifecycle: lobby wiring', () => {
   /**
@@ -29,30 +35,48 @@ describe('skins lifecycle: lobby wiring', () => {
 
   test('humanSeat copies session.skins, and room.skins stores them on the session and the seat', () => {
     const lobby = lobbyWith();
-    const session = { playerId: 'p1', name: 'Player 1', connected: true, skins: { [INSIDE]: SKIN_ID }, loadout: null };
+    const session = { playerId: 'p1', name: 'Player 1', connected: true, skins: { [INSIDE_CHAR]: SKIN_ID }, loadout: null };
     const seat = lobby.humanSeat(0, session);
-    assert.deepEqual(seat.skins, { [INSIDE]: SKIN_ID }, 'humanSeat must preserve skins from session');
+    assert.deepEqual(seat.skins, { [INSIDE_CHAR]: SKIN_ID }, 'humanSeat must preserve skins from session');
 
-    // room.skins writes through to the session and the seat; an unknown chess id is dropped, not rejected
     const live = { playerId: 'p1', connected: true };
     lobby.rooms.set('TEST', {
       code: 'TEST', match: null,
       seatOf: (id) => (id === 'p1' ? seat : null),
     });
     live.roomCode = 'TEST';
-    assert.deepEqual(lobby.skins(live, { skins: { [INSIDE]: 'char_498_inside@summer#22', chess_nope: 'x' } }), { ok: true });
-    assert.deepEqual(live.skins, { [INSIDE]: 'char_498_inside@summer#22' }, 'a recognised chess id is kept');
-    assert.equal(seat.skins[INSIDE], 'char_498_inside@summer#22', 'and reaches the seat');
+    const CHOICE = { [INSIDE_CHAR]: 'char_498_inside_summer_22' };
+    assert.deepEqual(lobby.skins(live, { choices: CHOICE }), { ok: true });
+    assert.deepEqual(live.skins, CHOICE, 'the catalogue choice is kept as sent');
+    assert.deepEqual(seat.skins, CHOICE, 'and reaches the seat');
+    lobby.rooms.delete('TEST');
+  });
+
+  test('the lobby refuses a map the catalogue does not admit, whole', () => {
+    const lobby = lobbyWith();
+    const seat = lobby.humanSeat(0, { playerId: 'p1', name: 'P', connected: true, loadout: null });
+    lobby.rooms.set('TEST', { code: 'TEST', match: null, seatOf: (id) => (id === 'p1' ? seat : null) });
+    const live = { playerId: 'p1', connected: true, roomCode: 'TEST' };
+    // a chess id key, another operator's outfit, the official id instead of the catalogue id, a made-up id
+    for (const choices of [
+      { [INSIDE]: SKIN_ID },
+      { [INSIDE_CHAR]: 'char_103_angel_wild_1' },
+      { [INSIDE_CHAR]: SKIN_OFFICIAL },
+      { [INSIDE_CHAR]: 'char_498_inside@made_up#9' },
+      { [INSIDE_CHAR]: 42 },
+    ]) {
+      assert.equal(lobby.skins(live, { choices }).error, 'BAD_MSG', JSON.stringify(choices));
+    }
+    assert.equal(live.skins, undefined, 'nothing was stored');
     lobby.rooms.delete('TEST');
   });
 
   test('the lobby refuses a bot / unknown player, and the seat choice reaches the Match', () => {
     const lobby = lobbyWith();
-    const session = { playerId: 'p1', name: 'Player 1', connected: true, skins: { [INSIDE]: SKIN_ID }, loadout: null };
+    const session = { playerId: 'p1', name: 'Player 1', connected: true, skins: { [INSIDE_CHAR]: SKIN_ID }, loadout: null };
     const seat = lobby.humanSeat(0, session);
-    assert.deepEqual(lobby.skins({ playerId: 'ghost', connected: true }, { skins: {} }), { ok: true }, 'no room → just stored');
+    assert.deepEqual(lobby.skins({ playerId: 'ghost', connected: true }, { choices: {} }), { ok: true }, 'no room → just stored');
 
-    // startMatch builds the Match seats from the room's seats (the mapping that carries skins into PlayerState)
     const room = {
       code: 'TEST', hostId: 'p1', mode: 'solo', difficulty: 'NORMAL', aiPicksLast: false,
       seats: [seat], spectators: [], matchCount: 0,
@@ -67,50 +91,41 @@ describe('skins lifecycle: lobby wiring', () => {
     lobby.MatchClass = MockMatch;
     lobby.startMatch(room);
     assert.ok(passedSeats, 'seats should be passed to Match');
-    assert.equal(passedSeats[0].skins?.[INSIDE], SKIN_ID, 'seats[0].skins should be retained in startMatch');
+    assert.equal(passedSeats[0].skins?.[INSIDE_CHAR], SKIN_ID, 'seats[0].skins should be retained in startMatch');
     assert.equal(passedSeats[0].loadout, null, 'a seat without a loadout still passes null');
   });
 });
 
 describe('skins lifecycle: PlayerState and Match', () => {
-  test('skins propagate to base piece and golden piece in prep pieceView and battleInput', () => {
+  test('one entry covers the operator: base and golden piece alike, in pieceView, prepFieldMeta, battleInput and the sim', () => {
     const h = makeMatch({
       mode: 'solo',
-      seats: [{ seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true, skins: { [INSIDE]: SKIN_ID } }],
+      seats: [{ seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true, skins: { [INSIDE_CHAR]: SKIN_ID } }],
     });
     const ps = h.ps('p_0');
-    assert.equal(ps.skins[INSIDE], SKIN_ID, 'ps.skins should be initialized from seat.skins');
+    assert.equal(ps.skins[INSIDE_CHAR], SKIN_ID, 'ps.skins should be initialized from seat.skins');
+    assert.equal(ps.skinIdFor(ps.gd.chess(INSIDE)), SKIN_ID, 'the base chess resolves through its operator');
+    assert.equal(ps.skinIdFor(ps.gd.chess(INSIDE_GOLDEN)), SKIN_ID, 'and so does its elite — same operator');
+    assert.equal(ps.skinIdFor(ps.gd.chess('chess_char_2_01_a')), null, 'another operator keeps its own model');
 
-    // Place a base piece
     const pBase = ps.newPiece('chess', INSIDE);
     ps.board.set('0,0', pBase);
-
-    // Place a golden piece
     const pGolden = ps.newPiece('chess', INSIDE_GOLDEN);
     ps.board.set('0,1', pGolden);
 
-    // Check pieceView for both pieces during prep
-    const viewBase = ps.pieceView(pBase, [0, 0]);
-    assert.equal(viewBase.skin, SKIN_ID, 'base pieceView should carry skin');
+    assert.equal(ps.pieceView(pBase, [0, 0]).skin, SKIN_ID, 'base pieceView should carry skin');
+    assert.equal(ps.pieceView(pGolden, [0, 1]).skin, SKIN_ID, 'golden pieceView should carry skin');
 
-    const viewGolden = ps.pieceView(pGolden, [0, 1]);
-    assert.equal(viewGolden.skin, SKIN_ID, 'golden pieceView should carry skin');
-
-    // Check scouting prepFieldMeta
     const meta = h.m.prepFieldMeta(ps);
-    const metaBase = meta.units.find((u) => u.defId === INSIDE);
-    const metaGolden = meta.units.find((u) => u.defId === INSIDE_GOLDEN);
-    assert.equal(metaBase?.skin, SKIN_ID, 'scouting prepFieldMeta base piece should carry skin');
-    assert.equal(metaGolden?.skin, SKIN_ID, 'scouting prepFieldMeta golden piece should carry skin');
+    assert.equal(meta.units.find((u) => u.defId === INSIDE)?.skin, SKIN_ID, 'scouting prepFieldMeta base piece');
+    assert.equal(meta.units.find((u) => u.defId === INSIDE_GOLDEN)?.skin, SKIN_ID, 'scouting prepFieldMeta golden piece');
 
-    // Check battleInput
     const bInput = ps.battleInput({ side: 'ally' });
     const bBase = bInput.units.find((u) => u.chessId === INSIDE);
     const bGolden = bInput.units.find((u) => u.chessId === INSIDE_GOLDEN);
     assert.equal(bBase?.skin, SKIN_ID, 'base unit in battleInput must have skin');
     assert.equal(bGolden?.skin, SKIN_ID, 'golden unit in battleInput must have skin');
 
-    // Simulate Battle ally creation on a valid field row (row 9 for normal field)
     const b = new Battle({
       fieldId: 'n:p_0',
       kind: 'normal',
@@ -127,57 +142,74 @@ describe('skins lifecycle: PlayerState and Match', () => {
     });
     b.start();
     const battleUnits = b.fieldMeta().units;
-    const buBase = battleUnits.find((u) => u.defId === INSIDE);
-    const buGolden = battleUnits.find((u) => u.defId === INSIDE_GOLDEN);
-    assert.equal(buBase?.skin, SKIN_ID, 'sim unit for base piece must have skin in fieldMeta');
-    assert.equal(buGolden?.skin, SKIN_ID, 'sim unit for golden piece must have skin in fieldMeta');
+    assert.equal(battleUnits.find((u) => u.defId === INSIDE)?.skin, SKIN_ID, 'sim unit for base piece');
+    assert.equal(battleUnits.find((u) => u.defId === INSIDE_GOLDEN)?.skin, SKIN_ID, 'sim unit for golden piece');
   });
 
-  test('mid-match setSkins updates PlayerState and marks dirty', () => {
+  test('a 自选 slot wears the outfit of the operator PICKED for it (skinIdFor reads the body, never the slot)', () => {
+    // A 自选 slot's own record has `charId: null` — the slot is not an operator. What it fields is its pick, and
+    // PlayerState.fieldRecord is what resolves one to the other; stubbed here so the rule is visible without a legal
+    // roster (checkDiyPicks needs the tier pools, which a unit test's data does not carry).
     const h = makeMatch({
       mode: 'solo',
-      seats: [{ seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true }],
+      seats: [{ seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true, skins: { char_103_angel: 'char_103_angel_wild_1' } }],
+    });
+    const ps = h.ps('p_0');
+    const slot = { isDiy: true, chessId: 'chess_char_6_diy1_a', baseId: 'chess_char_6_diy1_a', charId: null };
+    assert.equal(ps.skinIdFor(slot), null, 'an unfilled slot wears nothing');
+    const saved = ps.fieldRecord;
+    ps.fieldRecord = () => ({ charId: 'char_103_angel' });
+    try {
+      assert.equal(ps.skinIdFor(slot), 'char_103_angel_wild_1', 'a slot filled with 能天使 wears her outfit');
+    } finally { ps.fieldRecord = saved; }
+  });
+
+  test('setSkins is accepted in the briefing only, refuses bots, and marks the public view', () => {
+    const h = makeMatch({
+      mode: 'solo',
+      seats: [
+        { seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true },
+        { seat: 1, playerId: 'b_1', name: 'B1', isBot: true, connected: true },
+      ],
     });
     const ps = h.ps('p_0');
     assert.deepEqual(ps.skins, {}, 'initially empty');
+    // A fresh match is still in the LOBBY: the lobby stores the choice on the seat and the briefing is where a MATCH
+    // takes it (Match.setSkins), so both phases are exercised here.
+    assert.equal(h.m.phase, 'LOBBY');
+    assert.equal(h.m.setSkins('p_0', { [INSIDE_CHAR]: SKIN_ID }).error, 'WRONG_PHASE', 'the lobby stores, the briefing applies');
 
+    const phase0 = h.m.phase;
+    h.m.phase = 'INFO_CHECK';
     let privateMarked = false;
     h.m.markPrivate = () => { privateMarked = true; };
-
-    h.m.setSkins('p_0', { [INSIDE]: SKIN_ID });
-    assert.equal(ps.skins[INSIDE], SKIN_ID, 'ps.skins updated');
+    assert.deepEqual(h.m.setSkins('p_0', { [INSIDE_CHAR]: SKIN_ID }), { ok: true });
+    assert.equal(ps.skins[INSIDE_CHAR], SKIN_ID, 'ps.skins updated');
     assert.ok(privateMarked, 'markPrivate was called');
+    assert.equal(h.m.publicView().players[0].skins?.[INSIDE_CHAR], SKIN_ID, 'publicView carries updated skins');
 
-    const pv = h.m.publicView();
-    assert.equal(pv.players[0].skins?.[INSIDE], SKIN_ID, 'publicView carries updated skins');
+    assert.equal(h.m.setSkins('b_1', { [INSIDE_CHAR]: SKIN_ID }).error, 'NOT_IN_ROOM', 'a bot has no choice to make');
+    assert.equal(h.m.setSkins('p_0', { [INSIDE_CHAR]: 'char_103_angel_wild_1' }).error, 'BAD_MSG', 'not this operator\'s outfit');
+
+    h.m.phase = 'PREP';
+    try {
+      assert.equal(h.m.setSkins('p_0', {}).error, 'WRONG_PHASE', 'display choices close with the briefing');
+      assert.equal(ps.skins[INSIDE_CHAR], SKIN_ID, 'and the briefing choice stands');
+    } finally { h.m.phase = phase0; }
   });
 
-  test('a 自选 slot carries its skin: the base slot id is kept, the golden form is not, and the piece shows it', () => {
-    // The slot's `visible` is false by design (a 自选 slot is never sold as itself), so the gate takes isDiy +
-    // baseId instead of the visibility flags — this is the whole fix that lets a 自选 pick wear a skin.
-    const SLOT = 'chess_char_6_diy1_a';
-    const SLOT_GOLDEN = 'chess_char_6_diy1_b';
+  test('a restored checkpoint keeps the choices it can still verify', () => {
     const h = makeMatch({
       mode: 'solo',
-      seats: [{
-        seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true,
-        diy: { [SLOT]: { charId: 'char_608_acpion' } },
-        skins: { [SLOT]: 'char_608_acpion@sharp#1', [SLOT_GOLDEN]: 'x', chess_nope: 'y' },
-      }],
+      seats: [{ seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true,
+        skins: { [INSIDE_CHAR]: SKIN_ID, char_103_angel: 'char_gone@nope#1' } }],
     });
-    const ps = h.ps('p_0');
-    assert.deepEqual(ps.skins, { [SLOT]: 'char_608_acpion@sharp#1' }, 'the base slot id survives, the golden form and junk do not');
-
-    const piece = ps.newPiece('chess', SLOT);
-    assert.ok(piece, 'the slot composes into a piece');
-    ps.board.set('0,0', piece);
-    assert.equal(ps.pieceView(piece, [0, 0]).skin, 'char_608_acpion@sharp#1', 'prep view carries the slot skin');
-    const u = ps.battleInput({ side: 'ally' }).units.find((x) => x.chessId === SLOT);
-    assert.equal(u?.skin, 'char_608_acpion@sharp#1', 'battleInput carries it (the sim unit then forwards it to unitInfo)');
+    assert.deepEqual(h.ps('p_0').skins, {}, 'a map the catalogue does not admit is refused whole, not half-applied');
   });
 });
 
 describe('skins lifecycle: client assets and avatars', () => {
+  // keyed the way our data/assets.json is: per operator, then by OFFICIAL id
   const MANIFEST = {
     chars: {
       char_498_inside: {
@@ -185,7 +217,7 @@ describe('skins lifecycle: client assets and avatars', () => {
         avatarE2: '/default_avatar_e2.png',
         spine: { front: { skel: '/default.skel', atlas: '/default.atlas', textures: ['/default.png'], anims: { idle: 'Idle' } } },
         skins: {
-          [SKIN_ID]: {
+          [SKIN_OFFICIAL]: {
             avatar: '/skin_avatar.png',
             spine: {
               front: { skel: '/skin.skel', atlas: '/skin.atlas', textures: ['/skin.png'], anims: { idle: 'Idle' } },
@@ -197,9 +229,10 @@ describe('skins lifecycle: client assets and avatars', () => {
     },
   };
 
-  test('avatarUrl returns skin avatar when skin is given', () => {
+  test('avatarUrl resolves the catalogue id (and the official one) through the manifest key', () => {
     assert.equal(avatarUrl(MANIFEST, 'char_498_inside', { skin: SKIN_ID }), '/skin_avatar.png');
-    assert.equal(avatarUrl(MANIFEST, 'char_498_inside', { skin: 'unknown' }), '/default_avatar.png');
+    assert.equal(avatarUrl(MANIFEST, 'char_498_inside', { skin: SKIN_OFFICIAL }), '/skin_avatar.png');
+    assert.equal(avatarUrl(MANIFEST, 'char_498_inside', { skin: 'char_498_inside_gone_9' }), '/default_avatar.png');
     assert.equal(avatarUrl(MANIFEST, 'char_498_inside'), '/default_avatar.png');
   });
 

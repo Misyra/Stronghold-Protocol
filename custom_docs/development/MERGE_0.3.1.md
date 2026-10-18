@@ -71,3 +71,8 @@
 - 文档：`docs-consistency` 24 条、`docs-paths` 11 条全绿
 - i18n：`node tools/i18n.mjs check en --strict` → 2422 / 2422（100 %）
 - 客户端静态 import 图：`client-static` 680 条无断链
+- 浏览器里真跑一遍（`test/ui/coop-votes.browser.test.js`，三名真人 + 一个 AI，Chrome headless）：房间给 AI 指定策略 →
+  开局信息确认 → 重刷投票 1/3、2/3、3/3（¾ 向上取整）→ 策略草稿里 AI 那一格标「AI 指定」且真人禁选 → 掉线托管后的
+  投票移出（过半、两人同意后按中途退出移除）。22 条断言全绿，无脚本报错。
+- 顺带修掉一个 UI 缺陷：房间里的 AI 席位标签显示的是 `band_bldsk` 这种策略 id，不是策略名（`BotBandChip` 拿不到
+  `bands` 列表）。现在从房间的策略表里查名字，与选择器里列的一致。

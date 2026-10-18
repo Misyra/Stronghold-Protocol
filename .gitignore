@@ -122,3 +122,4 @@ public/dev/simcheck/data/
 # Optional MaxMind downloads; Country is already tracked separately.
 /geoip/GeoLite2-ASN.mmdb
 /geoip/GeoLite2-City.mmdb
+undefined/

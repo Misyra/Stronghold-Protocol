@@ -441,23 +441,6 @@ export class SkillRuntime {
     return this._trigKeys;
   }
 
-  /**
-   * The attack profile the skill WOULD fight with: the unit's own with the spec's `targeting` (canHitFly / groundOnly)
-   * merged over it, for the range conditions that ask about the skill's own range (ACTIVE_RANGE). A melee operator whose
-   * skill range covers air (凛御银灰 S3, PRTS 可对空) must fire on a wave of flyers only — his base profile's canHitFly
-   * false would never see one (user playtest). Without those fields it is the base profile itself.
-   */
-  _planningProfile() {
-    const tg = this.spec.targeting;
-    if (!tg) return this.unit.profile;
-    const uf = this.unit.profile || {};
-    if (tg.canHitFly == null && tg.groundOnly == null) return uf;
-    const p = Object.assign({}, uf);
-    if (tg.canHitFly != null) p.canHitFly = tg.canHitFly;
-    if (tg.groundOnly != null) p.groundOnly = tg.groundOnly;
-    return p;
-  }
-
   /** `trigger.allies`: an injured, healable ally on the trigger grid (the unit's own range without one) ≤ hpAtMost. */
   _allyTriggerSatisfied() {
     const b = this.battle;
@@ -487,7 +470,7 @@ export class SkillRuntime {
       if (!this.triggerGrid) return this._defaultCondition();
       return b.anyEnemyInKeys(this._triggerKeys(), u) || this._allyTargetIn(this._trigSet);
     }
-    if (this.rule === 'ACTIVE_RANGE') return this._defaultCondition(this.triggerGrid ? this._triggerKeys() : null, this._planningProfile());
+    if (this.rule === 'ACTIVE_RANGE') return this._defaultCondition(this.triggerGrid ? this._triggerKeys() : null);
     // GDGLOW_SKILL_2 "全场存在可选目标时释放技能": a targetable enemy anywhere (heal skill: an ally that needs healing)
     if (this.rule === 'GDGLOW_SKILL_2') {
       if (this.healSkill) return b.injuredAlliesInKeys(ALL_TILES, u, !!u.profile?.heal?.elementHealRatio).length > 0;
@@ -500,29 +483,26 @@ export class SkillRuntime {
    * DEFAULT rule condition: an enemy (or injured ally for heal skills) inside the initial range (baseRangeKeys: own
    * grid + permanent rangeExtend) — a registered ally target there too (`_allyTargetIn`: 铁钳号·原型机; not for heal
    * skills) — or an enemy inside a content trigger range (addTriggerRange; not for heal skills).
-   * `range` (ACTIVE_RANGE): those absolute tile keys instead of the initial range; `profile` the attack profile the
-   * selection uses (ACTIVE_RANGE: `_planningProfile()`, the skill's own targeting merged over the unit's — the skill's
-   * range, not the base attack, decides whether a flyer counts), the unit's profile by default.
+   * `range` (ACTIVE_RANGE): those absolute tile keys instead of the initial range.
    */
-  _defaultCondition(range = null, profile = null) {
+  _defaultCondition(range = null) {
     const b = this.battle;
     const u = this.unit;
-    const prof = profile ?? u.profile;
     if (b.rangeChanged(u)) b._refreshRange(u);
     const keys = range || u.baseRangeKeys || u.rangeKeys;
     if (keys) {
       if (this.healSkill) return b.injuredAlliesInKeys(keys, u, !!u.profile?.heal?.elementHealRatio).length > 0
         || (this.triggerEnemies && b.enemiesInKeys(keys, u, TRIGGER_PROFILE).length > 0);
-      if (b.enemiesInKeys(keys, u, prof).length > 0 || this._allyTargetIn(keys)) return true;
+      if (b.enemiesInKeys(keys, u, u.profile).length > 0 || this._allyTargetIn(keys)) return true;
     }
-    if (!this.healSkill && prof && prof.fortress) {
+    if (!this.healSkill && u.profile?.fortress) {
       // The branch's own-tile melee range also satisfies the basic cast condition for unblockable fragments.
       const here = [u.tileR * COLS + u.tileC];
-      if (b.enemiesInKeys(here, u, prof).length > 0 || this._allyTargetIn(here)) return true;
+      if (b.enemiesInKeys(here, u, u.profile).length > 0 || this._allyTargetIn(here)) return true;
     }
     // the enemies a unit blocks are always its targets (Battle.blockedTargets), in range or not — PRTS 卫戍协议/帮助
     // "敌人被近战干员自身阻挡" satisfies the target condition of the basic strategy (a ranged blocker too: user playtest #6)
-    if (!this.healSkill && u.blocking.length && b.blockedTargets(u, prof).length > 0) return true;
+    if (!this.healSkill && u.blocking.length && b.blockedTargets(u, u.profile).length > 0) return true;
     return !this.healSkill && this.triggerRanges.length > 0 && this._extraTriggerSatisfied();
   }
 

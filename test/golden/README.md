@@ -14,13 +14,14 @@ through.
 `coop2-NORMAL-3`、`coop2-HARD-4`、`coop3-ABYSS-5`、`coop4-ABYSS-7`、`coop2-NORMAL-8-serverrun`、`coop2-NORMAL-14-standins`。
 同时修正黄金场景构造，让 `unite-1`、`unite-2` 也传入本回合 stageId；仅更新这 8 个基线，其余 275 场景不变。差异来自保留阻挡物后的寻路、伤害与漏怪变化及后续回合结果。
 
-2026-10-18 修 凛御银灰 S3 变革已至 打不到空中单位（用户试玩：全是飞行敌人的波次它一次都不放）。原因两半：数据里 S3 的
-`ACTIVE_RANGE` 触发用干员**基础** profile 判「技能范围里有敌人」，而他是近战 PIONEER（`canHitFly` false），飞行单位永远
-不算——技能一直就绪却永不释放；同时 S3 的 `targeting` 没声明 `canHitFly`，即便开启也打不到。改法：`skills.js` 的
-`ACTIVE_RANGE` 用新增的 `_planningProfile()`（spec `targeting` 的 `canHitFly` / `groundOnly` 覆盖干员 profile）——
-范围由技能自己的攻击范围决定；kit 侧 S3 声明 `canHitFly`，并让 beforeAttack 的「同一直线多目标」用 `AIR` profile 选敌人。
-完整重算 287 场景，只有 `roster-043`（该场景带 `chess_char_5_14_a` 且 `act1autochess_h03` 有飞行敌人）改变：
-漏怪 4 → 0、击杀 60 → 64、`perfect` false → true、时间 171.03 → 175.03 s。
+2026-10-18 修 凛御银灰 S3 变革已至 打不到空中单位（用户试玩：全是飞行敌人的波次它一次都不放）。数据里 S3 的触发是
+`ACTIVE_RANGE`，它的条件（「技能要跑的范围里有敌人」）用干员**基础** profile 判定，而他是近战 PIONEER（`canHitFly` false），
+飞行单位永远不算——技能一直就绪却永不释放；S3 的 `targeting` 也没声明 `canHitFly`，即便开启也打不到。**引擎保持与上游
+`copy/xinhai` 完全一致**（`git diff copy/xinhai -- server/sim` 只剩本文件这一处内容），修法全在 kit：S3 自己释放技能
+（`battle.every` → `sk.activate`，MANUAL 技能允许的自释放，见 skills.js `opCooling`）、`targeting` 声明 `canHitFly`、
+beforeAttack 的「同一直线多目标」用 `AIR` profile 选敌人。完整重算 287 场景，只有两个带 `chess_char_5_14` 的场景改变：
+`roster-043`（`act1autochess_h03` 有飞行敌人）与 `roster-044`（精英形态）——击杀 / 漏怪 / 回合数与引擎版修法完全相同，
+只有 `snaps`（逐 10 秒的状态摘要）以及 `roster-044` 的 `statusApplied` 3252 → 3250（0.25 s 自释放节奏的时序差）动了。
 
 ## The corpus
 

@@ -171,7 +171,7 @@ import { BotPopulation } from './botPopulation.js';
 import { RoomReclamation } from './roomReclamation.js';
 import { ROOM_PROTECTION_DEFAULTS, validateRoomConfig } from './roomConfig.js';
 import { seatEntries, restoreLobbyRooms, restoreLobbyMatch, adoptRestoredMatch } from './matchRestore.js';
-import { allocateMatchmakingGroup, mergePartyMatchmaking, queuePartyMatchmaking, cancelPartyMatchmaking } from './matchmakingRooms.js';
+import { allocateMatchmakingGroup, queuePartyMatchmaking, cancelPartyMatchmaking, dropMatchmakingParty, matchmakingAvailable, matchmakingMembers, matchmakingSend } from './matchmakingRooms.js';
 
 const VANILLA_KITTED = new Set(KITTED_CHARS);
 import { isContentHash } from '../shared/plugins/identity.js';
@@ -449,8 +449,10 @@ export class Lobby {
     this.resyncTimers = new Map();
     /** per-network limit warnings: at most one log line per 10 s (the rest are counted) */
     this.limitLog = { at: -Infinity, suppressed: 0 };
-    this.matchmaking = new Matchmaking({ registry, now, roomOf: (s) => this.roomOf(s),
-      partyChanged: (room) => this.broadcastState(room), allocate: (group, difficulty) => this.allocateMatchmaking(group, difficulty) });
+    this.matchmaking = new Matchmaking({ now, send: (session, msg) => this.sendQueue(session, msg),
+      available: (session, entry) => matchmakingAvailable(this, session, entry),
+      members: (session, difficulty, party) => matchmakingMembers(this, session, difficulty, party),
+      allocate: (sessions, difficulty) => this.allocateMatchmaking(sessions, difficulty), options: this.opts.matchmaking || {} });
     this.checkpointListeners = new Set();
     this.draining = false;
     this.roomReclamation = new RoomReclamation(this);
@@ -733,9 +735,10 @@ export class Lobby {
   handleMessage(session, msg, ctx = null) {
     switch (msg.t) {
       case 'state.resync': this.resync(session, true); return OK;
-      case 'matchmaking.join': return this.matchmaking.join(session, msg.difficulty);
-      case 'matchmaking.cancel': return this.cancelMatchmaking(session);
-      case 'room.matchmaking': return this.queueParty(session);
+      case 'queue.join': return this.queueReply(this.queueJoin(session, msg));
+      case 'queue.cancel': return this.queueReply(this.cancelMatchmaking(session, msg));
+      case 'queue.accept': return this.queueReply(this.matchmaking.accept(session, msg));
+      case 'room.matchmaking': return this.queueReply(this.queueParty(session));
       case 'room.create': return this.create(session, msg);
       case 'room.join': return this.join(session, msg);
       case 'room.leave': return this.leave(session);
@@ -772,7 +775,7 @@ export class Lobby {
   onDisconnect(session) {
     this.audit('session.disconnected', session, this.roomOf(session));
     if (this.matchmaking.has(session)) session.matchmakingCancelledOnDisconnect = true;
-    this.matchmaking.cancel(session, false);
+    this.matchmaking.remove(session, 'disconnected');
     this.clearResync(session.playerId); // the next resume resyncs immediately
     const room = this.roomOf(session);
     // a solo run may be resumed within singleReconnectTime (24 h); everything else keeps the registry's window
@@ -799,7 +802,7 @@ export class Lobby {
 
   /** The session's reconnect window elapsed (already removed from the registry). */
   onExpire(session) {
-    this.matchmaking.cancel(session, false);
+    this.matchmaking.remove(session, 'disconnected');
     session.notice = null;
     session.pendingResult = null;
     this.clearResync(session.playerId);
@@ -829,7 +832,7 @@ export class Lobby {
    */
   shutdown(reason = 'shutdown') {
     this.roomReclamation.stop();
-    this.matchmaking.shutdown();
+    this.matchmaking.close();
     this.offStale?.();
     this.offContentStale?.();
     this.offStale = null;
@@ -845,7 +848,7 @@ export class Lobby {
   beginDrain() {
     this.draining = true;
     this.roomReclamation.stop();
-    this.matchmaking.shutdown();
+    this.matchmaking.close();
     for (const timer of this.graceTimers.values()) clearTimeout(timer);
     this.graceTimers.clear();
     for (const timer of this.resyncTimers.values()) clearTimeout(timer);
@@ -879,7 +882,7 @@ export class Lobby {
     const code = this.genCode();
     if (!code) return fail(ERR.INTERNAL, 'no room code available');
     if (!this.allowRoomAction(session, 'create', cur)) return fail(ERR.RATE, 'room creation rate exceeded');
-    if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
+    this.leaveQueue(session, 'cancelled');
     if (cur) this.removeMember(cur, session.playerId);
     const room = new Room(code, mode, difficulty, this.now());
     room.content = this.vanilla;
@@ -916,8 +919,8 @@ export class Lobby {
     if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo room');
     const idx = room.freeSeat();
     if (idx < 0) return fail(ERR.ROOM_FULL);
-    if (room.matchmaking) this.matchmaking.cancelParty(room);
-    if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
+    if (room.matchmaking) dropMatchmakingParty(this, room);
+    this.leaveQueue(session, 'cancelled');
     if (cur) this.removeMember(cur, session.playerId);
     room.seats[idx] = this.humanSeat(idx, session);
     session.roomCode = room.code;
@@ -932,7 +935,7 @@ export class Lobby {
   leave(session) {
     const room = this.roomOf(session);
     if (this.matchmaking.has(session)) {
-      this.matchmaking.cancel(session);
+      this.leaveQueue(session, 'cancelled');
       if (!room) return OK;
     }
     if (!room) return fail(ERR.NOT_IN_ROOM);
@@ -940,16 +943,52 @@ export class Lobby {
     return OK;
   }
 
-  /** Allocate a fresh private co-op room and start it with exactly four opted-in humans (server/matchmakingRooms.js). */
+  /** Allocate a fresh private co-op room and start it with exactly four humans who accepted the offer. */
   allocateMatchmaking(group, difficulty) { return allocateMatchmakingGroup(this, group, difficulty); }
+
+  /** Drop a session's queue ticket — unless the queue is committing it right now (allocateMatchmakingGroup). */
+  leaveQueue(session, reason = 'cancelled') {
+    if (!session || session.mmCohort) return;
+    if (this.matchmaking.has(session)) this.matchmaking.remove(session, reason);
+  }
+
+  /** The queue engine answers {ok} / {error}; the socket answers {t:'ok'} / {t:'error'} (server/net.js replies). */
+  queueReply(result) {
+    if (result && typeof result.error === 'string') return fail(result.error, result.detail);
+    return result?.ok || !result ? OK : result;
+  }
+
+  /**
+   * queue.join: one solo player, or a whole alliance when its host asks for one (server/matchmaking.js members).
+   * A queued room keeps `matchmaking` set so its own page shows the waiting state.
+   */
+  queueJoin(session, { difficulty, party = false } = {}) {
+    const queued = this.matchmaking.join(session, { difficulty, party });
+    if (queued?.ok && party) { const room = this.roomOf(session); if (room) { room.matchmaking = true; this.broadcastState(room); } }
+    return queued;
+  }
 
   /** The host opts the whole ready alliance into four-human matchmaking. */
   queueParty(session) { return queuePartyMatchmaking(this, session); }
 
-  cancelMatchmaking(session) { return cancelPartyMatchmaking(this, session); }
+  cancelMatchmaking(session, msg = {}) { return cancelPartyMatchmaking(this, session, msg); }
 
-  /** Keep the oldest alliance's code and host; merge whole parties, restoring them if start fails. */
-  allocatePartyMatchmaking(group, difficulty) { return mergePartyMatchmaking(this, group, difficulty); }
+  /** queue.state goes out through here: an idle ticket also drops its room's waiting flag. */
+  sendQueue(session, msg) {
+    if (msg?.t === 'queue.state' && msg.state === 'idle') this.refreshMatchmakingFlag(session);
+    matchmakingSend(session, msg);
+  }
+
+  /** A room waits only while one of its seated humans still holds a ticket. */
+  refreshMatchmakingFlag(session) {
+    const room = this.roomOf(session);
+    if (!room?.matchmaking) return;
+    const queued = room.activeHumans().some((seat) => {
+      const member = this.registry.byId(seat.playerId);
+      return !!member && this.matchmaking.has(member);
+    });
+    if (!queued) { room.matchmaking = false; this.broadcastState(room); }
+  }
 
   /**
    * room.spectate: one of a co-op room's MAX_SPECTATORS spectator seats, in its lobby or during its match (header). In a
@@ -968,7 +1007,7 @@ export class Lobby {
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
     if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo room');
     if (room.spectators.length >= MAX_SPECTATORS) return fail(ERR.ROOM_FULL, 'no free spectator seat');
-    if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
+    this.leaveQueue(session, 'cancelled');
     if (cur) this.removeMember(cur, session.playerId);
     room.spectators.push({ playerId: session.playerId, name: session.name, connected: session.connected });
     session.roomCode = room.code;
@@ -1007,7 +1046,7 @@ export class Lobby {
     // a room with gameplay plugins: ready once the page has loaded and checked its content (header "Gameplay plugins")
     if (ready && room.modded && seat.content !== 'ready') return fail(ERR.CONTENT_NOT_READY);
     if (seat.ready !== ready) {
-      if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
+      this.leaveQueue(session, 'cancelled');
       seat.ready = ready;
       this.broadcastState(room);
     }
@@ -1022,7 +1061,7 @@ export class Lobby {
     this.dropReplay(room, session.playerId);
     // a plugin mode chosen (header "Gameplay plugins") carries its own difficulty: picking one leaves it
     if (room.difficulty !== difficulty || room.content?.modeId) {
-      if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
+      this.leaveQueue(session, 'cancelled');
       room.difficulty = difficulty;
       if (room.content?.modeId) { const rest = { ...room.content }; delete rest.modeId; room.content = Object.freeze(rest); }
       this.dropUnofferedBotBands(room);
@@ -1076,7 +1115,7 @@ export class Lobby {
     if (room.mode === 'solo') return fail(ERR.BAD_TARGET, 'solo rooms have no AI teammates');
     this.dropReplay(room, session.playerId);
     if (room.aiPicksLast !== on) {
-      if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
+      this.leaveQueue(session, 'cancelled');
       room.aiPicksLast = on;
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
       this.broadcastState(room);
@@ -1270,7 +1309,7 @@ export class Lobby {
       });
       return fail(admission.code);
     }
-    if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
+    this.leaveQueue(session, 'cancelled');
     const used = new Set(room.seats.filter((s) => s && s.isBot).map((s) => s.name));
     const name = BOT_NAMES.find((n) => !used.has(n)) || `AI·${idx + 1}`;
     let playerId;
@@ -2144,7 +2183,7 @@ export class Lobby {
    */
   removeMember(room, playerId) {
     const session = this.registry.byId(playerId);
-    if (session && this.matchmaking.has(session)) this.matchmaking.cancel(session);
+    if (session) this.leaveQueue(session, 'cancelled');
     if (session && session.roomCode === room.code) session.roomCode = null;
     this.clearGrace(playerId);
     this.dropReplay(room, playerId);
@@ -2224,7 +2263,9 @@ export class Lobby {
     if (room.disposed) return;
     this.audit('room.disposed', this.registry.byId(room.hostId), room, { reason });
     const queued = room.activeHumans().map((s) => this.registry.byId(s.playerId)).find((s) => s && this.matchmaking.has(s));
-    if (queued) this.matchmaking.cancel(queued);
+    // A cohort under allocation keeps its tickets: server/matchmaking.js breaks the offer itself and reports the
+    // real reason, so the healthy accepted tickets survive a failed start for a retry.
+    if (queued && !room.queueCohort) this.leaveQueue(queued, 'cancelled');
     room.disposed = true;
     for (const seat of room.seats) this.botPopulation.release(seat);
     if (this.rooms.get(room.code) === room) { this.trustedRuntime?.event('roomClosed',{room:room.toState()}); this.rooms.delete(room.code); }

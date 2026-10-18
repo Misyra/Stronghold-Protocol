@@ -1,3 +1,5 @@
+// Premade alliances in the four-human queue (server/matchmaking.js): a party is one indivisible ticket, the pool
+// fills it with solos or another party, and every pooled human accepts the offer before the lobby commits a room.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startServer } from '../server/index.js';
@@ -5,26 +7,30 @@ import { StubMatch } from '../server/match/StubMatch.js';
 import { TestClient } from './helpers/wsClient.js';
 import { Lobby } from '../server/lobby.js';
 import { SessionRegistry } from '../server/net.js';
+import { dropMatchmakingParty } from '../server/matchmakingRooms.js';
+import { MATCHMAKING_VERSION } from '../shared/constants.js';
 
 test('joining a queued room cancels the whole party after the host session disappears', (t) => {
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, MatchClass: StubMatch, getData: () => ({}),
     log: { info() {}, warn() {}, error() {}, debug() {} } });
   t.after(() => lobby.shutdown());
-  const player = (name) => { const s = registry.create(name); s.connected = true; return s; };
+  const player = (name) => { const s = registry.create(name); s.connected = true; s.matchmakingVersion = MATCHMAKING_VERSION; return s; };
   const host = player('Host'), member = player('Member'), newcomer = player('Newcomer'), outsider = player('Other queue');
   assert.equal(lobby.create(host, { mode: 'coop', difficulty: 'NORMAL' }).ok, true);
   const room = lobby.roomOf(host);
   assert.equal(lobby.join(member, { code: room.code }).ok, true);
-  assert.equal(lobby.matchmaking.join(outsider, 'HARD').ok, true);
-  assert.equal(lobby.matchmaking.joinParty(room).ok, true);
+  assert.equal(lobby.ready(member, { ready: true }).ok, true);
+  assert.equal(lobby.matchmaking.join(outsider, { difficulty: 'HARD' }).ok, true);
+  assert.equal(lobby.matchmaking.join(host, { difficulty: 'NORMAL', party: true }).ok, true);
+  room.matchmaking = true;
   registry.remove(host);
   assert.equal(lobby.join(newcomer, { code: room.code }).ok, true);
   assert.equal(room.matchmaking, false);
   assert.ok(room.seatOf(newcomer.playerId));
   assert.deepEqual([...lobby.matchmaking.entries.keys()], [outsider.playerId]);
   room.matchmaking = true; // A stale flag without any remaining entry is recoverable too.
-  assert.equal(lobby.matchmaking.cancelParty(room).ok, true);
+  dropMatchmakingParty(lobby, room, 'cancelled');
   assert.equal(room.matchmaking, false);
   assert.deepEqual([...lobby.matchmaking.entries.keys()], [outsider.playerId]);
 });
@@ -66,9 +72,16 @@ async function fixture(t, options = {}) {
   }
   return { server, player, party, url };
 }
-async function ok(c, msg) { assert.equal((await c.request(msg)).t, 'ok'); }
+async function ok(c, msg) { assert.equal((await c.request(msg)).t, 'ok', JSON.stringify(msg)); }
 const search = (c) => ok(c, { t: 'room.matchmaking' });
-const solo = (c, difficulty = 'FUNNY') => ok(c, { t: 'matchmaking.join', difficulty });
+const solo = (c, difficulty = 'FUNNY') => ok(c, { t: 'queue.join', difficulty });
+// Every pooled human confirms the offer; the last accept allocates (or fails and re-offers the tickets).
+async function settle(people) {
+  const offers = await Promise.all(people.map((c) => c.waitFor('queue.state', (s) => s.state === 'offered')));
+  const replies = [];
+  for (let i = 0; i < people.length; i++) replies.push(await people[i].request({ t: 'queue.accept', ticketId: offers[i].ticketId, offerId: offers[i].offerId }));
+  return replies;
+}
 
 for (const size of [1, 2, 3]) test(`${size}-player premade fills with solos, retains code/host/settings and auto starts`, async (t) => {
   const { server, party, player } = await fixture(t);
@@ -77,12 +90,14 @@ for (const size of [1, 2, 3]) test(`${size}-player premade fills with solos, ret
   original[0].loadout = room.seats[0].loadout = { fixture: { skill: 1, module: null } };
   await search(host); await search(host);
   assert.equal(server.lobby.matchmaking.entries.size, size);
-  assert.equal((await host.waitFor('matchmaking.state', (s) => s.status === 'searching')).players, size);
+  const queued = await host.waitFor('queue.state', (s) => s.state === 'queued');
+  assert.equal(queued.waitingCount, size); assert.equal(queued.required, 4);
   const outsider = await player();
   assert.equal((await host.request({ t: 'room.start' })).code, 'ALREADY');
   const status = await (await fetch(`http://127.0.0.1:${server.port}/api/rooms/${room.code}/status`)).json();
   assert.equal(status.joinable, false);
   for (let i = 0; i < 4 - size; i++) { const c = i === 0 ? outsider : await player(); people.push(c); await solo(c); }
+  await settle(people);
   const states = await Promise.all(people.map((c) => c.waitFor('room.state', (s) => s.inMatch)));
   assert.ok(states.every((s) => s.code === room.code && s.hostId === host.id && !s.matchmaking && s.seats.every((seat) => seat && !seat.isBot && seat.ready)));
   assert.deepEqual(room.seats[0].loadout, original[0].loadout);
@@ -99,7 +114,9 @@ test('joining a published alliance key pauses matchmaking, keeps the party and a
   assert.ok([...a.people, newcomer].every((c) => server.registry.byId(c.id).roomCode === a.room.code));
   assert.equal((await a.host.request({ t: 'room.matchmaking' })).code, 'NOT_READY');
   await ok(newcomer, { t: 'room.ready', ready: true });
-  await search(a.host); await solo(await player());
+  const filler = await player();
+  await search(a.host); await solo(filler);
+  await settle([...a.people, newcomer, filler]);
   assert.ok(a.room.match); assert.equal(a.room.activeHumans().length, 4);
 });
 
@@ -109,7 +126,9 @@ test('two double premades merge without splitting, carrying both spectator seats
   await ok(watchers[0], { t: 'room.spectate', code: a.room.code });
   await ok(watchers[1], { t: 'room.spectate', code: b.room.code });
   await search(a.host); await search(b.host);
-  for (const c of [...a.people, ...b.people, ...watchers]) {
+  const everyone = [...a.people, ...b.people];
+  await settle(everyone);
+  for (const c of [...everyone, ...watchers]) {
     const state = await c.waitFor('room.state', (s) => s.inMatch);
     assert.equal(state.code, a.room.code); assert.equal(state.hostId, a.host.id); assert.equal(state.spectators.length, 2);
     assert.equal(server.registry.byId(c.id).roomCode, a.room.code);
@@ -121,9 +140,10 @@ test('two triple premades wait intact, and a solo fills only one of them', async
   const { server, party, player } = await fixture(t);
   const a = await party(3), b = await party(3);
   await search(a.host); await search(b.host);
-  const state = await a.host.waitFor('matchmaking.state', (s) => s.status === 'searching' && s.players === 3);
-  assert.equal(state.target, 4); assert.equal(server.lobby.stats().matches, 0);
-  await solo(await player());
+  const queued = await a.host.waitFor('queue.state', (s) => s.state === 'queued');
+  assert.equal(queued.required, 4); assert.equal(server.lobby.stats().matches, 0);
+  const third = await player(); await solo(third);
+  await settle([...a.people, third]);
   assert.ok(a.room.match); assert.equal(b.room.match, null);
   assert.equal(server.lobby.matchmaking.entries.size, 3);
   assert.ok(b.people.every((c) => server.registry.byId(c.id).roomCode === b.room.code));
@@ -141,7 +161,7 @@ test('party queue validates host, readiness, bots, solo rooms, full rooms and sp
   await ok(a.host, { t: 'room.removeBot', seat: 2 });
   const watcher = await player(); await ok(watcher, { t: 'room.spectate', code: a.room.code });
   assert.equal((await watcher.request({ t: 'room.matchmaking' })).code, 'SPECTATOR');
-  assert.equal((await watcher.request({ t: 'matchmaking.cancel' })).code, 'SPECTATOR');
+  assert.equal((await watcher.request({ t: 'queue.cancel', ticketId: 'x' })).code, 'SPECTATOR');
   const full = await party(4);
   assert.equal((await full.host.request({ t: 'room.matchmaking' })).code, 'BAD_MSG');
   const single = await player(); await ok(single, { t: 'room.create', mode: 'solo', difficulty: 'FUNNY' });
@@ -153,21 +173,25 @@ test('cancellation preserves alliance, difficulty isolation, and late cancellati
   const { server, party, player } = await fixture(t);
   const a = await party(2), guest = a.people[1], outsider = await player();
   await solo(outsider, 'HARD'); await search(a.host);
-  assert.equal((await guest.request({ t: 'matchmaking.cancel' })).code, 'NOT_HOST');
-  await ok(a.host, { t: 'matchmaking.cancel' });
-  await guest.waitFor('matchmaking.state', (s) => s.status === 'idle');
+  const ticket = await a.host.waitFor('queue.state', (s) => s.state === 'queued' && !!s.ticketId);
+  assert.equal((await guest.request({ t: 'queue.cancel', ticketId: ticket.ticketId })).code, 'NOT_HOST');
+  await ok(a.host, { t: 'queue.cancel', ticketId: ticket.ticketId });
+  await guest.waitFor('queue.state', (s) => s.state === 'idle');
   assert.equal(a.room.matchmaking, false); assert.equal(a.room.activeHumans().length, 2);
   assert.equal(server.registry.byId(guest.id).roomCode, a.room.code);
   assert.equal(server.lobby.matchmaking.entries.size, 1);
-  await search(a.host); await solo(await player()); await solo(await player());
+  await search(a.host); const extra = [await player(), await player()];
+  for (const c of extra) await solo(c);
+  await settle([...a.people, ...extra]);
   assert.ok(a.room.match);
-  assert.equal((await a.host.request({ t: 'matchmaking.cancel' })).code, 'ROOM_STARTED');
+  assert.equal((await a.host.request({ t: 'queue.cancel', ticketId: ticket.ticketId })).code, 'ROOM_STARTED');
   assert.equal(server.registry.byId(guest.id).roomCode, a.room.code);
 });
 
 for (const action of ['leave', 'disconnect', 'unready', 'difficulty', 'bot', 'kick']) test(`${action} withdraws the whole premade and keeps remaining members in the alliance`, async (t) => {
   const { server, party, url } = await fixture(t);
   const a = await party(2), guest = a.people[1]; await search(a.host);
+  await a.host.waitFor('queue.state', (s) => s.state === 'queued');
   if (action === 'leave') await ok(guest, { t: 'room.leave' });
   if (action === 'disconnect') { await guest.terminate(); await a.host.waitFor('room.state', (s) => !s.matchmaking && s.seats[1]?.connected === false); }
   if (action === 'unready') await ok(guest, { t: 'room.ready', ready: false });
@@ -180,12 +204,12 @@ for (const action of ['leave', 'disconnect', 'unready', 'difficulty', 'bot', 'ki
   if (action === 'disconnect') {
     const resumed = await TestClient.connect(url); t.after(() => resumed.terminate());
     await resumed.hello('Guest', guest.token);
-    assert.equal((await resumed.waitFor('matchmaking.state')).status, 'idle');
+    assert.equal((await resumed.waitFor('queue.state')).state, 'idle');
     const state = await resumed.waitFor('room.state'); assert.equal(state.code, a.room.code); assert.equal(state.matchmaking, false);
   }
 });
 
-for (const failure of ['start', 'limit']) test(`${failure} failure preserves premades and frees temporary solo seats`, async (t) => {
+for (const failure of ['start', 'limit']) test(`${failure} failure preserves premades and re-offers the accepted tickets`, async (t) => {
   class Broken extends StubMatch { start() { throw new Error('fixture start failure'); } }
   const { server, party, player } = await fixture(t, failure === 'start' ? { MatchClass: Broken } : { maxMatchesPerAddr: 1 });
   if (failure === 'limit') {
@@ -196,13 +220,16 @@ for (const failure of ['start', 'limit']) test(`${failure} failure preserves pre
   if (failure === 'limit') server.registry.byId(solos[0].id).limitKey = 'blocked';
   const seats = a.room.seats;
   await search(a.host); await solo(solos[0]); await solo(solos[1]);
-  const state = await a.host.waitFor('matchmaking.state', (s) => s.status === 'failed');
-  assert.equal(state.error, failure === 'start' ? 'INTERNAL' : 'RATE');
-  assert.equal(a.room.match, null); assert.equal(a.room.matchmaking, false); assert.equal(a.room.seats, seats);
+  const replies = await settle([...a.people, ...solos]);
+  assert.equal(replies.at(-1).code, failure === 'start' ? 'INTERNAL' : 'RATE');
+  const state = await a.host.waitFor('queue.state', (s) => s.reason === 'allocation_failed');
+  assert.equal(state.state, 'queued');
+  assert.equal(a.room.match, null); assert.equal(a.room.matchmaking, true); assert.equal(a.room.seats, seats);
   assert.ok(a.people.every((c) => server.registry.byId(c.id).roomCode === a.room.code));
   assert.ok(solos.every((c) => server.registry.byId(c.id).roomCode === null));
-  assert.equal(server.lobby.matchmaking.entries.size, 0);
-  await search(a.host); assert.equal(server.lobby.matchmaking.entries.size, 2);
+  // Healthy accepted tickets stay queued: the pool is not dissolved by a failed start.
+  assert.equal(server.lobby.matchmaking.entries.size, 4);
+  await search(a.host); assert.equal(server.lobby.matchmaking.entries.size, 4);
 });
 
 test('failed merging of two premades restores both rooms and spectators', async (t) => {
@@ -211,10 +238,11 @@ test('failed merging of two premades restores both rooms and spectators', async 
   const a = await party(2), b = await party(2), watcher = await player();
   await ok(watcher, { t: 'room.spectate', code: b.room.code });
   await search(a.host); await search(b.host);
-  await a.host.waitFor('matchmaking.state', (s) => s.status === 'failed');
+  await settle([...a.people, ...b.people]);
+  await a.host.waitFor('queue.state', (s) => s.reason === 'allocation_failed');
   assert.equal(server.lobby.rooms.size, 2);
   for (const p of [a, b]) {
-    assert.equal(p.room.activeHumans().length, 2); assert.equal(p.room.matchmaking, false);
+    assert.equal(p.room.activeHumans().length, 2); assert.equal(p.room.matchmaking, true);
     assert.ok(p.people.every((c) => server.registry.byId(c.id).roomCode === p.room.code));
   }
   assert.equal(server.registry.byId(watcher.id).roomCode, b.room.code); assert.equal(b.room.spectators.length, 1);

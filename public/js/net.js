@@ -29,7 +29,8 @@
 // Shared modules are imported relatively: in the browser '../../shared/x.js' from /js/ resolves
 // to /shared/x.js (URL resolution clamps at the root); under Node it resolves to <repo>/shared.
 
-import { PROTOCOL_VERSION, ERR_TEXT, ERR } from '../../shared/constants.js';
+import { PROTOCOL_VERSION, ERR_TEXT, ERR, MATCHMAKING_VERSION } from '../../shared/constants.js';
+import { PLAYER_CAPACITY_VERSION } from '../../shared/playerCapacity.js';
 import { validateC2S } from '../../shared/protocol.js';
 import { N_ } from '../../shared/i18n.js';
 import { StateReceiver, STATE_DELTA_VERSION } from '../../shared/stateDelta.js';
@@ -381,7 +382,9 @@ export class Net {
   _sendHello() {
     if (!this.name) return;
     const rid = this._nextRid();
-    const msg = { t: 'hello', rid, name: this.name, version: PROTOCOL_VERSION, stateDelta: STATE_DELTA_VERSION };
+    // Capability versions the queue compares (server/matchmaking.js): a stale tab rejoins instead of mixing pools.
+    const msg = { t: 'hello', rid, name: this.name, version: PROTOCOL_VERSION, stateDelta: STATE_DELTA_VERSION,
+      matchmakingVersion: MATCHMAKING_VERSION, playerCapacityVersion: PLAYER_CAPACITY_VERSION };
     let token = null;
     try { token = this.getToken(); } catch { token = null; }
     if (typeof token === 'string' && token.length > 0 && token.length <= 64) {

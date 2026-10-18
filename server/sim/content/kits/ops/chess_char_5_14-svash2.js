@@ -11,7 +11,7 @@ import {
 } from '../shared/tier5.js';
 
 const isKjerag = (u) => inFaction(u, 'kjeragShip', ['kjerag']);
-/** The profile S3's line selection picks with: his melee PIONEER profile would drop air enemies (PRTS 备注 可对空). */
+/** The enemy profile the skill's range selection uses: his own, lifted to air (PRTS 备注 可对空) — canHitFly false is a melee PIONEER's. */
 const AIR = Object.freeze({ canHitFly: true });
 
 export default {
@@ -181,7 +181,7 @@ export default {
             const lat = (r, cc) => toLocal(r - unit.tileR, cc - unit.tileC, unit.dir)[0];
             const l0 = lat(Math.round(main.y), Math.round(main.x));
             const onLine = (e) => bodyKeys(e).some((k) => lat(Math.floor(k / COLS), k % COLS) === l0);
-            const line = battle.enemiesInKeys(unit.rangeKeys, unit, AIR).filter((e) => e !== main && onLine(e));
+            const line = battle.enemiesInKeys(unit.rangeKeys, unit, { ...unit.profile, canHitFly: true }).filter((e) => e !== main && onLine(e));
             if (line.length) c.targets = [main, ...line];
           }, { owner: unit, priority: 10 });
         }

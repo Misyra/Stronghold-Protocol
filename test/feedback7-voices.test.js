@@ -91,7 +91,7 @@ test('data/assets.json: voiceJp gives every voiced operator the JP twin of each 
   if (fs.existsSync(dir)) for (const u of lines) assert.ok(fs.statSync(path.join(ROOT, 'public', u)).size > 0, u);
 });
 
-test('settings 语音语言: 中文 by default, 日本語 / English / 한국어 kept, nothing else; the row is translated in every language pack', () => {
+test('settings 语音语言: 中文 by default, 日本語 / English / 한국어 kept, nothing else; the shared language control stays translated', () => {
   assert.deepEqual([...VOICE_LANGS], ['cn', 'jp', 'en', 'kr']);
   assert.equal(DEFAULT_SETTINGS.voiceLang, 'cn', 'not tied to the interface language: 中文 until the player picks another dub');
   assert.equal(DEFAULT_SETTINGS.voiceNative, false);
@@ -103,9 +103,8 @@ test('settings 语音语言: 中文 by default, 日本語 / English / 한국어 
   assert.equal(sanitizeSettings({ voiceNative: true }).voiceNative, true);
   assert.equal(sanitizeSettings({ voiceNative: 'yes' }).voiceNative, false);
   const ui = fs.readFileSync(path.join(ROOT, 'public/js/ui/settings.js'), 'utf8');
-  assert.match(ui, /updateSettings\(\{ voiceLang: id \}\)/);
-  assert.match(ui, /const VOICE_LANG_NAMES = \{ cn: '中文', jp: '日本語', en: 'English', kr: '한국어' \};/, 'each dub named in its own language');
-  assert.match(ui, /updateSettings\(\{ voiceNative: !s\.voiceNative \}\)/);
+  assert.match(ui, /<\$\{LanguageSettings\}/, 'one shared language control, not a second Japanese-only selector');
+  assert.match(ui, /setVoiceLanguage\(next\.voiceLang\)/, 'explicit compatible settings API updates the canonical preference');
   assert.match(ui, /audio\.setVoiceLang\(s\.voiceLang, s\.voiceOverrides\)/);
   for (const code of ['en', 'ja', 'ko', 'zh-TW']) {
     const pack = readJson(`public/i18n/${code}.json`);

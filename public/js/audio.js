@@ -79,10 +79,11 @@
 // `bgmKeyFor(route, pub)` picks the track for the current screen/phase (main.js calls `audio.install()`,
 // which follows the store).
 
-import { sanitizeVoiceOverrides, voiceLangFor, VOICE_LANGS, VOICE_TREES, VOICE_PICKS } from './voicePrefs.js';
+import { sanitizeVoiceOverrides, voiceLangFor, dubTree, VOICE_TREES, VOICE_PICKS } from './voicePrefs.js';
 export { VOICE_TREES } from './voicePrefs.js';
 import { PHASE } from '../../shared/constants.js';
 import { mediaUrl } from './media.js';
+import { normalizeVoiceLanguage } from './voiceLanguage.js';
 import { resourceUrl } from './resourceUrl.js';
 
 const MAX_VOICES = 8;
@@ -362,8 +363,7 @@ export function voiceLine(audio, charId, slot, lang = 'cn', random = Math.random
   const lines = (line) => (Array.isArray(line) ? line : [line]).filter((u) => typeof u === 'string' && u);
   const draw = (list) => (list.length ? list[Math.min(list.length - 1, Math.floor(random() * list.length))] : null);
   const cn = lines(audio?.voice?.[charId]?.[slot]);
-  const tree = VOICE_TREES[lang];
-  const dub = tree ? draw(lines(audio?.[tree]?.[charId]?.[slot])) : null;
+  const dub = VOICE_TREES[lang] ? draw(lines(dubTree(audio, lang)?.[charId]?.[slot])) : null;
   if (dub) {
     const file = (u) => u.slice(u.lastIndexOf('/') + 1);
     return { url: dub, fallback: cn.find((u) => file(u) === file(dub)) ?? draw(cn) };
@@ -595,7 +595,7 @@ export class AudioManager {
     this.bondCueToken = 0;
     this.bondCueScope = null;
     this.voiceOverrides = {};
-    this.voiceLang = 'cn';    // settings 语音语言: cn | jp | en | kr (VOICE_TREES; a missing line falls back to audio.voice)
+    this.voiceLanguage = 'cn'; // the listener's 语音语言: cn | jp | en | kr (VOICE_TREES; a missing line falls back to audio.voice)
     this.voiceNative = false; // settings 本土语言: an operator with an own-language dub speaks it unless their own pick wins
     this.startVoiceDone = false; // 行动出发 of this field (the first operator deployed says it)
     this.uiVoices = 0;
@@ -757,9 +757,26 @@ export class AudioManager {
    * @param {Record<string, string>} [overrides]
    */
   setVoiceLang(lang, overrides = this.voiceOverrides) {
-    this.voiceLang = VOICE_LANGS.includes(lang) ? lang : 'cn';
+    this.setVoiceLanguage(lang);
     this.voiceOverrides = sanitizeVoiceOverrides(overrides);
   }
+
+  /**
+   * Change only the listener's voice channel (ui/voiceLanguage.js calls this; 界面语言 is a separate preference).
+   * A line already on air finishes in its own dub; a decode that started under the old language must not start.
+   * @param {string} language
+   * @returns {boolean} whether it changed
+   */
+  setVoiceLanguage(language) {
+    const next = normalizeVoiceLanguage(language);
+    if (next === this.voiceLanguage) return false;
+    this.voiceLanguage = next;
+    this._stopVoice();
+    return true;
+  }
+
+  /** The key the 语音语言 setting is stored under, and the name older callers use. */
+  get voiceLang() { return this.voiceLanguage; }
 
   /**
    * The settings' 本土语言 switch: an operator with an own-language dub (`audio.voiceNative`) speaks it instead of
@@ -772,7 +789,7 @@ export class AudioManager {
 
   /** The dub `charId` speaks now (voiceLangFor), given the manifest this manager reads. */
   _voiceLangOf(charId) {
-    return voiceLangFor(charId, this.voiceLang, this.voiceOverrides, { native: this.voiceNative, audio: this.getManifest()?.audio });
+    return voiceLangFor(charId, this.voiceLanguage, this.voiceOverrides, { native: this.voiceNative, audio: this.getManifest()?.audio });
   }
 
   _applyVolumes() {
@@ -1539,7 +1556,12 @@ export function installAudio(deps) {
     manifestGetter = typeof deps?.getManifest === 'function' ? deps.getManifest : manifestGetter;
     if (typeof deps?.onFailed === 'function') audio.onFailed = deps.onFailed;
     audio.install();
-    if (deps?.settings) { audio.setVolumes(deps.settings); audio.setVoiceLang(deps.settings.voiceLang, deps.settings.voiceOverrides); audio.setVoiceNative(deps.settings.voiceNative); }
+    if (deps?.settings) {
+      audio.setVolumes(deps.settings);
+      // The listener's 语音语言 may live in its own store (ui/voiceLanguage.js) rather than in the settings document.
+      if (typeof deps.settings.voiceLang === 'string') audio.setVoiceLang(deps.settings.voiceLang, deps.settings.voiceOverrides);
+      audio.setVoiceNative(deps.settings.voiceNative);
+    }
     if (typeof deps?.subscribe === 'function' && typeof deps?.getState === 'function') {
       const sync = (s) => {
         try {

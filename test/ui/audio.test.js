@@ -370,7 +370,10 @@ describe('operator battle voice', () => {
       // the settings store hands the choice over (installAudio and ui/settings.js)
       const settings = readFileSync(path.join(ROOT, 'public/js/ui/settings.js'), 'utf8');
       assert.match(settings, /audio\.setVoiceLang\(s\.voiceLang, s\.voiceOverrides\)/);
-      assert.match(settings, /t\('语音语言'\)/);
+      // 语音语言 的选择器搬到了 ui/languageSettings.js（界面语言与干员配音放在同一处）
+      const languageSettings = readFileSync(path.join(ROOT, 'public/js/ui/languageSettings.js'), 'utf8');
+      assert.match(languageSettings, /t\('干员配音'\)/);
+      assert.match(languageSettings, /setVoiceLanguage\(option\.code\)/);
       assert.match(settings, /audio\.setVoiceNative\(s\.voiceNative\)/);
     } finally {
       globalThis.fetch = origFetch;

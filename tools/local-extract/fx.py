@@ -13,6 +13,9 @@ What is read (paths relative to the AB root, see extract.py CANDIDATES):
                                                              MonoScripts (class names of the behaviours)
   charpack/<charId>.ab, chararts/<charId>.ab                 the operators' attack modes / effect emitters, the skin
                                                              mount points (HitPoint, Muzzle, HeadPoint, …)
+  skinpack/<charId>.ab                                       (used set) the battle prefabs of the operators' skins of
+                                                             shared/skin-catalogue.js: their points, effect swaps and
+                                                             fake projectiles
   battle/prefabs/[uc]projectiles.ab, [uc]skills.ab           projectile flight + effects, the skills' effects
   config/buff_template_holder.ab                             the buff templates (a buff's default effect, its actions)
   battle/enm_pfb_*.ab, pkgrps/btl_pfb_tokens_*.ab            enemies and tokens
@@ -70,6 +73,9 @@ PROJECTILES = 'battle/prefabs/[uc]projectiles.ab'
 # index.json `link`; the runtime tells them apart by `behaviours` (render/vfx/flight.js projectileParts)
 LINK_BEHAVIOURS = ('ChainLightningEffectBehaviour', 'HarpoonRenderer')
 SKILLS = 'battle/prefabs/[uc]skills.ab'
+SKINPACK = 'skinpack/{}.ab'           # an operator's skins: their battle prefabs (points, effect swaps), §33.12 Skin
+SKIN_PREFAB_DIR = '/battle/prefabs/skins/character/'
+SKIN_CATALOGUE = 'shared/skin-catalogue.js'   # the skins the remake offers (their officialId names the battle prefab)
 ENEMY_GLOB = 'battle/enm_pfb_*.ab'
 TOKEN_GLOB = 'pkgrps/btl_pfb_tokens_*.ab'
 
@@ -322,6 +328,57 @@ def fx_file(key):
     `#`, `[`, `]`: 'buff_ fragile_01', 'x#1')."""
     s = FX_SAFE.sub('_', key).strip('._') or 'fx'
     return s if s == key else f'{s}-{zlib.crc32(key.encode("utf-8")) & 0xffffffff:08x}'
+
+
+def skin_catalogue(text):
+    """The operators' skins of shared/skin-catalogue.js (its generated object literals): charId → [{id, officialId}]
+    in catalogue order. The file is generated with one `"field": "value"` per line; entries missing a field are
+    skipped."""
+    out = {}
+    for block in re.findall(r'\{[^{}]*\}', text or ''):
+        f = dict(re.findall(r'"(id|charId|officialId)"\s*:\s*"([^"]*)"', block))
+        if f.get('id') and f.get('charId') and f.get('officialId', '').startswith(f['charId'] + '@'):
+            out.setdefault(f['charId'], []).append({'id': f['id'], 'officialId': f['officialId']})
+    return out
+
+
+def skin_prefab_container(official_id):
+    """The container path ending of a skin's battle prefab in skinpack/<charId>.ab: 'char_1040_blaze2@nlc#1' →
+    '/battle/prefabs/skins/character/char_1040_blaze2/char_1040_blaze2_nlc#1.prefab' (lower case)."""
+    cid = official_id.split('@', 1)[0]
+    return f'{SKIN_PREFAB_DIR}{cid}/{official_id.replace("@", "_")}.prefab'.lower()
+
+
+def skin_swaps(pairs, fakes, use_fake, eff, pk, where, log):
+    """A skin's effect swaps (§33.12 Skin): its `_replaceEffectPairs` → {fromKey: toKey} (lower case; a pair whose
+    target the client lacks is dropped, logged — the default effect stays), and with `_useFakeProjectile` its
+    `_fakeProjectileConfigs` → [{origin, graphic, logic, muzzle}] (projectile keys via `pk`, None when the client lacks
+    them; a config without its origin or graphic projectile is dropped; `muzzle` the `_fakeMuzzlePoint`
+    MountPointType name). Returns (replace, fakeProjectiles, dropped targets)."""
+    replace, missing = {}, []
+    for p in pairs or []:
+        fr, to = str(p.get('fromEffect') or '').lower(), str(p.get('toEffect') or '').lower()
+        if not fr or not to or fr == to:
+            continue
+        if to not in eff:
+            missing.append(to)
+            log(f'  {where}: swap {fr} → {to}, which the client lacks (dropped)')
+        elif fr in replace and replace[fr] != to:
+            log(f'  {where}: {fr} swapped twice ({replace[fr]}, {to}): the first kept')
+        else:
+            replace.setdefault(fr, to)
+    out = []
+    for c in (fakes or []) if use_fake else []:
+        origin, graphic = pk(c.get('originProjectileKey')), pk(c.get('graphicProjectileKey'))
+        logic = pk(c.get('logicProjecitleKey') or c.get('logicProjectileKey'))     # the client's spelling: Projecitle
+        if origin is None or graphic is None:
+            missing.append(str(c.get('graphicProjectileKey') or c.get('originProjectileKey') or ''))
+            log(f'  {where}: fake projectile {c.get("originProjectileKey")} → {c.get("graphicProjectileKey")} / '
+                f'{c.get("logicProjecitleKey")}: not in the client (dropped)')
+            continue
+        out.append({'origin': origin, 'graphic': graphic, 'logic': logic,
+                    'muzzle': (mount_names([c.get('_fakeMuzzlePoint')]) or [None])[0]})
+    return replace, out, missing
 
 
 def f6(v):
@@ -2403,6 +2460,26 @@ def skin_points(env, rel, prefab, graphic, container=None):
     return points
 
 
+def skin_behaviour(env, root):
+    """The typetree of the behaviour of a skin's battle prefab that carries its effect swaps (`_replaceEffectPairs`,
+    `_useFakeProjectile`, `_fakeProjectileConfigs`: the skin's root behaviour, next to `_faceSwitcher`), searched
+    through the whole prefab; {} when none."""
+    stack, seen = [root], set()
+    while stack:
+        go = stack.pop()
+        if go.path_id in seen:
+            continue
+        seen.add(go.path_id)
+        for c in env.tt(go).get('m_Component', []):
+            cf, co = env.resolve(go.assets_file, c.get('component'))
+            if co is not None and cf != 'builtin' and co.type.name == 'MonoBehaviour':
+                d = env.tt(co)
+                if '_replaceEffectPairs' in d or '_fakeProjectileConfigs' in d:
+                    return d
+        stack.extend(go_children(env, go))
+    return {}
+
+
 def strings_of(v, out):
     """all_strings without the fields that name animations or sounds (NOT_EFFECT_FIELDS)."""
     if isinstance(v, dict):
@@ -2563,8 +2640,10 @@ def skill_entry(env, root, ek, pk, effect_refs, templates):
     return e
 
 
-def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
-    """index.json's units / projectiles / skills / skins for `unit_ids`, and every effect key they reference."""
+def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log, skin_root=None, skin_eff=None):
+    """index.json's units / projectiles / skills / skins for `unit_ids`, and every effect key they reference.
+    `skin_root` / `skin_eff`: newer bundles read for the catalogue's skins only (export_fx `skin_bundles`): their
+    skinpack/<charId>.ab, and the effect keys `eff` lacks (key → bundle under `skin_root`)."""
     units, projectiles, skills, skins, referenced = {}, {}, {}, {}, set()
     shared = AssetEnv(ab_root, cabs)                           # [uc]projectiles.ab and [uc]skills.ab, loaded once
     proj_roots = shared.prefabs(PROJECTILES)
@@ -2855,6 +2934,56 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
                           **{k: e[k] for k in ('effects', 'projectiles', 'uses', 'roles', 'unclassified', 'abilities')}})
         return out_t, out_a
 
+    skin_keys = set(eff) | set(skin_eff or {})          # a skin's swap targets may come from the newer bundles
+
+    def catalogue_skins(env, uid, u):
+        """skins[<catalogue skin id>] (§33.12 Skin) for the operator's skins of shared/skin-catalogue.js: the battle
+        prefab of each in skinpack/<charId>.ab gives its mount points (placed under the charpack's Graphic, like the
+        default skin's) and its effect swaps; returns the effect keys the swaps add to the set."""
+        cat = (gd.get('skins') or {}).get(uid) or []
+        rel = SKINPACK.format(uid)
+        if not cat:
+            return set()
+        if skin_root is not None and (skin_root / rel).is_file():
+            rel = str(skin_root / rel)                  # absolute: AssetEnv.load_rel / Path(ab_root) / rel take it as is
+        if not (Path(ab_root) / rel).exists():
+            log(f'  skins {uid}: no {rel} — {len(cat)} catalogue skin(s) left out')
+            return set()
+        try:
+            prefabs = env.prefabs(rel, full=True)
+        except Exception as e:
+            log(f'  FAIL skins {uid}: {rel}: {e!r}')
+            return set()
+        added = set()
+        for sk in cat:
+            try:
+                added |= catalogue_skin(env, uid, u, rel, prefabs, sk)
+            except Exception as e:                  # a skin never costs the unit its default effects
+                log(f'  FAIL skin {sk["id"]}: {e!r}')
+        return added
+
+    def catalogue_skin(env, uid, u, rel, prefabs, sk):
+        """One catalogue skin's entry (catalogue_skins); returns the effect keys it adds."""
+        end = skin_prefab_container(sk['officialId'])
+        path = next((p for p in prefabs if p.lower().endswith(end)), None)
+        if path is None:
+            log(f'  skins {sk["id"]}: no battle prefab …{end} in {rel} (left out)')
+            return set()
+        pts = skin_points(env, rel, None, u.get('graphic'), container=path) or {}
+        cfg = skin_behaviour(env, prefabs[path])
+        replace, fakes, _ = skin_swaps(cfg.get('_replaceEffectPairs'), cfg.get('_fakeProjectileConfigs'),
+                                       bool(cfg.get('_useFakeProjectile')), skin_keys, pk, f'skins {sk["id"]}', log)
+        added = set(replace.values())
+        for f in fakes:                          # the graphic / logic projectiles join index.projectiles
+            for k in (f['graphic'], f['logic']):
+                if k:
+                    projectile(k)
+                    added.update(projectiles.get(k, {}).get('effects', []))
+        skins[sk['id']] = {'source': f'{SKINPACK.format(uid)} {path}', 'graphic': u.get('graphic'), 'points': pts,
+                           'char': uid, 'officialId': sk['officialId'], 'replace': dict(sorted(replace.items())),
+                           'fakeProjectiles': fakes}
+        return added
+
     # an enemy variant without a prefab of its own (the elite `_2` keys of six enemies) is drawn with its base prefab:
     # index.json gets a copy of the base unit with `aliasOf`
     aliases, ids = {}, []
@@ -2954,6 +3083,8 @@ def crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log):
             if pts:
                 skins[uid] = {'source': src, 'graphic': u.get('graphic'), 'points': pts}
                 u['skin'] = uid
+            if uid.startswith('char_'):          # the catalogue's skins: not in units[uid].refs (the default skin's)
+                referenced |= catalogue_skins(env, uid, u)
             units[uid] = u
         except Exception as e:
             log(f'  FAIL unit {uid}: {e!r}')
@@ -3149,11 +3280,17 @@ def _read_json(path):
         return None
 
 
-def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, jobs=None, root=None, fx_manifest=None):
+def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, jobs=None, root=None, fx_manifest=None,
+              catalogue=None, skin_bundles=None):
     """The fx run (extract.py --only fx): writes <out_root>/fx/** and `fx_manifest` (default <root>/data/local-fx.json:
     the groups FX_GROUPS, every file); returns the number of files written. `manifest` (the groups of
     data/local-assets.json) gets nothing: extract.py drops the fx groups an earlier run left there (ran_groups). A
-    --fx-keys run (`keys`) updates those prefabs in the earlier set's index and file list."""
+    --fx-keys run (`keys`) updates those prefabs in the earlier set's index and file list. `catalogue` is the skin
+    catalogue whose operators' skins the used set exports (index.json skins[<skin id>], §33.12 Skin): a path (default
+    <root>/shared/skin-catalogue.js), or False for none. `skin_bundles`: an AB root of newer bundles (the same layout)
+    read for those skins only — its skinpack/<charId>.ab before the client's, and its effect prefabs the client lacks
+    (the skins' swap targets, the prefabs they name); every other effect, the default skins' included, stays the
+    client's."""
     t_start = time.time()
     ab_root = Path(ab_root)
     root = Path(root) if root else Path(__file__).resolve().parents[2]
@@ -3171,6 +3308,13 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
 
     t0 = time.time()
     gd = game_data(root)
+    cat_path = None if catalogue is False or selection != 'used' or keys else \
+        Path(catalogue) if catalogue else root / SKIN_CATALOGUE
+    try:
+        gd['skins'] = skin_catalogue(cat_path.read_text(encoding='utf-8')) if cat_path else {}
+    except OSError as e:
+        log(f'fx: no skin catalogue ({e}): the operators\' skins are left out')
+        gd['skins'] = {}
     if keys:
         unit_ids = []
     elif selection == 'sample':
@@ -3181,8 +3325,22 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
         if any(u.startswith('enemy_') for u in unit_ids) else {}
     token_idx = container_index(ab_root, (TOKEN_GLOB,), root / '.cache/fx/tokens.json', jobs, log) \
         if any(not u.startswith(('char_', 'enemy_')) for u in unit_ids) else {}
-    units, projectiles, skills, skins, referenced = crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log)
+    skin_root = Path(skin_bundles).resolve() if skin_bundles and gd['skins'] else None
+    skin_eff = {}
+    if skin_root is not None:
+        skin_eff = {k: rel for k, rel in container_index(skin_root, EFFECT_GLOBS, root / '.cache/fx/skin-effects.json',
+                                                         jobs, log).items() if k not in eff}
+        log(f'fx: skins: {len(skin_eff)} effect prefabs only in {skin_root}, '
+            f'{sum(1 for p in skin_root.glob(SKINPACK.format("*")))} skinpacks there')
+    units, projectiles, skills, skins, referenced = crawl_units(ab_root, cabs, unit_ids, gd, eff, enemy_idx, token_idx, log,
+                                                                skin_root, skin_eff)
     timings['units'] = time.time() - t0
+    cat = [sk for v in gd['skins'].values() for sk in v]
+    if cat:
+        own = [k for k, v in skins.items() if v.get('char')]
+        log(f'fx: skins: {len(own)} of the catalogue\'s {len(cat)} ({cat_path}) exported, '
+            f'{sum(1 for k in own if skins[k]["replace"])} with effect swaps ({sum(len(skins[k]["replace"]) for k in own)} '
+            f'pairs), {sum(1 for k in own if skins[k]["fakeProjectiles"])} with fake projectiles')
 
     generic = {v for group in FX_GENERIC.values() for v in group.values()}
     generic |= {k for k, rel in eff.items() if rel in FX_GENERIC_BUNDLES}
@@ -3190,7 +3348,9 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
         wanted = set(keys)
     else:                         # the used set holds the sample too (a full run never drops a key a sample has)
         wanted = set(FX_SAMPLE_KEYS) | set(FX_COVERAGE_KEYS) | referenced | generic
-    missing = sorted(k for k in wanted if k not in eff)
+    where = {k: (ab_root, rel) for k, rel in eff.items()}
+    where.update({k: (skin_root, rel) for k, rel in skin_eff.items()})   # only keys the client lacks
+    missing = sorted(k for k in wanted if k not in where)
     for k in missing:
         log(f'  skip (no such effect prefab in this client) {k}')
     wanted -= set(missing)
@@ -3200,15 +3360,15 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
     t0 = time.time()
     entries, textures, meshes, done = {}, {}, {}, set()
     todo, rounds = set(wanted), 0
-    with ProcessPoolExecutor(max_workers=jobs, initializer=_init_worker, initargs=(tuple(eff),)) as pool:
+    with ProcessPoolExecutor(max_workers=jobs, initializer=_init_worker, initargs=(tuple(where),)) as pool:
         while todo and rounds < 6:
             rounds += 1
             by_bundle = {}
             for k in sorted(todo):
-                by_bundle.setdefault(eff[k], []).append(k)
+                by_bundle.setdefault(where[k], []).append(k)
             log(f'fx: pass {rounds}: exporting {len(todo)} prefabs from {len(by_bundle)} bundles ({jobs} processes)')
-            work = [(str(ab_root), str(out_root), cabs, rel, ks) for rel, ks in sorted(by_bundle.items(), key=lambda kv: -len(kv[1]))]
-            results = list(pool.map(_export_worker, work)) if jobs > 1 and len(work) > 1 else [_export_worker(w, tuple(eff)) for w in work]
+            work = [(str(ar), str(out_root), cabs, rel, ks) for (ar, rel), ks in sorted(by_bundle.items(), key=lambda kv: -len(kv[1]))]
+            results = list(pool.map(_export_worker, work)) if jobs > 1 and len(work) > 1 else [_export_worker(w, tuple(where)) for w in work]
             done |= todo
             for e, tx, me, lines in results:
                 entries.update(e)
@@ -3217,7 +3377,7 @@ def export_fx(ab_root, out_root, manifest, log, selection='sample', keys=None, j
                 for line in lines:
                     log(line)
             named = {r for e in entries.values() for r in e.get('refs', [])}
-            todo = {k for k in named if k in eff and k not in done}
+            todo = {k for k in named if k in where and k not in done}
     timings['prefabs'] = time.time() - t0
 
     summaries = {k: {f: v[f] for f in ('file', 'bundle', 'nodes', 'particleSystems', 'liveParticles', 'duration', 'looping', 'refs',

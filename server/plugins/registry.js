@@ -846,6 +846,12 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     },
     /** Re-read the folders now if they changed (force: even within recheckMs). */
     refresh: (force = false) => (scanner && state ? refreshAsync(force) : Promise.resolve(refresh(force))),
+    /**
+     * The background scan a read just started, or null when the last one is still trusted (recheckMs). A reader that
+     * must not answer with a snapshot older than the folders — the index bodies of server/http/static.js — waits for
+     * it instead of starting a scan of its own: the same once-a-second cadence, one request's latency.
+     */
+    pending: () => scanning,
     refreshAsync,
     /**
      * Re-read the folders now even when their names, sizes and times look unchanged: a served file was found changed

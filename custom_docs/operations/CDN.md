@@ -156,7 +156,7 @@ CF 把整个 zone 拉到 Under Attack（或浏览器完整性检查拦住了非�
 
 原因是 `cf_clearance` **按主机名签发**，而预载、纹理、数据 JSON 的跨域请求都是不带 cookie 的匿名请求（`fetchResource` 用 `credentials:'same-origin'`，跨域即匿名），挑战永远问不过去；CDN 上"缓存命中"也救不了——challenge 由边缘先答，命中的是 challenge 而不是素材。
 
-两边一起做：CF 侧给素材域名开 Skip（根治），代码侧保留同源兜底（配错也能跑）。
+两边一起做：CF 侧给素材域名开 Skip（**根治**，也是唯一能保住源站带宽的做法），代码侧保留**有上限的**同源兜底（配错时运行期还能跑，但预载不会把源站当 CDN 用）。
 
 ### 5.2 CF 侧（必须）
 
@@ -181,7 +181,8 @@ curl -sI https://assets.example.com/assets/local/ui/icon.png | head -3   # 200�
 ### 5.3 代码侧（兜底）
 
 - `shared/assetCdn.js` 的 `assetSiteUrl(cdnUrl)`：把 `<SP_ASSETS_CDN>/assets/x.png?v=<hash>` 还原成源站路径 `/assets/x.png`（去掉只为 CDN 缓存用的 `?v=`，保留完整性重试用的 `?sp=`）。
-- `public/js/resources/network.js` 的 `fetchResource`：先走 CDN，失败（403 challenge / opaque / 超时 / 无 CORS 头）就换源站那份再试；**连续两次失败熔断 5 分钟**，否则 27 000 个文件会把同一个 block 重新发现 27 000 次。熔断只影响"先试 CDN"这一步：缓存键仍是 CDN URL，内容指纹照旧校验，预载索引与 ZIP 导入导出不受影响。
+- `public/js/resources/network.js` 的 `fetchResource`：先走 CDN，失败（403 challenge / opaque / 超时 / 无 CORS 头）才换源站那份。**连续两次失败熔断 5 分钟**，否则 27 000 个文件会把同一个 block 重新发现 27 000 次。熔断只影响"先试 CDN"这一步：缓存键仍是 CDN URL，内容指纹照旧校验，预载索引与 ZIP 导入导出不受影响。
+- **源站不是兜底带宽**（`allowOrigin` / `takeOriginBudget`）：批量预载（`store.js` 与 SW 的预载交接）传 `allowOrigin: false` —— CDN 被拦时它以一条可重试的错误**停下来**，一个字节都不去源站；运行期那张图 / 那个 Spine 才允许用源站副本，而且整个页面共用一份预算（400 个文件 / 48 MiB，`resourceNetwork.js` 与 `image.js` 同一个计数器），用完就报"回退已达本次会话上限"。若真想让预载也回退，得同时改 `store.js` 的调用和这里的预算，并清楚那是把 ~310 MiB × 每个玩家压在源站上。
 - `public/js/image.js`：只有跨域图片才设 `crossOrigin='anonymous'`，同源图片不再强制 CORS（否则等于主动丢掉挑战要的那张 cookie）；CDN 图失败一次就切到源站副本并在这个页面里记住。`recoverImageError` 重试同源图片时还会摘掉模板上的 `crossorigin`。
 - `public/js/data.js`：数据 CDN（`SP_DATA_CDN`）读失败换源站 `/_v/<tag>/data/…`，语言 overlay 同理。
 

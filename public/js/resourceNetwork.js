@@ -6,6 +6,7 @@
 // refuses a credentials-less fetch forever, so a failed attempt switches to the game host's own copy of the path
 // before the retry ladder spends itself on a 403.
 import { assetSiteUrl } from '../../shared/assetCdn.js';
+import { takeOriginBudget } from './resources/network.js';
 
 /** The game host's copy of a CDN URL — '' for anything the host already owns. */
 function siteCopy(url) {
@@ -98,7 +99,8 @@ export function createArtTransport({
         // answers, and only it is retried from here on.
         if (!mirrored) {
           const twin = siteCopy(url);
-          if (twin && twin !== target) { mirrored = true; target = twin; n = -1; continue; }
+          // The host copy is a favour, not a plan: this page's fallback budget decides (resources/network.js).
+          if (twin && twin !== target && takeOriginBudget(0)) { mirrored = true; target = twin; n = -1; continue; }
         }
         if (n >= retryDelays.length || !retryableArtError(error)) throw error;
         await wait(retryDelays[n] * (0.8 + random() * 0.4));

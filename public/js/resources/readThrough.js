@@ -61,7 +61,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     return result;
   }
 
-  async function load(file, key, generation) {
+  async function load(file, key, generation, allowOrigin = true) {
     let openError;
     const own = cacheNameForScope(resourceScope(file));
     const cache = await caches.open(own).catch((error) => { openError = error; return null; });
@@ -90,7 +90,8 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
       // A stale copy in another card must not shadow the fresh bytes stored below.
       if (owner !== cache) await owner.delete(key).catch(() => {});
     }
-    const response = await fetchResource(key, { ...network, fetcher });
+    // The page's preload handoff is bulk work; a game request on screen is one picture and may use the host copy.
+    const response = await fetchResource(key, { ...network, fetcher, allowOrigin });
     const bytes = await response.arrayBuffer();
     let digest;
     try { digest = await resourceDigests(bytes); }
@@ -103,11 +104,11 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     return { response: stored, error: openError, ...await keep(cache, key, stored, generation), downloaded: true };
   }
 
-  function sharedLoad(file, key) {
+  function sharedLoad(file, key, allowOrigin = true) {
     let job = pending.get(key);
     if (!job || job.generation !== epoch) {
       job = { generation: epoch };
-      job.promise = load(file, key, epoch).finally(() => { if (pending.get(key) === job) pending.delete(key); });
+      job.promise = load(file, key, epoch, allowOrigin).finally(() => { if (pending.get(key) === job) pending.delete(key); });
       pending.set(key, job);
     }
     return job.promise;
@@ -128,7 +129,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
       // Only local writers issue this marker after verification. Raw network headers cannot reach this branch.
       if (cachedResourceHash(cached) !== hash) return null;
       result = { stored: true, downloaded: false };
-    } else result = await sharedLoad(file, url);
+    } else result = await sharedLoad(file, url, false); // a preload handoff never drains the game server
     if (!enabled || generation !== epoch) return null;
     if (result.error) throw result.error;
     return result.stored ? { cached: true, url, hash, size: file.size ?? null, downloaded: !!result.downloaded } : null;

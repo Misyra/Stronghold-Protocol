@@ -52,6 +52,7 @@ import { t, tc, N_ } from '../../../shared/i18n.js';
 import { C2S as SERVER_C2S } from '../../../shared/protocol.js';
 
 const COMMUNITY_GROUP = '709955459';
+const DESIGN_CREDIT = 'Bilibili@雨千代chiyo'; // i18n-ignore: the designer's handle — a name, not UI text
 
 /** Official mode texts (activity_table act2autochess.modeDataDict), fallback when config.json is absent. */
 export const MODE_TEXT = {
@@ -786,7 +787,7 @@ export function LobbyScreen() {
               const ok = await copyText(COMMUNITY_GROUP);
               toast(ok ? t('已复制到剪贴板') : t('复制失败，请手动复制'), ok ? 'success' : 'warn');
             }}><${Icon} name="copy" />${t('防失联群')} <strong class="num">${COMMUNITY_GROUP}</strong></button></p>
-          <p>${t('界面设计')} <strong>Bilibili@雨千代chiyo</strong></p>
+          <p>${t('界面设计')} <strong>${DESIGN_CREDIT}</strong></p>
           <p class="hub-credits__meta">${t('非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有')} · <a href=${REPOSITORY_URL} target="_blank" rel="noopener noreferrer">${t('项目仓库')}</a><span> · v${APP_VERSION}</span></p>
         </footer>
       </aside>

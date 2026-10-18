@@ -1,5 +1,5 @@
 // Redis 持久化的真实线协议集成：起一个最小的 RESP 服务器，让 server/redis.js 里真正的 redis 客户端连上去，
-// 走完整的 connect → SET/GET/DEL → 重连失败路径。store 的单测（test/redis-state.test.js）用的是假 store，
+// 走完整的 connect → SET/GET/MGET/DEL → 重连失败路径。store 的单测（test/redis-state.test.js）用的是假 store，
 // 这里测的是「线上会连的那条路」。
 
 import { test, describe, after } from 'node:test';
@@ -45,9 +45,15 @@ function fakeRedis() {
         }
         if (cmd === 'SET') {
           store.set(args[0], args[1]);
-          const ex = String(args[3] || '').toUpperCase() === 'EX' ? Number(args[4]) : null;
+          const ex = String(args[2] || '').toUpperCase() === 'EX' ? Number(args[3]) : null;
           if (ex) ttl.set(args[0], ex); else ttl.delete(args[0]);
           socket.write('+OK\r\n');
+          continue;
+        }
+        if (cmd === 'MGET') {
+          let out = '*' + args.length + '\r\n';
+          for (const key of args) { const value = store.get(key); out += value == null ? '_\r\n' : bulk(value); }
+          socket.write(out);
           continue;
         }
         if (cmd === 'DEL') {
@@ -112,37 +118,51 @@ describe('Redis 线协议', () => {
     for (const s of servers) await s.close();
   });
 
-  test('save → 新实例 load 读回同一份文档，键名与 TTL 都对', async () => {
+  test('save → 新实例 load 读回同一份文档；index 与 runtime 各一个键，TTL 都带上', async () => {
     const redis = fakeRedis(); servers.push(redis);
     const port = await redis.listen();
     const store = makeStore(port);
     const doc = { v: 3, snapshot: 1, savedAt: 1, sessions: [{ playerId: 'p' }], rooms: [], matches: {}, clocks: {} };
     assert.equal(await store.save(doc), true);
-    const setCmd = redis.commands.find((c) => String(c[0]).toUpperCase() === 'SET');
-    assert.equal(setCmd[1], 'test:state', 'prefix + name is the key');
-    assert.equal(String(setCmd[3]).toUpperCase(), 'EX');
-    assert.equal(Number(setCmd[4]), 60, 'the configured TTL is applied on every write');
-    assert.deepEqual(JSON.parse(setCmd[2]), doc);
+    const sets = redis.commands.filter((c) => String(c[0]).toUpperCase() === 'SET');
+    const keys = sets.map((c) => c[1]).sort();
+    assert.deepEqual(keys, ['test:index', 'test:runtime'], '整份文档被拆成索引与时钟两个键');
+    for (const cmd of sets) {
+      assert.equal(String(cmd[3]).toUpperCase(), 'EX', '每个键都带 TTL：' + cmd[1]);
+      assert.equal(Number(cmd[4]), 60, 'the configured TTL is applied on every write');
+    }
 
     const second = makeStore(port);
     const loaded = await second.load();
-    assert.deepEqual(loaded, doc);
+    assert.equal(loaded.v, 3);
+    assert.deepEqual(loaded.sessions, [{ playerId: 'p' }]);
+    assert.deepEqual(loaded.matches, {});
     assert.equal(second.loadState, 'loaded');
-    assert.equal(await second.clear(), true, 'clear deletes the key');
-    assert.equal(redis.store.has('test:state'), false);
+    assert.equal(await second.clear(), true, 'clear deletes every key of the prefix');
+    assert.deepEqual([...redis.store.keys()], []);
   });
 
-  test('saveSharded 把分片合并成一份文档（Redis 只有一个键）', async () => {
+  test('saveSharded 一房一个键：只写变了的那一份，坏的那份读回时被跳过', async () => {
     const redis = fakeRedis(); servers.push(redis);
     const port = await redis.listen();
     const store = makeStore(port);
-    const index = { v: 3, savedAt: 2, sessions: [], rooms: [], clocks: { R1: { deadlineRemainingMs: 5 } } };
+    const rooms = [{ code: 'R1', matchCount: 1, hasMatch: true }, { code: 'R2', matchCount: 1, hasMatch: true }];
+    const index = { v: 3, savedAt: 2, sessions: [], rooms, clocks: { R1: { deadlineRemainingMs: 5 } } };
     const shards = new Map([['R1', JSON.stringify({ v: 1, phase: 'PREP', players: [] })], ['R2', '{broken']]);
-    assert.equal(await store.saveSharded({ index, shards }), true);
+    assert.equal(await store.saveSharded({ index, shards, metadataVersion: 1 }), true);
+    const setKeys = redis.commands.filter((c) => String(c[0]).toUpperCase() === 'SET').map((c) => c[1]).sort();
+    assert.deepEqual(setKeys, ['test:cp:R1', 'test:cp:R2', 'test:index', 'test:runtime']);
+    assert.ok(Number(redis.ttl.get('test:cp:R1')) === 60, '检查点的键也带 TTL');
+
+    // 同一份输入再来一轮：一个 SET 都不发（时钟没动、分片正文没变、元数据版本没变）
+    redis.commands.length = 0;
+    assert.equal(await store.saveSharded({ index, shards, metadataVersion: 1 }), true);
+    assert.equal(redis.commands.filter((c) => String(c[0]).toUpperCase() === 'SET').length, 0);
+
     const loaded = await store.load({ attempts: 1 });
     assert.equal(loaded.matches.R1.phase, 'PREP');
     assert.equal('R2' in loaded.matches, false, 'a broken shard is skipped, never written as garbage');
-    assert.deepEqual(loaded.clocks, index.clocks);
+    assert.equal(loaded.clocks.R1.deadlineRemainingMs, 5);
   });
 
   test('Redis 挂了：load 返回 null 且 loadState=unavailable，save 返回 false 而不是抛', async () => {

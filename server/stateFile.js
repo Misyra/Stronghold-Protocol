@@ -17,12 +17,12 @@ const SHARD_SUFFIX = '.json';
 const DIRECTORY_LAYOUT = 2;
 
 /** Only stable metadata participates in the index dirty check; clocks/heartbeat have their own small file. */
-function indexMetadata(index) {
+export function indexMetadata(index) {
   const { savedAt, clocks, matches, layout, revision, ...rest } = index;
   return rest;
 }
 
-function canonicalIndex(index) { return JSON.stringify(indexMetadata(index)); }
+export function canonicalIndex(index) { return JSON.stringify(indexMetadata(index)); }
 
 export class FileStateStore {
   constructor({ file, log = console }) {

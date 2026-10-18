@@ -2664,7 +2664,7 @@
       "hooks": [1,85,5251,634,634,2417,2523,1251,71,72,17,13,7,26798,540,53,64,0,1,76,9,7,5],
       "events": {"atk":739,"bounty":4,"cast":2,"deploy":18,"die":72,"dmg":2523,"engage":13,"fx":157,"heal":1201,"layer":9,"skill":30,"spawn":80,"status":595},
       "fx": {"aoe":8,"beam":1,"burst":7,"crit":24,"displace":34,"dodge":5,"dollEnd":1,"garrison":9,"meltdown":5,"overload":1,"reborn":1,"substitute":5,"summon":1,"swap":3,"telegraph":1,"zone":51},
-      "snaps": "050fe5a5 8d9e3e04 e1b48309 11c3bcdf 5867bca2 bbba25d0 323d4ec0 0b1c3019 1649b56c 1a123a07 62207ab1 bf932522 d7f6c564 aaeb9281 13f927c0 56166419 cf7e1a92 011c5bbe"
+      "snaps": "050fe5a5 e583be4e 20641610 4fb9c651 b56a91bd c625e11f bb0595d9 e9fb3da6 ece1750f c021c3e7 eff2b9ca 27b5b7b0 668a13d2 61c37557 23e7ed96 8db0407f e1e6187c 0eda9120"
     },
     "roster-044": {
       "about": "pass 2 band 6: chess_char_5_19_a chess_char_5_11_b chess_char_5_19_b chess_char_5_13_b chess_char_5_14_b chess_char_5_17_b chess_char_5_20_a chess_char_5_22_a chess_char_5_12_b chess_char_5_15_b chess_char_5_20_b chess_char_5_22_b",
@@ -2729,10 +2729,10 @@
         "enemy_1502_crowns": [1,1,0,0,17916],
         "enemy_2085_skzjxd": [1,0,1,0,148362]
       },
-      "hooks": [1,161,6184,1842,1842,4356,4365,5566,134,149,46,41,0,23117,3250,120,119,15,1,136,0,0,1],
+      "hooks": [1,161,6184,1842,1842,4356,4365,5566,134,149,46,41,0,23117,3252,120,119,15,1,136,0,0,1],
       "events": {"atk":2266,"bounty":4,"deploy":40,"die":134,"dmg":4365,"engage":27,"fx":140,"heal":140,"leak":15,"skill":87,"spawn":148,"status":740},
       "fx": {"crit":20,"displace":49,"dodge":1,"explode":5,"sp":12,"substitute":2,"summon":15,"swap":2,"teleport":11,"zone":23},
-      "snaps": "888da833 ed2d2c4a 32b98a59 c50866e6 f648a9cc 34b4458a 66360aa8 5df8ecab 33ef4e42 0aad1dd0 cbe2f447 7137aacc 046a06fc 52a0a211 7f00b8f5 c927be7f a9227649 f1c8cf64 fde621b1 79ca6f63 b9766c86"
+      "snaps": "888da833 ed2d2c4a 32b98a59 c50866e6 f648a9cc 34b4458a 66360aa8 5df8ecab 33ef4e42 0aad1dd0 cbe2f447 7137aacc 046a06fc ae53c45d 9d9d80fe 6589ef24 be6ce2ee ad42df5b 0403603e fc7b2da4 4d13a66d"
     },
     "roster-045": {
       "about": "pass 2 band 6: chess_char_6_03_a chess_char_6_06_a chess_char_6_07_a chess_char_6_01_a chess_char_6_02_a chess_char_6_04_a chess_char_6_05_a chess_char_6_08_a chess_char_6_09_a chess_char_6_11_a chess_char_6_12_a chess_char_6_13_a token_10017_skadi2_dedant",

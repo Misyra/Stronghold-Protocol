@@ -4,6 +4,7 @@
 import { COLS } from '../../../constants.js';
 import { bodyKeys } from '../../../body.js';
 import { toLocal } from '../../../dir.js';
+import { absoluteRangeKeys } from '../../../targeting.js';
 import {
   AURA_IV, AURA_DUR, num, on, talent, talentRec, skillGrid, mods, inFaction, isOp, selectedId, lazySkills, instantKind,
   skillRange, whileOn, enemiesInGrid,
@@ -24,14 +25,14 @@ export default {
   // The eye follows the selected skill (its overrideTokenKey: S1 eagle1 cost 16, S2 eagle2 14, S3 eagle3 19).
   // S1 周旋的谋略 (instant): +cost DP at once; the waiting op nearest to the eye gets −[deck].cost redeploy cost (same pick
   // as S2) and a barrier of [deck].shield × his max HP when it redeploys.
-  // S3 变革已至 (duration 48 s): skill range — 可对空, so a wave of flyers alone fires it: the data's ACTIVE_RANGE trigger
-  // is asked with his melee PIONEER profile (never a flyer), so the kit casts the skill itself (battle.every →
-  // sk.activate — the automatic cast a MANUAL skill may make; user playtest: it never cast against air-only waves);
-  // enemies in it lose 隐匿; every attack hits every enemy of the range on the target's line (his facing) for
-  // bird_atk_scale × ATK phys + 脆弱 (damage_scale − 1, weak[limit] s [ASSUMED duration]); +[start_cost] DP at once,
-  // then +[cost].cost DP every [cost].interval s; the first activation of the battle swaps the base costs of the most
-  // (guard/caster/sniper first) and least expensive waiting ops. "风雪之眼变为可部署" is not modelled (nobody deploys by
-  // hand in the auto battle).
+  // S3 变革已至 (duration 48 s): skill range — 可对空 (PRTS 备注), so a wave of flyers alone fires it: the data's
+  // ACTIVE_RANGE condition asks the unit's own attack profile, which for a melee PIONEER never counts a flyer, so the
+  // kit adds the skill's grid as a content trigger range selected with an air profile — the way 赤刃明霄陈 S3 does
+  // (op-chen3.js; user playtest: it never cast against air-only waves); enemies in it lose 隐匿; every attack hits
+  // every enemy of the range on the target's line (his facing) for bird_atk_scale × ATK phys + 脆弱 (damage_scale − 1,
+  // weak[limit] s [ASSUMED duration]); +[start_cost] DP at once, then +[cost].cost DP every [cost].interval s; the first
+  // activation of the battle swaps the base costs of the most (guard/caster/sniper first) and least expensive waiting
+  // ops. "风雪之眼变为可部署" is not modelled (nobody deploys by hand in the auto battle).
   chess_char_5_14_a: (bb, chess, def) => {
     const t0 = talent(chess, 0), t1 = talent(chess, 1);
     const grid = skillGrid(chess, def) ?? [[0, 0], [0, 1]];
@@ -163,16 +164,15 @@ export default {
         const tok = battle.tokenDef(eyeId, unit); // the owner's skill variant (DESIGN §16)
         unit.mem.eyeCost = num(tok?.stats?.cost, 14);
         if (selectedId(chess, def) === 'skchr_svash2_3') {
-          // The data's trigger is ACTIVE_RANGE, and that condition ("an enemy in the range the skill would run with")
-          // is asked with the UNIT's own attack profile (skills.js _defaultCondition): his melee PIONEER profile drops
-          // every flyer, so a wave of them left the ready skill closed forever (user playtest). S3's range covers air
-          // (PRTS 可对空) — the kit casts it there itself, the automatic cast a MANUAL skill may make on its own
-          // (skills.js `opCooling`, as 德克萨斯2's / 缪尔赛思's kits do), so the engine stays the upstream one.
-          battle.every(AURA_IV, () => {
-            const sk = unit.skill;
-            if (!on(unit) || !sk || sk.active || !sk.ready || sk.opCooling) return;
-            if (enemiesInGrid(battle, unit, grid, 0).length) sk.activate('svash2');
-          }, { owner: unit });
+          // PRTS 备注 可对空: the skill's range covers air, although his normal attacks stay ground-only (a melee PIONEER,
+          // data canHitFly false) — and the data's ACTIVE_RANGE condition asks the UNIT's profile, so a wave of flyers
+          // alone left the ready skill closed forever (user playtest; the same hole 赤刃明霄陈 S3 had, op-chen3.js). Add
+          // those selectable targets to the existing ACTIVE_RANGE automation through a content trigger range, exactly as
+          // she does: [ASSUMED] its expanded attack grid (plus permanent range extension), not the line's whole route;
+          // the operation cooldown and control checks stay the engine's.
+          unit.skill.addTriggerRange(() => [{
+            keys: absoluteRangeKeys(grid, unit.tileR, unit.tileC, unit.dir, unit.s.baseRangeExtend || 0), profile: AIR,
+          }]);
           // S3: every attack hits the enemies of the skill range on the target's line (his facing frame): the line of
           // the target's position; another enemy is on it when its body is (a huge one: any tile — body.js)
           battle.on('beforeAttack', (c) => {

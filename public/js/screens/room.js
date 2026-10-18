@@ -221,9 +221,11 @@ function CardPicker({ current, list, m, onPick, onClose }) {
 }
 
 /** AI 指定策略 (room.setBotBand): the strategy this AI seat takes in the strategy draft, or 自动选择. */
-function BotBandChip({ seat, editable, busy, onOpen }) {
+function BotBandChip({ seat, bands, editable, busy, onOpen }) {
+  // 显示策略名（选择器里列的那个），不是 band_bldsk 这种 id：房间里看懂 id 的人不多
   const bandId = typeof seat.band === 'string' ? seat.band : null;
-  const body = html`${bandId ? html`<${BandIcon} bandId=${bandId} size="xs" /><span class="rseat__bandname">${bandId}</span>`
+  const bandName = bandId ? (bands || []).find((b) => b.bandId === bandId)?.name || bandId : null;
+  const body = html`${bandId ? html`<${BandIcon} bandId=${bandId} size="xs" /><span class="rseat__bandname">${bandName}</span>`
     : html`<${Icon} name="robot" /><span class="rseat__bandname">${t('自动选择')}</span>`}`;
   if (!editable || !onOpen) {
     return html`<span class=${`rseat__band${bandId ? ' is-set' : ''}`} title=${t('开局策略')}>${body}</span>`;
@@ -266,7 +268,7 @@ function BotBandPicker({ open, seat, seats, bands, busy, onClose, onPick }) {
   <//>`;
 }
 
-function SeatCard({ seat, index, room, facts, myId, busy, onKick, onInvite, onAddBot, onRemoveBot, searching, portraits, onPickCard = null, onBotBand = null }) {
+function SeatCard({ seat, index, room, facts, myId, bands, busy, onKick, onInvite, onAddBot, onRemoveBot, searching, portraits, onPickCard = null, onBotBand = null }) {
   const seatAccount = useAccount(seat && !seat.isBot ? seat.playerId : null);
   const [bad, setBad] = useState(null);
   const flash = useRise(!!seat && (seat.ready || seat.isBot || seat.playerId === room.hostId));
@@ -324,7 +326,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onKick, onInvite, onAd
       onClick=${() => onKick(index, seat.name, seat.playerId)} title=${t('将该博士移出同盟')} aria-label=${t('移出该博士')}><${Icon} name="user" /><${Icon} name="close" /></button>` : null}
     ${seat.isBot && facts.isHost ? html`<button type="button" class="rseat__kick" disabled=${busy === `rm${index}`}
       onClick=${() => onRemoveBot(index)} title=${t('移除该 AI 队友')} aria-label=${t('移除该 AI 队友')}><${Icon} name="robot" /><${Icon} name="close" /></button>` : null}
-    ${seat.isBot && room.mode !== 'solo' ? html`<${BotBandChip} seat=${seat} editable=${!!facts.isHost} busy=${busy === `band${index}`}
+    ${seat.isBot && room.mode !== 'solo' ? html`<${BotBandChip} seat=${seat} bands=${bands} editable=${!!facts.isHost} busy=${busy === `band${index}`}
       onOpen=${onBotBand ? () => onBotBand(index) : null} />` : null}
     <div class=${`rseat__plate${seatAccount?.card ? ' has-nc' : ''}`}>
       <${NameCardLayer} card=${seatAccount?.card} />
@@ -776,7 +778,7 @@ export function RoomScreen() {
     </header>
 
     <main class="rs-seats">
-      ${facts.seats.map((s, i) => html`<${SeatCard} key=${s ? `p${s.playerId}` : `e${i}`} seat=${s} index=${i} room=${room} facts=${facts}
+      ${facts.seats.map((s, i) => html`<${SeatCard} key=${s ? `p${s.playerId}` : `e${i}`} seat=${s} index=${i} room=${room} facts=${facts} bands=${bandList}
         myId=${me.playerId} busy=${busy} onKick=${kick} onInvite=${() => copy('code')} onAddBot=${addBot} onRemoveBot=${removeBot} searching=${searching} portraits=${portraits}
         onPickCard=${cardList.length ? () => setPicking(true) : null}
         onBotBand=${(i) => setBandSeat(i)} />`)}

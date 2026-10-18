@@ -4,7 +4,7 @@ A **plugin** is a folder a server owner puts into `plugins/`: a manifest, `plugi
 it names. The interface calls them 「插件」, never 「模组」 (that word is the operators' modules). The design and its
 phases are DESIGN §32 (`docs/history/0.3.0.md`); this file is the reference.
 
-**Status — 0.3.1: content sets, scripts, sandbox execution and the Forge-pack additions (§34).** The server finds, checks and lists plugins and names its content
+**Status — 0.3.1: content sets, scripts, sandbox execution and the Forge-pack additions (§54).** The server finds, checks and lists plugins and names its content
 with a hash (P0); a room's host switches the server's cosmetic plugins on for the whole room, a player switches them on
 for themself (§9) — art, models and audio only: the battles stay the original ones and a room's `cs` stays the vanilla
 one. Language packs (`docs/PACKS.md`) are the plugin class `lang` and work as before. Data plugins (§10) build
@@ -542,7 +542,7 @@ A declined reference set is remembered; a different set can ask again [ASSUMED].
 unavailable; extracted files stay ignored. Discovery caps [ASSUMED]: 256 folders, 64 declared JSON files per plugin,
 8 MiB per file, 24 levels and 100,000 values per document.
 
-Since §34.28, that same discovery also drives optional **operator art** for official ids outside the shipped roster.
+Since §54.28, that same discovery also drives optional **operator art** for official ids outside the shipped roster.
 `setup --local` extracts base/E2 avatars and portraits and default Front/Back battle Spine models from the local game,
 with no network. Startup/update asks again for missing operator art with the same opt-in rules above. Extracted art
 is indexed in `data/local-assets.json` and merged into the served asset manifest before cosmetic layers: shop cards,
@@ -1513,7 +1513,7 @@ still refuse executable sources. A UI preview loads the registry's sandboxed `/p
 `GET …/dsl-example?name=&id=` returns a starting point; `POST …/validate-dsl {spec}` returns the real validator's result.
 Generated DSL is checked again before new/save writes (including `kit.dsl` and prep host keys); rejected specs leave the saved files unchanged. The form reports failed validation requests, and save revalidates its current spec and checks `ok` before writing. All templates pass strict check/pack and data templates compose through C1; the DSL caster is tested in battle, and generated prep effects in a real match-host round. The original single-battle presets do not dispatch prep events; the five templates below add an explicit isolated exercise.
 
-**0.3.1 gameplay forms (§34.29).** Each has a server template and a page editor, with official-name search,
+**0.3.1 gameplay forms (§54.29).** Each has a server template and a page editor, with official-name search,
 bounded numeric inputs, selects and editable lists. No hand-written JSON or new HTTP route is required:
 
 | Template | Fields and generated content |
@@ -1621,7 +1621,7 @@ enemies of owner one; use custom groups for the actual leaks. Bounties also belo
 the number of boards in this isolated field. Other fields, team LP, real-time overtime, acquisition effects, economy,
 cross-round state, arbitrary stat edits, movable devices, Arts items and plugin content sets are outside this console.
 The UI names its unsupported parts and prep-only tactics. A full match is not this page: the host test room
-(DESIGN §34.8, `SP_TEST_MODE` / `--test-mode`) is a separate lobby room. This sandbox does not create one.
+(DESIGN §54.8, `SP_TEST_MODE` / `--test-mode`) is a separate lobby room. This sandbox does not create one.
 
 The run starts paused. Editing recompiles and resets; one tick / one second means 1 / 30 fixed sim ticks, up to the
 cap or the normal battle end. Empty custom waves stay open until the cap. Speed 0.25×–8× affects tick scheduling only;
@@ -1938,7 +1938,7 @@ pack could not be read or a product failed `check`, `pack`, the visual set or th
 command. A product that fails is not left in `plugins/`. `--no-scripts` writes no script plugin: each kit file is
 named in the report with that reason, and its record keeps its own kit in the content plugin.
 
-**On-demand official tables (0.3.1, §34.33).** The maintainer decided on 2026-10-17 that an explicit import needing
+**On-demand official tables (0.3.1, §54.33).** The maintainer decided on 2026-10-17 that an explicit import needing
 official operators outside the shipped chess/backups roster fetches the missing `character_table.json`,
 `skill_table.json`, `range_table.json`, `uniequip_table.json`, `battle_equip_table.json` and `activity_table.json`.
 Setup/startup/update gap preparation does the same when W5/P10's bounded installed-plugin JSON scan finds such
@@ -2171,7 +2171,7 @@ items to their trap/icon keys, bonds to their own ids. A retained record sharing
 [ASSUMED]. Dropped kits and panel titles are never art targets, so a panel named like a kept portrait leaves the
 imported art list in place. A product that keeps a target, or that only carries audio, does not say that.
 
-### Import and display polish (0.3.1, §34.27)
+### Import and display polish (0.3.1, §54.27)
 
 An unsupported `pack.json.assets` engine resource container (`.spresources`) sets both `partial` and
 `needsManualAdaptation`, with a bilingual `manualReasons` entry, including when no plugin is produced. `ok` still
@@ -2184,7 +2184,7 @@ plugins while they are off in both the room and this player's personal selection
 「外观在『…』（设置 → 外观插件）」. Missing or incompatible companion versions produce no hint.
 
 Folder/CLI checks and the registry count embedded record `kit.dsl` as a `dsl` permission use, alongside operator
-trait DSL and its official-record `data.patch` use (§34.26). Studio refuses a stale autofix that would remove one
+trait DSL and its official-record `data.patch` use (§54.26). Studio refuses a stale autofix that would remove one
 of these consumed permissions. Manifest-only diagnostics are reconciled after the declared record JSON is read.
 Rule-conflict toasts name both plugins and the rule switch in the player's language, falling back to plugin ids.
 [ASSUMED] Imported `result.tab` pages scroll horizontally inside their frame when content is wider than the slot;

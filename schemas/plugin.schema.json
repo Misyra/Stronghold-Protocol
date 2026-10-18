@@ -960,7 +960,7 @@
     "rules": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Gameplay rule switches (DESIGN §34.15). Absent means today's rules. Only a content, script or trusted plugin may set any of these.",
+      "description": "Gameplay rule switches (DESIGN §54.15). Absent means today's rules. Only a content, script or trusted plugin may set any of these.",
       "properties": {
         "shopBias": {
           "enum": [

@@ -25,13 +25,13 @@ content identity; conflicting options return `PLUGIN_RULE_CONFLICT`. The full se
 are in [PLUGINS.md](PLUGINS.md#rule-switches). `g.unequip { itemUid }` is a server-checked game intent, available only
 under unequip=allow; interface plugins still cannot send game intents.
 
-The 0.3.1 import polish (§34.27) reuses stable `manifest.field.optional` for companion cosmetics (id → exact
+The 0.3.1 import polish (§54.27) reuses stable `manifest.field.optional` for companion cosmetics (id → exact
 version); it adds no manifest field, slot or wire message. Optional personal cosmetics remain the player's choice.
 See [PLUGINS.md](PLUGINS.md#import-and-display-polish-031-3427) for hint visibility and record-permission checks.
 
 ## The table
 
-Optional local extraction for official plugin operators outside the roster (§34.28) fills the installation's existing
+Optional local extraction for official plugin operators outside the roster (§54.28) fills the installation's existing
 `chars` asset slots before cosmetic composition. It adds no author-facing field or stable surface name; existing
 `overlay.chars.*` files/references and their precedence are unchanged. See [ASSETS.md](ASSETS.md#official-operator-art-referenced-by-plugins-031).
 
@@ -43,7 +43,7 @@ API 1 manifests remain supported without this part. Native match intents are `g.
 seat unpicked; refresh remains possible. This is native match state, not a script SDK callback. Sources, effect bounds and examples:
 [PLUGINS §10b](PLUGINS.md#10b-offers--interaction-windows). No new script SDK permission is implied.
 
-Studio authoring follow-up (0.3.1, §34.29): `bond`, `item`, `trait`, `offers` and `rules` are template IDs for the
+Studio authoring follow-up (0.3.1, §54.29): `bond`, `item`, `trait`, `offers` and `rules` are template IDs for the
 existing new/authoring/trial routes. `POST validate-dsl` additionally accepts `{draft:{id,template,target,options}}`
 and returns the same `{ok,problems}` result shape after folder/data-only composition checks. Trial requests may add
 `exercise:{round,at,hook,elite,actions}` and receive `exercise:{before,after,windows,blocking,outcomes,round,at,hook}`.
@@ -54,7 +54,7 @@ and required dependencies before writing. Actions are pick/refresh with window/p
 Studio helpers using existing stable record, trait, offer and rule vocabularies; no new frozen plugin surface row or
 route is introduced. The stable baseline remains unchanged. See PLUGINS §15 for form and exercise limits.
 
-Studio presentation follow-up (§34.30): existing authoring and validate-dsl draft payloads may carry
+Studio presentation follow-up (§54.30): existing authoring and validate-dsl draft payloads may carry
 `uploads:[{path,data}]` for FX flipbook PNGs (`data` is base64). Paths must be distinct, safe and declared by the
 merged flipbook configuration; at most 128 uploads, 64 MiB per file and the existing 160 MiB request cap [ASSUMED].
 Validation stages these bytes with the complete folder. Save commits them only after strict validation; errors
@@ -622,7 +622,7 @@ uses the sold form, including the last copy [ASSUMED]. Layer actions preserve ga
 cooldown tolerance; affected fields require server authority [ASSUMED]. No new author API names are introduced.
 
 
-Studio authoring note (0.3.1, §34.30): `theme`, `notices`, `fx` and `skins` are templates using existing studio
+Studio authoring note (0.3.1, §54.30): `theme`, `notices`, `fx` and `skins` are templates using existing studio
 routes and the stable theme/notices/operator.fx/overlay.fx/overlay.chars.skins contracts above. Form draft options
 are studio metadata, excluded from packed plugins. This adds no stable API member or route; surface.stable.json
 therefore remains unchanged. See PLUGIN-GUIDE.md for the fields, bounds, previews and trial workflow.

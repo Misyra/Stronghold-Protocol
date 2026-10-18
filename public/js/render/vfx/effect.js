@@ -203,7 +203,7 @@ export function compileEffect(desc, lib = {}) {
   // parented to the projectile's body and reset to it — Projectile._CreateMainEffect → BattleController.CreateEffect(…,
   // attach) → Misc.Reset, GameAssembly of 2026-09-13). 203 prefabs of the used set keep where the artist left the root:
   // 155 projectile bodies (安洁莉娜 S2's orbs 0.74 north and 0.6 up, 灰毫's shell 0.78 to the right …), 嵯峨's buff 10
-  // tiles away … — they were drawn that far from their place (0.3.1, history §34.6)
+  // tiles away … — they were drawn that far from their place (0.3.1, history §54.6)
   def.rootPos = n ? [def.base[rootIdx * 10], def.base[rootIdx * 10 + 1], def.base[rootIdx * 10 + 2]] : [0, 0, 0];
   if (n) def.base[rootIdx * 10] = def.base[rootIdx * 10 + 1] = def.base[rootIdx * 10 + 2] = 0;
   // systems under another system play with it at the start (Unity plays child systems with their parent)

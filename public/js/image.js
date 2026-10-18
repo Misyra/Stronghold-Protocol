@@ -39,6 +39,8 @@ function refreshImage(url) {
  * refuses the page (`Under Attack` challenges an anonymous fetch) gets one switch to the host's own copy.
  */
 export function loadImageElement(url, { refresh = false, timeoutMs = 15000 } = {}) {
+  // An explicit repair re-asks the CDN first: the remembered host copy is only for plain repeat loads in this page.
+  if (refresh) copies.delete(url);
   return new Promise((resolve, reject) => {
     if (typeof Image === 'undefined') { reject(new Error('no Image in this environment')); return; }
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) { reject(new RangeError('invalid image timeout')); return; }

@@ -5,8 +5,7 @@
 // the field state every SYNC_TICKS (server/sim/syncHash.js) and the match forwards it as b.sync, and a browser whose
 // digest differs, or that cannot keep up, asks for the stream again (g.sim { battleId, stream: true }) — from then on
 // that player gets this field streamed like before. A boss / hidden field shares one pool with the other fields of its
-// phase: its replica also replays the Worker's record of that pool (b.start `ext`, then b.ext; combat/runner.js extFor,
-// sim/spec.js ReplayBossPool). The Worker battle stays the only authority: results, layers, LP, the boss pool, the damage
+// phase: its replica also replays the battle's record of that pool (b.start `ext`, then b.ext; sim/spec.js ReplayBossPool). The Worker battle stays the only authority: results, layers, LP, the boss pool, the damage
 // board and settlement never read a browser. Spectator seats keep the stream.
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated).
 
@@ -14,7 +13,7 @@ import { OK } from './common.js';
 
 /** Field kinds a player's browser may run locally: their battles depend on nothing outside their spec. */
 export const LOCAL_KINDS = new Set(['normal', 'unite']);
-/** Field kinds whose replica also needs the Worker's record of the shared boss pool (combat/runner.js extFor). */
+/** Field kinds whose replica also needs the record of the shared boss pool (the `ext` in b.start and b.ext). */
 export const POOL_KINDS = new Set(['boss', 'hidden']);
 
 export class MatchLocalReplica {

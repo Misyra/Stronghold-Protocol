@@ -631,7 +631,7 @@ export class FxWiring {
    * bone's angle — as `mountRot` (it faces with the unit: FLIP_TWO_SIDE adds no flip, _orient), else the spawn
    * location's as `rootRot`: the unit's Graphic tilt for FOOT / HIT / HEAD — no facing turn: FLIP_TWO_SIDE still flips
    * it — and the identity for the others (both replace the prefab root's own rotation, as the client's
-   * Effect._InitLocationFromEntity does). Before 0.3.1 (history §34.6) FOOT / HIT / HEAD effects took no tilt: an effect
+   * Effect._InitLocationFromEntity does). Before 0.3.1 (history §54.6) FOOT / HIT / HEAD effects took no tilt: an effect
    * authored standing lay on the board (荒芜拉普兰德 S3's seal, 能天使 S3's light bars, 灰毫 S2's smoke over her legs).
    */
   _rotate(P, place, skin, pose) {

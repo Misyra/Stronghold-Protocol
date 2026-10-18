@@ -18,6 +18,7 @@
 //     `PlayerBattleInput.contentInfo`, written by the `global:contentb_info` meta handler (support/meta.js).
 
 import { getData } from '../../../data.js';
+import { grantedBondsByMorph } from '../../../../shared/plugins/rules.js';
 import { COLS, DIRECT_BONUS_STACKING } from '../../constants.js';
 import { frontOf, offsetTile } from '../../dir.js';
 import { bodyInKeys, bodyDist, bodyInRadius, bodyOnTile, bodyTileReach, bodyInRange } from '../../body.js';
@@ -178,17 +179,13 @@ export function unitBonds(u) {
   if (!isOp(u)) return EMPTY;
   const cached = BONDS.get(u);
   const items = itemsOf(u);
-  const key = items.join('|');
+  const plus = u.player?.morphPairing === 'plus';
+  // The official key stays items.join('|'), so a cached official result is unchanged.
+  const key = (plus ? 'plus|' : '') + items.join('|');
   if (cached && cached.key === key) return cached.bonds;
   const out = [...(Array.isArray(u.def?.bonds) ? u.def.bonds : Array.isArray(u.def?.raw?.bonds) ? u.def.raw.bonds : [])];
-  if (items.length >= 2) {
-    const recs = items.map((id) => itemRecord(id)).filter(Boolean);
-    if (recs.some((r) => r.canGiveBond)) {
-      for (const r of recs) {
-        if (r.canGiveBond) continue;
-        if (typeof r.giveBondId === 'string' && bondRecord(r.giveBondId) && !out.includes(r.giveBondId)) out.push(r.giveBondId);
-      }
-    }
+  for (const b of grantedBondsByMorph(items, (id) => itemRecord(id), { mode: plus ? 'plus' : 'official', bondOk: (id) => !!bondRecord(id) })) {
+    if (!out.includes(b)) out.push(b);
   }
   const bonds = Object.freeze(out);
   BONDS.set(u, { key, bonds });

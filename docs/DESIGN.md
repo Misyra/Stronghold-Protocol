@@ -41,3 +41,4 @@ normative lines it rewrote).
 | §32 | [history/0.3.0.md](history/0.3.0.md) | 0.3.0 — the plugin system (插件) and the fixes after 0.2.6 (2026-10-14) |
 | §33 | [design/vfx-format.md](design/vfx-format.md) | Official battle effects (特效): the extracted format the runtime reads |
 | §34, §35, §36, §37, §38, §39, §40, §41, §42, §43, §44, §45, §46, §47, §48, §49, §50, §51, §52, §53 | [design/portal-agent-wss.md](design/portal-agent-wss.md) | 游戏站 Agent 与 sp-portal 的双向通信：WSS 协议、公告与配置、房间分享（草稿，待改写。§32 已被 0.3.0 的插件系统、§33 被特效格式占用，所以这份草稿在合并 0.3.0 时从 §32–§51 顺延成 §34–§53） |
+| §54 | [history/0.3.1.md](history/0.3.1.md) | 0.3.1 — the fixes after 0.3.0 (2026-10-18) |

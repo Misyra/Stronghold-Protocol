@@ -21,7 +21,7 @@
 // the lossy world scale, Local: the node's own scale, Shape: none — the shape positions are scaled at birth instead).
 // A world-space system converts each particle at birth through that matrix. Velocities scale with it (not in Shape mode).
 // Sizes: a local-space particle is drawn at that scale as it is now (`sizeScale`), as the rest of its frame is — a node
-// a clip grows from 0 grows the particles it holds (0.3.1, history §34.6: 荒芜拉普兰德 S3's seal discs, born at the scale 0
+// a clip grows from 0 grows the particles it holds (0.3.1, history §54.6: 荒芜拉普兰德 S3's seal discs, born at the scale 0
 // of their 0.5 s pop-in, stayed invisible for their 4.8 s life); a world-space particle keeps the scale it was born at.
 //
 // Time: `update(dt)` takes battle seconds and sub-steps at ≤ 1/30 s like the client (TimeManager "Maximum Particle

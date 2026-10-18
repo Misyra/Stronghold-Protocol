@@ -571,7 +571,7 @@ JSON 里写 `partial: true` 和各类的 `dropped` 数量。`ok` 仍表示没有
 服务端模块、宿主样式或消息声明没有导入时，也会在开头写「部分导入 / Partial import」和「需要人工适配 / Needs manual adaptation」，
 JSON 写 `partial: true`、`needsManualAdaptation: true` 和双语原因 `manualReasons`；`ok` 只表示校验通过。[ASSUMED]
 
-### 导入与显示修复（0.3.1，§34.27）
+### 导入与显示修复（0.3.1，§54.27）
 
 「没有可应用的对象」按实际美术键判断：棋子用 `charId`，道具用 trap / icon 键，盟约用自身 id。
 有保留下来的记录共用该美术键时仍可应用，不会因为另一个棋子或脚本被跳过而误报。[ASSUMED]
@@ -752,7 +752,7 @@ Forge 的 baseId 是普通棋子 id，不当官方来源猜测。详见 [PLUGINS
 Forge 导入会转换新盟约、支持的装备/驻守效果/效果/召唤物；`traits` 只接受能对应已有驻守 `effectKey` 的记录。
 自定义行为逐项写进报告，不把说明文字当成已实现效果。灵巧钩索保留 2 阶、价格 2、攻速 +25 / +50。
 名单外的官方 `charId` 从本机官方 character/skill/range 表调用数据构建器同一套函数，按经济表练度和满潜能生成，
-再应用包的显式覆盖 [ASSUMED]；报告记录所读表的 SHA-256 版本。维护者 2026-10-17 决定改为按需补表（§34.33）：
+再应用包的显式覆盖 [ASSUMED]；报告记录所读表的 SHA-256 版本。维护者 2026-10-17 决定改为按需补表（§54.33）：
 只有导入确实需要这类干员，或 setup / 启动更新缺项检查发现已安装插件引用它们时，才下载缺失的
 `character_table.json`、`skill_table.json`、`range_table.json`、`uniequip_table.json`、`battle_equip_table.json`、
 `activity_table.json` 到 `.cache/gamedata/excel/`，共约 50 MB（未压缩估算），日志和报告会写具体表名、大小与原因。

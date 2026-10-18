@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { dataBasePath } from '../public/js/resourceUrl.js';
+import { dataBasePath, i18nUrlFor } from '../public/js/resourceUrl.js';
 import { createDataStore } from '../public/js/data.js';
 
 const withCdn = async (value, run) => {
@@ -49,4 +49,15 @@ test('没配数据 CDN 时仍然同源', async () => {
     await store.loadAll('chess');
     assert.ok(urls.every((u) => String(u).startsWith('/data/')), JSON.stringify(urls));
   });
+});
+
+test('界面语言 JSON 跟着素材 CDN 走，语言包目录留在源站', async () => {
+  await withCdn(undefined, () => assert.equal(i18nUrlFor('/i18n/en.json'), '/i18n/en.json'));
+  await withCdn({ base: 'https://art.example/game/' }, () => {
+    assert.equal(i18nUrlFor('/i18n/en.json'), 'https://art.example/game/i18n/en.json');
+    assert.equal(i18nUrlFor('/i18n/zh-TW.json?v=2'), 'https://art.example/game/i18n/zh-TW.json?v=2');
+    assert.equal(i18nUrlFor('/packs/qaa/ui.json'), '/packs/qaa/ui.json', 'a pack folder is served by this server');
+    assert.equal(i18nUrlFor('https://other.example/i18n/en.json'), 'https://other.example/i18n/en.json');
+  });
+  await withCdn({ base: 'https://art.example' }, () => assert.equal(i18nUrlFor('/data/i18n/en.json'), '/data/i18n/en.json', 'the data loader owns that one'));
 });

@@ -86,7 +86,7 @@ export const NET_DEFAULTS = Object.freeze({
  * and matchmaking.join (this fork's alliance queue) and room.setPlugins (a new visual set: every member downloads its
  * art manifest — server/plugins/visualSet.js). state.resync requests a full recovery through the same limits.
  */
-export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.ownership', 'room.diy', 'matchmaking.join', 'room.matchmaking', 'room.spectate', 'state.resync', 'room.skins', 'room.skin.install', 'room.setPlugins']);
+export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.ownership', 'room.diy', 'matchmaking.join', 'room.matchmaking', 'room.spectate', 'state.resync', 'room.skins', 'room.setPlugins']);
 
 /** Close codes (see header). */
 export const CLOSE = Object.freeze({ REPLACED: 4001, HELLO_TIMEOUT: 4002, FOREIGN_BLOCKED: 4003, POLICY: 1008, SHUTDOWN: 1001 });
@@ -137,7 +137,7 @@ export class Session {
     this.notOwned = null;
     /** @type {Readonly<Record<string, { charId: string, skillIndex: number, uniEquipId: string|null }>> | null} checked 自选 picks (lobby-owned, 0.2.0 自选编队) */
     this.diy = null;
-    /** @type {Record<string, string> | null} chosen operator skins (lobby-owned, custom_docs/SKINS.md): PUBLIC, unlike the loadout */
+    /** @type {Record<string, string> | null} chosen operator appearances (lobby-owned, docs/SKINS.md): `{ [charId]: skinId }`, PUBLIC, unlike the loadout */
     this.skins = null;
     /** @type {string} client address of the latest connection (logging) */
     this.addr = '?';

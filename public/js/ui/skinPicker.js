@@ -16,28 +16,27 @@
 //     them (render/spinePreview.js): the same Spine + PIXI path the battlefield draws, with a button per animation
 //     the model actually ships (部署 / 待机 / 攻击 / 技能1… / 眩晕 / 移动 / 死亡 — from `clipsOf`, per skin).
 //
-// Three states per skin, and the difference matters because skins are installed on demand:
-//   * installed   → selectable, art from the asset manifest
-//   * not installed → shown with an 未安装 · 点击安装 note; picking it would render nothing, so a click INSTALLS it
-//     rather than selecting it (in either group — an uninstalled skin has neither a model nor a 立绘)
+// Two states per skin, because the catalogue and the installation are two different facts:
+//   * 已安装 → selectable, art from the asset manifest (chars[charId].skins[officialId])
+//   * 未安装 → listed but not selectable (nothing to draw), with a 未安装 note. Skins are installed on this server by its
+//     owner (tools/install-skins.mjs), not from the game: a room cannot make the server fetch files (docs/SKINS.md).
 //   * the group's own tiles (原始立绘 / 精英二立绘 / 默认) go back to the operator's own art / model
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
-import { html, MicroLabel, Spinner } from './components.js';
+import { html, MicroLabel } from './components.js';
 import { recoverImageError } from '../image.js';
 import { useStore, shallowEqual } from '../store.js';
 import { data } from '../data.js';
-import { toast } from './toasts.js';
-import { net as appNet } from '../net.js';
 import { t, N_ } from '../../../shared/i18n.js';
 import {
   previewState, requestPreview, subscribePreviews, clearPreviews, clipsOf, mountPreview,
 } from '../render/spinePreview.js';
 import { chessOwnPortraitUrl, PORTRAIT_E2 } from './assetUrls.js';
 import {
-  skinsStore, availableSkins, loadSkinData, setSkin, clearSkin, requestSkinInstall,
+  skinsStore, availableSkins, loadSkinData, setSkin, clearSkin,
   setPortrait, clearPortrait,
 } from './skins.js';
+import { manifestSkinKey } from '../../../shared/skins.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -79,12 +78,14 @@ function charAsset(charId, field) {
 function modelArt(charId, skinId) {
   const ready = previewState(charId, skinId).url;
   if (ready) return ready;
-  return skinId ? (data.get('assets')?.chars?.[charId]?.skins?.[skinId]?.avatar || null) : charAsset(charId, 'avatar');
+  const key = manifestSkinKey(skinId);
+  return key ? (data.get('assets')?.chars?.[charId]?.skins?.[key]?.avatar || null) : charAsset(charId, 'avatar');
 }
 
 /** The 商店立绘 tile's art: the skin's 180×360 立绘, falling back to its square avatar. */
 function skinPortrait(charId, skinId) {
-  const sk = data.get('assets')?.chars?.[charId]?.skins?.[skinId];
+  const key = manifestSkinKey(skinId);
+  const sk = key ? data.get('assets')?.chars?.[charId]?.skins?.[key] : null;
   return sk?.portrait || sk?.avatar || null;
 }
 
@@ -92,12 +93,12 @@ function skinPortrait(charId, skinId) {
  * One radio group of tiles: the group's own tiles first (原始立绘 / 精英二立绘 / 默认), then every skin of the
  * operator. `onPick('')` always means "the operator's own".
  * @param {{ name: string, ariaLabel: string, leading: any[], list: any[], chosenId: string|null,
- *   art: (x: any) => string|null, onPick: (id: string) => void, installing: string|null, progLabel: string,
- *   onInstall: (skinId: string) => void, thumbnails?: boolean, tall?: boolean }} p `tall` = the 立绘 tiles, whose
- *   box is the shop card's own 1:2 portrait shape inside a narrow column (a square box crops them)
+ *   art: (x: any) => string|null, onPick: (id: string) => void, thumbnails?: boolean, tall?: boolean }} p
+ *   `tall` = the 立绘 tiles, whose box is the shop card's own 1:2 portrait shape inside a narrow column (a square box
+ *   crops them)
  */
 function SkinGroup(p) {
-  const { leading, list, chosenId, art, onPick, installing, progLabel, onInstall, thumbnails = true, tall = false } = p;
+  const { leading, list, chosenId, art, onPick, thumbnails = true, tall = false } = p;
   // A tile whose art 404s (an uninstalled skin's file, a broken mirror) falls back to the hatched placeholder instead
   // of showing a broken-image box — the repo-wide rule for DOM game images is crossorigin + recoverImageError
   // (public/js/image.js, test/ui/image-policy.test.js: CORS must precede src or the WebGL path would poison the cache).
@@ -108,38 +109,35 @@ function SkinGroup(p) {
   const chosen = chosenId || '';
   const tile = (key, id, name, note, url, extra) => html`
     <button key=${key} type="button" role="radio" aria-checked=${chosen === (id || '') ? 'true' : 'false'}
-      data-skin=${id} disabled=${!!installing} title=${extra.title || name}
-      class=${cx('lo-skin', !thumbnails && 'lo-skin--text', tall && 'lo-skin--tall', chosen === (id || '') && 'is-on', extra.missing && 'lo-skin--missing', extra.busy && 'is-installing')}
+      data-skin=${id} disabled=${!!extra.missing} title=${extra.title || name}
+      class=${cx('lo-skin', !thumbnails && 'lo-skin--text', tall && 'lo-skin--tall', chosen === (id || '') && 'is-on', extra.missing && 'lo-skin--missing')}
       onClick=${extra.onClick}>
       ${thumbnails
         ? html`<span class=${cx('lo-skin__art', tall && 'lo-skin__art--tall')}>
             ${url && !bad.has(url)
               ? html`<img crossorigin="anonymous" src=${url} alt="" draggable=${false} loading="lazy"
                   onError=${(event) => recoverImageError(event, () => dropArt(url))} />`
-              : extra.busy ? html`<${Spinner} size="sm" />` : html`<span class="lo-skin__art--none"></span>`}
+              : html`<span class="lo-skin__art--none"></span>`}
           </span>`
         : null}
       <span class="lo-skin__text">
         <b class="lo-skin__name">${name}</b>
-        <span class="lo-skin__group">${extra.busy ? progLabel : note}</span>
+        <span class="lo-skin__group">${note}</span>
       </span>
     </button>`;
   return html`<div class=${cx('lo-skins', !thumbnails && 'lo-skins--text', tall && 'lo-skins--tall')} role="radiogroup"
       aria-label=${p.ariaLabel} data-skin-group=${p.name}>
     ${leading.map((x) => tile('own:' + x.id, x.id, x.name, x.note, x.art, { onClick: () => onPick(x.id), title: x.note }))}
-    ${list.map((x) => {
-      const isBusy = installing === x.id;
-      return tile(x.id, x.id, x.name, isBusy ? '' : x.installed ? x.group : t('未安装 · 点击安装'), x.installed ? art(x) : null,
-        { missing: !x.installed, busy: isBusy, onClick: () => (x.installed ? onPick(x.id) : onInstall(x.id)), title: x.name + (x.group ? ' · ' + x.group : '') });
-    })}
+    ${list.map((x) => tile(x.id, x.id, x.name, x.installed ? x.group : t('未安装（服务器没装这套）'), x.installed ? art(x) : null,
+      { missing: !x.installed, onClick: () => onPick(x.id), title: x.name + (x.group ? ' · ' + x.group : '') }))}
   </div>`;
 }
 
 /**
  * 皮肤 section for one operator.
- * @param {{ chess: any, net?: any }} props `chess` is the chess record of the detail panel; `net` is injectable for tests
+ * @param {{ chess: any }} props `chess` is the chess record of the detail panel
  */
-export function SkinSection({ chess, net = appNet }) {
+export function SkinSection({ chess }) {
   const s = useStore((v) => v, shallowEqual, skinsStore);
   const m = data.get('assets');
   const [, bump] = useState(0);
@@ -181,13 +179,14 @@ export function SkinSection({ chess, net = appNet }) {
   // inline and no 更多动画 button appears at all.
   const fold = extraClips.length >= 3;
   const [extraOpen, setExtraOpen] = useState(false);
-  // the catalogue lives in data/skins.json and the installed set in data/assets.json; both may still be loading
+  // the catalogue is the code module shared/skin-catalogue.js; what is INSTALLED is data/assets.json, which may still be
+  // loading (the section renders as soon as the operator is in the catalogue, and the tiles fill in when it lands)
   useEffect(() => {
     let dead = false;
     let manifest = data.get('assets');
     loadSkinData();
     const off = data.subscribe?.(() => {
-      // a manifest that changed identity means somebody installed a skin: URLs (and so the preview) may differ
+      // a manifest that changed identity means somebody installed a skin on this server: URLs (and so the preview) differ
       const now = data.get('assets');
       if (now !== manifest) { manifest = now; clearPreviews(); }
       if (!dead) bump((n) => n + 1);
@@ -250,27 +249,6 @@ export function SkinSection({ chess, net = appNet }) {
   if (!renderable) return null; // no slot, or a piece with neither a catalogue nor any art: nothing to show
 
   const installedCount = list.filter((x) => x.installed).length;
-  const sock = net;
-  const installing = s.installing || null;
-  const prog = s.installingProgress;
-  // The eight files are 2 models × (skel + atlas + png) + the avatar + the 立绘, and the installer reports them as
-  // they land. Before the first report there is nothing to show but that it started.
-  const progLabel = !prog ? '' :
-    prog.phase === 'queued' ? t('排队中…') :
-    prog.total > 0
-      ? (prog.phase === 'finishing' ? t('{done}/{total} · 解析中…', { done: prog.done, total: prog.total }) : t('{done}/{total}', { done: prog.done, total: prog.total }))
-      : t('准备中…');
-
-  const install = async (skinId) => {
-    if (!sock || installing) return;
-    try {
-      // acknowledged at once; the outcome arrives as skins.changed (ui/skins.js), which also reloads the manifest
-      await requestSkinInstall(sock, skinId);
-      toast(t('开始安装，装好后这里会自动出现（网络慢时约一分钟）'), 'info');
-    } catch (e) {
-      toast(t('安装失败：{why}', { why: (e && (e.detail || e.code)) || t('未知错误') }), 'warn');
-    }
-  };
 
   // 商店立绘: the operator's own two 立绘 first. A 1★/2★ operator has no 精英二 art — its own portrait is the only
   // option, and offering a second tile that would draw the same image is worse than offering one.
@@ -280,7 +258,7 @@ export function SkinSection({ chess, net = appNet }) {
     { id: '', name: t('原始立绘'), note: 'ORIGINAL', art: ownPortrait },
     ...(e2Portrait && e2Portrait !== ownPortrait ? [{ id: PORTRAIT_E2, name: t('精英二立绘'), note: 'ELITE 2', art: e2Portrait }] : []),
   ];
-  const shared = { list, installing, progLabel, onInstall: install };
+  const shared = { list };
   // the frame: the model of the CURRENT choice, with its name and the animation buttons under it
   const previewStateNow = previewState(charId, previewSkin).status;
   const previewUrl = modelArt(charId, previewSkin);
@@ -291,11 +269,9 @@ export function SkinSection({ chess, net = appNet }) {
     <header class="lo-sec__head">
       <h3>${t('皮肤')}<${MicroLabel}>SKIN<//></h3>
       <span class="lo-sec__note">
-        ${installing
-          ? html`<${Spinner} size="sm" /> ${t('正在安装')} <b class="num">${progLabel}</b>`
-          : list.length
-            ? t('{installed}/{total} 已安装', { installed: installedCount, total: list.length })
-            : t('该干员暂无皮肤')}
+        ${list.length
+          ? t('{installed}/{total} 已安装', { installed: installedCount, total: list.length })
+          : t('该干员暂无皮肤')}
       </span>
     </header>
     <h4 class="lo-skin__title">${t('商店立绘')}<${MicroLabel}>SHOP ART<//></h4>

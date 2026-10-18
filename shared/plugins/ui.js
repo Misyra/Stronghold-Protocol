@@ -83,7 +83,7 @@ const HOST_TYPES = new Set(UI_HOST_MESSAGES);
 
 /**
  * A client→server type (shared/protocol.js C2S): hello, ping, and room.* / state.* / matchmaking.* / g.* / b.*
- * (this fork adds state.resync, matchmaking.join|cancel and the nested room.skin.install to the upstream names).
+ * (this fork adds state.resync and matchmaking.join|cancel to the upstream names).
  * The unit test asserts every current C2S key matches.
  * @param {unknown} s
  */

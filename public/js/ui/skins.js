@@ -1,20 +1,23 @@
-// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in custom_docs/SKINS.md.
-// 干员皮肤：客户端状态与同步 (custom_docs/SKINS.md).
+// 干员皮肤：客户端状态与同步 (docs/SKINS.md).
 //
-// Two different things live here, and keeping them apart is what makes 「按需安装」 work:
+// Two different things live here, and keeping them apart is what makes the picker honest:
 //
-//   * the CATALOGUE (data/skins.json) — every skin the project knows about, installed or not: ids, names, series.
-//     It carries no URLs, because a skin that is not installed has no files to point at.
-//   * what is INSTALLED (data/assets.json → chars[charId].skins) — the skins whose models are actually on this
-//     server. `availableSkins()` marks which is which, and the picker greys out (or offers to install) the rest.
+//   * the CATALOGUE (shared/skin-catalogue.js, a code module): every outfit the project knows — 276 over 174 operators.
+//     It carries no URLs, because an outfit that is not installed has no files to point at.
+//   * what is INSTALLED (data/assets.json → chars[charId].skins[officialId]) — the outfits whose models are actually on
+//     this server. `availableSkins()` marks which is which, and the picker lists the rest as 未安装.
 //
-// The choice itself is a plain `{ [chessId]: skinId }` map, persisted per browser in localStorage and mirrored to
-// the server through `room.skins` — the same shape and the same wiring as the operator loadout (ui/loadoutSync.js),
-// except that this one is PUBLIC: the server puts it in `Match.publicView().players[]`, which is how a teammate
-// sees your skin.
+// The choice itself is stored per browser as `{ [chessId]: skinId }` and mirrored to the server through
+// `room.skins { choices }` as `{ [charId]: skinId }` — one entry per OPERATOR, which is the key the wire, the
+// catalogue and the server's whitelist all use (shared/skins.js). The translation happens in `installSkinsSync`
+// below and nowhere else; the local map stays chess-keyed because that is what the 干员调配 roster, the 自选 slots and
+// the 商店立绘 choice are keyed by. This one is PUBLIC (unlike the 商店立绘): the server puts it in
+// `Match.publicView().players[]` and in every unit of a watched board, which is how a teammate sees your skin.
 
 import { createStore, loadPref, savePref } from '../store.js';
 import { data } from '../data.js';
+import { DIY_PREF, parseStoredDiy } from './diyModel.js';
+import { manifestSkinKey, skinById, skinsFor } from '../../../shared/skins.js';
 
 export const SKINS_PREF = 'skins';
 /**
@@ -38,8 +41,24 @@ function readPref(pref) {
   return out;
 }
 
+/**
+ * A stored battle-model map as the catalogue names it: values are canonicalised to catalogue ids
+ * (`char_498_inside_kitchen_2`), because a preference saved before the catalogue became a code module holds the
+ * OFFICIAL id (`char_498_inside@kitchen#2`). Both a value the catalogue no longer knows and an unmatched one are
+ * dropped — the operator simply wears its own model. Runs on read, so no migration step and no version stamp.
+ * @param {Record<string, string>} raw
+ */
+function canonSkins(raw) {
+  const out = {};
+  for (const [chessId, skinId] of Object.entries(raw || {})) {
+    const skin = skinById(skinId);
+    if (skin) out[chessId] = skin.id;
+  }
+  return out;
+}
+
 function readStored() {
-  return readPref(SKINS_PREF);
+  return canonSkins(readPref(SKINS_PREF));
 }
 
 /**
@@ -47,34 +66,8 @@ function readStored() {
  * kept apart from the app store for the same reason the loadout is.
  */
 export const skinsStore = createStore({
-  entries: readStored(), portraits: readPref(PORTRAITS_PREF), sync: 'idle', installing: null, installingProgress: null,
+  entries: readStored(), portraits: readPref(PORTRAITS_PREF), sync: 'idle',
 });
-
-/**
- * Ask the server to install a skin's files (custom_docs/SKINS.md).
- *
- * The reply is only an acknowledgement — an install takes tens of seconds, far longer than the 8 s a request is
- * allowed (net.js REQUEST_TIMEOUT_MS) — so the outcome arrives as `skins.changed`, which installSkinsSync()
- * handles here because it is the one place that owns the socket.
- * @param {any} net
- * @param {string} skinId
- * @returns {Promise<{ ok: boolean, state?: string }>}
- */
-export async function requestSkinInstall(net, skinId) {
-  skinsStore.set({ installing: skinId, installingProgress: { skinId, phase: 'queued', done: 0, total: 0 } });
-  try {
-    // A resolved request() already means the server accepted it. The framework answers with a bare
-    // `{ t: 'ok', rid }` (server/net.js) and carries NO payload, so there is nothing here to inspect: checking
-    // `.ok` on the reply (which the first version did) read undefined, treated every accepted request as a
-    // failure and cleared `installing` at once — the panel fell back to its normal header and the progress the
-    // server was sending all along had nothing left to render into. Errors arrive as a rejection.
-    await net.request('room.skin.install', { skinId });
-    return { ok: true };
-  } catch (e) {
-    skinsStore.set({ installing: null, installingProgress: null });
-    throw e;
-  }
-}
 
 /** Replace the whole selection (persisted at once; the sync picks the change up). */
 export function setSkins(entries) {
@@ -113,9 +106,9 @@ export function clearSkin(chessId) {
 export const skinFor = (chessId) => skinsStore.get().entries[chessId] || null;
 
 /**
- * The outfits this browser has equipped, as the `<charId>/<skinId>` keys the 资源预载 follows (custom_docs/SKINS.md). The
- * choice is stored per chess and the asset manifest (hence the preload) is keyed per operator, so the chess table has
- * to be in for this to return anything: `loadEquippedSkinKeys()` waits for it.
+ * The outfits this browser has equipped, as the `<charId>/<official skin id>` keys the 资源预载 follows (docs/SKINS.md).
+ * The choice is stored per chess, the asset manifest (hence the preload) is keyed per operator and by the official id,
+ * so the chess table AND the catalogue have to be in for this to return anything — `loadEquippedSkinKeys()` waits.
  *
  * Both rows count: the battle model and the shop art are one choice now (`setSkin`), but 「默认模型 + 某套立绘」 is still
  * reachable by clearing the model afterwards, and that outfit's files are wanted just the same. The art-only values
@@ -126,7 +119,10 @@ export function equippedSkinKeys() {
   const keys = new Set();
   const add = (chessId, skinId) => {
     const charId = data.lookup('chess', chessId)?.charId;
-    if (charId && typeof skinId === 'string' && skinId.startsWith('char_')) keys.add(`${charId}/${skinId}`);
+    // the OFFICIAL id: the resource manifest keys an outfit's files by it (tools/assets/plan.mjs), so a catalogue id
+    // here would name a key no file carries and the preload would quietly skip the outfit
+    const key = manifestSkinKey(skinId);
+    if (charId && key) keys.add(`${charId}/${key}`);
   };
   for (const [chessId, skinId] of Object.entries(skinsStore.get().entries || {})) add(chessId, skinId);
   for (const [chessId, skinId] of Object.entries(skinsStore.get().portraits || {})) add(chessId, skinId);
@@ -177,9 +173,10 @@ export const portraitFor = (chessId) => skinsStore.get().portraits[chessId] || n
 // ---- 自选编队 slots -----------------------------------------------------------------------------------------------
 
 /**
- * A skin selection's structural clean (for imports): `{ [chessId]: skinId }` with string values, junk dropped. The
- * same lightness as the server's freezeSkins — an id this build does not know resolves to nothing in spineEntry(),
- * so the shape is all that is worth checking before the values reach the store.
+ * A skin selection's structural clean (for imports / loadout envelopes): `{ [chessId]: skinId }` with string values,
+ * junk dropped. The lightness is deliberate — a value this build does not know resolves to nothing in spineEntry(), so
+ * the shape is all that is worth checking before the values reach the store (the sync then leaves out what the catalogue
+ * cannot name, see skinChoicesOf).
  * @param {any} raw
  * @returns {Record<string, string>}
  */
@@ -223,37 +220,68 @@ export function syncDiySkins(oldPicks, newPicks) {
 }
 
 /**
- * Every skin of an operator, whether or not this install has it.
+ * Every outfit of an operator, whether or not this server has its files.
  *
- * Takes the OPERATOR id (`char_498_inside`), not the chess id (`chess_char_1_01_a`): both data/skins.json and
- * data/assets.json are grouped per operator, while a skin *choice* is stored per chess — see ui/skinPicker.js.
+ * Takes the OPERATOR id (`char_498_inside`), not the chess id (`chess_char_1_01_a`): the catalogue
+ * (shared/skin-catalogue.js) and data/assets.json are both grouped per operator, while the local *choice* is stored per
+ * chess — see ui/skinPicker.js. The row id is the CATALOGUE id, which is what the wire, the server's whitelist and the
+ * menu all speak; `installed` compares against the official id the asset manifest is keyed by (shared/skins.js
+ * manifestSkinKey), so the two id forms never have to meet anywhere else.
  * @param {string} charId
  * @returns {{ id: string, name: string, group: string, installed: boolean }[]}
  */
 export function availableSkins(charId) {
-  const list = data.get('skins')?.chars?.[charId];
-  if (!Array.isArray(list)) return [];
+  if (typeof charId !== 'string' || !charId) return [];
   const installedHere = data.get('assets')?.chars?.[charId]?.skins || {};
-  return list.map((s) => ({ id: s.id, name: s.name, group: s.group || '', installed: !!installedHere[s.id] }));
+  return skinsFor(charId).map((s) => ({
+    id: s.id, name: s.name, group: s.brand || '', installed: !!installedHere[manifestSkinKey(s.id)],
+  }));
 }
 
-/** Whether this install has the files for a skin (its model and avatar are in the asset manifest). @param {string} charId */
+/** Whether this server has the files of a skin (its model and avatar are in the asset manifest). @param {string} charId */
 export function isInstalled(charId, skinId) {
-  return !!data.get('assets')?.chars?.[charId]?.skins?.[skinId];
+  const key = manifestSkinKey(skinId);
+  return !!key && !!data.get('assets')?.chars?.[charId]?.skins?.[key];
 }
 
-/** Load what the picker needs (the catalogue, and the manifest that says what is installed). */
+/** Load what the picker needs: the asset manifest, which says which outfits this server actually has. */
 export function loadSkinData() {
-  data.load('skins').catch(() => {});
   data.load('assets').catch(() => {});
 }
 
 /**
- * Keep the server's copy of this browser's skins current.
+ * The `room.skins { choices }` payload of a local `{ [chessId]: skinId }` map: `{ [charId]: skinId }`, one entry per
+ * OPERATOR — the key the wire, the catalogue and the server's whitelist use (shared/skins.js isSkinChoices).
  *
- * Mirrors installLoadoutSync, minus the sanitising: the loadout has to be checked against data/chess.json before
- * it is sent (a stale entry would be dropped by the server), whereas a skinId needs no lookup to be sent — the
- * server keeps the entries whose chess it recognises and drops the rest, and an unknown skinId is harmless.
+ * A chess id reaches its operator through data/chess.json; a 自选 slot has no charId of its own (its `charId` is null:
+ * the SLOT is not an operator), so it takes the operator PICKED for it from the stored roster (sp.pref.diy). Two slots
+ * picking the same operator collapse to one entry, which is exactly the wire's model. Anything this browser cannot
+ * resolve to an operator is left out — the server would refuse the whole map otherwise, and a piece would quietly keep
+ * a default model nobody asked for.
+ * @param {Record<string, string>} entries @returns {Record<string, string>}
+ */
+export function skinChoicesOf(entries) {
+  const out = {};
+  let picks = null;
+  for (const [chessId, skinId] of Object.entries(entries || {})) {
+    const rec = data.lookup('chess', chessId);
+    let charId = typeof rec?.charId === 'string' ? rec.charId : null;
+    if (!charId && rec?.isDiy) {
+      if (picks === null) { try { picks = parseStoredDiy(loadPref(DIY_PREF, null)); } catch { picks = {}; } }
+      charId = picks?.[chessId]?.charId ?? null;
+    }
+    if (!charId || typeof skinId !== 'string' || !skinId) continue;
+    out[charId] = skinId;
+  }
+  return out;
+}
+
+/**
+ * Keep the server's copy of this browser's appearances current.
+ *
+ * What is sent is `skinChoicesOf(entries)`, so the server sees the operator-keyed map it validates; the local map stays
+ * chess-keyed. A choice the server refuses is a display preference, never an error worth a toast: it retries on RATE /
+ * TIMEOUT / OFFLINE and otherwise parks in 'error' until the next edit.
  * @param {{ net: any, timers?: { setTimeout: Function, clearTimeout: Function } }} deps
  * @returns {{ flush: () => Promise<void>, dispose: () => void }}
  */
@@ -276,15 +304,15 @@ export function installSkinsSync({ net, timers } = {}) {
   async function flush() {
     if (disposed || net.status !== 'online') { setState('idle'); return; }
     try {
-      const skins = skinsStore.get().entries;
-      const json = JSON.stringify(skins);
+      const choices = skinChoicesOf(skinsStore.get().entries);
+      const json = JSON.stringify(choices);
       if (json === pendingJson) return;
       if (json === lastSent && pendingJson == null) { setState('synced'); return; }
       const my = ++seq;
       pendingJson = json;
       setState('sending');
       try {
-        await net.request('room.skins', { skins });
+        await net.request('room.skins', { choices });
         if (my !== seq) return;
         pendingJson = null;
         lastSent = json;
@@ -304,28 +332,10 @@ export function installSkinsSync({ net, timers } = {}) {
   }
 
   const offWelcome = net.on('welcome', () => { lastSent = null; pendingJson = null; seq++; schedule(50); });
+  // The chess table decides which operator a stored chess key belongs to, so a sync that ran before it landed is worth
+  // one more run once it does (skinChoicesOf would otherwise send nothing at all).
+  const offChess = data.load('chess').then(() => schedule(50), () => {});
   const offStore = skinsStore.subscribe((s, prev) => { if (s.entries !== prev.entries) schedule(); });
-
-  // A skin installed anywhere on this server rewrites data/assets.json for EVERYONE, so the cached copy has to go:
-  // a client that keeps the manifest it loaded at boot cannot resolve the new model at all (the skin id the server
-  // sends for a teammate's unit would find nothing) and would fall back to the default model for the rest of the
-  // session. This is also where an install requested by this player reports back.
-  const offChanged = net.on('skins.changed', (msg) => {
-    data.invalidate('assets');
-    void data.load('assets').catch(() => {});
-    const s = skinsStore.get();
-    if (s.installing && (!msg || !msg.skinId || msg.skinId === s.installing)) {
-      skinsStore.set({ installing: null, installingProgress: null, lastInstalled: msg ? msg.skinId : null, lastInstalledOk: !msg || msg.ok !== false });
-    }
-  });
-
-  // how far along the install this client asked for is (the requester only — the server sends it to nobody else)
-  const offProgress = net.on('skin.progress', (msg) => {
-    if (!msg) return;
-    const s = skinsStore.get();
-    if (s.installing && s.installing !== msg.skinId) return;
-    skinsStore.set({ installingProgress: { skinId: msg.skinId, phase: msg.phase, done: msg.done | 0, total: msg.total | 0 } });
-  });
 
   return {
     flush,
@@ -334,8 +344,7 @@ export function installSkinsSync({ net, timers } = {}) {
       T.clearTimeout(timer);
       offWelcome?.();
       offStore?.();
-      offChanged?.();
-      offProgress?.();
+      void offChess;
     },
   };
 }

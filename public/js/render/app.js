@@ -799,9 +799,9 @@ export async function createFieldView(host, options = {}) {
     return {
       kind: 'op', side: 'ally', defId: piece.id,
       spine: rec?.assets?.spine || rec?.charId || null, avatar: rec?.assets?.avatar || rec?.charId || null,
-      // 干员皮肤 (custom_docs/SKINS.md): present when the prep unit came from the server (Match.prepView / the snapshot); a
-      // golden piece's own id is not a skin key (setSkins only accepts base chess ids), so fall back to this client's
-      // own choice
+      // 干员皮肤 (docs/SKINS.md): present when the prep unit came from the server (Match.prepView / the snapshot), already
+      // resolved per OPERATOR there (PlayerState.skinIdFor); the local fallback covers the frames before it arrives — it
+      // is keyed by chess, so this client's own choice serves the base piece and its elite alike.
       skin: piece.skin ?? skinFor(baseId) ?? skinFor(piece.id) ?? null,
       tier: chess?.tier || piece.tier || 1, golden: !!(piece.golden || chess?.isGolden), dir,
       ...(si ? { standInFor: si.standInFor } : null),

@@ -8,7 +8,7 @@ import { cultivatedStats, isPotential, isCultivate, POTENTIAL_DEFAULT, CULTIVATE
 import { isContentHash } from './plugins/identity.js';
 import { isPluginId } from './plugins/manifest.js';
 import { isCardAvatarId, isCardPortraitId } from './playerCard.js';
-import { SKIN_LIMITS, isSkinId } from './skins.js';
+import { SKIN_LIMITS, isSkinId, isCharId, isSkinChoices } from './skins.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -74,25 +74,29 @@ export function isBattleResult(v) {
     && optional((x) => isInt(x, 0, 1e9))(v.errors) && optional((x) => isNum(x, 0, BIG))(v.bossHpLeft);
 }
 
-// ---- 干员皮肤 (custom_docs/SKINS.md): room.skins { skins } -----------------------------------------------------------
+// ---- 干员皮肤 (docs/SKINS.md): room.skins { choices } --------------------------------------------------------------
 
 /**
- * `room.skins { skins }`: `skins` = `{ [baseChessId]: skinId }` — which installed skin each operator wears. The ids
- * come from `data/skins.json` (`{ chars: { [charId]: [{ id, name, group }] } }`).
+ * `room.skins { choices }`: `choices` = `{ [charId]: skinId }` — which appearance each operator wears, one entry per
+ * OPERATOR, so it covers the normal chess, its elite and a 自选 slot fielding the same operator (the catalogue of
+ * shared/skin-catalogue.js is grouped per operator too: 276 outfits over 174 operators).
  *
- * Unlike `room.loadout` these are PUBLIC: they ride in `Match.publicView().players[]` so a teammate sees your skin,
- * which is the whole point of choosing one in a co-op match.
+ * Unlike `room.loadout` these are PUBLIC: they ride in `Match.publicView().players[]` and in every unit of a watched
+ * board, which is how a teammate sees your skin.
  *
- * Validation here is deliberately shallow, and that is safe: an unknown skinId, or one belonging to another operator,
- * can do nothing worse than fall back to the operator's default model in `spineEntry()`. So only the shape is
- * checked on the wire; the server matches each id against its chess (`PlayerState.setSkins`) and drops the entries
- * it does not recognise rather than rejecting the whole selection.
+ * 来源: Stardust-minus/Stronghold-Protocol @ fab1b97 shared/protocol.js. Their map is validated by the catalogue
+ * itself (`isSkinChoices`): a key that is not an operator charId, a value that is not an outfit of THAT operator, or
+ * one entry too many refuses the whole message. That is stricter than the shape check kept below and it is why the
+ * lobby can trust what it stores — no second list to keep in date, and a made-up id never reaches a renderer.
  */
-// The model itself lives in shared/skins.js (the canonical home); re-exported here because the wire helpers below and
-// several callers reach it through this module.
-export { SKIN_LIMITS, isSkinId };
-/** Structural check of `room.skins.skins`. */
-export const isSkinSelection = (v) => isMap(v, SKIN_LIMITS.entries, isId, isSkinId);
+// The model lives in shared/skins.js (the catalogue, the id limits, the whitelist); re-exported here because the wire
+// table below and several callers reach it through this module.
+export { SKIN_LIMITS, isSkinId, isCharId };
+/**
+ * Structural check of a `room.skins` map: a plain object of ≤ `SKIN_LIMITS.entries` entries, keyed by an operator
+ * charId, each value a skinId. Used by the tests and by anything that has to look at a map without the catalogue.
+ */
+export const isSkinSelection = (v) => isMap(v, SKIN_LIMITS.entries, isCharId, isSkinId);
 
 // ---- operator loadout (DESIGN §16): room.loadout { entries } -------------------------------------------------
 
@@ -457,13 +461,10 @@ export const C2S = {
   // operator loadout (DESIGN §16): stored per session/seat; accepted until the match leaves INFO_CHECK — `ops` (0.2.2):
   // the per-operator 潜能 / 练度 (absent = none set: every operator at 潜能 6, 精英2 Lv.60)
   'room.loadout': { entries: isLoadoutEntries, ops: isLoadoutOps, $optional: ['ops'] },
-  // 干员皮肤 (custom_docs/SKINS.md): public, so it is accepted in any room phase — no need to freeze it at INFO_CHECK
   // 名片干员: the operator a seat card shows (shared/playerCard.js). Cosmetic ids only — never a URL, identity or stat.
   'room.card': { charId: isCardPortraitId, avatar: isCardAvatarId, $optional: ['charId', 'avatar'] },
-  'room.skins': { skins: isSkinSelection },
-  // install one skin's files on this server, on demand (custom_docs/SKINS.md). The server answers at once and reports the
-  // outcome later, as `skins.changed` — an install is tens of seconds and the client gives up after 8 (net.js).
-  'room.skin.install': { skinId: isSkinId },
+  // 干员皮肤 (docs/SKINS.md): display-only choices, one entry per operator, accepted in INFO_CHECK only
+  'room.skins': { choices: isSkinChoices },
   // operator ownership (干员持有, 0.2.0 补位): stored per session / seat; a match takes the list its seat had when it
   // started (an out-of-match setting — during a match it is stored for the next one: ROOM_STARTED)
   'room.ownership': { notOwned: isNotOwnedList },

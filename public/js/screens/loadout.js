@@ -769,7 +769,7 @@ export function DataMissing({ files }) {
 
 /** The overlay screen (`leaving`: closed, fading out). */
 function LoadoutScreen({ st, leaving = false }) {
-  const ready = useData('chess', 'bonds', 'assets', 'local', 'backups', 'garrisons', 'effects', 'skins');
+  const ready = useData('chess', 'bonds', 'assets', 'local', 'backups', 'garrisons', 'effects');
   const phase = useStore((s) => s.match?.public?.phase || null);
   const inMatch = useStore((s) => !!s.room?.inMatch);
   // co-op briefing (INFO_CHECK, 25 s): the overlay covers the briefing's own countdown, so it shows the time left — the

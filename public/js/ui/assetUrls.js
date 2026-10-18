@@ -3,6 +3,8 @@
 // (glyph, CSS shape) when null. Only URLs present in the manifest are ever returned, so the client
 // never requests files the asset pipeline did not produce (no 404 noise in the console).
 
+import { manifestSkinKey } from '../../../shared/skins.js';
+
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const obj = (v) => (v && typeof v === 'object' ? v : null);
 
@@ -82,16 +84,17 @@ export function shopPortraitUrl(m, chess, choice) {
 }
 
 /**
- * The 精英二 立绘 choice's value in the local 商店立绘 map (ui/skins.js). Every real skinId starts with `char_`
- * (data/skins.json — `isSkinId` in shared/protocol.js is looser), so this cannot collide with one; and even a
+ * The 精英二 立绘 choice's value in the local 商店立绘 map (ui/skins.js). Every real skin id starts with `char_`
+ * (shared/skin-catalogue.js — `isSkinId` in shared/skins.js is looser), so this cannot collide with one; and even a
  * collision would only fall back to the operator's own portrait (`shopPortraitUrl`).
  */
 export const PORTRAIT_E2 = 'e2';
 
 /**
- * 干员皮肤 (custom_docs/SKINS.md): the tall 立绘 (180×360 — the same frame `chessPortraitUrl` fills) of a chosen skin, or
- * null when nothing is chosen / this install has no 立绘 for that skin. The skin is looked up through the operator
- * (`chars[charId].skins[skinId]`), so a portrait chosen for one chess shows for every chess of that operator.
+ * 干员皮肤 (docs/SKINS.md): the tall 立绘 (180×360 — the same frame `chessPortraitUrl` fills) of a chosen skin, or null
+ * when nothing is chosen / this install has no 立绘 for that skin. The skin is looked up through the operator
+ * (`chars[charId].skins[<official id>]` — shared/skins.js manifestSkinKey turns either id form into that key), so a
+ * portrait chosen for one chess shows for every chess of that operator.
  * @param {any} m manifest @param {any} chess chess record @param {string|null} skinId
  */
 export function skinPortraitUrl(m, chess, skinId) {
@@ -99,7 +102,7 @@ export function skinPortraitUrl(m, chess, skinId) {
   const charId = str(chess?.charId);
   if (!id || !charId) return null;
   const skins = obj(obj(obj(m)?.chars)?.[charId])?.skins;
-  return str(obj(obj(skins)?.[id])?.portrait);
+  return str(obj(obj(skins)?.[manifestSkinKey(id)])?.portrait);
 }
 
 /** Skill icon of a chess record (manifest `skills[iconId]`, else the empty skill sprite). */

@@ -51,7 +51,8 @@
 | [国际化](I18N.md) | 上游 | 翻译、语言文件与覆盖范围 |
 | [插件系统](PLUGINS.md) | 上游 | 清单、权限、覆盖与目录 |
 | [难度与平衡](BALANCE.md) | 上游 | 难度模型和测量 |
-| [干员皮肤](../custom_docs/SKINS.md) | 本分支 | 皮肤目录、安装、预载与战斗模型 |
+| [干员外观](OPERATOR-SKINS.md) | 上游 + 本分支 | 时装目录、`room.skins { choices }`、预载与战斗模型 |
+| [干员皮肤（插件叠加）](SKINS.md) | 上游 | 外观插件的 overlay schema 与显示规则 |
 | [性能](../custom_docs/development/PERFORMANCE.md) | 本分支 | Worker 池、预载与性能优化 |
 | [状态同步链路基线](../custom_docs/development/STATE_SYNC_BENCHMARK.md) | 本分支 | 视图构建/差分/检查点的分段成本与端到端对照,以及计划三条优先级的实测判定(配套[增量传输](../custom_docs/development/STATE_DELTA.md)、[增量压测](../custom_docs/development/STATE_DELTA_BENCHMARK.md)) |
 | [管理界面移动端密度](../custom_docs/development/MOBILE_UI.md) | 本分支 | 非战场管理界面的紧凑层、变量契约与真机验证边界 |

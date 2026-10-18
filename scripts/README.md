@@ -7,6 +7,7 @@
 | `start-windows.bat`、`start-windows.ps1` | Windows 启动入口 |
 | `start.sh` | macOS / Linux 启动入口 |
 | `launch.mjs`、`open-browser.mjs` | 启动检查和打开浏览器 |
+| `deploy-compose.mjs` | 生成 docker compose 部署用的环境文件（见[部署指南](../custom_docs/operations/DEPLOY.md)） |
 | `install-service-windows.ps1`、`run-server.cmd` | Windows 开机自启和服务启动；本机生成的 `service.env.cmd` 不入库 |
 | `make-windows-bundle.mjs` | 制作 Windows 便携包；见[Windows 说明](../docs/WINDOWS.md) |
 | `network-probe.ps1` | 本地网络与 WebSocket 诊断 |

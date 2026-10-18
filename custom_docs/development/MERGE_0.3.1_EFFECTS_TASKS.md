@@ -258,8 +258,9 @@ node tools/i18n.mjs extract                                   # 必须 "0 Chines
 | 皮肤选择器 | 我们的 `ui/skinPicker.js`（含商店立绘 `PORTRAITS_PREF`、安装状态、spine 预览） | 插件驱动的 `ui/{skinAssets,skinsModel,pluginSkinPicker,dynamicIllustration}.js` | 抄过来会丢掉商店立绘和 DIY 槽皮肤同步 |
 | 状态增量 | `shared/stateDelta.js`（我们从 xinhai `2abc60f` 移植） | 同一份 xinhai 代码的另一个版本 | 两版都没有共同 base；我们这版已接线 + 有基准测试 |
 | 集群 / 持久化 | 不接 `server/cluster/**`（17 文件）、`server/persist/**`（6 文件） | 全套 | 我们保留自己的 worker + Redis（`server/redis.js` `redisState.js`），4c4g 参数已按实测定好 |
-| 战斗线程池 | 不接 `server/match/combat/**`（7 文件） | 全套 | 从未接线；接进来要连带改 Match 生命周期与线程预算 |
+| 战斗线程池 | 不接 `server/match/combat/**`（7 文件 / 106 KB：`pool` 34KB 固定 worker 池、`runner` 22KB 主线程适配器、`engine` 20KB 阶段隔离、`rehearsal`+`trial` bot 预演、`worker` 私有协议、`data` 每线程数据集） | 全套 | ① 我们的 `Match` 在主线程跑 `server/sim/Battle.js`，接它要重写 Match 的拥有关系（phase/settlement/watchers）；② 已有 lane worker（`server/workers/matchPool.js`，xinhai 线）在做同一件事，两套线程模型并存＝双倍复杂度；③ 它强依赖 REF 版 `match/fields.js`、`finalAssault.js`、`gamedata.js`，我们的 sim 引擎是 xinhai 的；④ 4c4g 上每 worker 实测 ~87 MiB。`runner.js` 早已删过（`f4e2fcf1`） |
 | `match/extensions.js` | 不接 | REF 独有，被 `Match.js`/`effectsMeta.js` 引用 | 属于 REF 的扩展机制，不是本期四样 |
+| `ui/` 新面板 | 不抄 REF 独有的 35 个 `public/js/ui/*.js`（3535 行）：赛事视频还原（`bossPlates` 16KB、`downedPlate`、`protocolBoot`、`turnBanner`、`turnPopup`）、房间增强（`nickname`、`playerCard`、`opPicker`、`roomCues`、`lobbyFeedback`、`matchNotice`、`notices`、`announcements`、`serverStatus`、`danmaku`、`teamLayout`、`emblem`、`siteBoards`）、素材下载（`assetDownload`/`assetImport`/`assetSection`/`materialImage`，与我们 `public/js/resources/**` 功能重叠）、对局内件（`bondPlan`、`offerOverlay`、`revival`、`gameLoading`）、管理台（`testConsole` 16KB、`testDock` 8KB、`testAudit`、`experimental`）、模型（`operatorPresetModel`） | REF 独有 | 每个都要配套 CSS + i18n + `m.public.*` 新字段与后端支持，单抄一个文件是死代码；且不属于本期四样。其中 `skinAssets`/`skinsModel`/`pluginSkinPicker`/`dynamicIllustration` **禁止抄**（与我们的 `ui/skinPicker.js` 同位置冲突） |
 
 ---
 

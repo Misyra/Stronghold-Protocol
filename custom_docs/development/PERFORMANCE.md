@@ -78,6 +78,20 @@
 - 首次加载：版本缓存主要改善重复访问。首次下载仍受网络、贴图大小和音频大小影响；进一步缩减资源需同时验证透明度、Spine 图集、音质与兼容性。
 - WebSocket：项目已有压缩开关、状态合并和发送节流。高并发部署应实测 CPU、连接内存和出网流量再选择压缩策略。
 
+## 本机微基准（取自 xinhai）
+
+四个基准脚本逐字取来（`tools/match-workerbench.mjs`、`tools/persistbench.mjs`、`tools/wsbench.mjs`、`tools/server-hotpathsbench.mjs`），它们测的是**本机微基准**，不是线上容量：没有浏览器、没有 TLS、没有战斗 CPU。
+
+```sh
+node tools/match-workerbench.mjs --matches 8 --lanes 2 --rounds 20   # 对局线程池的 IPC 往返
+node tools/persistbench.mjs                                          # 存档：同步基线 vs 异步保存
+node tools/wsbench.mjs --clients 32                                  # 本机 WebSocket（另起子进程）
+node tools/server-hotpathsbench.mjs --matches 8 --lanes 2            # 资源检查 / 状态广播 / INFO_CHECK 抓档
+```
+
+本机（Windows，M3 级机器，8 线程池）实测：8 局 / 2 条 lane 的 IPC 往返 p50 0.14 ms、p95 0.34 ms、p99 0.70 ms，160 次调用主线程事件循环忙碌 3.2 ms；存档基准 250 局（5.5 MB 文档）同步基线 114 ms、异步保存 43 ms，主线程投递 0 ms、最长心跳间隔 88 ms —— 88 ms 就是「主线程抓快照 + 结构化克隆」的真实成本，编码本身在持久化 Worker 里。
+
+两处按本分支的契约改过（原脚本写的是上游的 API）：`persistbench` 的 store 用 `save(doc)` 而不是 `saveSerialized(buffer)`，并且把基准里的对局摆成真实房间形状放进 `lobby.rooms` —— 本分支的 Persister 只给「房间里正在跑的对局」拍检查点，否则测到的只是几十字节的元数据文档。
 ## 参考分支的移植与取舍
 
 对照仓库 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol)，检视版本 `a759f36`。两边均为 GPL-3.0-or-later；只移植适合当前 0.1.2 的性能改动，未合入该分支的新玩法和匹配实现。

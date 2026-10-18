@@ -81,9 +81,12 @@ node tools/i18n.mjs extract                                   # 必须 "0 Chines
 
 下面这些在干净树上就是红的。你唯一要证明的是：**你改完之后，红名单没有变长**。
 
+> 更新（2026-10-19）：`test/sim/**` 与 `test/content/kits_alt_t3.test.js` 现在**全绿**（890 + 36 项），
+> 它们的基线是「零失败」——`test/sim` 里再出现红，就是你自己弄坏的。
+
 | 用例 | 现象 | 结论 |
 |---|---|---|
-| `test/content/kits_alt_t3.test.js:276` 等 5 项（琳琅诗怀雅 S3 千金一掷） | 推击/金币断言失败 | 已确认既有（clean tree 复现） |
+| ~~琳琅诗怀雅 S3 千金一掷（5 项）~~ | ~~金币结算 / 推击断言失败~~ | **已修（2026-10-19 `49ac63d9`）**：0.3.1 的 kit 撤回了「满币自动关闭 + 结算金币」，用例跟着改成钉住新行为。`test/sim/**` 现在 890 项全绿 —— 这一组**不再**是基线 |
 | `test/build-size.test.js:146` | 需要 `npm run build` 的产物 | 已确认既有 |
 | `test/plugins/records.test.js:75`、`errors.test.js:40`、`tool.test.js:110` | schema / `PLUGIN_*` 错误码 / 模板素材漂移 | 疑似既有，未逐条复现；与本次改动无交集 |
 | `test/ops/syn-ban-list.test.js:12` | 封禁名单漂移 | 疑似既有（`node tools/net-ban.mjs` 可重生成） |
@@ -114,7 +117,7 @@ node tools/i18n.mjs extract                                   # 必须 "0 Chines
   server/sim/buffs.js
   ```
 - **步骤**：拷 7 个 → 跑 eslint → 跑 `test/sim/**` → 跑 `test/render/**`。
-- **验收**：`test/sim` 失败集合 = 基线（那 5 项琳琅诗怀雅）；`test/render` 失败集合 = 基线（python + 素材 4 项）；
+- **验收**：`test/sim/**` **全绿**（890 项，零失败）；`test/render` 失败集合 = 基线（python + 素材 4 项）；
   `test/match` 与改动前一致。
 - **回滚**：`git checkout -- <7 个文件>`。
 
@@ -199,7 +202,7 @@ node tools/i18n.mjs extract                                   # 必须 "0 Chines
     REF 的这段是旧版（死代码 `checkSkinSelection`/`operatorCharIds`），**不要回退**。
 - **硬验收（最重要的一批）**：
   1. `node tools/golden.mjs` —— 与 `test/golden/*.json` 逐字节一致，**变了就是错，不是「优化」**。
-  2. `test/sim/**` 失败集合 = 基线。
+  2. `test/sim/**` 全绿（890 项）——sim 的基线是零失败。
   3. `test/match/**` 全绿（sim 的下游）。
   4. `test/golden*` 全绿。
 - **回滚**：整批 `git reset --hard HEAD`（合并中，未提交时）。
@@ -244,7 +247,7 @@ node tools/i18n.mjs extract                                   # 必须 "0 Chines
 2. 确认 `server/match/combat/**` 7 个文件仍未接入（`git grep -n "match/combat" server` 应为空）。
 3. 跑 `test/docs-paths.test.js`、`test/docs-consistency.test.js`、`test/package.test.js`、`test/plugin-package.test.js`。
 4. 最终全量按目录跑（一遍跑不完 917 个文件，会超时）：
-   `root 1959 / ui 1000 / render+resources 1230 / sim 887 / match 463 / plugins+history+studio+ops 249 / content 170`，
+   `root 1959 / ui 1000 / render+resources 1230 / sim 890 / match 463 / plugins+history+studio+ops 249 / content 170`，
    判绿标准 = 失败集合等于第 4 节基线。
 
 ---
@@ -261,6 +264,12 @@ node tools/i18n.mjs extract                                   # 必须 "0 Chines
 | 战斗线程池 | 不接 `server/match/combat/**`（7 文件 / 106 KB：`pool` 34KB 固定 worker 池、`runner` 22KB 主线程适配器、`engine` 20KB 阶段隔离、`rehearsal`+`trial` bot 预演、`worker` 私有协议、`data` 每线程数据集） | 全套 | ① 我们的 `Match` 在主线程跑 `server/sim/Battle.js`，接它要重写 Match 的拥有关系（phase/settlement/watchers）；② 已有 lane worker（`server/workers/matchPool.js`，xinhai 线）在做同一件事，两套线程模型并存＝双倍复杂度；③ 它强依赖 REF 版 `match/fields.js`、`finalAssault.js`、`gamedata.js`，我们的 sim 引擎是 xinhai 的；④ 4c4g 上每 worker 实测 ~87 MiB。`runner.js` 早已删过（`f4e2fcf1`） |
 | `match/extensions.js` | 不接 | REF 独有，被 `Match.js`/`effectsMeta.js` 引用 | 属于 REF 的扩展机制，不是本期四样 |
 | `ui/` 新面板 | 不抄 REF 独有的 35 个 `public/js/ui/*.js`（3535 行）：赛事视频还原（`bossPlates` 16KB、`downedPlate`、`protocolBoot`、`turnBanner`、`turnPopup`）、房间增强（`nickname`、`playerCard`、`opPicker`、`roomCues`、`lobbyFeedback`、`matchNotice`、`notices`、`announcements`、`serverStatus`、`danmaku`、`teamLayout`、`emblem`、`siteBoards`）、素材下载（`assetDownload`/`assetImport`/`assetSection`/`materialImage`，与我们 `public/js/resources/**` 功能重叠）、对局内件（`bondPlan`、`offerOverlay`、`revival`、`gameLoading`）、管理台（`testConsole` 16KB、`testDock` 8KB、`testAudit`、`experimental`）、模型（`operatorPresetModel`） | REF 独有 | 每个都要配套 CSS + i18n + `m.public.*` 新字段与后端支持，单抄一个文件是死代码；且不属于本期四样。其中 `skinAssets`/`skinsModel`/`pluginSkinPicker`/`dynamicIllustration` **禁止抄**（与我们的 `ui/skinPicker.js` 同位置冲突） |
+
+### 已被上游撤回、不要再恢复
+
+| 机制 | 本分支的旧决定 | 上游 | 现在的实现 |
+|---|---|---|---|
+| 琳琅诗怀雅 S3 千金一掷 | 2026-10-04：金币满 10 且技能攻击范围里有地面敌人 → 自动关闭；关闭时把所有金币按「前方 2-4 + 她阻挡的地面单位」分掉（每币一次物理伤害 + 径向推开） | 2026-10-17 撤回（kit 注释原文：`Maintainer 2026-10-17 withdrew the 2026-10-04 cap-triggered close.`；依据 PRTS「通常不会自动关闭技能」+ `skill_table skchr_swire2_3` 只在主动关闭时花币） | 无限持续 toggle，二连击，杀人给币，**金币只涨不花**，关闭/撤退都不结算。钉在 `test/sim/feedback3-swire-s3.test.js`（文件头写了来龙去脉） |
 
 ---
 

@@ -22,6 +22,11 @@
 
 - 对局跑在 lane 线程里时，存档是跨线程 `capture` 拍的，且不做版本跳过：[性能说明](../development/PERFORMANCE.md)。
 
+### 线协议层面的验证（不需要真的 Redis）
+
+`test/redis-wire.test.js` 起一个最小的 RESP 服务器（只用 `node:net`），让 `server/redis.js` 里真正的 `redis` 客户端连上去，跑完整条路：`HELLO 3` 的 RESP3 握手、`CLIENT SETINFO`、`SET key value EX 60`、换一个新 store 实例把文档读回来、`DEL` 清理；再验证 `saveSharded` 把分片合并成一份文档（坏分片跳过、不写成垃圾），以及 Redis 挂掉时 `load` 返回 `null` 且 `loadState='unavailable'`、`save` 返回 `false` 而不是抛，恢复后原来的文档还在。
+
+写这类测试要注意一件事：`redis` 客户端保持的 socket 会让 `node --test` 不退出。用例结束时必须 `await store.close()`（以及关掉假服务器），否则整套测试会挂住而不是失败 —— 第一次写这个用例就是这么卡了五分钟。
 ## 启用与升级
 
 `npm start` 默认开启，保存于仓库 `.state/server-3000`（端口不同则目录名不同）。每 10 秒刷新一次，在开局和开战前额外检查保存，正常关服先等待已有写入，再写最后一次状态，然后关闭房间。

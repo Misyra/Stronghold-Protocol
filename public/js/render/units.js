@@ -792,6 +792,8 @@ export class UnitView {
   _loadPicture(replace = false) {
     const a = this.ctx.assets;
     const url = this._pictureUrl();
+    // a skin's picture that does not load: the operator's own (display only — the skin never changes the unit)
+    const defaultUrl = a?.picture ? a.picture(this.info.avatar) || a.picture(this.info.spine) : null;
     const old = replace && this._pic && this._pic.state === 'img' ? this._pic : null;
     // 干员皮肤 (custom_docs/SKINS.md): the cache key carries the skinId, else switching skins would keep the previous portrait
     this._pic = { key: String(this.info.avatar || this.info.defId || 'unknown') + (this.info.skin ? '|' + this.info.skin : ''), color: this._frameColor(), img: null, state: 'none', shown: null, t0: nowMs(), url, prev: !!old };
@@ -800,7 +802,7 @@ export class UnitView {
     if (cached) { this._pic.img = cached; this._pic.state = 'img'; return; }
     this._pic.state = 'wait';
     const pic = this._pic;
-    Promise.resolve().then(() => a.image(url)).then((img) => {
+    Promise.resolve().then(() => a.image(url)).then(img => img || (defaultUrl && defaultUrl !== url ? a.image(defaultUrl) : null)).then((img) => {
       if (img) { pic.img = img; pic.state = 'img'; } else pic.state = 'none';
     }, () => { pic.state = 'none'; });
   }
@@ -970,6 +972,7 @@ export class UnitView {
         actor?.destroy();
         console.warn('[render] spine build failed', id, err?.message || err);
         this._releaseEntry(entry);
+        if (entry.fallback) this._acquireSpine(entry.fallback, id, retry);
         // a cosmetic plugin's model the renderer cannot build falls back like one that did not load (assets.js `failed`:
         // the manifest changes, retryAssets loads the installation's); the installation's own: no change
         try { a.failed?.(entry.skel); } catch { /* ignore */ }

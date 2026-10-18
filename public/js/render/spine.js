@@ -438,8 +438,15 @@ export class SpineActor {
     this._applied = false;        // an update has posed the skeleton since its clip last changed (poseHeld)
     this._posed = false;          // the skeleton was ever posed (a model frozen before that shows its clip's first frame)
     this._appliedTint = undefined; // the tint that update put on the slots (pixi-spine applies `tint` in update)
-    try { this._play(this._idleName(), true); }
-    catch (err) { this.destroy(); throw err; }
+    try {
+      this._play(this._idleName(), true);
+      // Async PREP loads may be drawn or measured before the first tick; pose the idle without advancing its clock.
+      this.spine.update(0);
+      // …still as never played: a clip set before the first tick replaces it without a mix from it (spine's
+      // setAnimation skips mixing from an entry with nextTrackLast -1, as before this pose)
+      const posed = this.spine.state?.tracks?.[0];
+      if (posed) posed.nextTrackLast = -1;
+    } catch (err) { this.destroy(); throw err; }
   }
 
   /** Enable / disable the skeleton's clipping masks. */

@@ -438,6 +438,9 @@ export class BoardScene {
     this.sceneWater = [];
     const buckets = new Map();
     for (const c of pack.chunks || []) {
+      // The extractor keeps disabled, ungrouped objects as 'inactive' (tools/local-extract/scenes.py). Their bounds can
+      // overlap the boss area (its untextured survival-shadow planes): a camera switch must never show them.
+      if (c.group === 'inactive') continue;
       if (c.group && !sceneGroupVisible(pack.groups?.[c.group], this.area)) continue;
       const info = infos[c.material] || null;
       const mk = sceneMaterialKey(c, info);

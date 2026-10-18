@@ -56,14 +56,18 @@ test('real four-player sockets: host-only proposal, unanimous sync, reconnect an
   const voting = await host.waitFor('m.public', (p) => !!p.rerollVote);
   assert.equal(voting.deadline, 0);
   assert.equal(voting.rerollVote.voters.length, 4);
+  assert.equal(voting.rerollVote.need, 3, 'ceil(0.75 × 4)');
   assert.deepEqual(voting.rerollVote.agreed, [host.id]);
+  assert.deepEqual(voting.rerollVote.rejected, []);
+  assert.ok(voting.rerollVote.deadline > voting.serverNow, 'the vote has its own 20 s clock');
   const voteId = voting.rerollVote.id;
   await err(spectator, { t: 'g.rerollVote', voteId, agree: true }, ERR.SPECTATOR);
   await err(guests[0], { t: 'room.cancelReroll', voteId }, ERR.NOT_HOST);
-  await ok(guests[0], { t: 'g.rerollVote', voteId, agree: true });
+  await ok(guests[1], { t: 'g.rerollVote', voteId, agree: false });
   await ok(guests[1], { t: 'g.rerollVote', voteId, agree: true });
-  assert.equal(m.setupRevision, 0, '3/4 agrees never refreshes');
-  await ok(guests[2], { t: 'g.rerollVote', voteId, agree: true });
+  assert.equal(m.setupRevision, 0, '2/4 agrees never refreshes');
+  await ok(guests[0], { t: 'g.rerollVote', voteId, agree: true });
+  await err(guests[2], { t: 'g.rerollVote', voteId, agree: true }, ERR.WRONG_PHASE);
   const all = [host, ...guests, spectator];
   const fresh = await Promise.all(all.map((c) => c.waitFor('m.public', (p) => p.setupRevision === 1)));
   for (const p of fresh) {
@@ -97,28 +101,49 @@ test('real sockets: reject/cancel/disconnect keep the setup and resume the count
   const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
   const clients = [];
   t.after(async () => { await Promise.all(clients.map((c) => c.terminate())); await srv.close(); });
-  for (const name of ['Host', 'Guest']) {
+  for (const name of ['Host', 'Guest', 'Guest2']) {
     const c = await TestClient.connect(`ws://127.0.0.1:${srv.port}/ws`);
     clients.push(c);
     await c.hello(name);
   }
-  const [host, guest] = clients;
+  const [host, guest, guest2] = clients;
   await ok(host, { t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
   const room = await host.waitFor('room.state');
-  await ok(guest, { t: 'room.join', code: room.code });
-  await ok(guest, { t: 'room.ready', ready: true });
+  for (const c of [guest, guest2]) {
+    await ok(c, { t: 'room.join', code: room.code });
+    await ok(c, { t: 'room.ready', ready: true });
+  }
+  // 野排: the room was formed by matchmaking, so any seated human may propose (only the host cancels)
+  srv.lobby.rooms.get(room.code).fromMatchmaking = true;
   await ok(host, { t: 'room.start' });
   const initial = await host.waitFor('m.public', (p) => p.phase === 'INFO_CHECK');
   const m = srv.lobby.rooms.get(room.code).match;
-  for (const finish of ['reject', 'cancel', 'disconnect']) {
-    await new Promise((resolve) => setTimeout(resolve, 310));
-    await ok(host, { t: 'room.rerollSetup', setupRevision: 0 });
-    const voting = await host.waitFor('m.public', (p) => !!p.rerollVote);
-    if (finish === 'reject') await ok(guest, { t: 'g.rerollVote', voteId: voting.rerollVote.id, agree: false });
-    if (finish === 'cancel') await ok(host, { t: 'room.cancelReroll', voteId: voting.rerollVote.id });
-    if (finish === 'disconnect') await guest.terminate();
-    await host.waitFor('m.public', (p) => !p.rerollVote && p.deadline > 0);
-    assert.equal(m.setupRevision, 0);
-    assert.deepEqual(setupOf(m.publicView()), setupOf(initial));
-  }
+  // a rejection fails a 3-voter vote at once (need 3): the countdown comes back, nothing rerolled
+  await ok(host, { t: 'room.rerollSetup', setupRevision: 0 });
+  const voting = await host.waitFor('m.public', (p) => !!p.rerollVote);
+  assert.equal(voting.rerollVote.need, 3);
+  await ok(guest, { t: 'g.rerollVote', voteId: voting.rerollVote.id, agree: false });
+  await host.waitFor('m.public', (p) => !p.rerollVote && p.deadline > 0);
+  assert.equal(m.setupRevision, 0);
+  assert.deepEqual(setupOf(m.publicView()), setupOf(initial));
+  // another human proposes (one proposal per player per setup revision); the host cancels it
+  await new Promise((resolve) => setTimeout(resolve, 310));
+  await ok(guest, { t: 'room.rerollSetup', setupRevision: 0 });
+  const second = await host.waitFor('m.public', (p) => !!p.rerollVote);
+  await ok(host, { t: 'room.cancelReroll', voteId: second.rerollVote.id });
+  await host.waitFor('m.public', (p) => !p.rerollVote && p.deadline > 0);
+  assert.equal(m.setupRevision, 0);
+  assert.deepEqual(setupOf(m.publicView()), setupOf(initial));
+  // a disconnecting voter is dropped and the vote recounted (3 → 2 voters, need 3 → 2), never cancelled by it
+  await new Promise((resolve) => setTimeout(resolve, 310));
+  await ok(guest2, { t: 'room.rerollSetup', setupRevision: 0 });
+  const third = await host.waitFor('m.public', (p) => !!p.rerollVote);
+  await guest.terminate();
+  const recounted = await host.waitFor('m.public', (p) => p.rerollVote
+    && p.rerollVote.voters.length === 2 && p.rerollVote.need === 2);
+  assert.equal(recounted.rerollVote.id, third.rerollVote.id);
+  await ok(host, { t: 'room.cancelReroll', voteId: recounted.rerollVote.id });
+  await host.waitFor('m.public', (p) => !p.rerollVote && p.deadline > 0);
+  assert.equal(m.setupRevision, 0);
+  assert.deepEqual(setupOf(m.publicView()), setupOf(initial));
 });

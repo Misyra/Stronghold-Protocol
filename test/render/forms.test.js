@@ -560,7 +560,9 @@ test('render/app.js renderInfo keeps UnitInfo `form` (it used to drop it: views 
 
 test('render/app.js hands the `form` of a sim fx (shared/protocol.js fxForm) with the fx to the view and keeps the mode on the unit info', () => {
   const src = readFileSync(path.join(ROOT, 'public/js/render/app.js'), 'utf8');
-  assert.match(src, /const form = fxForm\(e\);[\s\S]{0,320}inf\.form = form[\s\S]{0,320}setForm\?\.\(form, x\)/);
+  // 0.3.1 routed the form fx through officialForm as well and hands it out as `fv?.setForm?.(form, x)`, so the three
+  // steps are the same but further apart in the source: the distances grew, the shape did not.
+  assert.match(src, /const form = fxForm\(e\);[\s\S]{0,900}inf\.form = form[\s\S]{0,900}setForm\?\.\(form, x\)/);
   // a form fx handed out late (render/interp.js takeEvents `late`) switches the model with its closing clip shortened by
   // the lateness and without replaying its telegraph
   assert.match(src, /const x = late > 0 \? \{ \.\.\.e\[4\], late, \.\.\.\(Number\(e\[4\]\.dur\) > 0 \? \{ dur: Math\.max\(0, Number\(e\[4\]\.dur\) - late\) \} : \{\}\) \} : e\[4\];/);
@@ -569,7 +571,8 @@ test('render/app.js hands the `form` of a sim fx (shared/protocol.js fxForm) wit
   // (a kit fx the official skill / talent effects stand for is not drawn procedurally either: render/vfx/skillfx.js
   // simFx, talentfx.js fx; nor a 重生's telegraph / revive the talents' rows stand for: wiring.form, talentfx.js form)
   assert.match(src, /if \(fv\) officialForm = wiring\.form\(fv, form, x\);/);
-  assert.match(src, /const official = !\(late > 0\) && wiring\.simFx\(e\[1\], Number\(e\[2\]\), Number\(e\[3\]\), e\[4\]\);\s*if \(!\(late > 0\) && !official && !officialForm\) fx\.simFx\(/);
+  // 0.3.1 added a fourth gate in front of the procedural fx: a plugin fx (pluginFx.simFx, render/vfx/pluginPlayer.js)
+  assert.match(src, /const custom = !\(late > 0\) && pluginFx\.simFx\(e\[1\], Number\(e\[2\]\), Number\(e\[3\]\), e\[4\]\);\s*const official = !\(late > 0\) && wiring\.simFx\(e\[1\], Number\(e\[2\]\), Number\(e\[3\]\), e\[4\]\);\s*if \(!\(late > 0\) && !official && !officialForm && !custom\) fx\.simFx\(/);
   assert.match(src, /interp\.takeEvents\(renderT, EVS, renderT - 1\.5, LATE\);/);
 });
 

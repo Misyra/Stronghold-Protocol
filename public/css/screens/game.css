@@ -1355,3 +1355,22 @@
 .console-ui__entry > .icon { width: calc(0.18 * var(--ui-unit, 1rem)); height: calc(0.18 * var(--ui-unit, 1rem)); margin-left: auto; color: var(--mint-400); flex: none; }
 .console-ui__entry-busy { margin-left: auto; color: var(--amber); font-size: calc(.13 * var(--t)); white-space: nowrap; }
 .console-ui__empty { margin: calc(0.35 * var(--ui-unit, 1rem)) 0; grid-column: 1 / -1; color: var(--text-lo); text-align: center; }
+
+
+/* 投票移出 (ui/kickVote.js): an offline teammate under AI takeover, and the open vote */
+.kick-bar {
+  position: absolute; right: .18rem; top: 50%; transform: translateY(-50%); z-index: 6;
+  display: flex; flex-direction: column; gap: .08rem; align-items: flex-end;
+}
+.kick-bar .team-rescue-action { position: static; }
+.team-kick-action .btn { font-size: calc(.14 * var(--t)); }
+.team-kick {
+  position: absolute; left: 50%; bottom: 1.1rem; transform: translateX(-50%); z-index: 8;
+  display: flex; flex-direction: column; gap: .04rem; align-items: center;
+  padding: .08rem .16rem; border-radius: .08rem;
+  border: 1px solid var(--red-premium); background: rgba(0, 0, 0, .72); color: var(--text-lo);
+  font-size: calc(.15 * var(--t)); text-align: center;
+}
+.team-kick strong { display: inline-flex; align-items: center; gap: .05rem; color: var(--red-premium); }
+.team-kick small { color: var(--text-dim); }
+.team-kick__actions { display: flex; gap: .08rem; }

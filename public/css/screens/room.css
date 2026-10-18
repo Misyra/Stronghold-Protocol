@@ -386,3 +386,40 @@
 .trusted-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 90; padding: 5px 16px; background: #9b202b; color: #fff; display: flex; justify-content: space-between; gap: 12px; }
 .trusted-banner button { color: inherit; text-decoration: underline; }
 .trusted-hash { overflow-wrap: anywhere; font-family: monospace; }
+
+
+/* AI 指定策略 (room.setBotBand): the strategy an AI seat takes in the draft, and the host's picker */
+.rseat__band {
+  position: absolute; inset-inline: .08rem; bottom: .5rem; z-index: 3;
+  display: inline-flex; align-items: center; justify-content: center; gap: .05rem;
+  min-height: .3rem; padding: 0 .08rem; border-radius: .06rem;
+  border: 1px solid var(--line-soft, rgba(255, 255, 255, .18));
+  background: rgba(0, 0, 0, .55); color: var(--text-lo); font-size: calc(.13 * var(--t));
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.rseat__band .icon, .rseat__band .spinner, .rseat__band .band-icon { width: .22rem; height: .22rem; }
+.rseat__band.is-set { color: var(--mint-400); border-color: var(--mint-700, rgba(120, 255, 210, .5)); }
+.rseat__band.is-edit { cursor: pointer; }
+.rseat__band.is-edit:hover:not(:disabled) { color: var(--mint-400); border-color: var(--mint-700, rgba(120, 255, 210, .5)); }
+.rseat__band.is-edit:disabled { opacity: .5; cursor: default; }
+.rseat__bandname { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+.botband__tip { margin: 0 0 .12rem; font-size: calc(.15 * var(--t)); }
+.botband__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(1.9rem, 1fr)); gap: .1rem; }
+.botband {
+  display: flex; flex-direction: column; align-items: center; gap: .05rem;
+  padding: .1rem .06rem; border-radius: .07rem; cursor: pointer;
+  border: 1px solid var(--line-soft, rgba(255, 255, 255, .16));
+  background: rgba(255, 255, 255, .03); color: var(--text-lo);
+  font-size: calc(.14 * var(--t)); text-align: center;
+}
+.botband:hover:not(:disabled):not(.is-used) { border-color: var(--mint-700, rgba(120, 255, 210, .5)); color: var(--mint-400); }
+.botband.is-sel { border-color: var(--mint-400); color: var(--mint-400); background: rgba(120, 255, 210, .08); }
+.botband.is-used { opacity: .45; cursor: not-allowed; }
+.botband:disabled { cursor: default; }
+.botband__auto { display: grid; place-items: center; width: .42rem; height: .42rem; }
+.botband__auto .icon { width: .32rem; height: .32rem; }
+.botband__name { font-weight: 600; }
+.botband__eff, .botband__used { font-size: calc(.115 * var(--t)); color: var(--text-dim); }
+.botband__used { color: var(--red-premium); }
+.botband__now { margin: .14rem 0 0; font-size: calc(.14 * var(--t)); }

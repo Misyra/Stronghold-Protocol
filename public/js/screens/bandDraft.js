@@ -190,6 +190,14 @@ export function BandDraftScreen() {
   const skipsLeft = draft.skipsLeft.has(myId) ? draft.skipsLeft.get(myId) : (skipped ? 0 : 1);
   const canSkip = !solo && myTurn && skipsLeft > 0 && draft.order.filter((pid) => !draft.picks.has(pid)).length > 1;
   const taken = solo ? new Map() : teammateBands(draft.picks, myId);
+  // AI 指定策略 (room.setBotBand): a strategy held for an AI seat counts as taken for everybody else until that seat
+  // picks it (m.public draft.reserved, bandId → the AI seat's playerId)
+  const reserved = solo ? {} : (pub?.draft?.reserved || {});
+  for (const [bid, pid] of Object.entries(reserved)) {
+    if (pid === myId || taken.has(bid)) continue;
+    const p = players.find((x) => x.playerId === pid);
+    taken.set(bid, [p || { playerId: pid, name: 'AI' }]);
+  }
   const pickers = new Map(); // bandId → players
   for (const [pid, bid] of draft.picks) {
     const p = players.find((x) => x.playerId === pid);
@@ -298,7 +306,8 @@ export function BandDraftScreen() {
             <span class="dband__lp num"><i></i>${b.totalHp}</span>
             <${BandOffTag} names=${offNames} />
             ${who.length ? html`<span class="dband__who">${who.slice(0, 4).map((p) => html`<${PlayerAvatar} key=${p.playerId} player=${p} size="sm" />`)}</span>` : null}
-            ${isTaken ? html`<span class="dband__taken">${t('队友已选')}</span>` : null}
+            ${reserved[b.bandId] && reserved[b.bandId] !== myId ? html`<span class="dband__taken is-ai">${t('AI 指定')}</span>`
+              : isTaken ? html`<span class="dband__taken">${t('队友已选')}</span>` : null}
           </button>`;
         })}
       </section>

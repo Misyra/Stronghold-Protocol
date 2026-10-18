@@ -35,6 +35,8 @@ export function seatEntries(room, checkpoint) {
       diy: p.isBot ? null : (p.diy || null),
       // 干员皮肤 (custom_docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
       skins: p.isBot ? null : (p.skins || null),
+      // room.setBotBand: the AI seat's designated strategy, restored with its checkpoint
+      ...(p.isBot && p.band ? { band: p.band } : {}),
     }));
   }
   return room.seats.filter(Boolean).map((s) => ({
@@ -48,6 +50,8 @@ export function seatEntries(room, checkpoint) {
     diy: s.isBot ? null : s.diy || null,
     // 干员皮肤 (custom_docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
     skins: s.isBot ? null : s.skins || null,
+    // room.setBotBand: the AI seat's designated strategy (absent when it picks by itself)
+    ...(s.isBot && s.band ? { band: s.band } : {}),
   }));
 }
 

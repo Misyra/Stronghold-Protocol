@@ -71,11 +71,18 @@ export class MatchViews {
       difficulty: this.difficulty,
       stageId: this.stageId,
       setupRevision: this.setupRevision,
+      // 投票移出 an offline AI-托管 teammate (kickVote.js): null or { id, proposerId, targetId, voters, agreed,
+      // rejected, need, deadline }
+      kickVote: this.kickVoteView(),
       rerollVote: this.setupVote ? {
         id: this.setupVote.id,
         proposerId: this.setupVote.proposerId,
         voters: this.setupVote.voters.slice(),
         agreed: [...this.setupVote.agreed],
+        // 0.3.0 (setupVote.js): the yes votes it needs, the no votes, its end (server clock ms)
+        rejected: [...this.setupVote.rejected],
+        need: this.setupVote.need,
+        deadline: this.setupVote.deadline,
       } : null,
       factions: this.factions.slice(),
       disabledBonds: [...new Set([...this.disabledBonds, ...this.staticInactiveBonds])].sort(),
@@ -117,6 +124,8 @@ export class MatchViews {
         // renderer reads info.skin off the unit rather than off the local player. Omitted when empty, which is the
         // normal case: skins are installed one at a time, on demand, and most players install none.
         ...(Object.keys(ps.skins).length ? { skins: ps.skins } : {}),
+        // the AI plays the seat because it stayed offline (_checkOffline): a 投票移出 target (kickVote.js)
+        ...(ps.offlineAutoplay && ps.autoplay && !ps.connected ? { offlineTakeover: true } : {}),
         // the LP this round's own battle will cost at settlement so far (COMBAT / 联防 only, omitted when 0)
         ...this._pendingLpView(ps),
       })),
@@ -137,6 +146,8 @@ export class MatchViews {
       v.draft = {
         order: d.order.slice(), turn: this.draftTurn(), picks: { ...d.picks }, skipsLeft: { ...d.skipsLeft }, turnDeadline: d.turnDeadline || 0,
         turnSeconds: d.untimed ? 0 : this.bandTurnMs() / 1000, untimed: !!d.untimed,
+        // room.setBotBand: the designated strategies still held for their AI seats (bandId → playerId; {} when none)
+        ...(this.botBands?.size ? { reserved: this.reservedBands() } : {}),
       };
     }
     if (this.phase === PHASE.SP_DRAFT && this.sp) {

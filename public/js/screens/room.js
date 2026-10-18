@@ -1,4 +1,5 @@
 import { useAccount, AccountTag } from '../ui/accounts.js';
+import { useGameData, BandIcon } from '../ui/gameComponents.js';
 import { TrophyBadge } from '../ui/trophies.js';
 import { isOwnerName, decorateOwnerName } from '../ui/ownerName.js';
 import { enabled as federationEnabled, currentNode } from '../federation.js';
@@ -219,7 +220,53 @@ function CardPicker({ current, list, m, onPick, onClose }) {
   <//>`;
 }
 
-function SeatCard({ seat, index, room, facts, myId, busy, onKick, onInvite, onAddBot, onRemoveBot, searching, portraits, onPickCard = null }) {
+/** AI 指定策略 (room.setBotBand): the strategy this AI seat takes in the strategy draft, or 自动选择. */
+function BotBandChip({ seat, editable, busy, onOpen }) {
+  const bandId = typeof seat.band === 'string' ? seat.band : null;
+  const body = html`${bandId ? html`<${BandIcon} bandId=${bandId} size="xs" /><span class="rseat__bandname">${bandId}</span>`
+    : html`<${Icon} name="robot" /><span class="rseat__bandname">${t('自动选择')}</span>`}`;
+  if (!editable || !onOpen) {
+    return html`<span class=${`rseat__band${bandId ? ' is-set' : ''}`} title=${t('开局策略')}>${body}</span>`;
+  }
+  return html`<button type="button" class=${`rseat__band is-edit${bandId ? ' is-set' : ''}`} disabled=${!!busy}
+    onClick=${onOpen} title=${t('指定该 AI 队友在开局时选择的策略')} aria-label=${t('指定 AI 策略')}>
+    ${body}${busy ? html`<${Spinner} size="sm" />` : html`<${Icon} name="edit" />`}</button>`;
+}
+
+/**
+ * AI 指定策略 (room.setBotBand): a grid of the strategies the room's draft offers — 自动选择 first, a strategy already
+ * designated to another AI seat greyed out (one AI seat per strategy). The host only.
+ */
+function BotBandPicker({ open, seat, seats, bands, busy, onClose, onPick }) {
+  if (!seat) return null;
+  const others = new Map();
+  for (const x of seats || []) if (x && x.isBot && x !== seat && typeof x.band === 'string') others.set(x.band, x.name);
+  const current = typeof seat.band === 'string' ? bands.find((b) => b.bandId === seat.band) : null;
+  return html`<${Modal} open=${open} utility=${true} title=${t('指定 AI 策略')} micro="AI STRATEGY" width="min(760px, 94vw)" onClose=${onClose}
+    actions=${html`<${Button} variant="secondary" data-autofocus onClick=${onClose}>${t('关闭')}<//>`}>
+    <p class="botband__tip t-dim">${t('开局选择策略时，该 AI 队友会直接选择指定的策略，其他博士不能再选它。')}</p>
+    <div class="botband__grid" role="listbox" aria-label=${t('策略')}>
+      <button type="button" role="option" aria-selected=${seat.band == null ? 'true' : 'false'} disabled=${!!busy}
+        class=${`botband${seat.band == null ? ' is-sel' : ''}`} onClick=${() => onPick(null)}>
+        <span class="botband__auto"><${Icon} name="robot" /></span><span class="botband__name">${t('自动选择')}</span>
+      </button>
+      ${(bands || []).map((b) => {
+        const other = others.get(b.bandId) || null;
+        return html`<button key=${b.bandId} type="button" role="option" aria-selected=${seat.band === b.bandId ? 'true' : 'false'}
+          aria-disabled=${other ? 'true' : 'false'} disabled=${!!busy}
+          class=${`botband${seat.band === b.bandId ? ' is-sel' : ''}${other ? ' is-used' : ''}`}
+          title=${other ? t('已指定给 {name}', { name: other }) : (b.effectName || '')}
+          onClick=${() => { if (!other) onPick(b.bandId); }}>
+          <${BandIcon} bandId=${b.bandId} size="md" /><span class="botband__name">${b.name}</span>
+          ${other ? html`<span class="botband__used">${other}</span>` : b.effectName ? html`<span class="botband__eff">${b.effectName}</span>` : null}
+        </button>`;
+      })}
+    </div>
+    <p class="botband__now t-dim">${current ? t('当前指定：{name}', { name: current.name }) : t('当前：自动选择')}</p>
+  <//>`;
+}
+
+function SeatCard({ seat, index, room, facts, myId, busy, onKick, onInvite, onAddBot, onRemoveBot, searching, portraits, onPickCard = null, onBotBand = null }) {
   const seatAccount = useAccount(seat && !seat.isBot ? seat.playerId : null);
   const [bad, setBad] = useState(null);
   const flash = useRise(!!seat && (seat.ready || seat.isBot || seat.playerId === room.hostId));
@@ -277,6 +324,8 @@ function SeatCard({ seat, index, room, facts, myId, busy, onKick, onInvite, onAd
       onClick=${() => onKick(index, seat.name, seat.playerId)} title=${t('将该博士移出同盟')} aria-label=${t('移出该博士')}><${Icon} name="user" /><${Icon} name="close" /></button>` : null}
     ${seat.isBot && facts.isHost ? html`<button type="button" class="rseat__kick" disabled=${busy === `rm${index}`}
       onClick=${() => onRemoveBot(index)} title=${t('移除该 AI 队友')} aria-label=${t('移除该 AI 队友')}><${Icon} name="robot" /><${Icon} name="close" /></button>` : null}
+    ${seat.isBot && room.mode !== 'solo' ? html`<${BotBandChip} seat=${seat} editable=${!!facts.isHost} busy=${busy === `band${index}`}
+      onOpen=${onBotBand ? () => onBotBand(index) : null} />` : null}
     <div class=${`rseat__plate${seatAccount?.card ? ' has-nc' : ''}`}>
       <${NameCardLayer} card=${seatAccount?.card} />
       ${isMe ? html`<span class="rseat__me" title=${t('你')}><${Icon} name="info" /></span>` : null}
@@ -467,11 +516,18 @@ export function RoomScreen() {
   // one tick a second: the room clock, and the queue's elapsed time while 同盟匹配 runs
   useEffect(() => { const id = setInterval(() => tick((x) => x + 1), 1000); return () => { clearInterval(id); alive.current = false; }; }, []);
   useData('chess', 'assets');
+  const gd = useGameData();
+  // the strategies a room's draft may offer (MULTI): sortId order, the same list the draft screen draws
+  const bandList = useMemo(() => (gd.list('bands') || [])
+    .filter((b) => b && (!Array.isArray(b.modeTypeList) || b.modeTypeList.includes('MULTI')))
+    .sort((a, b) => (a.sortId ?? 99) - (b.sortId ?? 99) || (a.bandId < b.bandId ? -1 : 1)), [gd.ready, data.locale()]);
   const m = data.get('assets');
   // 名片干员: the pickable operators, the default pool (5★/6★ by charId, the same order on every client), one's pick
   const cardList = useMemo(() => cardOperators(data.list('chess')), [data.get('chess')]);
   const [myCard, setMyCard] = useState(() => { const v = loadPref(CARD_PREF, ''); return typeof v === 'string' ? v : ''; });
   const [picking, setPicking] = useState(false);
+  // AI 指定策略 (room.setBotBand): the AI seat whose strategy the host is picking
+  const [bandSeat, setBandSeat] = useState(null);
   const portraits = useMemo(() => ({
     pool: cardList.filter((c) => (c.rarity ?? 0) >= 5).sort((a, b) => (a.charId < b.charId ? -1 : 1)),
     byChar: new Map(cardList.map((c) => [c.charId, c])), m, myId: me.playerId, myCard,
@@ -554,6 +610,8 @@ export function RoomScreen() {
   const start = () => run('start', () => net.request('room.start', {}));
   const addBot = () => run('add', () => net.request('room.addBot', {}));
   const removeBot = (seat) => run(`rm${seat}`, () => net.request('room.removeBot', { seat }));
+  // AI 指定策略 (room.setBotBand): the host names the strategy an AI seat takes in the draft (null = 自动选择)
+  const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.request('room.setBotBand', { seat, bandId }); setBandSeat(null); });
   // 开始搜寻 = this fork's room queue (server/matchmakingRooms.js joinParty): the room ITSELF is the queue entry, so
   // nothing is re-queued here — room.state.matchmaking says whether it runs, and the server ends it on a match.
   const queueMatch = () => run('match', () => net.request('room.matchmaking', {}));
@@ -720,7 +778,8 @@ export function RoomScreen() {
     <main class="rs-seats">
       ${facts.seats.map((s, i) => html`<${SeatCard} key=${s ? `p${s.playerId}` : `e${i}`} seat=${s} index=${i} room=${room} facts=${facts}
         myId=${me.playerId} busy=${busy} onKick=${kick} onInvite=${() => copy('code')} onAddBot=${addBot} onRemoveBot=${removeBot} searching=${searching} portraits=${portraits}
-        onPickCard=${cardList.length ? () => setPicking(true) : null} />`)}
+        onPickCard=${cardList.length ? () => setPicking(true) : null}
+        onBotBand=${(i) => setBandSeat(i)} />`)}
       ${coop ? null : html`<aside class="solo-brief rs-brief brackets">
         <${MicroLabel} tone="mint">BRIEFING<//>
         <h2>${DIFFICULTY_NAMES[room.difficulty] ? t(DIFFICULTY_NAMES[room.difficulty]) : ''}<span class="num t-dim"> ${info.code}</span></h2>
@@ -733,6 +792,10 @@ export function RoomScreen() {
       </aside>`}
     </main>
     <${SpectatorBar} facts=${facts} myId=${me.playerId} busy=${busy} onRemove=${removeSpectator} onSit=${sit} />
+
+    <${BotBandPicker} open=${bandSeat != null && !!facts.seats[bandSeat]?.isBot} seat=${bandSeat != null ? facts.seats[bandSeat] : null}
+      seats=${facts.seats} bands=${bandList} busy=${busy === `band${bandSeat}`} onClose=${() => setBandSeat(null)}
+      onPick=${(bandId) => setBotBand(bandSeat, bandId)} />
 
     ${!searchShown ? portalEntry : null}
 

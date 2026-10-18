@@ -482,6 +482,10 @@ export const C2S = {
   // is for the classes that have settings (a cosmetic plugin has none, so it is ignored). room.state.content names the set
   'room.setPlugins': { plugins: (v) => isList(v, 32, (p) => isPlain(p) && isPluginId(p.id)
     && (p.settings === undefined || isMap(p.settings, 32, (k) => isStr(k, 32), isScalar))) },
+  // the strategy an AI seat takes in the strategy draft (host, co-op, before the match; server/lobby.js setBotBand):
+  // `seat` holds an AI, `bandId` is one the mode offers (null / absent = the seat picks by itself), one AI seat per
+  // strategy. The AI takes it in the draft, held for it until then (draft.reserved), and nobody else can pick it
+  'room.setBotBand': { seat: (v) => isInt(v, 0, MAX_SEATS - 1), bandId: nullable(isId), $optional: ['bandId'] },
   // the room's mode (DESIGN §32.6, P1c; host, before the match — like a difficulty change it un-readies the others): an
   // official mode of the room's type (the one of a difficulty: it sets the difficulty) or a mode a plugin of the room's
   // content set provides (room.state.content.modes; room.state.content.modeId while it is chosen)
@@ -495,6 +499,11 @@ export const C2S = {
   // match
   'g.infoReady': { setupRevision: (v) => isInt(v, 0, 2 ** 31), $optional: ['setupRevision'] },
   'g.rerollVote': { voteId: (v) => isInt(v, 1, 2 ** 31), agree: isBool },
+  // 投票移出 (kickVote.js): a vote of the connected humans to remove a teammate whose seat the AI plays because it
+  // stayed offline (掉线由 AI 接管). g.kickVote { targetId } proposes, g.kickBallot { voteId, agree } answers; a strict
+  // majority of the other connected humans passes it and the seat leaves the match like a 中途退出.
+  'g.kickVote': { targetId: isId },
+  'g.kickBallot': { voteId: (v) => isInt(v, 1, 2 ** 31), agree: isBool },
   'g.band': { bandId: isId },
   'g.bandSkip': {},
   // the strategy highlighted in the draft screen (user playtest #4 item 4): a turn that runs out takes it while it is

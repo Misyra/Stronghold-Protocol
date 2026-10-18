@@ -21,6 +21,9 @@ export class MatchIntents {
         if (!ps.infoReady) { ps.infoReady = true; this.markPublic(); this.maybeEndInfo(); }
         return OK;
       case 'g.rerollVote': return this.voteSetupReroll(ps, msg.voteId, msg.agree);
+      // 投票移出 an offline seat under AI takeover (kickVote.js)
+      case 'g.kickVote': return this.requestKickVote(ps, msg.targetId);
+      case 'g.kickBallot': return this.answerKickVote(ps, msg.voteId, msg.agree);
       case 'g.band': return this.pickBand(ps, msg.bandId);
       case 'g.bandSkip': return this.skipBand(ps);
       // the strategy highlighted in the draft screen (what a timed-out turn takes, timeoutBand)

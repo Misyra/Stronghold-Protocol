@@ -8,7 +8,7 @@
 //     Humans and bots take the lowest free seat index; seat indexes never compact.
 //   * ▸ Being in a LOBBY room and sending room.create / room.join implicitly leaves it. While your room is
 //     in a match, create/join of another room fails with ROOM_STARTED (send g.leave or room.leave first).
-//   * Host-only: room.setDifficulty, room.setAiPicksLast, room.addBot, room.removeBot, room.kick, room.start.
+//   * Host-only: room.setDifficulty, room.setAiPicksLast, room.setBotBand, room.addBot, room.removeBot, room.kick, room.start.
 //     ▸ Changing the difficulty or the AI-picks-last option (co-op only) un-readies the other humans.
 //     ▸ room.start requires every other human to be connected and ready; the host's start counts as the host's
 //     ready (the host may still toggle room.ready for display).
@@ -405,6 +405,8 @@ export class Room {
       matchmaking: !!this.matchmaking,
       seats: this.seats.map((s) => (s
         ? { seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, ready: s.ready, connected: s.connected && !s.left,
+          // an AI seat's designated strategy (room.setBotBand; null = it picks by itself)
+          ...(s.isBot ? { band: s.band ?? null } : {}),
           // 名片干员: the operator this seat's card shows (room.card) — absent until the player picks one
           ...(s.card && (s.card.charId || s.card.avatar) ? { card: s.card } : {}),
           // a room with gameplay plugins (header "Gameplay plugins"): has this player's page loaded and checked its content?
@@ -770,6 +772,7 @@ export class Lobby {
       case 'room.ready': return this.ready(session, msg);
       case 'room.setDifficulty': return this.setDifficulty(session, msg);
       case 'room.setAiPicksLast': return this.setAiPicksLast(session, msg);
+      case 'room.setBotBand': return this.setBotBand(session, msg);
       case 'room.console.enable': return this.enableConsole(session);
       case 'room.console.disable': return this.disableConsole(session);
       case 'room.addBot': return this.addBot(session);
@@ -1053,6 +1056,7 @@ export class Lobby {
       if (this.matchmaking.has(session)) this.matchmaking.cancel(session);
       room.difficulty = difficulty;
       if (room.content?.modeId) { const rest = { ...room.content }; delete rest.modeId; room.content = Object.freeze(rest); }
+      this.dropUnofferedBotBands(room);
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
       this.broadcastState(room);
     }
@@ -1231,6 +1235,7 @@ export class Lobby {
     this.dropReplay(room, session.playerId);
     room.difficulty = difficulty;
     room.content = content;
+    this.dropUnofferedBotBands(room);
     for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
     this.broadcastState(room);
     return OK;
@@ -1301,7 +1306,8 @@ export class Lobby {
     const name = BOT_NAMES.find((n) => !used.has(n)) || `AI·${idx + 1}`;
     let playerId;
     do playerId = 'ai_' + randomBytes(4).toString('hex'); while (room.seatOf(playerId));
-    room.seats[idx] = { seat: idx, playerId, name, isBot: true, ready: true, connected: true, left: false };
+    // band: the strategy the host designated for this AI seat in the strategy draft (room.setBotBand; null = its own pick)
+    room.seats[idx] = { seat: idx, playerId, name, isBot: true, ready: true, connected: true, left: false, band: null };
     // Keep only the origin country across restarts, never the source IP or a client-controlled value.
     room.seats[idx].botCountry = admission.country;
     this.botPopulation.track(room.seats[idx]);
@@ -1323,6 +1329,47 @@ export class Lobby {
     this.audit('room.botRemoved', session, room, { botPlayerId: target.playerId, seat });
     this.broadcastState(room);
     return OK;
+  }
+
+  /**
+   * room.setBotBand {seat, bandId} (header): host-only, before the match, co-op rooms only — the strategy the AI seat
+   * takes in the strategy draft, or null for its own pick. One AI seat per strategy. Like a difficulty change it
+   * un-readies the other humans.
+   */
+  setBotBand(session, { seat, bandId = null }) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    if (room.mode === 'solo') return fail(ERR.BAD_TARGET, 'solo rooms have no AI teammates');
+    const target = room.seats[seat];
+    if (!target || !target.isBot) return fail(ERR.BAD_TARGET, 'seat does not hold an AI');
+    if (bandId !== null) {
+      if (!this.bandOffered(room, bandId)) return fail(ERR.BAD_TARGET, 'strategy not offered in this mode');
+      if (room.seats.some((s) => s && s !== target && s.isBot && s.band === bandId)) return fail(ERR.BAD_TARGET, 'strategy designated to another AI');
+    }
+    this.dropReplay(room, session.playerId);
+    if ((target.band ?? null) !== bandId) {
+      target.band = bandId;
+      for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
+      this.broadcastState(room);
+    }
+    return OK;
+  }
+
+  /** A strategy the room's mode offers (server/match/gamedata.js bandAllowed, without building a match). */
+  bandOffered(room, bandId) {
+    const data = this.dataFor(room);
+    const b = data?.bands?.[bandId];
+    if (!b || typeof b !== 'object') return false;
+    const list = Array.isArray(b.modeTypeList) ? b.modeTypeList : null;
+    return !list || list.includes(room.mode === 'solo' ? 'SINGLE' : 'MULTI');
+  }
+
+  /** After a difficulty / mode / plugin change: an AI seat's strategy the new rules no longer offer goes back to automatic. */
+  dropUnofferedBotBands(room) {
+    if (!room.seats.some((s) => s && s.isBot && s.band != null)) return;
+    for (const s of room.seats) if (s && s.isBot && s.band != null && !this.bandOffered(room, s.band)) s.band = null;
   }
 
   /** Host removes another human before the match (header: room.kick). */
@@ -1379,7 +1426,8 @@ export class Lobby {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
-    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    // the host of a private room proposes; in a matchmade room (野排) any seated human does (the host may be gone)
+    if (room.hostId !== session.playerId && (cancel || !room.fromMatchmaking)) return fail(ERR.NOT_HOST);
     const method = cancel ? 'cancelSetupReroll' : 'requestSetupReroll';
     if (!room.match || typeof room.match[method] !== 'function') return fail(ERR.WRONG_PHASE);
     return this.callMatch(room, method, session.playerId, cancel ? msg.voteId : msg.setupRevision) || fail(ERR.INTERNAL);
@@ -1744,6 +1792,8 @@ export class Lobby {
         diy: own ? own.diy : null,
         // 干员皮肤 (custom_docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
         skins: s.isBot ? null : (s.skins || null),
+        // room.setBotBand: an AI seat's designated strategy (absent when it picks by itself)
+        ...(s.isBot && s.band ? { band: s.band } : {}),
       };
     });
     // lastPublic / results: the latest m.public broadcast and the m.result frames (encoded), kept for the replay.

@@ -221,6 +221,7 @@ import { MatchIntents } from './match/intents.js';
 import { MatchPause } from './match/pause.js';
 import { MatchPhases } from './match/phases.js';
 import { MatchSetupVote } from './match/setupVote.js';
+import { MatchKickVote } from './match/kickVote.js';
 import { MatchSpDraft } from './match/spDraft.js';
 import { MatchPrep } from './match/prep.js';
 import { MatchCombat } from './match/combat.js';
@@ -380,6 +381,16 @@ export class Match {
       this.players.set(s.playerId, new PlayerState(this, s));
     }
     if (!this.players.size) throw new TypeError('Match: seats required');
+    /**
+     * Strategies the room designated for AI seats (opts.seats[].band, room.setBotBand): AI playerId → bandId, in seat
+     * order. The AI seat takes its strategy in the draft, held for it until then (phases.js bandTaken / reservedBands).
+     * @type {Map<string, string>}
+     */
+    this.botBands = new Map();
+    for (const s of opts.seats) {
+      const ps = s && typeof s.playerId === 'string' ? this.players.get(s.playerId) : null;
+      if (ps?.isBot && typeof s.band === 'string' && s.band) this.botBands.set(ps.playerId, s.band);
+    }
     this.order = [...this.players.values()].sort((a, b) => a.seat - b.seat);
     /**
      * Spectator seats (opts.spectators / addSpectator): playerId → a stand-in every watch path treats like an eliminated
@@ -430,6 +441,16 @@ export class Match {
     this.setupVote = null;
     this._setupVoteSeq = 0;
     this._lastSetupVoteAt = -Infinity;
+    /** playerId → the setup revision it already proposed a reroll for (setupVote.js) @type {Map<string, number>} */
+    this._setupProposals = new Map();
+    // 投票移出 (kickVote.js): the open vote, its id sequence, targetId → the round a vote on it failed, playerId →
+    // the last proposal ms
+    this.kickVote = null;
+    this._kickVoteSeq = 0;
+    /** @type {Map<string, number>} */
+    this._kickFailed = new Map();
+    /** @type {Map<string, number>} */
+    this._kickVoteAt = new Map();
     this._turnTimer = null;
     this._pubDirty = false;
     this._pubTimer = null;
@@ -482,7 +503,7 @@ export class Match {
 }
 
 // the method modules, in this order (a name defined twice is an error, never a silent override)
-for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchRehearsal, MatchReports, MatchUnite, MatchBoss, MatchSettle]) {
+for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchKickVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchRehearsal, MatchReports, MatchUnite, MatchBoss, MatchSettle]) {
   for (const key of Reflect.ownKeys(part.prototype)) {
     if (key === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(Match.prototype, key)) throw new Error(`Match.${String(key)} is defined twice`);

@@ -231,13 +231,14 @@ export const MATCH_FIELDS = Object.freeze([
   'roomCode', 'mode', 'difficulty', 'modeId', 'seed', 'isSolo', 'aiPicksLast', 'consoleEnabled', 'battlePrefix', 'timerScale', 'gameSpeed',
   'botRehearsal', 'clientCombat', 'verifyMode', 'headlessSliceMs', 'verifyStats', '_battleSeq', 'pausedMs',
   'stageId', 'factions', 'bossId', 'hiddenBossId', 'disabledBonds', 'staticInactiveBonds', 'bannedChess',
-  'round', 'uidSeq', 'loneHuman', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
+  'round', 'uidSeq', 'loneHuman', 'botBands', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
   'simErrorLog', 'draft', 'sp', 'wave', 'bossWaves', 'setupRevision', 'setupVote', '_setupVoteSeq', '_lastSetupVoteAt', '_botEmotesSettledRound', '_botEmotesMerges',
 ]);
 
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */
 export const PLAYER_FIELDS = Object.freeze([
-  'playerId', 'seat', 'name', 'isBot', 'connected', 'left', 'autoplay', 'consoleRoundUses', 'consoleTotalUses', 'alive', 'lp', 'bandId', 'funds',
+  'playerId', 'seat', 'name', 'isBot', 'connected', 'left', 'autoplay', 'offlineRounds', 'offlineAutoplay',
+  'consoleRoundUses', 'consoleTotalUses', 'alive', 'lp', 'bandId', 'funds',
   'pendingFunds', 'ready', 'infoReady', 'lastEmoteAt', 'loadout', 'ops', 'personalChoice', 'shop', 'offers', 'hand', 'temp', 'prepsEnded',
   '_tempDue', 'board', 'layers', 'pendingLayerGains', 'bondCountBonus', 'effects', 'bounties', 'counters', 'round',
   'deployCapBonus', 'deployCapMin', 'deviceOverrides', 'tileOverrides', 'stats', 'eliminatedRound', 'lpAtFinal',
@@ -256,7 +257,7 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
   'workerStats', '_workerAuditAt', 'offlinePaused', 'rehearsalPressure', 'registry', 'dispatcher', 'BattleClass',
   'workerPool', '_workerTasks', 'battleContent', 'botRehearsalLimit', 'botSliceMs', 'ds', 'paused', '_pausedAt',
   '_bossPubTimer', '_bossPubAt', '_bossClockOn', '_progressTimer', '_bossClock', '_lastPoolAt', '_poolTimer',
-  '_lastPoolKey', 'pacer', 'rngSetup', 'rngShop', 'rngWaves', 'rngDraft', 'rngBots', 'rngMeta', 'players', 'order',
+  '_lastPoolKey', '_setupProposals', 'kickVote', '_kickVoteSeq', '_kickFailed', '_kickVoteAt', 'pacer', 'rngSetup', 'rngShop', 'rngWaves', 'rngDraft', 'rngBots', 'rngMeta', 'players', 'order',
   'spectators', 'stage', 'pool', 'itemPool', 'phase', 'deadline', 'overtimeAt', 'ended', 'disposed', 'startedAt',
   '_timers', '_phaseTimer', '_infoAdvanceTimer', '_turnTimer', '_pubDirty', '_pubTimer', '_lastPubAt', '_lastPubJson',
   '_privDirty', '_prepEndQueued', 'bossPairs', 'fields', 'runner', 'watchers', 'watchPref', 'lastResults', 'unitePlan',
@@ -471,6 +472,14 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
     ps._lastPriv = null;
     ps.recompute();
   }
+  // the reroll vote and its proposal marks do not survive a restore (setupVote.js: transient)
+  m.setupVote = null;
+  m._setupProposals = new Map();
+  // the kick vote is transient too (kickVote.js)
+  m.kickVote = null;
+  m._kickFailed = new Map();
+  m._kickVoteAt = new Map();
+  if (!(m.botBands instanceof Map)) m.botBands = new Map();
   enterPhase(m, doc);
   return true;
 }

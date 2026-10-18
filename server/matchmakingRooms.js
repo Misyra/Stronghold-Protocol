@@ -24,6 +24,8 @@ export function allocateMatchmakingGroup(lobby, group, difficulty) {
   const created = lobby.create(group[0], { mode: 'coop', difficulty });
   if (!created.ok) return created;
   const room = lobby.roomOf(group[0]);
+  // 野排: any seated human may propose the setup reroll vote (server/lobby.js rerollSetup)
+  room.fromMatchmaking = true;
   try {
     for (const s of group.slice(1)) {
       const joined = lobby.join(s, { code: room.code });
@@ -69,6 +71,7 @@ export function mergePartyMatchmaking(lobby, group, difficulty) {
   if (parties.some((r) => r.match || r.disposed || r.mode !== 'coop' || r.difficulty !== difficulty ||
     r.seats.some((s) => s?.isBot) || r.activeHumans().some((s) => !group.some((p) => p.playerId === s.playerId)))) return fail(ERR.NOT_READY);
   const room = parties[0];
+  room.fromMatchmaking = true;
   const spectators = parties.flatMap((r) => r.spectators);
   if (spectators.length > MAX_SPECTATORS) return fail(ERR.ROOM_FULL);
   const previous = { seats: room.seats, spectators: room.spectators, matchCount: room.matchCount, replay: room.replay };

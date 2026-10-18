@@ -177,7 +177,12 @@ export class PlayerAcquire {
     if (!rec || rec.isGolden) return false;
     const gid = rec.upgradeChessId || rec.goldenId;
     if (!gid || !this.gd.item(gid)) return false;
-    if (this.m.itemPool.left(piece.id) < 1) return false;
+    // A direct upgrade spends one more copy of the shared stock — unless the piece holds none (a gift or a console
+    // grant): a pure gift stays free, and a mixed one grew by exactly what it really occupied.
+    const reserved = this.m.itemPool.occupied(piece);
+    if (reserved > 0 && this.m.itemPool.left(piece.id) < 1) return false;
+    if (reserved === 0) piece.itemPoolCopies = 0;
+    else if (Object.hasOwn(piece, 'itemPoolCopies')) piece.itemPoolCopies = reserved + 1;
     piece.id = gid;
     this.recompute();
     return true;
@@ -264,7 +269,7 @@ export class PlayerAcquire {
    * is actually kept, record the copies that did not fit (`need` minus `left` before the gain). A failed stow or
    * merge records nothing. Fixed gift families stay unlimited without a debt entry. Every other grant still refuses.
    */
-  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false, requirePool = true, displayed = false } = {}) {
+  acquireItem(itemId, { source = 'grant', toTemp = false, silent = false, deferMerge = false, requirePool = true, fromPool = true, displayed = false } = {}) {
     const rec = this.gd.item(itemId);
     if (!rec) return null;
     // Only the fixed operator-gift families can overdraw. Several unrelated strategy grants also pass
@@ -272,12 +277,13 @@ export class PlayerAcquire {
     const unlimitedGift = !requirePool && this.gd.isUnlimitedGiftItem(itemId);
     const pool = this.m.itemPool;
     const leftBefore = pool.left(itemId);
-    const need = pool.need(itemId);
-    if (!unlimitedGift && !displayed && !pool.canGain(itemId)) {
+    const need = fromPool ? pool.need(itemId) : 0;
+    if (fromPool && !unlimitedGift && !displayed && !pool.canGain(itemId)) {
       this.m.toast(this, 'warn', '装备库存不足，未获得该装备');
       return null;
     }
-    let piece = this.newPiece('item', itemId);
+    // Provenance travels with the piece: a console grant / operator passive holds zero copies of the shared stock.
+    let piece = this.newPiece('item', itemId, fromPool ? {} : { itemPoolCopies: 0 });
     // A prep-end grant may sit beside an identical copy until the next prep. The invariant counts only copies
     // without this mark, so the fight that is about to start is not reported as a missed merge.
     if (deferMerge) piece.deferMerge = true;
@@ -287,7 +293,7 @@ export class PlayerAcquire {
     } else {
       this.stow(piece, { allowTemp: true, toTemp });
     }
-    if (displayed && !unlimitedGift) {
+    if (displayed && fromPool && !unlimitedGift) {
       const shortfall = leftBefore === Infinity ? 0 : Math.max(0, need - leftBefore);
       if (shortfall > 0) pool.owe(itemId, shortfall);
     }
@@ -304,7 +310,13 @@ export class PlayerAcquire {
     for (const l of locs) { if (consumed.length >= need) break; consumed.push(l); }
     if (consumed.length < need) return null;
     for (const l of consumed) if (l.area !== 'new') this._detach(l);
-    const golden = this.newPiece('item', rec.upgradeChessId || rec.goldenId);
+    // Merging preserves the sum of real reservations: two console grants make a golden that still holds nothing, while a
+    // purchase beside a grant holds exactly one (never two).
+    const goldenId = rec.upgradeChessId || rec.goldenId;
+    const reserved = Math.min(this.m.itemPool.need(goldenId),
+      consumed.reduce((n, l) => n + this.m.itemPool.occupied(l.piece), 0));
+    const golden = this.newPiece('item', goldenId,
+      reserved === this.m.itemPool.need(goldenId) ? {} : { itemPoolCopies: reserved });
     this.stow(golden, { allowTemp: true });
     this.stats.itemMerges++;
     this.m.dispatch(this, 'onMerge', { kind: 'item', piece: golden, itemId, consumed: consumed.map((l) => l.piece.uid) });

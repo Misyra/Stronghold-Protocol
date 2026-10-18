@@ -523,6 +523,13 @@ export const C2S = {
   // the stats the own board's units start their next battle with (user playtest #4 item 7; prep phases): answered by
   // the push m.unitStats { seq, round, units: [unitStatsEntry] }; `seq` is echoed so the client keeps the newest answer
   'g.unitStats': { seq: (v) => isInt(v, 0, 2 ** 31), $optional: ['seq'] },
+  // Developer console (room.console.enable): one grant intent; only a server-authorized private/solo room match accepts it.
+  'g.console': {
+    kind: (v) => v === 'item' || v === 'chess' || v === 'bond',
+    id: isId,
+    amount: optional((v) => isNum(v, 1, 1e9)),
+    $optional: ['amount'],
+  },
   'g.leave': {},
 
   // client-side combat (DESIGN §14): the authoritative client of a field reports its battle; a 联防 field adds

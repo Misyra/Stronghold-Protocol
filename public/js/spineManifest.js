@@ -82,7 +82,9 @@ export function localSpineEntry(sl, local, web) {
   const skel = url(sl.skel), atlas = url(sl.atlas);
   const textures = Array.isArray(sl.textures) ? sl.textures.map(url) : [];
   let entry = null;
-  if (skel && atlas && bareAssetUrl(skel).replace(/\.skel$/, '.atlas') === bareAssetUrl(atlas) && textures.length && textures.every(Boolean)) {
+  // A dual-format release keeps the PNG atlas for old tabs next to the .webp.atlas this build selects.
+  const paired = skel && [bareAssetUrl(skel).replace(/\.skel$/, '.atlas'), bareAssetUrl(skel).replace(/\.skel$/, '.webp.atlas')];
+  if (skel && atlas && paired.includes(bareAssetUrl(atlas)) && textures.length && textures.every(Boolean)) {
     entry = { skel, atlas, textures, pma: !!sl.pma, anims: sl.anims, animations: sl.animations, events: sl.events, hits: sl.hits, bounds: sl.bounds, local: true, fallback: web || null };
     if (!validSpine(entry)) entry = null;
   }

@@ -228,7 +228,7 @@ export function persistVersion(m) {
  * order, pool, schedulers) or transient (clocks, view plumbing, timers, battle objects).
  */
 export const MATCH_FIELDS = Object.freeze([
-  'roomCode', 'mode', 'difficulty', 'modeId', 'seed', 'isSolo', 'aiPicksLast', 'battlePrefix', 'timerScale', 'gameSpeed',
+  'roomCode', 'mode', 'difficulty', 'modeId', 'seed', 'isSolo', 'aiPicksLast', 'consoleEnabled', 'battlePrefix', 'timerScale', 'gameSpeed',
   'botRehearsal', 'clientCombat', 'verifyMode', 'headlessSliceMs', 'verifyStats', '_battleSeq', 'pausedMs',
   'stageId', 'factions', 'bossId', 'hiddenBossId', 'disabledBonds', 'staticInactiveBonds', 'bannedChess',
   'round', 'uidSeq', 'loneHuman', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
@@ -237,7 +237,7 @@ export const MATCH_FIELDS = Object.freeze([
 
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */
 export const PLAYER_FIELDS = Object.freeze([
-  'playerId', 'seat', 'name', 'isBot', 'connected', 'left', 'autoplay', 'alive', 'lp', 'bandId', 'funds',
+  'playerId', 'seat', 'name', 'isBot', 'connected', 'left', 'autoplay', 'consoleRoundUses', 'consoleTotalUses', 'alive', 'lp', 'bandId', 'funds',
   'pendingFunds', 'ready', 'infoReady', 'lastEmoteAt', 'loadout', 'ops', 'personalChoice', 'shop', 'offers', 'hand', 'temp', 'prepsEnded',
   '_tempDue', 'board', 'layers', 'pendingLayerGains', 'bondCountBonus', 'effects', 'bounties', 'counters', 'round',
   'deployCapBonus', 'deployCapMin', 'deviceOverrides', 'tileOverrides', 'stats', 'eliminatedRound', 'lpAtFinal',

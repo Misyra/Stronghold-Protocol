@@ -15,12 +15,13 @@
 // purpose: they are stored in Cache Storage, and letting the HTTP cache keep a second copy would double the disk the
 // browser needs (~250 MiB of art). Everything is injected (`caches`, `fetcher`) so this module is unit-testable.
 
-import { markResourceHeaders, cacheIndex, readCacheIndex } from './cacheMetadata.js';
+import { cachedResourceHash, markResourceHeaders, cacheIndex, readCacheIndex } from './cacheMetadata.js';
 import { resourceIdentity } from '../../../shared/resourcePaths.js';
 import { VOICE_LANGS } from '../voicePrefs.js';
 import { absoluteUrl, CACHE_NAME, CACHE_PREFIX, cacheNameForScope, checkAbort, CONTENT_HASH_RE, indexUrl, isCacheQueryLimit, isQuotaError, isSkinKey, MAX_FILE_BYTES, RESOURCE_GROUPS, RESOURCE_SCOPES, resourceGroup, resourceScope, resourceType, SHARD_CACHE_NAMES, TIER_ESSENTIAL, TIER_REST } from './common.js';
 import { resourceDigests, verifiedResourceBytes } from './integrity.js';
 import { fetchResource, isTransientResourceError } from './network.js';
+import { runtimeIndexUrl, updateRuntimeIndex } from './runtimeIndex.js';
 
 /** Files above this are downloaded one at a time (a 20 MiB Spine texture should not race three others). */
 const BIG_FILE_BYTES = 4 << 20;
@@ -632,6 +633,7 @@ export class ResourceStore {
     return fresh;
   }
 
+
   /** Caches of earlier builds this app wrote: their entries carry no hash record and are verified before being kept. */
   async #olderCaches() {
     return (await this.#cacheNames()).filter((n) => !SHARD_CACHE_NAMES.includes(n));
@@ -1142,11 +1144,18 @@ export class ResourceStore {
     let removed = 0;
     for (const { name, cache } of await this.#shards()) {
       const index = await this.#readIndex(cache);
-      const doomed = [...await this.#keyUrls(cache, name)].filter((url) => url !== indexKey && !wanted.has(url));
+      const runtimeKey = runtimeIndexUrl(this.origin);
+      const doomed = [...await this.#keyUrls(cache, name)].filter((url) => url !== indexKey && url !== runtimeKey && !wanted.has(url));
       if (!doomed.length) continue;
       await Promise.all(doomed.map((url) => cache.delete(url)));
       for (const url of doomed) delete index.files[url];
       await this.#writeIndex(cache, index.files, this.manifest.version);
+      // Records of the entries just swept must not outlive them (resources/runtimeIndex.js).
+      const present = new Set([...await this.#keyUrls(cache, name)].filter((url) => url !== indexKey && url !== runtimeKey));
+      // Only a document that already exists is rewritten: a browser that never let the worker store runtime art pays nothing.
+      if (await cache.match(runtimeKey).catch(() => null)) {
+        void updateRuntimeIndex(cache, this.origin, { present }).catch(() => {});
+      }
       removed += doomed.length;
     }
     return removed;

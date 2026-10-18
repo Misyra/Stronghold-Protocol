@@ -57,6 +57,7 @@ import { ToastHost, toast, toastError, describeError } from './ui/toasts.js';
 import { net, identity, NetError } from './net.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating } from './store.js';
 import { data, getChess } from './data.js';
+import { bindResourceCombat } from './resources/combat.js';
 import { matchResourceUrls } from './resources/schedule.js';
 import { GAME_FILES } from './ui/gameComponents.js';
 import { TitleScreen, sanitizeName, isValidName } from './screens/title.js';
@@ -76,7 +77,7 @@ import { equippedSkinKeys, installSkinsSync, loadEquippedSkinKeys, skinsStore } 
 import { startBuildGuard } from './ui/buildGuard.js';
 import { AnnouncementBanner } from './ui/announcement.js';
 import { ResourceHost } from './ui/resourcePanel.js';
-import { ERR, PHASE } from '../../shared/constants.js';
+import { ERR } from '../../shared/constants.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
 import { t, N_, translateWire } from '../../shared/i18n.js';
 import { recordError, installTrafficMeter } from './diag.js';
@@ -547,6 +548,9 @@ function installResourcePreload() {
         void loadEquippedSkinKeys().then((loaded) => { if (loaded.length) apply(settingsStore.get()); });
       }
     };
+    // Installed before the enabled settings sync: a page restored straight into a fight must not briefly
+    // start bulk downloads (public/js/resources/combat.js).
+    bindResourceCombat(store, r, (err) => console.warn('[resources] combat gate failed', err));
     apply(settingsStore.get());
     settingsStore.subscribe(apply);
     // Equipping a different skin changes what the preload wants, with no settings change to announce it.
@@ -554,7 +558,7 @@ function installResourcePreload() {
     let timer;
     const priority = () => {
       const s = store.get();
-      r.updateResourcePriority({ active: selectRoute(s) === 'game', combat: s.match?.public?.phase === PHASE.COMBAT,
+      r.updateResourcePriority({ active: selectRoute(s) === 'game',
         urls: matchResourceUrls(s.match, data.get('assets'), getChess, data.get('local')) });
     };
     const schedule = () => { timer ??= setTimeout(() => { timer = null; priority(); }, 300); };

@@ -151,6 +151,9 @@ export class PlayerState {
     this.left = false;
     this.autoplay = false;
     this.alive = true;
+    /** Developer-console quota (CONSOLE_ROUND_LIMIT / CONSOLE_TOTAL_LIMIT): successful grants only, reset each round. */
+    this.consoleRoundUses = 0;
+    this.consoleTotalUses = 0;
     this.lp = 0;
     this.bandId = null;
     this.funds = 0;

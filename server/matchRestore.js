@@ -68,6 +68,8 @@ export function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() } = {})
     const room = new Room(d.code, mode, difficulty, now, typeof d.roomId === 'string' ? d.roomId : null);
     if (Number.isSafeInteger(d.createdAt) && d.createdAt >= 0 && d.createdAt <= now) room.createdAt = d.createdAt;
     room.aiPicksLast = mode !== 'solo' && d.aiPicksLast === true;
+    // Developer console authorization survives a restart with the room (a running match keeps its own copy).
+    room.consoleEnabled = d.consoleEnabled === true;
     room.ownerKey = typeof d.ownerKey === 'string' ? d.ownerKey : null;
     room.matchKey = typeof d.matchKey === 'string' ? d.matchKey : null;
     room.matchCount = Number.isInteger(d.matchCount) && d.matchCount >= 0 ? d.matchCount : 0;

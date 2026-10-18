@@ -26,6 +26,9 @@ export const MAX_SEATS = 4;
 export const MAX_SPECTATORS = 2;
 export const ROOM_CODE_LEN = 4;
 export const NAME_MAX_LEN = 12;
+/** In-match developer console quotas: a grant is one use, and both limits are per player (server/match/match/intents.js). */
+export const CONSOLE_ROUND_LIMIT = 5;
+export const CONSOLE_TOTAL_LIMIT = 50;
 
 export const DIFFICULTIES = ['FUNNY', 'NORMAL', 'HARD', 'ABYSS'];
 export const DIFFICULTY_NAMES = { FUNNY: N_('标准模拟'), NORMAL: N_('险境模拟'), HARD: N_('绝境模拟'), ABYSS: N_('终极模拟') };

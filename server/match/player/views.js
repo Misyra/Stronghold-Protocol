@@ -3,7 +3,7 @@
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
-import { PHASE } from '../../../shared/constants.js';
+import { PHASE, CONSOLE_ROUND_LIMIT, CONSOLE_TOTAL_LIMIT } from '../../../shared/constants.js';
 import { boardOrder, pieceDir } from '../board.js';
 import { bondList, offBondCounts } from '../bondsMeta.js';
 import { bountyText, bountyCard } from '../choices.js';
@@ -88,6 +88,9 @@ export class PlayerViews {
       bandId: this.bandId,
       ready: this.ready,
       canReady: this.alive && this.tempEmpty && !this.personalChoice && this.m.phase === PHASE.PREP,
+      // The developer console's quota and whether the room opted in (server/match/match/intents.js consoleGrant).
+      console: { enabled: !!this.m.consoleEnabled, roundUses: this.consoleRoundUses, totalUses: this.consoleTotalUses,
+        roundLimit: CONSOLE_ROUND_LIMIT, totalLimit: CONSOLE_TOTAL_LIMIT },
       personalChoice: this.personalChoice ? {
         id: this.personalChoice.id,
         round: this.personalChoice.round,

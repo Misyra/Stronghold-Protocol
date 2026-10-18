@@ -54,6 +54,9 @@ export class StateStore {
   constructor({ url, prefix = 'stronghold:', ttlSec = 90_000, name = 'state', log = noopLog,
     connectTimeoutMs = CONNECT_TIMEOUT_MS, commandTimeoutMs = COMMAND_TIMEOUT_MS }) {
     this.url = url;
+    /** Key namespace; the multi-key store derives <prefix>index / <prefix>runtime / <prefix>cp:<code> from it. */
+    this.prefix = prefix;
+    this.name = name;
     this.key = `${prefix}${name}`;
     this.ttlSec = ttlSec;
     this.connectTimeoutMs = Number.isFinite(connectTimeoutMs) ? Math.max(0, Number(connectTimeoutMs)) : CONNECT_TIMEOUT_MS;
@@ -202,6 +205,79 @@ export class StateStore {
       return true;
     } catch (e) {
       this.#warn('write failed', e);
+      if (!this.client?.isReady) this.#drop();
+      return false;
+    }
+  }
+
+  /**
+   * The throttled failure log, exposed for the multi-key store that extends this class (server/redisState.js).
+   * @param {string} msg @param {any} [err]
+   */
+  warn(msg, err) { this.#warn(msg, err); }
+
+  // ---------------------------------------------------------------------------------------------
+  // Key-level primitives. The multi-key state store (server/redisState.js) is built on these four so
+  // that the command timeout, the reconnect and the "the game never depends on Redis" policy stay in
+  // one place. Reads answer `undefined` (not `null`) when the store did not answer at all — that is the
+  // difference between "absent" and "unknown", and the persister's deferLoad depends on it.
+  // ---------------------------------------------------------------------------------------------
+
+  /** One key. @returns {Promise<string | null | undefined>} value / null = absent / undefined = no answer */
+  async getKey(key) {
+    const client = await this.connect();
+    if (!client) return undefined;
+    try {
+      return await this.#command(client.get(key), 'read');
+    } catch (e) {
+      this.#warn('read failed', e);
+      if (!this.client?.isReady) this.#drop();
+      return undefined;
+    }
+  }
+
+  /** Many keys in one round trip. @returns {Promise<(string | null)[] | undefined>} undefined = no answer */
+  async getKeys(keys) {
+    const list = [...keys];
+    if (!list.length) return [];
+    const client = await this.connect();
+    if (!client) return undefined;
+    try {
+      const out = await this.#command(client.mGet(list), 'read');
+      return Array.isArray(out) ? out : undefined;
+    } catch (e) {
+      this.#warn('read failed', e);
+      if (!this.client?.isReady) this.#drop();
+      return undefined;
+    }
+  }
+
+  /** One key, TTL refreshed, never throws. @returns {Promise<boolean>} */
+  async setKey(key, value) {
+    const client = await this.connect();
+    if (!client) return false;
+    try {
+      await this.#command(client.set(key, value, { EX: this.ttlSec }), 'write');
+      this.saved++;
+      return true;
+    } catch (e) {
+      this.#warn('write failed', e);
+      if (!this.client?.isReady) this.#drop();
+      return false;
+    }
+  }
+
+  /** Delete keys, never throws. @returns {Promise<boolean>} true when the store answered */
+  async delKeys(keys) {
+    const list = (Array.isArray(keys) ? keys : [keys]).filter((k) => typeof k === 'string' && k);
+    if (!list.length) return true;
+    const client = await this.connect();
+    if (!client) return false;
+    try {
+      await this.#command(client.del(list), 'delete');
+      return true;
+    } catch (e) {
+      this.#warn('delete failed', e);
       if (!this.client?.isReady) this.#drop();
       return false;
     }

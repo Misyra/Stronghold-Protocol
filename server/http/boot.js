@@ -74,7 +74,10 @@ export function printBanner(srv) {
   if (DEV_BUILD) console.log('  ! 开发版（dev 分支）：不稳定，请勿用于公开服务器 · development build — unstable, not for public servers');
   console.log(`  Local:   ${srv.url}`);
   if (srv.persister) {
-    console.log(`  State:   checkpoint every ${srv.persister.saveMs / 1000}s (${srv.store?.mode === 'dir' ? 'sharded files in ' + srv.store.dir : 'single file'})`);
+    const backend = srv.store?.kind === 'redis'
+      ? 'sharded keys ' + srv.store.prefix + '{index,runtime,cp:<code>}'
+      : srv.store?.mode === 'dir' ? 'sharded files in ' + srv.store.dir : 'single file';
+    console.log(`  State:   checkpoint every ${srv.persister.saveMs / 1000}s (${backend})`);
   }
   if (srv.host === '0.0.0.0' || srv.host === '::') {
     for (const u of lanUrls(srv.port)) console.log(`  LAN:     ${u}`);

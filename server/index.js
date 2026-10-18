@@ -350,7 +350,7 @@ export async function startServer(opts = {}) {
   const redisStore = opts.store === undefined ? createRedisStore({ env: opts.env ?? process.env, log }) : null;
   const store = opts.store !== undefined ? opts.store : redisStore ?? (stateFile && stateFile !== 'off'
     ? new FileStateStore({ file: stateFile, log }) : null);
-  if (redisStore) log.info(`[persist] Redis 存储 ${redisStore.label}（键 ${redisStore.key}）`);
+  if (redisStore) log.info(`[persist] Redis 存储 ${redisStore.label}（键 ${redisStore.prefix}index / runtime / cp:<房间码>）`);
   const persister = store ? new Persister({ store, registry, lobby, log, saveMs: opts.saveMs ?? process.env.SP_STATE_SAVE_MS }) : null;
   try {
     if (store) {

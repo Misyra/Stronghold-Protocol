@@ -2,31 +2,67 @@
 
 游戏安装和统一配置从[部署指南](DEPLOY.md)开始；本文说明对局数据的保存、备份与恢复。
 
-与浏览器本地战绩不同，这个功能保存正在进行的服务端对局。检查点与恢复逻辑移植自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol/tree/20524bb07dff68743980ec8e6b4a8e458f3720b6)，遵循 GPL-3.0-or-later；本仓库增加原子文件存储、独占写入锁、开战前检查点、关服写入等待、观战与结算补推恢复，以及持久化 Worker 与分片存储（见下）。
+与浏览器本地战绩不同，这个功能保存正在进行的服务端对局。检查点与恢复逻辑移植自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol/tree/20524bb07dff68743980ec8e6b4a8e458f3720b6)，遵循 GPL-3.0-or-later；本仓库增加原子文件存储、独占写入锁、开战前检查点、关服写入等待、观战与结算补推恢复、持久化 Worker，以及分片存储（文件目录与 Redis 多键两套，见下）。
 
 ## Redis（可选持久化）
 
-状态除了 `SP_STATE_FILE` 之外还能放在 Redis 里；这部分取自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) 的 `server/redis.js`（逐字），本分支另加了 `server/redisState.js` 这层适配（分片文档 → 单个键）。优先级是：**Redis → `SP_STATE_FILE` → 内存**；只要配了 Redis URL 就不再写文件。
+状态除了 `SP_STATE_FILE` 之外还能放在 Redis 里；连接层取自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol) 的 `server/redis.js`（逐字，本分支只往里加了四个按键读写的原语），存储布局是 `server/redisState.js`。优先级是：**Redis → `SP_STATE_FILE` → 内存**；只要配了 Redis URL 就不再写文件。
 
 | 变量 | 默认 | 含义 |
 | --- | --- | --- |
 | `SP_REDIS_URL` / `REDIS_URL` | （空，不启用） | 只有 `rediss://`、`redis://`、`unix:` 会被接受；其他值当作未配置 |
-| `SP_REDIS_PREFIX` | `stronghold:` | 键前缀，键名是 `<前缀>state` |
+| `SP_REDIS_PREFIX` | `stronghold:` | 键前缀。**一个前缀只给一个游戏服**：两个进程连同一个前缀会互相覆盖 |
 | `SP_REDIS_TTL` | `90000`（25 小时） | 每次写都刷新过期时间，单位秒；小于 60 的值忽略。25 小时是「最长重连窗口」的下限 |
-| `SP_REDIS_CONNECT_TIMEOUT` | `3000` | 连接超时（毫秒），0 表示不限 |
+| `SP_REDIS_CONNECT_TIMEOUT` | `3000` | 连接超时（毫秒），0 表示不限；启动读重试 4 次、间隔 750 ms |
 | `SP_REDIS_COMMAND_TIMEOUT` | `4000` | 单条命令超时（毫秒），0 表示不限 |
 
-启动时会读一次（4 次尝试、间隔 750 ms，给「Redis 比游戏服晚起来」留余量）。**读不出来就不写**：Redis 连不上或内容不是状态文档时，`Persister` 进入 `deferLoad` 状态，之后每轮写之前重读一次，读到才恢复（房间、身份、对局，含线程池里的对局）并继续写 —— 这样一盏起不来的 Redis 不会让第一次存档把真正的存档覆盖掉。`/metrics.persist` 的 `pendingLoad` / `deferredSkips` 就是这件事的状态与计数。
+### 键布局：和文件目录布局一一对应
 
-存档是「一个键一份 JSON 文档」：本分支的分片布局（索引 + 房间分片）在 Redis 里合并成单个键值，写一次、读一次，不做增量。写入失败（命令超时、键被别的实例占用）不会中断游戏，下一轮再写；`state` 键只由当前进程刷新 TTL，两个进程连同一个前缀会互相覆盖，因此**一个 Redis 前缀只给一个游戏服**。
+一个文件一个键，所以两种后端读回的形状完全相同，`restoreServer` 不需要分支：
+
+| 键 | 内容 | 什么时候写 |
+| --- | --- | --- |
+| `<前缀>index` | 会话、房间、对局元数据 | 元数据变了才写（`Persister` 传的 `metadataVersion` 或元数据的规范化 JSON 与上次提交的不同） |
+| `<前缀>runtime` | 各对局时钟、`savedAt`、索引版本 | 每轮刷（很小，通常几百字节） |
+| `<前缀>cp:<房间码>` | 一个房间的检查点（带信封：版本、对局序号、分片自带时钟） | 正文变了才写 |
+| `<前缀>state` | 旧版「一个键一份整份文档」 | 只在 `index` 不存在时读一次；之后按上表写，旧键保留做回滚副本 |
+
+**写入顺序**（几份键之间的崩溃一致性）：分片 → `index` → `runtime` → 删除不再被点名的分片。索引永远晚于它点名的分片落地，所以崩在任何一步都不会出现「索引点名一个不存在的分片」；反过来「分片比索引新」由 `runtime` 里的索引版本与分片信封里自带的时钟兜住 —— 和文件后端用的是同一套信封。
+
+**值编码**：小于 1 KiB 直接存 JSON 文本（前缀 `J:`），超过就用 zlib `deflateRaw` 再 base64（前缀 `Z:`）。压缩走 libuv 线程池，不占 Worker 也不占游戏线程；读回有 64 MiB 上限，一个坏键或外来键不能让进程把它 inflate 到爆内存。没有前缀标记的值原样交给 `JSON.parse`（旧版文档、别人的键都是这条路）。
+
+**失败与退让**：`load()` 把「没应答」和「不存在」分开（`undefined` / `null`）。读不出来时 `Persister` 进 `deferLoad`，之后每轮写之前重读一次，读到才恢复并继续写 —— 一盏起不来的 Redis 不会让第一次存档把真正的存档覆盖掉。`/metrics.persist` 的 `pendingLoad` / `deferredSkips` 就是这件事的状态与计数。单个检查点坏了只丢那个房间的对局，其余照常恢复。
 
 - 对局跑在 lane 线程里时，存档是跨线程 `capture` 拍的，且不做版本跳过：[性能说明](../development/PERFORMANCE.md)。
 
+### 小机器（4 核 4 GB）
+
+一台 4c4g 上三个进程抢内存：游戏主线程、`SP_WORKERS` 个模拟线程（每个线程独立加载一份游戏数据）、以及 Redis 自己。可用的配置：
+
+```conf
+# redis.conf —— 状态是「能续上最好，续不上重开」的数据，不值得为它冒 OOM 的险
+maxmemory 384mb
+maxmemory-policy volatile-ttl     # 所有状态键都带 TTL，先淘汰最旧的检查点
+appendonly no                     # 丢了就从空状态起，不影响玩家重开
+save ""
+```
+
+```sh
+SP_REDIS_URL=redis://127.0.0.1:6379 SP_REDIS_PREFIX=stronghold: \
+SP_WORKERS=2 SP_MATCH_WORKERS=0 SP_ROOM_WORKERS=0 \
+SP_STATE_SAVE_MS=15000 npm start
+```
+
+- `SP_WORKERS` 默认 `min(8, 核数-2)`，4 核就是 2；每多一个线程多一份游戏数据的常驻内存，机器小就往小调。
+- 房间数很少时把 `SP_STATE_SAVE_MS` 放宽到 15–20 秒：它是整份 `runtime` 的刷新周期，检查点本身只在内容变化时才写。
+- 用 Valkey 还是 Redis 都行（同一套 RESP 与命令），镜像体积与许可证按自己的偏好挑。
+
 ### 线协议层面的验证（不需要真的 Redis）
 
-`test/redis-wire.test.js` 起一个最小的 RESP 服务器（只用 `node:net`），让 `server/redis.js` 里真正的 `redis` 客户端连上去，跑完整条路：`HELLO 3` 的 RESP3 握手、`CLIENT SETINFO`、`SET key value EX 60`、换一个新 store 实例把文档读回来、`DEL` 清理；再验证 `saveSharded` 把分片合并成一份文档（坏分片跳过、不写成垃圾），以及 Redis 挂掉时 `load` 返回 `null` 且 `loadState='unavailable'`、`save` 返回 `false` 而不是抛，恢复后原来的文档还在。
+`test/redis-wire.test.js` 起一个最小的 RESP 服务器（只用 `node:net`），让 `server/redis.js` 里真正的 `redis` 客户端连上去，跑完整条路：`HELLO 3` 的 RESP3 握手、`CLIENT SETINFO`、每个键的 `SET key value EX 60`、用 `MGET` 把几个检查点一次读回、换一个新 store 实例把文档读回来、`DEL` 清理；再验证「同一份输入第二轮一个 `SET` 都不发」、坏分片被跳过而不写成垃圾，以及 Redis 挂掉时 `load` 返回 `null` 且 `loadState='unavailable'`、`save` 返回 `false` 而不是抛，恢复后原来的文档还在。不需要真 Redis 的键布局、写入顺序与压缩用例在 `test/redis-state.test.js`。
 
 写这类测试要注意一件事：`redis` 客户端保持的 socket 会让 `node --test` 不退出。用例结束时必须 `await store.close()`（以及关掉假服务器），否则整套测试会挂住而不是失败 —— 第一次写这个用例就是这么卡了五分钟。
+
 ## 启用与升级
 
 `npm start` 默认开启，保存于仓库 `.state/server-3000`（端口不同则目录名不同）。每 10 秒刷新一次，在开局和开战前额外检查保存，正常关服先等待已有写入，再写最后一次状态，然后关闭房间。

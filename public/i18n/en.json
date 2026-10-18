@@ -2548,5 +2548,7 @@
   "{n} 层": "{n} layers",
   "实际增加层数受盟约层数上限限制。": "The layers added are capped by the bond’s layer limit.",
   "{name}博士通过控制台获得了{item}": "Dr. {name} obtained {item} through the console",
-  "{name}博士通过控制台获得了{item} {n} 层": "Dr. {name} obtained {item} ×{n} layers through the console"
+  "{name}博士通过控制台获得了{item} {n} 层": "Dr. {name} obtained {item} ×{n} layers through the console",
+  "查看详情": "View details",
+  "我知道了": "Got it"
 }

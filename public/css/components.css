@@ -1287,6 +1287,27 @@
 .announcement__content:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
 @keyframes announcement-scroll { to { transform: translateX(var(--announcement-distance)); } }
 .announcement-detail__text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+
+/* A popup announcement (shared/announcements.js): the Markdown subset of ui/announcementMarkdown.js, never HTML. */
+.announcement-popup__body { max-height: 62vh; overflow: auto; line-height: 1.7; overflow-wrap: anywhere; }
+.announcement-markdown > :first-child { margin-top: 0; }
+.announcement-markdown > :last-child { margin-bottom: 0; }
+.announcement-markdown h1, .announcement-markdown h2, .announcement-markdown h3,
+.announcement-markdown h4, .announcement-markdown h5, .announcement-markdown h6 { margin: .5em 0 .3em; line-height: 1.3; }
+.announcement-markdown h1 { font-size: 1.15em; }
+.announcement-markdown h2 { font-size: 1.08em; }
+.announcement-markdown p { margin: .4em 0; }
+.announcement-markdown ul, .announcement-markdown ol { margin: .4em 0 .4em 1.2em; }
+.announcement-markdown li { margin: .15em 0; }
+.announcement-markdown blockquote { margin: .5em 0; padding-left: .6em; border-left: 2px solid currentColor; opacity: .85; }
+.announcement-markdown code { padding: .05em .3em; border-radius: 3px; background: rgba(255, 255, 255, .08); font-family: var(--font-num, monospace); }
+.announcement-markdown pre { margin: .5em 0; padding: .5em .6em; overflow: auto; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-2, rgba(255,255,255,.12)); }
+.announcement-markdown pre code { padding: 0; background: none; }
+.announcement-markdown a { color: var(--mint-400, #4fd1a5); text-decoration: underline; }
+.announcement-markdown img { max-width: 100%; height: auto; }
+.announcement-markdown hr { margin: .7em 0; border: 0; border-top: 1px solid var(--line-2, rgba(255,255,255,.12)); }
+.announcement-markdown blockquote p { margin: .2em 0; }
+
 @media (prefers-reduced-motion: reduce) {
   .announcement__track.is-scrolling { animation: none; }
 }

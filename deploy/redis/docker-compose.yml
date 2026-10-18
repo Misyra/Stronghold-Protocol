@@ -1,0 +1,28 @@
+# docker compose -f deploy/redis/docker-compose.yml up -d
+#
+# 起一台只给这个游戏服用的 Valkey。游戏侧只需要一个环境变量：
+#   SP_REDIS_URL=redis://127.0.0.1:6379
+#   SP_REDIS_PREFIX=stronghold:        # 一个游戏服一个前缀
+#
+# 数据不落盘（见 redis.conf）：容器重建就当存档没了，重启玩家重开即可。
+# 要跨重启保留就挂个卷并打开 appendonly。
+services:
+  stronghold-redis:
+    image: valkey/valkey:8-alpine
+    container_name: stronghold-redis
+    restart: unless-stopped
+    command: ["valkey-server", "/etc/valkey/redis.conf"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - ./redis.conf:/etc/valkey/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"

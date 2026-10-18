@@ -148,6 +148,45 @@ npm start
 
 预载实现移植并改编自 [xinhai-ai/Stronghold-Protocol](https://github.com/xinhai-ai/Stronghold-Protocol)，保留 GPL-3.0-or-later 许可，并增加本站版本资源与 CDN 的适配。
 
-## 5. 回滚
+## 5. Cloudflare「Under Attack」与同源兜底
+
+### 5.1 症状与原因
+
+CF 把整个 zone 拉到 Under Attack（或浏览器完整性检查拦住了非常规 UA）时，游戏页面本身能打开——导航拿得到 `cf_clearance`——但**预载一个文件也下不了**：控制台里 CDN 请求全是 403 加一段 challenge 网页，而素材域名不在挑战后面的部署照常预载。
+
+原因是 `cf_clearance` **按主机名签发**，而预载、纹理、数据 JSON 的跨域请求都是不带 cookie 的匿名请求（`fetchResource` 用 `credentials:'same-origin'`，跨域即匿名），挑战永远问不过去；CDN 上"缓存命中"也救不了——challenge 由边缘先答，命中的是 challenge 而不是素材。
+
+两边一起做：CF 侧给素材域名开 Skip（根治），代码侧保留同源兜底（配错也能跑）。
+
+### 5.2 CF 侧（必须）
+
+WAF ▸ 自定义规则，表达式只写主机名：
+
+```
+http.host eq "assets.example.com"
+```
+
+`http.host` 里只有主机名，写成 `assets.example.com/*` 或带引号里的通配符**永远 0 匹配**，保存前看一眼「匹配数」。
+
+动作 Skip，勾这几项就够：**安全级别**（Under Attack 的本质就是它拉到最高）、**浏览器完整性检查**、**所有托管规则**、**所有速率限制规则**（一次预载两千多个文件很容易撞限流）。不要勾「所有其余自定义规则」——否则以后加的防盗链、IP 封禁会被一起跳过；「区域锁定 / 用户代理阻止 / Hotlink 保护」按是否真的在用决定，**用了防盗链就别勾 Hotlink 保护**。素材域名只放静态文件，除了防盗链和流量没有别的东西要护，宽一点无妨。
+
+**游戏主域名不要套这条**：那里有登录、房间和 WebSocket，挑战是唯一的机器人闸门。主域名最多只跳过静态树路径 `^/(assets|fonts|data|packs|i18n|resource-packs|_v|build)/`。
+
+验证：
+
+```bash
+curl -sI https://assets.example.com/assets/local/ui/icon.png | head -3   # 200，且没有 cf-mitigated: challenge
+```
+
+### 5.3 代码侧（兜底）
+
+- `shared/assetCdn.js` 的 `assetSiteUrl(cdnUrl)`：把 `<SP_ASSETS_CDN>/assets/x.png?v=<hash>` 还原成源站路径 `/assets/x.png`（去掉只为 CDN 缓存用的 `?v=`，保留完整性重试用的 `?sp=`）。
+- `public/js/resources/network.js` 的 `fetchResource`：先走 CDN，失败（403 challenge / opaque / 超时 / 无 CORS 头）就换源站那份再试；**连续两次失败熔断 5 分钟**，否则 27 000 个文件会把同一个 block 重新发现 27 000 次。熔断只影响"先试 CDN"这一步：缓存键仍是 CDN URL，内容指纹照旧校验，预载索引与 ZIP 导入导出不受影响。
+- `public/js/image.js`：只有跨域图片才设 `crossOrigin='anonymous'`，同源图片不再强制 CORS（否则等于主动丢掉挑战要的那张 cookie）；CDN 图失败一次就切到源站副本并在这个页面里记住。`recoverImageError` 重试同源图片时还会摘掉模板上的 `crossorigin`。
+- `public/js/data.js`：数据 CDN（`SP_DATA_CDN`）读失败换源站 `/_v/<tag>/data/…`，语言 overlay 同理。
+
+代价：走兜底的那批文件由源站提供，缓存头是 `no-cache` 而不是 CDN 的 immutable，每次预载会多几次 304。这是有意的——正确性优先；5.2 的 Skip 规则配好后走的是 CDN 那条快路。
+
+## 6. 回滚
 
 旧版「`_v/<tag>/` 全量快照」布局的对象仍保留在 bucket 里，`.assets-cdn-version` 与手动 `SP_ASSETS_CDN_VERSION` 的解析链也还在——切回旧代码即回到 `_v/<tag>/` 的版本化 URL，无需动 bucket。同步脚本不再写入这两者（旧服务器若拉到新 tag，会指向已不再生成的 `_v/` key）。

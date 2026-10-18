@@ -8,7 +8,7 @@ import { startServer } from '../server/index.js';
 import { readAssetsCdnVersionFile, readAssetsManifestFile } from '../server/assetVersion.js';
 import { parseAssetCdn } from '../server/http/config.js';
 import { createStaticHandler } from '../server/http/static.js';
-import { assetCdnSettings, assetCdnUrl, cdnLatestUrl, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
+import { assetCdnSettings, assetCdnUrl, assetSiteUrl, cdnLatestUrl, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { resourceUrl, resourceCache, resourceReady } from '../public/js/resourceUrl.js';
 import { mediaUrl } from '../public/js/media.js';
 import { validSpine, loadSpineData, createAssets, unloadSpineData } from '../public/js/assets.js';
@@ -32,6 +32,10 @@ test('CDN settings validate public bases and rewrite art without leaking the gam
   for (const url of ['/data/assets.json', '/js/main.js', '/vendor/pixi.min.js', '/api/rooms/ABCD/status', '/ws', 'https://third.example/assets/x.png']) {
     assert.equal(assetCdnUrl(url, cdn), url);
   }
+  // The host copy of a CDN URL: same art path, no per-file cache-buster (Cloudflare "Under Attack" refuses the CDN).
+  assert.equal(assetSiteUrl('https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa', cdn), '/assets/x.skel');
+  assert.equal(assetSiteUrl('https://cdn.example/static/_v/1234567890abcdef/fonts/a.woff2', cdn), '/fonts/a.woff2');
+  assert.equal(assetSiteUrl('/assets/x.skel', cdn), '', 'a local path has no twin');
 });
 
 test('a per-file manifest turns art into immutable ?v= URLs and falls back to bare for unlisted files', () => {

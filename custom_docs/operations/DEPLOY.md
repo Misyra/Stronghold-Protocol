@@ -371,6 +371,37 @@ sudo systemctl start stronghold
 
 重启后的对局也在 lane 里恢复：启动时 `restoreServerForBoot` 会等每条 lane 把检查点应用完再监听端口，所以「服务器被杀 → 重启」之后，房间和它那局仍然在后台线程里继续，而不是掉回主线程。启动日志会写明 `match #N restored in a worker`。
 
+### 4 核 4 GB：线程与内存怎么取
+
+线程不是越多越好，每条线程都自带一份游戏数据。在本机（4 核 4 GB）用真实战场实测：
+
+| 项 | 实测 |
+| --- | --- |
+| 主进程 + 引擎 + 数据（空闲） | RSS 153 MiB，堆 38.5 MiB |
+| 一个 worker 线程 | 约 **87 MiB RSS**（线程内 heapUsed 58 / heapTotal 103 / external 5.4 MiB） |
+| 1 / 2 / 4 条线程跑真实战场 | RSS 244 / 331 / 504 MiB |
+| 一场战斗 | 单线程 575 ms；4 条线程并行 4 场共 820 ms（约 2.8 倍） |
+
+所以 4 核的取值：
+
+| 变量 | 4c4g 取值 | 理由 |
+| --- | --- | --- |
+| `SP_WORKERS` | `2`（默认就是 `min(8, 核数-2)`） | 两条线程约 174 MiB，留两核给主线程与系统 |
+| `SP_ROOM_WORKERS` | `0` | 泳道不增加线程，只是把同一个池按房间分队列；房间少时没有队头阻塞可解 |
+| `SP_MATCH_WORKERS` | `0`；`>=` 四局同时跑再试 `1` | 一条 lane 是**另一条**约 90 MiB 的线程，外加整局状态 |
+| `SP_VERIFY` | `off`（默认） | `all`/`sample` 会把每个被接受的结果再算一遍 |
+| `SP_BOT_REHEARSAL` | `host` | AI 布阵试算交给房主浏览器，是这台机器上最省的一档 |
+| `SP_REHEARSAL_PRESSURE` | 与上一行同时设 `off` | 试算已经不在服务器上，再按自己的负载降档没有意义 |
+
+预算大致是：主进程 300–450 MiB（跑起来之后）+ 两条模拟线程 174 MiB + 持久化 Worker（不加载游戏数据，开销最小）+ Redis 封顶 384 MiB + 系统与浏览器，4 GB 里还有相当余量。**真正的瓶颈是主线程**：对局逻辑、AI 决策的编排和状态广播都在那里，worker 只接三类 CPU 活（AI 布阵试算、客户端战斗复算、校验），所以先看 `/metrics` 的 `memory`、`workers.queue` 与事件循环延迟，再决定加不加线程。
+
+Windows 上给主进程封个顶，别让它把整台机器吃掉（实测空闲堆 38 MiB，768 MiB 足够）：
+
+```powershell
+$env:NODE_OPTIONS = '--max-old-space-size=768'
+npm start
+```
+
 <!-- 保留旧文档锚点，外部链接继续到达对应说明。 -->
 <a id="16-维护公告"></a>
 公告完整流程移至 [ANNOUNCEMENTS.md](ANNOUNCEMENTS.md)。

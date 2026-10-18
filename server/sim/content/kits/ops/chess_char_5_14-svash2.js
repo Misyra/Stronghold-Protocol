@@ -10,6 +10,8 @@ import {
 } from '../shared/tier5.js';
 
 const isKjerag = (u) => inFaction(u, 'kjeragShip', ['kjerag']);
+/** The profile S3's line selection picks with: his melee PIONEER profile would drop air enemies (PRTS 备注 可对空). */
+const AIR = Object.freeze({ canHitFly: true });
 
 export default {
   // ---------------------------------------------------------------------------------------------------------------
@@ -22,11 +24,12 @@ export default {
   // The eye follows the selected skill (its overrideTokenKey: S1 eagle1 cost 16, S2 eagle2 14, S3 eagle3 19).
   // S1 周旋的谋略 (instant): +cost DP at once; the waiting op nearest to the eye gets −[deck].cost redeploy cost (same pick
   // as S2) and a barrier of [deck].shield × his max HP when it redeploys.
-  // S3 变革已至 (duration 48 s): skill range; enemies in it lose 隐匿; every attack hits every enemy of the range on the
-  // target's line (his facing) for bird_atk_scale × ATK phys + 脆弱 (damage_scale − 1, weak[limit] s [ASSUMED duration]);
-  // +[start_cost] DP at once, then +[cost].cost DP every [cost].interval s; the first activation of the battle swaps the
-  // base costs of the most (guard/caster/sniper first) and least expensive waiting ops. "风雪之眼变为可部署" is not
-  // modelled (nobody deploys by hand in the auto battle).
+  // S3 变革已至 (duration 48 s): skill range — 可对空, so a wave of flyers alone fires it (user playtest: it never cast
+  // against air-only waves, the ACTIVE_RANGE trigger read his melee PIONEER profile); enemies in it lose 隐匿; every attack
+  // hits every enemy of the range on the target's line (his facing) for bird_atk_scale × ATK phys + 脆弱 (damage_scale − 1,
+  // weak[limit] s [ASSUMED duration]); +[start_cost] DP at once, then +[cost].cost DP every [cost].interval s; the first
+  // activation of the battle swaps the base costs of the most (guard/caster/sniper first) and least expensive waiting ops.
+  // "风雪之眼变为可部署" is not modelled (nobody deploys by hand in the auto battle).
   chess_char_5_14_a: (bb, chess, def) => {
     const t0 = talent(chess, 0), t1 = talent(chess, 1);
     const grid = skillGrid(chess, def) ?? [[0, 0], [0, 1]];
@@ -73,7 +76,7 @@ export default {
         }),
         skchr_svash2_3: () => ({
           kind: 'duration',
-          targeting: skillRange(chess, def),
+          targeting: skillRange(chess, def, { canHitFly: true }),
           attack: {
             atkScale: num(bb.bird_atk_scale, 1),
             onEachHit({ battle, unit, target }) {
@@ -166,7 +169,7 @@ export default {
             const lat = (r, cc) => toLocal(r - unit.tileR, cc - unit.tileC, unit.dir)[0];
             const l0 = lat(Math.round(main.y), Math.round(main.x));
             const onLine = (e) => bodyKeys(e).some((k) => lat(Math.floor(k / COLS), k % COLS) === l0);
-            const line = battle.enemiesInKeys(unit.rangeKeys, unit, unit.profile).filter((e) => e !== main && onLine(e));
+            const line = battle.enemiesInKeys(unit.rangeKeys, unit, AIR).filter((e) => e !== main && onLine(e));
             if (line.length) c.targets = [main, ...line];
           }, { owner: unit, priority: 10 });
         }

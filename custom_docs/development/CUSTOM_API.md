@@ -20,8 +20,8 @@
 | `/metrics` | HTTP GET / HEAD | 进程内部性能与诊断（worker、内存、持久化…）；只回应回环 / 私网调用者 | 未开放 CORS |
 | `/data/resource-manifest.json` | HTTP GET / HEAD | 动态生成资源预载清单 | 未开放 CORS |
 | `/_v/:version/...` 及素材路径 | HTTP 资源请求 | 版本缓存、素材 CORS | 仅素材开放 CORS |
-| `/ws` → `matchmaking.join` / `room.matchmaking` / `matchmaking.cancel` | WebSocket JSON | 四人同站匹配，支持组队补齐 | 按原有 WebSocket 连接规则 |
-| `/ws` ← `matchmaking.state` | WebSocket JSON | 推送匹配进度与结果 | 按原有 WebSocket 连接规则 |
+| `/ws` → `queue.join` / `queue.cancel` / `queue.accept` / `room.matchmaking` | WebSocket JSON | 四人同站匹配：入队、取消、确认入场，支持组队补齐 | 按原有 WebSocket 连接规则 |
+| `/ws` ← `queue.state` | WebSocket JSON | 推送匹配进度（入队 / 待确认 / 已匹配）与结果 | 按原有 WebSocket 连接规则 |
 | `/ws` ← `m.result` | WebSocket JSON | 增加稳定的结算 ID 和时间 | 按原有 WebSocket 连接规则 |
 
 以下示例以 `http://localhost:3000` 为服务基地址；实际接入时替换为游戏站点地址。所有路径相对于游戏服务根路径，反向代理应把 API 和 `/ws` 转发到对应游戏进程。
@@ -243,89 +243,107 @@ HEAD /api/announcement
 
 收到 `welcome` 后再发送匹配请求。以下只定义新增消息。
 
-### 5.1 加入 / 取消
+### 5.1 加入 / 取消 / 确认
 
 ```json
-{ "t": "matchmaking.join", "rid": 2, "difficulty": "NORMAL" }
+{ "t": "queue.join", "rid": 2, "difficulty": "NORMAL" }
 ```
 
-`difficulty` 必填，使用第 1 节的四个枚举。成功直接回复 `{"t":"ok","rid":2}`，匹配进度另行推送。重复加入相同难度不增加人数、不重置入队时间；改选难度会退出旧队列并重新入队。
+`difficulty` 必填，使用第 1 节的四个枚举。成功即回复 `{"t":"ok","rid":2}`，随后推送一份完整的 `queue.state`。相同难度重复加入不增加人数、不重置入队时间；更换难度必须先取消（否则返回 `QUEUED`）。进度另行推送。
 
 ```json
-{ "t": "matchmaking.cancel", "rid": 3 }
+{ "t": "queue.cancel", "rid": 3, "ticketId": "9f2c…" }
 ```
 
-取消成功回复 `{"t":"ok","rid":3}` 并推送 `idle`。未在队列时取消也成功；对局已经开始时返回 `ROOM_STARTED`。同盟队列仅创建者可主动取消，取消会让整队退出队列并保留原同盟。
+`ticketId` 取最近一次 `queue.state` 里给出的值。取消成功回复 `{"t":"ok","rid":3}` 并推送 `state: "idle"`（带 `reason`）；未在队列时取消同样成功。对局已经开始时返回 `ROOM_STARTED`。同盟队列只有创建者能主动取消，取消会让整队退出队列并保留原同盟。
 
-已有同盟的创建者可发送：
+凑齐人数的过程是 0.3.1 的 offer / accept 握手：队列把同难度、能凑成恰好四人的票组成一份 offer，给每个入队者推 `state: "offered"`（带 `offerId`、`deadline`、`accepted`、`acceptedCount`）。每人都要点一次：
+
+```json
+{ "t": "queue.accept", "rid": 5, "ticketId": "9f2c…", "offerId": "3ee7…" }
+```
+
+最后一位确认者触发房间分配，请求直接回复 `ok` 并推送 `state: "matched"`（带 `code`）；分配失败则直接回复错误码，未过期的票退回 `state: "queued"` 并带 `reason: "allocation_failed"`。默认确认窗口 30 秒（`deadline`），超时 offer 作废、票继续排队；单人最长等待 10 分钟。
+
+已有同盟的创建者仍然发送：
 
 ```json
 { "t": "room.matchmaking", "rid": 4 }
 ```
 
-使用同盟当前难度，要求 1–3 名在线真人、无 AI、其他队员已准备。整队进入队列，不拆散队员；支持 2+1+1、3+1、2+2 等组合。队列中的同盟通过 `room.state.matchmaking: true` 显示匹配状态，暂停直接开局。其他玩家可凭同盟密钥加入，成功加入会让整队退出队列，待新队员准备后创建者可重新发起匹配。凑齐四人后保留较早入队同盟的密钥和创建者，其他同盟合并进入该房间；观战者一起迁移，合并后观战席仍最多两人。
+使用同盟当前难度，要求 1–3 名在线真人、无 AI、其他队员已准备。整队作为**一张不可拆分的票**入队，支持 2+1+1、3+1、2+2 等组合。队列中的同盟通过 `room.state.matchmaking: true` 显示匹配状态，期间不能直接开局。其他玩家可凭同盟密钥加入，成功加入会让整队退出队列，待新队员准备后创建者可重新发起匹配。凑齐四人后保留较早入队同盟的密钥和创建者，其他同盟整体合并进入该房间；观战者一起迁移，合并后观战席仍最多两人。
 
 ### 5.2 状态推送
 
-等待中：
+`queue.state` 是**完整快照**，从不发送增量。等待中：
 
 ```json
-{ "t": "matchmaking.state", "status": "searching", "difficulty": "NORMAL", "joinedAt": 1791190800000, "players": 2, "target": 4, "serverNow": 1791190810000 }
+{ "t": "queue.state", "state": "queued", "ticketId": "9f2c…", "difficulty": "NORMAL", "required": 4, "joinedAt": 1791190800000, "deadline": 1791191400000, "partyId": null, "partySize": 1, "partyLeaderId": "p_ab12…", "partyRoomCode": null, "waitingCount": 2 }
 ```
 
 | 字段 | 说明 |
 |---|---|
-| `status` | `searching` / `idle` / `matched` / `failed` |
-| `serverNow` | 每种状态均有，服务器时间 |
-| `difficulty` | `searching`、`matched`、`failed` 时有 |
-| `joinedAt` | 仅 `searching`，当前难度入队时间 |
-| `players` | 仅 `searching`，保持本队完整且符合观战席容量时可组合的同难度队列人数，上限 4；不是本站在线人数 |
-| `target` | 仅 `searching`，固定为 4 |
-| `code` | 仅 `matched`，已分配的大写房间号 |
-| `error` | 仅 `failed`，分配 / 启动失败错误码 |
+| `state` | `idle` / `queued` / `offered` / `matched` |
+| `ticketId` | 本票标识；`idle` 时为 `null` |
+| `difficulty` / `required` / `joinedAt` | 难度、目标人数（固定 4）、入队时间 |
+| `deadline` | 本票的过期时间；`offered` 时是 offer 的确认截止时间 |
+| `partyId` / `partySize` / `partyLeaderId` / `partyRoomCode` | 同盟票的归属信息；单人票 `partySize: 1`、`partyRoomCode: null` |
+| `waitingCount` | 仅 `queued`：同难度、且能保持本队完整时可组合的等待人数，上限 4；不是本站在线人数 |
+| `reason` | 票被结束的原因：`cancelled` / `peer_cancelled` / `peer_disconnected` / `expired` / `unavailable` / `allocation_failed` / `superseded` / `shutdown` |
+| `offerId` / `accepted` / `acceptedCount` / `allocationPending` | 仅 `offered`：确认窗口、自己是否已确认、已确认人数；分配进行中时带 `allocationPending: true` |
+| `code` | 仅 `matched`：已分配的大写房间号 |
 
-其余状态示例：
+其余三种状态：
 
 ```json
-{ "t": "matchmaking.state", "status": "idle", "serverNow": 1791190810000 }
+{ "t": "queue.state", "state": "idle", "ticketId": null, "required": 4, "reason": "expired" }
 ```
 
 ```json
-{ "t": "matchmaking.state", "status": "matched", "difficulty": "NORMAL", "code": "ABCD", "serverNow": 1791190810000 }
+{ "t": "queue.state", "state": "offered", "ticketId": "9f2c…", "difficulty": "NORMAL", "required": 4, "offerId": "3ee7…", "accepted": false, "acceptedCount": 2, "deadline": 1791190830000, "partyId": null, "partySize": 1, "partyLeaderId": "p_ab12…", "partyRoomCode": null }
 ```
 
 ```json
-{ "t": "matchmaking.state", "status": "failed", "difficulty": "NORMAL", "error": "RATE", "serverNow": 1791190810000 }
+{ "t": "queue.state", "state": "matched", "ticketId": "9f2c…", "offerId": "3ee7…", "difficulty": "NORMAL", "required": 4, "code": "ABCD" }
 ```
 
 匹配成功自动创建或复用同盟房间并开局，沿用上游 `room.state` 和 `m.public` 进入 `INFO_CHECK`。这些房间 / 对局推送可能先于 `matched` 或请求的直接 `ok` 到达，调用端应独立处理推送和直接回复，不要假定严格的到达顺序。
 
 ### 5.3 队列规则与错误
 
-队列仅限同一游戏进程、同难度、主动入队且在线的真人，优先按入队顺序选择能完整凑齐 4 人的队伍，不补 AI。单人 `matchmaking.join` 不要求发送 `room.ready`，已有房间的玩家通过创建者的 `room.matchmaking` 整队入队；观战者不占匹配人数且不能发起匹配。
+队列仅限同一游戏进程、同难度、主动入队且在线的真人：池内按入队顺序组合，把整队和真人填成**恰好四人**，不补 AI；一个队伍凑不满时不会被拆开。单人 `queue.join` 不要求发送 `room.ready`；已有房间的玩家通过创建者的 `room.matchmaking` 整队入队；观战者不占匹配人数且不能发起匹配。
 
-断线会立即退出队列，重连不会自动重新入队；同盟任一队员断线、离队、被移出或取消准备时整队出队。更改难度、添加 AI 或手动创建、加入其他房间、进入观战席位成功时也退出队列。服务器重启后队列清空；多个进程之间不共享队列。分配失败移除该组的排队记录，已有同盟恢复原来的队员、密钥与准备状态，单人释放临时座位，用户可重新加入。
+断线会立即退出队列，重连不会自动重新入队；同盟任一队员断线、离队、被移出或取消准备时整队出队。更改难度、添加 AI 或手动创建、加入其他房间、进入观战席位成功时也退出队列。服务器重启后队列清空；多个进程之间不共享队列。分配失败不会解散队列：已确认且仍健康的票保持原来的入队顺序与过期时间，同盟恢复原来的队员、密钥与准备状态，单人释放临时座位，用户可以直接重试。
+
+`hello` 需要带上队列与容量契约的版本（见第 3 节）：
+
+```json
+{ "t": "hello", "rid": 1, "name": "博士", "version": 1, "matchmakingVersion": "alliance-2", "playerCapacityVersion": "capacity-3" }
+```
+
+客户端可省略；一旦发送就必须与服务端一致，否则 `hello` 直接返回 `BAD_MSG`（`detail: "matchmaking version mismatch"` / `"player capacity version mismatch"`），客户端应刷新页面重连。
 
 | 错误码 | 触发条件 |
 |---|---|
-| `BAD_MSG` | 非法难度、不符合消息格式，或尚未完成握手（`detail: "hello required"`） |
+| `BAD_MSG` | 非法难度、不符合消息格式、未完成握手（`detail: "hello required"`）、或版本契约不一致 |
+| `QUEUED` | 已在队列中却又改了难度，或先取消再开 / 加入私人房间 |
+| `MAINTENANCE` | 服务器暂不接受新的匹配（维护开关） |
 | `NOT_READY` | 服务端会话不处于已连接状态，或组队成员离线 / 未准备 |
-| `ALREADY` | 用户已在房间中，包括观战者 |
-| `RATE` | 请求限流、队列已满（默认最多 2000 人）或网络资源限制 |
-| `ROOM_STARTED` | 对局已开始后加入 / 取消匹配 |
 | `NOT_HOST` | 同盟非创建者发起 / 取消整队匹配 |
 | `SPECTATOR` | 观战者发起 / 取消整队匹配 |
+| `ROOM_STARTED` | 对局已开始后加入 / 取消匹配 |
+| `RATE` | 请求限流、队列已满（默认最多 2000 人）或网络资源限制 |
 | `INTERNAL` | 房间分配或对局启动失败等内部错误 |
 
 直接错误回复沿用上游格式，例如：
 
 ```json
-{ "t": "error", "rid": 2, "code": "ALREADY", "msg": "已完成该操作", "detail": "leave your room before matchmaking" }
+{ "t": "error", "rid": 2, "code": "ALREADY", "msg": "已完成该操作", "detail": "cancel matchmaking before starting" }
 ```
 
-`msg` 以实际服务端文本为准，`detail` 可缺省；业务判断使用 `code`。分配失败也可能通过 `matchmaking.state.error` 推送，不一定表现为加入请求的直接错误。
+`msg` 以实际服务端文本为准，`detail` 可缺省；业务判断使用 `code`。分配失败也可能通过 `queue.state` 的 `reason` 推送反映，不一定表现为请求的直接错误。
 
-`matchmaking.join` 和 `room.matchmaking` 使用原有重请求限流桶，默认每连接每秒补充 2 次、突发容量 6 次，并同时受普通消息桶限制（默认每秒 40 次、突发 40 次）。这些默认值可由程序配置覆盖。
+`queue.join` / `queue.accept` / `room.matchmaking` 使用原有重请求限流桶，默认每连接每秒补充 2 次、突发容量 6 次，并同时受普通消息桶限制（默认每秒 40 次、突发 40 次）。这些默认值可由程序配置覆盖。
 
 ### 5.4 WebSocket 压缩扩展
 

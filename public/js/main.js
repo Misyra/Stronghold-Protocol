@@ -77,7 +77,7 @@ import { equippedSkinKeys, installSkinsSync, loadEquippedSkinKeys, skinsStore } 
 import { startBuildGuard } from './ui/buildGuard.js';
 import { AnnouncementBanner } from './ui/announcement.js';
 import { ResourceHost } from './ui/resourcePanel.js';
-import { ERR } from '../../shared/constants.js';
+import { ERR, MAX_SEATS } from '../../shared/constants.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
 import { t, N_, translateWire } from '../../shared/i18n.js';
 import { recordError, installTrafficMeter } from './diag.js';
@@ -268,12 +268,18 @@ function wireNet() {
   net.on('replaced', () => toast(t('该身份已在其他页面登录，本页已断开'), 'warn', { ttl: 6000 }));
   net.on('unhandledError', (err) => toastError(err));
   net.on('room.state', onRoomState);
-  net.on('matchmaking.state', (msg) => {
-    if (msg.status === 'searching') store.set({ matchmaking: payload(msg) });
-    else {
-      store.set({ matchmaking: null });
-      if (msg.status === 'failed') toast(msg.error === 'RATE' ? t('当前站点或网络资源已达到上限，请稍后重试') : t('匹配未能启动，请重新搜寻'), 'warn');
-    }
+  // 0.3.1 alliance queue (server/matchmaking.js): `queue.state` is a complete ticket snapshot, never a delta.
+  // The hub screens read one shape — { status: 'searching', players, target, joinedAt } — so the mapping lives here:
+  // `waitingCount` is the pool the ticket waits in (its own party included) and `required` is that pool's capacity.
+  // An offer rides the same shape plus { offerId, accepted }: 确认入场 answers queue.accept.
+  net.on('queue.state', (msg) => {
+    const queue = { ...payload(msg), status: 'searching', players: msg.waitingCount ?? msg.partySize ?? 1,
+      target: msg.required || MAX_SEATS };
+    if (msg.state === 'queued' || msg.state === 'offered') { store.set({ matchmaking: queue }); return; }
+    store.set({ matchmaking: null });
+    // allocation_failed / allocation_timeout: the group was formed but the room could not be committed; the
+    // original party (if any) is intact and the player is back in the lobby — say so instead of dropping silently.
+    if (msg.reason === 'allocation_failed' || msg.reason === 'allocation_timeout') toast(t('匹配未能启动，已返回大厅'), 'warn');
   });
   net.on('room.closed', (msg) => {
     backToLobby();

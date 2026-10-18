@@ -560,7 +560,7 @@ export function RoomScreen() {
 
   // 同盟匹配: room.state.matchmaking is the truth (the server queues the ROOM and drops the entry itself when the
   // room fills or the group is matched), so the panel and the buttons read that flag instead of a local wish. The
-  // counts and the clock come from the player-level matchmaking.state (server/matchmaking.js).
+  // counts and the clock come from the player-level queue.state (server/matchmaking.js).
   const mmView = mm && mm.status === 'searching' ? {
     matched: mm.players, target: mm.target || MAX_SEATS,
     elapsed: mm.joinedAt ? Math.max(0, (serverNow() - mm.joinedAt) / 1000) : 0,
@@ -584,6 +584,8 @@ export function RoomScreen() {
   const searching = !!room && coop && !!facts.searching;
   // the overlays stay mounted while they fade out; 离开同盟 fades the room before the request goes out
   const [searchShown, searchLeaving] = usePresence(searching && !found, 220);
+  // 队友已集结 (server/matchmaking.js offer): every pooled human confirms before the room is committed
+  const offerShown = !!(searching && mm?.offerId && !mm?.accepted);
   const [foundShown, foundLeaving] = usePresence(found, 320);
   const [protoShown, protoLeaving] = usePresence(picker && !!facts?.isHost, 220);
   const [optsShown, optsLeaving] = usePresence(opts, 160);
@@ -619,7 +621,9 @@ export function RoomScreen() {
   const queueMatch = () => run('match', () => net.request('room.matchmaking', {}));
   // 房主切换无限火力分支（blitz / endurance）——room.setRandom 带 variant
   const setVariant = (v) => run('variant', () => net.request('room.setRandom', { random: true, variant: v }));
-  const cancelMatch = () => run('cancel-match', () => net.request('matchmaking.cancel', {}));
+  const cancelMatch = () => run('cancel-match', () => net.request('queue.cancel', { ticketId: mm?.ticketId }));
+  // 确认入场: an offer needs every seated human of the party before the room is committed (server/matchmaking.js)
+  const acceptMatch = () => run('accept-match', () => net.request('queue.accept', { ticketId: mm?.ticketId, offerId: mm?.offerId }));
   // 提交到联机站（§45.1）：只有服务端明说 registered 才算收录；202 是「发出去了但不知道结果」，界面转待确认；
   // 其余按业务码给文案。晚回执（房间已经不是当时那间）一概不写进界面。
   const submitPortal = () => run('portal', async () => {
@@ -836,6 +840,12 @@ export function RoomScreen() {
       </div>
     </footer>
 
+    ${offerShown ? html`<div class="rs-offer brackets" role="status">
+      <div class="rs-offer__head"><${MicroLabel}>MATCH FOUND<//><h2>${t('队友已集结')}</h2></div>
+      <p>${t('全员确认后直接开局；超时未确认则继续等待队友')}</p>
+      <${Button} variant="primary" icon="check" disabled=${!online || !!busy} loading=${busy === 'accept-match'}
+        onClick=${acceptMatch}>${t('确认入场')}<//>
+    </div>` : null}
     ${searchShown ? html`<${SearchPanel} class=${`rs-searchpanel${searchLeaving ? ' is-leaving' : ''}`} elapsed=${searchElapsed}
       onStop=${facts.isHost ? cancelMatch : null} stopping=${busy === 'cancel-match'}
       note=${facts.isHost ? t('搜寻期间可随时直接开始模拟') : t('创建者正在搜寻队友')}

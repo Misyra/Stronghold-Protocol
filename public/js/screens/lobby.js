@@ -8,7 +8,7 @@ import { useHubBackdrop, HubBackdrop, HubRadar, BackdropSettings, BackdropGlyph,
 // the player's own picture) with the game's dot-matrix emblem in the middle, a left column (密钥加入 · tips), a right
 // column (S.W.E.E.P.报告 (screens/sweep.js) · 干员调配) and the entries at the bottom right:
 // 独立模拟 / 同盟模拟 open the start sheet (difficulty 标准/险境/绝境/终极) and 选择同盟方式, 同盟匹配 opens THIS fork's
-// own queue (matchmaking.join; see below). The 密钥加入 dialog joins with a 同盟密钥 (recent codes remembered) — as a
+// own queue (queue.join; see below). The 密钥加入 dialog joins with a 同盟密钥 (recent codes remembered) — as a
 // player (加入同盟) or in one of its MAX_SPECTATORS spectator seats (观战: room.spectate, also while its match runs;
 // community report #26). The server is picked on the title screen.
 //
@@ -460,7 +460,7 @@ export function ProtoCard({ roomMode, difficulty, selected, onSelect, matchmakin
  * (ui/transitions.js); the picture is redrawn for each difficulty.
  */
 function ProtocolSelect({ card, roomMode, random, variant, difficulty, onDifficulty, onClose, matchmaking, brief,
-  online, maint, busy, isSearching, onCreate, purpose = 'create', onSearch, onCancel, mm, chained = false }) {
+  online, maint, busy, isSearching, onCreate, purpose = 'create', onSearch, onCancel, onAccept, offering = false, mm, chained = false }) {
   const [leaving, leave] = useLeave(onClose);
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.modal, .guide')) leave(); };
@@ -488,6 +488,13 @@ function ProtocolSelect({ card, roomMode, random, variant, difficulty, onDifficu
       <div class="proto-body">
         <section class="proto-stage"><${ProtocolScene} key=${d} difficulty=${d} /></section>
         <section class="proto-side proto-side--search">
+          ${offering ? html`<div class="proto-offer" role="status">
+            <${MicroLabel}>MATCH FOUND<//>
+            <h3>${t('队友已集结')}</h3>
+            <p>${t('全员确认后直接开局；超时未确认则继续等待队友')}</p>
+            <${Button} variant="primary" block=${true} icon="check" disabled=${!online || !!busy} loading=${busy === 'accept'}
+              onClick=${onAccept}>${t('确认入场')}<//>
+          </div>` : null}
           <${SearchPanel} elapsed=${mm?.elapsed || 0} onStop=${onCancel} stopping=${busy === 'cancel'}
             note=${t('已找到 {matched}/{target} 名博士', { matched: mm?.matched || 1, target: mm?.target || 4 })}
             tags=${[{ key: 'mode', label: t('精确搜寻'), icon: html`<${Icon} name="search" />` },
@@ -595,7 +602,7 @@ function AllianceSelect({ onClose, code, onCode, codeOk, recent, online, maint, 
 const HAS = (type) => !!SERVER_C2S && Object.hasOwn(SERVER_C2S, type);
 const CAN_FIREPOWER = HAS('room.setRandom');
 // This fork's 同盟匹配 (server/matchmaking.js: identified players of ONE difficulty, the group gets a room of its own)
-// takes the hub's 搜寻队友 entry: `match.queue` is not a message this server knows, `matchmaking.join` is.
+// takes the hub's 搜寻队友 entry: `match.queue` is not a message this server knows, `queue.join` is.
 const CAN_SEARCH = true;
 
 /** Lobby screen component. */
@@ -688,8 +695,9 @@ export function LobbyScreen() {
   };
 
   const create = () => run('create', () => net.request('room.create', { mode: roomMode, difficulty, random: randomMode, ...(randomMode ? { variant } : {}) }));
-  const queueMatch = () => run('search', () => net.request('matchmaking.join', { difficulty }));
-  const cancelMatch = () => run('cancel', () => net.request('matchmaking.cancel'));
+  const queueMatch = () => run('search', () => net.request('queue.join', { difficulty }));
+  const cancelMatch = () => run('cancel', () => net.request('queue.cancel', { ticketId: mm?.ticketId }));
+  const acceptMatch = () => run('accept', () => net.request('queue.accept', { ticketId: mm?.ticketId, offerId: mm?.offerId }));
   const join = (c = code, federationNode) => {
     // `onClick=${join}` hands the click EVENT as the first argument, and a default parameter only applies to
     // `undefined` — codeArg keeps an event target out of the key and falls back to the input field
@@ -729,7 +737,7 @@ export function LobbyScreen() {
   };
   // leaving the hub while the queue runs cancels it first: a queue entry outlives this screen otherwise
   const backToTitle = () => isSearching
-    ? run('cancel', async () => { await net.request('matchmaking.cancel'); returnToTitle(); })
+    ? run('cancel', async () => { await net.request('queue.cancel', { ticketId: mm?.ticketId }); returnToTitle(); })
     : returnToTitle();
   // hub dialogs: the start sheet of a picked mode, 密钥加入 (opened by an invite code in the URL too)
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -825,7 +833,8 @@ export function LobbyScreen() {
       brief=${randomMode ? html`<${FirepowerBrief} variant=${fpVariant} onVariant=${pickVariant} />` : null}
         online=${online} maint=${maint} busy=${busy} isSearching=${isSearching}
         onCreate=${create}
-        purpose=${sheetPurpose} onSearch=${queueMatch} onCancel=${cancelMatch} mm=${mmView} chained=${sheetChained} />` : null}
+        purpose=${sheetPurpose} onSearch=${queueMatch} onCancel=${cancelMatch} onAccept=${acceptMatch}
+      offering=${!!mmView?.offerId && !mmView?.accepted} mm=${mmView} chained=${sheetChained} />` : null}
 
     ${allyOpen ? html`<${AllianceSelect} onClose=${() => setAllyOpen(false)} code=${code} onCode=${(v) => setCode(normalizeCode(v))} codeOk=${codeOk}
       recent=${recent} online=${online} maint=${maint} busy=${busy} difficulty=${difficulty}

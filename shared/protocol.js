@@ -435,8 +435,12 @@ const target = (v) => {
 /** @type {Record<string, Record<string, (v:any)=>boolean> & { $optional?: string[] }>} */
 export const C2S = {
   // session & lobby
+  // matchmakingVersion / playerCapacityVersion: the 0.3.1 capability contracts (shared/constants.js MATCHMAKING_VERSION,
+  // shared/playerCapacity.js PLAYER_CAPACITY_VERSION); a hello that names another one is refused (server/net.js)
   hello: { name: (v) => isStr(v, NAME_MAX_LEN) && v.trim().length > 0, token: (v) => v == null || isStr(v, 64), version: (v) => v == null || isInt(v, 0, 1e6),
-    stateDelta: (v) => isInt(v, 0, 1e6), noReplace: isBool, claimAt: (v) => isNum(v, 0, Number.MAX_SAFE_INTEGER), $optional: ['token', 'version', 'stateDelta', 'noReplace', 'claimAt'] },
+    stateDelta: (v) => isInt(v, 0, 1e6), noReplace: isBool, claimAt: (v) => isNum(v, 0, Number.MAX_SAFE_INTEGER),
+    matchmakingVersion: isId, playerCapacityVersion: isId,
+    $optional: ['token', 'version', 'stateDelta', 'noReplace', 'claimAt', 'matchmakingVersion', 'playerCapacityVersion'] },
   ping: { c: (v) => typeof v === 'number' && Number.isFinite(v) },
   'state.resync': {},
   'room.create': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v) },
@@ -454,8 +458,13 @@ export const C2S = {
   'room.kick': { seat: (v) => isInt(v, 0, MAX_SEATS - 1), playerId: isId },
   'room.start': {},
   'room.matchmaking': {},
-  'matchmaking.join': { difficulty: (v) => DIFFICULTIES.includes(v) },
-  'matchmaking.cancel': {},
+  // queue.join: difficulty decides the pool. `party` asks for the whole alliance (host only); the ticket then covers
+  // every seated human of the room (server/matchmaking.js members). server/matchmaking.js answers queue.state.
+  'queue.join': { difficulty: (v) => DIFFICULTIES.includes(v), party: isBool, $optional: ['party'] },
+  // queue.cancel: the ticket may be named (it survives a reconnect) or resolved from the session.
+  'queue.cancel': { ticketId: isId, $optional: ['ticketId'] },
+  // queue.accept: every seated human of an offered room has to accept the same offerId before the room starts.
+  'queue.accept': { ticketId: isId, offerId: isId, revivalVote: isBool, $optional: ['revivalVote'] },
   'room.rerollSetup': { setupRevision: (v) => isInt(v, 0, 2 ** 31) },
   'room.cancelReroll': { voteId: (v) => isInt(v, 1, 2 ** 31) },
   // operator loadout (DESIGN §16): stored per session/seat; accepted until the match leaves INFO_CHECK — `ops` (0.2.2):
@@ -583,7 +592,9 @@ export const C2S = {
 export const S2C = [
   'welcome', 'ok', 'error', 'pong',
   'room.state', 'room.closed',
-  'matchmaking.state',
+  // queue.state { state: 'idle' | 'queued' | 'offered' | 'started', ticketId?, difficulty?, party?, offerId?, roomCode?,
+  // waitingCount?, expiresInMs? } — one complete ticket snapshot, never other members' identities
+  'queue.state',
   'm.state', // opt-in stateDelta: 1: { kind, seq, full } or { kind, seq, base, patch }
   'm.public', 'm.private', 'm.field', 'm.toast', 'm.ticker', 'm.emote', 'm.chat', 'm.chatState', 'm.result',
   // m.layer { playerId, bondId, add } — own live prep layer gain; ephemeral, never replayed on resync.

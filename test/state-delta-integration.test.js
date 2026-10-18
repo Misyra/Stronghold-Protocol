@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { startServer } from '../server/index.js';
 import { TestClient } from './helpers/wsClient.js';
 import { StateReceiver } from '../shared/stateDelta.js';
-import { PROTOCOL_VERSION } from '../shared/constants.js';
+import { PROTOCOL_VERSION, MATCHMAKING_VERSION } from '../shared/constants.js';
+import { PLAYER_CAPACITY_VERSION } from '../shared/playerCapacity.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { STATE_COALESCE, NET_DEFAULTS } from '../server/net.js';
 
@@ -17,7 +18,8 @@ async function fixture(t, opts = {}) {
     const c = await TestClient.connect(`ws://127.0.0.1:${srv.port}/ws`);
     clients.push(c);
     c.welcome = await c.request({ t: 'hello', name: 'Player' + clients.length, token,
-      version: PROTOCOL_VERSION, ...(delta ? { stateDelta: 1 } : {}) });
+      version: PROTOCOL_VERSION, matchmakingVersion: MATCHMAKING_VERSION, playerCapacityVersion: PLAYER_CAPACITY_VERSION,
+      ...(delta ? { stateDelta: 1 } : {}) });
     c.id = c.welcome.playerId;
     return c;
   };
@@ -162,8 +164,11 @@ test('standalone FIFO matchmaking also uses delta transport, without sending a p
   for (let i = 0; i < 4; i++) {
     const c = await connect(i !== 1);
     clients.push(c);
-    assert.equal((await c.request({ t: 'matchmaking.join', difficulty: 'NORMAL' })).t, 'ok');
+    assert.equal((await c.request({ t: 'queue.join', difficulty: 'NORMAL' })).t, 'ok');
   }
+  // 0.3.1: the four tickets become one offer, and the match starts when the last one accepts it.
+  const offers = await Promise.all(clients.map((c) => c.waitFor('queue.state', (s) => s.state === 'offered')));
+  for (let i = 0; i < 4; i++) assert.equal((await clients[i].request({ t: 'queue.accept', ticketId: offers[i].ticketId, offerId: offers[i].offerId })).t, 'ok');
   for (let i = 0; i < 4; i++) {
     const c = clients[i];
     if (i === 1) assert.equal((await c.waitFor('m.private')).playerId, c.id);

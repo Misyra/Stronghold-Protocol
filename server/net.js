@@ -55,7 +55,8 @@ import { C2S, validateC2S } from '../shared/protocol.js';
 import { hasSensitiveNickname } from './moderation/nickname.js';
 import { chatRetentionUntil, CHAT_MUTE_MAX_MS, CHAT_WINDOW_MS } from './moderation/chatState.js';
 import { negotiateStateDelta, prepareStateFrame, reserveStateFrame, resetStateDelta } from './stateTransport.js';
-import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION } from '../shared/constants.js';
+import { ERR, ERR_TEXT, MATCHMAKING_VERSION, NAME_MAX_LEN, PROTOCOL_VERSION } from '../shared/constants.js';
+import { PLAYER_CAPACITY_VERSION } from '../shared/playerCapacity.js';
 
 /** Tunables (all overridable through the Network / SessionRegistry constructors). */
 export const NET_DEFAULTS = Object.freeze({
@@ -83,10 +84,11 @@ export const NET_DEFAULTS = Object.freeze({
  * edits), room.ownership
  * (a ≤ 160-id list, the same way), room.diy (≤ 8 自选 picks checked against the data, the same way) and room.spectate
  * (taking a spectator seat in a running match resends its state like a watcher's g.watch — server/lobby.js spectate)
- * and matchmaking.join (this fork's alliance queue) and room.setPlugins (a new visual set: every member downloads its
- * art manifest — server/plugins/visualSet.js). state.resync requests a full recovery through the same limits.
+ * and queue.join (an alliance queue ticket: every seated human of the room turns ready-to-queue at once) and
+ * room.setPlugins (a new visual set: every member downloads its art manifest — server/plugins/visualSet.js).
+ * state.resync requests a full recovery through the same limits.
  */
-export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.ownership', 'room.diy', 'matchmaking.join', 'room.matchmaking', 'room.spectate', 'state.resync', 'room.skins', 'room.setPlugins']);
+export const HEAVY_TYPES = new Set(['g.watch', 'room.loadout', 'room.ownership', 'room.diy', 'queue.join', 'room.matchmaking', 'room.spectate', 'state.resync', 'room.skins', 'room.setPlugins']);
 
 /** Close codes (see header). */
 export const CLOSE = Object.freeze({ REPLACED: 4001, HELLO_TIMEOUT: 4002, FOREIGN_BLOCKED: 4003, POLICY: 1008, SHUTDOWN: 1001 });
@@ -143,6 +145,12 @@ export class Session {
     this.addr = '?';
     /** @type {string | null} per-network limit key of the latest connection (null = not limited), see clientAddress */
     this.limitKey = null;
+    /** @type {string | null} `matchmakingVersion` the client said it spoke (0.3.1; a mismatch keeps it out of the queue) */
+    this.matchmakingVersion = null;
+    /** @type {string | null} `playerCapacityVersion` the client said it spoke (0.3.1; see shared/playerCapacity.js) */
+    this.playerCapacityVersion = null;
+    /** Set once the lobby answered `queue.accept` with `started`: this session's own party was started from the queue. */
+    this.matchmakingResult = null;
     /** Private stable quota key, never sent to clients; unlike addr it survives state restoration. */
     this.foreignSessionKey = null;
     /**
@@ -865,6 +873,14 @@ export class Network {
       this.reply(conn, errorMsg(ERR.BAD_MSG, rid, `version mismatch: server ${PROTOCOL_VERSION}`));
       return;
     }
+    if (msg.matchmakingVersion != null && msg.matchmakingVersion !== MATCHMAKING_VERSION) {
+      this.reply(conn, errorMsg(ERR.BAD_MSG, rid, `matchmaking version mismatch: server ${MATCHMAKING_VERSION}`));
+      return;
+    }
+    if (msg.playerCapacityVersion != null && msg.playerCapacityVersion !== PLAYER_CAPACITY_VERSION) {
+      this.reply(conn, errorMsg(ERR.BAD_MSG, rid, 'player capacity version mismatch'));
+      return;
+    }
     const name = sanitizeName(msg.name);
     if (!name) { this.reply(conn, errorMsg(ERR.BAD_MSG, rid, 'bad field name')); return; }
     // Check before creating, renaming or taking over a session, including token-based reconnects.
@@ -925,6 +941,8 @@ export class Network {
     session.lastSeen = now;
     session.addr = conn.ip;
     session.limitKey = conn.key;
+    session.matchmakingVersion = msg.matchmakingVersion ?? null;
+    session.playerCapacityVersion = msg.playerCapacityVersion ?? null;
     if (!repeat) this.log.info('[audit] ' + JSON.stringify({ at: new Date(now).toISOString(),
       action: resumed ? 'session.resumed' : 'session.connected', ip: conn.ip,
       network: conn.key, playerId: session.playerId, name: session.name, roomCode: session.roomCode || null }));

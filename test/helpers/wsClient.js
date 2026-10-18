@@ -12,6 +12,8 @@
 //   await c.close();
 
 import WebSocket from 'ws';
+import { MATCHMAKING_VERSION } from '../../shared/constants.js';
+import { PLAYER_CAPACITY_VERSION } from '../../shared/playerCapacity.js';
 
 const REPLY_TYPES = new Set(['ok', 'error', 'welcome', 'pong']);
 
@@ -133,7 +135,10 @@ export class TestClient {
    * @param {string} name @param {string} [token] @param {object} [extra]
    */
   async hello(name, token, extra = {}) {
-    const reply = await this.request({ t: 'hello', name, version: 1, ...(token ? { token } : {}), ...extra });
+    const reply = await this.request({
+      t: 'hello', name, version: 1, matchmakingVersion: MATCHMAKING_VERSION, playerCapacityVersion: PLAYER_CAPACITY_VERSION,
+      ...(token ? { token } : {}), ...extra,
+    });
     if (reply.t !== 'welcome') throw new Error(`hello failed: ${JSON.stringify(reply)}`);
     return reply;
   }

@@ -1,10 +1,10 @@
-// test/render/drag.test.js — drop target resolution, the pointer state machine (no DOM, fake timers) and the tile a
-// dragged unit is drawn standing on (dragStandTile; the harness's 100 px grid stands in for the camera's tile pick).
+// test/render/drag.test.js — drop target resolution, the pointer state machine (no DOM, fake timers) and the drag moves
+// the renderer follows (the harness's 100 px grid stands in for the camera's tile pick).
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { GEO } from '../../shared/constants.js';
-import { tileSlot, pieceSlot, pieceTile, resolveDrop, isLegal, sameSlot, createDragController, dragStandTile } from '../../public/js/render/drag.js';
+import { tileSlot, pieceSlot, pieceTile, resolveDrop, isLegal, sameSlot, createDragController } from '../../public/js/render/drag.js';
 
 describe('slots & targets', () => {
   test('tileSlot classifies hand, temp, board and everything else', () => {
@@ -277,8 +277,9 @@ describe('drag controller', () => {
     assert.deepEqual(h.events.find((e) => e[0] === 'pieceDrop')[1].target, { area: 'outside', clientX: 250, clientY: 950 });
   });
 
-  // GitHub #602 (PR #646): picking a piece up zooms the board to the shop-collapsed camera while the pointer may stand
-  // still — refresh() judges the drag again at the last pointer, so the target, tileHover and the dragged piece follow
+  // a camera flight under a still pointer (0.3.0's deploy fold zoomed the board as a piece was picked up, GitHub #602;
+  // removed 2026-10-16): refresh() judges the drag again at the last pointer, so the target, tileHover and the dragged
+  // piece follow
   test('refresh(): a still pointer over a moving camera gets the tile now under it; no-op unless dragging', () => {
     let shift = 0; // the "camera": the tile under a canvas point moves by `shift` columns
     const events = [];
@@ -328,53 +329,31 @@ describe('drag controller', () => {
   });
 });
 
-// The official deploy drag (the owner's recording of 2026-10-09; the report in PR #403): the dragged unit is drawn
-// standing on the tile under the pointer while that is a legal target, and held under the pointer elsewhere. The tile
-// is the drag target itself, so the pick, tileHover, the highlight and the drop stay the pointer's tile.
-describe('the tile a dragged unit stands on (dragStandTile)', () => {
-  test('a legal board tile or bench slot is stood on; an illegal tile, a temp slot, no target hold it under the pointer', () => {
-    assert.deepEqual(dragStandTile({ target: { area: 'board', row: 10, col: 3 }, legal: true }), { row: 10, col: 3, bench: false });
-    assert.deepEqual(dragStandTile({ target: { area: 'hand', idx: 6 }, legal: true }), { row: GEO.HAND_ROW, col: 6, bench: true });
-    assert.equal(dragStandTile({ target: { area: 'board', row: 10, col: 3 }, legal: false }), null, 'an illegal tile');
-    assert.equal(dragStandTile({ target: { area: 'hand', idx: 6 }, legal: false }), null, 'the own bench slot / an illegal slot');
-    assert.equal(dragStandTile({ target: { area: 'temp', idx: 1 }, legal: true }), null, 'a temp slot is never a target');
-    assert.equal(dragStandTile({ target: { area: 'outside', clientX: 1, clientY: 2 }, legal: true }), null);
-    assert.equal(dragStandTile({ target: null, legal: false }), null, 'off the grid, over the shop bar');
-    assert.equal(dragStandTile({ target: { area: 'board', row: 10, col: 3 }, legal: 1 }), null, 'legal must be true');
-    assert.equal(dragStandTile({ target: { area: 'board', row: 9.5, col: 3 }, legal: true }), null);
-    assert.equal(dragStandTile({ target: { area: 'hand' }, legal: true }), null);
-    assert.equal(dragStandTile(null), null);
-    assert.equal(dragStandTile(undefined), null);
-    assert.deepEqual(dragStandTile({ target: { area: 'hand', idx: 2 }, legal: true }, { HAND_ROW: 3 }), { row: 3, col: 2, bench: true }, 'geo is a parameter');
-  });
-
-  test('over the drag path: one tile while the pointer moves inside it, the next legal tile at once, none where no drop lands (mouse and touch)', () => {
-    for (const pointerType of ['mouse', 'touch']) {
+// The free deploy drag (2026-10-15): the dragged unit follows the pointer and is never snapped to a tile (render/app.js
+// moveDragVisual). Each move carries the pointer type — a finger holds the model further below it than a mouse — and the
+// tile under the pointer as the target, so the pick, tileHover, the highlight and the drop stay the pointer's tile.
+describe('the drag moves the renderer follows (pieceDragMove)', () => {
+  test('every move carries the pointer type and the pointer\'s tile; the drop lands on the last one (mouse, touch, pen)', () => {
+    for (const pointerType of ['mouse', 'touch', 'pen']) {
       const h = harness({ domCover: true, canPlace: (p, r, c) => !(r === 11 && c === 4) });
       h.c.setEditable(true);
-      const stand = () => dragStandTile(h.events.filter((e) => e[0] === 'pieceDragMove').pop()[1]);
-      const at = (x, y) => { h.ev('pointerMove', x, y, { pointerType }); return stand(); };
+      const at = (x, y) => {
+        h.ev('pointerMove', x, y, { pointerType });
+        const m = h.events.filter((e) => e[0] === 'pieceDragMove').pop()[1];
+        assert.equal(m.pointerType, pointerType, `${pointerType}: the move says which pointer`);
+        assert.equal(m.x, x); assert.equal(m.y, y);
+        return { target: m.target, legal: m.legal };
+      };
       h.ev('pointerDown', 50, 550, { pointerType });
-      assert.equal(at(50, 530), null, `${pointerType}: on its own bench slot (no target) it is held under the pointer`);
+      assert.deepEqual(at(50, 530), { target: { area: 'hand', idx: 0 }, legal: false }, `${pointerType}: its own bench slot is no target`);
       assert.ok(h.c.dragging);
-      // the pointer anywhere on (9,4) (x 400–499, y 300–399 in the harness grid): the unit stands on (9,4) the whole time
-      const inside = [[410, 390], [450, 350], [495, 305], [402, 301]].map(([x, y]) => at(x, y));
-      assert.deepEqual(inside, Array(4).fill({ row: 9, col: 4, bench: false }), `${pointerType}: moving inside the tile leaves it there`);
-      assert.deepEqual(at(450, 299), { row: 10, col: 4, bench: false }, `${pointerType}: the next tile takes it at once`);
-      assert.equal(at(450, 150), null, `${pointerType}: an illegal tile (11,4)`);
-      assert.equal(at(550, 450), null, `${pointerType}: a temp slot`);
-      assert.deepEqual(at(250, 550), { row: GEO.HAND_ROW, col: 2, bench: true }, `${pointerType}: another bench slot`);
-      assert.equal(at(250, 950), null, `${pointerType}: over the shop bar (DOM over the canvas)`);
-      assert.equal(at(-20, 300), null, `${pointerType}: off the grid`);
-      assert.deepEqual(at(350, 250), { row: 10, col: 3, bench: false });
+      for (const [x, y] of [[410, 390], [450, 350], [495, 305]]) assert.deepEqual(at(x, y), { target: { area: 'board', row: 9, col: 4 }, legal: true }, `${pointerType}: anywhere on (9,4)`);
+      assert.deepEqual(at(450, 150), { target: { area: 'board', row: 11, col: 4 }, legal: false }, `${pointerType}: an illegal tile`);
+      assert.deepEqual(at(550, 450), { target: { area: 'temp', idx: 1 }, legal: false }, `${pointerType}: a temp slot`);
+      assert.deepEqual(at(250, 950), { target: null, legal: false }, `${pointerType}: over the shop bar (DOM over the canvas)`);
+      assert.deepEqual(at(350, 250), { target: { area: 'board', row: 10, col: 3 }, legal: true });
       h.ev('pointerUp', 350, 250, { pointerType });
-      assert.deepEqual(h.events.find((e) => e[0] === 'pieceDrop')[1].target, { area: 'board', row: 10, col: 3 }, `${pointerType}: dropped on the tile it stood on`);
-      // a board piece lifts on its own tile (a legal drop: the direction wheel re-orients it in place)
-      h.events.length = 0;
-      h.ev('pointerDown', 450, 250, { pointerType });
-      assert.deepEqual(at(470, 230), { row: 10, col: 4, bench: false }, `${pointerType}: a board piece stands on its own tile`);
-      h.ev('pointerUp', 470, 230, { pointerType });
-      assert.deepEqual(h.events.find((e) => e[0] === 'pieceDrop')[1].target, { area: 'board', row: 10, col: 4 });
+      assert.deepEqual(h.events.find((e) => e[0] === 'pieceDrop')[1].target, { area: 'board', row: 10, col: 3 }, `${pointerType}: dropped on the pointer's tile`);
     }
   });
 });

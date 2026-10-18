@@ -7,6 +7,8 @@ import { diySlotIds, validateDiyPicks } from './diy.js';
 import { cultivatedStats, isPotential, isCultivate, POTENTIAL_DEFAULT, CULTIVATE_DEFAULT, hasPotentialData } from './potential.js';
 import { isContentHash } from './plugins/identity.js';
 import { isPluginId } from './plugins/manifest.js';
+import { isCardAvatarId, isCardPortraitId } from './playerCard.js';
+import { SKIN_LIMITS, isSkinId } from './skins.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -86,9 +88,9 @@ export function isBattleResult(v) {
  * checked on the wire; the server matches each id against its chess (`PlayerState.setSkins`) and drops the entries
  * it does not recognise rather than rejecting the whole selection.
  */
-export const SKIN_LIMITS = Object.freeze({ entries: 160, idLen: 64 });
-/** A skinId. NOT `isId`: that allows only `[A-Za-z0-9_\-.:]`, and skin ids carry `@` and `#` (`char_002_amiya@winter#1`). */
-export const isSkinId = (v) => typeof v === 'string' && v.length > 0 && v.length <= SKIN_LIMITS.idLen && /^[A-Za-z0-9_@#+.\-]+$/.test(v);
+// The model itself lives in shared/skins.js (the canonical home); re-exported here because the wire helpers below and
+// several callers reach it through this module.
+export { SKIN_LIMITS, isSkinId };
 /** Structural check of `room.skins.skins`. */
 export const isSkinSelection = (v) => isMap(v, SKIN_LIMITS.entries, isId, isSkinId);
 
@@ -456,6 +458,8 @@ export const C2S = {
   // the per-operator 潜能 / 练度 (absent = none set: every operator at 潜能 6, 精英2 Lv.60)
   'room.loadout': { entries: isLoadoutEntries, ops: isLoadoutOps, $optional: ['ops'] },
   // 干员皮肤 (custom_docs/SKINS.md): public, so it is accepted in any room phase — no need to freeze it at INFO_CHECK
+  // 名片干员: the operator a seat card shows (shared/playerCard.js). Cosmetic ids only — never a URL, identity or stat.
+  'room.card': { charId: isCardPortraitId, avatar: isCardAvatarId, $optional: ['charId', 'avatar'] },
   'room.skins': { skins: isSkinSelection },
   // install one skin's files on this server, on demand (custom_docs/SKINS.md). The server answers at once and reports the
   // outcome later, as `skins.changed` — an install is tens of seconds and the client gives up after 8 (net.js).

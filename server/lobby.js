@@ -157,6 +157,7 @@
 import { chatEnabled, moderateChat } from './moderation/chat.js';
 import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { DIFFICULTIES, ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
+import { cleanPlayerCard, cardAvatarOperatorId, cardPortraitOperatorId } from '../shared/playerCard.js';
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks, charPotentialChanges } from '../shared/protocol.js';
 import { encode, isErrCode, sendRaw, sendSession, resetSocketState } from './net.js';
 import { matchStatus, roomStatus } from './roomStatus.js';
@@ -404,6 +405,8 @@ export class Room {
       matchmaking: !!this.matchmaking,
       seats: this.seats.map((s) => (s
         ? { seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, ready: s.ready, connected: s.connected && !s.left,
+          // 名片干员: the operator this seat's card shows (room.card) — absent until the player picks one
+          ...(s.card && (s.card.charId || s.card.avatar) ? { card: s.card } : {}),
           // a room with gameplay plugins (header "Gameplay plugins"): has this player's page loaded and checked its content?
           ...(this.modded && !s.isBot ? { content: s.content || 'loading' } : {}) }
         : null)),
@@ -778,6 +781,7 @@ export class Lobby {
       case 'room.loadout': return this.loadout(session, msg);
       case 'room.ownership': return this.ownership(session, msg);
       case 'room.diy': return this.diy(session, msg);
+      case 'room.card': return this.card(session, msg);
       case 'room.skins': return this.skins(session, msg);
       case 'room.skin.install': return this.skinInstall(session, msg);
       case 'room.spectate': return this.spectate(session, msg);
@@ -1426,6 +1430,28 @@ export class Lobby {
    * *does*; a skin changes only what it looks like, and it is public — a teammate switching model mid-match is
    * harmless, and the next `m.public` broadcast carries it to everyone.
    */
+  /**
+   * room.card (名片干员, shared/playerCard.js): the operator a seat card shows. Cosmetic ids only — an unknown or hidden
+   * operator is refused rather than stored, and an omitted field keeps the previous pick. The seat carries it in
+   * room.state so every client draws the same card; it is display metadata and never enters the match.
+   */
+  card(session, msg) {
+    const ids = opsCharIds(this.safeData());
+    const previous = session.card || { charId: '', avatar: '' };
+    const charId = msg?.charId === undefined ? previous.charId : msg.charId;
+    const avatar = msg?.avatar === undefined ? previous.avatar : msg.avatar;
+    if (charId && !ids.has(cardPortraitOperatorId(charId))) return fail(ERR.BAD_TARGET, 'unknown operator');
+    if (avatar && !ids.has(cardAvatarOperatorId(avatar))) return fail(ERR.BAD_TARGET, 'unknown operator');
+    const next = cleanPlayerCard({ charId, avatar }, (id) => ids.has(id));
+    const changed = next.charId !== previous.charId || next.avatar !== previous.avatar;
+    session.card = next;
+    const room = this.roomOf(session);
+    const seat = room?.seatOf(session.playerId);
+    if (seat) seat.card = next;
+    if (changed && seat) this.broadcastState(room);
+    return OK;
+  }
+
   skins(session, { skins }) {
     const data = this.safeData();
     const cleaned = freezeSkins(skins, (id) => lookup('chess', id, data));

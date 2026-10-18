@@ -3,7 +3,9 @@
 // Installed on Battle.prototype by server/sim/Battle.js (a method container: never instantiated; `this` is the battle).
 
 import { EVENT_BUFFER_CAP } from '../constants.js';
+import { damageRows } from '../damageBoard.js';
 import { elementView } from '../damage.js';
+import { unitStatsEntry } from '../../../shared/protocol.js';
 import { unitInfo, snapshotUnits, ammoView, wolfView, negView, coinView, mysticView, layerView, chargeView } from '../snapshot.js';
 
 export class BattleEvents {
@@ -43,12 +45,15 @@ export class BattleEvents {
   }
 
   /**
-   * Compact full snapshot of this field (DESIGN §8.2 b.snap), plus (only when non-empty):
+   * Compact full snapshot of this field (DESIGN §8.2 b.snap). With includeUnitStats: true, unitStats is always an
+   * array of detail DTOs for the exact units in the tuples, using their already-computed stats (no extra lazy s read).
+   * An explicit diagnostic call may opt in; periodic streaming never copies these details. Plus (only when non-empty):
    *   down: [[id, respawnAt, respawnTime, state, row, col]] — operators that left the field waiting to redeploy (isDown): the
    *         game time their respawn timer ends, its length (s), constants.js DOWN_STATE and the tile they lie on (and
    *         come back on: _layBody — where they fell, or their home);
    *   elem: [[id, element, fill, cooldownEnd, cooldown]] — the element gauge each unit shows (damage.js elementView);
    *   ammo: [[id, rounds left, rounds in the magazine]] — a running ammo skill, whole rounds (snapshot.js ammoView): the segmented bar;
+   *   coins: [[id, balance, cap]] — a live Swire skill purse, zero included (snapshot.js coinView);
    *   wolves: [[id, 狼影 left, the talent's maximum]] — 伺夜's 狼群 (snapshot.js wolfView): the pips under the HP bar;
    *   neg: [[id, fill]] — the share of its cap a negative-HP pool holds (snapshot.js negView; 斩业星熊's 我执): the red bar;
    *   energy: [[id, stored, the trait's maximum]] — a 秘术师's stored attack energies (snapshot.js mysticView): the
@@ -61,14 +66,16 @@ export class BattleEvents {
    *         feared or stunned) — display metadata (render/interp.js holds the position until then);
    *   standCut: [[id, at]] — the latest time each listed enemy's recovery was cut or ignored (_cutAttackStand), the
    *         dying ones in their death window included.
-   * ammo / wolves / neg / energy / layers / charges / stand / standCut are display only: no sim state reads them, and the
-   * nine-field unit tuples are unchanged.
+   * ammo / coins / wolves / neg / energy / layers / charges / stand / standCut are display only: no sim state reads them,
+   * and the nine-field unit tuples are unchanged.
    */
-  snapshot() {
+  snapshot({ includeUnitStats = false } = {}) {
+    const unitStats = includeUnitStats ? [] : null;
     const snap = {
       fieldId: this.fieldId,
       t: Math.round(this.time * 1000) / 1000,
-      units: snapshotUnits(this.units, this.time),
+      units: snapshotUnits(this.units, this.time, unitStats),
+      ...(unitStats ? { unitStats } : {}),
       dp: this.players.length ? Math.floor(this.players[0].dp) : 0,
       killed: this.killed,
       total: this.total,
@@ -127,14 +134,29 @@ export class BattleEvents {
     return snap;
   }
 
+  /** Freeze the detail panel after the first tick; reading it never triggers lazy stat recomputation. */
+  captureStartUnitStats() {
+    if (this._startUnitStats != null) return;
+    this._startUnitStats = this.units.filter(u => u.alive && u.deployed && !u.hidden)
+      .map(u => unitStatsEntry(u, u._s || null));
+  }
+
   /**
-   * Field meta for m.field: { fieldId, kind, rect, stageId, units: UnitInfo[] } — the units on the field, knocked-out
-   * operators waiting to redeploy included (a client joining mid-battle shows them down).
+   * Field meta for m.field: deployed units and knocked-out operators waiting to redeploy. The optional detail cache
+   * is sent only on entry/start/resync and filtered to this view's units, never regenerated during combat.
    */
-  fieldMeta() {
+  fieldMeta({ includeUnitStats = false } = {}) {
+    const units = this.units.filter((u) => (u.alive && u.deployed && !u.hidden) || this.isDown(u))
+      .map(u => unitInfo(u, includeUnitStats ? u._s || u.base : null));
+    const listed = includeUnitStats ? new Set(units.map(u => u.id)) : null;
     return {
       fieldId: this.fieldId, kind: this.kind, rect: { ...this.rect }, stageId: this.stageId,
-      units: this.units.filter((u) => (u.alive && u.deployed && !u.hidden) || this.isDown(u)).map(unitInfo),
+      players: this.players.map((p) => p.playerId),
+      sides: Object.fromEntries(this.players.map((p) => [p.playerId, p.half])),
+      units,
+      ...(includeUnitStats && this._startUnitStats ? { unitStats: this._startUnitStats.filter(u => listed.has(u.id)) } : {}),
     };
   }
+  damageRows() { return damageRows(this); }
+
 }

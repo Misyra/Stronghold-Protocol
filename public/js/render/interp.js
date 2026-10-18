@@ -7,6 +7,11 @@
 //   * runs a render clock `renderT` that trails the newest snapshot by `delay` real seconds (default 100 ms),
 //     advancing at `rate` and gently steered back when network jitter pushes it off target (hard snap when it
 //     is more than `snapAfter` real seconds off),
+//   * `adaptive`: sizes that delay from the stream itself — one snapshot interval plus the 95th percentile of how late
+//     the snapshots of the last `jitterWindow` real seconds arrived (each one's arrival against its game time at the
+//     nominal rate, relative to the earliest of the window) plus `jitterMargin`, within [minDelay, maxDelay]; a later
+//     stream raises it at once, a steadier one lowers it by `delayEase` real s per real s. A gap in the stream longer
+//     than `jitterGap` (a pause, a hidden tab, a new battle) starts the window over,
 //   * extrapolation guard: renderT never runs more than `maxExtrapolate` real seconds past the newest snapshot;
 //     positions are extrapolated along the last velocity for at most that long, then freeze — never for a unit the
 //     newest snapshot shows dead, stunned (frozen, asleep) or blocked, nor for an enemy it shows standing (`stand`),
@@ -192,6 +197,13 @@ export class SnapshotBuffer {
     this.keep = Math.max(0.5, finite(opts.keep, 2.5));
     this.teleport = Math.max(0.5, finite(opts.teleport, 2.5));
     this.snapAfter = Math.max(0.2, finite(opts.snapAfter, 0.75));
+    this.adaptive = opts.adaptive === true;
+    this.minDelay = Math.max(0, finite(opts.minDelay, 0.1));
+    this.maxDelay = Math.max(this.minDelay, finite(opts.maxDelay, 0.6));
+    this.jitterWindow = Math.max(1, finite(opts.jitterWindow, 8));
+    this.jitterMargin = Math.max(0, finite(opts.jitterMargin, 0.02));
+    this.jitterGap = Math.max(0.2, finite(opts.jitterGap, 1));
+    this.delayEase = Math.max(0, finite(opts.delayEase, 0.05));
     this.reset();
   }
 
@@ -204,6 +216,9 @@ export class SnapshotBuffer {
     this.renderT = NaN;
     this.lastNow = NaN;
     this.interval = 0.1 * this.defaultRate / 2; // game s between snapshots (estimated)
+    /** @type {[number, number][]} adaptive: [arrival, arrival − game time / nominal rate] of the recent snapshots */
+    this.lateness = [];
+    this.lastArrival = NaN; // (a new battle's clock is not comparable: the learned `delay` stays, its window starts over)
     /** @type {{t:number, ev:any}[]} */
     this.events = [];
     this.meta = null; // latest snapshot's extra fields (dp, killed, total, boss…)
@@ -229,6 +244,7 @@ export class SnapshotBuffer {
       else if (s.t <= newest) return false;
     }
     s.at = now;
+    if (this.adaptive) this._adapt(s.t, now);
     const prev = this.snaps[this.snaps.length - 1];
     if (prev) {
       const dt = s.t - prev.t;
@@ -251,6 +267,24 @@ export class SnapshotBuffer {
     if (!Number.isFinite(this.renderT)) this.renderT = Math.max(this.snaps[0].t, s.t - this.delay * this.rate);
     else if (this.renderT < this.snaps[0].t) this.renderT = this.snaps[0].t;
     return true;
+  }
+
+  /** Adaptive delay (see header): the lateness of the snapshot of game time `t` that arrived at real time `now`. */
+  _adapt(t, now) {
+    const w = this.lateness;
+    const gap = Number.isFinite(this.lastArrival) ? now - this.lastArrival : Infinity;
+    this.lastArrival = now;
+    if (!(gap >= 0 && gap <= this.jitterGap)) w.length = 0;
+    w.push([now, now - t / this.defaultRate]);
+    while (w.length > 1 && now - w[0][0] > this.jitterWindow) w.shift();
+    if (w.length < 6) return;
+    let min = Infinity;
+    for (const e of w) if (e[1] < min) min = e[1];
+    const late = w.map((e) => e[1] - min).sort((a, b) => a - b);
+    const p95 = late[Math.min(late.length - 1, Math.floor(late.length * 0.95))];
+    const want = clamp(this.interval / this.defaultRate + p95 + this.jitterMargin, this.minDelay, this.maxDelay);
+    if (want > this.delay) this.delay = want;
+    else if (gap >= 0 && gap <= this.jitterGap) this.delay = Math.max(want, this.delay - this.delayEase * gap);
   }
 
   /**

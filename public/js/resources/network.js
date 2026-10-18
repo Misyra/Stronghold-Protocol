@@ -19,11 +19,38 @@ export function waitForResource(ms, signal) {
 
 /** Consecutive CDN failures that mean the asset host is challenging or failing this client outright. */
 const CDN_TRIP = 2;
+/**
+ * How much a single page may pull from the game host when the CDN refuses it. The fallback exists so a challenged CDN
+ * does not turn into "no art at all"; it must never turn into "every player re-downloads 310 MiB from the game server".
+ * Bulk preload does not fall back at all (public/js/resources/store.js passes allowOrigin:false).
+ */
+const ORIGIN_LIMIT_FILES = 400;
+const ORIGIN_LIMIT_BYTES = 48 << 20;
+let originFiles = 0;
+let originBytes = 0;
+let originRefused = 0;
 /** How long a tripped breaker keeps the CDN out of the loop before it is probed again (a page or worker
  *  lives far longer than a preload run, and an "Under Attack" window closes on its own). */
 const CDN_COOL_OFF_MS = 5 * 60_000;
 let cdnFails = 0;
 let cdnBlockedUntil = 0;
+
+/**
+ * Reserve `bytes` of this page's game-host fallback budget (a page may only lean on the game server so much while the
+ * CDN refuses it). Returns the reserved amount, or 0 when the budget is spent. Every caller of the host copy — bulk
+ * preload is refused outright — goes through here: public/js/resourceNetwork.js and public/js/image.js share it.
+ */
+export function takeOriginBudget(bytes = 0) {
+  if (originFiles >= ORIGIN_LIMIT_FILES || originBytes >= ORIGIN_LIMIT_BYTES) { originRefused++; return 0; }
+  originFiles++;
+  originBytes += Math.max(0, Number(bytes) || 0);
+  return Math.max(1, Math.max(0, Number(bytes) || 0));
+}
+
+/** Test seam: forget the breaker and the fallback budget (a page load starts with a fresh module anyway). */
+export function __resetOriginFallback() {
+  cdnFails = 0; cdnBlockedUntil = 0; originFiles = 0; originBytes = 0; originRefused = 0;
+}
 
 /** The game host's copy of a CDN URL — '' for anything the host already owns. */
 function siteCopy(url) {
@@ -34,25 +61,51 @@ function siteCopy(url) {
 }
 
 /**
- * Download a resource into a complete, bounded body. A URL on the assets CDN is tried first and, when that
- * fails for any reason the host could answer instead — a browser challenge (403), a body-less CORS answer, a
- * timeout, a cache that does not have the file — the game host's own copy answers instead. Two consecutive
- * CDN failures trip a breaker for {@link CDN_COOL_OFF_MS}: 27 000 assets must not each rediscover the same block.
+ * Download a resource into a complete, bounded body. A URL on the assets CDN is tried first; when it fails for a
+ * reason the host could answer instead (403 challenge, body-less CORS answer, timeout, a cache without the file) the
+ * game host's own copy answers — but only for callers that asked for it (`allowOrigin`, the runtime art path) and only
+ * within this page's budget. Bulk preload passes `allowOrigin: false`: 27 000 files must never re-download 310 MiB from
+ * the game server because a CDN host is challenging, so it stops with one clear, retryable error instead. Two
+ * consecutive CDN failures trip a breaker for {@link CDN_COOL_OFF_MS} either way.
  */
 export async function fetchResource(url, options) {
   const signal = options?.signal;
+  const allowOrigin = options?.allowOrigin !== false;
   const twin = siteCopy(url);
+  const blocked = () => cdnBlockedUntil > 0 && Date.now() < cdnBlockedUntil;
+  const unavailable = (err, fatal) => Object.assign(
+    new Error('素材 CDN 暂时不可用（被浏览器挑战或连不上）；确认素材域名没有拦住浏览器后再重试预载'),
+    { status: err?.status ?? null, transient: true, fatal });
   if (!twin) return attempt(url, options);
-  if (cdnBlockedUntil && Date.now() < cdnBlockedUntil) { checkAbort(signal); return attempt(twin, options); }
+  if (blocked()) {
+    checkAbort(signal);
+    if (!allowOrigin) throw unavailable(null, true);
+    return fromOrigin(twin, options, signal);
+  }
   try {
     const response = await attempt(url, options);
     cdnFails = 0; cdnBlockedUntil = 0;
     return response;
   } catch (err) {
     checkAbort(signal); // an abort is the caller's, never the CDN's
-    if (++cdnFails >= CDN_TRIP) { cdnFails = 0; cdnBlockedUntil = Date.now() + CDN_COOL_OFF_MS; }
-    return attempt(twin, options);
+    const tripped = ++cdnFails >= CDN_TRIP;
+    if (tripped) { cdnFails = 0; cdnBlockedUntil = Date.now() + CDN_COOL_OFF_MS; }
+    // Bulk preload stops here: one clear failure beats 27 000 origin downloads (and the owner's bandwidth).
+    if (!allowOrigin) throw unavailable(err, tripped);
+    return fromOrigin(twin, options, signal, tripped);
   }
+}
+
+/** The game host's copy within this page's fallback budget; a fatal error stops a bulk run instead of draining it. */
+async function fromOrigin(twin, options, signal, tripped = false) {
+  if (!takeOriginBudget(0)) {
+    throw Object.assign(new Error('素材 CDN 不可用，源站回退已达本次会话上限；稍后再试'), { transient: true, fatal: true });
+  }
+  const response = await attempt(twin, options);
+  originBytes += Number(response.headers.get('Content-Length')) || 0;
+  checkAbort(signal);
+  if (tripped) void 0;
+  return response;
 }
 
 /** One URL, its retries and its deadline. */

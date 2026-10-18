@@ -641,7 +641,8 @@ export class ResourceStore {
 
   /** Fetch a file and hand back a storable response (an opaque or empty or failed answer throws). */
   async #fetchStorable(url, signal) {
-    return fetchResource(url, { ...this.network, fetcher: this.fetcher, signal });
+    // allowOrigin:false — a blocked CDN must not re-download the whole manifest from the game server (network.js).
+    return fetchResource(url, { ...this.network, fetcher: this.fetcher, signal, allowOrigin: false });
   }
 
   /**
@@ -1009,6 +1010,8 @@ export class ResourceStore {
           if (Number.isSafeInteger(file.size)) { bytes += file.size; sized++; }
         } catch (err) {
           checkAbort(signal); // an abort wins over a per-file error: the run is being stopped
+          // A CDN that refuses this client is one reason, not 27 000 file failures: stop and let the panel say so.
+          if (err?.fatal === true) throw err;
           if (isQuotaError(err)) {
             const quota = new Error('quota exceeded');
             quota.name = 'QuotaExceededError';

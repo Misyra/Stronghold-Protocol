@@ -1,4 +1,5 @@
 import { assetSiteUrl } from '../../shared/assetCdn.js';
+import { takeOriginBudget } from './resources/network.js';
 
 const refreshes = new Map();
 const recoveries = new WeakMap();
@@ -57,7 +58,8 @@ export function loadImageElement(url, { refresh = false, timeoutMs = 15000 } = {
     const source = () => copies.get(url) || url;
     const repair = () => refreshImage(source()).then(() => load(true), () => {
       const twin = siteCopy(url);
-      if (!twin || copies.get(url) === twin) { fail(); return; }
+      // Same page-wide budget as the transport: a blocked CDN may only pull so much from the game host.
+      if (!twin || copies.get(url) === twin || !takeOriginBudget(0)) { fail(); return; }
       copies.set(url, twin);
       refreshImage(twin).then(() => load(true), fail);
     });

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { fetchResource } from '../../public/js/resources/network.js';
+import { fetchResource, __resetOriginFallback } from '../../public/js/resources/network.js';
 import { ResourceStore } from '../../public/js/resources/store.js';
 import { CACHE_NAME } from '../../public/js/resources/common.js';
 import { assetSiteUrl } from '../../shared/assetCdn.js';
@@ -26,9 +26,13 @@ class Caches {
 }
 
 function withCdn(t, base = BASE) {
+  __resetOriginFallback();
   const previous = Object.getOwnPropertyDescriptor(globalThis, '__spAssetCdn');
   globalThis.__spAssetCdn = { base };
-  t.after(() => { if (previous) Object.defineProperty(globalThis, '__spAssetCdn', previous); else delete globalThis.__spAssetCdn; });
+  t.after(() => {
+    __resetOriginFallback();
+    if (previous) Object.defineProperty(globalThis, '__spAssetCdn', previous); else delete globalThis.__spAssetCdn;
+  });
 }
 
 test('the host twin is the same art path without the CDN cache-buster', () => {
@@ -69,20 +73,54 @@ test('a host copy that is also missing reports its own failure rather than the C
   await assert.rejects(fetchResource(BASE + '/assets/gone.png', { fetcher, retries: 0, retryDelayMs: 0 }), /HTTP 404/);
 });
 
-test('a blocked CDN still fills the verified cache under its own keys', async t => {
+test('a blocked CDN stops the preload with one reason instead of draining the game host', async (t) => {
   withCdn(t);
   const body = (name) => `bytes of ${name}`;
   const files = ['ok.png', 'two.png'].map((name) => ({ url: `${BASE}/assets/${name}?v=0123456789abcdef`, tier: 1,
     size: Buffer.byteLength(body(name)), hash: createHash('sha1').update(body(name)).digest('hex').slice(0, 12) }));
   const caches = new Caches();
+  const calls = [];
   const store = new ResourceStore({ format: 1, version: 'cdn-fallback', files }, { origin: ORIGIN, caches, network: { retries: 0, retryDelayMs: 0 },
-    fetcher: async (url) => String(url).startsWith(BASE) ? new Response('challenge', { status: 403 })
-      : new Response(body(String(url).replace('/assets/', '').replace('.png', '.png')), { status: 200,
-        headers: { 'Content-Type': 'image/png' } }) });
-  const result = await store.download();
-  assert.equal(result.failed, 0, JSON.stringify(result.failures));
-  assert.equal(result.count, 2);
-  const cache = await caches.open(CACHE_NAME);
-  assert.equal(await (await cache.match(`${BASE}/assets/ok.png?v=0123456789abcdef`)).text(), 'bytes of ok.png');
-  assert.equal(await (await cache.match(`${BASE}/assets/two.png?v=0123456789abcdef`)).text(), 'bytes of two.png');
+    fetcher: async (url) => { calls.push(String(url)); return new Response('challenge', { status: 403 }); } });
+  await assert.rejects(store.download(), (err) => {
+    assert.match(err.message, /素材 CDN 暂时不可用/);
+    assert.equal(err.fatal, true);
+    return true;
+  });
+  assert.ok(calls.every((url) => url.startsWith(BASE)), 'not one request went to the game host');
+  assert.ok(calls.length <= 8, `the run stopped after ${calls.length} requests, not behind every file`);
+});
+
+test('bulk preload never falls back to the game host: one clear retryable stop instead of 27 000 downloads', async (t) => {
+  withCdn(t);
+  const calls = [];
+  const fetcher = async (url) => { calls.push(String(url)); return new Response('challenge', { status: 403 }); };
+  const opts = { fetcher, retries: 0, retryDelayMs: 0, allowOrigin: false };
+  // A single CDN refusal fails that file — the run itself is still allowed to continue.
+  await assert.rejects(fetchResource(BASE + '/assets/a.png', opts), (err) => {
+    assert.match(err.message, /素材 CDN 暂时不可用/);
+    assert.equal(err.transient, true);
+    assert.equal(err.fatal, false, 'one refusal is not a verdict');
+    return true;
+  });
+  // The second consecutive refusal trips the breaker, and bulk work stops with a fatal, retryable reason.
+  await assert.rejects(fetchResource(BASE + '/assets/b.png', opts), (err) => {
+    assert.equal(err.fatal, true);
+    assert.match(err.message, /确认素材域名没有拦住浏览器/);
+    return true;
+  });
+  assert.deepEqual(calls, [BASE + '/assets/a.png', BASE + '/assets/b.png'], 'the game host was never asked');
+});
+
+test('runtime art may use the host copy, but only within this page\'s budget', async (t) => {
+  withCdn(t);
+  const calls = [];
+  const fetcher = async (url) => {
+    calls.push(String(url));
+    if (String(url).startsWith(BASE)) return new Response('challenge', { status: 403 });
+    return new Response(new Uint8Array(1024), { status: 200, headers: { 'Content-Length': '1024' } });
+  };
+  const response = await fetchResource(BASE + '/assets/hero.png', { fetcher, retries: 0, retryDelayMs: 0 });
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [BASE + '/assets/hero.png', '/assets/hero.png']);
 });

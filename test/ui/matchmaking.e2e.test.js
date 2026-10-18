@@ -49,6 +49,8 @@ test('same-site matchmaking UI: three cards, cancellation, live count and four h
   await c.screenshot({ path: 'test/e2e/out/matchmaking-phone.png' });
   assert.equal(await c.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'no horizontal viewport overflow');
   await d.click('.create-box .btn');
+  await Promise.all(players.map((p) => p.waitForFunction(() => !!globalThis.__SP__.store.get().matchmaking?.offerId && document.querySelector('.proto-offer .btn'))));
+  await Promise.all(players.map((p) => p.click('.proto-offer .btn')));
   await Promise.all(players.map((p) => p.waitForFunction(() => globalThis.__SP__.store.get().match.public?.phase === 'INFO_CHECK')));
   const states = await Promise.all(players.map((p) => p.evaluate(() => { const s = globalThis.__SP__.store.get(); return { room: s.room, matching: s.matchmaking }; })));
   assert.equal(new Set(states.map((s) => s.room.code)).size, 1);
@@ -132,6 +134,9 @@ test('premade matchmaking UI: checkbox above start, ready gate, cancellation and
   await host.waitForFunction(() => globalThis.__SP__.store.get().matchmaking?.players === 3);
   await host.screenshot({ path: 'test/e2e/out/matchmaking-party-search.png' });
   await b.click('.create-box .btn');
+  await Promise.all(pages.map((p) => p.waitForFunction(() => !!globalThis.__SP__.store.get().matchmaking?.offerId)));
+  await host.screenshot({ path: 'test/e2e/out/matchmaking-party-offer.png' });
+  await Promise.all(pages.map((p) => p.click('.proto-offer .btn, .rs-offer .btn')));
   await Promise.all(pages.map((p) => p.waitForFunction(() => globalThis.__SP__.store.get().match.public?.phase === 'INFO_CHECK')));
   const states = await Promise.all(pages.map((p) => p.evaluate(() => { const s = globalThis.__SP__.store.get(); return { room: s.room, matching: s.matchmaking }; })));
   assert.ok(states.every((s) => s.room.code === code && !s.matching && !s.room.matchmaking && s.room.seats.every((seat) => seat && !seat.isBot)));

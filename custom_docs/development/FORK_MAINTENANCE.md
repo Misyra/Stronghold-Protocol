@@ -49,6 +49,31 @@ Worker 池在本分支的开关是 `SP_MATCH_WORKERS`（默认 0），细节见 
 - `public/js/resourceNetwork.js`（运行期素材下载器 + PIXI parser 钩子）。它绑的是对方的渲染取图路径；本分支走自己的 `public/js/image.js` 与 `public/js/cdnSpine.js`（含皮肤 273 套的图集与纹理页适配）。换过去等于重写取图链路，收益只有请求去重。
 - `public/js/resources/combat.js`（战斗期暂停批量预载）。功能有，实现不同：本分支的 `public/js/resources/schedule.js` 按比赛状态排队（战斗期间只停 `TIER_REST` 与低优先级 lane，正在跑的请求允许收尾），由 `main.js` 的 `updateResourcePriority` 驱动。
 
+## 取自 Stardust-minus/Stronghold-Protocol @ fab1b97 的部分（0.3.1：特效层与匹配）
+
+上游 0.3.1 用两支提交落在同一个仓库里：`b3deebda`（origin/master 的 0.3.1）与 `fab1b97`（`Merge upstream v0.3.1`）。合并按三方走 `git merge-file`，以 fab1b97 的行为为准，一批一提交：`160669eb`（A0 零冲突照抄）、`9333054c`（A1 特效层）、`413d48da`（A2a 渲染入口）、`9a0269f2`（A2b 模型与 3D 场景）、`cb036963`（A3 模拟层）、`51f1cdc1`（B1 匹配）、`921cba7a`（B2 确认面板样式）。
+
+| 部分 | 照搬（逐字或仅改字段名） | 只做接入适配 |
+| --- | --- | --- |
+| 特效层 | `public/js/render/vfx/wiring.js`（`skinOf`/`swap`/`_fakeShot`，飞行特效按皮肤换投射物）、`vfx/geom.js` 的 pivot 符号、其余 12 份 vfx 文件 | `v?.info?.skinId` → `v?.info?.skin`（本分支的 UnitInfo 字段名）；注释里的 §34.6 改成本分支的 §54.6 |
+| 模拟层 | `server/sim/battle/events.js`、`ai.js`、`buffs.js`、`damageBoard.js`、`syncHash.js`（与上游逐字节相同）、`battle/units.js` 的 31 行字段预声明、`Battle.js`/`battle/lifecycle.js` 的开局面板统计触发 | `server/sim/spec.js` 接 `morphPairing: 'plus'`（本分支 `shared/plugins/rules.js` 的 `morphBattleOpt` 一直在发，此前 sim 不认）；`content/support/index.js` 的 `unitBonds` 走 `grantedBondsByMorph`；`snapshot.js` 顺带 `unitStatsEntry` |
+| 匹配 | `server/matchmaking.js`（offer/accept 握手、ticket、分池、超时扫描）、`server/phaseMetrics.js`、`shared/protocol.js` 的 `queue.*` 与 hello 能力版本、`shared/constants.js` 的 `MATCHMAKING_VERSION` / `ERR.QUEUED` / `ERR.MAINTENANCE` | `server/matchmakingRooms.js` 改成本分支的适配层（导出名不变；`allocate()` 必须回 `{ ok, code }`，引擎只认 `result.code`）、`server/lobby.js` 的 25 处调用点加两道缝：`queueReply`（引擎回 `{ok}`/`{error}`，本分支 net 是 RPC `{t:'ok'}`）与 `leaveQueue`/`mmCohort`（cohort 正在分配房间时不许各自解票，否则引擎 `breakOffer` 会把整组打散）、`public/js/screens/{lobby,room}.js` 的确认入场面板、`public/js/main.js` 把 `queue.state` 映射回旧视图形状 |
+
+刻意没有采用的部分（每一项都先实测过代价）：
+
+- `public/js/materialFallback.js` 与 `public/js/render/materialLoader.js`（取图镜像/重试层）。本分支的取图链路是自己的 `public/js/image.js` + `public/js/resourceUrl.js`（`/_v/<tag>/` 前缀），且 `test/ui/image-policy.test.js` 白名单只允许 `image.js`/`resourceNetwork.js` 出现 `new Image()`；`boardArt.js`、`board3d/load.js` 在上游的改动全部只是换成 `fetchMaterial`，本分支保留原样。
+- UnitInfo 的皮肤字段仍叫 `skin`（不是上游的 `skinId`）。皮肤目录是本分支的 `shared/skin-catalogue.js` 加 `room.skins{choices}`，皮肤选择器是本分支的 `public/js/ui/skinPicker.js`（含商店立绘）；上游的 `ui/{skinAssets,skinsModel,pluginSkinPicker,dynamicIllustration}.js` 不接。
+- `server/cluster/**`、`server/persist/**`、`server/match/combat/**`、`server/match/extensions.js`、`shared/cluster-load.js`，以及上游独有的 35 个 `public/js/ui/*.js` 面板。
+- `public/js/ui/matchmaking.js` 的 159 行队列面板（依赖 `public/js/queueCancellation.js` 与 `ui/experimental.js`，两份本分支都没有）与 `test/cluster-matchmaking.test.js`；本分支的匹配界面仍在 `screens/{lobby,room}.js`，只借用了 `queue.state` 的字段。
+- `shared/names.js`：上游那份只是 `deploy/stardust/auth/name-policy.mjs` 的转发，本分支没有那个目录，昵称策略在 `server/net.js` 的 `sanitizeName` + `server/moderation/nickname.js`（更严：混淆名也会被拒）。
+- `shared/protocol.js`、`shared/constants.js`、`shared/plugins/ui.js` 整份不照抄：两支分支各自增减了消息与错误码（本分支有聊天、控制台配额与 `MAX_SEATS`，上游换成了 `queue.*`、`presence.state`、`MAX_PLAYER_CAPACITY`），只把 0.3.1 需要的键逐条搬过来。
+- `server/sim/content/{bands,garrisons}/meta.js` 的装备库存模型：上游 #488 把「装备占份数」当库存，与本分支 2026-10-13 的拍板（保留 0.3.0 模型）相反，跳过。
+- `data/` 整批跳过。`data/assets.json` 是两份不同的生成产物（本分支 `tools/fetch-assets.mjs` 的全量清单：288335 个文件、1214 个 Spine、每角色带 `chars.<id>.skins`；上游是 `tools/merge-generated-release.mjs` 的精简发布清单：21775 个文件、673 个 Spine），重建清单会动到 273 套皮肤的图集键；`data/config.json` 的三处差异（`unite.helperOrder` 的层数、`rewards.milestones` 的 60 档 token、`rewards.daily` 的每日防卫目标）对应上游独有的机制，本分支的 sim 与结算没有对应实现，只改字符串会让说明与行为不符。
+
+匹配这一批是**行为变更**：凑满四人不再直接开局，而是先发 offer、全员在 30 秒内 `queue.accept` 才分配房间（`waitMs` 10 分钟）。回滚只需回退 `51f1cdc1`：旧引擎、旧消息名与旧大厅调用点都在那一个提交里。
+
+**基线差异（不是本次合并引入）**：`node tools/golden.mjs` 只差 `roster-039`；在 `366f056b`（合并前的 master）上复跑同样只差这一条。`test/match/fuzz.test.js` 的两项（`g.kickBallot` 的 `voteId`）与 `test/match/simServe.test.js` 的 simdata 路径断言、`test/render` 的 5 组（板面素材与 vfx-psys 的 Local 缩放）同样是既有的红，与本批无关。
+
 ## 回归检查
 
 常规测试使用 `npm test -- <文件>`；源码浏览器与临时生产包测试分别使用 `npm run test:browser`、`npm run test:client`。参见 [测试流程](TEST_WORKFLOW.md)，不要通过清理本机 `public/build` 解决源码测试混用问题。
@@ -56,6 +81,7 @@ Worker 池在本分支的开关是 `SP_MATCH_WORKERS`（默认 0），细节见 
 ```sh
 npm test -- test/runtime-lifecycle.test.js test/room-reclamation.test.js test/bot-population.test.js test/bot-policy.test.js
 npm test -- test/net-backpressure.test.js test/net-fanout.test.js test/state-delta-integration.test.js
+npm test -- test/matchmaking.test.js test/matchmaking-party.test.js
 npm test -- test/asset-cdn.test.js test/render/image-cors-recovery.test.js test/resources/index.test.js test/resources/state.test.js
 npm run check:imports
 npm run typecheck

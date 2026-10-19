@@ -277,11 +277,11 @@
 .about-credits { display: flex; flex-direction: column; gap: .05rem; }
 .about-credits h3 { margin-bottom: .04rem; }
 .about-credits__row { display: flex; align-items: center; flex-wrap: wrap; gap: .06rem .12rem; }
-.about-panel .about-star { display: inline-flex; align-items: center; gap: .05rem; flex: none; height: max(.24rem, 1.5em);
-  padding: 0 .1rem; border: 1px solid var(--mint-a35); color: var(--mint-400); text-decoration: none;
-  font-size: calc(.13 * var(--utility-text, var(--t))); font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+.about-panel .about-star { display: inline-flex; align-items: center; gap: .05rem; flex: none; height: max(.26rem, 1.6em);
+  padding: 0 .11rem; border: 1px solid var(--mint-a35); color: var(--mint-400); text-decoration: none;
+  font-size: calc(.16 * var(--utility-text, var(--t))); font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
 .about-panel .about-star:hover { border-color: var(--mint-400); background: var(--mint-a10); }
-.about-links dd .about-star { margin-left: .1rem; vertical-align: middle; }
+.about-links dd .about-star { margin-left: .12rem; vertical-align: middle; }
 @media (max-width: 600px) { .about-links { grid-template-columns: 1fr; } }
 /* language menu (中文 | English | …, ui/lang.js) in the top-right corner; more than four languages make it a list.
    The height is max(design, 1.4em) so the buttons still hold their text at 设置 →「文字大小」 大 / 特大 (on a phone

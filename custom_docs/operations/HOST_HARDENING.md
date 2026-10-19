@@ -77,7 +77,7 @@ Nginx reload 的信号发送成功并不代表新配置已经加载。此次旧�
 
 最终 301 阈值复验：独立测试 jail 中 400 条静态响应不计数、300 条业务响应不封，第 301 条业务 444 触发永久封禁；重启恢复后清理测试 jail 和地址。
 
-2026-10-17 已在国内源站叠加[自动浏览器验证](BROWSER_GATE.md)：未验证业务请求 444，浏览器导航显示验证页；公网健康、缓存、静态直出和 WS 均检查凭证，本机健康例外。6 小时凭证由健康响应续期。原游戏 PID 未改变；现场页面、图标、昵称校验为 200，WS 为 101，未验证和伪造头请求均拒绝。备份 `/root/srv-browser-gate-20261017.tar.gz` 含签名密钥，权限 0600；目录指针 `/root/sp-browser-gate-current`，内附回滚脚本。
+2026-10-17 已在国内源站叠加[自动浏览器验证](BROWSER_GATE.md)：未验证业务请求 444，浏览器导航显示验证页；公网健康、缓存、静态直出和 WS 均检查凭证，本机健康例外。当时 6 小时凭证仅由健康响应续期；2026-10-19 本地修复扩展到受保护 HTTP/WS 响应，新增明确恢复探针，尚需上线验证（见 BROWSER_GATE）。原游戏 PID 未改变；现场页面、图标、昵称校验为 200，WS 为 101，未验证和伪造头请求均拒绝。备份 `/root/srv-browser-gate-20261017.tar.gz` 含签名密钥，权限 0600；目录指针 `/root/sp-browser-gate-current`，内附回滚脚本。
 
 2026-10-17 按后续要求**临时关闭昵称 HTTP 预检**：原 Node 和前端实现保留；前端 `NICKNAME_PREFLIGHT_ENABLED=false`，Nginx 注释 API 放行项并为 `/api/nickname/validate` 增加临时 `return 444`。WebSocket `hello` 最终检查保留。已重新构建并重启游戏服务，客户端版本为 `2caa3fd738fdaa6e`；验证接口的 GET/POST、查询参数及规范化路径均拒绝，原 Node 回环实现仍可用，页面 200、WS 101、升级封禁 jail 仍运行。私有备份及回滚脚本在 `/root/sec-nickname-pause-20261017-020414`，指针 `/root/sp-nickname-pause-current`，验证后已取消自动回滚。恢复步骤见 [HTTP_PROTECTION.md](HTTP_PROTECTION.md)。
 本地真实 Chrome 验证首次进入、WS 拒绝敏感昵称、修改代号及刷新后恢复均通过，全程没有请求昵称 API；原 HTTP 取消场景保留，开关恢复后重新启用。原接口的服务端测试、前端停用/恢复测试及 lint/imports/typecheck 通过。

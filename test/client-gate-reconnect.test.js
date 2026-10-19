@@ -57,7 +57,7 @@ function harness({ statuses = [], hidden = false, storage, probe } = {}) {
   const net = new Net({
     url: 'ws://test/ws', WebSocket: Socket, timers: clock.timers, now: clock.now,
     random: () => 0.5, storage: store, isHidden: () => hidden,
-    probe: probe === null ? undefined : probe || (() => { probes += 1; return Promise.resolve(statuses.length ? statuses.shift() : false); }),
+    gateProbe: probe === null ? undefined : probe || (() => { probes += 1; return Promise.resolve(statuses.length ? statuses.shift() : false); }),
     reload: () => { reloads.push(clock.now()); },
   });
   net.on('gateReload', (payload) => events.push(['gateReload', payload]));
@@ -164,7 +164,7 @@ test('the default probe requires its own marker, never an ordinary rate limit or
   for (const [status, marker, required] of [[200, '1', true], [200, null, false], [204, null, false],
     [429, null, false], [429, '1', false], [503, '1', false], [404, null, false]]) {
     response = new Response(null, { status, headers: marker ? { 'X-Gate-Required': marker } : {} });
-    assert.equal(await env.net.probe(), required, `${status} / ${marker}`);
+    assert.equal(await env.net.gateProbe(), required, `${status} / ${marker}`);
   }
   assert.ok(requests.every(({ url, options }) => url === '/_gate/status' &&
     options.credentials === 'same-origin' && options.cache === 'no-store' && options.signal instanceof AbortSignal));
@@ -215,4 +215,13 @@ test('a rejected or throwing probe leaves normal reconnect available', async () 
     assert.equal(env.reloads.length, 0);
     assert.equal(env.net.status, 'reconnecting');
   }
+});
+
+test('the gate probe does not replace the existing focus/latency probe', () => {
+  const env = harness();
+  let heartbeats = 0;
+  env.net._heartbeat = () => { heartbeats++; };
+  env.net.probe();
+  assert.equal(heartbeats, 1);
+  assert.equal(env.probes(), 0);
 });

@@ -12,7 +12,7 @@
 import { useLayoutEffect, useState } from '../../vendor/hooks.module.js';
 import { html, Icon, Button, TierChip } from '../ui/components.js';
 import { Img, RichText, BondGlyph } from '../ui/gameComponents.js';
-import { chessAvatarUrl, chessPortraitUrl, profIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from '../ui/assetUrls.js';
+import { chessAvatarUrl, shopPortraitUrl, profIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from '../ui/assetUrls.js';
 import { data } from '../data.js';
 import { PROF_NAME, skillLabel, moduleBadge, fullTraitText, skillTags } from '../ui/loadoutModel.js';
 import { diySlotList, pickChoices, pickOptions, slotRecord, defaultPick } from '../ui/diyModel.js';
@@ -20,6 +20,7 @@ import { OperatorVoice } from '../ui/operatorVoice.js';
 import { LoadoutStats } from '../ui/loadoutStats.js';
 import { CultivationSelects } from './cultivation.js';
 import { SkinSection } from '../ui/skinPicker.js';
+import { portraitFor } from '../ui/skins.js';
 import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -48,6 +49,10 @@ function SlotCard({ m, slot, pick, illegal, onOpen, onClear, ops = {}, onOps = n
   const D = diyData();
   const rec = pick ? slotRecord(slot.slotId, pick, D) : null;
   const elite = pick ? slotRecord(slot.slotId, pick, D, { elite: true }) : null;
+  // the slot's 商店立绘 choice (ui/skins.js, keyed by the slot's base id — the same id ui/skinPicker.js writes): the card
+  // draws the chosen art too. Read, not subscribed: DiyPanel redraws this on every pick (SkinSection's `onChange`) and
+  // these views are drawn without a hook dispatcher by the tests, so no hook can live here.
+  const portraitPick = portraitFor(rec?.chessId);
   const label = t('{tier}阶 自选', { tier: slot.tier });
   if (!rec) {
     return html`<div class=${cx('diy-slot', `diy-slot--t${slot.tier}`, 'is-empty', pick && 'is-bad')} data-slot=${slot.slotId}>
@@ -64,7 +69,7 @@ function SlotCard({ m, slot, pick, illegal, onOpen, onClear, ops = {}, onOps = n
   const sk = rec.skill;
   const mod = elite?.module?.active ? elite.module : null;
   return html`<div class=${cx('diy-slot', `diy-slot--t${slot.tier}`, illegal && 'is-bad')} data-slot=${slot.slotId} data-char=${rec.charId}>
-    <div class="diy-slot__art"><${Img} src=${chessPortraitUrl(m, elite || rec)} fallback=${html`<b>${[...(rec.name || '?')][0]}</b>`} /></div>
+    <div class="diy-slot__art"><${Img} src=${shopPortraitUrl(m, elite || rec, portraitPick)} fallback=${html`<b>${[...(rec.name || '?')][0]}</b>`} /></div>
     <div class="diy-slot__body">
       <div class="diy-slot__head"><${TierChip} tier=${slot.tier} size="sm" /><span class="diy-slot__label">${label}</span><${KindTag} proto=${proto} /></div>
       <b class="diy-slot__name">${rec.name}</b>
@@ -259,11 +264,13 @@ export function DiyPickerView({ m, slot, picks, kitted, onDone, onClose, filter,
 export function DiyPanel(props) {
   const [picking, setPicking] = useState(null);
   const [skinSlot, setSkinSlot] = useState(null);
-  return DiyPanelView({ ...props, picking, onPicking: setPicking, skinSlot, onSkin: setSkinSlot });
+  // a 皮肤 pick redraws the tab so the slot's own 立绘 follows it (the card reads the choice, it cannot subscribe)
+  const [, bumpSkin] = useState(0);
+  return DiyPanelView({ ...props, picking, onPicking: setPicking, skinSlot, onSkin: setSkinSlot, onSkinChange: () => bumpSkin((n) => n + 1) });
 }
 
 /** The tab's view (no hooks: the tests draw it): `picking` = the slot being filled, or null. */
-export function DiyPanelView({ m, picks, legal, kitted, onSet, picking, onPicking: setPicking, skinSlot = null, onSkin = null, ops = {}, onOps = null }) {
+export function DiyPanelView({ m, picks, legal, kitted, onSet, picking, onPicking: setPicking, skinSlot = null, onSkin = null, onSkinChange = null, ops = {}, onOps = null }) {
   const slots = diySlotList(diyData());
   const slot = picking ? slots.find((s) => s.slotId === picking) : null;
   const tiers = [...new Set(slots.map((s) => s.tier))];
@@ -291,7 +298,7 @@ export function DiyPanelView({ m, picks, legal, kitted, onSet, picking, onPickin
         <small>${t('{tier}阶 自选 · {name}', { tier: skinOpenSlot.tier, name: skinRec.name })}</small>
         <${Button} variant="ghost" size="sm" icon="collapse" data-testid="diy-skin-close" onClick=${() => onSkin(null)}>${t('收起')}<//>
       </header>
-      <${SkinSection} chess=${skinRec} />
+      <${SkinSection} chess=${skinRec} onChange=${onSkinChange} />
     </section>` : null}
     ${slot ? html`<${DiyPicker} m=${m} slot=${slot} picks=${picks} kitted=${kitted} ops=${ops} onOps=${onOps} onClose=${() => setPicking(null)}
       onDone=${(pick) => { onSet(slot.slotId, pick); setPicking(null); }} />` : null}

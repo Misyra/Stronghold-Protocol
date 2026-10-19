@@ -140,6 +140,67 @@ and the 1:2 tile crops to the top exactly as it already does for a skin that shi
 while the record has any of the three; an operator the composed manifest does not hold at all (not even a 默认 tile
 exists) gets no section rather than an empty grid.
 
+## Where the choice is drawn
+
+The 商店立绘 row is not a preview of somewhere else: the art it picks is the art of the operator **in the screen that
+picked it**. Three surfaces read it, all through `ui/assetUrls.js shopPortraitUrl(m, chess, chose)` so the 默认 /
+精英二 sentinel and the fallback to the operator's own portrait stay one rule:
+
+| Surface | Read |
+|---|---|
+| `loadout.js OpCard` — the 干员调配 deck card | `usePortraitPick(chess.chessId)` |
+| `loadout.js Detail` — the detail header | `usePortraitPick(chess?.chessId)`, art of `golden || chess` (the 精英二 record when there is one) |
+| `diy.js SlotCard` — the 自选 slot card | `portraitFor(rec.chessId)`, redrawn by `SkinSection`'s `onChange` |
+
+A pick writes `ui/skins.js` and therefore only a **subscriber** sees it: a `.get()` in a render is read once, so the two
+loadout surfaces subscribe (`usePortraitPick`) instead of reading the store. `screens/diy.js` cannot — its views are
+drawn without a hook dispatcher by the tests — so `SkinSection` takes an optional `onChange` it fires after each pick,
+and `DiyPanel` bumps a counter with it. The key is `chess.chessId` on all three, the same key `SkinSection` writes and
+the server validates; the in-match shop card reads `baseId || chessId` (a piece's own record).
+[ASSUMED] That the 干员调配 screen shows the art it just chose is a UI reading of the picker, not an official rule.
+
+## The file: 皮肤配置 travels on its own
+
+A 调配 export carries the picks inside its envelope (`skins` / `portraits` next to `entries`), which is the right shape
+for a backup of a loadout and the wrong one for the thing players actually do with skins — carry them to another
+server: that file also names skills, modules and 潜能, so importing it costs the receiving install its own loadout, and a
+file holding only skins was refused outright (`里面没有有效的调配条目`). So the choice has a second file, of its own, and
+nothing else in it (`public/js/ui/skinTransfer.js`):
+
+```json
+{ "kind": "stronghold.skins", "v": 1, "exportedAt": "…", "count": 2,
+  "skins":     { "char_377_gdkn_2b": "char_377_gdkn_2b@epoque#4" },
+  "portraits": { "char_377_gdkn_2b": "e2", "chess_char_5_diy1_a": "char_377_gdkn_2b@epoque#4" } }
+```
+
+1. **Keys are what the store stores** — `{ [chessId]: skinId }`, the roster's chess ids and the 自选 slot ids alike
+   (`sp.pref.skins` / `sp.pref.skinPortraits`, same key `SkinSection` writes), both maps whole rather than split by the
+   tab the player happened to be on. `count` is the number of distinct operators across both maps, not the sum of their
+   lengths.
+2. **Values are carried, not resolved.** The envelope never asks whether this install has that operator or that skin.
+   An id from a server with a different plugin set is kept and simply draws nothing (`assets.js spineEntry` returns
+   null) — which is exactly what makes the file portable. A blank value and a non-string are dropped (a blank is "no
+   choice", not a value); `__proto__` / `constructor` / `prototype` are refused as keys, as everywhere a stored map is
+   parsed.
+3. **Import replaces both maps** (`setSkins` + `setPortraits`), and asks for no readiness gate: the other three imports
+   sanitise against `chess.json`, a skin id needs no table, so this one works while the data is still loading — and on a
+   server whose roster differs. It refuses a file with **no choices at all** — that file would silently wipe the
+   selection — and refuses a foreign `kind` (a 调配 file is not a skin file either way round) or a higher `v`; 64 KiB
+   cap [ASSUMED], refreshed at a few KB.
+4. **Entry points are the screen's own toolbars**, beside the exports that were already there — 导出皮肤 / 导入皮肤
+   (`data-testid="skin-export"` / `skin-import`): direct buttons in the 自选编队 toolbar and in the list view's, two
+   items in the deck view's 更多 menu. Not in the 皮肤 section: a picker holds the choice, the screen holds every file
+   it writes, and the player who came to carry skins across servers looks where the other two exports are. The pair
+   therefore also reaches an operator the detail panel is not showing — the export is the whole stored map, not the
+   open operator's row. 导出 is disabled while nothing is stored; the screen reads that count through
+   `useStore(... skinsStore)` rather than a one-off `get()`, or the item would stay grey after the first pick beside it.
+   The modal is the screen's (`kind: 'skins'`, title 导出 / 导入皮肤配置); the download is
+   `stronghold-skins-YYYYMMDD-HHmm.json`.
+5. **It is an addition, not a replacement.** The 调配 / 自选 exports keep writing their own half of the choices
+   (`rosterSkinMap` / `slotSkinMap` in `loadout.js openExport`) and keep reading them back, so an old way of carrying a
+   loadout still restores its appearances; a file written now carries both halves and one file is enough for a backup.
+   What the standalone file buys is the case a backup cannot serve: a server you are not restoring a loadout onto.
+
 ## New files
 
 > Upstream 0.3.1's port log, kept for provenance: the file list and the edit list below describe the ORIGINAL port.
@@ -149,7 +210,9 @@ exists) gets no section rather than an empty grid.
 | Path | What |
 |---|---|
 | `public/js/ui/skins.js` | The client store (`sp.pref.skins`, `{ [charId]: skinId }`, at most `SKIN_LIMITS.entries` pairs: `parseStoredSkins` is the one parse of a stored selection — the store's initial state, every edit and what the sync sends — so the wire's own limit is applied where the selection is read), `availableSkins` (the composed manifest's rows, with `playable` and with art already resolved and fallen back; the 默认 row exists for every operator the manifest holds, also one with no `skins`), `hasAnySkinChoices` (the section's global rule), `hasSkinChoices` (the single-operator criterion, kept for tests and future rules), `chosenSkin` (a stored entry that is not one of this operator's wear-able skins counts as 默认), `setSkin` / `clearSkin` |
-| `public/js/ui/skinPicker.js` | The 皮肤 section itself: `SkinSection` (nothing while `hasAnySkinChoices` is false — for every operator alike; the 默认 tile alone for an operator without a skin), `SkinPreview` (the enlarged 立绘), the five-tile grid's markup |
+| `public/js/ui/skinPicker.js` | The 皮肤 section itself: `SkinSection` (nothing while `hasAnySkinChoices` is false — for every operator alike; the 默认 tile alone for an operator without a skin), `SkinPreview` (the enlarged 立绘), the five-tile grid's markup and the `onChange` hook a parent's art hangs off; no 导出 / 导入 button — the screen's toolbars carry the file, the picker carries the choice |
+| `public/js/ui/skinTransfer.js` | 皮肤配置 as a file of its own: `SKIN_EXPORT_KIND` (`stronghold.skins`), `SKIN_TRANSFER_VERSION`, `SKIN_IMPORT_MAX_BYTES`, `skinConfig` / `serializeSkinConfig` / `parseSkinConfig` — the envelope above, and the only reader that accepts it |
+| `test/skins-transfer.test.js` | The envelope: what it carries, junk dropped, a foreign `kind`, a newer `v`, an empty file refused, that an unknown operator id survives, and that the toolbar pair is wired while the 皮肤 section itself carries no file buttons — plus that the 调配 / 自选 exports still hold their own half of the choices |
 | `test/skins.test.js` | The wire shape (`isSkinId` / `isSkinSelection`), the lobby → Match → PlayerState chain, the public view, reconnect, the sim's UnitInfo, the client's fallbacks, and the absence of the install channel |
 | `test/lobby-skins.test.js` | `room.skins` over WebSocket: validation, session and seat storage, the seats handed to the Match, bots, the change made mid-match |
 | `test/ui/skin-picker.test.js` | The picker's rules against a composed manifest: the rows, `playable`, the art fallbacks, the global `hasAnySkinChoices` and the per-operator `hasSkinChoices`, `chosenSkin`, and that the section's gate is the global one |
@@ -180,6 +243,12 @@ exists) gets no section rather than an empty grid.
 | `public/js/ui/gameLogic/settings.js` | `DEFAULT_SETTINGS`, `sanitizeSettings` | `otherSkins: true` |
 | `public/js/ui/fieldHost.js` | mount, store subscription, `OPTIONAL` | `view.setMe` and `view.setSkins` adopt and follow local identity / public seat choices; unmount removes the subscription |
 | `public/css/screens/loadout.css` | end | `.lo-skins` / `.lo-skin*` tiles, `.lo-skin-preview` |
+| `public/js/ui/skinPicker.js` | header | `onChange(chessId)` after every pick (the screens that draw the art cannot all subscribe), and the optional `io` prop — 导出 / 导入 beside the 皮肤 label (`skin-io-export` / `skin-io-import`) |
+| `public/js/screens/loadout.js` | `Detail`, `OpCard`, the io block and modal | `usePortraitPick` on both art surfaces, drawn through `shopPortraitUrl`; `onSkinIO` handed to `Detail` and `DiyPanel`; `kind: 'skins'` in the shared export/import modal (`skinTransfer.js`), no readiness gate on apply |
+| `public/js/screens/diy.js` | `SlotCard`, `DiyPanel`, `DiyPanelView` | the card's art from `portraitFor(rec.chessId)`; a 皮肤 button per slot (`diy-skin`) opening `diy-skin-panel` for that one slot; `onSkinChange` redraws the tab after a pick (its views get no hook dispatcher) |
+| `public/js/ui/loadoutModel.js`, `public/js/ui/diyModel.js` | `exportPayload`, `exportDiy` | `skins` / `portraits` dropped from both export envelopes; the parsers still return them for a file written before 0.3.2 |
+| `public/js/ui/skins.js` | `portraitFor`, `usePortraitPick` | the read the two 干员调配 surfaces subscribe with (`useStore` on one key) |
+| `public/css/screens/loadout.css` | picker block | `.lo-skin__io` (the two header buttons), `.diy-skin*` (one slot's section) |
 | `public/i18n/*.json` | — | the strings above, in every pack (`node tools/i18n.mjs check --all --strict`) |
 
 ## Invariants

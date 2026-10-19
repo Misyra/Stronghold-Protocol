@@ -135,9 +135,13 @@ function SkinGroup(p) {
 
 /**
  * 皮肤 section for one operator.
- * @param {{ chess: any }} props `chess` is the chess record of the detail panel
+ * @param {{ chess: any, onChange?: (chessId: string) => void }} props
+ *   `chess` is the chess record of the detail panel; `onChange` fires after every pick, for a parent whose own art
+ *   follows the choice but which cannot subscribe itself (screens/diy.js — its views are drawn without a hook
+ *   dispatcher by the tests). The 皮肤配置 file is NOT exported from here: the screen that owns the transfer modal
+ *   keeps that pair in its own toolbar (screens/loadout.js), one place for every 导出 / 导入 in the app.
  */
-export function SkinSection({ chess }) {
+export function SkinSection({ chess, onChange }) {
   const s = useStore((v) => v, shallowEqual, skinsStore);
   const m = data.get('assets');
   const [, bump] = useState(0);
@@ -259,6 +263,9 @@ export function SkinSection({ chess }) {
     ...(e2Portrait && e2Portrait !== ownPortrait ? [{ id: PORTRAIT_E2, name: t('精英二立绘'), note: 'ELITE 2', art: e2Portrait }] : []),
   ];
   const shared = { list };
+  // A pick writes the store; `onChange` tells a parent whose art follows it (the 自选 card's 立绘) to redraw.
+  const pickPortrait = (id) => { if (id) setPortrait(chessId, id); else clearPortrait(chessId); onChange?.(chessId); };
+  const pickModel = (id) => { if (id) setSkin(chessId, id); else clearSkin(chessId); onChange?.(chessId); };
   // the frame: the model of the CURRENT choice, with its name and the animation buttons under it
   const previewStateNow = previewState(charId, previewSkin).status;
   const previewUrl = modelArt(charId, previewSkin);
@@ -278,7 +285,7 @@ export function SkinSection({ chess }) {
     <${SkinGroup} ...${shared} name="portrait" ariaLabel=${t('选择商店立绘')} tall=${true}
       leading=${leading}
       chosenId=${chosenPortrait} art=${(x) => skinPortrait(charId, x.id)}
-      onPick=${(id) => (id ? setPortrait(chessId, id) : clearPortrait(chessId))} />
+      onPick=${pickPortrait} />
     <details key=${previewKey} class="lo-model-fold lo-sec--fold" data-testid="model-fold"
       onToggle=${(event) => setOpenedModel(event.currentTarget.open ? previewKey : null)}>
     <summary class="lo-sec__head">
@@ -288,7 +295,7 @@ export function SkinSection({ chess }) {
     <${SkinGroup} ...${shared} name="model" ariaLabel=${t('选择战斗模型')} thumbnails=${false}
       leading=${[{ id: '', name: t('默认'), note: 'DEFAULT' }]}
       chosenId=${chosen} art=${() => null}
-      onPick=${(id) => (id ? setSkin(chessId, id) : clearSkin(chessId))} />
+      onPick=${pickModel} />
     ${previewOpen ? html`<div class="lo-model" data-testid="model-preview">
       <div class="lo-model__box" data-live=${live ? '1' : null}>
         <img class="lo-model__art" crossorigin="anonymous" src=${artBad ? TRANSPARENT_PX : (previewUrl || TRANSPARENT_PX)} alt="" draggable=${false}

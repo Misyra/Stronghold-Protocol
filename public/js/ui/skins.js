@@ -14,7 +14,7 @@
 // the 商店立绘 choice are keyed by. This one is PUBLIC (unlike the 商店立绘): the server puts it in
 // `Match.publicView().players[]` and in every unit of a watched board, which is how a teammate sees your skin.
 
-import { createStore, loadPref, savePref } from '../store.js';
+import { createStore, loadPref, savePref, useStore } from '../store.js';
 import { data } from '../data.js';
 import { DIY_PREF, parseStoredDiy } from './diyModel.js';
 import { manifestSkinKey, skinById, skinsFor } from '../../../shared/skins.js';
@@ -169,6 +169,27 @@ export function clearPortrait(chessId) {
 
 /** The skin whose 立绘 this browser shows for an operator's shop card, or null (its own portrait). */
 export const portraitFor = (chessId) => skinsStore.get().portraits[chessId] || null;
+
+// ---- reading the choice in a component ---------------------------------------------------------------------------
+
+/**
+ * A chess's 商店立绘 pick as a HOOK: `''` when nothing is chosen, else `PORTRAIT_E2` or a skin id (assetUrls.js
+ * `shopPortraitUrl`). The cards that draw an operator's 立绘 call it instead of `chessPortraitUrl`, so the pick made in
+ * ui/skinPicker.js shows up on the card and in the detail header immediately (it used to be read from the store by
+ * `get()` in the shop bar only, which left 干员调配 drawing the operator's own art forever).
+ *
+ * `chessId` may be nullish (a card that is still waiting for its record): the selector is a constant then, so the call
+ * can sit above an early return. `Object.is` on the string means only THIS chess's change re-renders the caller.
+ * @param {string|null|undefined} chessId @returns {string} `''` | `'e2'` | skinId
+ */
+export function usePortraitPick(chessId) {
+  return useStore((s) => (chessId ? s.portraits[chessId] || '' : ''), Object.is, skinsStore);
+}
+
+/** A chess's 皮肤 / battle-model pick as a hook (`''` when nothing is chosen) — same contract as `usePortraitPick`. */
+export function useSkinPick(chessId) {
+  return useStore((s) => (chessId ? s.entries[chessId] || '' : ''), Object.is, skinsStore);
+}
 
 // ---- 自选编队 slots -----------------------------------------------------------------------------------------------
 

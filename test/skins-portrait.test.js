@@ -14,6 +14,12 @@ import { skinPortraitUrl, chessPortraitUrl, chessOwnPortraitUrl, shopPortraitUrl
 import { skinsStore, setPortrait, clearPortrait, portraitFor, setSkin, clearSkin, skinFor, setSkins, setPortraits, equippedSkinKeys, PORTRAITS_PREF, SKINS_PREF } from '../public/js/ui/skins.js';
 import { data } from '../public/js/data.js';
 import { OPERATOR_SKINS, isSkinId } from '../shared/skins.js';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const read = (p) => readFileSync(path.join(ROOT, p), 'utf8');
 
 const CHESS = 'chess_char_1_01_a';           // 隐现 char_498_inside 的基础 chess
 const OTHER = 'chess_char_2_01_a';
@@ -184,5 +190,42 @@ describe('商店立绘: the catalogue it is chosen from', () => {
     assert.ok(one, 'the installed outfit is in the catalogue');
     assert.equal(one.name, '甜品大奖');
     assert.equal(one.officialId, SKIN_OFFICIAL, 'and it names the official id data/assets.json is keyed by');
+  });
+});
+
+// 干员调配 must draw the choice it just made. Two ways this can silently do nothing: the card keeps calling
+// `chessPortraitUrl` (the operator's own art, whatever is chosen), or nothing re-renders it — a pick writes the store,
+// and only a subscriber of that store sees it. So both halves are pinned: the call site resolves through
+// `shopPortraitUrl(m, chess, chose)`, and it is fed by `usePortraitPick` (a re-render on the choice, not a `.get()`).
+describe('干员调配: the art follows the 皮肤 choice', () => {
+  const loadoutSrc = read('public/js/screens/loadout.js');
+  const diySrc = read('public/js/screens/diy.js');
+  const pickerSrc = read('public/js/ui/skinPicker.js');
+  const count = (hay, needle) => hay.split(needle).length - 1;
+
+  test('the deck card and the detail header both resolve through the choice', () => {
+    assert.equal(count(loadoutSrc, 'shopPortraitUrl(m, '), 2,
+      'the deck card and the detail header — one call site each');
+    assert.equal(count(loadoutSrc, 'shopPortraitUrl(m, chess, portraitPick)'), 1, 'the deck card passes the choice');
+    assert.equal(count(loadoutSrc, 'shopPortraitUrl(m, golden || chess, portraitPick)'), 1, 'so does the detail header');
+    assert.equal(count(loadoutSrc, 'usePortraitPick(chess'), 2, 'both subscribe, so a pick repaints them');
+    assert.equal(count(loadoutSrc, 'chessPortraitUrl(m, chess'), 0, 'no call site keeps the unskinned art');
+  });
+
+  test('the composition is the whole story: chosen outfit → its 立绘, cleared → the operator\'s own', () => {
+    setPortrait(CHESS, SKIN);
+    assert.equal(shopPortraitUrl(MANIFEST, chess, portraitFor(CHESS)), '/assets/char/portrait/skin/a.png');
+    clearPortrait(CHESS);
+    assert.equal(shopPortraitUrl(MANIFEST, chess, portraitFor(CHESS)), '/assets/char/portrait/char_498_inside_1.png');
+    setSkin(CHESS, SKIN); clearSkin(CHESS); // the model row is the synced one, untouched by the art
+  });
+
+  test('自选 draws the same art, and a pick there redraws the tab', () => {
+    assert.ok(diySrc.includes('portraitFor(rec?.chessId)'), 'the slot card reads the choice');
+    assert.equal(count(diySrc, 'shopPortraitUrl(m, elite || rec, portraitPick)'), 1, 'and draws it');
+    assert.ok(diySrc.includes('onChange=${onSkinChange}'), 'the 皮肤 panel reports a pick to the tab');
+    assert.ok(pickerSrc.includes('onChange?.(chessId)'), 'which is a callback the panel may or may not be given');
+    // no hook can live down there: the tests draw DiyPanelView's helpers directly, outside a dispatcher
+    assert.ok(!diySrc.includes('usePortraitPick'), 'the slot card must not reach for a hook');
   });
 });

@@ -1737,7 +1737,7 @@ function MatchScreen() {
             setBondOpen(null);
           }}><${Icon} name="signal" /></button>` : null}
         ${roomConsole && !spectator ? html`<button type="button" class="gm__gear gm__console" aria-label=${t('控制台')} title=${t('控制台')}
-          onClick=${() => setConsoleOpen(true)}><${GIcon} name="gear" /></button>` : null}
+          onClick=${() => setConsoleOpen(true)}><${GIcon} name="console" /></button>` : null}
         <button type="button" class="gm__gear" aria-label=${t('设置')} title=${t('设置')} onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label=${t('玩法说明')} title=${t('玩法说明')} onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
         <${AnnouncementButton} class="gm__gear gm__announcement" square=${true} />

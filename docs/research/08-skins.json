@@ -6,7 +6,8 @@
    "Kengxxiao/ArknightsGameData — zh_CN/gamedata/excel/skin_table.json (charSkins[].displaySkin / portraitId)",
    "yuanyan3060/ArknightsGameResource — avatar/{avatarId}.png",
    "fexli/ArknightsResource — spine/{charId}/{stem}/Spine/<stem>.{skel,atlas,png} for the skins whose directory holds a single merged model instead of Front/Back (char_1012_skadi2@boc#4, @iteration#2; found 2026-10-15)",
-   "2026-10-15: extended to the 自选编队 pool (the owned 6★ outside the chess pool, ui/diyModel.js) — same sources, per-skin model existence re-verified with HEAD probes; documented in meta.diyPoolExtension"
+   "2026-10-15: extended to the 自选编队 pool (the owned 6★ outside the chess pool, ui/diyModel.js) — same sources, per-skin model existence re-verified with HEAD probes; documented in meta.diyPoolExtension",
+   "2026-10-19: 99 avatar URLs were missing their .png suffix, so neither the avatar nor the derived 立绘 ever downloaded (tools/assets/plan.mjs skinPortraitUrl slices the URL, it cannot invent an extension). Suffix added; the 99 skins were reinstalled."
   ],
   "note": "Only skins whose Spine model directory exists upstream, and only for the pool operators of 07-assets.json. Default outfits (默认服装) are omitted: they are the chars[].spine entries the manifest already carries.",
   "stemRule": "skinId.replace(/@/g,'_').replace(/#/g,'_') === stem  (fexli directory and model file stem)",
@@ -1952,6 +1953,41 @@
        "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1033_swire2/char_1033_swire2_ambienceSynesthesia_4/Back/char_1033_swire2_ambienceSynesthesia_4.png"
       },
       "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1033_swire2/char_1033_swire2_ambienceSynesthesia_4/Back/char_1033_swire2_ambienceSynesthesia_4.skel"
+     }
+    }
+   },
+   {
+    "skinId": "char_1033_swire2@nlc#1",
+    "stem": "char_1033_swire2_nlc_1",
+    "name": "盛世之象",
+    "group": "合作款/1/1",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1033_swire2_nlc%231.png"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1033_swire2/char_1033_swire2_nlc_1/Front/char_1033_swire2_nlc_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1033_swire2/char_1033_swire2_nlc_1/Front/char_1033_swire2_nlc_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1033_swire2/char_1033_swire2_nlc_1/Front/char_1033_swire2_nlc_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1033_swire2/char_1033_swire2_nlc_1/Front/char_1033_swire2_nlc_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1033_swire2/char_1033_swire2_nlc_1/Back/char_1033_swire2_nlc_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1033_swire2/char_1033_swire2_nlc_1/Back/char_1033_swire2_nlc_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1033_swire2/char_1033_swire2_nlc_1/Back/char_1033_swire2_nlc_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1033_swire2/char_1033_swire2_nlc_1/Back/char_1033_swire2_nlc_1.skel"
      }
     }
    }
@@ -4525,6 +4561,41 @@
       "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1040_blaze2/char_1040_blaze2_winter_5/Back/char_1040_blaze2_winter_5.skel"
      }
     }
+   },
+   {
+    "skinId": "char_1040_blaze2@nlc#1",
+    "stem": "char_1040_blaze2_nlc_1",
+    "name": "夜行烛火",
+    "group": "合作款/1/1",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1040_blaze2_nlc%231.png"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1040_blaze2/char_1040_blaze2_nlc_1/Front/char_1040_blaze2_nlc_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1040_blaze2/char_1040_blaze2_nlc_1/Front/char_1040_blaze2_nlc_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1040_blaze2/char_1040_blaze2_nlc_1/Front/char_1040_blaze2_nlc_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1040_blaze2/char_1040_blaze2_nlc_1/Front/char_1040_blaze2_nlc_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1040_blaze2/char_1040_blaze2_nlc_1/Back/char_1040_blaze2_nlc_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1040_blaze2/char_1040_blaze2_nlc_1/Back/char_1040_blaze2_nlc_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_1040_blaze2/char_1040_blaze2_nlc_1/Back/char_1040_blaze2_nlc_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_1040_blaze2/char_1040_blaze2_nlc_1/Back/char_1040_blaze2_nlc_1.skel"
+     }
+    }
    }
   ],
   "char_4145_ulpia": [
@@ -6322,7 +6393,7 @@
     "name": "时遗",
     "group": "忒斯特收藏/XVI/XIV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_003_kalts_sale%2314"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_003_kalts_sale%2314.png"
     },
     "battleSpine": {
      "front": {
@@ -6357,7 +6428,7 @@
     "name": "残余",
     "group": "斗争血脉/VI/VI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_003_kalts_boc%236"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_003_kalts_boc%236.png"
     },
     "battleSpine": {
      "front": {
@@ -6394,7 +6465,7 @@
     "name": "初晴",
     "group": "忒斯特收藏/XI/X",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_010_chen_sale%2310"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_010_chen_sale%2310.png"
     },
     "battleSpine": {
      "front": {
@@ -6429,7 +6500,7 @@
     "name": "岁红霞",
     "group": "0011制造/II/II",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_010_chen_nian%232"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_010_chen_nian%232.png"
     },
     "battleSpine": {
      "front": {
@@ -6466,7 +6537,7 @@
     "name": "易爆蓝焰",
     "group": "巫异盛宴/V/V",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_017_huang_witch%235"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_017_huang_witch%235.png"
     },
     "battleSpine": {
      "front": {
@@ -6501,7 +6572,7 @@
     "name": "爆裂菲林",
     "group": "音律联觉",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_017_huang_as%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_017_huang_as%231.png"
     },
     "battleSpine": {
      "front": {
@@ -6538,7 +6609,7 @@
     "name": "遗石",
     "group": "生命之地/II/II",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_112_siege_wild%232"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_112_siege_wild%232.png"
     },
     "battleSpine": {
      "front": {
@@ -6573,7 +6644,7 @@
     "name": "摧城",
     "group": "雷神推进者/II/II",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_112_siege_striker%232"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_112_siege_striker%232.png"
     },
     "battleSpine": {
      "front": {
@@ -6610,7 +6681,7 @@
     "name": "恍惚",
     "group": "时代/VII/VII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_113_cqbw_epoque%237"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_113_cqbw_epoque%237.png"
     },
     "battleSpine": {
      "front": {
@@ -6647,7 +6718,7 @@
     "name": "日晒 SS.SP",
     "group": "珊瑚海岸/I/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_134_ifrit_summer%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_134_ifrit_summer%231.png"
     },
     "battleSpine": {
      "front": {
@@ -6682,7 +6753,7 @@
     "name": "儿童派对",
     "group": "肯德基/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_134_ifrit_kfc%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_134_ifrit_kfc%231.png"
     },
     "battleSpine": {
      "front": {
@@ -6717,7 +6788,7 @@
     "name": "轻松旅途",
     "group": "轻松小熊/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_134_ifrit_rilakkuma%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_134_ifrit_rilakkuma%231.png"
     },
     "battleSpine": {
      "front": {
@@ -6754,7 +6825,7 @@
     "name": "静谧午夜 DN02",
     "group": "珊瑚海岸/I/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_147_shining_summer%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_147_shining_summer%231.png"
     },
     "battleSpine": {
      "front": {
@@ -6791,7 +6862,7 @@
     "name": "挽歌",
     "group": "巫异盛宴 /I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_179_cgbird_witch%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_179_cgbird_witch%231.png"
     },
     "battleSpine": {
      "front": {
@@ -6826,7 +6897,7 @@
     "name": "流辉",
     "group": "错位巡礼/I/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_179_cgbird_sightseer%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_179_cgbird_sightseer%231.png"
     },
     "battleSpine": {
      "front": {
@@ -6863,7 +6934,7 @@
     "name": "夏卉 FA018",
     "group": "珊瑚海岸/V/V",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_180_amgoat_summer%235"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_180_amgoat_summer%235.png"
     },
     "battleSpine": {
      "front": {
@@ -6898,7 +6969,7 @@
     "name": "绵绒小魔女",
     "group": "三丽鸥家族/II/II",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_180_amgoat_sanrio%232"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_180_amgoat_sanrio%232.png"
     },
     "battleSpine": {
      "front": {
@@ -6935,7 +7006,7 @@
     "name": "歧路幻影",
     "group": "斗争血脉/II/II",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_188_helage_boc%232"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_188_helage_boc%232.png"
     },
     "battleSpine": {
      "front": {
@@ -6972,7 +7043,7 @@
     "name": "杰作",
     "group": "时代/XII/XII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_197_poca_epoque%2312"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_197_poca_epoque%2312.png"
     },
     "battleSpine": {
      "front": {
@@ -7007,7 +7078,7 @@
     "name": "常伴我身",
     "group": "轻松小熊/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_197_poca_rilakkuma%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_197_poca_rilakkuma%231.png"
     },
     "battleSpine": {
      "front": {
@@ -7044,7 +7115,7 @@
     "name": "百面郎中",
     "group": "0011制造/III/IV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_225_haak_nian%234"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_225_haak_nian%234.png"
     },
     "battleSpine": {
      "front": {
@@ -7079,7 +7150,7 @@
     "name": "妙手玄心",
     "group": "0011制造/IV/V",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_225_haak_nian%235"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_225_haak_nian%235.png"
     },
     "battleSpine": {
      "front": {
@@ -7116,7 +7187,7 @@
     "name": "回味冰霜雪",
     "group": "罗德厨房/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_248_mgllan_kitchen%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_248_mgllan_kitchen%231.png"
     },
     "battleSpine": {
      "front": {
@@ -7153,7 +7224,7 @@
     "name": "焦点",
     "group": "忒斯特收藏/V/IV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_250_phatom_sale%234"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_250_phatom_sale%234.png"
     },
     "battleSpine": {
      "front": {
@@ -7188,7 +7259,7 @@
     "name": "梦魇之梦",
     "group": "缠梦古堡/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_250_phatom_ghost%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_250_phatom_ghost%231.png"
     },
     "battleSpine": {
      "front": {
@@ -7225,7 +7296,7 @@
     "name": "锋潮",
     "group": "斗争血脉/VIII/VIII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_293_thorns_boc%238"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_293_thorns_boc%238.png"
     },
     "battleSpine": {
      "front": {
@@ -7260,7 +7331,7 @@
     "name": "惬意",
     "group": "i.t/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_293_thorns_it%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_293_thorns_it%231.png"
     },
     "battleSpine": {
      "front": {
@@ -7297,7 +7368,7 @@
     "name": "至圣誓言",
     "group": "巫异盛宴/IV/IV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_300_phenxi_witch%234"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_300_phenxi_witch%234.png"
     },
     "battleSpine": {
      "front": {
@@ -7332,7 +7403,7 @@
     "name": "审判日",
     "group": "斗争血脉/IX/IX",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_300_phenxi_boc%239"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_300_phenxi_boc%239.png"
     },
     "battleSpine": {
      "front": {
@@ -7369,7 +7440,7 @@
     "name": "鉴浮生",
     "group": "0011/飙系列/X/X",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_322_lmlee_whirlwind%2310"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_322_lmlee_whirlwind%2310.png"
     },
     "battleSpine": {
      "front": {
@@ -7404,7 +7475,7 @@
     "name": "手到牌来",
     "group": "巫异盛宴/III/III",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_322_lmlee_witch%233"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_322_lmlee_witch%233.png"
     },
     "battleSpine": {
      "front": {
@@ -7439,7 +7510,7 @@
     "name": "坊间凉茶铺",
     "group": "三丽鸥家族/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_322_lmlee_sanrio%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_322_lmlee_sanrio%231.png"
     },
     "battleSpine": {
      "front": {
@@ -7476,7 +7547,7 @@
     "name": "厚礼",
     "group": "冰原信使/I/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_340_shwaz_snow%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_340_shwaz_snow%231.png"
     },
     "battleSpine": {
      "front": {
@@ -7511,7 +7582,7 @@
     "name": "天际线",
     "group": "雷神推进者/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_340_shwaz_striker%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_340_shwaz_striker%231.png"
     },
     "battleSpine": {
      "front": {
@@ -7548,7 +7619,7 @@
     "name": "彼有",
     "group": "忒斯特收藏/X/IX",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_362_saga_sale%239"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_362_saga_sale%239.png"
     },
     "battleSpine": {
      "front": {
@@ -7585,7 +7656,7 @@
     "name": "夏卉 FA394",
     "group": "珊瑚海岸/XII/XII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_377_gdglow_summer%2312"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_377_gdglow_summer%2312.png"
     },
     "battleSpine": {
      "front": {
@@ -7620,7 +7691,7 @@
     "name": "喜夜侍者",
     "group": "冰原信使/V/V",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_377_gdglow_snow%235"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_377_gdglow_snow%235.png"
     },
     "battleSpine": {
      "front": {
@@ -7655,7 +7726,7 @@
     "name": "花房茶话会",
     "group": "三丽鸥家族/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_377_gdglow_sanrio%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_377_gdglow_sanrio%231.png"
     },
     "battleSpine": {
      "front": {
@@ -7692,7 +7763,7 @@
     "name": "糖果仙子",
     "group": "冰原信使/II/II",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_400_weedy_snow%232"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_400_weedy_snow%232.png"
     },
     "battleSpine": {
      "front": {
@@ -7727,7 +7798,7 @@
     "name": "倾听",
     "group": "错位巡礼/I/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_400_weedy_sightseer%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_400_weedy_sightseer%231.png"
     },
     "battleSpine": {
      "front": {
@@ -7764,7 +7835,7 @@
     "name": "熔锻铸匠",
     "group": "斗争血脉/III/III",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_416_zumama_boc%233"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_416_zumama_boc%233.png"
     },
     "battleSpine": {
      "front": {
@@ -7801,7 +7872,7 @@
     "name": "夏卉 FA161",
     "group": "珊瑚海岸/XX/XX",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_450_necras_summer%2320"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_450_necras_summer%2320.png"
     },
     "battleSpine": {
      "front": {
@@ -7836,7 +7907,7 @@
     "name": "晶化信念",
     "group": "音律联觉/VIII/VII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_450_necras_ambienceSynesthesia%237"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_450_necras_ambienceSynesthesia%237.png"
     },
     "battleSpine": {
      "front": {
@@ -7873,7 +7944,7 @@
     "name": "识芳",
     "group": "时代/XIV/XIV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_479_sleach_epoque%2314"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_479_sleach_epoque%2314.png"
     },
     "battleSpine": {
      "front": {
@@ -7908,7 +7979,7 @@
     "name": "夏卉 FA317",
     "group": "珊瑚海岸/XI/XI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_479_sleach_summer%2311"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_479_sleach_summer%2311.png"
     },
     "battleSpine": {
      "front": {
@@ -7945,7 +8016,7 @@
     "name": "传承",
     "group": "时代/XII/XII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_485_pallas_epoque%2312"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_485_pallas_epoque%2312.png"
     },
     "battleSpine": {
      "front": {
@@ -7980,7 +8051,7 @@
     "name": "山川的酿造",
     "group": "时代/XIX/XIX",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_485_pallas_epoque%2319"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_485_pallas_epoque%2319.png"
     },
     "battleSpine": {
      "front": {
@@ -8017,7 +8088,7 @@
     "name": "悠然假日 HD79",
     "group": "珊瑚海岸/XX/XX",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1013_chen2_summer%2320"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1013_chen2_summer%2320.png"
     },
     "battleSpine": {
      "front": {
@@ -8052,7 +8123,7 @@
     "name": "万重山",
     "group": "斗争血脉/VI/VI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1013_chen2_boc%236"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1013_chen2_boc%236.png"
     },
     "battleSpine": {
      "front": {
@@ -8089,7 +8160,7 @@
     "name": "栖息",
     "group": "时代/XXXII/XXXII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1031_slent2_epoque%2332"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1031_slent2_epoque%2332.png"
     },
     "battleSpine": {
      "front": {
@@ -8126,7 +8197,7 @@
     "name": "《上任达维镇》",
     "group": "中国电影资料馆/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1034_jesca2_cfa%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1034_jesca2_cfa%231.png"
     },
     "battleSpine": {
      "front": {
@@ -8163,7 +8234,7 @@
     "name": "超新星",
     "group": "忒斯特收藏/XV/XIV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1035_wisdel_sale%2314"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1035_wisdel_sale%2314.png"
     },
     "battleSpine": {
      "front": {
@@ -8198,7 +8269,7 @@
     "name": "绝对主角",
     "group": "成就之星/IX/IX",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1035_wisdel_game%239"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1035_wisdel_game%239.png"
     },
     "battleSpine": {
      "front": {
@@ -8235,7 +8306,7 @@
     "name": "真我自扼",
     "group": "错位巡礼/IV/IV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1042_phatm2_sightseer%234"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1042_phatm2_sightseer%234.png"
     },
     "battleSpine": {
      "front": {
@@ -8272,7 +8343,7 @@
     "name": "血翼蔷薇",
     "group": "成就之星/VIII/VIII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1043_leizi2_game%238"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1043_leizi2_game%238.png"
     },
     "battleSpine": {
      "front": {
@@ -8309,7 +8380,7 @@
     "name": "一闪极意",
     "group": "0011/飙系列/XI/XI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1044_hsgma2_whirlwind%2311"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1044_hsgma2_whirlwind%2311.png"
     },
     "battleSpine": {
      "front": {
@@ -8346,7 +8417,7 @@
     "name": "夜之终局",
     "group": "命途迭代/V/V",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1502_crosly_iteration%235"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_1502_crosly_iteration%235.png"
     },
     "battleSpine": {
      "front": {
@@ -8383,7 +8454,7 @@
     "name": "温差 RT.RX07",
     "group": "珊瑚海岸/XVII/XVII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2012_typhon_summer%2317"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2012_typhon_summer%2317.png"
     },
     "battleSpine": {
      "front": {
@@ -8418,7 +8489,7 @@
     "name": "北地引路人",
     "group": "生命之地/IX/IX",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2012_typhon_wild%239"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2012_typhon_wild%239.png"
     },
     "battleSpine": {
      "front": {
@@ -8455,7 +8526,7 @@
     "name": "无拘无束",
     "group": "0011/飙系列/II/II",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2013_cerber_whirlwind%232"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2013_cerber_whirlwind%232.png"
     },
     "battleSpine": {
      "front": {
@@ -8490,7 +8561,7 @@
     "name": "夏卉 FA333",
     "group": "珊瑚海岸/IV/IV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2013_cerber_summer%234"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2013_cerber_summer%234.png"
     },
     "battleSpine": {
      "front": {
@@ -8527,7 +8598,7 @@
     "name": "乐逍遥",
     "group": "0011制造/III/IV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2014_nian_nian%234"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2014_nian_nian%234.png"
     },
     "battleSpine": {
      "front": {
@@ -8562,7 +8633,7 @@
     "name": "霹雳导演",
     "group": "中国电影资料馆/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2014_nian_cfa%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2014_nian_cfa%231.png"
     },
     "battleSpine": {
      "front": {
@@ -8599,7 +8670,7 @@
     "name": "濯缨",
     "group": "0011制造/VIII/IX",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2023_ling_nian%239"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2023_ling_nian%239.png"
     },
     "battleSpine": {
      "front": {
@@ -8634,7 +8705,7 @@
     "name": "方遒卷",
     "group": "0011制造/XII/XII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2023_ling_nian%2312"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2023_ling_nian%2312.png"
     },
     "battleSpine": {
      "front": {
@@ -8669,7 +8740,7 @@
     "name": "崖高梦远",
     "group": "国家地理/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2023_ling_ncg%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2023_ling_ncg%231.png"
     },
     "battleSpine": {
      "front": {
@@ -8706,7 +8777,7 @@
     "name": "何处栖",
     "group": "0011制造/IX/X",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2024_chyue_nian%2310"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2024_chyue_nian%2310.png"
     },
     "battleSpine": {
      "front": {
@@ -8741,7 +8812,7 @@
     "name": "全能演员",
     "group": "中国电影资料馆/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2024_chyue_cfa%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2024_chyue_cfa%231.png"
     },
     "battleSpine": {
      "front": {
@@ -8778,7 +8849,7 @@
     "name": "春日宴",
     "group": "0011制造/XI/XI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2025_shu_nian%2311"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2025_shu_nian%2311.png"
     },
     "battleSpine": {
      "front": {
@@ -8806,6 +8877,41 @@
       "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2025_shu/char_2025_shu_nian_11/Back/char_2025_shu_nian_11.skel"
      }
     }
+   },
+   {
+    "skinId": "char_2025_shu@nlc#1",
+    "stem": "char_2025_shu_nlc_1",
+    "name": "源远流长",
+    "group": "合作款/1/1",
+    "avatar": {
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_2025_shu_nlc%231.png"
+    },
+    "battleSpine": {
+     "front": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nlc_1/Front/char_2025_shu_nlc_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nlc_1/Front/char_2025_shu_nlc_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nlc_1/Front/char_2025_shu_nlc_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2025_shu/char_2025_shu_nlc_1/Front/char_2025_shu_nlc_1.skel"
+     },
+     "back": {
+      "skel": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nlc_1/Back/char_2025_shu_nlc_1.skel"
+      },
+      "atlas": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nlc_1/Back/char_2025_shu_nlc_1.atlas"
+      },
+      "png": {
+       "url": "https://raw.githubusercontent.com/fexli/ArknightsResource/main/spine/char_2025_shu/char_2025_shu_nlc_1/Back/char_2025_shu_nlc_1.png"
+      },
+      "jsdelivrSkel": "https://cdn.jsdelivr.net/gh/fexli/ArknightsResource@main/spine/char_2025_shu/char_2025_shu_nlc_1/Back/char_2025_shu_nlc_1.skel"
+     }
+    }
    }
   ],
   "char_4009_irene": [
@@ -8815,7 +8921,7 @@
     "name": "飞羽",
     "group": "音律联觉/III/III",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4009_irene_ambienceSynesthesia%233"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4009_irene_ambienceSynesthesia%233.png"
     },
     "battleSpine": {
      "front": {
@@ -8850,7 +8956,7 @@
     "name": "至高判决",
     "group": "成就之星/III/III",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4009_irene_game%233"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4009_irene_game%233.png"
     },
     "battleSpine": {
      "front": {
@@ -8887,7 +8993,7 @@
     "name": "幻火",
     "group": "0011/飙系列/VII/VII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4011_lessng_whirlwind%237"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4011_lessng_whirlwind%237.png"
     },
     "battleSpine": {
      "front": {
@@ -8924,7 +9030,7 @@
     "name": "恒久祭礼",
     "group": "时代/XLIX/L",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4027_heyak_epoque%2350"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4027_heyak_epoque%2350.png"
     },
     "battleSpine": {
      "front": {
@@ -8959,7 +9065,7 @@
     "name": "历世流风",
     "group": "音律联觉/IV/IV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4027_heyak_ambienceSynesthesia%234"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4027_heyak_ambienceSynesthesia%234.png"
     },
     "battleSpine": {
      "front": {
@@ -8996,7 +9102,7 @@
     "name": "变奏",
     "group": "斗争血脉/VI/VI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4046_ebnhlz_boc%236"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4046_ebnhlz_boc%236.png"
     },
     "battleSpine": {
      "front": {
@@ -9033,7 +9139,7 @@
     "name": "命运主宰",
     "group": "巫异盛宴/IV/IV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4048_doroth_witch%234"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4048_doroth_witch%234.png"
     },
     "battleSpine": {
      "front": {
@@ -9070,7 +9176,7 @@
     "name": "字句中的雪原",
     "group": "生命之地/VII/VII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4055_bgsnow_wild%237"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4055_bgsnow_wild%237.png"
     },
     "battleSpine": {
      "front": {
@@ -9105,7 +9211,7 @@
     "name": "行梦侧畔",
     "group": "0011/韵系列/VII/VII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4055_bgsnow_yun%237"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4055_bgsnow_yun%237.png"
     },
     "battleSpine": {
      "front": {
@@ -9142,7 +9248,7 @@
     "name": "记叙",
     "group": "时代/XXXIII/XXXIII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4065_judge_epoque%2333"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4065_judge_epoque%2333.png"
     },
     "battleSpine": {
      "front": {
@@ -9177,7 +9283,7 @@
     "name": "偶尔醉陶",
     "group": "冰原信使/VI/VI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4065_judge_snow%236"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4065_judge_snow%236.png"
     },
     "battleSpine": {
      "front": {
@@ -9214,7 +9320,7 @@
     "name": "沙滩护卫 GT003",
     "group": "珊瑚海岸/XI/XI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4072_ironmn_summer%2311"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4072_ironmn_summer%2311.png"
     },
     "battleSpine": {
      "front": {
@@ -9249,7 +9355,7 @@
     "name": "空心王冠",
     "group": "音律联觉/V/V",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4072_ironmn_ambienceSynesthesia%235"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4072_ironmn_ambienceSynesthesia%235.png"
     },
     "battleSpine": {
      "front": {
@@ -9286,7 +9392,7 @@
     "name": "列瑶台",
     "group": "0011制造/IX/X",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4080_lin_nian%2310"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4080_lin_nian%2310.png"
     },
     "battleSpine": {
      "front": {
@@ -9321,7 +9427,7 @@
     "name": "夏卉 FA137",
     "group": "珊瑚海岸/XIX/XIX",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4080_lin_summer%2319"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4080_lin_summer%2319.png"
     },
     "battleSpine": {
      "front": {
@@ -9356,7 +9462,7 @@
     "name": "求知的魔法",
     "group": "小马宝莉/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4080_lin_littlePony%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4080_lin_littlePony%231.png"
     },
     "battleSpine": {
      "front": {
@@ -9393,7 +9499,7 @@
     "name": "沉思之庭",
     "group": "错位巡礼/I/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4088_hodrer_sightseer%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4088_hodrer_sightseer%231.png"
     },
     "battleSpine": {
      "front": {
@@ -9430,7 +9536,7 @@
     "name": "寄自奥格尼斯科",
     "group": "时代/XXXIX/XL",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4098_vvana_epoque%2340"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4098_vvana_epoque%2340.png"
     },
     "battleSpine": {
      "front": {
@@ -9467,7 +9573,7 @@
     "name": "夏卉 FA098",
     "group": "珊瑚海岸/XXII/XXII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4117_ray_summer%2322"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4117_ray_summer%2322.png"
     },
     "battleSpine": {
      "front": {
@@ -9502,7 +9608,7 @@
     "name": "梦幻高空",
     "group": "闪耀阶梯/II/II",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4117_ray_shining%232"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4117_ray_shining%232.png"
     },
     "battleSpine": {
      "front": {
@@ -9539,7 +9645,7 @@
     "name": "无息破局",
     "group": "忒斯特收藏/XVIII/XVI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4121_zuole_sale%2316"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4121_zuole_sale%2316.png"
     },
     "battleSpine": {
      "front": {
@@ -9574,7 +9680,7 @@
     "name": "少年游",
     "group": "0011制造/XI/XI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4121_zuole_nian%2311"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4121_zuole_nian%2311.png"
     },
     "battleSpine": {
      "front": {
@@ -9611,7 +9717,7 @@
     "name": "趋光之暗",
     "group": "命途迭代/IV/IV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4132_ascln_iteration%234"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4132_ascln_iteration%234.png"
     },
     "battleSpine": {
      "front": {
@@ -9648,7 +9754,7 @@
     "name": "辉煌的静谧",
     "group": "音律联觉/VI/VI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4133_logos_ambienceSynesthesia%236"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4133_logos_ambienceSynesthesia%236.png"
     },
     "battleSpine": {
      "front": {
@@ -9685,7 +9791,7 @@
     "name": "链锯陪护者",
     "group": "破格视界/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4138_narant_breaker%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4138_narant_breaker%231.png"
     },
     "battleSpine": {
      "front": {
@@ -9720,7 +9826,7 @@
     "name": "率直诚实之人",
     "group": "小马宝莉/I",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4138_narant_littlePony%231"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4138_narant_littlePony%231.png"
     },
     "battleSpine": {
      "front": {
@@ -9757,7 +9863,7 @@
     "name": "锋锐",
     "group": "斗争血脉/XI/XI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4179_monstr_boc%2311"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4179_monstr_boc%2311.png"
     },
     "battleSpine": {
      "front": {
@@ -9794,7 +9900,7 @@
     "name": "乱数法则",
     "group": "成就之星/VIII/VIII",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4195_radian_game%238"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4195_radian_game%238.png"
     },
     "battleSpine": {
      "front": {
@@ -9831,7 +9937,7 @@
     "name": "常世之幻",
     "group": "命途迭代/VI/VI",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4202_haruka_iteration%236"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4202_haruka_iteration%236.png"
     },
     "battleSpine": {
      "front": {
@@ -9868,7 +9974,7 @@
     "name": "万籁俱寂",
     "group": "错位巡礼/IV/IV",
     "avatar": {
-     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4204_mantra_sightseer%234"
+     "url": "https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/char_4204_mantra_sightseer%234.png"
     },
     "battleSpine": {
      "front": {

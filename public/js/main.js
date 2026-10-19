@@ -273,7 +273,9 @@ function wireNet() {
   // `waitingCount` is the pool the ticket waits in (its own party included) and `required` is that pool's capacity.
   // An offer rides the same shape plus { offerId, accepted }: 确认入场 answers queue.accept.
   net.on('queue.state', (msg) => {
-    const queue = { ...payload(msg), status: 'searching', players: msg.waitingCount ?? msg.partySize ?? 1,
+    // 出价时池里已经没有等待人数（waitingCount 只在 queued 帧上），用 required 报「一组已凑满」。
+    const queue = { ...payload(msg), status: 'searching',
+      players: msg.waitingCount ?? (msg.state === 'offered' ? msg.required : null) ?? msg.partySize ?? 1,
       target: msg.required || MAX_SEATS };
     if (msg.state === 'queued' || msg.state === 'offered') { store.set({ matchmaking: queue }); return; }
     store.set({ matchmaking: null });

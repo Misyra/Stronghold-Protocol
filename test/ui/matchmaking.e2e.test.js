@@ -1,12 +1,24 @@
-// SP_E2E=1 CHROME_PATH=... node --test test/ui/matchmaking.e2e.test.js
+// SP_E2E=1 SP_IP_SESSION_LIMIT=off CHROME_PATH='C:\Program Files\Google\Chrome\Application\chrome.exe' \
+//   node --import ./test/helpers/test-setup.js --test test/ui/matchmaking.e2e.test.js
+//
+// The alliance queue as a player meets it (0.3.1: server/matchmaking.js offers, the clients confirm).
+// Four solo humans pick the same difficulty in the hub, see the live count, and after the fourth joins every
+// panel turns into 队友已集结 / 确认入场; accepting on all four commits one room without bots, and the briefing's
+// 准备就绪 moves the room on to the strategy draft. The panel is also checked at phone size (844×390), where the
+// offer card must not push 停止搜寻 out of the viewport.
+//
+// The premade-party UI used to be a second test here. The hub's alliance screen (public/js/screens/lobby.js
+// ProtocolSelect) replaced the old three mode cards and the room's 同盟匹配 checkbox (.room-matchmaking,
+// .room-start, .room-recruit-hint) that test drove, so its party flow (party of two + two solos) is covered at the
+// protocol level by test/matchmaking-party.test.js instead.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync } from 'node:fs';
 import { startServer } from '../../server/index.js';
 
 const chrome = process.env.CHROME_PATH;
-test('same-site matchmaking UI: three cards, cancellation, live count and four humans entering the real match', {
-  skip: process.env.SP_E2E !== '1' || !existsSync(chrome || ''), timeout: 120000,
+test('hub queue UI: four solos search, see the count, confirm the offer and start one bot-free match', {
+  skip: process.env.SP_E2E !== '1' || !existsSync(chrome || ''), timeout: 180000,
 }, async (t) => {
   const { default: puppeteer } = await import('puppeteer-core');
   const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
@@ -15,130 +27,82 @@ test('same-site matchmaking UI: three cards, cancellation, live count and four h
   t.after(() => browser.close());
   const players = [], errors = [];
   mkdirSync('test/e2e/out', { recursive: true });
+  // Hidden tabs stop requestAnimationFrame, so every store read below polls on a timer instead of rAF.
+  const poll = (page, fn, arg) => page.waitForFunction(fn, { timeout: 60000, polling: 100 }, arg);
   for (let i = 0; i < 4; i++) {
     const context = await browser.createBrowserContext(), page = await context.newPage();
-    await page.setViewport(i === 2 ? { width: 844, height: 390, isMobile: true, hasTouch: true, isLandscape: true } : { width: 1920, height: 1080 });
+    await page.setViewport(i === 2 ? { width: 844, height: 390, isMobile: true, hasTouch: true, isLandscape: true } : { width: 1600, height: 900 });
     page.on('pageerror', (e) => errors.push(e.message));
-    page.on('response', (r) => { if (r.status() >= 400 && r.url().startsWith(`http://127.0.0.1:${server.port}`)) errors.push(`${r.status()} ${r.url()}`); });
+    page.on('response', (r) => { if (r.status() >= 400) errors.push(`${r.status()} ${new URL(r.url()).pathname}`); });
     await page.evaluateOnNewDocument((i) => { localStorage.setItem('sp.name', `匹配博士${i}`); sessionStorage.setItem('sp.entered', '1'); }, i);
     await page.goto(`http://127.0.0.1:${server.port}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => globalThis.__SP__?.store.get().connection.status === 'online' && document.querySelector('.lobby-screen'));
-    assert.equal(await page.$$eval('.mode-card', (els) => els.length), 3);
-    await page.click('.mode-card:nth-child(3)');
-    assert.match(await page.$eval('.create-box .btn', (e) => e.textContent), /开始匹配/);
-    await page.click('.diff-card:nth-child(3)');
+    await poll(page, () => globalThis.__SP__?.store.get().connection.status === 'online' && !!document.querySelector('.lobby-screen'));
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '暂不全屏'); if (b) b.click(); });
     players.push(page);
   }
   const [a, b, c, d] = players;
+  // 同盟匹配 in the hub's entry list opens the alliance screen; the third card is 绝境模拟 (HARD).
+  for (const page of players) {
+    await page.evaluate(() => {
+      const entry = [...document.querySelectorAll('.hub-entries__row button')].find((el) => el.textContent.includes('同盟匹配'));
+      if (!entry) throw new Error('the hub has no 同盟匹配 entry');
+      entry.click();
+    });
+    await page.waitForSelector('.proto .proto-list', { timeout: 15000 });
+    await page.evaluate(() => document.querySelectorAll('.pcard')[2].click());
+  }
+  assert.match(await a.$eval('.proto-start', (el) => el.textContent), /开始搜寻/);
   await a.screenshot({ path: 'test/e2e/out/matchmaking-select.png' });
-  await a.click('.create-box .btn');
-  await a.waitForFunction(() => globalThis.__SP__.store.get().matchmaking?.players === 1);
-  assert.equal(await a.$$eval('.diff-card:disabled', (els) => els.length), 4);
-  await b.click('.create-box .btn');
-  await a.waitForFunction(() => globalThis.__SP__.store.get().matchmaking?.players === 2);
-  await a.click('.matching-panel .btn');
-  await a.waitForFunction(() => !globalThis.__SP__.store.get().matchmaking && document.querySelectorAll('.mode-card').length === 3);
-  await b.waitForFunction(() => globalThis.__SP__.store.get().matchmaking?.players === 1);
-  await a.click('.create-box .btn');
-  await c.click('.create-box .btn');
-  await a.waitForFunction(() => globalThis.__SP__.store.get().matchmaking?.players === 3);
-  await a.waitForFunction(() => document.querySelector('.matching-panel__time').textContent !== '00:00');
-  assert.match(await a.$eval('.matching-panel', (el) => el.textContent), /绝境模拟/);
-  await a.screenshot({ path: 'test/e2e/out/matchmaking-search.png' });
-  await c.waitForFunction(() => globalThis.__SP__.store.get().matchmaking?.players === 3);
+
+  await a.evaluate(() => document.querySelector('.proto-start').click());
+  await poll(a, () => globalThis.__SP__.store.get().matchmaking?.players === 1);
+  assert.match(await a.$eval('.proto-side', (el) => el.textContent), /绝境模拟/);
+  await b.evaluate(() => document.querySelector('.proto-start').click());
+  await poll(a, () => globalThis.__SP__.store.get().matchmaking?.players === 2);
+  // 停止搜寻 drops this player's ticket and brings the cards back.
+  await a.evaluate(() => document.querySelector('.mf-stop').click());
+  await poll(a, () => !globalThis.__SP__.store.get().matchmaking && document.querySelectorAll('.pcard').length > 0);
+  await poll(b, () => globalThis.__SP__.store.get().matchmaking?.players === 1);
+  await a.evaluate(() => document.querySelector('.proto-start').click());
+  await c.evaluate(() => document.querySelector('.proto-start').click());
+  await poll(a, () => globalThis.__SP__.store.get().matchmaking?.players === 3);
+  // The phone layout keeps 停止搜寻 inside the viewport while three of four seats are filled.
+  const phone = await c.evaluate(() => {
+    const stop = document.querySelector('.mf-stop').getBoundingClientRect();
+    const side = document.querySelector('.proto-side').getBoundingClientRect();
+    return { bottom: stop.bottom, innerHeight, side: side.bottom, overflow: document.documentElement.scrollWidth > innerWidth + 1 };
+  });
+  assert.equal(phone.overflow, false, 'no horizontal viewport overflow on the phone');
+  assert.ok(phone.bottom <= phone.innerHeight, `停止搜寻 stays inside the ${phone.innerHeight}px viewport (bottom ${phone.bottom})`);
   await c.screenshot({ path: 'test/e2e/out/matchmaking-phone.png' });
-  assert.equal(await c.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'no horizontal viewport overflow');
-  await d.click('.create-box .btn');
-  await Promise.all(players.map((p) => p.waitForFunction(() => !!globalThis.__SP__.store.get().matchmaking?.offerId && document.querySelector('.proto-offer .btn'))));
-  await Promise.all(players.map((p) => p.click('.proto-offer .btn')));
-  await Promise.all(players.map((p) => p.waitForFunction(() => globalThis.__SP__.store.get().match.public?.phase === 'INFO_CHECK')));
-  const states = await Promise.all(players.map((p) => p.evaluate(() => { const s = globalThis.__SP__.store.get(); return { room: s.room, matching: s.matchmaking }; })));
-  assert.equal(new Set(states.map((s) => s.room.code)).size, 1);
-  assert.ok(states.every((s) => s.matching === null && s.room.difficulty === 'HARD' && s.room.seats.filter(Boolean).length === 4 && s.room.seats.every((seat) => !seat.isBot)));
+
+  await d.evaluate(() => document.querySelector('.proto-start').click());
+  await Promise.all(players.map((p) => poll(p, () => !!globalThis.__SP__.store.get().matchmaking?.offerId && !!document.querySelector('.proto-offer .btn'))));
+  assert.match(await a.$eval('.proto-offer', (el) => el.textContent), /队友已集结/);
+  assert.deepEqual(await Promise.all(players.map((p) => p.evaluate(() => globalThis.__SP__.store.get().matchmaking.players))), [4, 4, 4, 4]);
+  await a.screenshot({ path: 'test/e2e/out/matchmaking-offer.png' });
+  await c.screenshot({ path: 'test/e2e/out/matchmaking-offer-phone.png' });
+  const phoneOffer = await c.evaluate(() => {
+    const stop = document.querySelector('.mf-stop').getBoundingClientRect();
+    return { bottom: stop.bottom, innerHeight };
+  });
+  assert.ok(phoneOffer.bottom <= phoneOffer.innerHeight, 'the offer card does not push 停止搜寻 off the phone');
+
+  await Promise.all(players.map((p) => p.evaluate(() => document.querySelector('.proto-offer .btn').click())));
+  await Promise.all(players.map((p) => poll(p, () => globalThis.__SP__.store.get().match.public?.phase === 'INFO_CHECK')));
+  const states = await Promise.all(players.map((p) => p.evaluate(() => { const s = globalThis.__SP__.store.get(); return { code: s.room?.code, matching: s.matchmaking, seats: s.room?.seats, difficulty: s.room?.difficulty }; })));
+  assert.equal(new Set(states.map((s) => s.code)).size, 1, 'one room for the cohort');
+  assert.ok(states.every((s) => s.matching === null && s.difficulty === 'HARD' && s.seats.filter(Boolean).length === 4 && s.seats.every((seat) => !seat.isBot)), 'four humans, no bots, no leftover ticket');
   await Promise.all(players.map((p) => p.waitForSelector('.screen.brief', { visible: true })));
   await d.waitForFunction(() => document.getAnimations().every((animation) => animation.effect?.getTiming().iterations === Infinity || animation.playState === 'finished'));
   await d.screenshot({ path: 'test/e2e/out/matchmaking-start.png' });
-  assert.deepEqual(errors, []);
-});
 
-test('premade matchmaking UI: checkbox above start, ready gate, cancellation and filling with two solos', {
-  skip: process.env.SP_E2E !== '1' || !existsSync(chrome || ''), timeout: 120000,
-}, async (t) => {
-  const { default: puppeteer } = await import('puppeteer-core');
-  const server = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
-  t.after(() => server.close());
-  const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-first-run', '--mute-audio', '--disable-background-timer-throttling'] });
-  t.after(() => browser.close());
-  const pages = [], errors = [];
-  mkdirSync('test/e2e/out', { recursive: true });
-  for (let i = 0; i < 4; i++) {
-    const context = await browser.createBrowserContext(), page = await context.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
-    page.on('pageerror', (e) => errors.push(e.message));
-    await page.evaluateOnNewDocument((i) => { localStorage.setItem('sp.name', `组队博士${i}`); sessionStorage.setItem('sp.entered', '1'); }, i);
-    await page.goto(`http://127.0.0.1:${server.port}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => globalThis.__SP__?.store.get().connection.status === 'online' && document.querySelector('.lobby-screen'));
-    await page.click(`.mode-card:nth-child(${i < 2 ? 2 : 3})`);
-    await page.click('.diff-card:nth-child(1)');
-    pages.push(page);
-  }
-  const [host, guest, a, b] = pages;
-  await host.click('.create-box .btn');
-  await host.waitForSelector('.room-matchmaking input');
-  assert.equal(await host.$eval('.room-matchmaking input', (el) => el.checked), false, 'direct start is the default');
-  assert.match(await host.$eval('.room-start', (el) => el.textContent), /开始模拟/);
-  assert.equal(await host.evaluate(() => document.querySelector('.room-matchmaking').getBoundingClientRect().bottom <= document.querySelector('.room-start').getBoundingClientRect().top), true, 'checkbox is above start');
-  const code = await host.evaluate(() => globalThis.__SP__.store.get().room.code);
-  await guest.type('.join-row input', code); await guest.click('.join-row .btn--amber');
-  await guest.waitForSelector('.room-screen');
-  await host.waitForFunction(() => globalThis.__SP__.store.get().room.seats.filter(Boolean).length === 2);
-  await host.click('.room-matchmaking input');
-  assert.equal(await host.$eval('.room-start', (el) => el.disabled), true);
-  await guest.click('.room-bar__right .btn--xl');
-  await host.waitForFunction(() => !document.querySelector('.room-start').disabled);
-  await host.screenshot({ path: 'test/e2e/out/matchmaking-party-ready.png' });
-  for (const viewport of [{ width: 1280, height: 720 }, { width: 844, height: 390, isMobile: true, hasTouch: true, isLandscape: true }]) {
-    await host.setViewport(viewport);
-    await host.waitForSelector('.room-matchmaking');
-    assert.equal(await host.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'premade controls fit viewport');
-    const overlap = await host.evaluate(() => {
-      const left = document.querySelector('.room-bar__left').getBoundingClientRect();
-      const center = document.querySelector('.room-bar__center').getBoundingClientRect();
-      const right = document.querySelector('.room-bar__right').getBoundingClientRect();
-      return left.right > center.left + 1 || center.right > right.left + 1;
-    });
-    assert.equal(overlap, false, 'footer controls do not overlap');
-  }
-  await host.setViewport({ width: 1920, height: 1080 });
-  await host.waitForFunction(() => globalThis.__SP__?.store.get().connection.status === 'online' && document.querySelector('.room-start')?.disabled === false);
-  if (!await host.$eval('.room-matchmaking input', (el) => el.checked)) await host.click('.room-matchmaking input');
-  await host.click('.room-start');
-  await Promise.all([host, guest].map((p) => p.waitForFunction(() => globalThis.__SP__.store.get().matchmaking?.players === 2)));
-  assert.equal(await guest.$eval('.room-bar__right .btn--xl', (el) => el.disabled), true);
-  assert.equal(await host.$eval('.room-matchmaking input', (el) => el.checked && el.disabled), true);
-  assert.equal(await host.$$eval('.dpick__opt:disabled:not(.ailast__opt)', (els) => els.length), 4);
-  await host.waitForSelector('.room-recruit-hint', { visible: true, timeout: 20000 });
-  await guest.waitForSelector('.room-recruit-hint', { visible: true });
-  assert.match(await host.$eval('.room-recruit-hint', (el) => el.textContent), /发布当前同盟的房间号/);
-  assert.equal(await host.$eval('.room-recruit-hint a', (el) => el.href), 'https://game.rainya.me/');
-  await host.screenshot({ path: 'test/e2e/out/matchmaking-party-recruit.png' });
-  await host.click('.room-start');
-  await guest.waitForFunction(() => !globalThis.__SP__.store.get().room.matchmaking && !globalThis.__SP__.store.get().matchmaking);
-  assert.equal(await guest.evaluate(() => globalThis.__SP__.store.get().room.code), code);
-  assert.equal(await host.$('.room-recruit-hint'), null, 'recruit hint clears after cancellation');
-  await host.click('.room-matchmaking input');
-  assert.equal(await host.$eval('.room-matchmaking input', (el) => el.checked), false, 'unchecking restores direct start');
-  assert.match(await host.$eval('.room-start', (el) => el.textContent), /开始模拟/);
-  await host.click('.room-matchmaking input');
-  await host.click('.room-start'); await a.click('.create-box .btn');
-  await host.waitForFunction(() => globalThis.__SP__.store.get().matchmaking?.players === 3);
-  await host.screenshot({ path: 'test/e2e/out/matchmaking-party-search.png' });
-  await b.click('.create-box .btn');
-  await Promise.all(pages.map((p) => p.waitForFunction(() => !!globalThis.__SP__.store.get().matchmaking?.offerId)));
-  await host.screenshot({ path: 'test/e2e/out/matchmaking-party-offer.png' });
-  await Promise.all(pages.map((p) => p.click('.proto-offer .btn, .rs-offer .btn')));
-  await Promise.all(pages.map((p) => p.waitForFunction(() => globalThis.__SP__.store.get().match.public?.phase === 'INFO_CHECK')));
-  const states = await Promise.all(pages.map((p) => p.evaluate(() => { const s = globalThis.__SP__.store.get(); return { room: s.room, matching: s.matchmaking }; })));
-  assert.ok(states.every((s) => s.room.code === code && !s.matching && !s.room.matchmaking && s.room.seats.every((seat) => seat && !seat.isBot)));
+  // 准备就绪 in the briefing: four ready humans leave INFO_CHECK for the strategy draft.
+  await Promise.all(players.map((p) => p.evaluate(() => {
+    const ready = [...document.querySelectorAll('button')].find((el) => el.textContent.trim() === '准备就绪');
+    if (!ready) throw new Error('the briefing has no 准备就绪 button');
+    ready.click();
+  })));
+  await Promise.all(players.map((p) => poll(p, () => { const phase = globalThis.__SP__.store.get().match.public?.phase; return phase && phase !== 'INFO_CHECK'; })));
   assert.deepEqual(errors, []);
 });

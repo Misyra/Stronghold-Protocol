@@ -88,4 +88,13 @@ npm run typecheck
 npm run build
 ```
 
+匹配界面的端到端检查（真 Chrome，起临时服务器，四个浏览器上下文）：四个上下文共用 `::1`，必须先关掉每 IP 会话上限，否则第四个连不上。
+
+```sh
+SP_E2E=1 SP_IP_SESSION_LIMIT=off CHROME_PATH='C:\Program Files\Google\Chrome\Application\chrome.exe' \
+  node --import ./test/helpers/test-setup.js --test test/ui/matchmaking.e2e.test.js
+```
+
+它覆盖：大厅「同盟匹配」→ 选难度 → 开始搜寻 → 人数计数 → 停止搜寻 → 四人「队友已集结 / 确认入场」→ 同一房间四个真人无 AI → 简报「准备就绪」离开 INFO_CHECK，并在手机尺寸（844×390）上钉住「停止搜寻」不被确认卡片挤出视口。预组队一侧走协议级用例（`test/matchmaking-party.test.js`），因为旧的房间内「同盟匹配」勾选框界面已被大厅的 `ProtocolSelect` 取代。
+
 `check:imports` 使用本分支严格适配器，不改变上游的 advisory 检查器。只登记 `server/sim/nodeData.js` 原有的三个 Node 内置导入例外，其他新增跨层依赖均失败，不能豁免整个文件或目录。

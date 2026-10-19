@@ -1,7 +1,9 @@
 // i18n-ignore-file: private server-side chat audit log; never sent to players.
 import { within } from './pathSafety.js';
-import { appendFile, mkdir } from 'node:fs/promises';
-import { realpathSync } from 'node:fs';
+import { appendFile, mkdir, readdir } from 'node:fs/promises';
+import { createReadStream, realpathSync } from 'node:fs';
+import { createGunzip } from 'node:zlib';
+import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logDays, maintainChatLogs } from './chatLogArchive.js';
@@ -10,6 +12,10 @@ export const DEFAULT_CHAT_LOG_DIR = fileURLToPath(new URL('../.state/chat-logs/'
 const MAX_PENDING = 10000;
 const BATCH_SIZE = 100;
 const MAX_WRITE_ATTEMPTS = 3;
+const DAY_MS = 86400000;
+// 单次回看最多跨多少天。房间不可能比保留窗更老（更早的日志早被 chatLogArchive 删掉了），所以超过这一段的只读
+// 最近的这几天，并把 partial 立起来：让面板知道「更早的那部分读不到」，比让它以为这就是全部便宜得多。
+const MAX_HISTORY_DAYS = 31;
 
 /** Resolve existing parent links even when the final log directory has not been created yet. */
 function realLocation(location) {
@@ -22,6 +28,36 @@ function realLocation(location) {
       if (parent === current) throw error;
       suffix.unshift(path.basename(current)); current = parent;
     }
+  }
+}
+
+/**
+ * 逐行读一个审计文件（明文或 .gz），不整份读进内存 —— 一天的文件可能是几 MB，而调用方只要最近的那几条。
+ * 按块解码而不是 `chunk.toString()`：一个中文字被切在两个块之间就会变成两个替换符，而房名、昵称、消息正文
+ * 恰恰全是中文。末尾没有换行的那一行照样交出去（进程崩在写一半的现场，解析失败由调用方一笔勾掉）。
+ */
+async function eachLine(file, onLine) {
+  const source = createReadStream(file);
+  const gz = file.endsWith('.gz');
+  const stream = gz ? source.pipe(createGunzip()) : source;
+  // pipe 不负责把源头的错误送到下游：不转这一次，读一个没权限的文件会安静地等到天荒地老。
+  if (gz) source.once('error', (error) => stream.destroy(error));
+  try {
+    const decoder = new StringDecoder('utf8');
+    let buffered = '';
+    for await (const chunk of stream) {
+      buffered += decoder.write(chunk);
+      let index;
+      while ((index = buffered.indexOf('\n')) !== -1) {
+        onLine(buffered.slice(0, index));
+        buffered = buffered.slice(index + 1);
+      }
+    }
+    buffered += decoder.end();
+    if (buffered) onLine(buffered);
+  } finally {
+    stream.destroy();
+    source.destroy();
   }
 }
 
@@ -162,6 +198,73 @@ export class ChatLog {
       archiveFiles: null, archiveBytes: null, temporaryFiles: null, temporaryBytes: null }),
     pendingRecords: this.queue.length + this.writing, droppedRecords: this.failed, maintenanceFailures: this.maintenanceFailures,
     compressAfterDays: this.compressAfterDays, retentionDays: this.retentionDays, lastMaintenanceAt: this.lastMaintenanceAt };
+  }
+
+  /**
+   * 一间房在**当前这个实例**里说过的话，从盘上读回来（运维面板的只读回看用）。
+   *
+   * 写法由三件事决定：
+   *   1) 房间码会被复用，所以「哪几条算这间房」只能靠实例边界判 —— `since` 传房间的 createdAt（毫秒），
+   *      而不是靠码去猜；比它更早的同码记录属于上一间房，交出去就是栽赃。
+   *   2) 只为「最新 limit 条」把整天的文件攒进内存没有意义：边读边丢更早的那条，丢过就把 truncated 立起来。
+   *   3) 读不出来不是故障，是这份回答不完整：任何 IO 失败都折成 partial:true 返回，绝不往请求路径上抛 ——
+   *      面板那边还有房间自己的环形缓冲能交差，让一次读盘失败把整条链路变成 500 才是真的丢信息。
+   * @param {{ code: string, since: number, limit?: number, now?: number }} query
+   * @returns {Promise<{ messages: { at: number, ip: string|null, playerId: string, name: string, text: string }[],
+   *   truncated: boolean, partial: boolean }>} messages 按 at 升序，最多 limit 条；截断时丢的是最旧的那些
+   */
+  async roomRecords({ code, since, limit = 100, now = this.now() }) {
+    const wanted = typeof code === 'string' ? code.toUpperCase() : '';
+    const max = Math.min(200, Math.max(1, Number.isSafeInteger(limit) ? limit : 100));
+    const sinceMs = Number.isFinite(since) ? since : 0;
+    const todayStart = Math.floor(now / DAY_MS) * DAY_MS;
+    let fromDay = Math.floor(Math.min(sinceMs, now) / DAY_MS) * DAY_MS;
+    let partial = false;
+    const days = Math.min(MAX_HISTORY_DAYS, this.retentionDays > 0 ? this.retentionDays : MAX_HISTORY_DAYS);
+    if (todayStart - fromDay >= days * DAY_MS) {
+      fromDay = todayStart - (days - 1) * DAY_MS;
+      partial = true;
+    }
+    let names;
+    try { names = new Set(await readdir(this.dir)); }
+    // 目录不存在（还没有任何聊天）与读不了（权限、被一个同名文件占了位置）在调用方眼里是同一件事：这份回答只剩
+    // 内存里的那一段。
+    catch { return { messages: [], truncated: false, partial: true }; }
+    const messages = [];
+    let truncated = false;
+    for (let day = fromDay; day <= todayStart; day += DAY_MS) {
+      const key = new Date(day).toISOString().slice(0, 10);
+      const plain = `${key}.jsonl`, archive = `${key}.jsonl.gz`;
+      // 明文优先：它是正在追加的那一份。压缩完成与删除明文之间有个很短的窗口，那份文件可能刚好消失，所以
+      // 留 gz 当退路；已经读进来的行绝不重读另一份，不然同一条消息会出现两次。
+      const candidates = [plain, archive].filter((name) => names.has(name));
+      if (!candidates.length) {
+        // 今天还没有文件是正常的：要么今天还没人说话，要么那几条还在内存里（环形缓冲兜得住）。更早的日期没有
+        // 文件就只能是丢了 —— 那天的聊天记录再也补不回来。
+        if (day !== todayStart) partial = true;
+        continue;
+      }
+      let matched = 0, ok = false;
+      for (const name of candidates) {
+        const file = path.join(this.dir, name);
+        try {
+          await eachLine(file, (line) => {
+            let record;
+            // 写一半崩掉的那行不算数；坏一行不能连累它后面的那些。
+            try { record = JSON.parse(line); } catch { return; }
+            if (!record || record.roomCode !== wanted) return;
+            const at = Date.parse(record.at);
+            if (!Number.isFinite(at) || at < sinceMs) return;
+            messages.push({ at, ip: record.ip ?? null, playerId: record.playerId, name: record.name, text: record.text });
+            matched++;
+            if (messages.length > max) { messages.shift(); truncated = true; }
+          });
+          ok = true; break;
+        } catch { if (matched) break; }
+      }
+      if (!ok) partial = true;
+    }
+    return { messages, truncated, partial };
   }
 
   async flush() {

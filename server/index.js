@@ -431,7 +431,7 @@ export async function startServer(opts = {}) {
     if (bound === null) throw lastError;
     boundHost = bound;
     try {
-      roomAdmin = await listenRoomAdmin({ lobby, registry, token: roomAdminToken, gameBootId, roomConfig,
+      roomAdmin = await listenRoomAdmin({ lobby, registry, token: roomAdminToken, gameBootId, roomConfig, chatLog,
         port: opts.roomAdminPort ?? (process.env.SP_ROOM_ADMIN_PORT ? Number(process.env.SP_ROOM_ADMIN_PORT) : 3001),
         stateFile: roomAdminStateFile, log });
     } catch (error) { log.error('[room-admin] loopback API unavailable; game service remains online', error); }

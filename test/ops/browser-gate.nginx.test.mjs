@@ -17,8 +17,8 @@ test('real Nginx checks admission before static files, cache, API and WS; real b
   {skip:!process.env.NGINX_PATH,timeout:60000},async t=>{
     const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sp-browser-gate-')),prefix=dir.replaceAll('\\','/')+'/';
     fs.mkdirSync(path.join(dir,'logs'));fs.mkdirSync(path.join(dir,'cache'));fs.mkdirSync(path.join(dir,'temp'));fs.writeFileSync(path.join(dir,'icon.svg'),'<svg/>');
-    let banned=false,hits=0;
-    const gate=createGate({key:randomBytes(32),bits:18,banCheck:async()=>banned?403:204});
+    let banned=false,hits=0,clock=Date.now();
+    const gate=createGate({key:randomBytes(32),bits:18,now:()=>clock,banCheck:async()=>banned?403:204});
     t.after(()=>gate.close());
     const gatePort=await listen(gate);
     const backend=http.createServer((req,res)=>{hits++;res.setHeader('Content-Type','text/html; charset=utf-8');res.end('GAME_OK');});
@@ -28,6 +28,7 @@ test('real Nginx checks admission before static files, cache, API and WS; real b
     let snippet=fs.readFileSync(new URL('../../scripts/hardening/sp-browser-gate.conf',import.meta.url),'utf8');
     // The shared cache snippet owns this public bootstrap location; avoid duplicate live locations.
     const cacheSnippet=fs.readFileSync(new URL('../../scripts/nginx-game-cache.conf.example',import.meta.url),'utf8');
+    snippet=snippet.replace(/location = \/data\/resource-manifest\.json \{[\s\S]*?\n\}/,'');
     snippet+='\n'+cacheSnippet.match(/location = \/data\/resource-manifest\.json \{[\s\S]*?\n\}/)[0].replace('proxy_cache sp_assets;','proxy_cache gate_cache;');
     const main=fs.readFileSync(new URL('../../scripts/nginx.conf.example',import.meta.url),'utf8');
     snippet+='\n'+main.match(/location = \/api\/ping \{[\s\S]*?\n        \}/)[0];
@@ -57,6 +58,10 @@ location / {proxy_pass http://127.0.0.1:${backendPort};proxy_http_version 1.1;pr
       return await new Promise((resolve,reject)=>{let output='';const socket=net.connect(port,'127.0.0.1',()=>socket.write(`${method} ${uri} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n${extra}\r\n`));socket.on('data',chunk=>output+=chunk);socket.on('end',()=>resolve(output));socket.on('error',reject);socket.setTimeout(3000,()=>{socket.destroy();reject(new Error('socket timeout'));});});
     }
     for(const uri of ['/healthz','/icon.svg','/api/nickname/validate','/ws'])assert.equal(await raw(uri), '',uri);
+    const required=await fetch(base+'/_gate/status');
+    assert.equal(required.status,200);assert.equal(required.headers.get('x-gate-required'),'1');
+    assert.equal(required.headers.get('set-cookie'),null);
+    assert.equal(await raw('/_gate/status','','POST'),'');
     for(const uri of ['/resource-sw.js?v=test','/manifest.json','/js/resources/common.js','/js/resources/workerManifest.js','/js/resources/readThrough.js','/shared/i18n.js','/shared/i18nPacks.js','/shared/resourcePaths.js','/data/resource-manifest.json?v=test'])
       assert.match(await raw(uri),/^HTTP\/1\.1 200/,`${uri} is public bootstrap data`);
     assert.match(await raw('/_sp/gate-check'),/^HTTP\/1.1 404/);
@@ -72,7 +77,7 @@ location / {proxy_pass http://127.0.0.1:${backendPort};proxy_http_version 1.1;pr
     assert.equal(await raw('/api/ping','','POST'),'');
     assert.equal(await raw('/api/rooms/AAAA/status'),'','room lookup still needs the browser gate');
     const portalIp='X-Test-IP: 203.0.113.55\r\n';
-    for(let i=0;i<11;i++)assert.match(await raw('/api/ping',portalIp),/^HTTP\/1\.1 200/);
+    for(let i=0;i<16;i++)assert.match(await raw('/api/ping',portalIp),/^HTTP\/1\.1 200/);
     assert.equal(await raw('/api/ping',portalIp),'','a public ping flood exhausts its own burst');
     const headers={'User-Agent':'GateTest'};
     const proof=await(await fetch(base+'/_gate/challenge',{headers})).json();
@@ -82,10 +87,22 @@ location / {proxy_pass http://127.0.0.1:${backendPort};proxy_http_version 1.1;pr
     assert.equal(await(await fetch(base+'/icon.svg',{headers})).text(),'<svg/>');
     assert.equal((await fetch(base+'/healthz',{headers})).headers.get('x-cache'),'MISS');
     assert.equal((await fetch(base+'/healthz',{headers})).headers.get('x-cache'),'HIT');
+    assert.equal((await fetch(base+'/_gate/status',{headers})).status,204);
+    clock+=11000000;
+    for(const uri of ['/','/healthz']){
+      const renewed=await fetch(base+uri,{headers});
+      assert.match(renewed.headers.get('set-cookie'),/sp_browser_gate=/,uri);
+    }
+    const renewedProbe=await fetch(base+'/_gate/status',{headers});
+    assert.match(renewedProbe.headers.get('set-cookie'),/sp_browser_gate=/);
+    assert.equal(renewedProbe.headers.get('x-gate-renew'),null);
     assert.equal(await raw('/healthz'),'');
     assert.equal(await(await fetch(base+'/api/nickname/validate',{method:'POST',headers,body:'{}'})).text(),'GAME_OK');
     const client=new WebSocket(base.replace('http:','ws:')+'/ws',{headers});
+    let upgraded;
+    client.once('upgrade',response=>{upgraded=response.headers;});
     assert.equal(await new Promise((resolve,reject)=>{client.once('message',d=>resolve(d.toString()));client.once('error',reject);}),'WELCOME');client.terminate();
+    assert.ok(upgraded['set-cookie']?.some(cookie=>cookie.includes('sp_browser_gate=')));
     banned=true;assert.equal(await raw('/healthz',`Cookie: ${headers.Cookie}\r\nUser-Agent: GateTest\r\n`),'');banned=false;
     if(process.env.CHROME_PATH){
       const {default:puppeteer}=await import('puppeteer-core');

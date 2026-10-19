@@ -467,4 +467,4 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 
 素材直接从 CDN 下载时不限制请求次数；静态限流只装在游戏源站。源站的构建文件、模拟模块、数据和本地素材归入独立静态预算，不挤占业务永久封禁计数。构建文件及合法版本资源可缓存，裸 `/sim/` 仍遵循上游 no-cache；完整打包另行实施。可选浏览器 gate 与公共缓存片段共享唯一资源清单 location，更新旧配置时先移除重复定义。
 
-门户延迟探测使用 GET/HEAD `/api/ping`（30/min、burst 10、免浏览器 Cookie），房间状态使用 GET/HEAD `/api/rooms/<code>/status`（20/min、burst 5、保留准入）。不要把 ping 加入永久 IP 封禁 jail。WS 入口 jail 改为只累计 `/ws` 444 拒绝，100 次/60s 封禁 1h；应用兜底允许 100 次/60s，第 101 次封禁 1h，检查旧环境变量是否仍覆盖默认值。Web SYN 模板与 `ops/sp-web-syn-guard.nft` 统一为 30/min、burst 10，全局保持 50/s、burst 100；这只是仓库规范值，线上更新仍需目标机器检查。
+门户延迟探测使用 GET/HEAD `/api/ping`（60/min、burst 15、免浏览器 Cookie），房间状态使用 GET/HEAD `/api/rooms/<code>/status`（30/min、burst 8、保留准入）。不要把 ping 加入永久 IP 封禁 jail。WS 入口 jail 改为只累计 `/ws` 444 拒绝，100 次/60s 封禁 1h；应用兜底允许 100 次/60s，第 101 次封禁 1h，检查旧环境变量是否仍覆盖默认值。Web SYN 模板与 `ops/sp-web-syn-guard.nft` 统一为 120/min、burst 40，全局保持 50/s、burst 100；这只是仓库规范值，线上更新仍需目标机器检查。

@@ -3,6 +3,9 @@
 # When merging into an existing nginx.conf, load the module exactly once.
 load_module /usr/lib/nginx/modules/ngx_http_geoip2_module.so;
 worker_processes auto;
+# worker_connections 16384 means up to ~32768 open descriptors (client + upstream per proxied request).
+# The package default (often 1024 via systemd) silently caps connections long before the config does.
+worker_rlimit_nofile 65535;
 
 events {
     # Includes clients AND upstream/auth sockets; keep the service's open-file limit sufficient.
@@ -12,6 +15,20 @@ events {
 http {
     # Explicitly fit the public API/bootstrap map keys on platforms with 32-byte defaults too.
     map_hash_bucket_size 64;
+    # ---- 转发缓冲与连接复用：默认值按小站点定，游戏源站按 1200 前台页面定 ----
+    # 默认 proxy_buffers 8x4k/64k busy 会把几百 KB 的清单 JSON 落到 proxy_temp 临时文件，
+    # 每个请求多一次磁盘往返（线上实测 resource-manifest 上游 9ms、客户端看到 362ms，并伴随
+    # "an upstream response is buffered to a temporary file" 告警刷屏）。放大到 16x32k 后
+    # ≤512KB 的 JSON 在内存里结束，超过阈值仍走临时文件，不会被内存吃穿。
+    proxy_buffer_size 32k;
+    proxy_buffers 16 32k;
+    proxy_busy_buffers_size 128k;
+    # 一页会并发拉 ~200 个模块；默认 keepalive_requests 1000 会在加载中途强制换连接。
+    keepalive_requests 10000;
+    keepalive_timeout 65s;
+    # 客户端长时间不回包时立即回收 fd，避免 TIME_WAIT/FIN_WAIT 堆积占满 worker_connections。
+    reset_timedout_connection on;
+    server_tokens off;
     # Install scripts/nginx-log-format.conf.example at this http-level path first.
     include /etc/nginx/conf.d/sp-log-format.conf;
     include /etc/nginx/conf.d/sp-business-limit-map.conf;
@@ -31,9 +48,11 @@ http {
         / $binary_remote_addr;
         /index.html $binary_remote_addr;
     }
-    limit_req_zone $sp_health_key zone=sp_health:10m rate=12r/m;
-    limit_req_zone $sp_page_key zone=sp_page:10m rate=120r/m;
-    limit_req_zone $binary_remote_addr zone=sp_ws_rate:10m rate=5r/m;
+    limit_req_zone $sp_health_key zone=sp_health:10m rate=30r/m;
+    limit_req_zone $sp_page_key zone=sp_page:10m rate=180r/m;
+    # 客户端重连退避 500ms→10s，一页在 60 秒内最多发起 9 次握手（含刷新、多标签、网络抖动）。
+    # 5r/m 会让真实玩家在"服务器挂了"和"被限流"之间无法区分，故默认取 30r/m。
+    limit_req_zone $binary_remote_addr zone=sp_ws_rate:10m rate=30r/m;
     limit_conn_zone $binary_remote_addr zone=sp_ws_conn:10m;
     # Exclude internal auth subrequests from the public connection budget.
     map $uri $sp_conn_all_key {
@@ -81,16 +100,19 @@ http {
         # Access logs supply fail2ban; avoid duplicating every refusal in the error log.
         limit_req_log_level notice;
         limit_conn_log_level notice;
-        limit_conn sp_conn_all 4000;
-        limit_conn sp_business_conn 64;
-        limit_conn sp_static_conn 256;
-        limit_req zone=sp_health burst=3 nodelay;
-        limit_req zone=sp_page burst=10 nodelay;
-        limit_req zone=sp_page_global burst=40 nodelay;
-        limit_req zone=sp_business burst=30 nodelay;
-        limit_req zone=sp_static burst=1024 nodelay;
-        limit_req zone=sp_health_global burst=10 nodelay;
-        limit_req zone=sp_build burst=3 nodelay;
+        limit_conn sp_conn_all 4500;
+        # Cold module graph: 200+ parallel HTTP/2 requests per page, and 30+ players may land together.
+        limit_conn sp_business_conn 96;
+        limit_conn sp_static_conn 384;
+        limit_req zone=sp_health burst=10 nodelay;
+        limit_req zone=sp_page burst=15 nodelay;
+        limit_req zone=sp_page_global burst=60 nodelay;
+        limit_req zone=sp_business burst=45 nodelay;
+        limit_req zone=sp_static burst=1536 nodelay;
+        limit_req zone=sp_health_global burst=18 nodelay;
+        # The build guard polls every 60s from every foreground page; a reload plus focus events
+        # legitimately lands 3-4 checks inside one window.
+        limit_req zone=sp_build burst=12 nodelay;
         limit_req zone=sp_build_global burst=120 nodelay;
 
         # Check bans before cached responses and direct files too (requires http_auth_request_module).
@@ -153,9 +175,9 @@ http {
             if ($request_method !~ ^(GET|HEAD)$) { return 444; }
             if ($http_authorization != "") { return 444; }
             max_ranges 0;
-            limit_conn sp_health_conn_global 32;
+            limit_conn sp_health_conn_global 48;
             # Child limit_conn replaces the parent list.
-            limit_conn sp_conn_all 4000;
+            limit_conn sp_conn_all 4500;
             proxy_connect_timeout 1s;
             proxy_read_timeout 2s;
             proxy_send_timeout 2s;
@@ -198,7 +220,7 @@ http {
         location = /api/ping {
             auth_request off;
             if ($request_method !~ ^(GET|HEAD)$) { return 444; }
-            limit_req zone=sp_ping_ip burst=10 nodelay;
+            limit_req zone=sp_ping_ip burst=15 nodelay;
             proxy_pass http://127.0.0.1:3000;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -214,8 +236,8 @@ http {
         location ~ ^/api/rooms(?:/|$) {
             if ($request_method !~ ^(GET|HEAD)$) { return 444; }
             # Keep inherited auth_request: room codes are enumerable.
-            limit_req zone=sp_business burst=30 nodelay;
-            limit_req zone=sp_rooms_ip burst=5 nodelay;
+            limit_req zone=sp_business burst=45 nodelay;
+            limit_req zone=sp_rooms_ip burst=8 nodelay;
             proxy_pass http://127.0.0.1:3000;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -246,11 +268,13 @@ http {
             if ($request_method != GET) { return 444; }
             if ($http_upgrade !~* "^websocket$") { return 444; }
             # Child limit_req replaces parent directives: repeat the all-path fallback here.
-            limit_req zone=sp_business burst=30 nodelay;
-            limit_req zone=sp_ws_rate burst=3 nodelay;
-            limit_conn sp_ws_conn 4;
+            limit_req zone=sp_business burst=45 nodelay;
+            limit_req zone=sp_ws_rate burst=10 nodelay;
+            # 8 covers a full 4-seat room opened in two tabs plus the reconnect overlap; the
+            # application still caps real sessions per network at SP_IP_MAX_SESSIONS_PER_IP.
+            limit_conn sp_ws_conn 8;
             limit_conn sp_ws_conn_all 1600;
-            limit_conn sp_conn_all 4000;
+            limit_conn sp_conn_all 4500;
             proxy_pass http://127.0.0.1:3000;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;

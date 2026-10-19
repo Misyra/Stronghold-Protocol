@@ -12,7 +12,8 @@ export function AboutModal({ open, onClose }) {
         <div><dt>${t('维护者')}</dt><dd><a href="https://github.com/Misyra" target="_blank" rel="noopener noreferrer">Misyra</a></dd></div>
         <div><dt>${t('联系邮箱')}</dt><dd><a href="mailto:misyra@163.com">misyra@163.com</a></dd></div>
         <div><dt>${t('问题反馈')}</dt><dd><a href=${`${REPOSITORY}/issues`} target="_blank" rel="noopener noreferrer">GitHub Issues</a></dd></div>
-        <div><dt>${t('项目仓库')}</dt><dd><a href=${REPOSITORY} target="_blank" rel="noopener noreferrer">Misyra / Stronghold-Protocol</a></dd></div>
+        <div><dt>${t('项目仓库')}</dt><dd><a href=${REPOSITORY} target="_blank" rel="noopener noreferrer">Misyra / Stronghold-Protocol</a><a class="about-star" href=${REPOSITORY} target="_blank" rel="noopener noreferrer"
+          title=${t('在 GitHub 上给该项目加星')} aria-label=${`${t('在 GitHub 上给该项目加星')} — Misyra / Stronghold-Protocol`}><span aria-hidden="true">★</span>Star</a></dd></div>
       </dl>
       <p>${t('遇到游戏或服务器问题，可通过 GitHub Issues 或邮件联系，反馈时请附上问题描述和截图。')}</p>
       <section class="about-section">
@@ -24,8 +25,21 @@ export function AboutModal({ open, onClose }) {
       </section>
       <section class="about-section about-credits">
         <h3>${t('上游与参考来源')}</h3>
-        <a href="https://github.com/sganggs/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">sganggs / Stronghold-Protocol</a>
-        <a href="https://github.com/xinhai-ai/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">xinhai-ai / Stronghold-Protocol</a>
+        <div class="about-credits__row">
+          <a href="https://github.com/sganggs/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">sganggs / Stronghold-Protocol</a>
+          <a class="about-star" href="https://github.com/sganggs/Stronghold-Protocol" target="_blank" rel="noopener noreferrer"
+            title=${t('在 GitHub 上给该项目加星')} aria-label=${`${t('在 GitHub 上给该项目加星')} — sganggs / Stronghold-Protocol`}><span aria-hidden="true">★</span>Star</a>
+        </div>
+        <div class="about-credits__row">
+          <a href="https://github.com/xinhai-ai/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">xinhai-ai / Stronghold-Protocol</a>
+          <a class="about-star" href="https://github.com/xinhai-ai/Stronghold-Protocol" target="_blank" rel="noopener noreferrer"
+            title=${t('在 GitHub 上给该项目加星')} aria-label=${`${t('在 GitHub 上给该项目加星')} — xinhai-ai / Stronghold-Protocol`}><span aria-hidden="true">★</span>Star</a>
+        </div>
+        <div class="about-credits__row">
+          <a href="https://github.com/Stardust-minus/Stronghold-Protocol" target="_blank" rel="noopener noreferrer">Stardust-minus / Stronghold-Protocol</a>
+          <a class="about-star" href="https://github.com/Stardust-minus/Stronghold-Protocol" target="_blank" rel="noopener noreferrer"
+            title=${t('在 GitHub 上给该项目加星')} aria-label=${`${t('在 GitHub 上给该项目加星')} — Stardust-minus / Stronghold-Protocol`}><span aria-hidden="true">★</span>Star</a>
+        </div>
       </section>
     <//>`;
 }

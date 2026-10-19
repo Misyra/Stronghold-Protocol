@@ -6,6 +6,15 @@ import { createIpBanStore } from './ipBans.js';
 // Allow shared-NAT reconnect bursts; deployments may still explicitly choose a stricter threshold.
 export const WS_UPGRADE_DEFAULTS = Object.freeze({ threshold: 100, windowMs: 60000, banMs: 3600000 });
 
+// One client must not be able to ban itself. The browser backs off 500ms → ×2 → 10s
+// (public/js/net.js BACKOFF), which is about ten upgrade attempts per minute before any jitter:
+// a threshold under 20/min is reachable by a single stuck tab, and a ban longer than an hour then
+// turns one bad reconnect into an outage for that network. 2026-10-18 ran 10/min with a 24h ban and
+// refused 78% of all /ws upgrades (16,442 429s against 4,604 accepted) until it was walked back.
+const MIN_THRESHOLD_PER_MINUTE = 20;
+const LONG_BAN_MS = 3600000;
+const LONG_BAN_MIN_THRESHOLD = 100;
+
 export function wsUpgradeLimitsFrom(options = {}, env = process.env) {
   const names = { threshold: 'SP_WS_UPGRADE_THRESHOLD', windowMs: 'SP_WS_UPGRADE_WINDOW_MS', banMs: 'SP_WS_UPGRADE_BAN_MS' };
   const limits = {};
@@ -14,6 +23,13 @@ export function wsUpgradeLimitsFrom(options = {}, env = process.env) {
     const max = key === 'threshold' ? 10000 : key === 'windowMs' ? 86400000 : 30 * 86400000;
     if (!Number.isSafeInteger(value) || value < 1 || value > max) throw new RangeError(`${name} must be an integer between 1 and ${max}`);
     limits[key] = value;
+  }
+  const minThreshold = Math.ceil(MIN_THRESHOLD_PER_MINUTE * limits.windowMs / 60000);
+  if (limits.threshold < minThreshold) {
+    throw new RangeError(`${names.threshold} must be at least ${minThreshold} per ${limits.windowMs}ms window: one client's own reconnect ladder attempts ~10 upgrades per minute, so a lower threshold bans players for retrying`);
+  }
+  if (limits.banMs > LONG_BAN_MS && limits.threshold < LONG_BAN_MIN_THRESHOLD) {
+    throw new RangeError(`${names.banMs} above one hour requires ${names.threshold} >= ${LONG_BAN_MIN_THRESHOLD}: a shorter threshold lets a single stuck client earn a day-long ban`);
   }
   return limits;
 }

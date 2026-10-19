@@ -138,9 +138,13 @@ test('real nginx: defense rejections send zero HTTP bytes, retain 444 logs, pres
       .replaceAll('proxy_cache_bypass $sp_local_api_monitor;', 'proxy_cache_bypass $sp_test_health_bypass;')
       .replaceAll('proxy_no_cache $sp_local_api_monitor;', 'proxy_no_cache $sp_test_health_bypass;')
       // Keep this fixture's shortened Node ban window reachable; strict admission is covered separately.
-      .replace('rate=12r/m;', 'rate=60r/m;')
-      .replace('limit_req zone=sp_health burst=3', 'limit_req zone=sp_health burst=10')
-      .replace('limit_req zone=sp_health_global burst=10', 'limit_req zone=sp_health_global burst=40')
+      .replace('$sp_health_key zone=sp_health:10m rate=30r/m;', '$sp_health_key zone=sp_health:10m rate=60r/m;')
+      .replace('limit_req zone=sp_health_global burst=18', 'limit_req zone=sp_health_global burst=40')
+      // Pin the WebSocket admission values this suite asserts on; shipped defaults are looser
+      // (30r/m, burst 10, 8 per IP) so real reconnects survive them.
+      .replace('$binary_remote_addr zone=sp_ws_rate:10m rate=30r/m;', '$binary_remote_addr zone=sp_ws_rate:10m rate=5r/m;')
+      .replace('limit_req zone=sp_ws_rate burst=10 nodelay;', 'limit_req zone=sp_ws_rate burst=3 nodelay;')
+      .replace('limit_conn sp_ws_conn 8;', 'limit_conn sp_ws_conn 4;')
       // Test-only switch: exercise the underlying Node defenses and the closed API overlay in one server.
       .replace('if ($sp_close_public_api)', 'if ($sp_test_close_public_api)')
       .replace('include /etc/nginx/snippets/stronghold-game-cache.conf;', `include "${prefix}game.conf";`)
@@ -289,7 +293,7 @@ test('real nginx: defense rejections send zero HTTP bytes, retain 444 logs, pres
       const res = await get('/js/fixture.js', '198.51.100.80'); assert.equal(res.status, 200); await res.text();
     }
     // The browser imports the simulation engine as many parallel /sim/*.js modules. These are static code too: if
-    // they enter the 5r/s business bucket, its 30-request burst rejects part of the first match startup and the
+    // they enter the business bucket, its burst rejects part of the first match startup and the
     // battle runner reports "simulation unavailable" (which leaves the board with no enemies).
     for (let i = 0; i < 160; i++) {
       const res = await get('/sim/fixture.js', '198.51.100.81'); assert.equal(res.status, 200); await res.text();

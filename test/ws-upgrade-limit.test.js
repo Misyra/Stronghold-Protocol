@@ -146,6 +146,15 @@ test('upgrade configuration allows 100 attempts then bans one hour; invalid valu
   assert.equal(wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '20' }).threshold, 20);
   for (const name of ['SP_WS_UPGRADE_THRESHOLD', 'SP_WS_UPGRADE_WINDOW_MS', 'SP_WS_UPGRADE_BAN_MS'])
     for (const value of ['0', '-1', 'NaN', '1.5', '']) assert.throws(() => wsUpgradeLimitsFrom({}, { [name]: value }), new RegExp(name));
+  // One client's reconnect ladder (~10 attempts/min) must never be able to ban itself.
+  assert.throws(() => wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '10' }), /SP_WS_UPGRADE_THRESHOLD/);
+  assert.throws(() => wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '19' }), /at least 20/);
+  // The floor scales with the window: 5 minutes needs 100, not 20.
+  assert.equal(wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '100', SP_WS_UPGRADE_WINDOW_MS: '300000' }).threshold, 100);
+  assert.throws(() => wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '20', SP_WS_UPGRADE_WINDOW_MS: '300000' }), /at least 100/);
+  // A day-long ban needs real flood evidence, not a stuck tab.
+  assert.throws(() => wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '20', SP_WS_UPGRADE_BAN_MS: '86400000' }), /above one hour/);
+  assert.equal(wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '100', SP_WS_UPGRADE_BAN_MS: '86400000' }).banMs, 86400000);
 });
 
 test('real upgrades: successful reconnects and refused paths/origins count; bans survive restart and expire', async (t) => {
@@ -153,7 +162,7 @@ test('real upgrades: successful reconnects and refused paths/origins count; bans
   const file = path.join(dir, 'bans.jsonl');
   const opts = { host: '127.0.0.1', port: 0, quiet: true, log: quiet, workers: 0, store: null,
     announcementFile: null, ipBanFile: file, httpApiMainlandOnly: false,
-    wsUpgradeLimits: { threshold: 10, banMs: 86400000 } };
+    wsUpgradeLimits: { threshold: 20, banMs: 3600000 } };
   let server;
   t.after(async () => { await server?.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   server = await startServer(opts);
@@ -164,16 +173,16 @@ test('real upgrades: successful reconnects and refused paths/origins count; bans
     ws.on('unexpected-response', (_req, res) => { res.resume(); ws.terminate(); resolve(res.statusCode); });
     ws.on('error', reject);
   });
-  for (let i = 0; i < 10; i++) assert.equal(await attempt(), 101);
+  for (let i = 0; i < 20; i++) assert.equal(await attempt(), 101);
   assert.equal(await attempt(), 403);
   assert.equal((await fetch(server.url + '/healthz', { headers: { 'X-Real-IP': '203.0.113.9' } })).status, 403);
   assert.equal(await attempt('203.0.113.10'), 101);
-  for (let i = 0; i < 5; i++) assert.equal(await attempt('203.0.113.11', '/wrong'), 404);
-  for (let i = 0; i < 5; i++) assert.equal(await attempt('203.0.113.11', '/ws', 'https://other.example'), 403);
+  for (let i = 0; i < 10; i++) assert.equal(await attempt('203.0.113.11', '/wrong'), 404);
+  for (let i = 0; i < 10; i++) assert.equal(await attempt('203.0.113.11', '/ws', 'https://other.example'), 403);
   assert.equal(await attempt('203.0.113.11'), 403, 'refused upgrades count toward the same threshold');
   const records = fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
   assert.equal(records.length, 2);
-  for (const record of records) { assert.equal(record.reason, 'WS_UPGRADE_FLOOD'); assert.equal(record.expiresAt - record.bannedAt, 86400000); }
+  for (const record of records) { assert.equal(record.reason, 'WS_UPGRADE_FLOOD'); assert.equal(record.expiresAt - record.bannedAt, 3600000); }
   await server.close(); server = await startServer(opts);
   assert.equal(await attempt(), 403);
   await server.close(); server = null;

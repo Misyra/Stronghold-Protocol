@@ -41,6 +41,48 @@ export const PING_INTERVAL_MS = 4000;
 export const DEAD_AFTER_MS = 15000;
 export const BACKOFF = Object.freeze({ base: 500, factor: 2, max: 10000, jitter: 0.2 });
 
+/**
+ * Gate-aware reconnect. A refused WebSocket handshake hands JS only `code: 1006` — browsers never
+ * expose the HTTP status of a failed upgrade — so a page whose gate cookie went stale cannot tell
+ * "the gate wants a challenge" from "the socket died" and retries the same refused upgrade forever.
+ * Seen in the field: one address attempted 4,172 `/ws` upgrades in half a day at the 10 s backoff
+ * cap, never once loading a page, while nginx answered 429 to every attempt.
+ * After a few failures fetch /_gate/status. Only its explicit X-Gate-Required marker triggers a
+ * navigation to the challenge; rate limits and upstream failures never trigger a reload.
+ * The caps keep the cure from becoming the disease.
+ */
+export const GATE_PROBE = Object.freeze({
+  afterAttempt: 2,             // from this `attempt` value on, each further failure probes (interval-throttled)
+  intervalMs: 10000,           // at most one probe per window, per page
+  reloadAfterFailureMs: 20000, // a brief flap must not reload the page out from under a player
+  reloadGapMs: 60000,          // never two reloads this close together
+  maxReloadsPerWindow: 3,      // counted across page loads (sessionStorage): the 4th means we are the problem
+  windowMs: 600000,
+});
+const GATE_RELOAD_KEY = 'sp.gateReload';
+
+/** nginx passes this read-only probe to the gate even when the page's cookie is invalid. */
+async function defaultGateProbe() {
+  const res = await fetch('/_gate/status', { cache: 'no-store', credentials: 'same-origin',
+    signal: AbortSignal.timeout(3000) });
+  return res.status === 200 && res.headers.get('X-Gate-Required') === '1';
+}
+
+function defaultReload() { globalThis.location?.reload?.(); }
+
+function defaultHidden() { return globalThis.document?.hidden === true; }
+
+function defaultStorage() {
+  try {
+    const store = globalThis.sessionStorage;
+    store.getItem(GATE_RELOAD_KEY);
+    return store;
+  } catch {
+    const mem = new Map();
+    return { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { mem.set(k, String(v)); } };
+  }
+}
+
 /** Client-side error codes (in addition to shared ERR codes). */
 export const CLIENT_ERR_TEXT = Object.freeze({
   TIMEOUT: N_('请求超时，请重试'),
@@ -49,6 +91,7 @@ export const CLIENT_ERR_TEXT = Object.freeze({
   CLOSED: N_('连接已关闭'),
   REPLACED: N_('该身份已在其他页面登录'),
   VERSION: N_('客户端版本与服务器不一致，请刷新页面'),
+  GATE_REQUIRED: N_('浏览器验证已失效，需要刷新页面'),
 });
 
 /** Server close code: the session was taken over by another socket (server/net.js CLOSE.REPLACED). */
@@ -135,6 +178,15 @@ export class Net {
       setInterval: (fn, ms) => globalThis.setInterval(fn, ms),
       clearInterval: (id) => globalThis.clearInterval(id),
     };
+    // Gate probe (see GATE_PROBE): all four are injectable so the reconnect ladder is testable offline.
+    this.probe = typeof opts.probe === 'function' ? opts.probe : defaultGateProbe;
+    this.reload = typeof opts.reload === 'function' ? opts.reload : defaultReload;
+    this.storage = opts.storage || defaultStorage();
+    this.isHidden = typeof opts.isHidden === 'function' ? opts.isHidden : defaultHidden;
+    this._failedSince = 0;         // first failure of the current outage (0 = not failing)
+    this._gateProbeAt = 0;         // last probe time
+    this._gateProbeInFlight = false;
+    this._gateReloadAt = 0;        // last reload time (this page)
 
     /** @type {'idle'|'connecting'|'connected'|'handshaking'|'online'|'reconnecting'|'closed'} */
     this.status = 'idle';
@@ -299,6 +351,7 @@ export class Net {
     this._lastRx = this._openedAt;
     this._unansweredSince = null;
     this.retryAt = 0;
+    this._failedSince = 0;
     this._startHeartbeat();
     if (this.name) {
       this._setStatus('handshaking');
@@ -344,15 +397,77 @@ export class Net {
 
   _scheduleReconnect() {
     if (this._manualClose) return;
+    const now = this.now();
+    if (!this._failedSince) this._failedSince = now;
+    if (this.attempt >= GATE_PROBE.afterAttempt) this._probeGate();
     const delay = backoffDelay(this.attempt, this.random);
     this.attempt += 1;
-    this.retryAt = this.now() + delay;
+    this.retryAt = now + delay;
     this._clearTimer('_reconnectTimer', 'clearTimeout');
     this._reconnectTimer = this.timers.setTimeout(() => {
       this._reconnectTimer = null;
       this.connect();
     }, delay);
     this._setStatus('reconnecting');
+  }
+
+  /**
+   * Ask the gate directly whether this page must verify again (see GATE_PROBE).
+   * Fire-and-forget: the normal backoff keeps running either way, so a slow probe never delays a retry.
+   */
+  _probeGate() {
+    if (this._gateProbeInFlight) return;
+    const now = this.now();
+    if (now - this._gateProbeAt < GATE_PROBE.intervalMs) return;
+    this._gateProbeAt = now;
+    if (this.isHidden()) return; // a background tab has no user to rescue
+    const failedSince = this._failedSince;
+    let probe;
+    try {
+      probe = Promise.resolve(this.probe());
+    } catch {
+      return;
+    }
+    this._gateProbeInFlight = true;
+    probe.then((required) => {
+      this._gateProbeInFlight = false;
+      if (required === true && this._failedSince === failedSince) this._reloadForGate();
+    }, () => { this._gateProbeInFlight = false; });
+  }
+
+  /** Reload only for explicit gate failure, after a real outage, a few times per session. */
+  _reloadForGate() {
+    if (this._manualClose || this.isHidden()) return;
+    const now = this.now();
+    if (!this._failedSince || now - this._failedSince < GATE_PROBE.reloadAfterFailureMs) return;
+    if (now - this._gateReloadAt < GATE_PROBE.reloadGapMs) return;
+    const history = this._reloadHistory(now);
+    if (history.some((at) => now - at < GATE_PROBE.reloadGapMs)) return;
+    if (history.length >= GATE_PROBE.maxReloadsPerWindow) {
+      this.lastError = new NetError('GATE_REQUIRED');
+      this.close(); // A refused cookie must not leave another page retrying WS all night.
+      this._emit('gateBlocked', { at: now });
+      return;
+    }
+    history.push(now);
+    this._writeReloadHistory(history);
+    this._gateReloadAt = now;
+    this._emit('gateReload', { at: now });
+    try { this.reload(); } catch { /* nothing left to try */ }
+  }
+
+  /** Reload timestamps inside the current window, kept across page loads. */
+  _reloadHistory(now) {
+    let raw;
+    try { raw = this.storage.getItem(GATE_RELOAD_KEY); } catch { raw = null; }
+    let list;
+    try { list = raw ? JSON.parse(raw) : []; } catch { list = []; }
+    if (!Array.isArray(list)) return [];
+    return list.filter((at) => Number.isFinite(at) && now - at >= 0 && now - at < GATE_PROBE.windowMs);
+  }
+
+  _writeReloadHistory(list) {
+    try { this.storage.setItem(GATE_RELOAD_KEY, JSON.stringify(list)); } catch { /* storage disabled */ }
   }
 
   _teardownSocket() {

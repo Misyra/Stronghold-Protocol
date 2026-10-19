@@ -37,18 +37,26 @@ export function createGate({key,bits=18,now=Date.now,banCheck=async()=>204,maxSp
     const ip=req.headers['x-gate-ip'],host=req.headers['x-gate-host'];
     if(!ip||!host||host.length>255||!['http','https'].includes(req.headers['x-gate-scheme']))return reply(res,403);
     const pathname=(req.url||'').split('?')[0];
-    if(pathname==='/check'){
+    if(pathname==='/check'||pathname==='/_gate/status'){
       if(req.method!=='GET')return reply(res,403);
       const original=req.headers['x-gate-original-uri']||'';
-      const localHealth=['127.0.0.1','::1'].includes(ip)&&original.split('?')[0]==='/healthz';
+      const localHealth=pathname==='/check'&&['127.0.0.1','::1'].includes(ip)&&original.split('?')[0]==='/healthz';
       const name=cookieName(req);
       const tokens=(req.headers.cookie||'').split(';').map(s=>s.trim()).filter(s=>s.startsWith(name+'='));
       const grant=tokens.length===1?open(tokens[0].slice(name.length+1),'grant',req):null;
-      if(!localHealth&&!grant)return reply(res,401);
+      if(!localHealth&&!grant){
+        // A dedicated fetch endpoint makes gate failures readable without accepting a WS first.
+        // Keep 200 here: inherited nginx error_page handlers would hide a 401 again.
+        if(pathname==='/_gate/status'){res.setHeader('X-Gate-Required','1');return reply(res,200);}
+        return reply(res,401);
+      }
       const status=await banCheck(ip);
       if(status!==204&&status!==200)return reply(res,status===403?403:503);
-      // Renew only through health responses; Nginx explicitly forwards this header there.
-      if(grant&&original.split('?')[0]==='/healthz'&&grant.exp-now()<SIX_HOURS/2)res.setHeader('X-Gate-Renew',cookie(req));
+      // auth_request passes this through on protected HTML, API, health and WS responses.
+      if(grant&&grant.exp-now()<SIX_HOURS/2){
+        const renewed=cookie(req);
+        res.setHeader(pathname==='/_gate/status'?'Set-Cookie':'X-Gate-Renew',renewed);
+      }
       return reply(res,204);
     }
     if(req.headers['x-gate-entry']==='1'||pathname==='/_gate/entry'){

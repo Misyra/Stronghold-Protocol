@@ -30,7 +30,9 @@ test('origin static routes and aliases never consume the permanent business budg
     assert.equal(candidate, '1', uri);
     assert.equal(mapped(business, 'sp_business_key', candidate + ':' + uri), '', uri);
     assert.equal(mapped(business, 'sp_log_business', candidate + ':' + uri), '0', uri);
-    assert.equal(mapped(business, 'sp_static_key', candidate), '$binary_remote_addr', uri);
+    const cosmetic = mapped(business, 'sp_cosmetic_asset', uri);
+    assert.equal(mapped(business, 'sp_static_key', candidate + ':' + cosmetic),
+      cosmetic === '1' ? '' : '$binary_remote_addr', uri);
   }
   // A forged CDN-related header cannot turn an origin business request into a free static request.
   for (const uri of ['/api/rooms/AAAA/status', '/api/announcement', '/ws', '/unknown']) {
@@ -53,10 +55,16 @@ test('portal budgets share room-code counters, exempt loopback and distinguish u
   assert.equal(mapped(api, 'sp_rooms_key', '0:/api/roomsmith'), '');
 });
 
-test('public resource manifest has one authoritative location and preserves version/host isolation', () => {
+test('public resource manifest has one location in each alternative template and preserves isolation', () => {
   const cache = read('nginx-game-cache.conf.example');
   const gate = read('hardening/sp-browser-gate.conf');
-  assert.equal((cache + gate).match(/location = \/data\/resource-manifest\.json \{/g)?.length, 1);
+  for (const source of [cache, gate]) {
+    for (const uri of ['/data/resource-manifest.json', '/assets-manifest.json']) {
+      assert.equal(source.split(`location = ${uri} {`).length - 1, 1, uri);
+      const block = source.split(`location = ${uri} {`)[1].split('\n}')[0];
+      assert.match(block, /auth_request off;/);
+    }
+  }
   const location = cache.match(/location = \/data\/resource-manifest\.json \{([\s\S]*?)\n\}/)[1];
   assert.match(location, /proxy_cache_key .*\$host.*\$proxy_host.*\$request_uri/);
   assert.match(location, /auth_request off;/);
@@ -67,12 +75,28 @@ test('public resource manifest has one authoritative location and preserves vers
   assert.match(source, /proxy_cache_lock on;/);
 });
 
+test('icons and fonts skip per-IP static budgets while modules and APIs retain theirs', () => {
+  for (const uri of ['/favicon.ico', '/apple-touch-icon.png', '/icons/app.png', '/fonts/fonts.css',
+    '/build/assets/favicon-abcd.png', '/build/assets/app-abcd.svg', '/build/assets/font-abcd.woff2',
+    '/_v/0123456789abcdef/fonts/fonts.css', '/_v/0123456789abcdef/icons/app.png']) {
+    assert.equal(mapped(business, 'sp_static_candidate', uri), '1', uri);
+    assert.equal(mapped(business, 'sp_cosmetic_asset', uri), '1', uri);
+    assert.equal(mapped(business, 'sp_static_key', '1:1'), '', uri);
+    assert.equal(mapped(business, 'sp_business_key', '1:' + uri), '', uri);
+    assert.equal(mapped(business, 'sp_business_conn_key', '1:' + uri), '', uri);
+  }
+  for (const uri of ['/api/announcement', '/ws', '/build/assets/app.js', '/assets/art.png', '/fonts-api'])
+    assert.equal(mapped(business, 'sp_cosmetic_asset', uri), '0', uri);
+  assert.equal(mapped(business, 'sp_static_key', '1:0'), '$binary_remote_addr');
+  assert.match(read('nginx.conf.example'), /limit_conn sp_conn_all 4500;/);
+});
+
 test('alternate SYN templates agree with the normative ops policy without changing burst/global limits', () => {
   const policy = fs.readFileSync(new URL('../../ops/sp-web-syn-guard.nft', import.meta.url), 'utf8');
   const limits = source => source.split('\n').filter(line => !line.trim().startsWith('#'))
     .map(line => line.match(/limit rate over (\d+\/\w+) burst (\d+) packets/))
     .filter(Boolean).map(([, rate, burst]) => [rate, Number(burst)]);
-  const expected = [['30/minute', 10], ['30/minute', 10], ['50/second', 100]];
+  const expected = [['120/minute', 40], ['120/minute', 40], ['50/second', 100]];
   assert.deepEqual(limits(policy), expected);
   assert.deepEqual(limits(read('hardening/sp-web-syn-guard.nft.example')), expected);
 });

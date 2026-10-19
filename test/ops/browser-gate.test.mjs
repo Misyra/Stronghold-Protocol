@@ -84,14 +84,30 @@ test('admission proof, replay, binding, expiration, renewal, bans and fail-close
   assert.equal((await submit()).status,403);
   const check=(headers={})=>request('/check',{headers:{Cookie:cookie,'X-Gate-Original-URI':'/ws',...headers}});
   assert.equal((await check()).status,204);
+  const probe=(headers={})=>request('/_gate/status',{headers:{Cookie:cookie,...headers}});
+  assert.equal((await probe()).status,204);
+  for(const headers of [{Cookie:''},{Cookie:cookie+'x'},{'X-Gate-IP':'8.8.8.8'}]){
+    const response=await probe(headers);
+    assert.equal(response.status,200);assert.equal(response.headers.get('x-gate-required'),'1');
+    assert.equal(response.headers.get('set-cookie'),null,'failure never mints admission');
+    assert.equal(response.headers.get('cache-control'),'no-store');
+  }
   for(const headers of [{'X-Gate-IP':'8.8.8.8'},{'X-Gate-Host':'other.example'},{'X-Gate-Scheme':'http',Cookie:cookie.replace('__Host-','')},{'User-Agent':'curl'}, {Cookie:cookie+'a'}, {Cookie:cookie+'; '+cookie}])
     assert.equal((await check(headers)).status,401);
   status=403;assert.equal((await check()).status,403);
-  status=503;assert.equal((await check()).status,503);status=204;
+  assert.equal((await probe()).status,403);
+  status=503;assert.equal((await check()).status,503);assert.equal((await probe()).status,503);status=204;
   clock+=11000000;
-  const renewal=await check({'X-Gate-Original-URI':'/healthz?build=1'});
-  assert.equal(renewal.status,204);assert.match(renewal.headers.get('x-gate-renew'),/sp_browser_gate=/);
+  for(const uri of ['/healthz?build=1','/','/api/announcement','/ws']){
+    const renewal=await check({'X-Gate-Original-URI':uri});
+    assert.equal(renewal.status,204);assert.match(renewal.headers.get('x-gate-renew'),/sp_browser_gate=/,uri);
+  }
+  const renewed=await probe();
+  const renewedCookie=renewed.headers.get('set-cookie').split(';')[0];
+  assert.equal(renewed.status,204);assert.equal(renewed.headers.get('x-gate-renew'),null,'HttpOnly token is not exposed to JS');
   clock+=11000000;assert.equal((await check()).status,401);
+  assert.equal((await probe()).headers.get('x-gate-required'),'1');
+  assert.equal((await probe({Cookie:renewedCookie})).status,204,'renewed cookie survives the original expiry');
   assert.equal((await submit()).status,403);
   assert.equal((await request('/check',{headers:{'X-Gate-IP':'127.0.0.1','X-Gate-Original-URI':'/healthz'}})).status,204);
   assert.equal((await request('/check',{headers:{'X-Gate-IP':'127.0.0.1','X-Gate-Original-URI':'/ws'}})).status,401);

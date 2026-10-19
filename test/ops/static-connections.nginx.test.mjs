@@ -29,7 +29,11 @@ test('static module concurrency has its own bounded per-IP budget and retains th
     await new Promise(resolve => reserve.close(resolve));
     const maps = fs.readFileSync(new URL('../../scripts/hardening/sp-business-limit-map.conf', import.meta.url), 'utf8');
     const template = fs.readFileSync(new URL('../../scripts/nginx.conf.example', import.meta.url), 'utf8');
-    const limits = template.match(/limit_conn sp_(?:business_conn|static_conn) \d+;/g).join('\n');
+    // Pin this fixture to the budgets its assertions document (64 business / 256 static); the
+    // shipped defaults are higher (96 / 384) so a cold module graph survives a player burst.
+    const limits = template.match(/limit_conn sp_(?:business_conn|static_conn) \d+;/g).join('\n')
+      .replace(/sp_business_conn \d+;/, 'sp_business_conn 64;')
+      .replace(/sp_static_conn \d+;/, 'sp_static_conn 256;');
     fs.writeFileSync(path.join(dir, 'nginx.conf'), `worker_processes 1; pid nginx.pid;
 error_log logs/error.log notice;
 events { worker_connections 2048; }

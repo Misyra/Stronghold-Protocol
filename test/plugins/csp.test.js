@@ -34,7 +34,10 @@ function handler(csp = siteCsp(publicDir)) {
 test('page import maps hash exact bytes; no inline executable script/events; page forbids eval', () => {
   const csp = siteCsp(publicDir);
   assert.ok(!csp.includes('unsafe-eval')); assert.match(csp, /worker-src 'self' blob:/);
-  assert.match(csp,/connect-src 'self';/);assert.ok(!/script-src[^;]*(?:data:|blob:)/.test(csp));
+  // blob: in connect-src is the object URL public/js/resourceNetwork.js hands to Pixi for texture decoding: Pixi 7.4
+  // loads an image through `fetch` when `createImageBitmap` exists, and `'self'` does not cover a blob: URL. It is a
+  // data origin only — script-src never gains it.
+  assert.match(csp,/connect-src 'self' blob:;/);assert.ok(!/script-src[^;]*(?:data:|blob:)/.test(csp));
   for (const file of ['index.html', 'studio/index.html', 'dev/game-mock.html', 'dev/render-demo.html', 'dev/battle-perf.html', 'dev/uikit.html']) {
     const html = fs.readFileSync(path.join(publicDir, file), 'utf8');
     assert.ok(!/<[^>]+\son(?:load|error|click)=/i.test(html), file);

@@ -22,10 +22,16 @@ function deepFreeze(root) {
  * /data/; `cs` names what was loaded; `bounds` its official-bounds snapshot (installSimBounds).
  */
 let loadedScripts = false;
+// 浏览器侧的 sim 模块一律走发布 tag（`/_v/<runtimeTag>/sim/…`，见 public/js/resourceUrl.js）：
+// tag 是内容的摘要，内容一变 URL 就变，所以这些地址可以被浏览器直接存一年 —— 桩 nginx 上的
+// `/sim/*.js` 原来每个都走 `no-cache` + 304 往返，一次页面加载十几个模块就是十几个来回
+// （server/http/static.js 现在把「URL 上的 tag == 本次发布的 tag」直接当 immutable）。
+// 自定义 base（测试的 file:/http: 基址、插件的临时目录）原样返回：那些字节不在发布的指纹里。
+const simModule = (url) => (typeof url === 'string' && /^\/(?:sim|shared|data|packs)\//.test(url) ? resourceUrl(url) : url);
 export async function loadBrowserSim({ base = '/sim/', dataBase = dataBasePath(), fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null,
   scripts = [], hashInput = null, nativeVerified = false, deferScripts = false } = {}) {
   const [spec, simdata, support] = await Promise.all([
-    import(`${base}spec.js`), import(`${base}simdata.js`), import(`${base}content/support/index.js`),
+    import(simModule(`${base}spec.js`)), import(simModule(`${base}simdata.js`)), import(simModule(`${base}content/support/index.js`)),
   ]);
   const fetchOnce = async (n) => {
     try {
@@ -47,10 +53,13 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = dataBasePath()
   if (typeof support.setGameData === 'function') support.setGameData(null); // re-read through the injected data
   await installSimBounds(base, raw, data ? bounds : undefined);
   if (!deferScripts && scripts.length) {
-    const sdkUrl = /^file:/i.test(base) ? new URL('../../shared/plugins/sdk.js',base).href : new URL('/shared/plugins/sdk.js',globalThis.location.href).href;
+    // sdk/scriptLoad/extensions 同样走发布 tag：插件运行时也是「内容变、URL 变」才敢让浏览器长缓存。
+    const sdkPath = /^file:/i.test(base) ? null : simModule('/shared/plugins/sdk.js');
+    const sdkUrl = sdkPath ? new URL(sdkPath, globalThis.location.href).href
+      : new URL('../../shared/plugins/sdk.js',base).href;
     const {loadScripts} = await import(new URL('scriptLoad.js',sdkUrl).href);
-    await loadScripts(scripts,{hashInput,sdkUrl,extensionsUrl:base+'content/extensions.js',cs,nativeVerified});
-  } else if (loadedScripts) (await import(base+'content/extensions.js')).resetExtensions();
+    await loadScripts(scripts,{hashInput,sdkUrl,extensionsUrl:simModule(base+'content/extensions.js'),cs,nativeVerified});
+  } else if (loadedScripts) (await import(simModule(base+'content/extensions.js'))).resetExtensions();
   loadedScripts = !deferScripts && scripts.length > 0;
   return { spec, ds: new simdata.DataSource(raw, null), cs, raw };
 }
@@ -68,7 +77,7 @@ async function installSimBounds(base, raw, bounds) {
   try {
     const spec = /^https?:|^file:/i.test(String(base))
       ? new URL('../../shared/plugins/officialBounds.js', base).href
-      : '/shared/plugins/officialBounds.js';
+      : simModule('/shared/plugins/officialBounds.js');
     boundsMod = await import(spec);
   } catch { return; }
   if (bounds === undefined) boundsMod.rememberOfficialBounds(raw);

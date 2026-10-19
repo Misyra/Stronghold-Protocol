@@ -19,9 +19,21 @@
 
 // The simulation modules are loaded the way the page loads them (`/sim/` is served from server/sim/, so it is no
 // public/ path a static import could resolve — public/js/battle/runner.js imports them dynamically too).
-const { createBattleFromSpec } = await import('/sim/spec.js');
-const { DataSource, setSimData } = await import('/sim/simdata.js');
-const { RehearsalRun } = await import('/sim/rehearsal.js');
+// 带上发布 tag：worker 自己没有页面注入的版本号，从被加载的地址里捞（battle/rehearsal.js 建 worker 时用的是
+// `/_v/<runtimeTag>/js/battle/rehearsalWorker.js`）。tag 是内容摘要，所以这些地址可以直接被浏览器存一年；
+// 捞不到就退回未版本化地址，行为和以前完全一样。
+const assetTag = (() => {
+  try {
+    const href = globalThis.location.href;
+    const fromPath = /\/_v\/([a-f0-9]{16})\//.exec(href);
+    const found = fromPath ? fromPath[1] : new URL(href).searchParams.get('v');
+    return /^[a-f0-9]{16}$/.test(found || '') ? found : null;
+  } catch { return null; }
+})();
+const tagged = (p) => (assetTag ? `${p}?v=${assetTag}` : p);
+const { createBattleFromSpec } = await import(tagged('/sim/spec.js'));
+const { DataSource, setSimData } = await import(tagged('/sim/simdata.js'));
+const { RehearsalRun } = await import(tagged('/sim/rehearsal.js'));
 
 /** The page's simulation data as a DataSource (null before the data frame arrives). */
 let ds = null;

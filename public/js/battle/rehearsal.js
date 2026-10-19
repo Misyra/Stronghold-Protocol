@@ -23,9 +23,13 @@
 //   installRehearsal({ net, runner, createWorker, log }) → { pending(), clear(), dispose() } | null   (wired in main.js)
 
 import { battleRunner } from './runner.js';
+import { resourceUrl } from '../resourceUrl.js';
 
 /** The module Worker that simulates the candidates (public/ is served at the root). */
 export const WORKER_URL = '/js/battle/rehearsalWorker.js';
+/** 带发布 tag 的 worker 地址（`/_v/<runtimeTag>/js/battle/rehearsalWorker.js`）：它内部 import 的
+ *  `/sim/…` 会沿用同一个 tag，浏览器才能把这些模块当 immutable 存着（server/http/static.js）。 */
+export function rehearsalWorkerUrl() { return resourceUrl(WORKER_URL); }
 /** Tasks kept while the single worker is busy; one more may always run. */
 export const MAX_PENDING_TASKS = 3;
 
@@ -45,7 +49,7 @@ export function rehearsalSpecsAreOfficial(specs) {
  *   (default: the browser singleton; its `ensureSim()` warms and caches it), `createWorker` = the Worker factory (tests)
  * @returns {null | { pending: () => number, clear: () => void, dispose: () => void }} null without a socket, or in Node
  */
-export function installRehearsal({ net, runner = battleRunner, createWorker = () => new Worker(WORKER_URL, { type: 'module' }), log = console } = {}) {
+export function installRehearsal({ net, runner = battleRunner, createWorker = () => new Worker(rehearsalWorkerUrl(), { type: 'module' }), log = console } = {}) {
   if (!net || typeof net.on !== 'function' || !runner || typeof runner.ensureSim !== 'function') return null;
   /** The tasks waiting for the worker, oldest first. */
   const queue = [];

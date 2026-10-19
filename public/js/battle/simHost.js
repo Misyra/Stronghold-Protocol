@@ -58,9 +58,21 @@ export class InPageSimHost {
   stop() { this.battle = null; }
 }
 
+/**
+ * sim worker 的脚本地址。页面模块本身已经是版本化地址（`/_v/<tag>/js/battle/simHost.js`），这里把同一个
+ * runtime tag 挂到查询串上：worker 内部没有页面注入的版本号（assetVersion 的 transform 只改 HTML），
+ * 它只能从自己被加载的地址里把 tag 捞回来 —— 捞到了，它 import 的 `/sim/…` 才敢交给浏览器长缓存。
+ */
+function simWorkerUrl() {
+  const url = new URL('./simWorker.js', import.meta.url);
+  const tag = globalThis.__spRuntimeVersion;
+  if (typeof tag === 'string' && /^[a-f0-9]{16}$/.test(tag)) url.searchParams.set('v', tag);
+  return url;
+}
+
 /** Wire state only: no engine import or engine object, including in the dev introspection hooks. */
 export class WorkerSimHost {
-  constructor({ workerFactory = () => new Worker(new URL('./simWorker.js', import.meta.url), { type: 'module' }),
+  constructor({ workerFactory = () => new Worker(simWorkerUrl(), { type: 'module' }),
     timeoutMs = WORKER_TIMEOUT_MS, loadTimeoutMs = WORKER_LOAD_TIMEOUT_MS, onFailure = () => {}, contentFor = null } = {}) {
     this.contentFor = contentFor;
     this.remote = true;

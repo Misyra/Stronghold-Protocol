@@ -64,9 +64,13 @@ async function browserScripts(content) {
   return prepareScriptRuntime(content);
 }
 
+/** /sim|/vendor 的模块地址带上本页发布 tag：内容变 tag 就变，浏览器才能把它们当 immutable 存着（server/http/static.js）。 */
+const taggedUrl = (p) => (typeof globalThis.__spRuntimeVersion === 'string' && /^[a-f0-9]{16}$/.test(globalThis.__spRuntimeVersion)
+  ? `${p}?v=${globalThis.__spRuntimeVersion}` : p);
+
 /** Same production adapter in both browser Workers and the Node determinism harness. */
-export async function prepareScriptRuntime(content, { loadSES = () => import('/vendor/ses.umd.js'),
-  loadMath = () => import('/sim/detmath.js'), loadParser = () => import('/vendor/acorn.mjs'), sdkUrl, extensionsUrl } = {}) {
+export async function prepareScriptRuntime(content, { loadSES = () => import(taggedUrl('/vendor/ses.umd.js')),
+  loadMath = () => import(taggedUrl('/sim/detmath.js')), loadParser = () => import(taggedUrl('/vendor/acorn.mjs')), sdkUrl, extensionsUrl } = {}) {
   const { verifyScripts, scriptExecution, loadScripts } = await import('../../../shared/plugins/scriptLoad.js');
   verifyScripts(content.scripts, content.hashInput);
   const opts = { hashInput: content.hashInput, cs: content.cs, nativeVerified: content.nativeVerified, sdkUrl, extensionsUrl };

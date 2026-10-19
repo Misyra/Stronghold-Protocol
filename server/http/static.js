@@ -206,6 +206,15 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       decoded = match[2];
       versioned = true;
     }
+    // 客户端把发布 tag 挂在 `?v=` 上（public/js/resourceUrl.js:49-56）：/data/… 用 asset tag，
+    // js/vendor/shared/sim 用 runtime tag，assets/fonts/media 用 art tag。这些 tag 是**内容摘要**
+    // （server/assetVersion.js:85-91）：runtime tag 吃进 js/vendor/shared/sim/data/packs 的字节，
+    // art tag 吃进 assets/fonts/media 的字节，所以「URL 上的 tag 等于本次发布算出来的 tag」等价于
+    // 「这份字节以后不会再变」——可以直接 immutable 缓存，连 304 往返都省掉。
+    // 不等于的一律照旧 no-cache：旧页面手里的旧 tag 必须重新验证，不能把新字节挂在旧 URL 上长期缓存
+    // （和 /_v/ 是同一条规则：宁可让页面重新验证，也不给错字节贴一张永不过期的 URL）。
+    const queryTag = typeof query === 'string' && /^v=[a-f0-9]{16}$/.test(query) ? query.slice(2) : '';
+    const tagVerified = !versioned && queryTag !== '' && queryTag === release.expectedTag(decoded);
     if (useBuiltClient && (decoded === '/' || decoded === '/index.html')) {
       // 打包页同样要带上发布标签（内联脚本、importmap 的 CDN 改写），CSP 会把这段内联脚本算进 script-src
       await serveFile(req, res, builtIndex, await fsp.stat(builtIndex), 'public', ['build', 'index.html'], query, gzipCache, log,
@@ -253,7 +262,9 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       const etag = gz ? `${idx.etag.slice(0, -1)}-gz"` : idx.etag;
       const headers = {
         'Content-Type': MIME['.json'],
-        'Cache-Control': 'no-cache',
+        // `?v=<tag>` 就是这张清单内容的摘要（tag 同时吃进 runtime 与 art 字节），所以发布了新素材
+        // 这个 URL 必然变；带上发布 tag 的请求可以直接 immutable，不带 tag 的仍旧每次验证。
+        'Cache-Control': tagVerified ? IMMUTABLE_CACHE : 'no-cache',
         ETag: etag,
         'Last-Modified': stat.mtime.toUTCString(),
         Vary: 'Accept-Encoding',
@@ -275,8 +286,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         const body = Buffer.from(JSON.stringify(doc));
         const st = await fsp.stat(file);
         const etag = `"resource-packs-${createHash('sha256').update(body).digest('hex')}"`;
-        const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-cache', ETag: etag,
-          'Last-Modified': st.mtime.toUTCString(), 'Content-Length': body.length };
+        const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': tagVerified ? IMMUTABLE_CACHE : 'no-cache',
+          ETag: etag, 'Last-Modified': st.mtime.toUTCString(), 'Content-Length': body.length };
         if (isNotModified(req, etag, st.mtime)) { res.writeHead(304, headers); res.end(); return; }
         res.writeHead(200, headers);
         res.end(req.method === 'HEAD' ? undefined : body);
@@ -490,7 +501,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log, {
       ...(Object.keys(workerHeaders).length ? { headers: workerHeaders } : {}),
       transform: transformFor(ext, versioned),
-      ...(versioned ? { cacheControl: IMMUTABLE_CACHE } : {}),
+      ...(versioned || tagVerified ? { cacheControl: IMMUTABLE_CACHE } : {}),
     });
   };
   // 发布版本（server/assetVersion.js）：调试与测试读它判断「这个 URL 属于哪次发布」

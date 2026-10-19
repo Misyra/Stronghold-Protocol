@@ -201,7 +201,9 @@ export function checkAssets() {
   for (const u of urls) {
     let st = null;
     try { st = fs.statSync(path.join(pub, ...u.split('/').filter(Boolean).map(decodeURIComponent))); } catch { /* missing */ }
-    if (!st || !st.size) missing.push(u);
+    // A directory at an asset URL (an interrupted unpack leaves `sample art.png/`) has a nonzero size on many
+    // filesystems, so "stat worked and size is not 0" would call it downloaded; the manifest lists files.
+    if (!st || !st.isFile() || !st.size) missing.push(u);
   }
   return { ok: present && missing.length === 0 && urls.length > 0, present, manifest: true, total: urls.length, missing: missing.length, sample: missing.slice(0, 5), bytes: Number(m.stats?.bytes) || 0 };
 }

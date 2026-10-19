@@ -45,6 +45,38 @@ function portalStatus(room, { now = Date.now(), gameBootId = null } = {}) {
   return { state: 'ok', roomId: room.roomId, createdAt: room.createdAt, gameBootId, room: portalRoomView(room, now) };
 }
 
+// 面板问「这间房说过什么」。答案有两个来源：审计日志（已经落盘的那部分）与房间自己的环形缓冲（还没落盘、
+// 或者刚落盘但仍在缓冲里的那几条）。日志读不出来不算故障，只说明更早的那段读不到（partial）—— 这间房现在
+// 还在内存里的聊天照样能交差，把一次读盘失败变成 5xx 才是真的把信息丢了。
+async function roomChatHistory(chatLog, room, limit, now) {
+  const since = room.createdAt;
+  // 没有 ChatLog 实例（测试、或者日志被关掉）：只有内存这一段，如实标 partial。
+  let log = { messages: [], truncated: false, partial: true };
+  if (chatLog && typeof chatLog.roomRecords === 'function') {
+    try { log = await chatLog.roomRecords({ code: room.code, since, limit, now }); }
+    // 契约上 roomRecords 不抛，但这是跨文件系统的调用：兜一层比让面板看到一个 500 便宜。
+    catch { log = { messages: [], truncated: false, partial: true }; }
+  }
+  const seen = new Set();
+  const merged = [];
+  const take = (message) => {
+    // 两条来源会重叠：一条消息落盘之后仍然待在那 50 条环形缓冲里，两边都算就会重复。
+    const key = `${message.playerId}\u0000${message.at}\u0000${message.text}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(message);
+  };
+  for (const message of log.messages) take(message);
+  // 环形缓冲里没有 IP（那份记录只有审计日志有），所以这里如实给 null，而不是去猜一个。
+  for (const message of room.chatMessages || []) {
+    if (!Number.isFinite(message?.at) || message.at < since) continue;
+    take({ at: message.at, ip: null, playerId: message.playerId, name: message.name, text: message.text });
+  }
+  merged.sort((a, b) => a.at - b.at);
+  // 日志那边已经截过一次，这里再截一次：合并之后超出的只会是更早的那些。
+  return { messages: merged.slice(-limit), truncated: log.truncated || merged.length > limit, partial: log.partial };
+}
+
 function authorized(req, expected) {
   const value = typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')
     ? req.headers.authorization.slice(7) : '';
@@ -66,7 +98,7 @@ function roomView(room, lobby, registry) {
 }
 
 export async function listenRoomAdmin({ lobby, registry, token, port = 3001, stateFile, gameBootId = randomUUID(),
-  roomConfig = null, log = console }) {
+  roomConfig = null, chatLog = lobby.chatLog ?? null, log = console }) {
   if (!token) return null;
   const expected = hashSecret(token);
   // 配置文档的当前版本（§43.2）。调用方（index.js）已经把它读出来了，因为启动时要用它覆盖环境默认值 ——
@@ -252,7 +284,25 @@ export async function listenRoomAdmin({ lobby, registry, token, port = 3001, sta
       return sendJson(req, res, 200, { closed: true, roomCode, roomId, createdAt });
     }
 
-    if (url.pathname === '/api/rooms' || url.pathname === '/api/room-config' || closeMatch || portalStatusMatch)
+    // 单间房的聊天回看（运维面板 → 本机探针）。只读，房间码的形状、大小写处理与关房那条完全一致：
+    // 面板手里的码可能来自别处，大小写不该让同一个码变成两种结果。
+    const chatMatch = new RegExp(`^/api/rooms/([A-Z]{${ROOM_CODE_LEN}})/chat$`, 'i').exec(url.pathname);
+    if (chatMatch && ['GET', 'HEAD'].includes(req.method)) {
+      const raw = url.searchParams.get('limit');
+      const limit = raw === null ? 100 : Number(raw);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200)
+        return sendJson(req, res, 400, { error: 'INVALID_LIMIT', min: 1, max: 200 });
+      const room = lobby.getRoom(chatMatch[1].toUpperCase());
+      // 这里的 404 只表示「真没有这间房 / 已经销毁」。读日志失败走的是 200 + partial:true，绝不能混在一起：
+      // 一次读盘抖动让面板把房间显示成已消失，比少给几条聊天记录严重得多。
+      if (!room || room.disposed) return sendJson(req, res, 404, { error: 'ROOM_NOT_FOUND' });
+      const now = Date.now();
+      const history = await roomChatHistory(chatLog, room, limit, now);
+      return sendJson(req, res, 200, { code: room.code, roomId: room.roomId, createdAt: room.createdAt,
+        serverNow: now, limit, truncated: history.truncated, partial: history.partial, messages: history.messages });
+    }
+
+    if (url.pathname === '/api/rooms' || url.pathname === '/api/room-config' || closeMatch || portalStatusMatch || chatMatch)
       res.setHeader('Allow', url.pathname === '/api/rooms' ? 'GET, HEAD'
         : url.pathname === '/api/room-config' ? 'GET, HEAD, PUT' : closeMatch ? 'POST' : 'GET, HEAD');
     return sendJson(req, res, 405, { error: 'METHOD_NOT_ALLOWED' });

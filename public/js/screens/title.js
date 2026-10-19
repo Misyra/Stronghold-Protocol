@@ -313,7 +313,7 @@ export function TitleScreen() {
       <div class="title-bg__radar"><div class="title-bg__sweep"></div></div>
       <div class="title-bg__target"></div>
       ${cssRidges ? html`<${Ridges} />` : null}
-      ${ridges && !ridgesFailed ? html`<div class="title-bg__ridge-art" style=${`background-image:url("${ridges}")`}>
+      ${ridges && !ridgesFailed ? html`<div class="title-bg__ridge-art" style=${ridgesLoaded ? `background-image:url("${ridges}")` : null}>
         <img crossorigin="anonymous" src=${ridges} alt="" hidden onLoad=${() => setRidgesLoadedUrl(ridges)}
           onError=${(event) => recoverImageError(event, () => setRidgesFailedUrl(ridges))} />
       </div>` : null}

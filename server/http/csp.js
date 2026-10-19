@@ -43,5 +43,8 @@ export function siteCsp(publicDir, transformPage = null, cdnBase = '') {
   // page is downloaded by our transport and then decoded by Pixi 7.4, which fetches the blob when
   // `createImageBitmap` exists. `'self'` does not cover a blob: URL, so every Spine page failed in the texture
   // loader and the battle units fell back to their tokens (2026-10-19).
-  return `default-src 'self'; script-src 'self'${hashes.size ? ' ' + [...hashes].join(' ') : ''}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com${art}; font-src 'self' https://fonts.gstatic.com${art}; img-src 'self' data: blob:${art}; media-src 'self'${art}; connect-src 'self' blob:${art}; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'`;
+  // `connect-src` names `data:` because Pixi probes `isImageBitmapSupported` by fetching a 1×1 data: PNG in a
+  // Worker; without it the probe throws, the Spine texture loader takes the failure path, and the battle units
+  // fall back to their tokens (2026-10-19 console: "Fetch API cannot load data:image/png;base64,…").
+  return `default-src 'self'; script-src 'self'${hashes.size ? ' ' + [...hashes].join(' ') : ''}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com${art}; font-src 'self' https://fonts.gstatic.com${art}; img-src 'self' data: blob:${art}; media-src 'self'${art}; connect-src 'self' blob: data:${art}; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'`;
 }

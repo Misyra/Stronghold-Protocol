@@ -154,6 +154,17 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   };
   const shimBody = Buffer.from(DATA_SHIM_JS);
   const shimTag = `"shim-${shimBody.length.toString(16)}"`;
+  // 版本化 /data.js（/_v/<tag>/data.js）：同一条垫片，但它引的 '../sim/simdata.js' 在那个地址下会
+  // 爬出命名空间变成 /_v/sim/simdata.js —— 那里没有 tag，静态层一律 404，整条战斗数据链断在第一步。
+  // 所以要先把垫片过一遍相对说明符改写，再按发布 tag 给 immutable（字节只由这次发布决定）。
+  let shimVersioned = null;
+  const shimVersionedBody = () => {
+    if (!shimVersioned) {
+      const body = Buffer.from(rewriteRelativeImports(DATA_SHIM_JS, '/data.js'));
+      shimVersioned = { body, tag: `"shim-v-${release.runtimeTag}-${body.length.toString(16)}"` };
+    }
+    return shimVersioned;
+  };
   const gzipCache = new CompressCache(); // brotli and gzip bodies (files.js)
   /** 每文件指纹清单的响应体（一次构建，按 tag 重建时随进程重启） */
   let manifestBody = null;
@@ -165,11 +176,24 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
    * 哪些响应要就地改写：HTML 与 CSS 一律（页面要拿到版本前缀与 __sp* 全局，CSS 要改写 url()），
    * JSON 只在版本化地址下改写（/_v/<tag>/data/assets.json）—— 普通 /data/*.json 必须原样送出，
    * 它们已经被 CDN 改写层（rewriteAssetPaths / manifestEncode）处理过，游戏数据也不该带版本前缀。
-   * JS 不改写：release.transform 对 .js 本来就不动手，跳过省一次读文件。
+   * JS 不改写：release.transform 对 .js 本来就不动手，但相对说明符必须改（见下）。
    */
-  const transformFor = (ext, versioned) => {
+  // 相对说明符在 /_v/<tag>/ 下会爬出命名空间：/_v/<tag>/sim/simdata.js 里的 '../../shared/x.js'
+  // 被浏览器解析成 /_v/shared/x.js —— 少了 tag，服务器不认，整条模拟线程全 404。所以按模块自身的
+  // 逻辑路径把「以 . 开头」的说明符解析成绝对地址，再交给 release.url 挂上本次发布的 tag。其余字节不动。
+  const RELATIVE_SPEC = /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(["'])(\.{1,2}\/[^"'\n]*)\2/g;
+  const rewriteRelativeImports = (source, modulePath) => source.replace(RELATIVE_SPEC, (whole, head, quote, spec) => {
+    const cut = spec.search(/[?#]/);
+    const clean = cut === -1 ? spec : spec.slice(0, cut);
+    const suffix = cut === -1 ? '' : spec.slice(cut);
+    const abs = path.posix.normalize(path.posix.join(path.posix.dirname(modulePath), clean));
+    if (!abs.startsWith('/') || abs.includes('../')) return whole;
+    return `${head}${quote}${release.url(abs)}${suffix}${quote}`;
+  });
+  const transformFor = (ext, versioned, modulePath) => {
     if (ext === '.html' || ext === '.htm' || ext === '.css') return (source, e) => release.transform(source, e);
     if (ext === '.json' && versioned) return (source, e) => release.transform(source, e);
+    if (ext === '.js' && versioned && modulePath) return (source) => rewriteRelativeImports(source, modulePath);
     return null;
   };
 
@@ -300,10 +324,16 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     // the plugin studio's page is never a static file (server/studio/index.js isStudioPath: any spelling of /studio/)
     if (isStudioPath(decoded)) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
     if (decoded === '/data.js') {
-      const headers = { 'Content-Type': MIME['.js'], 'Cache-Control': 'no-cache', ETag: shimTag, 'Content-Length': shimBody.length };
-      if (isNotModified(req, shimTag, new Date(0))) { delete headers['Content-Length']; res.writeHead(304, headers); res.end(); return; }
+      const shim = versioned ? shimVersionedBody() : { body: shimBody, tag: shimTag };
+      const headers = {
+        'Content-Type': MIME['.js'],
+        'Cache-Control': versioned ? IMMUTABLE_CACHE : 'no-cache',
+        ETag: shim.tag,
+        'Content-Length': shim.body.length,
+      };
+      if (isNotModified(req, shim.tag, new Date(0))) { delete headers['Content-Length']; res.writeHead(304, headers); res.end(); return; }
       res.writeHead(200, headers);
-      res.end(req.method === 'HEAD' ? undefined : shimBody);
+      res.end(req.method === 'HEAD' ? undefined : shim.body);
       return;
     }
     // The plugin catalogue (server/plugins/registry.js; never cached) and the vanilla content set's manifest
@@ -500,7 +530,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     const ext = path.extname(absPath).toLowerCase();
     await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log, {
       ...(Object.keys(workerHeaders).length ? { headers: workerHeaders } : {}),
-      transform: transformFor(ext, versioned),
+      transform: transformFor(ext, versioned, decoded),
       ...(versioned || tagVerified ? { cacheControl: IMMUTABLE_CACHE } : {}),
     });
   };

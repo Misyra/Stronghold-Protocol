@@ -280,7 +280,15 @@ export function localPathFor(url, publicDir, cdnBase = '') {
  *           readFile?: typeof fsp.readFile, log?: any }} opts
  */
 export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resourcePackRoutes = [], rewrite = (v) => v,
-  statFile = (p) => fsp.stat(p), readFile = fsp.readFile, log = null } = {}) {
+  statFile = (p) => fsp.stat(p), readFile = fsp.readFile, log = null, assetManifestFile = null } = {}) {
+
+  /**
+   * The CDN publish manifest (`.assets-manifest.json`, written by tools/r2-sync.mjs) carries a `size` for every object
+   * it published. A CDN-only install (the usual deployment: art lives in R2, the box only serves code) therefore still
+   * knows how big the preload set is instead of reporting just the handful of files it happens to have on disk.
+   * Sizes only — the hashes stay as they are, so filling in the numbers never invalidates a client's cache.
+   */
+  const publishPath = assetManifestFile || path.join(path.resolve(publicDir), '..', '.assets-manifest.json');
 
   /**
    * 本仓库新增（xinhai 的清单只信清单里给的哈希）：清单没给哈希、但文件就在本机的（离线安装、站点自带表情），
@@ -325,6 +333,42 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resource
   }
 
   const stamp = (source) => source ? `${source.mtimeMs}:${source.size}` : '-';
+
+  /** Stat of the publish manifest (it lives beside `public/`, not in `dataDir`). */
+  async function publishSource() {
+    try {
+      const stat = await statFile(publishPath);
+      if (!stat.isFile()) return null;
+      return { file: publishPath, mtimeMs: stat.mtimeMs, size: stat.size };
+    } catch (error) {
+      if (error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return null;
+      throw error;
+    }
+  }
+
+  /** Sizes of every published object, keyed by site path (`/assets/…`) — the shape `pathKey()` produces. */
+  function publishedSizes(doc) {
+    const map = new Map();
+    const preload = doc && typeof doc === 'object' ? doc.preload : null;
+    if (!preload || typeof preload !== 'object') return map;
+    for (const [url, meta] of Object.entries(preload)) {
+      if (!meta || typeof meta !== 'object') continue;
+      if (!Number.isSafeInteger(meta.size) || meta.size < 0) continue;
+      map.set(pathKey(url), meta.size);
+    }
+    return map;
+  }
+  /** Content hashes of every published object, keyed by site path — a CDN-only install has no local digests. */
+  function publishedHashes(doc) {
+    const map = new Map();
+    const preload = doc && typeof doc === 'object' ? doc.preload : null;
+    if (!preload || typeof preload !== 'object') return map;
+    for (const [url, meta] of Object.entries(preload)) {
+      if (!meta || typeof meta !== 'object' || typeof meta.hash !== 'string' || !HASH_RE.test(meta.hash)) continue;
+      map.set(pathKey(url), meta.hash);
+    }
+    return map;
+  }
   async function readJson(source) {
     if (!source) return null;
     try { return { ...source, doc: JSON.parse(await readFile(source.file, 'utf8')) }; }
@@ -367,6 +411,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resource
   async function build(epoch) {
     const previous = cache;
     const sources = await Promise.all(['assets.json', 'local-assets.json', ASSET_HASHES_FILE, 'local-fx.json'].map(sourceFile));
+    const publish = await publishSource();
     // The optional pack index is probed only when it exists. Keeping it out of
     // the normal source stat set preserves the cheap three-manifest startup
     // path for installs that publish packs nowhere.
@@ -376,7 +421,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resource
       const stat = await fsp.stat(file);
       if (stat.isFile()) packSource = { file, mtimeMs: stat.mtimeMs, size: stat.size };
     } catch { /* optional deployment artifact */ }
-    const sourceKey = [...sources.map(stamp), stamp(packSource), cdnBase].join('|');
+    const sourceKey = [...sources.map(stamp), stamp(packSource), stamp(publish), cdnBase].join('|');
     // Cache hits only stat the source files and the already-discovered board companions.
     // Keep missing companions in tileFiles so creation, not just edits/deletion, invalidates the cache.
     if (previous && previous.sourceKey === sourceKey) {
@@ -385,6 +430,7 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resource
       if (previous.key === key) return previous;
     }
     const [assets, local, hashesDoc, fx] = await Promise.all(sources.map(readJson));
+    const publishDoc = await readJson(publish);
     const packsDoc = await readJson(packSource);
     const assetsDoc = assets ? rewrite(assets.doc) : null;
     const localDoc = local || fx ? rewrite({ ...(local?.doc || {}), groups: { ...(local?.doc?.groups || {}), ...(fx?.doc?.groups || {}) } }) : null;
@@ -407,6 +453,9 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resource
     const key = [sourceKey, ...tiles.map((f) => f?.stamp || '-')].join('|');
     const t0 = Date.now();
     const real = collectRealHashes(localDoc, hashesDoc ? hashesDoc.doc : null);
+    // 发布清单里的哈希是 CDN 对象的真实摘要（tools/r2-sync.mjs 上传时算的），覆盖本机没有的素材（如 local-fx 特效），
+    // 也比 asset-hashes.json 更新；客户端的预载/资源包导入只认 12 位内容摘要，所以这里以它为准。
+    for (const [key, hash] of publishedHashes(publishDoc ? publishDoc.doc : null)) real.set(key, hash);
     for (const tile of tiles) if (tile) real.set(pathKey(tile.url), crypto.createHash('sha1').update(await readFile(tile.abs)).digest('hex').slice(0, 12));
     const files = collected.filter((f) => !tileFiles.includes(f) || real.has(pathKey(f.url))
       || (cdnBase && real.has(pathKey(f.url.slice(cdnBase.length)))));
@@ -419,7 +468,18 @@ export function createResourceIndex({ dataDir, publicDir, cdnBase = '', resource
     // The version is informational now (the client keys its cache per file), but it must still change whenever the set
     // or any hash does — the settings panel and the /healthz-style diagnostics read it.
     const version = shortHash([cdnBase, ...files.map((f) => `${f.url}|${fileHashes.get(f.url)}|${f.tier}`)].join('\n'));
-    const manifest = buildResourceManifest({ files, sizes: await measure(files), version, hashes: fileHashes });
+    const sizes = await measure(files);
+    // Files this install does not hold (CDN-only) still get their published size, so the client's preload panel
+    // reports the real total instead of the subset that happens to sit on this box.
+    const published = publishedSizes(publishDoc ? publishDoc.doc : null);
+    if (published.size) {
+      for (const f of files) {
+        if (sizes.has(f.url)) continue;
+        const size = published.get(pathKey(f.url));
+        if (size !== undefined) sizes.set(f.url, size);
+      }
+    }
+    const manifest = buildResourceManifest({ files, sizes, version, hashes: fileHashes });
     const packs = packsDoc?.doc;
     if (packs && packs.format === 'stronghold-resource-pack-index' && packs.version === 1) {
       manifest.packs = routeResourcePacks(packs.packs, cdnBase, resourcePackRoutes);

@@ -246,6 +246,60 @@ describe('the served resource manifest', () => {
     assert.deepEqual(m.files.map((f) => f.tier), [...m.files.map((f) => f.tier)].sort((a, b) => a - b), 'essential first');
   });
 
+  test('the CDN publish manifest supplies sizes for files this install does not hold', async (t) => {
+    // A CDN-only install keeps no art on disk: without the publish manifest the preload panel could only count files.
+    const inst = install();
+    const publish = path.join(inst.dataDir, 'published-fixture.json');
+    fs.writeFileSync(publish, JSON.stringify({
+      tag: 'fixture',
+      hashes: {},
+      preload: {
+        '/assets/spine/enemy/enemy_1007_slime/enemy_1007_slime.skel': { hash: 'aaaabbbbcccc', size: 4096 },
+        'https://cdn.example.com/assets/bond/yan.png': { hash: 'ddddeeeeffff', size: 512 },
+        '/assets/skill/x.png': { hash: 'deadbeefdead' },
+      },
+    }));
+    t.after(inst.cleanup);
+    const index = createResourceIndex({
+      dataDir: inst.dataDir, publicDir: inst.publicDir, assetManifestFile: publish, cdnBase: 'https://cdn.example.com',
+      rewrite: (v) => rewriteAssetPaths(v, 'https://cdn.example.com'),
+    });
+    const m = (await index.get()).manifest;
+    const byUrl = new Map(m.files.map((f) => [f.url, f]));
+    assert.equal(byUrl.get('https://cdn.example.com/assets/spine/enemy/enemy_1007_slime/enemy_1007_slime.skel').size, 4096,
+      'a file absent from this box reports its published size');
+    assert.equal(byUrl.get('https://cdn.example.com/assets/bond/yan.png').size, 512, 'a publish entry may carry an absolute URL');
+    assert.equal('size' in byUrl.get('https://cdn.example.com/assets/skill/x.png'), false, 'an entry without a published size stays unsized');
+    assert.ok(m.totalBytes >= 4096 + 512);
+    assert.equal(byUrl.get('https://cdn.example.com/assets/spine/op/char_002_amiya/front/char_002_amiya.skel').size,
+      'assets/spine/op/char_002_amiya/front/char_002_amiya.skel'.length, 'a file on disk keeps its real size');
+  });
+
+  test('the CDN publish manifest supplies verifiable content hashes for CDN-only art', async (t) => {
+    // The client only preloads/imports a file whose hash is a 12-hex content digest (resources/store.js, archive.js).
+    const inst = install({ hashesDoc: { version: 1, files: { '/assets/ui/battle/sprite_shadow.png': 'aaaaaaaaaaaa' } } });
+    const publish = path.join(inst.dataDir, 'published-hashes-fixture.json');
+    fs.writeFileSync(publish, JSON.stringify({
+      tag: 'fixture',
+      preload: {
+        '/assets/ui/battle/sprite_shadow.png': { hash: 'bbbbbbbbbbbb', size: 26 },
+        '/assets/bond/yan.png': { hash: 'cccccccccccc', size: 512 },
+      },
+    }));
+    t.after(inst.cleanup);
+    const index = createResourceIndex({ dataDir: inst.dataDir, publicDir: inst.publicDir, assetManifestFile: publish });
+    const m = (await index.get()).manifest;
+    const byUrl = new Map(m.files.map((f) => [f.url, f]));
+    assert.equal(byUrl.get('/assets/ui/battle/sprite_shadow.png').hash, 'bbbbbbbbbbbb',
+      'a published digest is fresher than asset-hashes.json');
+    assert.equal(byUrl.get('/assets/bond/yan.png').hash, 'cccccccccccc', 'art this box never held still gets a real digest');
+    for (const f of m.files) {
+      assert.match(String(f.hash), /^(?:[0-9a-f]{12}|syn-[0-9a-f]{12})$/, `${f.url} keeps a hash`);
+    }
+    assert.match(String(byUrl.get('/assets/spine/op/char_002_amiya/front/char_002_amiya.skel').hash), /^syn-/,
+      'a file the publish manifest does not list falls back to a synthetic hash');
+  });
+
   test('the CDN rewrites the entries (the client preloads from the CDN without knowing it)', async (t) => {
     const inst = install();
     const srv = await serve(inst, 'https://cdn.example.com/static');
@@ -412,10 +466,10 @@ describe('the resource index cache', () => {
     assert.ok(checks.every((check) => check === checks[0]), 'warm requests share only the ongoing check');
     for (const b of await Promise.all(checks)) assert.equal(b, a);
     assert.equal(reads.length, 0, 'no JSON or tile body read on a cache hit');
-    assert.equal(stats.length, 5, 'only four manifests and the known tile companion');
+    assert.equal(stats.length, 6, 'four manifests, the CDN publish manifest and the known tile companion');
     assert.equal(rewrites, 2, 'no CDN rewrite or resource traversal on a cache hit');
     await index.get();
-    assert.equal(stats.length, 10, 'completed checks are not cached indefinitely');
+    assert.equal(stats.length, 12, 'completed checks are not cached indefinitely');
     index.reset();
     assert.notEqual((await index.get()).body, a.body);
     assert.equal(reads.length, 4);

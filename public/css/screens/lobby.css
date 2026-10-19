@@ -1667,6 +1667,17 @@ button.ally-card:disabled { filter: grayscale(.7) brightness(.7); cursor: defaul
 .rs-offer h2 { font-size:max(calc(.42 * var(--t)), 20px); }
 .rs-offer p { max-width: 4.6rem; }
 
+/* 矮屏（手机横屏 ~390px 高）：确认入场压在搜寻面板上方，而不是把「停止搜寻」挤出屏幕外 ——
+   堆叠时面板只剩 215px，搜寻面板自己的内容放不下，退出按钮会跑到 440px（视口 390px）去。
+   覆盖层只留标题与按钮：标题说清发生了什么，正文那句提示在矮屏上没必要占高度。 */
+@media (max-height: 520px) {
+  .proto-side--search { position: relative; }
+  .proto-offer { position: absolute; inset: 0 0 auto; z-index: 4; padding: .12rem .14rem .14rem; gap: .02rem; }
+  .proto-offer .micro, .proto-offer p { display: none; }
+  .proto-offer h3 { font-size:max(calc(.21 * var(--t)), 13px); }
+  .proto-offer .btn { height: 34px; margin-top: .04rem; }
+}
+
 @media (max-height: 520px) {
   .rs-top { padding-top: 6px; }
   .rs-seats { padding-top: 14px; gap: 12px; }

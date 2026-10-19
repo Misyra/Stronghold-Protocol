@@ -496,7 +496,7 @@ function ProtocolSelect({ card, roomMode, random, variant, difficulty, onDifficu
               onClick=${onAccept}>${t('确认入场')}<//>
           </div>` : null}
           <${SearchPanel} elapsed=${mm?.elapsed || 0} onStop=${onCancel} stopping=${busy === 'cancel'}
-            note=${t('已找到 {matched}/{target} 名博士', { matched: mm?.matched || 1, target: mm?.target || 4 })}
+            note=${t('已找到 {matched}/{target} 名博士', { matched: mm?.players || 1, target: mm?.target || 4 })}
             tags=${[{ key: 'mode', label: t('精确搜寻'), icon: html`<${Icon} name="search" />` },
               { key: 'diff', label: t(DIFFICULTY_NAMES[d]), color: DIFFICULTY_COLORS[d], icon: html`<${DifficultyIcon} difficulty=${d} />` }]} />
         </section>

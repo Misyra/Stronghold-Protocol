@@ -183,6 +183,9 @@ export function gearPath({ teeth = 8, rTip = 10, rRoot = 7.4, tipW = 3.2, rootW 
 /** Extra 24×24 glyphs used by the in-match HUD (original shapes). */
 export const GLYPHS = Object.freeze({
   gear: gearPath(),
+  // a terminal window with a `>` prompt and a caret: the developer console button (game.js) — it must not read as a
+  // second gear next to 设置, which is what it did while it reused `gear`
+  console: 'M2 4h20v16H2zM4 6v12h16V6zM6.5 9.3 7.9 7.9 12.4 12 7.9 16.1 6.5 14.7 9.5 12zM13 14.2h5v1.8h-5z',
   eye: 'M12 5c5 0 9 4.5 10 7-1 2.5-5 7-10 7S3 14.5 2 12c1-2.5 5-7 10-7zm0 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4z',
   emote: 'M8.2 2h7.6L22 8.2v7.6L15.8 22H8.2L2 15.8V8.2zM8.5 8.5v3h2v-3zm5 0v3h2v-3zM7.8 14.2a5.5 5.5 0 0 0 8.4 0l-1.5-1.3a3.5 3.5 0 0 1-5.4 0z',
   dp: 'M13 2 4 13.5h6.2L9 22l11-12.5h-6.4z',

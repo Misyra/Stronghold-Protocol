@@ -380,6 +380,7 @@ function ConsoleToggle({ option, busy, onToggle, matching }) {
         <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('开发者控制台')}
       </button>
     <//>
+    ${option.on ? html`<span class="t-dim">${t('不能进入匹配队列')}</span>` : null}
     ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
   </div>`;
 }
@@ -555,6 +556,9 @@ export function RoomScreen() {
   // 同盟匹配 (server/matchmakingRooms.js): only the host, of a ready all-human alliance with a free seat and no match
   // already running, may opt in; the queue is keyed by the room's own difficulty.
   const searchable = CAN_SEARCH && !!room && coop && facts.canMatch;
+  // 开发者控制台与匹配互斥 (server/matchmakingRooms.js) —— 开着控制台的房间不进队列，所以「开始搜寻」留在原地并说明
+  // 原因，而不是点下去才被服务器拒。
+  const consoleOn = room?.consoleEnabled === true;
   const firepower = room?.random === true;
   const variant = room?.variant === 'endurance' || room?.variant === 'marathon' ? room.variant : 'blitz';
 
@@ -661,8 +665,13 @@ export function RoomScreen() {
   const setMaxSeats = (n) => run('cap', () => net.request('room.setMaxSeats', { n })); // 2026-10-12: 4–10 seats
   const setDifficulty = (difficulty) => run('diff', async () => { await net.request('room.setDifficulty', { difficulty }); setPicker(false); });
   const setAiLast = (on) => run('ailast', () => net.request('room.setAiPicksLast', { on }));
-  // Developer console: two messages, host-only on the server (a solo room's own seat may toggle it).
-  const setConsole = (on) => run('console', () => net.request(on ? 'room.console.enable' : 'room.console.disable', {}));
+  // Developer console: two messages, host-only on the server (a solo room's own seat may toggle it). Turning it ON
+  // costs the room its place in the 同盟匹配 queue, and that is worth saying out loud for five seconds: the switch
+  // itself sits in the ⚙ sheet, far from the 开始搜寻 button it disables.
+  const setConsole = (on) => run('console', async () => {
+    await net.request(on ? 'room.console.enable' : 'room.console.disable', {});
+    if (on) toast(t('开发者控制台已开启：本房间不会进入匹配队列'), 'warn', { ttl: 5000 });
+  });
   // spectator seats: the host frees one; a spectator takes a free player seat with room.join of this room
   const removeSpectator = (playerId) => run(`rs${playerId}`, () => net.request('room.removeSpectator', { playerId }));
   const sit = () => run('sit', () => net.request('room.join', { code: room.code }));
@@ -822,7 +831,8 @@ export function RoomScreen() {
       </div>
       <div class="rs-foot__right">
         ${facts.isHost && searchable && facts.emptySeats > 0 && !searching
-          ? html`<button type="button" class="rs-search" disabled=${!online || busy === 'match'} onClick=${queueMatch}>
+          ? html`<button type="button" class="rs-search" disabled=${!online || busy === 'match' || consoleOn} onClick=${queueMatch}
+              title=${consoleOn ? t('房间已开启开发者控制台，无法进入匹配队列') : undefined}>
               <${Icon} name="search" />${t('开始搜寻')}${busy === 'match' ? html`<${Spinner} size="sm" />` : null}</button>` : null}
         ${facts.isHost
           ? html`<button type="button" class="proto-start rs-go" disabled=${!facts.canStart || !online || busy === 'start'} onClick=${start}

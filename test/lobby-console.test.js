@@ -4,6 +4,7 @@
 // a spectator may not, a room waiting on the queue may not, and the running match keeps the flag it started with.
 import { describe, test, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { startServer } from '../server/index.js';
 import { StubMatch } from '../server/match/StubMatch.js';
@@ -133,5 +134,23 @@ describe('room.console (lobby)', () => {
     await ok(host, { t: 'room.console.disable' });
     await host.waitFor('room.state', (s) => s.consoleEnabled === false);
     void st;
+  });
+});
+
+// The client side of the same rule: the switch itself says what it costs (a 5 s warn toast, because the ⚙ sheet that
+// holds it is nowhere near the 开始搜寻 button), and the button stays put, disabled, with the reason in its tooltip —
+// a hidden button taught nobody why the queue was gone (feedback on 0.3.1).
+describe('room.js: 开发者控制台 in the client', () => {
+  const src = readFileSync(new URL('../public/js/screens/room.js', import.meta.url), 'utf8');
+  test('turning it on says so for five seconds', () => {
+    assert.match(src, /toast\(t\('开发者控制台已开启：本房间不会进入匹配队列'\), 'warn', \{ ttl: 5000 \}\)/);
+  });
+  test('the ⚙ sheet says it while it is on', () => {
+    assert.match(src, /\$\{option\.on \? html`<span class="t-dim">\$\{t\('不能进入匹配队列'\)\}<\/span>` : null\}/);
+  });
+  test('开始搜寻 stays on screen, disabled, with the reason', () => {
+    assert.match(src, /disabled=\$\{!online \|\| busy === 'match' \|\| consoleOn\}/);
+    assert.match(src, /title=\$\{consoleOn \? t\('房间已开启开发者控制台，无法进入匹配队列'\) : undefined\}/);
+    assert.match(src, /const consoleOn = room\?\.consoleEnabled === true;/);
   });
 });

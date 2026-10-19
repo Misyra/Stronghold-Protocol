@@ -40,7 +40,7 @@ isp 这一桶永远不能读成"家宽"。
 ```bash
 node tools/geoip-classify.mjs 202.96.128.86     # isp   — Chinanet 家宽
 node tools/geoip-classify.mjs 154.219.110.142   # isp   — cognetcloud INC,单词粘连让边界匹配失效,只能落默认
-node tools/geoip-classify.mjs <节点地址>     # cloud — CHINANET SHAANXI province Cloud Base network(weak)
+node tools/geoip-classify.mjs 124.223.31.113    # cloud — 腾讯云 ASN 45090 在人工主机名单里
 ```
 
 ### 名字匹配为什么必须带边界（库里真实存在的撞车）

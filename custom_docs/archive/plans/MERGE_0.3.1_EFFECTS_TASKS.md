@@ -285,7 +285,7 @@ node tools/i18n.mjs extract                                   # 必须 "0 Chines
 - <改动点 2>
 
 验证：<跑了哪些用例，多少项>；eslint 0 error；check-imports 只剩 3 条既有豁免；i18n extract 0 条未包装。
-失败集合与基线一致：<列出仍然红的用例及原因>（见 custom_docs/development/MERGE_0.3.1_EFFECTS_TASKS.md §4）。
+失败集合与基线一致：<列出仍然红的用例及原因>（见 custom_docs/archive/plans/MERGE_0.3.1_EFFECTS_TASKS.md §4）。
 ```
 
 `type` 用 `feat`（功能）/ `fix`（修 bug）/ `chore(merge)`（纯合并）/ `docs`。

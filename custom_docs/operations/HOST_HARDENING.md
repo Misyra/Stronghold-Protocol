@@ -65,7 +65,7 @@ journalctl -u sp-integrity.service
 
 ## 本次部署记录
 
-2026-10-17 应用到 <节点地址>，外部 SSH 10067、内部 SSH 22。Debian 11，Nginx 1.18；游戏只监听 127.0.0.1:3100，Nginx 保留 80/8080/3000。没有 CF 真实 IP 还原配置，入口覆盖上游 IP 头，当前为直连模式。国家集合已改为仓库 MMDB 的 CN 网络，整机包括 SSH 受其限制。没有发现 x-ui systemd 服务或监听。
+2026-10-17 应用到 `<节点地址>`，外部 SSH 10067、内部 SSH 22。Debian 11，Nginx 1.18；游戏只监听 127.0.0.1:3100，Nginx 保留 80/8080/3000。没有 CF 真实 IP 还原配置，入口覆盖上游 IP 头，当前为直连模式。国家集合已改为仓库 MMDB 的 CN 网络，整机包括 SSH 受其限制。没有发现 x-ui systemd 服务或监听。
 
 首轮备份目录 `/root/sec-20261017-005839`，压缩包 `/root/srv-hardening-20261017.tar.gz`。本次 GeoLite 与健康缓存更新备份目录 `/root/sec-geoip-20261016-173349`（服务器采用 UTC 命名），指针 `/root/sp-geoip-current`；压缩包 `/root/srv-geoip-health-hardening-20261017.tar.gz`。包内包含应用前后快照、测试结果与回滚说明，权限 0600。
 

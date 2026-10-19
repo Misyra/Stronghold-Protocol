@@ -35,7 +35,7 @@ Node 计数表有界；闲置记录过期，表满淘汰最久未活跃的普通
 
 ## Nginx 提前拒绝的请求
 
-2026-10-19 本地增加 [gate 恢复探针](BROWSER_GATE.md)，尚未上线：WS 升级失败本身仍只表现为浏览器 1006，客户端用 `GET /_gate/status` 的明确标记判断是否重新验证。普通 429/5xx 不触发刷新；未迁移 WS 准入、未新增 4004/4005、未取消入口保险阀。后台仍可能继续普通 WS 退避，不能把本次修复描述为已消除所有重试。现场验收见 [问题清单](OPEN-ISSUES-2026-10-19.md)。
+2026-10-19 本地增加 [gate 恢复探针](BROWSER_GATE.md)，尚未上线：WS 升级失败本身仍只表现为浏览器 1006，客户端用 `GET /_gate/status` 的明确标记判断是否重新验证。普通 429/5xx 不触发刷新；未迁移 WS 准入、未新增 4004/4005、未取消入口保险阀。后台仍可能继续普通 WS 退避，不能把本次修复描述为已消除所有重试。现场验收见 [BROWSER_GATE.md](BROWSER_GATE.md)。
 
 应用层只能统计真正到达 Node 的 upgrade。现有 Nginx 新建速率/并发限制、浏览器验证等可能更早拒绝请求，因此直连部署另加入口规则：
 
@@ -56,7 +56,7 @@ Nginx 在 WS **连接结束时**写 101 日志，且日志有缓冲和 fail2ban 
 
 ## 国内直连部署记录（2026-10-17）
 
-已核验 `<节点地址>:<端口>`：内核 `sp_foreign_cap` 的大陆 IPv4/IPv6 准入、Nginx GeoIP2 拒绝规则及应用 `SP_ALLOW_FOREIGN_CONNECTIONS=off` 均已启用，无 Cloudflare 前置。
+已核验 `<节点地址>:<gate 端口>`：内核 `sp_foreign_cap` 的大陆 IPv4/IPv6 准入、Nginx GeoIP2 拒绝规则及应用 `SP_ALLOW_FOREIGN_CONNECTIONS=off` 均已启用，无 Cloudflare 前置。
 本次保留这些既有规则，为实际 Nginx 日志补充末尾 `ws_upgrade` 标记，并启用独立的 `sp-ws-upgrade-direct` jail：`findtime=60`、`maxretry=11`、`bantime=86400`，封禁目标端口为内部实际监听的 `80,443,8080,3000`。
 原业务 301 次永久封禁规则保持独立。应用层滑动窗口代码尚未部署到此节点，因此目前入口规则仍有前述访问日志与 fail2ban 的处理延迟，不能承诺第 11 次握手瞬间拒绝。
 

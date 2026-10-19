@@ -79,7 +79,7 @@ test(`a real ${realMode} database blocks an overseas entry but allows a mainland
   skip: realDb ? false : 'Set SP_GEOIP_TEST_DB to a downloaded Country.mmdb (SP_GEOIP_TEST_MODE=country for a worldwide one)',
 }, async t => {
   const file = realDb, lookup = await openCountryLookup(file, { mode: realMode });
-  assert.equal(lookup('114.114.114.114'), 'CN'); assert.equal(lookup('<节点地址>'), 'CN');
+  assert.equal(lookup('114.114.114.114'), 'CN'); assert.equal(lookup('124.223.31.113'), 'CN');
   if (realMode === 'cn-only') {
     // The mainland-only source says nothing about a foreign country: an IPv4 miss is the marker 'ZZ'.
     assert.equal(lookup('8.8.8.8'), 'ZZ'); assert.equal(lookup('154.219.110.142'), 'ZZ');

@@ -1080,7 +1080,7 @@ export class Lobby {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.match) return fail(ERR.ROOM_STARTED);
-    if (room.matching) return fail(ERR.MATCHING, 'console and matchmaking are mutually exclusive');
+    if (room.matchmaking) return fail(ERR.QUEUED);
     if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
     const personal = room.mode === 'solo' && !!room.seatOf(session.playerId);
     if (!personal && room.hostId !== session.playerId) return fail(ERR.NOT_HOST);

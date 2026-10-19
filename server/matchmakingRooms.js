@@ -46,7 +46,7 @@ export function matchmakingMembers(lobby, session, difficulty, party) {
   if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
   if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
   if (room.match) return fail(ERR.ROOM_STARTED);
-  if (room.consoleEnabled) return fail(ERR.MATCHING, 'console and matchmaking are mutually exclusive');
+  if (room.consoleEnabled) return fail(ERR.CONSOLE_ON);
   if (room.mode !== 'coop' || room.seats.some((s) => s?.isBot) || room.freeSeat() < 0) return fail(ERR.BAD_MSG);
   if (room.activeHumans().some((s) => !s.connected || (s.playerId !== room.hostId && !s.ready))) return fail(ERR.NOT_READY);
   const sessions = room.activeHumans().map((seat) => lobby.registry.byId(seat.playerId));
@@ -117,7 +117,10 @@ export function cancelPartyMatchmaking(lobby, session, { ticketId } = {}) {
     if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
   }
-  return lobby.matchmaking.cancel(session, { ticketId });
+  // The engine insists on the ticket it handed out (server/matchmaking.js cancel); a client that lost the frame —
+  // a page reload, a room screen that never saw queue.state — may omit it and still cancel its own ticket.
+  const named = ticketId ?? lobby.matchmaking.entries.get(session.playerId)?.ticketId;
+  return lobby.matchmaking.cancel(session, { ticketId: named });
 }
 
 /** Withdraw a whole room's tickets even when its host's session has already expired. */

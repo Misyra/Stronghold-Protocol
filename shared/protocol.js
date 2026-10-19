@@ -458,6 +458,11 @@ export const C2S = {
   'room.kick': { seat: (v) => isInt(v, 0, MAX_SEATS - 1), playerId: isId },
   'room.start': {},
   'room.matchmaking': {},
+  // developer console (server/lobby.js enableConsole; the grants leave through g.console): a private room opts in
+  // before the match — a solo room's own seat may toggle it, every other room needs its host, and a room waiting on
+  // the queue may not (the console grants what the official rules do not).
+  'room.console.enable': {},
+  'room.console.disable': {},
   // queue.join: difficulty decides the pool. `party` asks for the whole alliance (host only); the ticket then covers
   // every seated human of the room (server/matchmaking.js members). server/matchmaking.js answers queue.state.
   'queue.join': { difficulty: (v) => DIFFICULTIES.includes(v), party: isBool, $optional: ['party'] },

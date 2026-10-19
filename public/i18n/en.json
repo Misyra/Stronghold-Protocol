@@ -2267,6 +2267,7 @@
   "密钥加入": "Join with Key",
   "服务器即将维护，暂停开启新的模拟": "The server is about to go down for maintenance; new simulations are paused",
   "正在匹配中，请先取消匹配": "Matchmaking is in progress. Cancel it first.",
+  "房间已开启开发者控制台，无法进入匹配队列": "This room has the developer console on; it cannot join matchmaking",
   "名片干员": "Seat Card Operator",
   "搜索干员": "Search Operators",
   "按博士编号自动分配": "Assigned automatically from the Doctor number",

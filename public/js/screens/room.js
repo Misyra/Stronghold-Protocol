@@ -430,7 +430,7 @@ function RoomOptions({ room, facts, myId, busy, online, variant, onMaxSeats, onA
         ${Array.from({ length: MAX_SEATS - DEFAULT_SEATS + 1 }, (_, k) => DEFAULT_SEATS + k).map((n) => html`<option key=${n} value=${String(n)} selected=${n === facts.seats.length}>${t('{n} 人', { n })}</option>`)}
       </select></label>` : null}
     <${AiLastToggle} option=${aiLastOption(room, myId)} busy=${busy} onToggle=${onAiLast} />
-    <${ConsoleToggle} option=${consoleOption(room, myId)} busy=${busy} matching=${!!room.matching} onToggle=${onConsole} />
+    <${ConsoleToggle} option=${consoleOption(room, myId)} busy=${busy} matching=${!!room.matchmaking} onToggle=${onConsole} />
     ${room.random === true ? html`<div class="rs-opt rs-opt--variant"><span>${t('模式分支')}</span>
       <div class="dpick" role="radiogroup" aria-label=${t('模式分支')}>
         ${[['blitz', t('快速突袭 {totalRounds} 回合', { totalRounds: RANDOM_MODE.totalRounds })], ['endurance', t('持久鏖战 {totalRounds} 回合', { totalRounds: RANDOM_MODE.endurance.totalRounds })], ['marathon', t('最长时赛 {totalRounds} 回合', { totalRounds: RANDOM_MODE.marathon.totalRounds })]].map(([v, label]) => html`

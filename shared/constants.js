@@ -168,6 +168,8 @@ export const ERR = Object.freeze({
   TEMP_NOT_EMPTY: 'TEMP_NOT_EMPTY',
   ELIMINATED: 'ELIMINATED',
   QUEUED: 'QUEUED',               // leave matchmaking before creating/joining a private room
+  CONSOLE_ON: 'CONSOLE_ON',       // the room opted into the developer console: it may not enter the queue
+                                  // (server/matchmakingRooms.js matchmakingMembers; the console opts out first)
   SPECTATOR: 'SPECTATOR',         // a spectator seat only watches (MAX_SPECTATORS)
   MAINTENANCE: 'MAINTENANCE',     // the server is not taking new matches right now
   // room.setPlugins (DESIGN §32): a plugin this server has not installed; one a room cannot switch on in this version
@@ -213,6 +215,7 @@ export const ERR_TEXT = {
   BAD_TILE: N_('无法部署在该位置'), BAD_TARGET: N_('无效的目标'), SOLD_OUT: N_('已售出'), MAX_LEVEL: N_('调度中心已达最高等级'),
   NOT_YOUR_TURN: N_('尚未轮到你'), ALREADY: N_('已完成该操作'), TEMP_NOT_EMPTY: N_('临时整备区不为空'), ELIMINATED: N_('你已被淘汰'),
   QUEUED: N_('正在匹配中，请先取消匹配'), MAINTENANCE: N_('服务器即将维护，暂停开启新的模拟'),
+  CONSOLE_ON: N_('房间已开启开发者控制台，无法进入匹配队列'),
   SPECTATOR: N_('观战中无法进行该操作'), INTERNAL: N_('服务器内部错误'),
   PLUGIN_UNKNOWN: N_('本服务器没有安装该插件'), PLUGIN_BLOCKED: N_('该插件不能在房间中启用'), PLUGIN_DEPENDENCY: N_('缺少该插件需要的其他插件'),
   PLUGIN_CONFLICT: N_('所选插件互相冲突'), PLUGIN_LIMIT: N_('所选插件的素材总量超出本服务器的上限'),

@@ -122,6 +122,8 @@ IPv6 的 `key` 为规范化 `/64`，例如 `2001:db8:1234:5678::/64`。名单不
 
 ## 验证
 
+2026-10-19 本地更新了 [浏览器 gate 的续期及恢复路径](BROWSER_GATE.md)，尚未部署生产。图标、字体从 per-IP 静态请求/连接桶分流，仍检查 gate、GeoIP 和全局连接上限；这不是健康接口或业务 API 的免限流规则。恢复探针只读、不对失败请求签发凭证，不能把普通 429/503 当作 cookie 失效。部署前核对实际端口、续签头继承及完整 Nginx 配置。
+
 ```sh
 node --import ./test/helpers/test-setup.js --test test/public-api-protection.test.js test/healthz-cache.test.js
 NGINX_PATH=/usr/sbin/nginx node --test test/http-protection.nginx.test.mjs

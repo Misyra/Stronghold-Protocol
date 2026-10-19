@@ -29,17 +29,17 @@ node tools/r2-sync.mjs --bucket <bucket> --metadata-only  # 只补齐已发布�
 
 脚本的行为：
 
-- 每个文件只占一个 key：普通路径 `assets/…`。仓库根目录的 `.assets-manifest.json` 记录上次发布时每个路径的内容哈希（`{ tag, hashes, preload }`，`tag` 是全部「路径 + SHA-256 前 16 位」哈希的前 16 位十六进制，美术不变则 tag 不变）。
+- 每个文件只占一个 key：普通路径 `assets/…`。项目根目录的 `.assets-manifest.json`（不入库，发布机生成）记录上次发布时每个路径的内容哈希（`{ tag, hashes, preload }`，`tag` 是全部「路径 + SHA-256 前 16 位」哈希的前 16 位十六进制，美术不变则 tag 不变）。
 - 每次运行先和这份清单对比，**只上传哈希变化的文件**（通常是几个到几十个），全部成功后才重写清单；中断或失败不写清单，重跑自动补齐——清单本身就是断点续传状态，没有额外的进度文件。
 - `preload` 记录同一批已发布字节的 SHA-1 前 12 位和大小，供没有本地素材的 CDN 部署验证资源包。只补齐这份元数据不会改变 tag 或任何素材 URL；公开的 `/assets-manifest.json` 仍只返回 `{ tag, hashes }`，保持原有不可变缓存响应。旧清单可在有完整本地素材的发布机运行 `--metadata-only` 补齐，再随代码部署并重启；发现本地尚未发布的素材改动时会拒绝写入。普通增量发布也自动生成这些字段。
 - 上传限速约 3 req/s 并对 429 全局退避：Cloudflare 管理 API 有每账户请求配额，并发猛打会大面积 429。OAuth token 过期时自动调 `wrangler whoami` 刷新。
 - 未知参数直接报错退出（历史上 `--help` 被静默忽略并触发过一次真实全量上传）。
 
-发布新美术的完整流程：`node tools/r2-sync.mjs --bucket <bucket> --push` → 部署机 `git pull` → 重启服务器。`--push` 把 `.assets-manifest.json` 这一个文件提交（`素材：R2 增量发布 <tag>`）并推送 master 到可发布的远程（跳过上游 `origin` 和只读参考 `xinhai-ai` 仓库；本站为 GitHub fork 与 Gitee）。日常发布只传变化文件，通常几十秒内完成。
+发布新美术的完整流程：`node tools/r2-sync.mjs --bucket <bucket> --push` → 把发布机上的 `.assets-manifest.json` 同步到服务器（`scp .assets-manifest.json <服务器>:/opt/Stronghold-Protocol/`）→ 重启服务器。清单从 2026-10-19 起不入库（6.2 MB，每发一次美术就多一个大提交），所以这一步取代了原来的「`--push` 提交清单 + 部署机 `git pull`」；Docker 部署在构建镜像时用 `tools/build-assets-manifest.mjs` 按构建上下文里的素材重新生成，不需要手工拷。日常发布只传变化文件，通常几十秒内完成。
 
 ## 3. 游戏服务器接入
 
-服务器侧只需设置 `SP_ASSETS_CDN=https://assets.example.com` 并保证仓库里有 `.assets-manifest.json`（随发布提交）。服务器启动时读取它，把每个美术文件的 CDN URL 改写成 `https://assets.example.com/assets/…?v=<文件哈希>`：查询串参与 CDN 缓存键，内容不变则 URL 不变，可复用已有缓存，文件更新时只有它的 URL 变化。缓存仍可能被浏览器或边缘节点提前清理。清单本身由游戏服务器在 `/assets-manifest.json?v=<tag>` 同源提供（不可变缓存，页面在 `<head>` 里就开始拉取）。
+服务器侧只需设置 `SP_ASSETS_CDN=https://assets.example.com` 并保证项目根有 `.assets-manifest.json`（发布机生成后 `scp` 过去；镜像构建时自动生成）。服务器启动时读取它，把每个美术文件的 CDN URL 改写成 `https://assets.example.com/assets/…?v=<文件哈希>`：查询串参与 CDN 缓存键，内容不变则 URL 不变，可复用已有缓存，文件更新时只有它的 URL 变化。缓存仍可能被浏览器或边缘节点提前清理。清单本身由游戏服务器在 `/assets-manifest.json?v=<tag>` 同源提供（不可变缓存，页面在 `<head>` 里就开始拉取）。
 
 发布层（本分支自己的 `/_v/<tag>/`，`server/assetVersion.js`）与每文件 `?v=<哈希>` 一起工作：页面和 CSS 被就地改写，代码与 CSS 走 `/_v/<runtimeTag>/…`（immutable；发版后旧 URL 一律 404，文件在进程内被改过则 503），素材走 CDN 的每文件 `?v=`。页面里只注入 `__spAssetVersion` / `__spRuntimeVersion` / `__spArtVersion`；CDN 基址与清单地址由 `/js/asset-cdn.js` 模块提供。
 
@@ -50,7 +50,7 @@ node tools/r2-sync.mjs --bucket <bucket> --metadata-only  # 只补齐已发布�
 嵌套资源也使用各自的文件哈希：字体 CSS 留在游戏服务器的 `/_v/<artVersion>/fonts/…` 路径，服务器把内部字体链接改写为 CDN 的 `?v=<字体哈希>`；R2 不负责改写 CSS。Spine 加载器按清单哈希请求并解析 atlas，为其实际引用的每张纹理补上独立哈希，再把解析后的 atlas 交给第三方加载器，避免默认派生地址时丢掉查询参数。2D、3D 地图等资源派生出的无版本 CDN 地址也会补上对应文件的哈希。客户端生成这些动态请求前等待哈希清单（最多 3 秒）；清单失败或超时时仍保留无版本回退，缓存时长由源站和缓存规则决定，迟到的清单仍可用于后续请求。
 
 - bucket：`weishu`；自定义域名：`https://assets.misyra.com`（zone `misyra.com`）。
-- bucket 只维护普通路径 key，仓库以 `.assets-manifest.json` 发布，当前 tag 与预载指纹以随代码发布的该文件为准。
+- bucket 只维护普通路径 key，清单不入库（2026-10-19 起），当前 tag 与预载指纹以发布机生成、同步到服务器的那份为准。
 
 **启用（游戏服务器上唯一要做的事）**：
 
@@ -59,7 +59,7 @@ $env:SP_ASSETS_CDN = 'https://assets.misyra.com'
 npm start        # 或写进服务管理器的环境配置
 ```
 
-未设置时从游戏服务器读取本机素材；设置后只有 `/assets`、`/fonts`、`/media` 走 R2。版本号不用设——仓库里的 `.assets-manifest.json` 随 `git pull` 生效，启动日志会打出 `assets CDN … manifest … (per-file ?v= busting)`。
+未设置时从游戏服务器读取本机素材；设置后只有 `/assets`、`/fonts`、`/media` 走 R2。版本号不用设——项目根里的 `.assets-manifest.json` 在启动时读取，启动日志会打出 `assets CDN … manifest … (per-file ?v= busting)`。
 
 **重启后验收（约 30 秒）**：
 
@@ -74,7 +74,9 @@ curl -I -H 'Origin: https://<游戏域名>' "https://assets.misyra.com/assets/ch
 **日常发布美术（固定三步）**：
 
 ```powershell
-node tools/r2-sync.mjs --bucket weishu --push   # 增量上传 + 更新清单 + 提交推送
+node tools/r2-sync.mjs --bucket weishu --push   # 增量上传 + 重写清单（清单留在发布机，见 §2）
+# 发布机：
+scp .assets-manifest.json <服务器>:/opt/Stronghold-Protocol/
 # 部署机：
 git pull
 重启服务器

@@ -96,7 +96,7 @@ SP_GEOIP_MODE=country
 | `SP_BOT_MAX_TOTAL` | `300` | 全服 AI 席位上限，1–10000 |
 | `SP_BOT_MAX_FOREIGN` | `50` | 海外来源 AI 席位共用上限，1–10000 |
 
-本仓库把全球 Country 库随 Git 一起带着走：`geoip/GeoLite2-Country.mmdb`（GeoLite2-Country，含 IPv6 记录；来源、校验值与许可见 [geoip/README.md](../../geoip/README.md)）。服务器上配置：
+国家库不入库（2026-10-19 起）：在服务器上跑一次 `node tools/fetch-geoip.mjs` 下载到 `geoip/GeoLite2-Country.mmdb`（GeoLite2-Country，含 IPv6 记录；来源、校验值与许可见 [geoip/README.md](../../geoip/README.md)）。服务器上配置：
 
 ```ini
 SP_GEOLITE_COUNTRY_DB=/opt/Stronghold-Protocol/geoip/GeoLite2-Country.mmdb

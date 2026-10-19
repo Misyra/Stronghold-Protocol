@@ -3,15 +3,16 @@
  * Sync public art (public/assets, public/fonts, public/media) to a Cloudflare R2 bucket
  * so it can be served via SP_ASSETS_CDN (https://developers.cloudflare.com/r2/).
  *
- * Incremental: every file lives under its plain path (`assets/…`) and the repo's
- * `.assets-manifest.json` records the content hash each published path had when this script
- * last ran. A run uploads only the files whose hash differs — usually a handful — then
- * rewrites the manifest (`{ tag, hashes, preload }`); `tag` is the first 16 hex chars of sha256 over
- * every path + hash, so it only changes when art actually changes. Servers commit the
- * manifest with the release and hand it to clients (server/index.js), which turn it into a
- * per-file `?v=<hash>` query on every CDN URL: immutable per URL, and a release re-busts
- * only the files it changed (see custom_docs/operations/CDN.md). Server-only `preload` metadata
- * holds SHA-1 fingerprints and sizes of the same bytes for cache import verification.
+ * Incremental: every file lives under its plain path (`assets/…`) and the manifest kept beside this
+ * checkout (`.assets-manifest.json`, not tracked in Git since 2026-10-19) records the content hash each
+ * published path had when this script last ran. A run uploads only the files whose hash differs — usually
+ * a handful — then rewrites the manifest (`{ tag, hashes, preload }`); `tag` is the first 16 hex chars of
+ * sha256 over every path + hash, so it only changes when art actually changes. The server reads the same
+ * file from its own project root (server/assetVersion.js; `tools/build-assets-manifest.mjs` writes one from
+ * local art, and the Docker build runs it) and hands it to clients, which turn it into a per-file
+ * `?v=<hash>` query on every CDN URL: immutable per URL, and a release re-busts only the files it changed
+ * (see custom_docs/operations/CDN.md). Server-only `preload` metadata holds SHA-1 fingerprints and sizes of
+ * the same bytes for cache import verification.
  * `--metadata-only` refreshes it offline, refusing any unpublished file changes.
  *
  * The manifest IS the resume state: an interrupted run left it untouched, so the next run
@@ -22,8 +23,8 @@
  * old server that pulled a new tag would otherwise point at `_v/` keys that no longer exist.
  *
  * Wrangler's OAuth token is re-read and refreshed (via `wrangler whoami`) when the API
- * answers 401/403. `--push` additionally commits just the manifest and pushes master to
- * every remote except `origin` (the upstream).
+ * answers 401/403. `--push` prints how to hand the manifest to the game servers (it no longer
+ * commits or pushes anything: the file left Git on 2026-10-19).
  *
  * Usage:
  *   node tools/r2-sync.mjs [--bucket weishu] [--account <account_id>] [--dry-run] [--push] [--metadata-only]
@@ -33,7 +34,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fingerprintPublishedAsset, publishedAssetsManifest } from './published-assets.mjs';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -177,38 +178,18 @@ async function put(key, abs, cacheControl) {
   await putObject(key, await fs.promises.readFile(abs), MIME[path.extname(key).toLowerCase()] ?? 'application/octet-stream', cacheControl);
 }
 
-/** Commit the manifest with the release: servers read it at startup after `git pull` (server/index.js). */
+/**
+ * The manifest no longer lives in Git: it changes with every art publish and weighs 6.2 MB, so it was one
+ * large commit per release. The publishing machine keeps the copy; a server that serves through the CDN
+ * needs that copy next to the repository (or an image built from a checkout that has the art).
+ */
 function pushManifest(tag) {
-  const git = (...args) => {
-    const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
-    if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${(r.stderr || r.stdout || '').trim()}`);
-    return r.stdout;
-  };
   const name = path.basename(MANIFEST_FILE);
-  if (!git('status', '--porcelain', '--', name).trim()) {
-    console.log(`${name} unchanged; nothing to commit.`);
-    return;
-  }
-  git('add', '--', name);
-  git('commit', '-m', `素材：R2 增量发布 ${tag}`, '--', name);
-  // Push targets: every remote except the read-only references — `origin` (the upstream this
-  // fork syncs from) and `xinhai` (the lingxia repository, pull-only per AGENTS.md; pushing it
-  // used to 403 AFTER the other pushes and fail the whole run).
-  const pushable = (r) => {
-    if (!r || r === 'origin') return false;
-    const url = git('remote', 'get-url', r).trim();
-    return !/github\.com[:/]xinhai-ai\//i.test(url);
-  };
-  const remotes = git('remote').split(/\r?\n/).filter(pushable);
-  let failures = 0;
-  for (const remote of remotes) {
-    try { console.log(git('push', remote, 'master').trim()); }
-    catch (e) {
-      failures++;
-      console.error(`  push ${remote} failed (the manifest commit is local; retry later): ${e.message}`);
-    }
-  }
-  if (failures === remotes.length && remotes.length > 0) throw new Error(`every push failed; the manifest is committed locally`);
+  console.log(`\n${name} 已写好：tag ${tag}`);
+  console.log('  它不再入库。用 CDN 的服务器要拿到这一份：');
+  console.log(`    scp ${name} <服务器>:/opt/Stronghold-Protocol/${name}    # 然后重启游戏服务器`);
+  console.log('  或者在那台机器上构建镜像：Dockerfile 的构建阶段会用 tools/build-assets-manifest.mjs 重新生成');
+  console.log(`  没有这份清单时照常启动，只是美术 URL 不带 ?v=<哈希>（/healthz 的 assetsManifest 为空）`);
 }
 
 // ---- collect files ----
@@ -291,5 +272,5 @@ if (failed) {
 }
 fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest) + '\n');
 console.log(`\nAll ${files.length} files published to R2 bucket '${BUCKET}' (manifest ${tag}).`);
-console.log(`Wrote ${path.basename(MANIFEST_FILE)} — commit it with the release, then \`git pull\` + restart the game servers.`);
+console.log(`Wrote ${path.basename(MANIFEST_FILE)} — 它不入库：用 CDN 的服务器要拷这份清单过去，然后重启游戏服务器。`);
 if (args.includes('--push')) pushManifest(tag);

@@ -101,8 +101,8 @@ export const PLAYER_SCRIPTS = ['scripts/install-service-windows.ps1', 'scripts/l
   'scripts/run-server.cmd', 'scripts/start-windows-sandbox.bat', 'scripts/start-windows.bat', 'scripts/start-windows.ps1', 'scripts/start.sh'];
 /** The tools a player runs (npm run setup / doctor / assets / plugin, the postinstall), the ones setup starts, and the ones
  * the server runs (tools/install-skins.mjs, imported by server/skinInstall.js when a player installs a skin). */
-export const PLAYER_TOOLS = ['tools/crop-board-atlas.mjs', 'tools/doctor.mjs', 'tools/fetch-assets.mjs', 'tools/fetch-stats-assets.mjs', 'tools/install-skins.mjs',
-  'tools/plugin.mjs', 'tools/setup.mjs', 'tools/vendor.mjs'];
+export const PLAYER_TOOLS = ['tools/build-assets-manifest.mjs', 'tools/crop-board-atlas.mjs', 'tools/doctor.mjs', 'tools/fetch-assets.mjs', 'tools/fetch-geoip.mjs',
+  'tools/fetch-stats-assets.mjs', 'tools/install-skins.mjs', 'tools/plugin.mjs', 'tools/published-assets.mjs', 'tools/setup.mjs', 'tools/vendor.mjs'];
 /** Whole tool directories: fetch-assets' modules, the local-client extraction setup runs. */
 export const PLAYER_TOOL_DIRS = ['tools/assets/', 'tools/local-extract/'];
 /** Whole runtime directories (their tracked files). */

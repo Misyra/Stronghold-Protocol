@@ -41,9 +41,9 @@ npm run build
 素材来源选择一种：
 
 - 本机提供素材：运行 `node tools/setup.mjs`，下载失败可重跑续传；缺失明细和环境诊断用 `node tools/doctor.mjs`。
-- 使用已发布的本站 CDN：配置 `SP_ASSETS_CDN=https://assets.misyra.com`，保留随代码发布的 `.assets-manifest.json`，无需在服务器下载整套素材。新建自己的 CDN 先按 [CDN.md](CDN.md) 配置和发布。
+- 使用已发布的本站 CDN：配置 `SP_ASSETS_CDN=https://assets.misyra.com`，把发布机生成的 `.assets-manifest.json` 放到项目根（`scp` 过去；镜像构建时会自动生成），无需在服务器下载整套素材。新建自己的 CDN 先按 [CDN.md](CDN.md) 配置和发布。
 
-本分支跟踪的 `public/assets/local/` 随 Git 下载；资源来源、客户端提取和清单见[素材说明](../../docs/ASSETS.md)。源码部署不要混用上游发行包中的程序文件。
+`public/assets/local/` 从 2026-10-19 起不再随 Git 下载（65 MB）：用 CDN，或在本机跑 `node tools/setup.mjs --local` 提取，或从同版本完整包复制；之后 `npm run manifest` 生成指纹清单。资源来源、客户端提取和清单见[素材说明](../../docs/ASSETS.md)。源码部署不要混用上游发行包中的程序文件。
 
 ## 配置
 
@@ -78,7 +78,7 @@ ASN 库走 `SP_GEOLITE_ASN_DB`（默认 `geoip/GeoLite2-ASN.mmdb`）。这个文
 
 ### 国家库（GeoLite，可选）
 
-海外 AI 席位上限、连接准入与 `foreign` 人群的单 IP 会话配额都要先识别来源国家，需要一个 Country `.mmdb`。本仓库把全球库放在 `geoip/GeoLite2-Country.mmdb`，随 `git pull` 到服务器（不进玩家发行包）：
+海外 AI 席位上限、连接准入与 `foreign` 人群的单 IP 会话配额都要先识别来源国家，需要一个 Country `.mmdb`。库不入库（从 2026-10-19 起），在服务器上跑一次 `node tools/fetch-geoip.mjs` 下载到 `geoip/GeoLite2-Country.mmdb`（Docker 镜像在构建阶段自动下载；不进玩家发行包）：
 
 ```ini
 SP_GEOLITE_COUNTRY_DB=/opt/Stronghold-Protocol/geoip/GeoLite2-Country.mmdb
@@ -290,7 +290,7 @@ docker run -d --name stronghold --restart unless-stopped \
   -v stronghold-state:/app/.state stronghold-protocol
 ```
 
-容器内部需要监听 `0.0.0.0`，覆盖宿主机环境文件里的 `127.0.0.1`；状态路径同样覆盖为容器持久卷。不用 CDN 时，以 `--build-arg FETCH_ASSETS=1` 构建并移除 `SP_ASSETS_CDN`，或挂载宿主机已准备好的整个 `public/assets`（包括 `local/`）。镜像自带 `geoip/GeoLite2-Country.mmdb`：容器里配置 `SP_GEOLITE_COUNTRY_DB=/app/geoip/GeoLite2-Country.mmdb`（`SP_GEOIP_MODE=country`）即可启用海外识别，也可以挂载宿主机自己的库替换它。
+容器内部需要监听 `0.0.0.0`，覆盖宿主机环境文件里的 `127.0.0.1`；状态路径同样覆盖为容器持久卷。不用 CDN 时，以 `--build-arg FETCH_ASSETS=1` 构建并移除 `SP_ASSETS_CDN`，或挂载宿主机已准备好的整个 `public/assets`（包括 `local/`）。镜像在构建阶段下载 `geoip/GeoLite2-Country.mmdb`（`--build-arg FETCH_GEOIP=0` 跳过）：容器里配置 `SP_GEOLITE_COUNTRY_DB=/app/geoip/GeoLite2-Country.mmdb`（`SP_GEOIP_MODE=country`）即可启用海外识别，也可以挂载宿主机自己的库替换它。
 
 Compose 示例：
 
@@ -344,7 +344,7 @@ sudo systemctl start stronghold
 2. `curl -s http://127.0.0.1:3000/api/announcement`：`source.mode` 为 `agent`（无探针 feed 站点为 `panel`）；在面板发布后确认正文生效。
 3. 浏览器打开游戏，创建并加入房间；确认 WebSocket 正常连接，刷新后可重连。
 4. CDN 模式检查图片和音频请求带 `?v=`；预载窗口可导入资源包并显示结果。
-5. 配置了国家库的服务器看启动日志 `[geoip] country database loaded in <mode> mode`：`geoip/GeoLite2-Country.mmdb` 随 `git pull` 更新，换库后必须重启才生效；海外识别没生效时先查这条日志与 `SP_GEOIP_MODE`。
+5. 配置了国家库的服务器看启动日志 `[geoip] country database loaded in <mode> mode`：`geoip/GeoLite2-Country.mmdb` 不在 Git 里，换库用 `node tools/fetch-geoip.mjs --force`（或复制文件过去），换库后必须重启才生效；海外识别没生效时先查这条日志与 `SP_GEOIP_MODE`。
 
 ## 排错与调优
 
@@ -359,7 +359,7 @@ sudo systemctl start stronghold
 | 想知道开服电脑上传了多少流量 | 本机 / 局域网打开 `/healthz?traffic=1`，按类别看 `traffic.http` 与 `traffic.ws`；公网访问者只会拿到普通报告 |
 | 素材地址里出现 `/_v/<tag>/` 前缀 | 这是本仓库的版本化地址（`server/assetVersion.js`）：素材字节没变前缀就不变、浏览器长期缓存，属正常现象；怀疑素材没更新时先确认服务器上真的换了文件 |
 | 海外玩家 / 海外 AI 限制没有生效 | 启动日志是否有 `[geoip] country database loaded in … mode`；`SP_GEOLITE_COUNTRY_DB` 是否指向 `geoip/GeoLite2-Country.mmdb`，`SP_GEOIP_MODE` 是否与库匹配；未命中、内网与查询失败的地址按未知放行，属正常行为；见[房间与连接保护](ROOM_PROTECTION.md) |
-| 启动即报国家库错误 | 库缺失、损坏、是 ASN 库，或模式与库不匹配（全球库配 `cn-only`，或大陆专用库配 `country`）；重新 `git pull` 取回 `geoip/GeoLite2-Country.mmdb`，或按 [geoip/README.md](../../geoip/README.md) 更新 |
+| 启动即报国家库错误 | 库缺失、损坏、是 ASN 库，或模式与库不匹配（全球库配 `cn-only`，或大陆专用库配 `country`）；重新运行 `node tools/fetch-geoip.mjs --force`（库不在 Git 里，`git pull` 不会带回它），或按 [geoip/README.md](../../geoip/README.md) 更新 |
 
 `SP_WS_COMPRESSION` 默认 `on`，可设 `off`；`SP_WORKERS` 控制模拟线程数，0 关闭，默认可用逻辑核心减 2、至少 1、最多 8。资源占用与真实并发有关，用 `/metrics` 观察 CPU、内存、队列与网络状况后调整，变量修改需重启。
 
@@ -463,7 +463,7 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 
 ## 2026-10-17 事故后的模板默认值
 
-2026-10-19 的 gate 恢复修复仍待上线，安装顺序、实际端口、续签头继承与验收步骤见 [BROWSER_GATE.md](BROWSER_GATE.md) 和 [问题清单](OPEN-ISSUES-2026-10-19.md)。完整修复包含 `30437428`、`2ec469e9`、`70bba335`，不要只拣最后一条文档/探针修正提交部署。先更新 gate 与 Nginx 并在目标机通过 `nginx -t`，再发布对应前端；保留密钥、现场健康防护及手工封禁。旧标签页首次可能仍需刷新。
+2026-10-19 的 gate 恢复修复仍待上线，安装顺序、实际端口、续签头继承与验收步骤见 [BROWSER_GATE.md](BROWSER_GATE.md)（含安装顺序与验收步骤）。完整修复包含 `30437428`、`2ec469e9`、`70bba335`，不要只拣最后一条文档/探针修正提交部署。先更新 gate 与 Nginx 并在目标机通过 `nginx -t`，再发布对应前端；保留密钥、现场健康防护及手工封禁。旧标签页首次可能仍需刷新。
 
 依据 [排查记录](INCIDENT-2026-10-17.md#七据此调整的仓库默认值待部署)，10-17 的模板记录为每 worker 16384 连接、源站总并发 3000、WS 总并发 800；当前仓库示例已调整为源站 4500、WS 1600，每 worker 仍为 16384。现场值以 `nginx -T` 为准。部署前确认 systemd 的 `LimitNOFILE` 与系统上限足够（例如 65536），否则配置中的容量不等于实际可用容量。
 

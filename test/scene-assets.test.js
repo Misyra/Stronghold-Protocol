@@ -74,12 +74,14 @@ test('an older extraction is told it lacks the battlefield scenes', () => {
 
 test('official scene bundles and extracted scenes are not git files; the extractor scripts are', () => {
   const gi = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
-  // This fork tracks public/assets/local/ (the v0.1.3 board art, data/local-assets.json among it), so the two
-  // assertions upstream makes about a wholly ignored public/assets/ and manifest are the fork's own shape here:
-  // the extracted scenes stay out of the repository, re-ignored under the tracked local art.
+  // Since 2026-10-19 this fork keeps no art in the repository at all: public/assets/ is wholly ignored (the
+  // local-client copy is published on the CDN under identical paths, docs/ASSETS.md) and the extractor's
+  // manifests are build outputs. Extracted scenes stay out of git twice over — yet the packager still takes
+  // them when the maintainer extracted them, which is why the isRefused assertions below stay false.
   assert.match(gi, /^public\/assets\/\*$/m);
-  assert.match(gi, /^!public\/assets\/local\/$/m);
-  assert.match(gi, /^\/public\/assets\/local\/scene\/$/m);
+  assert.match(gi, /^\/public\/assets\/local\/$/m);
+  assert.match(gi, /^data\/local-assets\.json$/m);
+  assert.match(gi, /^data\/local-fx\.json$/m);
   assert.match(gi, /^\.cache\/$/m);
   assert.match(gi, /official-scenes/);
   assert.equal(isRefused('.cache/official-scenes/26-04-13-12-31-42_e9b560/scenes/a.ab'), true);

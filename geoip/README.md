@@ -8,6 +8,18 @@
 |---|---|---|---|---|
 | `GeoLite2-Country.mmdb` | `GeoLite2-Country`（全球，含 IPv6 记录） | 3.25 MiB（3408573 字节） | 2026-10-16 | `55fb913b4a5ab69fb0bbe11f86242b8a3f64061205227f4c1efceef7e14e5dbc` |
 
+上表是写这份文档时实测的那一版；`node tools/fetch-geoip.mjs` 每次下载都会打印它实际拿到的 sha256。
+
+**下载**（这份库从 2026-10-19 起不入库）：
+
+```bash
+node tools/fetch-geoip.mjs          # 两个镜像，下载后校验体积与 MMDB 尾标；已存在则跳过
+node tools/fetch-geoip.mjs --force  # 换库
+```
+
+Docker 镜像在构建阶段自动下载，`--build-arg FETCH_GEOIP=0` 可跳过。缺库时服务照常启动，只打一条
+`[geoip] no country database configured` 警告并关掉海外 AI 席位上限，其余规则不变。
+
 配置（变量含义与判定规则见 [房间与连接保护](../custom_docs/operations/ROOM_PROTECTION.md)，部署步骤见
 [部署指南](../custom_docs/operations/DEPLOY.md)）：
 
@@ -20,10 +32,11 @@ SP_GEOIP_MODE=country
 静默放行：把全球库配成 `cn-only` 会因 `8.8.8.8` 命中非大陆而拒绝启动；反过来，只含大陆地址的库（如
 Hackl0us/GeoIP2-CN）也不能按 `country` 模式用，否则海外来源会被当成未知而放行。
 
-**为什么放在仓库根**：`tools/package.mjs` 的玩家发行包是对 `git ls-files` 的白名单（`server/`、
+**为什么放在 `geoip/`**：`tools/package.mjs` 的玩家发行包是对 `git ls-files` 的白名单（`server/`、
 `shared/`、`data/`、`public/`、`packs/`、`schemas/` 随包分发），而 MMDB 不随游戏分发。`geoip/`
-不在白名单内，因此它跟着 `git pull` 到服务器，但不会进玩家 zip；库也不能放在任何静态目录
-（`public/`、`data/`、`shared/`、`packs/`）——游戏启动时会把这类路径判为错误并拒绝启动。
+不在白名单内，所以它不会进玩家 zip；库也不能放在任何静态目录（`public/`、`data/`、`shared/`、
+`packs/`）——游戏启动时会把这类路径判为错误并拒绝启动。它同样不在版本库里：`git pull` 不会带回任何
+`.mmdb`，换机器或换库都要跑一次上面那条命令（或把文件复制到相同位置）。
 
 ## 来源与许可
 

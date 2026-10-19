@@ -41,7 +41,13 @@ function writeDigestCache(file, files) {
  * Local file identities only validate the optional digest cache; public tags contain content, never mtimes. */
 export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }, { cacheFile = defaultCacheFile(mounts) } = {}) {
   // A change to URL/response rewriting must also invalidate the bytes it previously generated.
-  const transformer = Buffer.concat([fs.readFileSync(new URL(import.meta.url)), fs.readFileSync(new URL('../shared/assetCdn.js', import.meta.url))]);
+  // server/http/static.js 是真正改写响应字节的地方（相对说明符、垫片的 import、版本前缀），
+  // 它变了而 serve 出去的字节变了、URL 却不变时，缓存和浏览器会一直拿着旧字节 —— 所以它也算进 tag。
+  const transformer = Buffer.concat([
+    fs.readFileSync(new URL(import.meta.url)),
+    fs.readFileSync(new URL('../shared/assetCdn.js', import.meta.url)),
+    fs.readFileSync(new URL('./http/static.js', import.meta.url)),
+  ]);
   const runtimeHash = createHash('sha256').update(shim).update(transformer).update(fs.readFileSync(new URL('./index.js', import.meta.url)));
   const artHash = createHash('sha256').update(transformer).update(JSON.stringify(cdn));
   const isArt = (url) => /^\/(?:assets|fonts|media)\//.test(url);
@@ -123,9 +129,10 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
   return { tag, artTag, runtimeTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === fileIdentity(stat) };
 }
 
-/** The CDN release tag shipped with the repo (`.assets-cdn-version`, written by tools/r2-sync.mjs and
- *  committed with the release): a `git pull` then restart syncs a server that cannot reach the CDN.
- *  Returns '' when the file is missing or does not hold a valid tag. */
+/** The legacy CDN release tag (`.assets-cdn-version`): the `_v/<tag>/` snapshot layout this fork used
+ *  before per-file `?v=` hashes. `tools/r2-sync.mjs` no longer writes it; the file stays tracked so an
+ *  older server that cannot reach the CDN still resolves its `_v/` keys. Returns '' when the file is
+ *  missing or does not hold a valid tag. */
 export function readAssetsCdnVersionFile(file = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.assets-cdn-version')) {
   try {
     const tag = fs.readFileSync(file, 'utf8').trim();
@@ -135,7 +142,9 @@ export function readAssetsCdnVersionFile(file = path.resolve(path.dirname(fileUR
   }
 }
 
-/** The per-file art manifest tools/r2-sync.mjs ships with the repo (`.assets-manifest.json`):
+/** The per-file art manifest (`.assets-manifest.json`) from the project root — generated there by
+ *  tools/r2-sync.mjs on the publishing machine or by tools/build-assets-manifest.mjs from local art; not
+ *  a tracked file:
  *  `{ tag, hashes, preload? }` — `hashes` maps every published art path (`/assets/…`) to its content hash.
  *  Servers pass it into every CDN URL as a per-file `?v=<hash>` query, so a release only re-busts
  *  the files it changed; the tag doubles as the manifest's own immutable-cache key. Returns null

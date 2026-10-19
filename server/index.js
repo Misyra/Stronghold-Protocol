@@ -304,11 +304,12 @@ export async function startServer(opts = {}) {
   lobby.trustedRuntime = trustedRuntime;
   const release = (extra = {}) => cleanupRuntime({ lobby, network, chatLog, workerPool, ownsWorkerPool, matchWorkerPool, log, ...extra });
 
-  // The per-file art manifest (`.assets-manifest.json`, shipped by tools/r2-sync.mjs and committed
-  // with the release) supersedes the release-tag lookup: with it, art URLs carry a per-file `?v=`
-  // query and no version is needed. Without it the legacy chain applies — the repo's
-  // `.assets-cdn-version` (travels with `git pull`), then the CDN's own `/_v/latest` publication —
-  // and a CDN without either simply stays unversioned.
+  // The per-file art manifest (`.assets-manifest.json`, generated on the publishing machine by
+  // tools/r2-sync.mjs or from local art by tools/build-assets-manifest.mjs; not in Git since 2026-10-19)
+  // supersedes the release-tag lookup: with it, art URLs carry a per-file `?v=` query and no version is
+  // needed. Without it the legacy chain applies — the repo's `.assets-cdn-version` (travels with
+  // `git pull`), then the CDN's own `/_v/latest` publication — and a CDN without either simply stays
+  // unversioned.
   const cdnBase = opts.assetsCdn ?? process.env.SP_ASSETS_CDN;
   const assetsManifest = cdnBase ? readAssetsManifestFile(opts.assetsManifestFile) : null;
   let cdnVersion = '';

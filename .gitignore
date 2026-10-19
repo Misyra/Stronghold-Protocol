@@ -9,17 +9,17 @@ public/build/
 # --- game assets: (c) Hypergryph / Yostar (see NOTICE.md) ------------------------------------------
 # tools/fetch-assets.mjs → public/assets/** (~270 MB) and public/fonts/** (+ fonts.css)
 public/assets/*
-# This fork tracks the v0.1.3 local-client art for Git-based deployments.
-!public/assets/local/
-# …except the extracted battlefield scenes (0.2.5): official files no repository stores, so re-ignore them here.
-# A maintainer who ran `node tools/setup.mjs --scenes` must not commit public/assets/local/scene/.
-/public/assets/local/scene/
+# Local-client art (public/assets/local/**): published on the CDN under identical paths and served via
+# SP_ASSETS_CDN (docs/ASSETS.md), so the repository no longer stores the 65 MB copy. Rebuild it on a
+# machine that has the client: `node tools/setup.mjs --local`, then `node tools/build-assets-manifest.mjs`.
+/public/assets/local/
+# …except the site's own emote theme (custom art, not the client's): the battle emotes below are drawn by this
+# branch and ship with the web client, so they stay tracked. Everything else under local/ is client output.
+!/public/assets/local/emoticon/
 public/fonts/
-# tools/local-extract/extract.py → public/assets/local/** and this per-machine manifest
-# (optional: the client and the tests work without it; custom_docs/operations/DEPLOY.md §6 lists what falls back)
-# Battlefield scenes (0.2.5): extracted files live under public/assets/local/scene/ (re-ignored just above).
-# Downloaded bundles live in .cache/official-scenes/ (already ignored by .cache/ below).
-# This fork tracks the extracted files and the manifest in Git (README 本分支差异): data/local-assets.json is a tracked file here, not an ignored one.
+# tools/local-extract/extract.py → public/assets/local/** plus this per-machine manifest; fx.py → the
+# battle-effect list. Both are build outputs now (custom_docs/operations/DEPLOY.md §6 lists what falls back).
+data/local-assets.json
 # download caches, upstream tables, ledgers, reports, setup state
 .cache/
 # Legacy scratch scripts and profiling output belong under .cache/.
@@ -78,13 +78,11 @@ docs/dev/
 
 # Local development suite artifacts and drafts --------------------------------------------------
 /.playwright-mcp/
-/custom_docs/operations/NGINX-RELIEF.md
 /sp-nginx-optimization-plan.md
 /stronghold-resources-9fea2761d427.zip
 /test/build-size.test.js
 /test/render/context-recovery.browser.test.js
 /test/render/impostor-context.test.js
-/test/tmp-churn.test.js
 /test/ui/announcement.render.test.js
 /tools/build-size.mjs
 
@@ -104,6 +102,17 @@ desktop.ini
 
 # Optional per-install preload content hashes
 /data/asset-hashes.json
+# Build output: the per-file art manifest (`node tools/build-assets-manifest.mjs`); tools/r2-sync.mjs
+# used to commit it on every art change.
+/.assets-manifest.json
+# tools/install-skins.mjs writes this machine's installed skin set
+/data/skins-installed.json
+# This checkout's own scratchpad
+/todo.md
+/.fleet-tmp/
+# The QQ key bot lives beside the game server, never in this repository: bot/config.json holds the
+# app id and app secret in clear text.
+/bot/
 
 # Server checkpoints contain private reconnect tokens; never publish or commit them.
 /.state/
@@ -119,7 +128,8 @@ desktop.ini
 # tools/sim-check.mjs: the corpus and its Node traces for /dev/sim-check.html
 public/dev/simcheck/data/
 
-# Optional MaxMind downloads; Country is already tracked separately.
+# MaxMind databases: none of them are tracked. Country is fetched by `node tools/fetch-geoip.mjs`
+# (geoip/README.md); ASN and City are optional files you place yourself (SP_GEOLITE_ASN_DB).
+/geoip/GeoLite2-Country.mmdb
 /geoip/GeoLite2-ASN.mmdb
 /geoip/GeoLite2-City.mmdb
-undefined/

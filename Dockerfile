@@ -2,15 +2,21 @@
 # 卫戍协议：盟约 · production image (server + static client). Docs: custom_docs/operations/DEPLOY.md「Docker」.
 #
 # Code: GPL-3.0-or-later (LICENSE). Game art/audio is © Hypergryph / Yostar, not covered by the GPL, non-commercial use
-# only (NOTICE.md). This fork includes local-client art; two ways to add the remaining downloaded art:
+# only (NOTICE.md). The repository stores no game art: put public/assets/local next to this file
+# (`node tools/setup.mjs --local`), serve everything from a CDN with SP_ASSETS_CDN, or do both. Two ways to add the
+# downloaded art:
 #   A) download it while building (needs internet during the build):
 #        docker build -t stronghold-protocol --build-arg FETCH_ASSETS=1 .
 #   B) build without it and mount the host's copy (prepared with `node tools/setup.mjs` on the host):
 #        docker build -t stronghold-protocol .
 #        docker run -d --name stronghold -p 3000:3000 --restart unless-stopped \
 #          -v "$PWD/public/assets:/app/public/assets:ro" stronghold-protocol
-#      (public/fonts, data/assets.json, data/local-assets.json and data/local-fx.json are copied from the build context when present)
+#      (public/fonts, public/assets/local, data/local-assets.json and data/local-fx.json are copied from the build
+#       context when present; .assets-manifest.json is generated during the build, never committed)
 # Without any art the game still runs with placeholder visuals.
+#
+# GeoIP: the build downloads geoip/GeoLite2-Country.mmdb (tools/fetch-geoip.mjs) unless --build-arg FETCH_GEOIP=0,
+#        which keeps the image offline-buildable and only disables the foreign-AI limit.
 #
 # Run:  see custom_docs/operations/DEPLOY.md for CDN, probe announcement directory and persistent state mounts.
 # Env:  PORT (3000), HOST (0.0.0.0), SP_COMBAT (client|server), SP_VERIFY (off|sample|all), TRUST_PROXY (auto|1|0), DEBUG
@@ -45,6 +51,12 @@ RUN npm run build \
  && if [ "$FETCH_ASSETS" = "1" ]; then \
       node tools/fetch-assets.mjs || echo "WARNING: art download incomplete; the image falls back to placeholder art"; \
     fi \
+ && if [ "$FETCH_GEOIP" = "0" ]; then rm -f geoip/GeoLite2-Country.mmdb; \
+    elif [ ! -s geoip/GeoLite2-Country.mmdb ]; then \
+      node tools/fetch-geoip.mjs || echo "WARNING: no GeoLite2-Country.mmdb; foreign AI limit stays disabled and the server logs a warning"; \
+    fi \
+ && node tools/build-assets-manifest.mjs \
+ && { [ -s .assets-manifest.json ] || printf '{"tag":null,"hashes":{},"preload":{}}\n' > .assets-manifest.json; } \
  && rm -rf .cache
 
 # ---- 3. runtime ---------------------------------------------------------------------------------------
@@ -59,7 +71,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/shared ./shared
 COPY --from=build /app/server ./server
 # Published art fingerprints are needed even when the CDN serves all binary assets.
-COPY .assets-manifest.json ./.assets-manifest.json
+COPY --from=build /app/.assets-manifest.json ./.assets-manifest.json
 COPY --from=build /app/data ./data
 COPY --from=build /app/public ./public
 # the Spine and atlas parsers the plugin packer and the plugin studio use (server/plugins/pack.js, server/studio/)

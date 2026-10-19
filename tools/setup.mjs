@@ -20,6 +20,10 @@
 //      (tools/local-extract/fetch_scenes.py) and extract them (extract.py --only scene). Missing Python or
 //      UnityPy / lz4 / Pillow is a warning: the 3D board keeps the metal tiles. --scenes does it without asking;
 //      --no-scenes skips it. The answer is remembered like step 6.
+//   6b. The per-file art manifest (.assets-manifest.json, `npm run manifest`): generated from whatever public/
+//      holds once the art is on disk. Missing art simply leaves it out — the server then serves unversioned URLs.
+//   6c. Optional GeoIP country database (`npm run geoip` → geoip/GeoLite2-Country.mmdb). Missing only disables the
+//      foreign-AI seat limit; the server logs a warning and keeps every other rule.
 //
 // Options:
 //   --check          report only, change nothing (exit 1 when something essential is missing)
@@ -548,6 +552,28 @@ async function main() {
       }
     }
   }
+
+  // 6b. per-file art manifest — a build output since public/assets/local left the repository
+  const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
+  const artDir = path.join(ROOT, 'public', 'assets');
+  if (exists(artDir)) {
+    const manifestFile = path.join(ROOT, '.assets-manifest.json');
+    const artStamp = Math.max(mtime(artDir), mtime(path.join(ROOT, 'data', 'local-assets.json')), mtime(path.join(ROOT, 'data', 'local-fx.json')));
+    if (exists(manifestFile) && mtime(manifestFile) >= artStamp) add('ok', '美术指纹清单 .assets-manifest.json', '已是最新');
+    else if (opts.check) add('skip', '美术指纹清单 .assets-manifest.json', '缺失或过期：运行 node tools/setup.mjs 会生成');
+    else {
+      const r = run(process.execPath, [path.join(ROOT, 'tools', 'build-assets-manifest.mjs'), '--quiet']);
+      add(r.ok ? 'ok' : 'warn', '美术指纹清单 .assets-manifest.json',
+        r.ok ? '已按当前 public/ 生成（服务器用它给每个美术 URL 加 ?v=<内容哈希>）'
+          : `生成失败（退出码 ${r.code}）：服务照常启动，只是 URL 不带逐文件版本号；可手动运行 npm run manifest`);
+    }
+  }
+
+  // 6c. optional GeoIP country database (tools/fetch-geoip.mjs); missing only disables the foreign AI limit
+  const countryDb = process.env.SP_GEOLITE_COUNTRY_DB || path.join(ROOT, 'geoip', 'GeoLite2-Country.mmdb');
+  add(exists(countryDb) ? 'ok' : 'skip', 'GeoIP 国家库（可选）',
+    exists(countryDb) ? '已就位：海外 IP 的 AI 席位上限生效'
+      : '未下载 → node tools/fetch-geoip.mjs（只影响海外 AI 席位上限，其余规则照常）');
 
   // 7. official battlefield scenes (optional; the full zip ships them, a lite / source install may fetch them)
   if (opts.scenes !== 'no') {

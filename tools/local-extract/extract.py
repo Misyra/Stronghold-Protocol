@@ -928,6 +928,12 @@ def main():
     ap.add_argument('--fx-keys', default='', metavar='K1,K2',
                     help='with --only fx: export only these effect prefabs (comma-separated keys)')
     ap.add_argument('--fx-jobs', type=int, default=0, metavar='N', help='with --only fx: worker processes (default up to 8)')
+    ap.add_argument('--fx-skins', default='', metavar='PATH|off',
+                    help='with --only fx: the skin catalogue whose operators\' skins the used set exports (default '
+                         '<root>/shared/skin-catalogue.js; off = no skins)')
+    ap.add_argument('--fx-skin-bundles', default='', metavar='DIR',
+                    help='with --only fx: an AB root of newer bundles read for those skins only — its '
+                         'skinpack/<charId>.ab before the client\'s, and the effect prefabs the client lacks')
     ap.add_argument('--webp', action='store_true',
                     help='only write the WebP copies of the board textures and the guide pages from the PNGs already '
                          'under --out and list them in the manifest (needs Pillow, not the client)')
@@ -990,9 +996,12 @@ def main():
         total += export_token_spines(ab_root, out_root, manifest, print, token_ids)
     if fx_on:
         keys = [k.strip().lower() for k in args.fx_keys.split(',') if k.strip()]
+        skins = args.fx_skins.strip()
         total += fx.export_fx(ab_root, out_root, manifest, print, selection=args.fx_set, keys=keys or None,
                               jobs=args.fx_jobs or None, root=ROOT,
-                              fx_manifest=Path(args.manifest).with_name(fx.FX_MANIFEST))
+                              fx_manifest=Path(args.manifest).with_name(fx.FX_MANIFEST),
+                              catalogue=False if skins.lower() == 'off' else (skins or None),
+                              skin_bundles=args.fx_skin_bundles.strip() or None)
     if stage_ids:
         total += export_scenes(ab_root, out_root, manifest, print, stage_ids, scene_roots(ab_root, args.scenes))
     old, old_chars = {}, {}

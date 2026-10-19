@@ -4,7 +4,11 @@
 
 这是一项工作量证明准入，不是真人识别。机器人也能完成计算，获得凭证后仍受已有频率、连接数和永久封禁约束。不要通过 User-Agent、Accept 或客户端 IP 头授予权限；Accept 仅决定显示验证页还是断开连接。
 
-默认 SHA-256 前导 18 位零，浏览器 Worker 计算、服务器只验证一次哈希。challenge 有效 120 秒，绑定真实来源 IP、站点和 UA；提交后在进程内标记已用，缓存最多 10000 条，满时拒绝新验证。重启会清除短期重放缓存。签名 Cookie 有效 6 小时，HttpOnly、SameSite=Lax、无 Domain；HTTPS 使用独立的 `__Host-sp_browser_gate` Cookie 并加 Secure；HTTP 使用 `sp_browser_gate`。凭证同时绑定协议，防止跨 HTTP/HTTPS 使用及同名 Secure Cookie 冲突。健康请求在后半个有效期自动续签，Nginx 仅将续签头传给健康响应。IP 改变、凭证过期或禁 Cookie 时须重新打开页面验证，已有 WS 不被入口主动踢掉。
+默认 SHA-256 前导 18 位零，浏览器 Worker 计算、服务器只验证一次哈希。challenge 有效 120 秒，绑定真实来源 IP、站点和 UA；提交后在进程内标记已用，缓存最多 10000 条，满时拒绝新验证。重启会清除短期重放缓存。签名 Cookie 有效 6 小时，HttpOnly、SameSite=Lax、无 Domain；HTTPS 使用独立的 `__Host-sp_browser_gate` Cookie 并加 Secure；HTTP 使用 `sp_browser_gate`。凭证同时绑定协议，防止跨 HTTP/HTTPS 使用及同名 Secure Cookie 冲突。有效凭证进入后半个有效期后，任意受保护请求都可生成续签头，由 Nginx 写入当前响应；已失效的凭证仍须重新解挑战。IP 绑定保留，移动网络换出口由自动恢复路径重新验证。已有 WS 不被入口主动踢掉。
+
+`GET /_gate/status` 是可读恢复探针：无效或缺失 cookie 返回 `200 + X-Gate-Required: 1`，有效且未封禁返回 204，封禁或后端故障仍返回 403/503；所有结果 `no-store`。失败不签发凭证，也不转发游戏请求。有效 cookie 可由此续期，凭证只放在 HttpOnly 的 Set-Cookie 中。该 exact location 使用 server 原有业务/全局限额，不占 challenge/verify 的签发桶。
+
+WS 连续失败时，前台页面每 10 秒最多一次探测；持续 20 秒且有明确的 `X-Gate-Required` 标记才导航恢复。普通 429、503、网络错误、旧部署上的 404 都不触发刷新；恢复连接、手动关闭或切入后台后的迟到结果被忽略。自动刷新间隔至少 60 秒，10 分钟窗口最多 3 次（跨页面保留）；耗尽后停止 WS 自动重试并显示手动刷新提示。版本检查器也使用同一明确判据，不再把“manifest 可访问而 healthz 失败”当作验证失效。
 
 ### 业务 token 与每请求校验
 
@@ -22,8 +26,8 @@ HTTP 下 Worker 不依赖 WebCrypto，可以计算；Cookie 和页面缺少传�
 2. 生成独立随机 32 字节签名密钥，写入 root 0600 的 `/etc/stronghold/browser-gate.env`，字段 `SP_GATE_KEY=<base64>`；另外配置 `SP_GATE_GAME_PORT=3100`、`SP_GATE_PORT=3101`、`SP_GATE_BITS=18`。不要记录或提交密钥。轮换密钥会让旧凭证失效。
 3. 安装 `sp-browser-gate.service`，按 `command -v node` 调整 ExecStart。服务使用 DynamicUser，不需要读取游戏密钥或写游戏目录。先启动并检查日志。
 4. 将 `sp-browser-gate-map.conf` 安装为 HTTP 级 include；`sp-browser-gate.conf` 安装为 server 级 snippet。**把原来 `auth_request /_sp/ip-check` 替换为 `auth_request /_sp/gate-check`**，不要配置两条 auth_request。验证服务在允许凭证后再检查原游戏封禁接口，不能丢掉原名单检查。资源清单 location 默认由 `nginx-game-cache.conf.example` 提供（需要 `sp_assets` 缓存区）；但本仓库的 fleet 部署没有单独安装 game-cache snippet，所以 `scripts/hardening/sp-browser-gate.conf` 也带了 `/data/resource-manifest.json` 和 `/assets-manifest.json` 两个 `auth_request off` location。**两者只能留一处**：如果另装 game-cache snippet，删掉 gate 里的这两个；不能同时保留两处定义，也不能使用忽略查询的 `$uri` 缓存键。service worker 的 UA 与页面不同、又不带 gate cookie，这两个清单必须免门，否则会形成 444 重试循环。
-5. 保留原 403 到 444 处理和 GeoIP 闸门。在 `/healthz` 的现有 add_header 旁加入 `add_header Set-Cookie $sp_gate_renew always;`，使每分钟健康请求能续期；不要把公网健康接口改成免验证。保留健康 5 秒缓存与既有额度。
-6. 更新 `sp-business-limit-map.conf`，排除内部 gate 子请求，验证脚本使用独立静态预算。验证入口设置独立签发速率与全局速率，不消耗游戏静态缓存。
+5. 保留原 403 到 444 处理和 GeoIP 闸门。gate snippet 在 server 级设置 `add_header Set-Cookie $sp_gate_renew always;`，供 HTML、业务和 WS 继承；**凡 location 自带 add_header，必须在其列表内重复这条**（至少 `/healthz`，以及部署中另加响应头的 HTML/API location），并保留已有安全头。必须同步更新 `gate.mjs`，旧服务只对 healthz 生成续签头。不要把公网健康接口改成免验证，保留健康 5 秒缓存与既有额度。
+6. 更新 `sp-business-limit-map.conf`，排除内部 gate 子请求，验证脚本使用独立静态预算。图标、字体（含版本路径、Vite 哈希文件名）不消耗 per-IP 静态请求/连接桶，仍检查 gate、GeoIP 和全局连接上限；业务、模块、游戏美术保留原桶。验证入口设置独立签发速率与全局速率，不消耗游戏静态缓存。
 7. 备份，运行 `nginx -t`，定时安排回滚后 reload。确认真实浏览器通过、原查询参数与片段保留；未经验证的 API、缓存 HIT、静态文件、WS 均拒绝，伪造请求头也无效；验证服务停止时必须拒绝业务，不能 fail-open。
 
 Nginx 只访问回环验证服务，外部无法调用内部 `/_sp/gate-check`，验证服务也不暴露公网监听。只信 Nginx 覆写的 X-Gate-* 头。有 CDN 时必须先正确配置可信 realip；当前国内直连部署不接受任意转发头。

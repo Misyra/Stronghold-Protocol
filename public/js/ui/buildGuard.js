@@ -190,7 +190,7 @@ export function startBuildGuard(o = {}) {
       const required = await probeGateRequired(fetchFn, { timeoutMs: o.timeoutMs, setTimeout: o.setTimeout, clearTimeout: o.clearTimeout });
       if (stopped) return { status: 'stopped', build: null };
       if (doc?.hidden) { refused = 0; return { status: 'paused', build: null }; }
-      if (!required) { refused = 0; return r; }                           // the server is really down: stay quiet
+      if (!required) { refused = 0; return r; }                           // no explicit gate verdict: stay quiet
       refused++;
       if (refused < GATE_LOST_CONFIRMATIONS) return { status: 'refused', build: null };
       const first = !lost;

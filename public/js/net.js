@@ -179,7 +179,7 @@ export class Net {
       clearInterval: (id) => globalThis.clearInterval(id),
     };
     // Gate probe (see GATE_PROBE): all four are injectable so the reconnect ladder is testable offline.
-    this.probe = typeof opts.probe === 'function' ? opts.probe : defaultGateProbe;
+    this.gateProbe = typeof opts.gateProbe === 'function' ? opts.gateProbe : defaultGateProbe;
     this.reload = typeof opts.reload === 'function' ? opts.reload : defaultReload;
     this.storage = opts.storage || defaultStorage();
     this.isHidden = typeof opts.isHidden === 'function' ? opts.isHidden : defaultHidden;
@@ -424,7 +424,7 @@ export class Net {
     const failedSince = this._failedSince;
     let probe;
     try {
-      probe = Promise.resolve(this.probe());
+      probe = Promise.resolve(this.gateProbe());
     } catch {
       return;
     }

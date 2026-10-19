@@ -39,5 +39,9 @@ export function siteCsp(publicDir, transformPage = null, cdnBase = '') {
   // fetches. `script-src` never gains it — a CDN may ship art, never code.
   let art = '';
   if (cdnBase) { try { art = ` ${new URL(cdnBase).origin}`; } catch { art = ''; } }
-  return `default-src 'self'; script-src 'self'${hashes.size ? ' ' + [...hashes].join(' ') : ''}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com${art}; font-src 'self' https://fonts.gstatic.com${art}; img-src 'self' data: blob:${art}; media-src 'self'${art}; connect-src 'self'${art}; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'`;
+  // `connect-src` names `blob:` for the object URLs public/js/resourceNetwork.js hands to Pixi: a runtime texture
+  // page is downloaded by our transport and then decoded by Pixi 7.4, which fetches the blob when
+  // `createImageBitmap` exists. `'self'` does not cover a blob: URL, so every Spine page failed in the texture
+  // loader and the battle units fell back to their tokens (2026-10-19).
+  return `default-src 'self'; script-src 'self'${hashes.size ? ' ' + [...hashes].join(' ') : ''}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com${art}; font-src 'self' https://fonts.gstatic.com${art}; img-src 'self' data: blob:${art}; media-src 'self'${art}; connect-src 'self' blob:${art}; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'`;
 }

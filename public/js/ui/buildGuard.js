@@ -20,19 +20,15 @@
 // only after two checks in a row report the SAME one, so a deploy that is still copying files cannot ping-pong a page.
 //
 // WHY (gate): every fleet location sits behind `auth_request /_sp/gate-check`. The gate admits a browser only with a
-// signed cookie bound to (IP, host, scheme, user-agent) that lives 6 hours, and it only ever re-issues one to a
-// NAVIGATION — `error_page 401 = @sp_gate_needed` serves the proof-of-work page when `$sp_gate_navigation` is set and
+// signed cookie bound to (IP, host, scheme, user-agent) that lives 6 hours and renews on admitted HTTP requests.
+// An invalid cookie needs a NAVIGATION — `error_page 401 = @sp_gate_needed` serves the proof-of-work page when `$sp_gate_navigation` is set and
 // answers `return 444` (connection closed, no headers) to anything else. A page whose cookie lapsed — 6 hours on an
 // idle tab, a phone that changed cell, a shell restored from the service worker — therefore keeps failing `/healthz`
 // and its WebSocket with a bare connection error, forever: nothing in that page is a navigation, so nothing ever
 // re-challenges it. The nginx logs show exactly that shape (one IP, 900 identical `/ws` 444s at 10s intervals, a day
 // after it had 1114 successful upgrades).
-// HOW (gate): a page cannot see 444 — nginx closes the socket before sending a status, so it surfaces as the same
-// network error a dead server produces. It can still tell the two apart, because `/manifest.json` is `auth_request off`
-// and answers whether or not the gate likes this client. So: when a build check comes back 'unknown', ask the ungated
-// probe once. Probe answers → the server is up and this page is the thing being refused → that is a lapsed gate
-// credential, and a reload fixes it (a reload is a navigation, so it gets the proof page and a cookie signed for the
-// address the player is on now). Probe fails too → the server is unreachable → say nothing, as before.
+// HOW (gate): /_gate/status explicitly marks a missing or invalid cookie with X-Gate-Required: 1.
+// Ordinary 429/503 responses and reachable public assets do not prove a gate failure.
 // Two refusals in a row are required, a live match is never thrown away (`onGateLost` fires and the banner offers the
 // reload), and a reload loop is impossible: one automatic gate reload per GATE_RELOAD_BACKOFF_MS, after which the page
 // stops trying and leaves the button to the player.
@@ -49,8 +45,8 @@ export const BUILD_CHECK_MS = 60_000;
 export const BUILD_FETCH_TIMEOUT_MS = 5_000;
 /** How many checks in a row must report the same NEW build before the page acts on it. */
 export const BUILD_CONFIRMATIONS = 2;
-/** Ungated path used to tell "the server is down" from "this page is not admitted" (auth_request off in nginx). */
-export const GATE_PROBE_URL = '/manifest.json';
+/** Read-only gate status; failure never grants admission. */
+export const GATE_PROBE_URL = '/_gate/status';
 /** How many checks in a row must be refused-with-the-server-up before the page treats its gate cookie as lapsed. */
 export const GATE_LOST_CONFIRMATIONS = 2;
 /** At most one automatic gate reload in this window; after that the page leaves the button to the player. */
@@ -102,18 +98,17 @@ export async function fetchBuild(fetchFn, o = {}) {
 }
 
 /**
- * Ask an ungated path whether the server itself is answering. true = the server is up, so a refused `/healthz` is
- * about THIS page (a lapsed browser-gate credential), not about the server. Never throws.
+ * Ask the gate whether this cookie requires a fresh challenge. Never infer this from server reachability.
  * @param {Function} fetchFn
  * @param {{ timeoutMs?: number, setTimeout?: Function, clearTimeout?: Function }} [o]
  * @returns {Promise<boolean>}
  */
-export async function probeUnlocked(fetchFn, o = {}) {
+export async function probeGateRequired(fetchFn, o = {}) {
   const timeoutMs = Number.isFinite(o.timeoutMs) && o.timeoutMs > 0 ? o.timeoutMs : BUILD_FETCH_TIMEOUT_MS;
   const race = abortable(o, timeoutMs);
   try {
-    const res = await Promise.race([fetchFn(GATE_PROBE_URL, { cache: 'no-store', signal: race.signal }), race.timeout]);
-    return !!(res && res.ok);
+    const res = await Promise.race([fetchFn(GATE_PROBE_URL, { cache: 'no-store', credentials: 'same-origin', signal: race.signal }), race.timeout]);
+    return res?.status === 200 && res.headers?.get('X-Gate-Required') === '1';
   } catch {
     return false;
   } finally {
@@ -191,10 +186,11 @@ export function startBuildGuard(o = {}) {
     if (doc?.hidden) { candidate = null; seen = 0; return { status: 'paused', build: null }; }
     if (r.status === 'unknown') {
       candidate = null; seen = 0;                                   // review: a failed check never reloads a stale page
-      // …but "failed" and "refused" are different: an ungated path still answers when the gate is the thing saying no.
-      const up = await probeUnlocked(fetchFn, { timeoutMs: o.timeoutMs, setTimeout: o.setTimeout, clearTimeout: o.clearTimeout });
+      // Require the explicit gate verdict before treating an unknown health check as lost admission.
+      const required = await probeGateRequired(fetchFn, { timeoutMs: o.timeoutMs, setTimeout: o.setTimeout, clearTimeout: o.clearTimeout });
       if (stopped) return { status: 'stopped', build: null };
-      if (!up) { refused = 0; return r; }                           // the server is really down: stay quiet
+      if (doc?.hidden) { refused = 0; return { status: 'paused', build: null }; }
+      if (!required) { refused = 0; return r; }                           // the server is really down: stay quiet
       refused++;
       if (refused < GATE_LOST_CONFIRMATIONS) return { status: 'refused', build: null };
       const first = !lost;

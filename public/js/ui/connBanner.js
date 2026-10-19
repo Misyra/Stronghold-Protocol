@@ -26,7 +26,8 @@ export function ConnectionBanner() {
   const entered = useStore((s) => s.session.entered);
   const restoring = useStore((s) => s.ui.restoring);
   const buildStale = useStore((s) => !!s.ui.buildStale);
-  const gateLost = useStore((s) => !!s.ui.gateLost);
+  const guardGateLost = useStore((s) => !!s.ui.gateLost);
+  const gateLost = guardGateLost || (conn.status === 'closed' && conn.lastError?.code === 'GATE_REQUIRED');
   useTicker(conn.status === 'reconnecting' ? 500 : 0);
   useDocClass('sp-conn', bannerVisible(conn, entered, restoring, buildStale, gateLost));
   if (!entered) return null;

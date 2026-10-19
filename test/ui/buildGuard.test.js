@@ -6,7 +6,7 @@
 // in a row agree, and a match on screen is never thrown away — the guard waits for it (and its settlement) to end.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkBuildOnce, startBuildGuard, fetchBuild, probeUnlocked, BUILD_CHECK_MS, BUILD_FETCH_TIMEOUT_MS,
+import { checkBuildOnce, startBuildGuard, fetchBuild, probeGateRequired, BUILD_CHECK_MS, BUILD_FETCH_TIMEOUT_MS,
   GATE_PROBE_URL, GATE_RELOAD_KEY } from '../../public/js/ui/buildGuard.js';
 
 /** A fake fetch answering /healthz with `build` (null → the frame carries none). */
@@ -211,8 +211,7 @@ test('onHealth: told every /healthz body a check reads — what else the page re
 
 // ---------------------------------------------------------------------------------------------------------------
 // A page the browser gate stopped admitting. nginx answers `return 444` (socket closed, no headers), so a client
-// cannot see WHY `/healthz` failed — a restarting server looks identical. `/manifest.json` is auth_request off, so the
-// guard can ask it instead: an answer means the server is up and THIS page is what is being refused.
+// cannot see WHY `/healthz` failed. The status endpoint must explicitly confirm a missing/invalid cookie.
 // ---------------------------------------------------------------------------------------------------------------
 
 /** A guard whose /healthz and ungated probe fail independently. */
@@ -227,7 +226,7 @@ function gated({ inMatch = false, storage = null, now = () => Date.now() } = {})
     fetchFn: async (url) => {
       if (url === GATE_PROBE_URL) {
         if (!probeUp) throw new Error('offline');
-        return { ok: true, status: 200, json: async () => ({ name: 'Stronghold' }) };
+        return new Response(null, {status: 200, headers: {'X-Gate-Required': '1'}});
       }
       assert.equal(url, '/healthz?build=1');
       if (!healthUp) throw new Error('connection closed without a response (nginx 444)');
@@ -254,14 +253,19 @@ function gated({ inMatch = false, storage = null, now = () => Date.now() } = {})
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
-test('probeUnlocked: an ungated path answering means the SERVER is up (whatever the gate says about this page)', async () => {
-  assert.equal(await probeUnlocked(async (url) => { assert.equal(url, GATE_PROBE_URL); return { ok: true }; }), true);
-  assert.equal(await probeUnlocked(async () => ({ ok: false, status: 444 })), false);
-  assert.equal(await probeUnlocked(async () => { throw new Error('offline'); }), false);
-  assert.equal(await probeUnlocked(() => new Promise(() => {}), { timeoutMs: 20 }), false, 'a hanging probe is not an answer');
+test('probeGateRequired: only the explicit status marker proves lost admission', async () => {
+  assert.equal(await probeGateRequired(async (url) => { assert.equal(url, GATE_PROBE_URL); return new Response(null, {status: 200, headers: {'X-Gate-Required': '1'}}); }), true);
+  assert.equal(await probeGateRequired(async () => ({ ok: false, status: 444 })), false);
+  assert.equal(await probeGateRequired(async () => { throw new Error('offline'); }), false);
+  assert.equal(await probeGateRequired(() => new Promise(() => {}), { timeoutMs: 20 }), false, 'a hanging probe is not an answer');
+  for (const status of [200, 204, 404, 429, 503]) {
+    assert.equal(await probeGateRequired(async () => new Response(null, { status })), false);
+  }
+  assert.equal(await probeGateRequired(async () => new Response(null,
+    { status: 429, headers: { 'X-Gate-Required': '1' } })), false);
 });
 
-test('a lapsed gate cookie reloads the page after two agreeing refusals — the probe proves the server is up', async () => {
+test('a lapsed gate cookie reloads the page after two agreeing refusals — the probe confirms lost admission', async () => {
   const g = gated();
   await settle();                                     // the immediate first check
   assert.equal(g.guard.known(), 'aaa');
@@ -271,7 +275,7 @@ test('a lapsed gate cookie reloads the page after two agreeing refusals — the 
   assert.equal(g.calls.reload, 0, 'one refusal is not enough');
   assert.equal(g.guard.gateLost(), false);
   await g.tick();
-  assert.equal(g.calls.reload, 1, 'the server answers an ungated path, so the refusal is about this page: reload');
+  assert.equal(g.calls.reload, 1, 'the gate explicitly requires a challenge: reload');
   assert.deepEqual(g.calls.gate, [{ waiting: false, exhausted: false }]);
   assert.equal(g.guard.gateLost(), true);
 });

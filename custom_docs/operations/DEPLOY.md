@@ -4,8 +4,7 @@
 
 | 场景 | 看这里 |
 |---|---|
-| Nginx / 游戏侧限额与共享 IP 验收 | [LIMITS.md](LIMITS.md)（当前参数唯一汇总） |
-| 10-19 三机问题与修复优先级 | [FLEET_PROBLEMS_2026-10-19.md](FLEET_PROBLEMS_2026-10-19.md) |
+| 限额、共享 IP 与 A/B/C 逐机验收 | [LIMITS.md](LIMITS.md)（当前参数唯一汇总） |
 | Linux 生产站点 | 本文的安装、systemd、反向代理和更新步骤 |
 | Docker | 本文的容器步骤 |
 | Windows / 家用小主机 / 整合包升级 | [HOME_SERVER.md](HOME_SERVER.md) |
@@ -469,4 +468,4 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 
 2026-10-19 的 gate 恢复修复仍待上线，安装顺序、实际端口、续签头继承与验收步骤见 [BROWSER_GATE.md](BROWSER_GATE.md)（含安装顺序与验收步骤）。完整修复包含 `30437428`、`2ec469e9`、`70bba335`，不要只拣最后一条文档/探针修正提交部署。先更新 gate 与 Nginx 并在目标机通过 `nginx -t`，再发布对应前端；保留密钥、现场健康防护及手工封禁。旧标签页首次可能仍需刷新。
 
-当前模板参数、与 Node 的叠加关系、四人共网推荐配置及三机发布核验统一维护在 [LIMITS.md](LIMITS.md)。旧事故记录中的 3000/800、4000、4 条 WS、5 次/min 等属于历史值，不能继续用作新部署默认。现场以 `nginx -T` 和应用有效配置为准；2026-10-19 问题清单的处理建议见 [三机问题方案](FLEET_PROBLEMS_2026-10-19.md)。
+当前模板参数、与 Node 的叠加关系、四人共网推荐配置及三机发布核验统一维护在 [LIMITS.md](LIMITS.md)。2026-10-17 事故当时的 3000/800、4000、4 条 WS、5 次/min 属于历史值，不能继续用作新部署默认。现场以 `nginx -T` 和应用有效配置为准，逐机验收步骤见 [LIMITS.md](LIMITS.md)。

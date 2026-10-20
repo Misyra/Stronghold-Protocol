@@ -398,7 +398,7 @@ HEAD /metrics
 | `rehearsalPressure` | object / null | 演练压力采样器：指标来源、负载百分比、当前档位、候选上限（`null` 表示沿用配置）与阈值 |
 | `websocket` | object | WebSocket 延迟诊断（`diagnostics`），仅本接口提供 |
 
-**只有回环或私网客户端能读到它。** 其余调用者不会被拒绝，而是回落到静态文件处理，得到与未知路径相同的 404，所以这条路径对外不暴露自身存在。判定与 `?traffic=1` 一致（`net.js` `clientAddress` + `isLocalIp`，受 `TRUST_PROXY` 影响），因此经隧道或本机反向代理转发来的公网客户端仍算公网；同机的监控进程经回环读取它（sp-portal `collector.mjs`，`MON_METRICS_URL`，默认 `http://127.0.0.1:<游戏端口>/metrics`），核查步骤见 [ONLINE-CHECKLIST.md §5](../operations/ONLINE-CHECKLIST.md)。
+**只有回环或私网客户端能读到它。** 其余调用者不会被拒绝，而是回落到静态文件处理，得到与未知路径相同的 404，所以这条路径对外不暴露自身存在。判定与 `?traffic=1` 一致（`net.js` `clientAddress` + `isLocalIp`，受 `TRUST_PROXY` 影响），因此经隧道或本机反向代理转发来的公网客户端仍算公网；同机的监控进程经回环读取它（sp-portal `collector.mjs`，`MON_METRICS_URL`，默认 `http://127.0.0.1:<游戏端口>/metrics`），接入见 [MONITORING.md](../operations/MONITORING.md)。
 
 `workers` 对象字段：
 

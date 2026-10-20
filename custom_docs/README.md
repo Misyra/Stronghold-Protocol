@@ -1,6 +1,6 @@
 # 本分支文档索引
 
-总导航在 [docs/README.md](../docs/README.md)：那里按来源分两棵树，`docs/` 是上游的、`custom_docs/` 是本分支的，同一主题两边都有时以本分支为准。这个文件只负责 `custom_docs/` 内部的目录约定。
+总导航在 [docs/README.md](../docs/README.md)：那里按来源分两棵树，`docs/` 是上游的、`custom_docs/` 是本分支的，同一主题两边都有时以本分支为准。这个文件只负责 `custom_docs/` 内部的目录约定与阅读顺序。
 
 ## 目录约定
 
@@ -10,17 +10,16 @@
 | `development/` | 本分支为什么和上游不一样：API、合并记录、测试流程、性能与测量 | 改代码时 |
 | `guides/` | 玩法向说明（战绩、匹配），给服主看 | 功能变化时 |
 | `history/site/` | 本站已发布版本的更新日志 | 每次发版 |
-| `archive/` | 已经结清的东西：完成的审查、历史事故、过期的一次性计划与任务清单 | 只追加，不改写 |
-| `screenshots/` | 文档里引用的截图 | 换界面时 |
 
-`archive/` 里按性质分子目录：`reviews/`（审查与整改记录）、`incidents/`（事故现场记录）、`plans/`（一次性计划与任务清单）。归档前先移除真实主机地址、端口和本机私有路径；归档后保留当时的结论、日期与提交信息，不随代码更新，文件移动时只修正相对链接。线上核查的当前步骤统一见 [ONLINE-CHECKLIST.md](operations/ONLINE-CHECKLIST.md)。
+文档需要配图时放在 `custom_docs/screenshots/`，只放正文确实引用到的图；没有引用的截图不留。
+
+每篇文档的抬头写清适用范围与核对日期；带日期的现场结论写进正文，不再单独留档。已经结清的审查、事故现场与一次性计划不保留副本：2026-10-20 统一移除，现行结论已经写回对应的运维与开发文档，需要原始记录时从 git 历史取。写进来的东西先移除真实主机地址、端口和本机私有路径，指代用 `<节点地址>:<端口>`；真实地址只留在服务器上的私有备注里。逐机验收表与当前值统一在 [LIMITS.md](operations/LIMITS.md)。
 
 ## 运维（operations/）
 
 | 文档 | 内容 |
 |---|---|
 | [LIMITS.md](operations/LIMITS.md) | 当前 Nginx/游戏限额、共网推荐配置与逐机验收 |
-| [FLEET_PROBLEMS_2026-10-19.md](operations/FLEET_PROBLEMS_2026-10-19.md) | 三机问题处理优先级与待验证判断 |
 | [DEPLOY.md](operations/DEPLOY.md) | 部署总入口：Linux / Docker、统一配置、更新与验收 |
 | [HOME_SERVER.md](operations/HOME_SERVER.md) | Windows 与家用开服：自启、整合包更新、家用网络 |
 | [ANNOUNCEMENTS.md](operations/ANNOUNCEMENTS.md) | 游戏内公告：中央源、站点 ID、显式本地模式 |
@@ -29,7 +28,6 @@
 | [PERSISTENCE.md](operations/PERSISTENCE.md) | 对局持久化：检查点、索引、运行时钟与恢复 |
 | [CDN.md](operations/CDN.md) | 素材 CDN：分发、预载、缓存与版本化 |
 | [PORTAL_ROOMS.md](operations/PORTAL_ROOMS.md) | 同盟房间一键收录与两端鉴权 |
-| [ONLINE-CHECKLIST.md](operations/ONLINE-CHECKLIST.md) | 三台主机的线上核查清单 |
 
 ### 防护
 
@@ -39,10 +37,8 @@
 | [WS_PROTECTION.md](operations/WS_PROTECTION.md) | WebSocket 升级尝试计数、Origin 校验与入口 jail |
 | [BROWSER_GATE.md](operations/BROWSER_GATE.md) | 自动浏览器入口验证：回环服务 + `auth_request` + 签名 Cookie |
 | [ROOM_PROTECTION.md](operations/ROOM_PROTECTION.md) | 房间审计与计算保护：网络额度、无人暂停、降级 |
-| [HOST_HARDENING.md](operations/HOST_HARDENING.md) | 主机加固：关闭公开探测、防火墙、fail2ban、日志轮转、巡检 |
+| [HOST_HARDENING.md](operations/HOST_HARDENING.md) | 主机防刷与巡检：关闭公开探测、防火墙、fail2ban、日志轮转 |
 | [IDC_PROTECTION.md](operations/IDC_PROTECTION.md) | 机房来源分级：ASN 名单的可行性、证据与封不住的边界 |
-
-运维文档里不写真实主机地址与端口，需要指代时用 `<节点地址>:<端口>`。真实地址写在服务器上的私有备注里，不进仓库。
 
 ## 开发（development/）
 
@@ -51,12 +47,11 @@
 | [FORK_MAINTENANCE.md](development/FORK_MAINTENANCE.md) | 维护边界：模块归属、合并流程、冲突处理与推迟清单 |
 | [CUSTOM_API.md](development/CUSTOM_API.md) | 本分支服务端 API：房间查询、匹配与扩展接口 |
 | [TEST_WORKFLOW.md](development/TEST_WORKFLOW.md) | 三个测试入口、已知常年红的用例、各套基线 |
-| [MODEL-RECOVERY.md](development/MODEL-RECOVERY.md) | 模型消失问题：结论与回归覆盖 |
+| [MODEL-RECOVERY.md](development/MODEL-RECOVERY.md) | 模型消失：已确认的原因与回归覆盖 |
 | [PERFORMANCE.md](development/PERFORMANCE.md) | Worker 池、预载与性能优化 |
 | [LATENCY.md](development/LATENCY.md) | 健康检查、网络诊断与多房间调度 |
 | [STATE_DELTA.md](development/STATE_DELTA.md) | WebSocket 状态增量传输 |
-| [STATE_SYNC_BENCHMARK.md](development/STATE_SYNC_BENCHMARK.md) | 状态同步链路基线与优先级验证 |
-| [STATE_DELTA_BENCHMARK.md](development/STATE_DELTA_BENCHMARK.md) | 增量传输的本地对照测试 |
+| [STATE_SYNC_BENCHMARK.md](development/STATE_SYNC_BENCHMARK.md) | 状态同步链路基线与优先级验证；§十一 是增量传输的首轮逐轮对照 |
 | [MOBILE_UI.md](development/MOBILE_UI.md) | 管理界面移动端密度 |
 
 ### 上游合并记录
@@ -83,18 +78,16 @@
 | [CHANGELOG.md](history/site/CHANGELOG.md) | 本站更新记录 |
 | [0.3.0-release.md](history/site/0.3.0-release.md) | 0.3.0 发布说明 |
 
-## 归档（archive/）
+## 阅读顺序
 
-| 文档 | 为什么归档 |
-|---|---|
-| [CODE_REVIEW_2026-10.md](archive/reviews/CODE_REVIEW_2026-10.md) | 对 `cf7a9400` 的整轮审查，P0–P3 已按记录整改 |
-| [CODE_REVIEW_REFACTOR_2026-10.md](archive/reviews/CODE_REVIEW_REFACTOR_2026-10.md) | 上面那份审查的整改记录，改动已落地 |
-| [MERGE_0.3.1_EFFECTS_TASKS.md](archive/plans/MERGE_0.3.1_EFFECTS_TASKS.md) | 0.3.1 特效层交接任务清单，任务已合并 |
-| [INCIDENT-2026-10-17.md](archive/incidents/INCIDENT-2026-10-17.md) | 西安节点历史防护事故与当时的仓库默认调整 |
-| [INCIDENT-2026-10-20-LATENCY.md](archive/incidents/INCIDENT-2026-10-20-LATENCY.md) | 单节点历史延迟尖峰采样与处理记录 |
+- 第一次开服：[DEPLOY.md](operations/DEPLOY.md) → [LIMITS.md](operations/LIMITS.md)（含逐机验收）。
+- 加固一台机器：[HOST_HARDENING.md](operations/HOST_HARDENING.md) → [HTTP_PROTECTION.md](operations/HTTP_PROTECTION.md) → [WS_PROTECTION.md](operations/WS_PROTECTION.md) → [BROWSER_GATE.md](operations/BROWSER_GATE.md)。
+- 跟上上游：[FORK_MAINTENANCE.md](development/FORK_MAINTENANCE.md) → 对应的 `MERGE_*.md` → [TEST_WORKFLOW.md](development/TEST_WORKFLOW.md)。
+- 排查性能与同步：[PERFORMANCE.md](development/PERFORMANCE.md) → [LATENCY.md](development/LATENCY.md) → [STATE_SYNC_BENCHMARK.md](development/STATE_SYNC_BENCHMARK.md)。
 
 ## 不放进来的东西
 
 - 一次性的复现脚本、截图、抓包与日志：放 Git 忽略的 `.cache/` 或 `.local/`，不进本树。
 - 含真实主机地址、端口、SSH 用户与密钥路径的现场备注：只留在服务器与本机私有目录。
 - 上游已有的文档：合并时按原路径更新 `docs/`，不在 `custom_docs/` 复制一份。
+- 已结清的历史记录：结论进正文，原始材料进 git 历史，不再新增归档目录。

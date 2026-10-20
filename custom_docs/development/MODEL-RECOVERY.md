@@ -1,175 +1,80 @@
-# Model Disappearance: Findings and Regression Coverage
+# 模型消失：已确认的原因与回归覆盖
 
-## Confirmed Failure Mechanisms
+场景可以保留单位影子、等级与战斗状态，同时丢掉它的模型。这些元素与 Spine actor 是两回事，它们还在，并不能证明模型那几张图集页面可用。
 
-The scene can keep a unit's shadow, rank and combat state while losing its model.
-Those elements are separate from the Spine actor; their presence does not prove
-that the model's page textures are usable.
+以下每条机制都由对照实验复现过，同时说明它解释的是哪一种现象，不能推证线上所有报告都是同一个原因。
 
-### Disposed atlas reused after an unload
+## 已确认的失效机制
 
-In per-file CDN manifest mode, `loadSpineData` supplies an explicit `spineAtlas`.
-Pixi Assets retains resolver metadata after unloading an asset and ignores new
-metadata supplied for an already registered URL. Without refreshing that resolver
-record, a reload can parse the skeleton against the previous atlas, whose page
-textures were destroyed by the preceding unload. Creating the Spine object can
-still succeed, so the renderer hides its fallback and draws an invisible model.
+### 卸载后复用了已销毁的图集
 
-The resolver refresh was already fixed in `fca74861`. A local Chrome control
-experiment on 2026-10-12 deliberately restored the disposed metadata before the
-second parse: the constructed model had 25 used textures, all destroyed/invalid.
-The fixed path rendered nontransparent pixels through 25 full unload/reload
-cycles covering two operators' Front/Back models and one enemy.
+按文件分片的 CDN 清单模式下，`loadSpineData` 会显式传入 `spineAtlas`。Pixi Assets 在卸载资源后仍保留 resolver 元数据，并且忽略为已注册 URL 新传入的元数据。不刷新那条 resolver 记录的话，重新加载会拿上一份图集去解析骨架，而那份图集的页面纹理已经被前一次卸载销毁。Spine 对象照样能创建成功，于是渲染层藏起了兜底图，画出来的是一个隐形模型。
 
-This explains a scene-switch-dependent failure mechanism, not proof that every
-production report has the same cause. Cache pressure and which models a scene
-reuses affect which units encounter it. This investigation made no production
-changes and did not verify the currently deployed client version.
+resolver 刷新在 `fca74861` 已修。2026-10-12 用本机 Chrome 做对照，刻意在第二次解析前把已销毁的元数据恢复回去：构造出来的模型有 25 张在用纹理，全部是销毁／无效状态。修复后的路径在 25 轮完整卸载／重载里都能渲染出非透明像素，覆盖两名干员的正面／背面模型和一个敌人。
 
-### Build errors had no recovery path
+这只解释了「切场景才出现」这一类机制，不等于每份线上报告都是同一原因。缓存压力、场景复用了哪些模型，决定了哪些单位会碰上。这次排查没有改动生产代码，也没有核对当时线上部署的客户端版本。
 
-`UnitView` used to retry rejected downloads, but returned immediately when actor
-construction threw. Failures while restoring the unit's pose were outside that
-handler; an orientation swap could discard the working actor first.
+### 构建报错没有恢复路径
 
-Construction and pose setup now share the bounded download-failure recovery path,
-including local-to-web fallback. A replacement is prepared before the previous
-actor is retired. Partial actors are destroyed without destroying shared textures.
-Retry counters reset only after installation succeeds; a failed orientation swap
-can retry while keeping the old model visible.
+`UnitView` 过去会重试被拒绝的下载，但 actor 构造抛错就直接返回。恢复单位姿态时的失败不在那个 handler 里；一次朝向切换还可能先把正常工作的 actor 丢掉。
 
-### Expired failures could corrupt reference counts
+现在构造与姿态设置共用同一条有界的下载失败恢复路径，包含本地素材回落到网络素材。新的 actor 准备好之后才退休旧的。半成品 actor 会被销毁，但不销毁共享纹理。重试计数只在安装成功后重置；朝向切换失败可以重试，期间旧模型保持可见。
 
-`RefLru.acquire` previously replaced expired failed entries even when callers still
-held references. Their later `release(key)` calls could decrement the replacement
-entry, allowing a live resource to be evicted. Both TTL expiry and explicit retry
-now require zero references before replacing a failure.
+### 过期的失败记录会破坏引用计数
 
-### Held impostor images stayed blank after WebGL restoration
+`RefLru.acquire` 过去会在调用方仍持有引用时替换过期的失败条目。这些调用方之后的 `release(key)` 会去减替换后的那个条目，让仍在使用的资源被淘汰。现在 TTL 到期和显式重试都要求引用为零才替换失败条目。
 
-Frozen and downed units can retain their final pose in a shared impostor atlas or
-a private render texture. WebGL context restoration invalidates those GPU image
-contents. The held-pose optimization previously skipped repainting them because
-the actor had not moved, leaving an empty cached image indefinitely.
+### 定格的替身图在 WebGL 恢复后仍是空白
 
-A real Chrome control lost and restored the context with `WEBGL_lose_context`:
-the held model went from 4,967 nontransparent pixels to zero. Manually marking
-the impostor dirty restored all 4,967 pixels. This confirms another independent
-failure mechanism, not that context loss occurred in the original screenshots.
+冻结与倒地的单位可以把最后一帧姿态留在共享替身图集或私有渲染目标里。WebGL 上下文恢复会让这些 GPU 图像内容失效。定格姿态优化过去因为 actor 没动就跳过重绘，于是那张缓存图一直是空的。
 
-Impostors now track the renderer's context identity and repaint after it changes.
-Each atlas page also clears itself on its first draw in the new context. Shared
-and private targets recovered automatically in Chrome, retaining the same actor
-and render target; the held-pose optimization resumes after the redraw. No model
-redownload, simulation restart or continuous pixel scan is required.
+本机 Chrome 用 `WEBGL_lose_context` 真实丢失并恢复一次上下文：定格模型从 4,967 个非透明像素掉到零；手动把替身标记为脏之后，4,967 个像素全部回来。这确认了另一条独立机制，不是说原始截图里一定发生过上下文丢失。
 
-The new browser test's evaluation callback ran through Playwright at 1280x720
-and 390x844 against the local raw-object CDN. Both shared and private targets
-retained nonzero pixels after restoration (4,668 on desktop; 477/476 on mobile).
-Screenshots were inspected at both sizes. This exercised the browser regression
-body, not its Puppeteer launcher. The non-browser renderer and asset-CDN suite
-passed 582 tests with two skips; `npm run build` also passed.
+现在替身会记录渲染器的上下文身份，换代后重绘；每个图集页面也会在新上下文里的第一次绘制时自清。共享与私有目标在 Chrome 里都能自动恢复，actor 与渲染目标不变，重绘后定格姿态优化继续生效。不需要重新下载模型、重启模拟或持续扫描像素。
 
-### A model loaded while stunned could cache an unposed skeleton
+新的浏览器用例经 Playwright 在 1280x720 与 390x844 下对本地原始对象 CDN 执行：恢复后共享与私有目标都保留了非零像素（桌面 4,668；移动 477/476），两个尺寸都看过截图。这次跑的是浏览器回归用例本体，不是它的 Puppeteer 启动器。非浏览器的渲染器与素材 CDN 套件 582 项通过、2 项跳过；`npm run build` 也通过。
 
-The 120-unit stress scene exposed three persistent blank models: Gavial the
-Invincible, an enemy shield guard and an enemy recruit. Their textures were
-valid, but they entered stun before their first Spine update. Without a stun
-clip, `frozen` skipped that update while still marking the pose as applied.
-Repainting alone left them blank; `spine.update(0)` followed by a repaint restored
-all three without advancing their animations or reloading their assets.
+### 眩晕期间加载的模型会缓存未摆姿的骨架
 
-Frozen actors now apply their first pose and pending tint/clip changes at zero
-animation time. Unchanged poses remain cached; failed pose updates are not marked
-as applied. A fresh browser run checked all 91 living models in the stress scene
-twice with no blank models or invalid textures. All three initially stunned
-models remained visible with track time zero. Degenbrecher's Skill 3 disappearance
-is an intentional animation and is not counted as a loading failure.
+120 单位的压测场景暴露出三个持续空白的模型：不败的嘉维尔、一个敌方盾卫和一个敌方新兵。它们的纹理都是好的，只是在第一次 Spine 更新前就进了眩晕。没有眩晕 clip 时，`frozen` 跳过那次更新，却仍然把姿态标记成已应用。单纯重绘救不回来；先 `spine.update(0)` 再重绘，三个模型全部恢复，既不推进动画也不重载素材。
 
-### WebGL restoration left Pixi extensions disabled
+现在冻结的 actor 在动画时间为零时应用第一次姿态，并带上待处理的染色与 clip 变更。姿态没变化就继续用缓存；姿态更新失败不标记为已应用。新跑一轮浏览器检查，把压测场景里全部 91 个活着的模型查了两遍，没有空白模型，也没有无效纹理。三个一开始就眩晕的模型保持可见，轨道时间为零。锏的三技能消失是设计内的动画，不计为加载失败。
 
-The shipped Pixi 7 context-restored handler rebuilt GPU resources without calling
-`getExtensions()` again. WebGL disables extensions on context loss, so cached
-anisotropic-filtering enums produced `INVALID_ENUM` warnings after restoration.
-A capture-phase restoration listener now refreshes extensions before Pixi's
-resource-rebuild listener runs; it is removed when the view is destroyed.
-Two real browser restorations (shared atlas and private target) retained visible
-model pixels, reported no matching warnings and ended with `gl.getError() === 0`.
+### WebGL 恢复后 Pixi 扩展仍处于禁用状态
 
-The combined non-browser renderer/asset-CDN suite passed 586 tests with two skips;
-the production Vite build passed. Browser checks used Playwright because the
-standalone Puppeteer launcher timed out in this environment.
+随包发布的 Pixi 7 在上下文恢复处理里重建 GPU 资源，却没有重新调用 `getExtensions()`。WebGL 在丢失上下文时会禁用扩展，于是缓存的各向异性过滤枚举值在恢复后产生 `INVALID_ENUM` 警告。现在有一个捕获阶段的恢复监听器，在 Pixi 自己的资源重建监听器之前刷新扩展，视图销毁时一并移除。两次真实浏览器恢复（共享图集与私有目标）都保住了可见的模型像素，没有对应的警告，结束时 `gl.getError() === 0`。
 
-## Additional Guards
+合并后的非浏览器渲染器／素材 CDN 套件 586 项通过、2 项跳过，生产 Vite 构建通过。浏览器检查用 Playwright 执行，因为这套环境里独立的 Puppeteer 启动器会超时。
 
-- Invalid atlas pages are rejected rather than accepted as a ready model.
-- Asynchronous atlas page callback errors reject the load instead of leaving it
-  pending until timeout.
-- Unload drops the resolver's old atlas reference, but never a newer load's atlas.
-- No cache-budget increase, permanent resource pinning or per-frame skin scan was
-  introduced. Missing or permanently broken assets still use a fallback after
-  bounded retries; the application cannot guarantee successful downloads.
+## 附加守卫
 
-## Tests
+- 无效的图集页面一律拒绝，不当成可用模型接受。
+- 图集页面回调里的异步错误会让这次加载失败，而不是一直挂到超时。
+- 卸载只丢弃 resolver 的旧图集引用，绝不丢弃更新的那次加载的图集。
+- 没有引入缓存预算上调、永久钉住资源或逐帧换肤扫描。缺失或彻底损坏的素材在有界重试之后仍走兜底图；应用无法保证下载一定成功。
 
-- `test/render/model-recovery.test.js`: construction failure, bounded retries,
-  atomic orientation replacement, partial actor cleanup and local-model fallback.
-- `test/render/assets.test.js`: referenced failure expiry and cache lifecycle.
-- `test/asset-cdn.test.js`: invalid atlas/page rejection and resolver cleanup.
-- `test/asset-cdn.browser.test.js`: real textures and extracted pixels across 25
-  unload/reload cycles. Opt in with `SP_E2E=1`; requires Chrome and downloaded art.
-- `test/render/held-pose.test.js`: one redraw after context restoration for both
-  shared and private targets, then held-pose update skipping resumes.
-- `test/render/impostor-context.test.js`: atlas pages clear once per context.
-- `test/render/frozen-pose.test.js`: first pose, tint/clip changes, thaw and retry
-  after a failed pose update while frozen.
-- `test/render/pixi-extensions.test.js`: extension refresh precedes resource
-  rebuilding, and the restoration listener is removable.
-- `test/render/context-recovery.browser.test.js`: real held-model pixels survive
-  context restoration in both target types at desktop and mobile viewport sizes.
-  Opt in with `RENDER_E2E=1`; requires Chrome and downloaded art.
+## 测试
 
-The browser evaluation callback was also executed through the Playwright browser
-tool against a local raw-object CDN. This does not exercise Puppeteer's launcher.
-Desktop (1440x900) and mobile-sized (390x844) demo scenes additionally completed
-17 prep/united-defense/normal/final-assault transitions without missing actors,
-invalid textures or logged errors. The desktop test changed model orientation in
-each scene. After the idle grace elapsed, the cache reclaimed idle models down to
-its existing 48 MiB budget; subsequent scene transitions still rendered correctly.
-Both viewport sizes were inspected with screenshots and canvas pixel checks.
-After deployment, existing tabs must load the updated client; files already
-executing in a browser are not replaced by a server restart.
+- `test/render/model-recovery.test.js`：构造失败、有界重试、原子化的朝向替换、半成品 actor 清理与本地模型回落。
+- `test/render/assets.test.js`：带引用的失败过期与缓存生命周期。
+- `test/asset-cdn.test.js`：无效图集／页面拒绝与 resolver 清理。
+- `test/asset-cdn.browser.test.js`：25 轮卸载／重载里的真实纹理与像素提取。用 `SP_E2E=1` 显式开启，需要 Chrome 和已下载的美术素材。
+- `test/render/held-pose.test.js`：上下文恢复后共享与私有目标各重绘一次，随后定格姿态的更新跳过继续生效。
+- `test/render/impostor-context.test.js`：图集页面在每个上下文里只自清一次。
+- `test/render/frozen-pose.test.js`：首次姿态、染色／clip 变更、解冻，以及冻结期间姿态更新失败后的重试。
+- `test/render/pixi-extensions.test.js`：扩展刷新先于资源重建，恢复监听器可移除。
+- `test/render/context-recovery.browser.test.js`：桌面与移动视口下，两类目标里的真实定格模型像素都能熬过上下文恢复。用 `RENDER_E2E=1` 显式开启，需要 Chrome 和已下载的美术素材。
 
-## Shared DOM and Canvas Image Policy
+浏览器求值回调另外通过 Playwright 对本地原始对象 CDN 跑过一遍，这不覆盖 Puppeteer 的启动器。桌面（1440x900）与移动尺寸（390x844）的演示场景还完整走完 17 次准备／联防／常规／最终攻势切换，没有缺 actor、无效纹理或报错日志；桌面用例在每次切场景时都改了一次模型朝向。空闲宽限期过后，缓存把闲置模型回收到既有的 48 MiB 预算，后续场景切换仍然正常。两个视口都用截图与 canvas 像素检查过。部署后已打开的标签页必须加载新客户端：服务器重启不会替换浏览器里正在跑的脚本。
 
-R2 custom-domain responses can omit CORS headers when the request has no Origin,
-even with a valid bucket allow policy. A normal DOM image can therefore seed the
-browser HTTP cache with a response that a later anonymous Canvas/WebGL image
-cannot use. This explains a detail-card icon loading while its battlefield plate
-remains the question-mark fallback.
+## 共享 DOM 与 Canvas 的图片策略
 
-All DOM image templates now request anonymous CORS before setting `src`. The
-shared `public/js/image.js` loader uses the same policy. On failure it refreshes
-the original URL once with a CORS `fetch` and `cache: 'reload'`, then retries the
-image. Concurrent refreshes of one URL share a request; the refresh times out
-after ten seconds. DOM recovery checks that the element is still mounted and
-still has the same URL before applying its result. Permanent failures retain the
-existing UI fallback, without an automatic retry loop.
+R2 自定义域在请求不带 Origin 时可能不返回 CORS 头，即使桶的允许策略有效。于是 DOM 图片可能先用一份响应占住浏览器 HTTP 缓存，后面匿名 Canvas／WebGL 的加载用不了它。详情卡图标能显示、但战场立绘一直停在问号兜底图，就是这条。
 
-Resource hashes, downloaded packs and CacheStorage entries are unchanged. This
-is a targeted migration of old HTTP-cache entries, not a global cache purge.
-`test/render/image-cors-recovery.test.js` covers bounded recovery, concurrency
-and stale elements; `test/ui/image-policy.test.js` guards every DOM image entry.
-Browser checks against an Origin-dependent local CDN also confirmed recovery of
-the three reported icons and a valid, nonblank ItemView texture after warming a
-legacy non-CORS cache entry. Real network errors or denied CORS still require a
-fallback; this policy does not make unavailable resources downloadable.
+所有 DOM 图片模板现在都在设置 `src` 之前请求匿名 CORS；共享的 `public/js/image.js` loader 用同一套策略。失败时用 CORS `fetch` 加 `cache: 'reload'` 刷新原 URL 一次，再重试图片。同一 URL 的并发刷新共用一个请求；刷新十秒超时。DOM 恢复在应用结果前确认元素仍挂载、URL 未变。永久失败保留既有的界面兜底，不自动重试。
 
-## Vite Is Not a Resource-Lifecycle Fix
+资源哈希、已下载的资源包和 CacheStorage 条目都不变。这是针对旧 HTTP 缓存条目的定点迁移，不是全局清缓存。`test/render/image-cors-recovery.test.js` 覆盖有界恢复、并发与过期元素；`test/ui/image-policy.test.js` 守住每个 DOM 图片入口。对依赖 Origin 的本地 CDN 做浏览器检查，也确认了报告里的三个图标能恢复，预热一条旧的非 CORS 缓存条目后 ItemView 纹理有效且非空白。真实网络错误或 CORS 被拒仍要走兜底；这套策略不会让取不到的素材变得可取。
 
-The project already builds the production client with Vite. Bundling reduces
-JavaScript module requests and produces versioned chunks, but the model's skeleton,
-atlas and image pages are still loaded at runtime. It cannot correct stale Pixi
-resolver metadata, reference-count corruption, or blank restored render targets.
-Those require the runtime fixes and regression coverage above. Do not disable
-texture garbage collection or pin all models permanently to hide the symptoms.
+## Vite 不是资源生命周期方案
+
+项目早就在用 Vite 构建生产客户端。打包减少 JS 模块请求、产出带版本的分包，但模型的骨架、图集与图集页面仍是运行时加载的。它修不了 Pixi resolver 的过期元数据、引用计数损坏，也修不了恢复后空白的渲染目标——这些靠上面的运行时修复与回归覆盖。不要靠关掉纹理 GC 或永久钉住所有模型来掩盖症状。

@@ -9,7 +9,7 @@
 
 同一个主题两边都有时以 `custom_docs/` 为准：例如部署以[custom_docs 的部署指南](../custom_docs/operations/DEPLOY.md)为准，`docs/DEPLOY.md` 只是上游原样保留的那一份。
 
-本分支自己的文档树内部另有一份[索引](../custom_docs/README.md)：目录约定、每篇的用途，以及 custom_docs/archive/ 里归档了什么。
+本分支自己的文档树内部另有一份[索引](../custom_docs/README.md)：目录约定、每篇文档的用途与阅读顺序。
 
 ## 玩法与内容包
 
@@ -32,15 +32,13 @@
 | [公开接口限流与永久封禁](../custom_docs/operations/HTTP_PROTECTION.md) | 本分支 | API 请求频率、持久封禁名单与 Nginx 缓存前鉴权 |
 | [WebSocket 升级防护](../custom_docs/operations/WS_PROTECTION.md) | 本分支 | 升级尝试计数、Origin 校验与入口 jail |
 | [自动浏览器入口验证](../custom_docs/operations/BROWSER_GATE.md) | 本分支 | 回环服务 + `auth_request`，签名 Cookie 准入 |
-| [Linux 主机加固](../custom_docs/operations/HOST_HARDENING.md) | 本分支 | 关闭公开探测、主机防火墙、fail2ban、日志轮转与每日巡检 |
+| [Linux 主机防刷与巡检](../custom_docs/operations/HOST_HARDENING.md) | 本分支 | 关闭公开探测、主机防火墙、fail2ban、日志轮转与每日巡检 |
 | [机房来源分级](../custom_docs/operations/IDC_PROTECTION.md) | 本分支 | ASN 名单的可行性、证据与封不住的边界 |
-| [2026-10-17 事故记录](../custom_docs/archive/incidents/INCIDENT-2026-10-17.md) | 本分支 | 防护默认值的来龙去脉与线上边界 |
 | [国家库（GeoLite）](../geoip/README.md) | 本分支 | 海外识别用的 Country 库：来源、许可、放置位置与更新 |
 | [发行包制作](../custom_docs/operations/PACKAGING.md) | 本分支 | 维护者制作完整、精简与更新包 |
 | [Windows 便携包](WINDOWS.md) | 上游 | 制作与使用便携包 |
 | [CDN 与资源更新](../custom_docs/operations/CDN.md) | 本分支 | 静态资源分发、预载与缓存 |
 | [对局持久化](../custom_docs/operations/PERSISTENCE.md) | 本分支 | 检查点、索引、运行时钟与恢复 |
-| [线上核查清单](../custom_docs/operations/ONLINE-CHECKLIST.md) | 本分支 | 三台主机逐项核查与验收 |
 
 ## 开发参考
 
@@ -58,11 +56,11 @@
 | [干员外观](OPERATOR-SKINS.md) | 上游 + 本分支 | 时装目录、`room.skins { choices }`、预载与战斗模型 |
 | [干员皮肤（插件叠加）](SKINS.md) | 上游 | 外观插件的 overlay schema 与显示规则 |
 | [性能](../custom_docs/development/PERFORMANCE.md) | 本分支 | Worker 池、预载与性能优化 |
-| [状态同步链路基线](../custom_docs/development/STATE_SYNC_BENCHMARK.md) | 本分支 | 视图构建/差分/检查点的分段成本与端到端对照,以及计划三条优先级的实测判定(配套[增量传输](../custom_docs/development/STATE_DELTA.md)、[增量压测](../custom_docs/development/STATE_DELTA_BENCHMARK.md)) |
+| [状态同步链路基线](../custom_docs/development/STATE_SYNC_BENCHMARK.md) | 本分支 | 视图构建/差分/检查点的分段成本与端到端对照,以及计划三条优先级的实测判定(配套[增量传输](../custom_docs/development/STATE_DELTA.md),增量压测的逐轮数据见本文 §十一) |
 | [管理界面移动端密度](../custom_docs/development/MOBILE_UI.md) | 本分支 | 非战场管理界面的紧凑层、变量契约与真机验证边界 |
 | [本分支 API](../custom_docs/development/CUSTOM_API.md) | 本分支 | 房间查询、匹配与扩展接口 |
 | [上游合并记录](../custom_docs/development/FORK_MAINTENANCE.md) | 本分支 | 合并流程、冲突处理与推迟清单 |
-| [归档](../custom_docs/README.md) | 本分支 | 已结清的审查、过期的一次性计划与历史任务清单 |
+| [本分支文档索引](../custom_docs/README.md) | 本分支 | 目录约定与其余开发、测试、合并记录的全表 |
 
 ## 设计章节、历史与调研
 

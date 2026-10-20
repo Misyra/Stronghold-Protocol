@@ -18,6 +18,7 @@ import { ensurePersistence, missingStorage, storageEstimate } from './storage.js
 import { createResourceState } from './state.js';
 import { ResourceTasks } from './tasks.js';
 import { ResourceRecovery } from './recovery.js';
+import { normalizePreloadVoiceLanguages } from './voices.js';
 import { t } from '../../../shared/i18n.js';
 
 /** @type {any} */
@@ -61,6 +62,7 @@ const stateStore = createResourceState({
   storage: null,
   voiceLang: 'cn',
   voiceLanguages: [],
+  voiceStats: [],
   allVoices: false,
   // 干员皮肤: the per-item selection and the counters the panel's skin list renders (custom_docs/SKINS.md).
   skins: [],
@@ -89,6 +91,7 @@ let wantRun = false;
 let workerPromise = null;
 let voiceLang = 'cn';
 let allVoices = false;
+let preloadVoiceLanguages = null;
 /** @type {string[]} the equipped 干员皮肤 (`charId/skinId`) the preload follows — empty when the switch is off. */
 let skinKeys = [];
 /** @type {boolean} 全部皮肤: preload every outfit the manifest offers instead of the equipped ones (custom_docs/SKINS.md). */
@@ -183,6 +186,7 @@ const counters = (s) => ({
   groups: s.groups ?? [],
   scopes: s.scopes ?? [],
   voiceLanguages: s.voiceLanguages ?? [],
+  voiceStats: s.voiceStats ?? [],
   fxFiles: s.fxFiles ?? 0,
   manifestFiles: s.manifestFiles ?? 0,
   manifestReady: typeof s.manifestFiles === 'number',
@@ -210,7 +214,7 @@ const SCOPE_LABEL = { essential: () => t('必备资源'), voice: () => t('干员
 const scopeLabel = (scope) => (scope && SCOPE_LABEL[scope] ? SCOPE_LABEL[scope]() : t('全部资源'));
 
 /** The current selection as the store wants it, whichever axis changed last. */
-const storeScope = () => ({ optional, voices, voiceLang, allVoices, skins: { keys: skinKeys, all: allSkins }, fx });
+const storeScope = () => ({ optional, voices, voiceLang, allVoices, voiceLanguages: preloadVoiceLanguages, skins: { keys: skinKeys, all: allSkins }, fx });
 
 /** Why this browser cannot keep the resources (empty ⇒ it can). */
 export function unsupportedReason() {
@@ -295,7 +299,7 @@ async function dropWorker() {
  * @param {boolean} [includeOptional] 额外资源: the optional (tier 2) set — voices, sound effects, music, tutorials
  * @param {string} [language] voice language kept in the selection
  * @param {boolean} [includeAllVoices]
- * @param {Iterable<string>|{ keys?: Iterable<string>, all?: boolean, fx?: boolean, voices?: boolean }|'all'|'off'|null} [selection]
+ * @param {Iterable<string>|{ keys?: Iterable<string>, all?: boolean, fx?: boolean, voices?: boolean, voiceLanguages?: string[]|null }|'all'|'off'|null} [selection]
  *   干员皮肤: the equipped `charId/skinId` keys to follow, or every outfit with `{ all: true }` (custom_docs/SKINS.md).
  *   官方特效: `{ fx }` — its own switch (tier 2, ~185 MiB, docs/design/vfx-format.md), unaffected by `includeOptional`.
  */
@@ -307,8 +311,11 @@ export async function syncResources(enabled, includeOptional = optional, languag
   const nextFx = selection && !Array.isArray(selection) && typeof selection.fx === 'boolean' ? selection.fx : fx;
   // Older callers tied voices to optional; the manager now exposes the two choices independently.
   const nextVoices = selection && typeof selection.voices === 'boolean' ? selection.voices : !!includeOptional;
+  const nextVoiceLanguages = selection && Object.hasOwn(selection, 'voiceLanguages')
+    ? normalizePreloadVoiceLanguages(selection.voiceLanguages) : preloadVoiceLanguages;
   const changed = optional !== !!includeOptional || voiceLang !== language || allVoices !== !!includeAllVoices
-    || !sameSkinScope({ keys: skinKeys, all: allSkins }, nextScope) || fx !== nextFx || voices !== nextVoices;
+    || !sameSkinScope({ keys: skinKeys, all: allSkins }, nextScope) || fx !== nextFx || voices !== nextVoices
+    || JSON.stringify(nextVoiceLanguages) !== JSON.stringify(preloadVoiceLanguages);
   if (enabled === current && !changed) { set({ enabled }); return; }
   recovery.cancel();
   recoveryAttempts = 0;
@@ -319,6 +326,7 @@ export async function syncResources(enabled, includeOptional = optional, languag
   voices = nextVoices;
   voiceLang = language;
   allVoices = !!includeAllVoices;
+  preloadVoiceLanguages = nextVoiceLanguages;
   skinKeys = nextScope.keys;
   allSkins = nextScope.all;
   fx = nextFx;
@@ -431,7 +439,7 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal)
   const list = validateResourcePacks(packs);
   if (!list.length) return { imported: 0 };
   const present = status?.present instanceof Set ? status.present : new Set(status?.present || []);
-  const byKey = new Map(store.files.map((file) => [store.keyOf(file.url), file]));
+  const byKey = new Map(store.selectedFiles.map((file) => [store.keyOf(file.url), file]));
   const plans = [];
   for (const pack of list) {
     checkAbort(signal);
@@ -441,7 +449,8 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal)
       const file = byKey.get(store.keyOf(entry.url));
       if (file && file.hash === entry.hash && (file.size == null || file.size === entry.size) && file.tier === pack.tier) candidates.push(file);
     }
-    if (!candidates.length) continue;
+    // A mixed-language/skin pack must not download bytes the player did not select. Fill those files individually.
+    if (!candidates.length || candidates.length !== pack.files.length) continue;
     const selected = candidates.reduce((sum, file) => sum + (file.size || 0), 0);
     const missing = candidates.reduce((sum, file) => present.has(store.keyOf(file.url)) ? sum : sum + (file.size || 0), 0);
     if (!selected || missing < selected * 0.25) continue;   // 缺得少就逐文件补，别为几个文件拉整包

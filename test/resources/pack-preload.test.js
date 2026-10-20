@@ -58,6 +58,7 @@ function stubStore(files, present = []) {
     got,
     manifest: { version: 'v1' },
     files,
+    selectedFiles: files,
     keyOf: (url) => url,
     status: async () => ({ present: new Set(present) }),
     importEntries: async (entries) => { for await (const e of entries) got.push({ file: e.files[0], size: e.size, bytes: [...e.read()] }); return { imported: got.length }; },
@@ -87,4 +88,19 @@ test('缺得少就不拉整包；档位不符也不拉', async () => {
   assert.equal((await preloadTransportPacks(mostlyCached, [pack], [1], await mostlyCached.status(), new AbortController().signal)).imported, 0);
   const wrongTier = stubStore(files);
   assert.equal((await preloadTransportPacks(wrongTier, [pack], [2], await wrongTier.status(), new AbortController().signal)).imported, 0);
+});
+
+test('语种未全选时不拉混合分包，也不导入未勾选的资源', async () => {
+  const files = ['cn', 'en'].map((lang) => ({ url: `/assets/audio/voice/${lang}/test.mp3`, tier: 2 }));
+  const { pack } = await makePack(files);
+  pack.tier = 2;
+  const mapped = files.map((file, i) => ({ ...file, hash: pack.files[i].hash, size: pack.files[i].size }));
+  const store = stubStore(mapped);
+  store.selectedFiles = mapped.slice(0, 1);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = () => { throw new Error('must not fetch a pack with unselected languages'); };
+  try {
+    assert.equal((await preloadTransportPacks(store, [pack], [2], await store.status(), new AbortController().signal)).imported, 0);
+    assert.deepEqual(store.got, []);
+  } finally { globalThis.fetch = realFetch; }
 });

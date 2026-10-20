@@ -171,7 +171,7 @@ test('compact controls use their actual box: the 44 px invisible hit area is cli
   assert.equal(declaration(selector, 'height', MOBILE), '100%');
   assert.equal(declaration(selector, 'transform', MOBILE), 'none');
   // and the compact boxes stay above the 24 px WCAG 2.2 minimum (24 px = .6 rem at the 40 px root floor)
-  assert.equal(declaration('.resource-choice', 'min-height', MOBILE), '.7rem');
+  assert.equal(declaration('.resource-choice', 'min-height', MOBILE), '30px');
   assert.equal(declaration('.guide__dot', 'min-width', MOBILE), '26px');
   assert.equal(declaration('.room-screen .invite__btns .btn', 'min-width', MOBILE), '.65rem');
   assert.equal(declaration('.utility-modal :is(.btn--square, .utility-modal__close)', 'width', MOBILE), '30px');

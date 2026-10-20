@@ -390,7 +390,8 @@ function ResourceManagerHost() {
   // there, not here — and 「全部皮肤」 widens that to every outfit the manifest offers. 官方特效 has one switch of its
   // own (docs/ASSETS.md): ~185 MiB of effect prefabs, textures and meshes, never implied by 额外资源.
   return html`<${ResourceHost} enabled=${settings.preload} optional=${settings.preloadOptional} voices=${settings.preloadVoices} allVoices=${settings.preloadAllVoices}
-    voiceLang=${settings.voiceLang} onVoiceLang=${(v) => updateSettings({ voiceLang: v })} skinPreload=${settings.preloadSkins}
+    voiceLang=${settings.voiceLang} voicePreloadLanguages=${settings.preloadVoiceLanguages}
+    onVoiceLanguages=${(v) => updateSettings({ preloadVoiceLanguages: v, preloadAllVoices: false })} skinPreload=${settings.preloadSkins}
     skinPreloadAll=${settings.preloadSkinsAll}
     fxPreload=${settings.preloadFx}
     onChange=${(v) => updateSettings({ preload: v })} onOptional=${(v) => updateSettings({ preloadOptional: v })}
@@ -555,7 +556,7 @@ function installResourcePreload() {
       const keys = s.preloadSkins ? equippedSkinKeys() : [];
       const all = !!(s.preloadSkins && s.preloadSkinsAll);
       // 官方特效 rides its own switch: it is not part of `preloadOptional` in either direction.
-      r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices, { keys, all, fx: s.preloadFx, voices: s.preloadVoices })
+      r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices, { keys, all, fx: s.preloadFx, voices: s.preloadVoices, voiceLanguages: s.preloadVoiceLanguages })
         .catch((err) => console.warn('[resources] sync failed', err));
       // 全部皮肤 wants every outfit, so an empty equipped list is the expected state, not a missing one.
       if (s.preloadSkins && !all && !keys.length) {

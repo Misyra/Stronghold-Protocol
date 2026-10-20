@@ -11,6 +11,7 @@ import { CACHE_NAME, CACHE_PREFIX, cacheName, indexUrl, rangeResponse, TIER_ESSE
 import { collectResourceFiles } from '../../server/resources.js';
 import { ResourceStore, normalizeSkinKeys, normalizeSkinScope } from '../../public/js/resources/store.js';
 import { handleResourceRequest } from '../../public/js/resources/service.js';
+import { sanitizeSettings } from '../../public/js/ui/gameLogic/settings.js';
 
 /** Minimal Cache Storage (Cache API surface the store uses: open/keys/delete + cache.put/match/keys). */
 class MemoryCache {
@@ -29,6 +30,30 @@ class MemoryCaches {
 }
 
 const ORIGIN = 'https://game.example';
+
+test('preload language selection persists multiple dubs and native without changing playback or discarding cached languages', async () => {
+  const langs = ['cn', 'jp', 'en', 'kr', 'native'];
+  const files = langs.map((lang) => ({ url: `/assets/audio/voice/${lang}/test.mp3`, tier: 2, size: 8 }));
+  const caches = new MemoryCaches();
+  const settings = sanitizeSettings({ voiceLang: 'jp', preloadVoiceLanguages: ['native', 'en', 'invalid', 'en'] });
+  assert.deepEqual(settings.preloadVoiceLanguages, ['en', 'native']);
+  assert.equal(settings.voiceLang, 'jp');
+  assert.equal(sanitizeSettings({ voiceLang: 'kr' }).preloadVoiceLanguages, null);
+  const store = new ResourceStore(manifest(files), { caches, origin: ORIGIN, fetcher: fetcherFor().fetch });
+  store.setScope({ voices: true, optional: false, voiceLang: settings.voiceLang, voiceLanguages: settings.preloadVoiceLanguages });
+  assert.deepEqual(store.selectedFiles.map((f) => f.url), [files[2].url, files[4].url]);
+  await store.download();
+  const stats = await store.status();
+  assert.equal(stats.count, 2);
+  assert.equal(stats.totalBytes, 16);
+  assert.deepEqual(stats.voiceStats.map((s) => [s.id, s.present, s.totalBytes]), langs.map((lang) => [lang, ['en', 'native'].includes(lang) ? 1 : 0, 8]));
+  store.setScope({ voices: true, voiceLang: 'cn', voiceLanguages: [] });
+  assert.deepEqual(store.selectedFiles, []);
+  store.setScope({ voices: true, voiceLang: 'cn', voiceLanguages: [], allVoices: true });
+  assert.equal(store.selectedFiles.length, 5);
+  store.setScope({ voices: true, voiceLang: 'en' });
+  assert.equal((await store.status()).count, 1, 'cached English is retained after selection changes');
+});
 
 test('voice scope is independent of music and supports every global dub, without hiding cached catalogs', async () => {
   const files = ['cn', 'jp', 'en', 'kr'].map((lang) => ({ url: `/assets/audio/voice/${lang}/test.mp3`, tier: 2, size: 4 }));

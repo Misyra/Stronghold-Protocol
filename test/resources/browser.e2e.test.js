@@ -43,21 +43,22 @@ const FIXTURE_MODULE = [
   "let voices = true;",
   "let allVoices = false;",
   "let voiceLang = 'cn';",
+  "let voicePreloadLanguages = null;",
   "let skinPreload = false;",
   "let skinPreloadAll = false;",
   "let fxPreload = true;",
   "// The three preload scopes, exactly as main.js passes them: skins follow 干员调配 (nothing is equipped in this",
   "// fixture) unless 全部皮肤 widens it, and 官方特效 rides a switch of its own — on by default (默认全预载).",
-  "const scope = () => ({ keys: [], all: skinPreload && skinPreloadAll, fx: fxPreload, voices });",
+  "const scope = () => ({ keys: [], all: skinPreload && skinPreloadAll, fx: fxPreload, voices, voiceLanguages: voicePreloadLanguages });",
   "const applyScope = () => { void syncResources(enabled, optional, voiceLang, allVoices, scope()); };",
   "const applySkinScope = (on, all) => { skinPreload = on; skinPreloadAll = all; applyScope(); paint(); };",
   "const paint = () => render(html`<div><${ResourceLauncher} enabled=${enabled} />",
   "  <${ResourceHost} enabled=${enabled} optional=${optional} voices=${voices} allVoices=${allVoices} voiceLang=${voiceLang}",
-  "    onVoiceLang=${(v) => { voiceLang = v; applyScope(); paint(); }}",
+  "    voicePreloadLanguages=${voicePreloadLanguages} onVoiceLanguages=${(v) => { voicePreloadLanguages = v; allVoices = false; applyScope(); paint(); }}",
   "    onAllVoices=${(v) => { allVoices = v; applyScope(); paint(); }} onChange=${(v) => set(v)}",
   "    onOptional=${(v) => { optional = v; applyScope(); paint(); }}",
   "    onVoices=${(v) => { voices = v; applyScope(); paint(); }}",
-  "    onPreset=${(p) => { optional = p.preloadOptional; voices = p.preloadVoices; skinPreload = p.preloadSkins; skinPreloadAll = p.preloadSkinsAll; fxPreload = p.preloadFx; allVoices = p.preloadAllVoices; applyScope(); paint(); }}",
+  "    onPreset=${(p) => { optional = p.preloadOptional; voices = p.preloadVoices; skinPreload = p.preloadSkins; skinPreloadAll = p.preloadSkinsAll; fxPreload = p.preloadFx; allVoices = p.preloadAllVoices; voicePreloadLanguages = p.preloadVoiceLanguages; applyScope(); paint(); }}",
   "    skinPreload=${skinPreload} skinPreloadAll=${skinPreloadAll} fxPreload=${fxPreload}",
   "    onSkinPreload=${(v) => applySkinScope(v, skinPreloadAll)}",
   "    onSkinPreloadAll=${(v) => applySkinScope(skinPreload, v)}",
@@ -75,7 +76,7 @@ const FIXTURE_MODULE = [
 
 /** The fixture page: one div, the stylesheets the manager uses, and the module above. */
 const FIXTURE_PAGE = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />'
-  + '<title>resource e2e</title><link rel="stylesheet" href="/css/theme.css" /><link rel="stylesheet" href="/css/components.css" /></head>'
+  + '<title>resource e2e</title><link rel="stylesheet" href="/css/theme.css" /><link rel="stylesheet" href="/css/components.css" /><link rel="stylesheet" href="/css/utility-mobile.css" /></head>'
   + '<body><div id="app"></div><script type="module" src="/e2e-fixture.js"></script></body></html>';
 
 /** A minimal install: the client modules, the worker and a fixture asset tree. */
@@ -93,7 +94,7 @@ function makeInstall({ voices = false, dynamic = false, skins = false, fx = fals
   fs.mkdirSync(path.join(publicDir, 'dev'), { recursive: true });
   fs.copyFileSync(path.join(ROOT, 'public', 'index.html'), path.join(publicDir, 'dev', 'game-mock.html'));
   fs.copyFileSync(path.join(ROOT, 'public', 'resource-sw.js'), path.join(publicDir, 'resource-sw.js'));
-  const voiceFiles = voices ? ['cn', 'jp'].map((lang) => ({ url: `/assets/audio/voice/${lang}/char_e2e/test.mp3`, body: `${lang}-voice` })) : [];
+  const voiceFiles = voices ? ['cn', 'jp', 'en', 'kr', 'native'].map((lang) => ({ url: `/assets/audio/voice/${lang}/char_e2e/test.mp3`, body: `${lang}-voice` })) : [];
   const dynamicFiles = dynamic ? [{ url: '/fonts/fonts.css', body: 'body { color: white; }' },
     { url: '/assets/local/map/common/materials.json', body: '{ "material": true }' }] : [];
   // One installed 干员皮肤 (custom_docs/SKINS.md): two files under a `chars.<charId>.skins.<skinId>…` key path, which is what
@@ -300,7 +301,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
     });
     assert.deepEqual(cached.filter((p) => p !== '/__sp-resource-index__').map((p) => p.replace(/^\/_v\/[a-f0-9]{16}/, '')).sort(), FILES.map((f) => f.url).sort());
     const paths = manifest.files.map((f) => f.url);
-    assert.ok(paths.every((p) => /^\/_v\/[a-f0-9]{16}\//.test(p)));
+    assert.ok(paths.every((p) => /^(?:\/_v\/[a-f0-9]{16})?\/assets\//.test(p)), 'the preload accepts canonical and release-prefixed art paths');
 
     // with the network off the cache still answers — and only for the resources (code is never cached)
     await page.setOfflineMode(true);
@@ -434,7 +435,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
     // The panel only knows about 特效 once the opening scan has read the manifest (and this tree is installed).
     await page.waitForSelector('[data-testid="fx-preload"]', { timeout: 15000 });
     // One box per scope, in the optional tier's header, all of them checked (默认全预载). No skins in this install.
-    assert.deepEqual(await page.$$eval('.resource-manager__tiers [data-testid]', (els) => els.map((el) => el.dataset.testid)),
+    assert.deepEqual(await page.$$eval('.resource-manager__tiers [data-testid$="-preload"]', (els) => els.map((el) => el.dataset.testid)),
       ['optional-preload', 'voice-preload', 'fx-preload'], 'audio and effects have independent controls');
     assert.equal(await page.$eval('[data-testid="fx-preload"]', (el) => el.checked), true, '特效 defaults to on');
     assert.equal(await page.$('[data-testid="skin-preload"]'), null, 'no outfits installed, so no 皮肤 box');
@@ -508,8 +509,8 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.equal(requests.filter(url => url.includes('/voice/')).length, 1);
     assert.equal(requests.some(url => /skin\/|local\/fx|e2e\/bgm\.mp3/.test(url)), false);
     await page.click('.resource-manager__voice input');
-    await page.waitForFunction('window.__res.state().phase === "ready" && window.__res.state().tier2Done === 2');
-    assert.equal(requests.filter(url => url.includes('/voice/')).length, 2, 'all languages adds only the missing Japanese voice');
+    await page.waitForFunction('window.__res.state().phase === "ready" && window.__res.state().tier2Done === 5');
+    assert.equal(requests.filter(url => url.includes('/voice/')).length, 5, 'all languages adds the four missing global/native dubs');
   });
 
   test('a second tab does not download the same files twice (real Web Locks)', async (t) => {
@@ -818,12 +819,12 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.equal(required.done, required.total); assert.ok(required.done > 0);
     assert.deepEqual(required.settings, { voiceLang: 'jp', bgm: 0.23 });
     await page.waitForFunction('window.__res.state().phase === "ready"');
-    assert.equal(await page.$eval('.resource-manager__voice input', (el) => el.disabled), true);
+    assert.equal(await page.$eval('[data-testid="voice-preload-all"]', (el) => el.disabled), true);
     await page.click('[data-testid="voice-preload"]');
     await page.$eval('.resource-card__details', (el) => { el.open = true; });
     await page.click('[data-testid="optional-preload"]');
     await page.waitForFunction('window.__res.state().phase === "ready" && window.__res.state().optional');
-    await page.click('.resource-manager__voice input');
+    await page.click('[data-testid="voice-preload-all"]');
     await page.waitForFunction('window.__res.state().allVoices');
     await page.waitForFunction('window.__res.state().phase === "ready"');
     await page.evaluate(() => [...document.querySelectorAll('.btn')].find((b) => b.textContent === '清理全部资源').click());
@@ -833,9 +834,11 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.deepEqual(problems, []);
   });
 
-  test('voice tabs download Chinese by default, add Japanese on switch, retain both; game loads fill the verified cache', { timeout: 60000 }, async (t) => {
+  test('voice downloads allow multiple languages independently of playback; ZIP import is expanded on desktop and mobile', { timeout: 60000 }, async (t) => {
     const { startServer } = await import('../../server/index.js');
-    const install = makeInstall({ voices: true });
+    const install = makeInstall({ voices: true, skins: true, fx: true });
+    fs.writeFileSync(path.join(install.dataDir, 'asset-hashes.json'), JSON.stringify({ files: Object.fromEntries(
+      ['cn', 'jp', 'en', 'kr', 'native'].map((lang) => [`/assets/audio/voice/${lang}/char_e2e/test.mp3`, createHash('sha1').update(`${lang}-voice`).digest('hex').slice(0, 12)])) }));
     const local = await startServer({ port: 0, host: '127.0.0.1', quiet: true, publicDir: install.publicDir,
       dataDir: install.dataDir, store: null, log: { info() {}, warn() {}, error() {}, debug() {} } });
     const page = await browser.newPage();
@@ -848,20 +851,47 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.waitForFunction('window.__res.state().selectionComplete && window.__res.state().phase === "ready"');
     assert.deepEqual(counts, { cn: 1, jp: 0 });
     await page.waitForFunction('!!navigator.serviceWorker.controller');
-    await page.evaluate(() => window.__res.click()); await page.waitForSelector('.resource-voice-tabs');
-    await page.click('.resource-voice-tabs button:nth-child(2)');
-    await page.waitForFunction('window.__res.state().voiceLang === "jp" && window.__res.state().phase === "ready"');
+    await page.evaluate(() => window.__res.click()); await page.waitForSelector('.resource-voice-options');
+    assert.equal(await page.$eval('.resource-archive', (el) => el.open), true);
+    assert.equal(await page.$$eval('.resource-voice-options input', (els) => els.length), 5);
+    await page.click('[data-testid="voice-preload-jp"]');
+    await page.waitForFunction('window.__res.state().voiceLang === "cn" && window.__res.state().phase === "ready" && window.__res.state().tier2Done >= 2');
     assert.deepEqual(counts, { cn: 1, jp: 1 });
-    await page.click('.resource-voice-tabs button:first-child');
+    assert.deepEqual(await page.$$eval('.resource-voice-options input:checked', (els) => els.map((el) => el.dataset.testid)), ['voice-preload-cn', 'voice-preload-jp']);
+    await page.click('[data-testid="voice-preload-cn"]');
+    await page.waitForFunction('window.__res.state().phase === "ready"');
+    await page.click('[data-testid="voice-preload-cn"]');
     await page.waitForFunction('window.__res.state().voiceLang === "cn" && window.__res.state().phase === "ready"');
     assert.deepEqual(counts, { cn: 1, jp: 1 }, 'switching back reuses the Chinese voice');
+    await page.click('[data-testid="voice-preload-native"]');
+    await page.waitForFunction('window.__res.state().phase === "ready" && window.__res.state().voiceStats.find((s) => s.id === "native").present === 1');
     await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
     const layout = await page.$eval('.resource-modal', (el) => ({ width: el.getBoundingClientRect().width, overflow: el.scrollWidth > el.clientWidth + 1 }));
     assert.ok(layout.width <= 390); assert.equal(layout.overflow, false);
+    const zip = await page.$eval('.resource-archive', (el) => ({ open: el.open, top: el.getBoundingClientRect().top,
+      bodyBottom: el.closest('.modal__body').getBoundingClientRect().bottom }));
+    assert.equal(zip.open, true); assert.ok(zip.top < zip.bodyBottom, 'ZIP import appears before the resource cards');
     const out = path.join(ROOT, '.state'); fs.mkdirSync(out, { recursive: true });
     await page.screenshot({ path: path.join(out, 'resource-manager-mobile.png') });
     await page.setViewport({ width: 1280, height: 900 });
     await page.screenshot({ path: path.join(out, 'resource-manager-desktop.png') });
+    await page.setViewport({ width: 844, height: 390 });
+    const cards = await page.$$eval('.resource-manager__tiers > section', (els) => els.map((el) => {
+      const rect = el.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom,
+        title: el.querySelector('h3').getBoundingClientRect().top, progress: el.querySelector('.pbar').getBoundingClientRect().top };
+    }));
+    assert.equal(cards.length, 4);
+    for (let i = 0; i < cards.length; i += 2) {
+      assert.equal(cards[i].top, cards[i + 1].top, 'landscape card tops align');
+      assert.equal(cards[i].bottom, cards[i + 1].bottom, 'landscape card bottoms align');
+      assert.equal(cards[i].title, cards[i + 1].title, 'landscape card titles align');
+      assert.equal(cards[i].progress, cards[i + 1].progress, 'landscape card progress bars align');
+    }
+    assert.equal(await page.$eval('.resource-modal .modal__body', (el) => el.scrollWidth > el.clientWidth + 1), false);
+    assert.ok(await page.$eval('.resource-archive .btn__label', (el) => parseFloat(getComputedStyle(el).fontSize)) >= 11, 'import action stays readable in landscape');
+    await page.screenshot({ path: path.join(out, 'resource-manager-landscape.png') });
+    await page.$eval('.resource-modal .modal__body', (el) => { el.scrollTop = el.querySelector('.resource-manager__tiers').offsetTop - el.offsetTop; });
+    await page.screenshot({ path: path.join(out, 'resource-manager-landscape-cards.png') });
     // Clear pauses bulk downloads but keeps the worker: the next request comes only from the game.
     await page.evaluate(async () => { await window.__res.clearResources(); });
     await page.waitForFunction('!!navigator.serviceWorker.controller');
@@ -879,9 +909,8 @@ describe('offline resources in headless Chrome', { skip }, () => {
       const imported = await importResourceZip(store, result.blob);
       return { count: result.count, imported: imported.imported };
     });
-    assert.deepEqual(gameExport, { count: 1, imported: 1 }, 'game-cached Japanese voice exports even before index adoption, with Chinese selected');
-    await page.click('.resource-voice-tabs button:nth-child(2)');
-    await page.evaluate(() => window.__preload(true));
+    assert.deepEqual(gameExport, { count: 1, imported: 1 }, 'game-cached Japanese voice exports before index adoption, independently of the selected languages');
+    await page.evaluate(async () => { window.__preload(true); await window.__res.startResources(); });
     await page.waitForFunction('window.__res.state().selectionComplete && window.__res.state().phase === "ready"');
     assert.equal(counts.jp, 2, 'bulk preload verifies and adopts game-cached bytes without downloading again');
     assert.deepEqual(problems, []);

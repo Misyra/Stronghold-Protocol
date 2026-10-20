@@ -694,6 +694,15 @@ ZIP and CRC code are loaded on demand from the locally vendored zip.js library, 
 
 The resource manager exposes the saved master preload switch separately from scope choices and presets.
 Choosing a scope while the master is off only plans the download; the panel explains how to start it.
+The compact overview is followed by an expanded ZIP import panel. Export scope and package instructions remain
+collapsed until needed. Short landscape viewports place overview and ZIP import side by side; resource cards in
+each row share their height and align headings and progress bars. The manager retains a local readable text floor
+and scales it with saved text-size preferences. Voice download checkboxes independently select Chinese, Japanese, English, Korean and
+native dubs; unavailable languages stay visible but disabled. `settings.preloadVoiceLanguages` stores the selected
+codes, independently of `voiceLang` and playback overrides. A missing/null list follows the playback language for
+older settings; an empty list selects no voice files. `preloadAllVoices` includes every provided dub. Per-language
+sizes span the complete catalog, while the download total includes only selected resources. Transport packs are
+used only when all their files are selected; mixed packs otherwise fall back to individual selected files.
 The effects card stays mounted while the manifest loads or fails and when the server has no effect files;
 it displays a distinct explanation for each case and enables its switch only when files are available.
 Incomplete downloads report a partial failure instead of a completed state, even when the required tier is cached.

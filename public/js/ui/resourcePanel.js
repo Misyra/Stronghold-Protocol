@@ -7,6 +7,7 @@ import { formatBytes } from '../resources/common.js';
 import { clearResources, exportResources, importResources, inspectResources, pauseResources,
   resourceState, startResources, subscribeResources } from '../resources/index.js';
 import { t } from '../../../shared/i18n.js';
+import { PRELOAD_VOICE_LANGUAGES, selectedVoiceLanguages } from '../resources/voices.js';
 
 const RESOURCE_DOWNLOAD_URL = 'https://b23.tv/A4vdQ1k';
 
@@ -118,12 +119,12 @@ export function resourcePlan(st) {
 }
 
 export const RESOURCE_PRESETS = Object.freeze({
-  essential: { preloadOptional: false, preloadVoices: false, preloadSkins: false, preloadSkinsAll: false, preloadFx: false, preloadAllVoices: false },
-  daily: { preloadOptional: true, preloadVoices: true, preloadSkins: true, preloadSkinsAll: false, preloadFx: false, preloadAllVoices: false },
-  full: { preloadOptional: true, preloadVoices: true, preloadSkins: true, preloadSkinsAll: true, preloadFx: true, preloadAllVoices: true },
+  essential: { preloadOptional: false, preloadVoices: false, preloadSkins: false, preloadSkinsAll: false, preloadFx: false, preloadAllVoices: false, preloadVoiceLanguages: null },
+  daily: { preloadOptional: true, preloadVoices: true, preloadSkins: true, preloadSkinsAll: false, preloadFx: false, preloadAllVoices: false, preloadVoiceLanguages: null },
+  full: { preloadOptional: true, preloadVoices: true, preloadSkins: true, preloadSkinsAll: true, preloadFx: true, preloadAllVoices: true, preloadVoiceLanguages: null },
 });
 
-const voiceName = (lang) => ({ cn: t('中文'), jp: t('日语'), en: t('英语'), kr: t('韩语') })[lang] || t('中文');
+const voiceName = (lang) => ({ cn: t('中文'), jp: t('日语'), en: t('英语'), kr: t('韩语'), native: t('本土语音') })[lang] || lang;
 
 function ResourceChoice({ id, on, disabled, onChange, children }) {
   return html`<label class=${`resource-choice${on ? '' : ' is-off'}`}>
@@ -134,16 +135,13 @@ function ResourceChoice({ id, on, disabled, onChange, children }) {
 function ResourceScope({ st, enabled, disabled, preferences, onPreset, onChange }) {
   const plan = resourcePlan(st);
   return html`<section class="resource-scope" aria-label=${t('预载范围')}>
-    <div class="resource-scope__head"><h3>${t('预载范围')}</h3>
-      <span class="resource-scope__total">${t('只补齐缺少的文件，已缓存资源会保留。')}</span></div>
-    <${ResourceChoice} id="resource-preload" on=${enabled} disabled=${disabled || !st.supported} onChange=${onChange}>${t('开启资源预载')}<//>
-    ${!enabled ? html`<p class="set-hint">${t('预载尚未开启：选择范围后，开启上方开关或点击「开始预载」。')}</p>` : null}
+    <div class="resource-scope__head"><${ResourceChoice} id="resource-preload" on=${enabled} disabled=${disabled || !st.supported} onChange=${onChange}>${t('开启资源预载')}<//>
     <div class="resource-presets" role="group" aria-label=${t('快捷方案')}>
       ${[['essential', t('仅必备')], ['daily', t('日常推荐')], ['full', t('完整预载')]].map(([key, label]) => html`
         <button type="button" disabled=${disabled || !onPreset}
           aria-pressed=${Object.entries(RESOURCE_PRESETS[key]).every(([name, value]) => preferences[name] === value)}
           onClick=${() => onPreset?.(RESOURCE_PRESETS[key])}>${label}</button>`)}
-    </div>
+    </div></div>
     <div class="resource-overview">
       <div><span>${t('本次预载')}</span><strong class="num">${formatBytes(plan.total)}${plan.unknown ? '+' : ''}</strong></div>
       <div><span>${t('已缓存')}</span><strong class="num">${formatBytes(plan.cached)}</strong></div>
@@ -171,18 +169,20 @@ function ResourceGroupList({ st, groups, off = false }) {
       <span class="num">${group.allUnknown ? t('大小待确认') : formatBytes(group.allBytes)}</span></li>`)}</ul>`;
 }
 
-function ResourceTier({ st, tier, optional, voices, disabled, onOptional, onVoices, voiceLang, allVoices, onVoiceLang, onAllVoices }) {
+function ResourceTier({ st, tier, optional, voices, disabled, onOptional, onVoices, voiceLang, voicePreloadLanguages, allVoices, onVoiceLanguages, onAllVoices }) {
   const required = tier === 1;
   const groups = st.groups.filter((g) => required ? g.tier === 1 : g.id === 'voice');
   const extras = st.groups.filter((g) => g.tier === 2 && !['skin', 'fx', 'voice'].includes(g.id));
   const on = required || voices;
+  const selection = allVoices ? st.voiceLanguages || [] : selectedVoiceLanguages(voicePreloadLanguages, voiceLang);
+  const toggleLanguage = (lang) => onVoiceLanguages?.(PRELOAD_VOICE_LANGUAGES.filter((id) => id === lang ? !selection.includes(id) : selection.includes(id)));
   return html`<section class=${`resource-tier${on ? '' : ' is-off'}`}>
     <header class="resource-tier__head"><div><${MicroLabel}>${required ? '01 / ESSENTIAL' : '02 / VOICE'}<//>
       <h3>${required ? t('必备资源') : t('干员语音')}</h3></div>
       ${required ? html`<span class="resource-badge">${t('开启后预载')}</span>`
         : html`<${ResourceChoice} id="voice-preload" on=${voices} disabled=${disabled} onChange=${onVoices}>${t('预载')}<//>`}
     </header>
-    <p class="resource-card__description">${required ? t('地图、干员图片与 Spine 等画面资源') : t('按所选语言缓存语音，切换后只补载缺少部分。')}</p>
+    <p class="resource-card__description">${required ? t('地图、干员图片、Spine、界面与字体') : t('可多选语种，仅影响下载范围。')}</p>
     <${ResourceProgress} groups=${groups} />
     ${!on ? html`<p class="resource-card__note">${t('未预载')} · ${t('使用时按需加载')}</p>` : null}
     ${required ? html`<details class="resource-card__details"><summary>${t('资源明细')}</summary>
@@ -192,15 +192,22 @@ function ResourceTier({ st, tier, optional, voices, disabled, onOptional, onVoic
         <${ResourceChoice} id="optional-preload" on=${optional} disabled=${disabled} onChange=${onOptional}>${t('音效、音乐与玩法说明')}
           <span class="resource-choice__size">${formatBytes(extras.reduce((n, g) => n + g.allBytes, 0))}${extras.some((g) => g.allUnknown) ? '+' : ''}</span><//>
       </div>` : null}` : html`<section class="resource-manager__voice" aria-label=${t('语音预载')}>
-      <div class="resource-voice-tabs" role="group" aria-label=${t('语音语言')}>
-        ${['cn', 'jp', 'en', 'kr'].filter((lang) => lang === voiceLang || st.voiceLanguages?.includes(lang)).map((lang) => html`<button type="button" aria-pressed=${voiceLang === lang}
-          disabled=${disabled || !onVoiceLang} onClick=${() => onVoiceLang?.(lang)}>${voiceName(lang)}</button>`)}
-      </div>
-      <label class="resource-choice resource-voice-all"><input type="checkbox" checked=${allVoices} disabled=${disabled || !voices}
+      <label class="resource-choice resource-voice-all"><input type="checkbox" data-testid="voice-preload-all" checked=${allVoices} disabled=${disabled || !voices}
         onChange=${(e) => onAllVoices?.(e.currentTarget.checked)} />${t('同时预载全部语音语言')}</label>
-      <p class="resource-card__note">${allVoices ? t('缓存服务器提供的全部语音语言。')
-        : st.manifestFiles && !st.voiceLanguages?.includes(voiceLang) ? t('服务器尚未提供所选语言的语音资源。')
-          : t('当前语音：{language}', { language: voiceName(voiceLang) })}</p>
+      <div class="resource-voice-options" role="group" aria-label=${t('预载语种')}>
+        ${PRELOAD_VOICE_LANGUAGES.map((lang) => {
+          const stat = st.voiceStats?.find((s) => s.id === lang);
+          const available = st.voiceLanguages?.includes(lang);
+          return html`<label class=${`resource-voice-option${selection.includes(lang) && available ? ' is-selected' : ''}${available ? '' : ' is-unavailable'}`}>
+            <input type="checkbox" data-testid=${`voice-preload-${lang}`} checked=${selection.includes(lang) && !!available}
+              disabled=${disabled || !voices || !available || !onVoiceLanguages} onChange=${() => toggleLanguage(lang)} />
+            <span>${voiceName(lang)}</span><small class="num">${!available ? st.manifestReady ? t('未提供') : t('读取中')
+              : stat ? formatBytes(stat.totalBytes) + (stat.unknownSize ? '+' : '') : t('大小待确认')}</small>
+          </label>`;
+        })}
+      </div>
+      <p class="resource-card__note">${!allVoices && !selection.length ? t('请至少选择一种预载语音。')
+        : t('播放语言：{language}；已缓存的其他语种会保留。', { language: voiceName(voiceLang) })}</p>
     </section>`}
   </section>`;
 }
@@ -218,7 +225,7 @@ function ResourceSkins({ st, on, all, disabled, onSkin, onAll }) {
   return html`<section class=${`resource-skins${on ? '' : ' is-off'}`} aria-label=${t('干员皮肤')}>
     <header class="resource-tier__head"><div><${MicroLabel}>03 / SKINS<//><h3>${t('干员皮肤')}</h3></div>
       <${ResourceChoice} id="skin-preload" on=${on} disabled=${disabled} onChange=${onSkin}>${t('预载')}<//></header>
-    <p class="resource-card__description">${t('默认跟随干员调配里选择的皮肤，也可缓存全部已安装皮肤。')}</p>
+    <p class="resource-card__description">${t('跟随已选皮肤，或勾选全部皮肤。')}</p>
     <div class="resource-tier__summary"><span class="num">${t('本次 {n} 套', { n: selected.length })}</span>
       <span class="num">${formatBytes(sum('bytes'))} / ${formatBytes(sum('totalBytes'))}${selected.some((s) => s.unknownSize) ? '+' : ''}</span></div>
     <${ProgressBar} value=${sum('present')} max=${Math.max(1, sum('files'))} size="sm" tone="amber" />
@@ -237,7 +244,7 @@ function ResourceEffects({ st, on, disabled, onChange }) {
   return html`<section class=${`resource-tier resource-effects${on ? '' : ' is-off'}`}>
     <header class="resource-tier__head"><div><${MicroLabel}>04 / EFFECTS<//><h3>${t('额外特效')}</h3></div>
       <${ResourceChoice} id="fx-preload" on=${on} disabled=${disabled || !available || !st.supported} onChange=${onChange}>${t('预载')}<//></header>
-    <p class="resource-card__description">${t('官方战斗特效素材；是否显示仍跟随画质设置。')}</p>
+    <p class="resource-card__description">${t('预缓存战斗特效，显示效果跟随画质设置。')}</p>
     ${available ? html`<${ResourceProgress} groups=${groups} />` : null}
     <p class="resource-card__note">${!available ? pending ? st.error ? t('资源清单暂时无法读取，请重试。') : t('正在读取特效资源清单…')
       : t('服务器尚未提供官方特效资源。') : on ? t('提前缓存，减少战斗中首次加载。') : t('未预载') + ' · ' + t('使用时按需加载')}</p>
@@ -245,8 +252,8 @@ function ResourceEffects({ st, on, disabled, onChange }) {
 }
 
 /** Mounted once in main.js, above all screens including the settings modal. */
-export function ResourceHost({ enabled, optional, voices = optional, allVoices, voiceLang = 'cn', skinPreload, skinPreloadAll, fxPreload,
-  onVoiceLang, onChange, onOptional, onVoices = onOptional, onAllVoices, onSkinPreload, onSkinPreloadAll, onFxPreload, onPreset }) {
+export function ResourceHost({ enabled, optional, voices = optional, allVoices, voiceLang = 'cn', voicePreloadLanguages = null, skinPreload, skinPreloadAll, fxPreload,
+  onVoiceLanguages, onChange, onOptional, onVoices = onOptional, onAllVoices, onSkinPreload, onSkinPreloadAll, onFxPreload, onPreset }) {
   const { open } = useStore((s) => s, Object.is, resourceUi);
   const st = useResources();
   const fileInput = useRef(null);
@@ -258,6 +265,7 @@ export function ResourceHost({ enabled, optional, voices = optional, allVoices, 
   const [exportScope, setExportScope] = useState('');
   const chosenScope = scopes.find((s) => s.id === exportScope && s.cached) || scopes.find((s) => s.cached) || null;
   const preferences = { preloadOptional: !!optional, preloadVoices: !!voices, preloadAllVoices: !!allVoices,
+    preloadVoiceLanguages: voicePreloadLanguages,
     preloadSkins: !!skinPreload, preloadSkinsAll: !!skinPreloadAll, preloadFx: !!fxPreload };
   const pause = () => { pauseResources(); if (!archiveBusy) onChange(false); };
   const importFile = async (e) => {
@@ -301,10 +309,46 @@ export function ResourceHost({ enabled, optional, voices = optional, allVoices, 
       <${Button} variant="secondary" onClick=${closeResources}>${t('关闭')}<//>`}>
     <div class="resource-manager">
       <${ResourceScope} st=${st} enabled=${enabled} disabled=${archiveBusy} preferences=${preferences} onPreset=${onPreset} onChange=${onChange} />
+      <details class="resource-archive" open>
+        <summary>${t('ZIP 资源包')}<span>${t('导入本机资源包，减少在线下载')}</span></summary>
+        <div class="resource-archive__toolbar">
+          <p>${t('校验后直接写入缓存，已有资源自动跳过。')}</p>
+          <div class="res-actions">
+            <${Button} variant="primary" size="sm" disabled=${archiveBusy || !st.supported} onClick=${() => fileInput.current?.click()}>${t('导入 ZIP')}<//>
+            <${Button} variant="secondary" size="sm" icon="link"
+              onClick=${() => window.open(RESOURCE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer')}>${t('前往下载')}<//>
+          </div>
+        </div>
+        <div class="resource-archive__secondary">
+        <details class="resource-archive__export"><summary>${t('导出已缓存资源')}</summary>
+        <div class="resource-archive__scope">
+          <span class="resource-archive__scope-label">${t('导出范围')}</span>
+          <div class="resource-presets" role="group" aria-label=${t('导出范围')}>
+            ${scopes.map((s) => html`<button type="button" key=${s.id} aria-pressed=${chosenScope?.id === s.id}
+              disabled=${archiveBusy || !s.cached} onClick=${() => setExportScope(s.id)}>${scopeText(s.id)}</button>`)}
+          </div>
+          <span class="resource-archive__scope-size num">${chosenScope ? t('{n} 个文件 · {size}', { n: chosenScope.cached, size: formatBytes(chosenScope.bytes) }) : t('尚未缓存任何资源')}</span>
+          <${Button} variant="secondary" size="sm" disabled=${archiveBusy || !st.supported || !st.done} onClick=${exportFile}>${t('导出 ZIP')}<//>
+        </div>
+        </details>
+        <details class="resource-archive__help">
+          <summary>${t('资源包说明')}</summary>
+          <p>${t('点击「前往下载」查看资源包链接。lite 仅含基础画面资源，full 还包含已发布的语音、音效、音乐等；也可导出已缓存资源分享。')}</p>
+          <p>${t('导入时会校验文件，并跳过不适用的资源；开启预载后可补齐缺少部分。若提示校验失败或 ZIP 损坏，请重新下载完整资源包。')}</p>
+          <p>${t('跨站导入说明：本站资源包包含额外的地图与模型配置，导入 xinhai（linxia）站点时可能提示「资源路径无效」并中止。请使用目标站点提供的资源包。')}</p>
+        </details>
+        </div>
+        ${st.archiveResult ? html`<div class=${`resource-archive__result${st.archiveResult.status === 'error' ? ' is-error' : ''}`} role="status" aria-live="polite">
+          <p>${st.archiveResult.message}</p>
+          ${skipReasonText(st.archiveResult.skipReasons) ? html`<p>${skipReasonText(st.archiveResult.skipReasons)}</p>` : null}
+        </div>` : null}
+        ${st.archive ? html`<${ProgressBar} value=${st.archivePercent} max=${100} size="sm" tone="mint" />` : null}
+        <input ref=${fileInput} type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden onChange=${importFile} />
+      </details>
       <div class="resource-manager__tiers">
         <${ResourceTier} st=${st} tier=${1} optional=${!!optional} disabled=${archiveBusy} onOptional=${onOptional} />
         <${ResourceTier} st=${st} tier=${2} voices=${!!voices} disabled=${archiveBusy} onVoices=${onVoices}
-          voiceLang=${voiceLang} allVoices=${allVoices} onVoiceLang=${onVoiceLang} onAllVoices=${onAllVoices} />
+          voiceLang=${voiceLang} voicePreloadLanguages=${voicePreloadLanguages} allVoices=${allVoices} onVoiceLanguages=${onVoiceLanguages} onAllVoices=${onAllVoices} />
         <${ResourceSkins} st=${st} on=${!!skinPreload} all=${!!skinPreloadAll} disabled=${archiveBusy}
           onSkin=${onSkinPreload} onAll=${onSkinPreloadAll} />
         <${ResourceEffects} st=${st} on=${!!fxPreload} disabled=${archiveBusy} onChange=${onFxPreload} />
@@ -318,38 +362,6 @@ export function ResourceHost({ enabled, optional, voices = optional, allVoices, 
       ${st.failures?.length ? html`<details class="resource-manager__failures"><summary>${t('查看下载失败详情')}</summary>
         <ul>${st.failures.map((failure) => html`<li>${new URL(failure.url, window.location.href).pathname} — ${failure.message}</li>`)}</ul>
       </details>` : null}
-      <details class="resource-archive" open=${!!st.archive || !!st.archiveResult}>
-        <summary>${t('ZIP 资源包')}<span>${t('导入、导出与下载')}</span></summary>
-        <div class="resource-archive__toolbar">
-          <h3>${t('ZIP 资源包')}</h3>
-          <div class="res-actions">
-            <${Button} variant="secondary" size="sm" disabled=${archiveBusy || !st.supported} onClick=${() => fileInput.current?.click()}>${t('导入 ZIP')}<//>
-            <${Button} variant="secondary" size="sm" disabled=${archiveBusy || !st.supported || !st.done} onClick=${exportFile}>${t('导出 ZIP')}<//>
-            <${Button} variant="secondary" size="sm" icon="link"
-              onClick=${() => window.open(RESOURCE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer')}>${t('前往下载')}<//>
-          </div>
-        </div>
-        <div class="resource-archive__scope">
-          <span class="resource-archive__scope-label">${t('导出范围')}</span>
-          <div class="resource-presets" role="group" aria-label=${t('导出范围')}>
-            ${scopes.map((s) => html`<button type="button" key=${s.id} aria-pressed=${chosenScope?.id === s.id}
-              disabled=${archiveBusy || !s.cached} onClick=${() => setExportScope(s.id)}>${scopeText(s.id)}</button>`)}
-          </div>
-          <span class="resource-archive__scope-size num">${chosenScope ? t('{n} 个文件 · {size}', { n: chosenScope.cached, size: formatBytes(chosenScope.bytes) }) : t('尚未缓存任何资源')}</span>
-        </div>
-        <details class="resource-archive__help">
-          <summary>${t('资源包说明')}</summary>
-          <p>${t('点击「前往下载」查看资源包链接。lite 仅含基础画面资源，full 还包含中日语音、音效、音乐等；也可导出已缓存资源分享。')}</p>
-          <p>${t('导入时会校验文件，并跳过不适用的资源；开启预载后可补齐缺少部分。若提示校验失败或 ZIP 损坏，请重新下载完整资源包。')}</p>
-          <p>${t('跨站导入说明：本站资源包包含额外的地图与模型配置，导入 xinhai（linxia）站点时可能提示「资源路径无效」并中止。请使用目标站点提供的资源包。')}</p>
-        </details>
-        ${st.archiveResult ? html`<div class=${`resource-archive__result${st.archiveResult.status === 'error' ? ' is-error' : ''}`} role="status" aria-live="polite">
-          <p>${st.archiveResult.message}</p>
-          ${skipReasonText(st.archiveResult.skipReasons) ? html`<p>${skipReasonText(st.archiveResult.skipReasons)}</p>` : null}
-        </div>` : null}
-        ${st.archive ? html`<${ProgressBar} value=${st.archivePercent} max=${100} size="sm" tone="mint" />` : null}
-        <input ref=${fileInput} type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden onChange=${importFile} />
-      </details>
       ${st.storage?.low ? html`<p class="resource-manager__warn">${t('预计可用空间可能不足。可先清理可选资源；浏览器仍可能因存储限制而停止处理，已保存进度会保留。')}</p>` : null}
       ${st.persistence && st.persistence.supported && !st.persistence.granted ? html`<p class="resource-manager__warn">${t('浏览器未授予持久化存储：空间紧张时可能自动清理已预载的资源。')}</p>` : null}
       <details class="resource-cache">

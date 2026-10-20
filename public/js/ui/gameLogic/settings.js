@@ -6,6 +6,7 @@ export { VOICE_LANGS } from '../../voicePrefs.js';
 import { clamp, isObj } from './shared.js';
 import { DEFAULT_HOTKEYS, sanitizeHotkeys } from './shortcuts.js';
 import { normalizeFrameRate } from '../../frameRate.js';
+import { normalizePreloadVoiceLanguages } from '../../resources/voices.js';
 
 
 // ---- settings ------------------------------------------------------------------------------------------------------
@@ -49,7 +50,7 @@ export const TEXT_SIZES = Object.freeze(['sm', 'md', 'lg', 'xl']);
  *  preload / preloadOptional / preloadVoices / preloadAllVoices / preloadSkins / preloadSkinsAll / preloadFx:
  *  independent resource scopes. The master stays off on first visit. Voices migrate from the older optional-audio
  *  choice; presets change scope flags in one update and never start a paused download. */
-export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', voiceNative: false, voiceOverrides: Object.freeze({}), muted: false, damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, combatMetrics: true, prepDeployZoom: false,  quality: 'high', officialFx: 'auto', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: DEFAULT_HOTKEYS });
+export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', voiceNative: false, voiceOverrides: Object.freeze({}), muted: false, damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, combatMetrics: true, prepDeployZoom: false,  quality: 'high', officialFx: 'auto', fpsLimit: 0, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadVoiceLanguages: null, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: DEFAULT_HOTKEYS });
 const QUALITIES = ['high', 'medium', 'low'];
 /** The values of 设置「官方特效」 (render/vfx/tier.js OFFICIAL_FX). */
 export const OFFICIAL_FX_MODES = Object.freeze(['auto', 'off', 'lite', 'full']);
@@ -58,7 +59,7 @@ export const OFFICIAL_FX_MODES = Object.freeze(['auto', 'off', 'lite', 'full']);
  * Sanitize persisted settings.
  * @param {any} raw
  * @returns {{ bgm: number, sfx: number, voice: number, voiceLang: 'cn'|'jp'|'en'|'kr', voiceNative: boolean, voiceOverrides: Record<string, string>, muted: boolean, damageNumbers: boolean, officialDamageNumbers: boolean, ammoEnergyCount: boolean, combatMetrics: boolean, prepDeployZoom: boolean, quality: 'high'|'medium'|'low', officialFx: 'auto'|'off'|'lite'|'full',
- *   fpsLimit: 0|30|60|120, preload: boolean, preloadOptional: boolean, preloadVoices: boolean, preloadAllVoices: boolean, preloadSkins: boolean, preloadSkinsAll: boolean, preloadFx: boolean,
+ *   fpsLimit: 0|30|60|120, preload: boolean, preloadOptional: boolean, preloadVoices: boolean, preloadAllVoices: boolean, preloadVoiceLanguages: string[]|null, preloadSkins: boolean, preloadSkinsAll: boolean, preloadFx: boolean,
  *   textSize: 'sm'|'md'|'lg'|'xl', keys: Record<'buy'|'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready', string> }}
  */
 export function sanitizeSettings(raw) {
@@ -85,6 +86,7 @@ export function sanitizeSettings(raw) {
     preloadVoices: typeof r.preloadVoices === 'boolean' ? r.preloadVoices
       : typeof r.preloadOptional === 'boolean' ? r.preloadOptional : DEFAULT_SETTINGS.preloadVoices,
     preloadAllVoices: r.preloadAllVoices === true,
+    preloadVoiceLanguages: normalizePreloadVoiceLanguages(r.preloadVoiceLanguages),
     // 皮肤 and 特效 default to on (DEFAULT_SETTINGS): only the master switch starts off, so a first visit caches
     // nothing until it is turned on — a saved `false` is respected either way.
     preloadSkins: typeof r.preloadSkins === 'boolean' ? r.preloadSkins : DEFAULT_SETTINGS.preloadSkins,

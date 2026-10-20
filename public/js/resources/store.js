@@ -18,6 +18,7 @@
 import { cachedResourceHash, markResourceHeaders, cacheIndex, readCacheIndex } from './cacheMetadata.js';
 import { resourceIdentity } from '../../../shared/resourcePaths.js';
 import { VOICE_LANGS } from '../voicePrefs.js';
+import { selectedVoiceLanguages } from './voices.js';
 import { absoluteUrl, CACHE_NAME, CACHE_PREFIX, cacheNameForScope, checkAbort, CONTENT_HASH_RE, indexUrl, isCacheQueryLimit, isQuotaError, isSkinKey, MAX_FILE_BYTES, RESOURCE_GROUPS, RESOURCE_SCOPES, resourceGroup, resourceScope, resourceType, SHARD_CACHE_NAMES, TIER_ESSENTIAL, TIER_REST } from './common.js';
 import { resourceDigests, verifiedResourceBytes } from './integrity.js';
 import { fetchResource, isTransientResourceError } from './network.js';
@@ -130,6 +131,7 @@ export class ResourceStore {
     this.statusPromise = null;
     /** @type {string|null} voice language the selection keeps, or null for every language. */
     this.voiceScope = null;
+    this.voiceSelection = null;
     /** @type {boolean} whether the optional (tier 2) set is part of the selection at all. */
     this.optional = true;
     this.voices = true;
@@ -152,15 +154,18 @@ export class ResourceStore {
    * 干员皮肤 and 官方特效 ride switches of their own rather than 「额外资源」: a player who wants a handful of outfits
    * should not have to take every voice, soundtrack and effect as well, and one who wants the soundtrack should not
    * get 328 MiB of skins or 185 MiB of effects.
-   * @param {{ optional?: boolean, voices?: boolean, voiceLang?: string, allVoices?: boolean, fx?: boolean,
+   * @param {{ optional?: boolean, voices?: boolean, voiceLang?: string, allVoices?: boolean, voiceLanguages?: string[]|null, fx?: boolean,
    *           skins?: Iterable<string>|{ keys?: Iterable<string>, all?: boolean }|'all'|'off'|null }} [scope]
    */
-  setScope({ optional = this.optional, voices = optional, voiceLang = 'cn', allVoices = false, skins = null, fx = this.fx } = {}) {
+  setScope({ optional = this.optional, voices = optional, voiceLang = 'cn', allVoices = false, voiceLanguages = null, skins = null, fx = this.fx } = {}) {
     const voice = allVoices ? null : (VOICE_LANGS.includes(voiceLang) ? voiceLang : 'cn');
+    const languages = allVoices ? null : selectedVoiceLanguages(voiceLanguages, voice);
     const next = normalizeSkinScope(skins);
     if (voice === this.voiceScope && !!optional === this.optional && next.all === this.allSkins
-      && sameSkinKeys(next.keys, this.skins) && !!fx === this.fx && !!voices === this.voices) return;
+      && sameSkinKeys(next.keys, this.skins) && !!fx === this.fx && !!voices === this.voices
+      && JSON.stringify(languages) === JSON.stringify(this.voiceSelection ? [...this.voiceSelection] : null)) return;
     this.voiceScope = voice;
+    this.voiceSelection = languages ? new Set(languages) : null;
     this.optional = !!optional;
     this.voices = !!voices;
     this.skins = next.keys;
@@ -191,9 +196,9 @@ export class ResourceStore {
    * the language knob narrows them, since that knob picks files rather than a scope (docs/ASSETS.md).
    */
   languageOk(file) {
-    if (!this.voiceScope) return true;
+    if (!this.voiceSelection) return true;
     const language = /\/assets\/audio\/voice\/([^/]+)\//.exec(new URL(file.url, this.origin).pathname)?.[1];
-    return !language || language === this.voiceScope;
+    return !language || this.voiceSelection.has(language);
   }
 
   /** Whether this file's skin is wanted: 全部皮肤 takes them all, otherwise only the equipped ones. */
@@ -761,8 +766,17 @@ export class ResourceStore {
     // The same pass feeds the per-card figures the ZIP card exports from: one card at a time, and no figure moves
     // while a switch is toggled (docs/ASSETS.md). The catch-all card is the whole tree minus the other three.
     const scopes = new Map(RESOURCE_SCOPES.map((id) => [id, { id, total: 0, cached: 0, bytes: 0, totalBytes: 0 }]));
+    const voiceStats = new Map();
     for (const f of this.files) {
       const pause = checkpoint(); if (pause) await pause;
+      const language = /\/assets\/audio\/voice\/([^/]+)\//.exec(new URL(f.url, this.origin).pathname)?.[1];
+      if (language) {
+        let entry = voiceStats.get(language);
+        if (!entry) { entry = { id: language, files: 0, present: 0, totalBytes: 0, bytes: 0, unknownSize: 0 }; voiceStats.set(language, entry); }
+        entry.files++;
+        if (Number.isSafeInteger(f.size)) entry.totalBytes += f.size; else entry.unknownSize++;
+        if (present.has(this.keyOf(f.url))) { entry.present++; if (Number.isSafeInteger(f.size)) entry.bytes += f.size; }
+      }
       if (!this.languageOk(f)) continue;
       const group = groups[resourceGroup(f)];
       const scope = scopes.get(resourceScope(f));
@@ -806,6 +820,7 @@ export class ResourceStore {
       manifestFiles: this.files.length,
       manifestBytes,
       voiceLanguages: this.voiceLanguages,
+      voiceStats: [...voiceStats.values()],
       fxFiles,
       fxPresent,
       skinScope: this.skinScope(),
@@ -1126,7 +1141,7 @@ export class ResourceStore {
         catch { continue; }
         const keep = entries.some((key) => {
           const language = /\/assets\/audio\/voice\/([^/]+)\//.exec(new URL(key.url).pathname)?.[1];
-          return language && language !== this.voiceScope;
+          return language && !this.voiceSelection?.has(language);
         });
         if (keep) continue;
       }

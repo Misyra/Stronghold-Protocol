@@ -151,7 +151,7 @@ describe('the 干员皮肤 scope', () => {
     // Equipping a skin in 干员调配 must re-apply the scope: nothing else announces that change.
     assert.match(main, /const keys = s\.preloadSkins \? equippedSkinKeys\(\) : \[\];/);
     assert.match(main, /const all = !!\(s\.preloadSkins && s\.preloadSkinsAll\);/);
-    assert.match(main, /r\.syncResources\(s\.preload, s\.preloadOptional, s\.voiceLang, s\.preloadAllVoices, \{ keys, all, fx: s\.preloadFx, voices: s\.preloadVoices \}\)/);
+    assert.match(main, /r\.syncResources\(s\.preload, s\.preloadOptional, s\.voiceLang, s\.preloadAllVoices, \{ keys, all, fx: s\.preloadFx, voices: s\.preloadVoices, voiceLanguages: s\.preloadVoiceLanguages \}\)/);
     assert.match(main, /skinsStore\.subscribe\(\(\) => apply\(settingsStore\.get\(\)\)\)/);
     assert.match(main, /fxPreload=\$\{settings\.preloadFx\}/);
     assert.match(main, /onFxPreload=\$\{\(v\) => updateSettings\(\{ preloadFx: v \}\)\}/);

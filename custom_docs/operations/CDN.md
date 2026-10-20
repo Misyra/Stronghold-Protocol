@@ -6,6 +6,23 @@
 
 **CDN 素材不设置请求次数或下载文件总数限制。** 游戏源站的静态 `limit_req` / 业务封禁预算不应用到 `assets.misyra.com`，也不在浏览器按 CDN 下载次数累计封禁。浏览器为带宽、内存与失败退避保留的下载并发预算不等于次数限制。未启用 CDN 时由游戏主机实际发出的素材，仍执行源站的静态额度。
 
+### 源站 304 与 Service Worker
+
+304 表示浏览器向该 URL 复验缓存，不等于下载了整份资源，也不一定是素材回源。2026-10-20 对 wei 入口抽样，约 9 分钟 2052 次 304 主要是 `/js/resources/*`、`/shared/*` 等 SW 依赖；当时资源清单 38536 项中 38523 项已经直接指向 CDN。不要把这批 JS 直接重定向到仅发布美术的 R2 bucket，也不要用忽略条件头、强制 200 的方式让大响应重新发送。
+
+生产构建现在将资源 SW 及依赖单独打包为 `/build/assets/resource-sw-<内容哈希>.js`。页面按该哈希路径注册，使用 `updateViaCache: all` 复用不可变缓存；页面发布版本仍通过 `?v=` 传给 worker，用于读取相应清单。SW 不再逐一请求无版本的 `/js/resources/` 和 `/shared/` 模块。入口必须同源；图片、模型、音频仍按现有规则直连 CDN，SW 继续只拦截素材，不接管代码、API 或 WS。
+
+Node 直出已为该构建 SW 添加 `Service-Worker-Allowed: /`。**若 Nginx 用 root/alias 直接提供 `/build/`，必须在对应 location 补上该头**，否则浏览器拒绝根作用域注册：
+
+```nginx
+# 合并到已有 location ^~ /build/，保留原来的 root、缓存头和其他必要响应头。
+add_header Service-Worker-Allowed "/" always;
+```
+
+源码模式仍注册根目录 `/resource-sw.js`，保留 `updateViaCache: none` 以发现未打包代码更新。不能给无版本源码模块强加一年缓存。首页、动态 CDN 配置、SW 更新检查及清单复验仍可能有少量 304；目标是消除重复模块复验，不能承诺所有源站请求都消失。
+
+生产验收：同一次构建应产出一个独立 `resource-sw-*.js`；用浏览器注册并检查根 scope、下载缓存和离线读取；重新打开页面不应再由该 SW 加载一串 `/js/resources/*`、`/shared/*`。旧 worker 的更新按浏览器更新检查逐步生效。构建文件和旧哈希 chunk 的保留/发布流程见 [部署指南](DEPLOY.md#生产前端构建)。
+
 ## 1. 一次性准备（Wrangler）
 
 管理操作全部可用 Wrangler CLI 完成（上传走 [S3 兼容 API](https://developers.cloudflare.com/r2/api/s3/api/) 的批量脚本，见下）：
@@ -39,7 +56,15 @@ node tools/r2-sync.mjs --bucket <bucket> --metadata-only  # 只补齐已发布�
 
 ## 3. 游戏服务器接入
 
-服务器侧只需设置 `SP_ASSETS_CDN=https://assets.example.com` 并保证项目根有 `.assets-manifest.json`（发布机生成后 `scp` 过去；镜像构建时自动生成）。服务器启动时读取它，把每个美术文件的 CDN URL 改写成 `https://assets.example.com/assets/…?v=<文件哈希>`：查询串参与 CDN 缓存键，内容不变则 URL 不变，可复用已有缓存，文件更新时只有它的 URL 变化。缓存仍可能被浏览器或边缘节点提前清理。清单本身由游戏服务器在 `/assets-manifest.json?v=<tag>` 同源提供（不可变缓存，页面在 `<head>` 里就开始拉取）。
+服务器侧只需设置 `SP_ASSETS_CDN=https://assets.example.com` 并保证项目根有 `.assets-manifest.json`（发布机生成后 `scp` 过去；镜像构建时自动生成）。服务器启动时读取它，把每个美术文件的 CDN URL 改写成 `https://assets.example.com/assets/…?v=<文件哈希>`：查询串参与 CDN 缓存键，内容不变则 URL 不变，可复用已有缓存，文件更新时只有它的 URL 变化。缓存仍可能被浏览器或边缘节点提前清理。公开哈希清单由同源 `/assets-manifest.json?v=<tag>` 提供，使用 gzip、ETag 和 immutable 缓存。
+
+CDN-only 游戏节点可在确认清单和 CDN 文件齐全后删除 `public/assets/` 与 `public/fonts/` 中的字体二进制；保留 `public/fonts/fonts.css`，服务器需要它改写字体 URL，字体文件本身从 CDN 加载。保留 `.assets-manifest.json` 和 `data/assets.json`、`data/local-assets.json` 等引用清单。此模式下 CDN 故障时客户端的可选源站回退会得到 404，因此应先确保 CDN 的发布和可访问性。
+
+### 版本化数据与战斗预载（本地新增，待部署）
+
+CDN 改写过的 `data/assets.json`、`local-assets.json`、`local-fx.json` 现在保留版本化路径/当前版本 query 的 immutable 响应，裸路径仍为 no-cache；改写后的内容哈希、gzip/Brotli 结果共用有界缓存，各编码有独立 ETag。版本化文件在进程启动后被修改仍返回 503，不能用新字节污染旧版本缓存。无需全局忽略数据响应的缓存头。
+
+后台预载默认小文件 2 车道、大文件 1 车道；战斗期间所有排队批量任务均暂停，已在途请求允许完成，退出战斗自动恢复。当前画面的即时取图不经过批量调度，仍可正常按需下载。该策略减少争抢带宽，代价是全量预载完成更慢。
 
 发布层（本分支自己的 `/_v/<tag>/`，`server/assetVersion.js`）与每文件 `?v=<哈希>` 一起工作：页面和 CSS 被就地改写，代码与 CSS 走 `/_v/<runtimeTag>/…`（immutable；发版后旧 URL 一律 404，文件在进程内被改过则 503），素材走 CDN 的每文件 `?v=`。页面里只注入 `__spAssetVersion` / `__spRuntimeVersion` / `__spArtVersion`；CDN 基址与清单地址由 `/js/asset-cdn.js` 模块提供。
 
@@ -144,7 +169,7 @@ npm start
 
 清单由 `/data/resource-manifest.json` 动态生成，沿用游戏的 CDN 配置和资源版本。Service Worker 只读取素材缓存；游戏仍需要服务器连接。内容未改变的二进制素材会跨版本路径复用，CSS/JSON 因可能被服务器重写而重新校验版本。意外关闭页面后，已经保存但尚未写入索引的文件会先校验内容指纹，匹配就直接恢复，无需重新下载；过期副本会先清除，避免 Service Worker 返回旧内容而触发重试。单文件限制 24 MiB，已知超大文件跳过；界面显示本站存储占用、预计可用空间和预计新增大小；导入前按兼容条目估算，提示仅供参考。空间不足会停止，并保留已有进度。下载失败可展开文件与错误详情。「清理可选资源」删除所有语种的语音、音效、音乐、特效、皮肤及可选图片，并关闭额外资源预载；「清理全部资源」删除本站预载缓存并暂停下载。两者均保留个人设置和其他应用缓存。另一标签页预载期间不能清理共享缓存，请先暂停该标签页。
 
-反向代理需将 `/resource-sw.js`、`/js/resources/` 和 `/data/resource-manifest.json` 路由至此版本的 Node 服务；浏览器继续遵循源站 `no-cache`。nginx 可按 [部署指南](DEPLOY.md#清单性能修复与-nginx-一次性更新) 缓存带页面发布版本的资源清单 12 小时，普通地址仅 15 秒；素材哈希清单按其 `?v=` 缓存 30 天。更新资源/数据后必须重启 Node 生成新版本；不要把 Worker、普通 JS/CSS 或无版本资源清单套用长期缓存。
+反向代理需将 `/resource-sw.js`、`/js/resources/` 和 `/data/resource-manifest.json` 路由至此版本的 Node 服务；浏览器继续遵循源站 `no-cache`。Nginx 对资源清单按查询串分桶缓存 15 秒，到期后重新取完整 200；TTL 内的条件请求可由 Nginx 用缓存体回答 304，不向 Node 发条件请求。素材哈希清单按其 `?v=` 缓存 30 天。更新资源/数据后必须重启 Node 生成新版本；不要把 Worker、普通 JS/CSS 或无版本资源清单套用长期缓存。
 
 本地已有文件在首次读取清单时补算内容指纹，不增加启动时的素材读取。也可在部署前运行 `node tools/asset-hashes.mjs`，生成本机 `data/asset-hashes.json`（不提交 Git）；用 `node tools/asset-hashes.mjs --check` 检查。素材改变后重生成指纹并重启。CDN 部署从发布清单的 `preload` 读取内容指纹和大小，无需在服务器保存完整素材或运行 `asset-hashes.mjs`。旧发布清单缺少这些字段且本地也没有素材时，才回退到合成指纹，相关文件不能从 ZIP 导入。补齐并部署清单后，原来导出的 ZIP 可直接再次导入；已有浏览器缓存会校验后复用。CDN 两次返回与内容指纹不符的文件不会标记为完成，请先重新发布素材（`node tools/r2-sync.mjs --bucket <bucket> --push`）再重试。
 
@@ -183,13 +208,13 @@ curl -sI https://assets.example.com/assets/local/ui/icon.png | head -3   # 200�
 ### 5.3 代码侧（兜底）
 
 - `shared/assetCdn.js` 的 `assetSiteUrl(cdnUrl)`：把 `<SP_ASSETS_CDN>/assets/x.png?v=<hash>` 还原成源站路径 `/assets/x.png`（去掉只为 CDN 缓存用的 `?v=`，保留完整性重试用的 `?sp=`）。
-- `public/js/resources/network.js` 的 `fetchResource`：先走 CDN，失败（403 challenge / opaque / 超时 / 无 CORS 头）才换源站那份。**连续两次失败熔断 5 分钟**，否则 27 000 个文件会把同一个 block 重新发现 27 000 次。熔断只影响"先试 CDN"这一步：缓存键仍是 CDN URL，内容指纹照旧校验，预载索引与 ZIP 导入导出不受影响。
+- `public/js/resources/network.js` 的 `fetchResource`：先走 CDN，失败（403 challenge / opaque / 超时 / 无 CORS 头）才尝试源站那份；CDN-only 节点未保留 `public/assets/` 时该尝试会 404。**连续两次失败熔断 5 分钟**，否则 27 000 个文件会把同一个 block 重新发现 27 000 次。熔断只影响"先试 CDN"这一步：缓存键仍是 CDN URL，内容指纹照旧校验，预载索引与 ZIP 导入导出不受影响。
 - **任何情况都先试 CDN**：顺序永远不变，源站只在一个请求的 CDN 那一步失败之后才被用到；熔断只是让**批量**工作别把同一次拒绝重新发现 27 000 次，运行期那张图每次都会先问 CDN（显式重试时连记住的源站副本也会先忘掉）。
 - **源站不是兜底带宽**（`allowOrigin` / `takeOriginBudget`）：批量预载（`store.js` 与 SW 的预载交接）传 `allowOrigin: false` —— CDN 被拦时它以一条可重试的错误**停下来**，一个字节都不去源站；运行期那张图 / 那个 Spine 才允许用源站副本，而且整个页面共用一份预算（400 个文件 / 48 MiB，`resourceNetwork.js` 与 `image.js` 同一个计数器），用完就报"回退已达本次会话上限"。若真想让预载也回退，得同时改 `store.js` 的调用和这里的预算，并清楚那是把 ~310 MiB × 每个玩家压在源站上。
-- `public/js/image.js`：只有跨域图片才设 `crossOrigin='anonymous'`，同源图片不再强制 CORS（否则等于主动丢掉挑战要的那张 cookie）；CDN 图失败一次就切到源站副本并在这个页面里记住。`recoverImageError` 重试同源图片时还会摘掉模板上的 `crossorigin`。
+- `public/js/image.js`：只有跨域图片才设 `crossOrigin='anonymous'`，同源图片不再强制 CORS（否则等于主动丢掉挑战要的那张 cookie）；CDN 图失败一次就尝试源站副本并在这个页面里记住。CDN-only 节点不保留美术文件时该回退会 404。`recoverImageError` 重试同源图片时还会摘掉模板上的 `crossorigin`。
 - `public/js/data.js`：数据 CDN（`SP_DATA_CDN`）读失败换源站 `/_v/<tag>/data/…`，语言 overlay 同理。
 
-代价：走兜底的那批文件由源站提供，缓存头是 `no-cache` 而不是 CDN 的 immutable，每次预载会多几次 304。这是有意的——正确性优先；5.2 的 Skip 规则配好后走的是 CDN 那条快路。
+保留源站素材时，走兜底的文件由源站提供，缓存头是 `no-cache` 而不是 CDN 的 immutable，每次预载会多几次 304。CDN-only 节点没有这条回退；5.2 的 Skip 规则配好后，正常加载走 CDN。
 
 ## 6. 回滚
 

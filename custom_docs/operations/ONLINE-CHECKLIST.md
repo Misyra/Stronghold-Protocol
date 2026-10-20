@@ -38,6 +38,7 @@ curl -sS --max-time 20 -D - -o /dev/null http://127.0.0.1:3000/data/resource-man
 
 - http 级 proxy_cache_path、log_format，以及目标站 access_log。
 - `/data/resource-manifest.json`、`/assets-manifest.json`、`/_v/`、`/api/announcement`、`/healthz` location；`/metrics` 走通用 `location /`（不单独缓存）。
+- 公告普通请求连续两次应从 `X-Announcement-Cache: MISS` 变为 `HIT`，`Age` 不超过 5 秒；`/api/announcement?nocache=1` 应为 `BYPASS` 并回源。确认公告 location 忽略 Node 的 `no-store` 只用于 Nginx 内部缓存，浏览器响应仍带 `Cache-Control: no-store`。
 - proxy_cache 是否启用、缓存键是否保留站点/版本 query、Vary 编码处理、缓存锁、TTL、Cache-Control/X-Accel-Expires 处理。
 - 新计时格式是否保留完整 combined 前缀和 UA，并包含 rt/urt/cache/reason。
 
@@ -119,6 +120,7 @@ curl -fsS --max-time 10 http://127.0.0.1:3999/api/data
 游戏、collector、agent、nginx 运行位置与状态：
 Node 清单：首轮/热请求/304 耗时，ETag：
 公网清单：缓存头、状态、耗时、编码/版本隔离：
+公告：缓存状态 / Age / `?nocache=1` 绕过结果：
 nginx -t 与计时日志：
 SW 注册 URL、清单 URL、重复下载量、第一条浏览器错误：
 healthz/探针/中央各层新字段与 null 或 error：

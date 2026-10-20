@@ -47,7 +47,7 @@ Worker 池在本分支的开关是 `SP_MATCH_WORKERS`（默认 0），细节见 
 
 - `public/js/resources/runtimeIndex.js`（运行期写缓存的旁路索引）。对方用它记下 Service Worker 运行期写进缓存的条目，省掉一次整文件哈希。本分支的 `store` 在 `#status` 里本来就把「已缓存但未入索引」的条目交给 `#adopt` 现算哈希后再复用，正确性相同，只是每次多算一遍；引入第二套索引会让「索引坏了就重算」这条退路变成两套可能不一致的退路。
 - `public/js/resourceNetwork.js`（运行期素材下载器 + PIXI parser 钩子）。它绑的是对方的渲染取图路径；本分支走自己的 `public/js/image.js` 与 `public/js/cdnSpine.js`（含皮肤 273 套的图集与纹理页适配）。换过去等于重写取图链路，收益只有请求去重。
-- `public/js/resources/combat.js`（战斗期暂停批量预载）。功能有，实现不同：本分支的 `public/js/resources/schedule.js` 按比赛状态排队（战斗期间只停 `TIER_REST` 与低优先级 lane，正在跑的请求允许收尾），由 `main.js` 的 `updateResourcePriority` 驱动。
+- `public/js/resources/combat.js`（战斗期暂停批量预载）。功能有，实现不同：本分支的 `public/js/resources/schedule.js` 按比赛状态排队（2026-10-20 本地改为暂停所有排队的批量预载，正在跑的请求允许收尾，即时取图不受影响），由 `main.js` 的 `updateResourcePriority` 驱动。
 
 ## 取自 Stardust-minus/Stronghold-Protocol @ fab1b97 的部分（0.3.1：特效层与匹配）
 

@@ -28,7 +28,7 @@
 
 HTTP 查询接口无需账号、Cookie 或访问令牌，不创建游戏会话，也不占用玩家席位。WebSocket 匹配接口需要先完成原有 `hello` 握手。
 
-除资源清单和静态资源外，表中 HTTP JSON 接口统一返回 `Content-Type: application/json; charset=utf-8` 和 `Cache-Control: no-store`。`HEAD` 返回与对应请求相同的状态码和响应头，但没有响应体。未开放 CORS 的接口可由同源页面或外部服务的后端读取，独立域名的浏览器页面不能直接跨域读取。
+除资源清单和静态资源外，表中 HTTP JSON 接口统一返回 `Content-Type: application/json; charset=utf-8` 和 `Cache-Control: no-store`。`HEAD` 返回与对应请求相同的状态码和响应头，但没有响应体。部署仓库 Nginx 示例时，`/api/announcement` 可在源站 Nginx 内部缓存 5 秒；Node 和浏览器收到的响应仍为 `no-store`。未开放 CORS 的接口可由同源页面或外部服务的后端读取，独立域名的浏览器页面不能直接跨域读取。
 
 时间戳单位均为 **Unix 毫秒**；`/healthz.uptimeSec` 是秒。HTTP 错误响应并非全都为 JSON，具体见各接口。
 
@@ -194,6 +194,8 @@ GET /api/announcement
 HEAD /api/announcement
 ```
 
+运维读取最新源站内容时可请求 `/api/announcement?nocache=1`；仓库 Nginx 示例会让该请求绕过共享缓存。普通公告请求在 Nginx 内部最多缓存 5 秒，Node 和浏览器仍使用 `no-store` 响应策略。
+
 存在有效公告时返回 200：
 
 ```json
@@ -204,16 +206,21 @@ HEAD /api/announcement
     "text": "服务器将在公告截止时间进行维护。",
     "expiresAt": 1791194400000
   },
-  "serverTime": 1791190800000
+  "popupAnnouncement": null,
+  "serverTime": 1791190800000,
+  "source": { "mode": "agent", "siteId": null },
+  "observedRevision": 7,
+  "observedAt": 1791190799000
 }
 ```
 
-`id` 为公告公开内容的 SHA-256 摘要前 24 位十六进制字符串；标题、正文或截止时间变化会改变 ID，可用于区分玩家已关闭的旧公告。`expiresAt` 和 `serverTime` 均为毫秒时间戳。
+`announcement` 是滚动公告，`popupAnnouncement` 是当前弹窗公告；没有对应公告时为 `null`。`id` 为公告公开内容的 SHA-256 摘要前 24 位十六进制字符串；标题、正文或截止时间变化会改变 ID，可用于区分玩家已关闭的旧公告。`expiresAt`、`serverTime` 和 `observedAt` 均为毫秒时间戳。`source` 描述公告源模式与站点 ID；`observedRevision` / `observedAt` 报告游戏进程实际读到的交付版本和时间，手工文件未携带交付版本时 revision 为 `null`。
 
 公告关闭、过期、文件不存在或配置无效时，仍返回 200：
 
 ```json
-{ "announcement": null, "serverTime": 1791194400000 }
+{ "announcement": null, "popupAnnouncement": null, "serverTime": 1791194400000,
+  "source": { "mode": "agent", "siteId": null }, "observedRevision": null, "observedAt": 1791194399000 }
 ```
 
 没有公告写入 API。POST / PUT / DELETE / OPTIONS 等方法返回 405、`Allow: GET, HEAD`，响应体为 HTML 错误页。

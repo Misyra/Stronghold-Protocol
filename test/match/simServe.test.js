@@ -33,7 +33,7 @@ test('/sim/ serves the simulation modules read-only; nothing else of server/ is 
   assert.equal(shim.status, 200);
   assert.match(shim.headers.get('content-type'), /^text\/javascript/);
   assert.equal(await shim.text(), DATA_SHIM_JS);
-  assert.match(DATA_SHIM_JS, /from '\.\/sim\/simdata\.js'/, 'the stand-in reads the data injected into the sim');
+  assert.match(DATA_SHIM_JS, /from '\.\.\/sim\/simdata\.js'/, 'the root-level stand-in reads the data injected into the sim');
   const again = await get('/data.js', { 'if-none-match': shim.headers.get('etag') });
   assert.equal(again.status, 304);
 });

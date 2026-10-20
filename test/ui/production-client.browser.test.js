@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, readFile, copyFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, copyFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,10 +62,31 @@ test('the production bundle boots, joins the lobby and displays a foreign-connec
     assert.ok(modules.some((url) => new URL(url).pathname === expectedEntry), 'the fresh build entry was requested');
     assert.deepEqual(modules.filter((url) => {
       const pathname = new URL(url).pathname.replace(/^\/_v\/[a-f0-9]{16}(?=\/)/, '');
-      return !pathname.startsWith('/build/assets/') && !bootstrapScripts.has(pathname);
-    }), [], 'app modules must come from the same build; only the two classic bootstrap scripts stay outside Vite');
+      return !pathname.startsWith('/build/assets/') && !bootstrapScripts.has(pathname) && pathname !== '/js/asset-cdn.js';
+    }), [], 'app modules must come from the same build; bootstrap scripts and generated CDN settings stay outside Vite');
     assert.deepEqual(failedModules, []);
     assert.deepEqual(errors, []);
+    const workerFiles = (await readdir(path.join(outDir, 'assets'))).filter((name) => /^resource-sw-[A-Za-z0-9_-]+\.js$/.test(name));
+    assert.equal(workerFiles.length, 1, 'production emits one content-hashed resource worker');
+    const workerPath = '/build/assets/' + workerFiles[0];
+    const workerResponse = await fetch(srv.url + workerPath);
+    assert.equal(workerResponse.status, 200);
+    assert.equal(workerResponse.headers.get('service-worker-allowed'), '/');
+    assert.match(workerResponse.headers.get('cache-control'), /immutable/);
+    const workerSource = await workerResponse.text();
+    const { parse } = await import('acorn');
+    const ast = parse(workerSource, { ecmaVersion: 'latest', sourceType: 'module' });
+    assert.equal(ast.body.some((node) => node.type === 'ImportDeclaration' || node.source), false,
+      'worker must not load an unversioned source-module graph');
+    const worker = await page.evaluate(async (script) => {
+      const registration = await navigator.serviceWorker.register(script + '?v=' + globalThis.__spAssetVersion,
+        { type: 'module', scope: '/', updateViaCache: 'all' });
+      await navigator.serviceWorker.ready;
+      return { scope: registration.scope, scriptURL: registration.active?.scriptURL, cache: registration.updateViaCache };
+    }, workerPath);
+    assert.equal(worker.scope, srv.url + '/');
+    assert.equal(new URL(worker.scriptURL).pathname, workerPath);
+    assert.equal(worker.cache, 'all');
     srv.lobby.applyRoomConfig({ allowForeignConnections: false });
     const blocked = await browser.newPage();
     blocked.on('pageerror', (error) => errors.push(error.message));

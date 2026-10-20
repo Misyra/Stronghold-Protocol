@@ -35,7 +35,7 @@ test('HTTP: body bytes by category as written (compressed), 304s counted, /healt
   w('public/assets/audio/bgm/a.mp3', mp3);
   w('data/config.json', JSON.stringify({ a: 1 }));
   w('shared/x.js', 'export const y = 2;');
-  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, publicDir: path.join(tmp, 'public'), dataDir: path.join(tmp, 'data'), sharedDir: path.join(tmp, 'shared') });
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, publicDir: path.join(tmp, 'public'), dataDir: path.join(tmp, 'data'), sharedDir: path.join(tmp, 'shared'), httpApiMainlandOnly: false });
   try {
     const plain = await get(srv.port, '/health');
     assert.equal(plain.status, 404);
@@ -118,7 +118,7 @@ test('/healthz?traffic=1 answers the counters to a loopback / LAN client only (m
     assert.equal(body.ok, true, 'the plain report still answers');
     return 'traffic' in body;
   };
-  const auto = await startServer({ port: 0, host: '127.0.0.1', quiet: true, ...dirs });
+  const auto = await startServer({ port: 0, host: '127.0.0.1', quiet: true, ...dirs, httpApiMainlandOnly: false });
   try {
     assert.equal(await has(auto.port), true, 'the host itself (loopback)');
     assert.equal(await has(auto.port, { 'x-forwarded-for': '192.168.1.20' }), true, 'a LAN client behind a local proxy');
@@ -128,7 +128,7 @@ test('/healthz?traffic=1 answers the counters to a loopback / LAN client only (m
   } finally {
     await auto.close();
   }
-  const ignore = await startServer({ port: 0, host: '127.0.0.1', quiet: true, trustProxy: false, ...dirs });
+  const ignore = await startServer({ port: 0, host: '127.0.0.1', quiet: true, trustProxy: false, ...dirs, httpApiMainlandOnly: false });
   try {
     assert.equal(await has(ignore.port, { 'x-forwarded-for': '203.0.113.9' }), true, 'TRUST_PROXY=0: the loopback peer itself counts');
   } finally {

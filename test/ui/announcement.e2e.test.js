@@ -28,11 +28,11 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.page.waitForSelector('.fullscreen-prompt');
   await c.click('.fullscreen-prompt button', '暂不全屏');
   await c.enter('Bob');
-  await c.click('.mode-card', '独立模拟');
-  await c.click('.diff-card', '标准模拟');
-  await c.click('.create-box button', '开始独立模拟');
+  await c.click('.hub-entry', '独立模拟');
+  await c.click('.pcard', '标准模拟');
+  await c.click('.proto-start', '开始模拟');
   await c.waitFor((s) => !!s.room, 'solo room');
-  if (!(await c.st()).phase) await c.click('.room-bar__right button', '开始模拟');
+  if (!(await c.st()).phase) await c.click('.rs-go', '开始模拟');
   await c.waitFor((s) => s.phase === 'INFO_CHECK', 'in-match briefing');
   await c.page.waitForSelector('.announcement');
   assert.equal(await c.page.$eval('.announcement__text', (el) => el.textContent), notice.text);

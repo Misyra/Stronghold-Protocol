@@ -54,7 +54,7 @@ test('polling updates and withdrawal do not require reloading, failures retain s
   const stop = startAnnouncementPolling({ doc, now: () => 50, intervalMs: 60_000, onChange: (a) => received.push(a),
     fetchFn: async (url, init) => {
       calls++;
-      assert.equal(url, '/api/announcement');
+      assert.ok(url === '/api/announcement' || url === '/api/announcement?nocache=1');
       assert.equal(init.cache, 'no-store');
       if (fail) throw new Error('offline');
       return { ok: true, json: async () => response };
@@ -106,4 +106,25 @@ test('hung fetches time out, do not overlap, and cannot publish after stop', asy
   release();
   await settle();
   assert.equal(received.length, 0);
+});
+
+test('WS hints suppress unchanged polls, fetch edits, and fall back after heartbeats stop', async (t) => {
+  const doc = documentStub(), listeners = new Map();
+  let tick;
+  t.mock.method(globalThis, 'setInterval', (fn) => { tick = fn; return 0; });
+  let now = 0, calls = 0;
+  const net = { on: (type, fn) => { listeners.set(type, fn); return () => listeners.delete(type); } };
+  const stop = startAnnouncementPolling({ doc, net, now: () => now, intervalMs: 30000,
+    onChange() {}, fetchFn: async () => { calls++; return Response.json(body); } });
+  const pong = (revision) => listeners.get('pong')({ announcementRevision: revision });
+  try {
+    await settle(); assert.equal(calls, 1);
+    pong('a'.repeat(24)); await settle(); assert.equal(calls, 2);
+    for (let i = 0; i < 4; i++) { now += 4000; pong('a'.repeat(24)); tick(); await settle(); }
+    assert.equal(calls, 2, 'unchanged live heartbeats avoid the regular HTTP poll');
+    pong('b'.repeat(24)); await settle(); assert.equal(calls, 3, 'an edit/withdrawal triggers content refresh');
+    doc.hidden = true; pong('c'.repeat(24)); await settle(); assert.equal(calls, 3);
+    doc.hidden = false; now += 20000; doc.fire(); await settle(); assert.equal(calls, 4, 'missing hints restore ordinary polling');
+  } finally { stop(); }
+  assert.equal(listeners.size, 0);
 });

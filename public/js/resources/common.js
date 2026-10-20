@@ -36,15 +36,17 @@ export function resourceManifestUrl(version = globalThis.__spAssetVersion) {
 }
 export const MANIFEST_URL = resourceManifestUrl();
 export const SW_URL = '/resource-sw.js';
+// Vite replaces this only in the page build; the independent worker build keeps the source fallback.
+const BUILT_SW_URL = '';
 /** Keep the worker at the root scope while passing the page's release into its independent global. */
 export function resourceWorkerUrl(version = globalThis.__spAssetVersion) {
-  return SW_URL + (/^[a-f0-9]{16}$/.test(version || '') ? `?v=${version}` : '');
+  return (BUILT_SW_URL || SW_URL) + (/^[a-f0-9]{16}$/.test(version || '') ? `?v=${version}` : '');
 }
 /** Both old unversioned and new versioned workers speak the hash-checked resource protocol. */
 export function isResourceWorker(scriptUrl, origin) {
   try {
     const url = new URL(scriptUrl, origin);
-    return url.origin === origin && url.pathname === SW_URL;
+    return url.origin === origin && (url.pathname === SW_URL || /^\/build\/assets\/resource-sw-[A-Za-z0-9_-]+\.js$/.test(url.pathname));
   } catch { return false; }
 }
 

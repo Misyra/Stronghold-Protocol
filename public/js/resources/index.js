@@ -274,8 +274,10 @@ async function ensureWorker() {
   if (!nav?.serviceWorker) throw new Error('不支持 Service Worker');
   let timer;
   try {
+    const workerUrl = resourceWorkerUrl();
     return await Promise.race([
-      nav.serviceWorker.register(resourceWorkerUrl(), { type: 'module', scope: '/', updateViaCache: 'none' }),
+      nav.serviceWorker.register(workerUrl, { type: 'module', scope: '/',
+        updateViaCache: workerUrl.startsWith('/build/assets/') ? 'all' : 'none' }),
       new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('资源缓存服务启动超时，请重试')), 10000); }),
     ]);
   } finally { clearTimeout(timer); }

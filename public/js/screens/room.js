@@ -1,7 +1,7 @@
 import { useAccount, AccountTag } from '../ui/accounts.js';
 import { useGameData, BandIcon } from '../ui/gameComponents.js';
 import { TrophyBadge } from '../ui/trophies.js';
-import { isOwnerName, decorateOwnerName } from '../ui/ownerName.js';
+import { isOwnerName } from '../ui/ownerName.js';
 import { enabled as federationEnabled, currentNode } from '../federation.js';
 // Room screen (同盟等待室). 2026-10-13 (the owner's request: the event's room, video 5:22–6:29): tall seat cards side by
 // side — a portrait per doctor (名片干员: the player's own pick — room.card, room.state seats[].card; one's own screen shows
@@ -65,7 +65,7 @@ import { hasScriptConsent, rememberScriptConsent } from '../content.js';
 import { t, tc } from '../../../shared/i18n.js';
 
 const MAX_SEATS = Number(SEAT_CONST.MAX_SEATS) || 4;
-const DEFAULT_SEATS = Number(SEAT_CONST.DEFAULT_SEATS) || MAX_SEATS;
+const DEFAULT_SEATS = Number(Reflect.get(SEAT_CONST, 'DEFAULT_SEATS')) || MAX_SEATS;
 
 /**
  * The room's 统计 / 设置 / 公告 / 玩法说明 entries. Icon-only squares on every device, in a co-op room and in

@@ -9,6 +9,21 @@ const MAX_REMOTE_BYTES = 64 * 1024;
 const CACHE_MS = 1000;
 const POLL_MS = 10000;
 
+/** One nonblocking, shared refresh for all WS heartbeats; never expose private delivery metadata. */
+export function createAnnouncementSignal(read, { now = Date.now, intervalMs = 1000 } = {}) {
+  let revision = null, nextRead = -Infinity, pending = null;
+  return () => {
+    if (!pending && now() >= nextRead) {
+      nextRead = now() + intervalMs;
+      pending = Promise.resolve().then(read).then((announcement) => {
+        revision = createHash('sha256').update(JSON.stringify({ announcement, popup: read.popup?.() ?? null }))
+          .digest('hex').slice(0, 24);
+      }).catch(() => {}).finally(() => { pending = null; });
+    }
+    return revision;
+  };
+}
+
 /**
  * 这份文档自述的交付版本（Agent 写入公告文件时留下的 `_delivery.revision`）。它**不进**公开投影：玩家看到的
  * 只有公告本身，而「游戏读到了哪一版」是三层状态里的第三层（写入 / 读到 / 收敛），只有探针与中央需要。

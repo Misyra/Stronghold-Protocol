@@ -28,7 +28,6 @@ const ORIGIN_LIMIT_FILES = 400;
 const ORIGIN_LIMIT_BYTES = 48 << 20;
 let originFiles = 0;
 let originBytes = 0;
-let originRefused = 0;
 /** How long a tripped breaker keeps the CDN out of the loop before it is probed again (a page or worker
  *  lives far longer than a preload run, and an "Under Attack" window closes on its own). */
 const CDN_COOL_OFF_MS = 5 * 60_000;
@@ -41,7 +40,7 @@ let cdnBlockedUntil = 0;
  * preload is refused outright — goes through here: public/js/resourceNetwork.js and public/js/image.js share it.
  */
 export function takeOriginBudget(bytes = 0) {
-  if (originFiles >= ORIGIN_LIMIT_FILES || originBytes >= ORIGIN_LIMIT_BYTES) { originRefused++; return 0; }
+  if (originFiles >= ORIGIN_LIMIT_FILES || originBytes >= ORIGIN_LIMIT_BYTES) return 0;
   originFiles++;
   originBytes += Math.max(0, Number(bytes) || 0);
   return Math.max(1, Math.max(0, Number(bytes) || 0));
@@ -49,7 +48,7 @@ export function takeOriginBudget(bytes = 0) {
 
 /** Test seam: forget the breaker and the fallback budget (a page load starts with a fresh module anyway). */
 export function __resetOriginFallback() {
-  cdnFails = 0; cdnBlockedUntil = 0; originFiles = 0; originBytes = 0; originRefused = 0;
+  cdnFails = 0; cdnBlockedUntil = 0; originFiles = 0; originBytes = 0;
 }
 
 /** The game host's copy of a CDN URL — '' for anything the host already owns. */

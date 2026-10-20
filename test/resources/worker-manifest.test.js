@@ -13,6 +13,10 @@ test('worker URLs carry validated versions and ownership includes legacy and wai
   assert.equal(resourceWorkerUrl(tag), '/resource-sw.js?v=' + tag);
   for (const value of ['', 'bad', '../escape']) assert.equal(resourceWorkerUrl(value), '/resource-sw.js');
   for (const suffix of ['', '?v=' + tag]) assert.equal(isResourceWorker(origin + '/resource-sw.js' + suffix, origin), true);
+  assert.equal(isResourceWorker(origin + '/build/assets/resource-sw-AbC_123-x.js?v=' + tag, origin), true);
+  for (const url of ['https://cdn.example/build/assets/resource-sw-AbC_123-x.js', origin + '/build/assets/other-AbC_123-x.js']) {
+    assert.equal(isResourceWorker(url, origin), false);
+  }
   for (const url of [undefined, 'https://other.example/resource-sw.js', origin + '/other/resource-sw.js', origin + '/resource-sw.js.bak']) {
     assert.equal(isResourceWorker(url, origin), false);
   }

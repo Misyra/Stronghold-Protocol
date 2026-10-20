@@ -6,7 +6,8 @@ import { TestClient } from './helpers/wsClient.js';
 import { createStatusLimiter } from '../server/roomStatus.js';
 
 test('code lookup follows room/match lifecycle without joining or exposing private state', async (t) => {
-  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, MatchClass: StubMatch });
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, MatchClass: StubMatch,
+    httpApiMainlandOnly: false });
   const clients = [];
   t.after(async () => { await Promise.all(clients.map((c) => c.close())); await srv.close(); });
   const player = async (name) => {

@@ -113,7 +113,8 @@ export const PLUGIN_ERRORS = Object.freeze({
     fix: { zh: '关掉其中一个；插件的 conflicts 写着它和谁不能一起用。', en: 'Switch one of them off; a plugin\'s "conflicts" says which ones it cannot be used with.' },
   },
   PLUGIN_RULE_CONFLICT: {
-    level: 'refusal', doc: D.rules,
+    level: 'problem', doc: D.rules,
+    symptom: { zh: '所选插件组合无法应用；检查结果会指出冲突', en: 'The selected plugin set cannot be applied; the check identifies the conflict' },
     zh: '两个插件把同一个规则开关设成了不同的选项（{path}）', en: 'Two plugins set the same rule switch to different options ({path})',
     fix: { zh: '只保留其中一个插件，或让它们选择同一个选项。', en: 'Keep only one of the plugins, or make them choose the same option.' },
   },

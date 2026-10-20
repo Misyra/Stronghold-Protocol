@@ -1,4 +1,4 @@
-import { checkAbort, abortError, TIER_REST } from './common.js';
+import { checkAbort, abortError } from './common.js';
 
 // Match state only changes queued work; an already-running download is allowed to finish.
 import { resourceIdentity as identity } from '../../../shared/resourcePaths.js';
@@ -13,7 +13,7 @@ export class ResourceSchedule {
 
   wake() { for (const wake of [...this.listeners]) wake(); }
 
-  /** The combat gate alone (resources/combat.js): queued optional work waits, the lanes are woken on the way out. */
+  /** Pause queued bulk work during combat; runtime resource requests do not use this scheduler. */
   setCombat(combat) {
     if (this.combat === !!combat) return false;
     this.combat = !!combat; this.revision++;
@@ -36,9 +36,9 @@ export class ResourceSchedule {
     return this.urls.has(path) ? 2 : this.active && /\/map\//.test(path) ? 1 : 0;
   }
 
-  async wait(signal, lane, tier, needed = () => true) {
+  async wait(signal, _lane, _tier, needed = () => true) {
     checkAbort(signal);
-    while (needed() && this.combat && (tier === TIER_REST || lane > 0)) {
+    while (needed() && this.combat) {
       await new Promise((resolve, reject) => {
         const cleanup = () => { this.listeners.delete(wake); signal?.removeEventListener('abort', abort); };
         const wake = () => { cleanup(); resolve(); };

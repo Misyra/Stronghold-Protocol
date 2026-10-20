@@ -85,7 +85,7 @@ test('Retry-After delays retrying a busy server', async () => {
   assert.ok(performance.now() - started >= 20);
 });
 
-test('combat restricts essential downloads to one lane, optional waits, and reprioritizes queued resources', async () => {
+test('combat pauses every bulk tier and lane, then resumes prioritized resources', async () => {
   const schedule = new ResourceSchedule();
   const a = file('/assets/ui/a.png', 'a'), b = file('/assets/char/b.png', 'b'), voice = file('/assets/audio/voice/cn/a.mp3', 'v', 2);
   schedule.update({ active: true, combat: true, urls: [b.url] });
@@ -96,10 +96,14 @@ test('combat restricts essential downloads to one lane, optional waits, and repr
     return new Response(url.endsWith('b.png') ? 'b' : url.endsWith('a.png') ? 'a' : 'v');
   } });
   const pending = s.download({ tiers: [1] });
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.deepEqual(calls, [], 'even essential lane zero waits during combat');
+  schedule.setCombat(false);
   await first.promise;
-  assert.deepEqual(calls, [origin + b.url]);
+  assert.equal(calls[0], origin + b.url);
   release.resolve(); await pending;
-  assert.deepEqual(calls, [origin + b.url, origin + a.url], 'required tier finishes during combat without stuck waiting lanes');
+  assert.deepEqual(new Set(calls), new Set([origin + b.url, origin + a.url]));
+  schedule.setCombat(true);
   const controller = new AbortController();
   const optional = s.download({ tiers: [2], signal: controller.signal });
   await new Promise((resolve) => setTimeout(resolve, 15));

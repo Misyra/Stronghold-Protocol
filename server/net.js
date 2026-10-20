@@ -671,6 +671,8 @@ export class Network {
     this.closed = false;
     this.diagnostics = diagnostics;
     this.draining = false;
+    /** @type {null | (() => string | null)} */
+    this.announcementRevision = null;
     this.netBlock = netBlock;
     this.blockLog = { at: -Infinity, suppressed: 0 };
     this.foreignSessions = new ForeignSessions({ registry, countryLookup, now, isEnabled: foreignSessionsEnabled,
@@ -820,6 +822,8 @@ export class Network {
 
     if (msg.t === 'ping') {
       const pong = { t: 'pong', c: msg.c, s: now };
+      const revision = this.announcementRevision?.();
+      if (revision) pong.announcementRevision = revision;
       if (validRid(rid)) pong.rid = rid;
       this.reply(conn, pong);
       return;

@@ -141,7 +141,7 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
     assert.equal(new URL('../../../shared/a.js', 'http://localhost' + prefix + '/js/render/app.js').pathname, '/_v/shared/a.js');
     const script = await get(prefix + '/js/main.js');
     assert.match(script.headers.get('cache-control'), /31536000, immutable/);
-    assert.ok((await script.text()).includes("import './child.js'"));
+    assert.ok((await script.text()).includes(`import '${codePrefix}/js/child.js'`), 'relative imports retain the runtime namespace');
     assert.equal((await get(prefix + '/js/child.js')).status, 200);
     const css = await (await get(prefix + '/css/a.css')).text();
     assert.ok(css.includes(`url('${artPrefix}/assets/p.png')`));

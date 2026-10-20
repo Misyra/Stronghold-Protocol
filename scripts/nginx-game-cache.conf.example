@@ -46,11 +46,13 @@ location = /data/resource-manifest.json {
     proxy_buffering on;
     proxy_cache_key "sp-game-cache-v1|$scheme|$host|$server_port|$proxy_host|$request_uri";
     proxy_ignore_headers Cache-Control Expires;
-    # Node X-Accel-Expires overrides this: current ?v=<release> 12h, plain URL 15s.
-    # Do not ignore X-Accel-Expires or drop query parameters from the cache key.
+    # Current Node emits no X-Accel-Expires: tagged and plain URLs both use this 15s TTL.
+    # Preserve query parameters and Vary; do not infer a 12h TTL from the upstream fixture test.
     proxy_cache_valid 200 15s;
     proxy_cache_lock on;
-    proxy_cache_revalidate on;
+    proxy_cache_revalidate off;
+    # After the 15s TTL, fetch a fresh 200 rather than asking Node for a 304.
+    # Conditional clients inside the TTL are answered from Nginx's cached body.
     proxy_cache_background_update off;
     proxy_cache_use_stale off;
     add_header X-Resource-Cache $upstream_cache_status;
@@ -91,9 +93,21 @@ location = /api/announcement {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 20s;
 
-    # Every public API request must reach admission accounting, including repeated announcements.
-    proxy_cache off;
-    proxy_ignore_headers X-Accel-Expires;
+    # The page polls every 30s, but the WS revision hint normally triggers requests only after edits.
+    # A 5s origin cache absorbs bursts while keeping updates/retractions quick. Nginx limits and the
+    # ban check above still run before cache lookup; Node keeps no-store for browsers and diagnostics.
+    # ?nocache=1 is reserved for operator verification and WS revision changes.
+    proxy_cache sp_assets;
+    proxy_buffering on;
+    proxy_cache_key "sp-announcement-v1|$scheme|$host|$server_port|$proxy_host|$request_uri";
+    # Cache this known-public JSON despite Node's browser-facing no-store header, with a fixed short TTL.
+    proxy_ignore_headers Cache-Control Expires X-Accel-Expires;
+    proxy_cache_valid 200 5s;
+    proxy_cache_lock on;
+    proxy_cache_bypass $arg_nocache;
+    proxy_no_cache $arg_nocache;
+    proxy_cache_use_stale off;
+    add_header X-Announcement-Cache $upstream_cache_status;
 }
 
 location ^~ /icons/ {

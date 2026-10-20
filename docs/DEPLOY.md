@@ -1,4 +1,6 @@
-# 部署指南
+# 部署指南（上游历史参考）
+
+> 本分支部署统一从 [custom_docs/operations/DEPLOY.md](../custom_docs/operations/DEPLOY.md) 开始；Windows 和整合包见 [HOME_SERVER.md](../custom_docs/operations/HOME_SERVER.md)，限额见 [LIMITS.md](../custom_docs/operations/LIMITS.md)。下文保留上游步骤及原章节锚点，其中“无存档”、资源体积、公告与 Nginx 配置不代表本分支现状。
 
 目标：在一台家用 Windows 小主机上长期开服，让朋友通过局域网或公网来玩。macOS / Linux / Docker 放在后面。
 所有命令都在项目根目录执行。遇到问题先运行 `node tools/doctor.mjs`（只读诊断）。

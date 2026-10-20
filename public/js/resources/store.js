@@ -15,7 +15,7 @@
 // purpose: they are stored in Cache Storage, and letting the HTTP cache keep a second copy would double the disk the
 // browser needs (~250 MiB of art). Everything is injected (`caches`, `fetcher`) so this module is unit-testable.
 
-import { cachedResourceHash, markResourceHeaders, cacheIndex, readCacheIndex } from './cacheMetadata.js';
+import { markResourceHeaders, cacheIndex, readCacheIndex } from './cacheMetadata.js';
 import { resourceIdentity } from '../../../shared/resourcePaths.js';
 import { VOICE_LANGS } from '../voicePrefs.js';
 import { selectedVoiceLanguages } from './voices.js';
@@ -110,7 +110,7 @@ export class ResourceStore {
    * @param {{ caches?: any, fetcher?: typeof fetch, origin?: string, smallLanes?: number, bigLanes?: number,
    *           now?: () => number, network?: any, schedule?: any, ensureCached?: any }} [opts]
    */
-  constructor(manifest, { caches = globalThis.caches, fetcher = globalThis.fetch?.bind(globalThis), origin, smallLanes = 4, bigLanes = 1, now = () => Date.now(), network = {}, schedule = null, ensureCached = null } = {}) {
+  constructor(manifest, { caches = globalThis.caches, fetcher = globalThis.fetch?.bind(globalThis), origin, smallLanes = 2, bigLanes = 1, now = () => Date.now(), network = {}, schedule = null, ensureCached = null } = {}) {
     this.manifest = manifest;
     this.files = Array.isArray(manifest.files) ? manifest.files : [];
     this.voiceLanguages = [...new Set(this.files.filter((f) => resourceGroup(f) === 'voice')

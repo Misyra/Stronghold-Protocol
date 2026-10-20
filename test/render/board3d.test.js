@@ -406,6 +406,7 @@ describe('asset pack loader (fake store)', () => {
     const manifest = { groups: {} };
     for (const [slot, [g, n]] of Object.entries(PACK_IMAGES)) (manifest.groups[g] ||= {})[n] = { path: `/assets/local/${g}/${n}.png` };
     manifest.groups['mesh/s_common_box_01'] = { pCube2: { path: '/assets/local/mesh/s_common_box_01/pCube2.obj' } };
+    manifest.groups['mesh/trap_110'] = { trap_1105_accrate: { path: '/assets/local/mesh/trap_110/trap_1105_accrate.obj' } };
     manifest.groups['map/fx'] = { ...manifest.groups['map/fx'], Start_up: { path: '/assets/local/map/fx/Start_up.obj' }, prefab: { path: '/assets/local/map/fx/prefab.json' } };
     const requested = [];
     const store = {
@@ -416,8 +417,9 @@ describe('asset pack loader (fake store)', () => {
     const realFetch = globalThis.fetch;
     globalThis.fetch = async (u) => {
       const s = String(u);
-      if (s.endsWith('.obj')) return { ok: true, text: async () => 'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3' };
-      if (s.endsWith('prefab.json')) return { ok: true, json: async () => [{ name: 'Start_up', parent: 'Start', mesh: 'Start_up', materials: ['[opt]start_end_add'] }] };
+      const pathname = new URL(s, 'http://localhost').pathname;
+      if (pathname.endsWith('.obj')) return { ok: true, text: async () => 'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3' };
+      if (pathname.endsWith('prefab.json')) return { ok: true, json: async () => [{ name: 'Start_up', parent: 'Start', mesh: 'Start_up', materials: ['[opt]start_end_add'] }] };
       return { ok: false, json: async () => null, text: async () => '' };
     };
     try {

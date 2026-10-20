@@ -186,6 +186,8 @@ export class Net {
     this._failedSince = 0;         // first failure of the current outage (0 = not failing)
     this._gateProbeAt = 0;         // last probe time
     this._gateProbeInFlight = false;
+    this._gateRequired = false;
+    this._gateRetryTimer = null;
     this._gateReloadAt = 0;        // last reload time (this page)
 
     /** @type {'idle'|'connecting'|'connected'|'handshaking'|'online'|'reconnecting'|'closed'} */
@@ -298,6 +300,7 @@ export class Net {
   close() {
     this._manualClose = true;
     this._clearTimer('_reconnectTimer', 'clearTimeout');
+    this._clearTimer('_gateRetryTimer', 'clearTimeout');
     this.retryAt = 0;
     const ws = this.ws;
     this._teardownSocket();
@@ -309,6 +312,12 @@ export class Net {
   /** Skip the backoff wait and reconnect right now (used on `online` / tab focus / retry button). */
   retryNow() {
     if (this._manualClose) return;
+    if (this._gateRequired) {
+      this._clearTimer('_gateRetryTimer', 'clearTimeout');
+      this._gateProbeAt = 0;
+      this._probeGate();
+      return;
+    }
     if (this.ws && (this.ws.readyState === WS_OPEN || this.ws.readyState === WS_CONNECTING)) return;
     this.connect();
   }
@@ -347,6 +356,8 @@ export class Net {
   }
 
   _onOpen() {
+    this._gateRequired = false;
+    this._clearTimer('_gateRetryTimer', 'clearTimeout');
     this._openedAt = this.now();
     this._lastRx = this._openedAt;
     this._unansweredSince = null;
@@ -397,6 +408,7 @@ export class Net {
 
   _scheduleReconnect() {
     if (this._manualClose) return;
+    if (this._gateRequired) { this._scheduleGateCheck(); return; }
     const now = this.now();
     if (!this._failedSince) this._failedSince = now;
     if (this.attempt >= GATE_PROBE.afterAttempt) this._probeGate();
@@ -413,14 +425,13 @@ export class Net {
 
   /**
    * Ask the gate directly whether this page must verify again (see GATE_PROBE).
-   * Fire-and-forget: the normal backoff keeps running either way, so a slow probe never delays a retry.
+   * Fire-and-forget until gate failure is confirmed; confirmed failures pause WS retries in favour of this probe.
    */
   _probeGate() {
-    if (this._gateProbeInFlight) return;
+    if (this._gateProbeInFlight || this._manualClose || this.isHidden()) return;
     const now = this.now();
     if (now - this._gateProbeAt < GATE_PROBE.intervalMs) return;
     this._gateProbeAt = now;
-    if (this.isHidden()) return; // a background tab has no user to rescue
     const failedSince = this._failedSince;
     let probe;
     try {
@@ -431,8 +442,28 @@ export class Net {
     this._gateProbeInFlight = true;
     probe.then((required) => {
       this._gateProbeInFlight = false;
-      if (required === true && this._failedSince === failedSince) this._reloadForGate();
-    }, () => { this._gateProbeInFlight = false; });
+      if (this._manualClose || !failedSince || this._failedSince !== failedSince) return;
+      if (required === true) {
+        this._gateRequired = true;
+        this._clearTimer('_reconnectTimer', 'clearTimeout');
+        this.retryAt = 0;
+        this._reloadForGate();
+        this._scheduleGateCheck();
+      } else if (this._gateRequired) {
+        this._gateRequired = false;
+        this._clearTimer('_gateRetryTimer', 'clearTimeout');
+        this._scheduleReconnect();
+      }
+    }, () => { this._gateProbeInFlight = false; if (this._gateRequired) this._scheduleGateCheck(); });
+  }
+
+  /** Once gate failure is confirmed, retry the small probe instead of refused WS upgrades. */
+  _scheduleGateCheck() {
+    if (this._manualClose || this._gateRetryTimer != null || this.isHidden()) return;
+    this._gateRetryTimer = this.timers.setTimeout(() => {
+      this._gateRetryTimer = null;
+      this._probeGate();
+    }, GATE_PROBE.intervalMs);
   }
 
   /** Reload only for explicit gate failure, after a real outage, a few times per session. */

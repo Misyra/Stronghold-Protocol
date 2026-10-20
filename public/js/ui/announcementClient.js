@@ -1,4 +1,4 @@
-// Read-only notice polling, independent of the game's WebSocket protocol.
+// HTTP remains the content source; optional WS revision hints suppress unchanged polling.
 export const ANNOUNCEMENT_CHECK_MS = 30_000;
 
 /** Use a monotonic deadline based on server time, even when the player's wall clock is wrong. */
@@ -25,7 +25,7 @@ export function popupSnapshot(body, now = performance.now()) {
 }
 
 /** One in-flight request, bounded wait, immediate check on return to the tab; failures retain the previous notice. */
-export function startAnnouncementPolling({ onChange, fetchFn = globalThis.fetch,
+export function startAnnouncementPolling({ onChange, fetchFn = globalThis.fetch, net = null,
   doc = globalThis.document, intervalMs = ANNOUNCEMENT_CHECK_MS, timeoutMs = 5000,
   now = () => performance.now() }) {
   let stopped = false;
@@ -33,9 +33,12 @@ export function startAnnouncementPolling({ onChange, fetchFn = globalThis.fetch,
   let controller = null;
   let timeout = null;
   let cancelWait = null;
-  async function check() {
+  let hint = null, hintedAt = -Infinity, appliedHint = null, lastReadAt = -Infinity, nextHintRetry = -Infinity;
+  async function check(force = false, bypassCache = false) {
     if (stopped || busy || doc?.hidden) return;
+    if (!force && hint && hint === appliedHint && now() - hintedAt < 12000 && now() - lastReadAt < 180000) return;
     busy = true;
+    const requestedHint = hint;
     controller = new AbortController();
     const signal = controller.signal;
     const timedOut = new Promise((resolve) => {
@@ -44,11 +47,23 @@ export function startAnnouncementPolling({ onChange, fetchFn = globalThis.fetch,
     });
     try {
       const request = (async () => {
-        const res = await fetchFn('/api/announcement', { cache: 'no-store', signal });
-        return res.ok ? await res.json() : undefined;
+        const res = await fetchFn(`/api/announcement${bypassCache ? '?nocache=1' : ''}`, { cache: 'no-store', signal });
+        if (!res.ok) return undefined;
+        const body = await res.json();
+        // Nginx caches the public projection for up to 5s. Age is added on cache HITs;
+        // advance serverTime so announcement expiry remains tied to wall time, not cache age.
+        const ageSeconds = Number.parseInt(res.headers?.get?.('age') || '0', 10);
+        if (Number.isFinite(ageSeconds) && ageSeconds > 0 && Number.isFinite(body?.serverTime)) {
+          body.serverTime += ageSeconds * 1000;
+        }
+        return body;
       })();
       const body = await Promise.race([request, timedOut]);
-      if (!stopped && body !== undefined) onChange(announcementSnapshot(body, now()), popupSnapshot(body, now()));
+      if (!stopped && body !== undefined) {
+        lastReadAt = now(); appliedHint = requestedHint;
+        nextHintRetry = -Infinity;
+        onChange(announcementSnapshot(body, now()), popupSnapshot(body, now()));
+      }
     } catch { /* Network outages must not interfere with an ongoing match. */ }
     finally {
       clearTimeout(timeout);
@@ -57,15 +72,26 @@ export function startAnnouncementPolling({ onChange, fetchFn = globalThis.fetch,
       busy = false;
     }
   }
+  const unsubscribe = net?.on('pong', (msg) => {
+    if (typeof msg.announcementRevision !== 'string' || !/^[a-f0-9]{24}$/.test(msg.announcementRevision)) return;
+    const changed = hint !== msg.announcementRevision;
+    hint = msg.announcementRevision; hintedAt = now();
+    if (!busy && (changed || hint !== appliedHint) && now() >= nextHintRetry) {
+      nextHintRetry = now() + intervalMs;
+      void check(false, true);
+    }
+  });
   const timer = setInterval(check, intervalMs);
-  doc?.addEventListener('visibilitychange', check);
+  const onVisible = () => { void check(true, true); };
+  doc?.addEventListener('visibilitychange', onVisible);
   void check();
   return () => {
     stopped = true;
+    unsubscribe?.();
     clearInterval(timer);
     clearTimeout(timeout);
     controller?.abort();
     cancelWait?.(undefined);
-    doc?.removeEventListener('visibilitychange', check);
+    doc?.removeEventListener('visibilitychange', onVisible);
   };
 }

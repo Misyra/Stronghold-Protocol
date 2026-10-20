@@ -1064,7 +1064,7 @@ test('a kit whose import does not map, that fails the script check, or uses synt
   kitPack(pack, {
     chess: { ...pairOf('rose_dir'), ...pairOf('rose_fs'), ...pairOf('rose_date'), ...pairOf('rose_async'), ...pairOf('rose_tier') },
     kits: {
-      'kits/chess_rose_dir_a.js': "import { dirVec } from '@sim/dir.js';\nexport default function kit() { return { skill: null, x: dirVec }; }\n",
+      'kits/chess_rose_dir_a.js': "import { dirVec } from '@sim/missing.js';\nexport default function kit() { return { skill: null, x: dirVec }; }\n",
       'kits/chess_rose_fs_a.js': `import { writeFileSync } from 'node:fs';\nwriteFileSync('${BAIT}', 'executed\\n');\nexport default function kit() { return {}; }\n`,
       'kits/chess_rose_date_a.js': 'export default function kit() { return { skill: { kind: "passive", mods: { atkPct: Date.now() % 2 } } }; }\n',
       'kits/chess_rose_async_a.js': 'export default async function kit() { return {}; }\n',
@@ -1077,7 +1077,7 @@ test('a kit whose import does not map, that fails the script check, or uses synt
     assert.equal(got.ok, true, got.markdown);
     assert.deepEqual(dirsOf(parent).filter((n) => n !== 'pack'), ['rose-kit']);
     const reason = (file) => got.report.skipped.find((s) => s.path === file);
-    assert.match(reason('kits/chess_rose_dir_a.js').en, /"@sim\/dir\.js" on line 1 has no sp:sdk@1 equivalent/);
+    assert.match(reason('kits/chess_rose_dir_a.js').en, /"@sim\/missing\.js" on line 1 has no sp:sdk@1 equivalent/);
     assert.match(reason('kits/chess_rose_fs_a.js').en, /"node:fs"/);
     assert.match(reason('kits/chess_rose_date_a.js').en, /fails the script check \(Date is not available in sp:sdk@1\)/);
     assert.match(reason('kits/chess_rose_async_a.js').en, /an async function/);

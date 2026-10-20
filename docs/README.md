@@ -34,7 +34,7 @@
 | [自动浏览器入口验证](../custom_docs/operations/BROWSER_GATE.md) | 本分支 | 回环服务 + `auth_request`，签名 Cookie 准入 |
 | [Linux 主机加固](../custom_docs/operations/HOST_HARDENING.md) | 本分支 | 关闭公开探测、主机防火墙、fail2ban、日志轮转与每日巡检 |
 | [机房来源分级](../custom_docs/operations/IDC_PROTECTION.md) | 本分支 | ASN 名单的可行性、证据与封不住的边界 |
-| [2026-10-17 事故记录](../custom_docs/operations/INCIDENT-2026-10-17.md) | 本分支 | 防护默认值的来龙去脉与线上边界 |
+| [2026-10-17 事故记录](../custom_docs/archive/incidents/INCIDENT-2026-10-17.md) | 本分支 | 防护默认值的来龙去脉与线上边界 |
 | [国家库（GeoLite）](../geoip/README.md) | 本分支 | 海外识别用的 Country 库：来源、许可、放置位置与更新 |
 | [发行包制作](../custom_docs/operations/PACKAGING.md) | 本分支 | 维护者制作完整、精简与更新包 |
 | [Windows 便携包](WINDOWS.md) | 上游 | 制作与使用便携包 |

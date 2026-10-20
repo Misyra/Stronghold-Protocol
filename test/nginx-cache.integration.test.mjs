@@ -51,7 +51,7 @@ test('real nginx examples: manifest caching, current health, log metadata and au
       }
       if (url.pathname === '/api/announcement') {
         if (fail) { res.writeHead(503, { 'Cache-Control': 'no-store' }); res.end('{}'); return; }
-        // Even an upstream acceleration header must not bypass public API admission accounting.
+        // The public projection is cached for the Nginx location's fixed 5s even if Node adds cache hints.
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Accel-Expires': '1' }); res.end('{"announcement":null}'); return;
       }
       if (url.searchParams.get('v') === 'old' || /nodedata\.js$/i.test(url.pathname)) {
@@ -154,11 +154,15 @@ test('real nginx examples: manifest caching, current health, log metadata and au
       const plain = await get('/data/resource-manifest.json'); assert.equal(plain.headers.get('x-resource-cache'), 'MISS');
       assert.equal((await get('/data/resource-manifest.json')).headers.get('x-resource-cache'), 'HIT');
       await (await get('/api/announcement')).text();
-      assert.equal((await get('/api/announcement')).headers.get('x-announcement-cache'), null);
+      assert.equal((await get('/api/announcement')).headers.get('x-announcement-cache'), 'HIT');
+      assert.equal(hits.get('/api/announcement'), 1, 'the short announcement cache coalesces repeated polls');
+      const liveAnnouncement = await get('/api/announcement?nocache=1');
+      assert.equal(liveAnnouncement.status, 200, 'diagnostic reads bypass the shared cache');
+      assert.equal(hits.get('/api/announcement?nocache=1'), 1);
       await delay(2200); fail = true;
       try {
         assert.equal((await get('/data/resource-manifest.json')).status, 500, 'expired plain manifests cannot mask failures');
-        assert.equal((await get('/api/announcement')).status, 503, 'uncached announcements cannot mask failures');
+        assert.equal((await get('/api/announcement?nocache=1')).status, 503, 'diagnostic reads never mask origin failures');
         assert.equal((await get(url)).headers.get('x-resource-cache'), 'HIT', 'versioned upstream TTL overrides the short default');
       }
       finally { fail = false; }

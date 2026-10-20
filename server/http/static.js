@@ -131,7 +131,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   const useBuiltClient = clientBuild && fs.existsSync(builtIndex);
   // the preload manifest (docs/ASSETS.md「Preload」): built on first request, cached until the manifests change
   const resources = createResourceIndex({ dataDir, publicDir, cdnBase: cdn, resourcePackRoutes, rewrite: (v) => (cdn ? rewriteAssetPaths(v, cdn) : v), log });
-  /** @type {Map<string, { mtimeMs: number, size: number, body: Buffer }>} rewritten manifests (per file path) */
+  /** @type {Map<string, { mtimeMs: number, size: number, ctimeMs: number, ino: number, body: Buffer, hash: string }>} rewritten manifests */
   const cdnCache = new Map();
   const cdnPending = new Map();
   const manifestEncoder = new BackgroundClient(new URL('../workers/manifestEncode.js', import.meta.url));
@@ -427,6 +427,11 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     const mount = mounts.find((m) => decoded.startsWith(m.prefix) || decoded === m.prefix.slice(0, -1)) || mounts[mounts.length - 1];
     const rest = decoded.length > mount.prefix.length ? decoded.slice(mount.prefix.length) : '';
     const segments = rest.split('/').filter((s) => s.length > 0);
+    const contentFile = mount.name === 'data' && segments.length === 1 && typeof query === 'string'
+      && /^v=[a-f0-9]{8}$/.test(query)
+      ? Object.values(vanillaContent().data).find((entry) => entry.file === segments[0]) : null;
+    const contentTagVerified = !versioned && contentFile && typeof query === 'string'
+      && query === `v=${contentFile.sha256.slice(0, 8)}`;
     if (segments.some((s) => s === '..' || s === '.')) { sendError(req, res, 403, '禁止访问 · Forbidden'); return; }
     if (segments.some((s) => s.startsWith('.'))) { sendError(req, res, 404, '页面不存在 · Not found'); return; }
     if (mount.only && (!segments.length || !mount.only.has(path.extname(segments[segments.length - 1]).toLowerCase())
@@ -483,6 +488,10 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     // 模拟 worker 要 eval 编译 DSL，策略和页面不同（server/http/csp.js SIM_WORKER_CSP）。按真实路径判定，
     // 编码/大小写别名指到同一个文件时也算 —— 上游的 static.js 在这里 setHeader，新静态层没有这段。
     const workerHeaders = {};
+    if (mount.name === 'public' && /^\/build\/assets\/resource-sw-[A-Za-z0-9_-]+\.js$/.test(decoded)) {
+      // The content-hashed worker lives below /build/assets but controls resource requests at the site root.
+      workerHeaders['Service-Worker-Allowed'] = '/';
+    }
     if (mount.name === 'public' && path.basename(absPath).toLowerCase() === 'simworker.js') {
       const [real, worker] = await Promise.all([
         fsp.realpath(absPath).catch(() => null),
@@ -492,7 +501,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     }
     // 一次发布的 URL 下必须是那一次发布的字节：文件在进程启动后被改过，就不能再按旧 tag 发出去
     // （否则浏览器/代理会把新字节永久缓存成旧 URL）。宁可 503 让运维重启。
-    if (versioned && !release.matchesFile(absPath, stat)) {
+    if ((versioned || tagVerified || contentTagVerified) && !release.matchesFile(absPath, stat)) {
       sendError(req, res, 503, '资源文件已变更，请重启服务器 · Restart required');
       return;
     }
@@ -507,31 +516,38 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       const cached = cdnCache.get(absPath);
       let body = cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size
         && cached.ctimeMs === stat.ctimeMs && cached.ino === stat.ino ? cached.body : null;
+      let hash = body ? cached.hash : null;
       if (!body) {
         try {
           const identity = `${absPath}:${stat.mtimeMs}:${stat.size}:${stat.ctimeMs}:${stat.ino}`;
           let pending = cdnPending.get(identity);
           if (!pending) {
-            pending = manifestEncoder.request({ file: absPath, cdn }).then((bytes) => Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength))
+            pending = manifestEncoder.request({ file: absPath, cdn }).then((bytes) => {
+              const body = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+              return { body, hash: createHash('sha256').update(body).digest('hex') };
+            })
               .finally(() => cdnPending.delete(identity));
             cdnPending.set(identity, pending);
           }
-          body = await pending;
-          cdnCache.set(absPath, { mtimeMs: stat.mtimeMs, size: stat.size, ctimeMs: stat.ctimeMs, ino: stat.ino, body });
+          ({ body, hash } = await pending);
+          cdnCache.set(absPath, { mtimeMs: stat.mtimeMs, size: stat.size, ctimeMs: stat.ctimeMs, ino: stat.ino, body,
+            hash });
         } catch (e) {
           log.error(`[http] cannot rewrite ${segments[0]} for the CDN`, e);
           sendError(req, res, 500, '服务器内部错误 · Internal error');
           return;
         }
       }
-      serveBuffer(req, res, body, stat, MIME['.json'], 'no-cache', cdn);
+      await serveHashedBuffer(req, res, { body, hash, type: MIME['.json'],
+      cacheControl: versioned || tagVerified || contentTagVerified ? IMMUTABLE_CACHE : 'no-cache',
+      key: `cdn-json:${absPath}`, cache: gzipCache });
       return;
     }
     const ext = path.extname(absPath).toLowerCase();
     await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log, {
       ...(Object.keys(workerHeaders).length ? { headers: workerHeaders } : {}),
       transform: transformFor(ext, versioned, decoded),
-      ...(versioned || tagVerified ? { cacheControl: IMMUTABLE_CACHE } : {}),
+      ...(versioned || tagVerified || contentTagVerified ? { cacheControl: IMMUTABLE_CACHE } : {}),
     });
   };
   // 发布版本（server/assetVersion.js）：调试与测试读它判断「这个 URL 属于哪次发布」
@@ -543,21 +559,6 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   serveStatic.close = () => manifestEncoder.close();
   serveStatic.cacheStats = () => ({ gzipBytes: gzipCache.total, gzipEntries: gzipCache.map.size, gzipLimitBytes: gzipCache.maxTotal, gzipInflight: gzipCache.inflight.size });
   return serveStatic;
-}
-
-function serveBuffer(req, res, body, stat, type, cacheControl, tag = '') {
-  const isHead = req.method === 'HEAD';
-  const etag = `"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}${tag ? '-' + Buffer.from(tag).toString('hex').slice(0, 12) : ''}"`;
-  const headers = {
-    'Content-Type': type,
-    'Cache-Control': cacheControl,
-    ETag: etag,
-    'Last-Modified': stat.mtime.toUTCString(),
-  };
-  if (isNotModified(req, etag, stat.mtime)) { res.writeHead(304, headers); res.end(); return; }
-  headers['Content-Length'] = body.length;
-  res.writeHead(200, headers);
-  res.end(isHead ? undefined : body);
 }
 
 const CDN_MANIFESTS = new Set(['assets.json', 'local-assets.json', 'local-fx.json']);

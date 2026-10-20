@@ -4,6 +4,8 @@
 
 | 场景 | 看这里 |
 |---|---|
+| Nginx / 游戏侧限额与共享 IP 验收 | [LIMITS.md](LIMITS.md)（当前参数唯一汇总） |
+| 10-19 三机问题与修复优先级 | [FLEET_PROBLEMS_2026-10-19.md](FLEET_PROBLEMS_2026-10-19.md) |
 | Linux 生产站点 | 本文的安装、systemd、反向代理和更新步骤 |
 | Docker | 本文的容器步骤 |
 | Windows / 家用小主机 / 整合包升级 | [HOME_SERVER.md](HOME_SERVER.md) |
@@ -32,6 +34,8 @@ npm run build
 
 构建输出为 `public/build/`，不会复制整套美术资源。服务启动时检测到 `public/build/index.html` 就使用构建入口；缺少构建时自动使用源码入口。`npm run dev` 或 `node server/index.js --source-client` 始终使用源码入口。
 
+资源 Service Worker 同时打成独立的 `build/assets/resource-sw-<哈希>.js`，减少其源码依赖的重复 304。Node 代理模式自动提供根作用域所需响应头；Nginx 若直接读取 `/build/` 文件，须补 `add_header Service-Worker-Allowed "/" always;`，并验收 SW 根 scope 注册与离线取图。详见 [CDN 与 SW 缓存](CDN.md#源站-304-与-service-worker)。
+
 以下源码更新命令不会自动刷新已有构建。启用构建模式的站点，每次更新代码时都必须同步同一版本的新 `public/build/`；不能只拉代码并重启。发行 ZIP 仍按原流程使用源码入口，不会自动收录本机未跟踪的构建目录。
 
 发布时先上传新哈希资源，再原子替换构建入口，并按正常维护流程重启业务服务以刷新版本信息；不要在运行目录边构建边覆盖入口。构建默认保留旧 chunk，发布同步也不得使用删除旧 chunk 的规则，否则旧标签页后续加载会失败。清理期限需要覆盖允许的旧页面及对局存活期。
@@ -43,7 +47,7 @@ npm run build
 - 本机提供素材：运行 `node tools/setup.mjs`，下载失败可重跑续传；缺失明细和环境诊断用 `node tools/doctor.mjs`。
 - 使用已发布的本站 CDN：配置 `SP_ASSETS_CDN=https://assets.misyra.com`，把发布机生成的 `.assets-manifest.json` 放到项目根（`scp` 过去；镜像构建时会自动生成），无需在服务器下载整套素材。新建自己的 CDN 先按 [CDN.md](CDN.md) 配置和发布。
 
-`public/assets/local/` 从 2026-10-19 起不再随 Git 下载（65 MB）：用 CDN，或在本机跑 `node tools/setup.mjs --local` 提取，或从同版本完整包复制；之后 `npm run manifest` 生成指纹清单。资源来源、客户端提取和清单见[素材说明](../../docs/ASSETS.md)。源码部署不要混用上游发行包中的程序文件。
+`public/assets/local/` 从 2026-10-19 起不再随 Git 下载（65 MB）：用 CDN，或在本机跑 `node tools/setup.mjs --local` 提取，或从同版本完整包复制；之后 `npm run manifest` 生成指纹清单。CDN-only 游戏节点确认清单与 CDN 对象齐全后可删除 `public/assets/` 和字体二进制，只保留 `public/fonts/fonts.css` 供服务器改写字体 URL；CDN 不可用时源站素材回退会 404。资源来源、客户端提取和清单见[素材说明](../../docs/ASSETS.md)。源码部署不要混用上游发行包中的程序文件。
 
 ## 配置
 
@@ -220,7 +224,7 @@ nginx 修改后先 `sudo nginx -t`，通过后再 reload。Node 只监听本机�
 
 完整 Nginx 示例支持将限流、永久封禁、海外 API 拦截转换为 444 静默断开，并拒绝 `/ws` 的普通 HTTP 请求。需要连同 Node 代码、回源 opt-in 请求头和内部 drop location 一起部署；配置和回滚见 [公开接口防护](HTTP_PROTECTION.md#444-静默拒绝)。正常错误与本机探针仍保留可读响应。
 
-`/api/announcement` 转发到游戏 Node；面板公开 feed `/api/announce/v1/<siteId>` 由 sp-portal 提供，两者是不同接口。所有公开 API（含公告）不共享缓存，每次请求都进入限流和永久封禁计数。新增的 Nginx 缓存前封禁检查、Nginx 全业务 300 次／分钟与 Node API 600 次／分钟阈值和持久名单配置见 [公开接口防护](HTTP_PROTECTION.md)。资源预载的 `/resource-sw.js`、`/js/resources/`、`/data/resource-manifest.json` 必须指向当前 Node，不能套用素材一年缓存规则。清单共享缓存的例外见下节，Worker 和普通 JS/CSS 继续遵循源站复验规则。
+`/api/announcement` 转发到游戏 Node；面板公开 feed `/api/announce/v1/<siteId>` 由 sp-portal 提供，两者是不同接口。使用本仓库 Nginx 缓存片段时，公告只在源站共享缓存 5 秒，限流和封禁检查仍在缓存查找前执行；其他公开 API 不共享缓存。每个公告请求仍经过 Nginx 限流、封禁与访问日志，Node 的 API 计数只统计实际回源。公告浏览器响应保持 `no-store`；运维可用 `/api/announcement?nocache=1` 绕过共享缓存。防护配置见 [公开接口防护](HTTP_PROTECTION.md)。资源预载的 `/resource-sw.js`、`/js/resources/`、`/data/resource-manifest.json` 必须指向当前 Node，不能套用素材一年缓存规则。清单共享缓存的例外见下节，Worker 和普通 JS/CSS 继续遵循源站复验规则。
 
 ### 清单性能修复与 nginx 一次性更新
 
@@ -230,14 +234,14 @@ nginx 修改后先 `sudo nginx -t`，通过后再 reload。Node 只监听本机�
 
 | 路径 | 策略 |
 |---|---|
-| `/data/resource-manifest.json?v=<页面发布版本>` | nginx 缓存 12 小时，查询参数参与 key；Node 校验版本，错误版本返回不缓存的 404 |
+| `/data/resource-manifest.json?v=<页面发布版本>` | 当前片段缓存 15 秒，查询参数参与 key；当前版本响应 immutable，旧/不匹配 query tag 回退 no-cache，并非 404 |
 | 不带版本的 `/data/resource-manifest.json` | 兼容旧客户端和 Worker 后备读取，仅缓存 15 秒 |
 | `/assets-manifest.json?v=<素材版本>` | nginx 缓存 30 天；浏览器保留源站不可变缓存头；只缓存 200 |
-| `/api/announcement` | 不缓存，每次回源参与限流和永久封禁计数 |
+| `/api/announcement` | 源站 Nginx 缓存 5 秒；限流、封禁和访问日志仍按每个请求执行；`?nocache=1` 绕过缓存 |
 | `/icons/` | nginx 直接读取图标，缓存 1 小时；未配置直出时 Node 同样缓存 1 小时；文件名无版本，更新图标最多延迟 1 小时 |
 | `/manifest.json` | Node 提供，浏览器缓存 1 小时，过期后通过 ETag 复验 |
 
-新页面自动带资源清单版本，发布版本随代码、数据、素材及预载元数据变化。浏览器仍复验；12 小时是 nginx 的共享缓存期限，由 Node 的 `X-Accel-Expires: 43200` 控制；普通地址是 `15`。不要忽略 `X-Accel-Expires`，不要从缓存键去掉查询串，也不要关闭上游 `Vary` 处理。资源清单和公告都禁止过期回退。长期缓存只用于有版本的清单；上线后资源或数据再次改变，须重启 Node 生成新页面版本，不能仅热覆盖文件。
+新页面自动带资源清单版本，发布版本随代码、数据和素材变化。当前 Node 未发送 `X-Accel-Expires`；片段忽略上游 Cache-Control/Expires 后，带版本与裸地址均按 `proxy_cache_valid 200 15s` 缓存，不能沿用旧文档的 12 小时承诺。Node 仅对匹配当前发布 tag 的 query 响应 immutable，其余 query 回退 no-cache；Nginx 仍可能保留 15 秒副本。查询串参与缓存 key，保留上游 `Vary` 处理；不使用过期回退。以后增加长期缓存必须先补版本校验与真实 Node 集成测试，不能只依赖模拟上游的 X-Accel-Expires。发布代码/数据/素材后重启 Node 刷新页面版本，不能仅热覆盖文件。
 
 已有 nginx 站点不用整份替换主配置，按以下步骤合入：
 
@@ -267,9 +271,9 @@ sudo systemctl reload nginx
 
 资源清单使用新的缓存键前缀，不需删除整个 nginx 缓存。不要修改状态目录、公告目录或审核密钥。重启同时会关闭本次临时开启的 inspector；若启动参数本身包含 `--inspect`/`NODE_OPTIONS=--inspect`，需先去掉该选项。
 
-公告 API 明确开放时不再使用 Nginx 共享缓存，浏览器仍每 30 秒轮询；发布或撤销后等待下一次轮询，不再额外等待代理缓存。当前默认关闭公开公告 API，客户端轮询失败且不再接收公告更新。旧的公告缓存 location 应一并更新，否则重新开放后攻击请求会绕过 Node 的频率计数。
+当前示例的公告 location 使用独立缓存键，只缓存 200 五秒，不提供过期副本；Nginx 限流、封禁检查和访问日志在缓存查找前执行。Node API 计数只增加实际回源，不能把它解释为所有公告请求数。浏览器仍收到 `no-store`，普通页面以 30 秒轮询兜底；WS 版本变化和页面恢复时以 `?nocache=1` 及时读取最新内容。发布或撤销在普通缓存下最多有 5 秒传播延迟。
 
-验证时使用游戏首页注入的 `__spAssetVersion` 拼出 `/data/resource-manifest.json?v=<版本>`，连续请求应从 `X-Resource-Cache: MISS` 变成 `HIT`；带原 ETag 请求应返回 304。素材清单看 `X-Asset-Manifest-Cache`；公告和 `/api/ping` 不应有共享缓存，公告也不再返回 `X-Announcement-Cache: HIT`。普通 JS/CSS 不应被新增长 TTL。nginx 缓存减少 Node 回源和处理开销，不减少同样响应向玩家发送的字节；首次填充较大清单时仍可能产生正常的缓存文件写入。
+验证时使用游戏首页注入的 `__spAssetVersion` 拼出 `/data/resource-manifest.json?v=<版本>`，连续请求应从 `X-Resource-Cache: MISS` 变成 `HIT`；带原 ETag 的条件请求可由 Nginx 用新鲜缓存体返回 304，Node 回源数不增加。清单缓存到期后重新请求完整 200，不向 Node 做 304 再验证。素材清单看 `X-Asset-Manifest-Cache`；公告连续请求应出现 `X-Announcement-Cache: MISS` 后 `HIT`，`?nocache=1` 应绕过缓存；`/api/ping` 仍不共享缓存。普通 JS/CSS 不应被新增长 TTL。nginx 缓存减少 Node 回源和处理开销，不减少同样响应向玩家发送的字节；首次填充较大清单时仍可能产生正常的缓存文件写入。
 
 完整示例的 `/healthz` 使用 5 秒 Nginx 源站缓存，公开完整响应与 `build=1` 分开规范化缓存键。回环探针完全绕过缓存；进程性能数据 `/metrics` 也不缓存且不对公网开放。浏览器响应仍是 `Cache-Control: no-store`；入口总限流、缓存填充锁和永久封禁计数不能省略，详见[接口防护](HTTP_PROTECTION.md)。缓存 location 显式 `proxy_buffering on`，避免继承 WebSocket 的关闭缓冲配置导致缓存不生效；不要全站覆盖 `X-Accel-Buffering: no`。`/_v/` 缓存键仍隔离 Host、端口、上游与完整 URI，只缓存 200，保留 Vary。Range 可由缓存完整素材切片，不能据此把 206 单独长期缓存；健康接口禁止 Range 分段。
 
@@ -331,7 +335,7 @@ cd /opt/Stronghold-Protocol
 git status --short
 git pull --ff-only
 npm ci --omit=dev
-# 本机素材模式才需 node tools/setup.mjs；CDN 模式随代码更新发布清单即可。
+# 本机素材模式才需 node tools/setup.mjs；CDN 模式同步同版本 data 素材索引、哈希索引和根发布清单，见 LIMITS.md。
 # 构建模式：此时同步同版本的新 public/build/，保留旧哈希资源。
 sudo systemctl start stronghold
 ```
@@ -465,8 +469,4 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 
 2026-10-19 的 gate 恢复修复仍待上线，安装顺序、实际端口、续签头继承与验收步骤见 [BROWSER_GATE.md](BROWSER_GATE.md)（含安装顺序与验收步骤）。完整修复包含 `30437428`、`2ec469e9`、`70bba335`，不要只拣最后一条文档/探针修正提交部署。先更新 gate 与 Nginx 并在目标机通过 `nginx -t`，再发布对应前端；保留密钥、现场健康防护及手工封禁。旧标签页首次可能仍需刷新。
 
-依据 [排查记录](INCIDENT-2026-10-17.md#七据此调整的仓库默认值待部署)，10-17 的模板记录为每 worker 16384 连接、源站总并发 3000、WS 总并发 800；当前仓库示例已调整为源站 4500、WS 1600，每 worker 仍为 16384。现场值以 `nginx -T` 为准。部署前确认 systemd 的 `LimitNOFILE` 与系统上限足够（例如 65536），否则配置中的容量不等于实际可用容量。
-
-素材直接从 CDN 下载时不限制请求次数；静态限流只装在游戏源站。源站的构建文件、模拟模块、数据和本地素材归入独立静态预算，不挤占业务永久封禁计数。构建文件及合法版本资源可缓存，裸 `/sim/` 仍遵循上游 no-cache；完整打包另行实施。可选浏览器 gate 与公共缓存片段共享唯一资源清单 location，更新旧配置时先移除重复定义。
-
-门户延迟探测使用 GET/HEAD `/api/ping`（60/min、burst 15、免浏览器 Cookie），房间状态使用 GET/HEAD `/api/rooms/<code>/status`（30/min、burst 8、保留准入）。不要把 ping 加入永久 IP 封禁 jail。WS 入口 jail 改为只累计 `/ws` 444 拒绝，100 次/60s 封禁 1h；应用兜底允许 100 次/60s，第 101 次封禁 1h，检查旧环境变量是否仍覆盖默认值。Web SYN 模板与 `ops/sp-web-syn-guard.nft` 统一为 120/min、burst 40，全局保持 50/s、burst 100；这只是仓库规范值，线上更新仍需目标机器检查。
+当前模板参数、与 Node 的叠加关系、四人共网推荐配置及三机发布核验统一维护在 [LIMITS.md](LIMITS.md)。旧事故记录中的 3000/800、4000、4 条 WS、5 次/min 等属于历史值，不能继续用作新部署默认。现场以 `nginx -T` 和应用有效配置为准；2026-10-19 问题清单的处理建议见 [三机问题方案](FLEET_PROBLEMS_2026-10-19.md)。

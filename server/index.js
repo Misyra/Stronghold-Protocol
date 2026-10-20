@@ -86,7 +86,7 @@ import { Persister, restoreServerForBoot } from './persist.js';
 import { FileStateStore } from './stateFile.js';
 import { createRedisStore } from './redisState.js';
 import { createStatusLimiter } from './roomStatus.js';
-import { createAnnouncementReader } from './announcement.js';
+import { createAnnouncementReader, createAnnouncementSignal } from './announcement.js';
 import { ChatLog } from './chatLog.js';
 import { readAssetsCdnVersionFile, readAssetsManifestFile, VERSION_PREFIX } from './assetVersion.js';
 import { SimulationPool, workerSettings } from './workers/pool.js';
@@ -377,6 +377,7 @@ export async function startServer(opts = {}) {
   const allowNickname = createStatusLimiter({ trustProxy: parseTrustProxy(opts.trustProxy ?? process.env.TRUST_PROXY) });
   const allowStatus = createStatusLimiter({ trustProxy: parseTrustProxy(opts.trustProxy ?? process.env.TRUST_PROXY) });
   const readAnnouncement = createAnnouncementReader({ ...announcementOptions, log });
+  network.announcementRevision = createAnnouncementSignal(readAnnouncement);
   log.info(`[announcement] ${announcementOptions.source.mode} ${announcementOptions.announcementUrl || announcementOptions.filePath}`);
   const startedAt = Date.now();
   // Game boot id (lobby share / 联机站, docs/design/portal-agent-wss.md §46.3): a fresh value on every process start.

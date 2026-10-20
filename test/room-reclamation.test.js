@@ -109,7 +109,7 @@ test('pressure stays armed when too few rooms are offline and disarms below 80%'
   assert.equal(entries[2].room.disposed, false);
 });
 
-test('fractional thresholds round safely, including the default 1000-room limit', (t) => {
+test('fractional room-pressure thresholds round safely', (t) => {
   const f = fixture(t), entries = Array.from({ length: 10 }, f.create);
   for (const e of entries) f.offline(e);
   f.lobby.opts.maxRooms = 11;
@@ -131,15 +131,15 @@ test('creating the room that reaches 90% triggers automatic reclamation', (t) =>
   assert.equal(f.lobby.botPopulation.stats().total, 0);
 });
 
-test('default 1000-room cap triggers exactly at 900 and reclaims to 799', (t) => {
-  const f = fixture(t), entries = Array.from({ length: 899 }, f.create);
-  for (const e of entries.slice(0, 101)) f.offline(e);
+test('default 1600-room cap triggers exactly at 1440 and reclaims to 1279', (t) => {
+  const f = fixture(t), entries = Array.from({ length: 1439 }, f.create);
+  for (const e of entries.slice(0, 161)) f.offline(e);
   assert.equal(f.lobby.reclaimOfflineRooms(), 0);
-  assert.equal(f.lobby.rooms.size, 899);
+  assert.equal(f.lobby.rooms.size, 1439);
   const newest = f.create();
-  assert.equal(f.lobby.rooms.size, 799);
+  assert.equal(f.lobby.rooms.size, 1279);
   assert.equal(newest.room.disposed, false);
-  assert.equal(f.lobby.roomPressure.reclaimed, 101);
+  assert.equal(f.lobby.roomPressure.reclaimed, 161);
   assert.equal(f.lobby.roomPressure.active, false);
 });
 

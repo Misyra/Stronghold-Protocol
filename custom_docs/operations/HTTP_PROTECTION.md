@@ -4,6 +4,8 @@
 
 可叠加[自动浏览器入口验证](BROWSER_GATE.md)：在缓存、页面、API 和 WS 握手前检查签名凭证；通过验证也不会豁免本页的请求与连接限额。
 
+当前参数汇总、共享出口与封禁风险以 [LIMITS.md](LIMITS.md) 为准；本页说明防护机制和安装方式。
+
 ## 关闭公开探测接口
 
 按当前部署选择，Nginx 对公网开放 `/api/ping`、`/api/announcement`、`/api/portal-room`、`/api/portal-room/status` 与 `/api/rooms/*`；游戏服务继续执行国家校验与 API 限流。其他 `/api` 路径和公网 `/metrics` 返回 444，不进入 Node、缓存或鉴权子请求。`/api/nickname/validate` 仍单独暂停，保留精确 Nginx 拒绝规则；本机监控只放行回环来源。`/healthz` 对国内来源开放，并使用下面的 5 秒缓存。将 `scripts/hardening/sp-public-api-map.conf` 安装为 `/etc/nginx/conf.d/sp-public-api-map.conf`，在目标 server 使用 `if ($sp_close_public_api) { return 444; }`。映射使用 Nginx 规范化的 `$uri`，查询参数、重复斜杠及编码字符不能绕过；不能接受客户端自报的本机地址。
@@ -14,7 +16,7 @@
 
 ## 主页多来源洪泛
 
-2026-10-17 增加 `scripts/hardening/sp-page-global.conf`（HTTP 级 include），并在游戏 server 的既有 `limit_req` 列表加入 `limit_req zone=sp_page_global burst=40 nodelay;`。`/`、`/play`、`/index.html`、`/build/index.html` 共用固定键，每台服务器合计 20 次/秒、突发 40 次；不同 IP、Host 和查询参数不能刷新总量预算。限流在 `auth_request` 前执行，超额 444，不生成验证页、不查询游戏封禁、不读取页面缓存。各 location 若自行声明 `limit_req` 会替换继承列表，新增主页入口时必须保留该全局 zone。素材与已有 WebSocket 消息不消耗主页额度。
+2026-10-17 增加 `scripts/hardening/sp-page-global.conf`（HTTP 级 include），并在游戏 server 的既有 `limit_req` 列表加入 `limit_req zone=sp_page_global burst=60 nodelay;`。`/`、`/play`、`/index.html`、`/build/index.html` 共用固定键，每台服务器合计 30 次/秒、突发 60 次；不同 IP、Host 和查询参数不能刷新总量预算。限流在 `auth_request` 前执行，超额 444，不生成验证页、不查询游戏封禁、不读取页面缓存。各 location 若自行声明 `limit_req` 会替换继承列表，新增主页入口时必须保留该全局 zone。素材与已有 WebSocket 消息不消耗主页额度。
 
 这是一道容量保护：持续洪泛也可能抢占新访客的主页额度，并不能保证所有新访客仍能进入。访问日志中的拒绝请求仍然计数；不能把日志总请求数当成成功回源数。查看状态码、实际鉴权调用、游戏请求量和网卡吞吐一起判断。Nginx 只能处理已到达主机的流量；入口带宽被打满时，需要机房或运营商上游清洗，国内部署不需要依赖 Cloudflare。
 
@@ -22,7 +24,7 @@
 
 该接口匿名、无状态、响应快，攻击者无需建游戏会话即可反复请求；正常浏览器只在 `public/js/ui/buildGuard.js` 中每 60 秒检查一次版本。浏览器的 `cache: no-store` 只要求获取当前版本，不应让任意请求头或随机查询参数驱动昂贵回源。国内云主机、IPv6 轮换和多 IP 低频请求也能制造洪泛，所以国别限制和单 IP 限流都不足以单独解决。
 
-当前规则：单 IP 30/分（burst 10），所有来源共用 9/秒（burst 18），健康请求合计最多 48 个并发。超过额度 444。全局预算在 auth_request 和缓存读取之前执行，缓存命中仍受限流；内部封禁子请求不消耗这个预算。不能把服务总量限制误写成另一个按 IP 的 zone。
+裸 `/healthz` 当前规则：单 IP 30/分（burst 10），所有来源共用 9/秒（burst 18），版本检查 `?build=1` 独立为单 IP 45/分（burst 12）、全站 40/秒（burst 120）；两类健康请求合计最多 48 个并发。超过额度 444。全局预算在 auth_request 和缓存读取之前执行，缓存命中仍受限流；内部封禁子请求不消耗这个预算。不能把服务总量限制误写成另一个按 IP 的 zone。
 
 安装 `sp-health-cache-map.conf` 到 HTTP 级 include。公开请求仅分为“完整公开健康”和 `build=1` 两个缓存键，键不含 Host、客户端 IP 或任意 query；回源查询也按这两种形式规范化，避免大小写/重复参数使缓存内容错位。缓存仅保存 200、TTL 5 秒，启用填充锁，不使用过期副本或后台更新。Nginx TTL 按整秒判断，集成测试留出一秒边界余量。拒绝非 GET/HEAD 及带 Authorization 的健康请求，禁 Range 分段，刷新头不能强制回源。
 
@@ -76,7 +78,7 @@ Nginx 仍在缓存读取前检查已有封禁。访问日志增加 `public_api=1
 
 1. `auth_request /_sp/ip-check` 在返回缓存内容或直接文件前检查封禁，避免已经封禁的地址继续从 Nginx 缓存下载素材。每个正常请求增加一次本机鉴权子请求，检查只查内存，不收集健康状态。Nginx 需要 `--with-http_auth_request_module`；可用 `nginx -V` 查看。模块说明：[Nginx auth_request](https://nginx.org/en/docs/http/ngx_http_auth_request_module.html)。
 2. `/_sp/ip-check` 必须 `internal`，子请求禁止转发正文、禁止缓存，并设置 `auth_request off` 防止递归；不能将结果缓存，否则新封禁无法立即生效。Node 只对实际来自私网/本机的请求提供此检查。
-3. `/api/announcement` 当前关闭；以后开放也不能共享缓存绕过请求计数。健康接口是明确配置的 5 秒缓存例外，其命中由日志计数，浏览器端仍是 `no-store`；其他新增 API 不自行放进此缓存。
+3. `/api/announcement` 是另一个明确配置的 5 秒共享缓存例外，且只缓存 200。每个请求仍先经过 Nginx 限流、封禁检查和访问日志；缓存命中不会增加 Node API 计数。浏览器仍收到 `no-store`，WS 提示变化和运维即时核验使用 `?nocache=1` 绕过缓存。健康接口保持独立的 5 秒缓存规则；其他新增 API 不自行放进共享缓存。
 4. 所有代理 location 覆盖 `X-Real-IP`、`CF-Connecting-IP` 为已还原的 `$remote_addr`。如果前面还有 CDN/代理，只对其真实网段配置 `set_real_ip_from`，绝不能信任 `0.0.0.0/0` 或 `::/0`。Node 监听回环并保持 `TRUST_PROXY=auto`。未修正的 CF 头可让攻击者伪造任意来源甚至冒充本机，绕过计数。
 5. `@sp_ip_banned` 关闭鉴权、防止递归，执行 `return 444`。保留访问日志的 444 状态与零正文长度供审计使用，沿用日志缓冲、轮转及目录权限，不为每次拒绝额外输出 Node 错误日志。
 

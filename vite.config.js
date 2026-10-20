@@ -43,6 +43,13 @@ function browserContracts() {
       `;
     },
     transform(code, id) {
+      if (id === absolute('public/js/resources/common.js')) {
+        // A worker has no page import map. Bundle its complete module graph separately, instead of
+        // revalidating dozens of unversioned /js/resources and /shared files on every update check.
+        // Worker builds intentionally do not inherit this plugin, avoiding recursive worker bundling.
+        return { code: `import __spBuiltResourceWorker from '../../resource-sw.js?worker&url';\n`
+          + code.replace("const BUILT_SW_URL = '';", 'const BUILT_SW_URL = __spBuiltResourceWorker;'), map: null };
+      }
       if (guardedImports.has(id)) {
         // Keep the native loader/error isolation, but make its complete module set visible to Vite.
         const kit = id === absolute('server/sim/content/kits/index.js');

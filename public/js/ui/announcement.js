@@ -5,6 +5,7 @@ import { startAnnouncementPolling } from './announcementClient.js';
 import { createAnnouncementDisplay } from './announcementDisplay.js';
 import { AnnouncementPopup } from './announcementPopup.js';
 import { t } from '../../../shared/i18n.js';
+import { net } from '../net.js';
 
 const announcementUi = createStore({ open: false, notice: null, popup: null });
 const openAnnouncement = () => announcementUi.set({ open: true });
@@ -69,7 +70,7 @@ export function AnnouncementBanner() {
     return createAnnouncementDisplay({ storage });
   });
   const [, setDismissed] = useState(0);
-  useEffect(() => startAnnouncementPolling({ onChange: (notice, popup) => announcementUi.set({ notice, popup }) }), []);
+  useEffect(() => startAnnouncementPolling({ net, onChange: (notice, popup) => announcementUi.set({ notice, popup }) }), []);
   const active = notice && performance.now() < notice.deadline;
   useTicker(active ? 1000 : 0);
   const dismiss = () => {

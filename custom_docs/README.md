@@ -10,15 +10,17 @@
 | `development/` | 本分支为什么和上游不一样：API、合并记录、测试流程、性能与测量 | 改代码时 |
 | `guides/` | 玩法向说明（战绩、匹配），给服主看 | 功能变化时 |
 | `history/site/` | 本站已发布版本的更新日志 | 每次发版 |
-| `archive/` | 已经结清的东西：完成的审查、过期的一次性计划、历史任务清单 | 只追加，不改写 |
+| `archive/` | 已经结清的东西：完成的审查、历史事故、过期的一次性计划与任务清单 | 只追加，不改写 |
 | `screenshots/` | 文档里引用的截图 | 换界面时 |
 
-`archive/` 里按性质分子目录：`reviews/`（审查与整改记录）、`plans/`（一次性计划、任务清单、验收表）。归档文件保留当时的结论和日期，不再跟着代码更新；里面的路径与提交号属于当时的事实，不要为了让它们"看起来还是最新的"而改写。
+`archive/` 里按性质分子目录：`reviews/`（审查与整改记录）、`incidents/`（事故现场记录）、`plans/`（一次性计划与任务清单）。归档前先移除真实主机地址、端口和本机私有路径；归档后保留当时的结论、日期与提交信息，不随代码更新，文件移动时只修正相对链接。线上核查的当前步骤统一见 [ONLINE-CHECKLIST.md](operations/ONLINE-CHECKLIST.md)。
 
 ## 运维（operations/）
 
 | 文档 | 内容 |
 |---|---|
+| [LIMITS.md](operations/LIMITS.md) | 当前 Nginx/游戏限额、共网推荐配置与逐机验收 |
+| [FLEET_PROBLEMS_2026-10-19.md](operations/FLEET_PROBLEMS_2026-10-19.md) | 三机问题处理优先级与待验证判断 |
 | [DEPLOY.md](operations/DEPLOY.md) | 部署总入口：Linux / Docker、统一配置、更新与验收 |
 | [HOME_SERVER.md](operations/HOME_SERVER.md) | Windows 与家用开服：自启、整合包更新、家用网络 |
 | [ANNOUNCEMENTS.md](operations/ANNOUNCEMENTS.md) | 游戏内公告：中央源、站点 ID、显式本地模式 |
@@ -39,7 +41,6 @@
 | [ROOM_PROTECTION.md](operations/ROOM_PROTECTION.md) | 房间审计与计算保护：网络额度、无人暂停、降级 |
 | [HOST_HARDENING.md](operations/HOST_HARDENING.md) | 主机加固：关闭公开探测、防火墙、fail2ban、日志轮转、巡检 |
 | [IDC_PROTECTION.md](operations/IDC_PROTECTION.md) | 机房来源分级：ASN 名单的可行性、证据与封不住的边界 |
-| [INCIDENT-2026-10-17.md](operations/INCIDENT-2026-10-17.md) | 事故记录：防护默认值的来龙去脉 |
 
 运维文档里不写真实主机地址与端口，需要指代时用 `<节点地址>:<端口>`。真实地址写在服务器上的私有备注里，不进仓库。
 
@@ -88,9 +89,9 @@
 |---|---|
 | [CODE_REVIEW_2026-10.md](archive/reviews/CODE_REVIEW_2026-10.md) | 对 `cf7a9400` 的整轮审查，P0–P3 已按记录整改 |
 | [CODE_REVIEW_REFACTOR_2026-10.md](archive/reviews/CODE_REVIEW_REFACTOR_2026-10.md) | 上面那份审查的整改记录，改动已落地 |
-| [NGINX-AGENT-REVIEW.md](archive/reviews/NGINX-AGENT-REVIEW.md) | 2026-10-11 的探针与 Nginx 示例复查，结论已并入运维文档 |
-| [OPTIMIZATION-ROLLOUT.md](archive/plans/OPTIMIZATION-ROLLOUT.md) | 一次性部署验收表，逐站核验未执行 |
 | [MERGE_0.3.1_EFFECTS_TASKS.md](archive/plans/MERGE_0.3.1_EFFECTS_TASKS.md) | 0.3.1 特效层交接任务清单，任务已合并 |
+| [INCIDENT-2026-10-17.md](archive/incidents/INCIDENT-2026-10-17.md) | 西安节点历史防护事故与当时的仓库默认调整 |
+| [INCIDENT-2026-10-20-LATENCY.md](archive/incidents/INCIDENT-2026-10-20-LATENCY.md) | 单节点历史延迟尖峰采样与处理记录 |
 
 ## 不放进来的东西
 

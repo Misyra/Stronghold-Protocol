@@ -73,11 +73,17 @@ async function failRounds(env, rounds, sliceMs = 500) {
   for (let i = 0; i < rounds; i += 1) {
     if (env.net._manualClose) break;
     const socket = env.sockets.at(-1);
+    if (env.net._gateRequired) {
+      env.clock.advance(GATE_PROBE.intervalMs);
+      elapsed += GATE_PROBE.intervalMs;
+      await flush();
+      continue;
+    }
     assert.equal(typeof socket.onclose, 'function', 'a live socket to refuse');
     socket.onclose({ code: 1006 });
     await flush();
     const before = env.sockets.length;
-    for (let guard = 0; guard < 400 && env.sockets.length === before; guard += 1) {
+    for (let guard = 0; guard < 400 && env.sockets.length === before && !env.net._gateRequired; guard += 1) {
       env.clock.advance(sliceMs);
       elapsed += sliceMs;
       await flush();
@@ -145,7 +151,7 @@ test('the session cap stops a reload loop and says so instead', async () => {
 });
 
 test('a successful open re-arms the outage timer', async () => {
-  const env = harness({ statuses: Array(50).fill(true) });
+  const env = harness({ statuses: Array(50).fill(false) });
   env.net.connect();
   await failRounds(env, 3);
   assert.ok(env.net._failedSince > 0);
@@ -154,6 +160,21 @@ test('a successful open re-arms the outage timer', async () => {
   socket.onopen();
   assert.equal(env.net._failedSince, 0);
   assert.equal(env.net.attempt, 0);
+});
+
+test('confirmed gate failure pauses WS handshakes and focus resumes only after a successful probe', async () => {
+  let required = true;
+  const env = harness({ probe: () => Promise.resolve(required) });
+  env.net.connect(); await failRounds(env, 3);
+  assert.equal(env.net._gateRequired, true);
+  const count = env.sockets.length;
+  env.clock.advance(5000); await flush(); assert.equal(env.sockets.length, count);
+  env.net.isHidden = () => true;
+  env.clock.advance(60000); await flush(); assert.equal(env.sockets.length, count);
+  env.net.isHidden = () => false; required = false;
+  env.net.retryNow(); await flush();
+  assert.equal(env.net._gateRequired, false);
+  env.clock.advance(15000); await flush(); assert.ok(env.sockets.length > count);
 });
 
 test('the default probe requires its own marker, never an ordinary rate limit or error', async (t) => {

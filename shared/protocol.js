@@ -594,6 +594,7 @@ export const C2S = {
 };
 
 // Server → client message types (documentation + client dispatch table keys).
+// pong may include announcementRevision (24 hex of public active notice content), a hint to refetch HTTP content.
 export const S2C = [
   'welcome', 'ok', 'error', 'pong',
   'room.state', 'room.closed',

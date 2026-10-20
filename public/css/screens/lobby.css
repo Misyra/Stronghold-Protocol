@@ -753,7 +753,9 @@
 /* Give the search panel its own column; a taller panel must not paint over the hub title. */
 .lobby-hub--searching .hub-stage { grid-template-columns: minmax(2.6rem, 3.2rem) minmax(0, 1fr) minmax(0, 8.6rem); }
 .lobby-hub--searching .hub-center { grid-column: 2; grid-row: 1 / -1; }
-.lobby-hub--searching .hub-entries { grid-column: 3; }
+.lobby-hub--searching .hub-entries { grid-column: 3; grid-row: 1 / -1; min-height: 0; overflow-y: auto; }
+.lobby-hub--searching .hub-right { display: none; }
+.hub-searching { flex-shrink: 0; }
 .lobby-hub--searching .hub-right__plates { flex-direction: row; }
 .lobby-hub--searching .hub-right__plates > * { flex: 1; min-width: 0; }
 .hub-maint { padding: .08rem .16rem; border: 1px solid var(--amber); color: var(--amber); background: rgba(40, 24, 6, .7); font-size:calc(.15 * var(--t)); }
@@ -1297,7 +1299,7 @@ button.sw-eth:hover { border-color: #fff; }
 .mf-brand__rook i { font-style: normal; }
 .mf-brand__rook .icon { width: 1.05em; height: 1.05em; }
 .mf-search { display: flex; flex-direction: column; align-items: center; gap: .14rem; padding: .5rem .3rem .3rem; text-align: center; color: #eef0ef; }
-.mf-search__title { display: flex; align-items: baseline; gap: .1rem; margin: .06rem 0 0; font-size:max(calc(.5 * var(--t)), 24px); font-weight: 900; letter-spacing: .08em;
+.mf-search__title { display: flex; flex-wrap: wrap; flex-shrink: 0; justify-content: center; max-width: 100%; align-items: baseline; gap: .1rem; margin: .06rem 0 0; font-size:max(calc(.4 * var(--t)), 20px); font-weight: 900; letter-spacing: .08em;
   text-shadow: 0 0 .24rem rgba(255, 255, 255, .35); }
 .mf-search__dots { display: inline-block; width: 1.2em; text-align: left; }
 .mf-search__title small { font-size: .42em; font-weight: 700; letter-spacing: 0; color: #c9cecc; text-shadow: none; }
@@ -1642,7 +1644,8 @@ button.ally-card:disabled { filter: grayscale(.7) brightness(.7); cursor: defaul
 .proto-offer h3 { font-size:max(calc(.3 * var(--t)), 16px); }
 .proto-offer p, .rs-offer p { margin: 0; font-size:max(calc(.16 * var(--t)), 11px); line-height: 1.45; color: #bfd8d0; }
 .proto-offer p { max-width: 4.4rem; }
-.proto-offer .btn, .rs-offer .btn { width: 100%; }
+.proto-offer .btn, .rs-offer .btn { width: 100%; min-height: 36px; font-size: max(calc(.18 * var(--t)), 13px); }
+.proto-offer .btn:disabled, .rs-offer .btn:disabled { color: #b9dfd3; }
 .proto-offer .btn { margin-top: .06rem; }
 .rs-offer { position: absolute; right: 0; top: 0; bottom: 0; z-index: 6; justify-content: center; width: min(6.2rem, 46vw); padding: .3rem;
   background: radial-gradient(80% 60% at 50% 20%, rgba(90, 255, 205, .2), transparent 72%), linear-gradient(90deg, transparent, rgba(6, 7, 7, .92) 16%, rgba(6, 7, 7, .97)); }
@@ -1650,15 +1653,18 @@ button.ally-card:disabled { filter: grayscale(.7) brightness(.7); cursor: defaul
 .rs-offer h2 { font-size:max(calc(.42 * var(--t)), 20px); }
 .rs-offer p { max-width: 4.6rem; }
 
-/* 矮屏（手机横屏 ~390px 高）：确认入场压在搜寻面板上方，而不是把「停止搜寻」挤出屏幕外 ——
-   堆叠时面板只剩 215px，搜寻面板自己的内容放不下，退出按钮会跑到 440px（视口 390px）去。
-   覆盖层只留标题与按钮：标题说清发生了什么，正文那句提示在矮屏上没必要占高度。 */
+/* Short screens keep the offer in the layout: progress and controls must never cover one another. */
 @media (max-height: 520px) {
-  .proto-side--search { position: relative; }
-  .proto-offer { position: absolute; inset: 0 0 auto; z-index: 4; padding: .12rem .14rem .14rem; gap: .02rem; }
-  .proto-offer .micro, .proto-offer p { display: none; }
+  .proto-side--search { position: relative; min-height: 0; }
+  .proto-offer { flex: none; padding: 8px 10px; gap: 4px; }
+  .proto-offer .micro { display: none; }
   .proto-offer h3 { font-size:max(calc(.21 * var(--t)), 13px); }
-  .proto-offer .btn { height: 34px; margin-top: .04rem; }
+  .proto-offer .btn { height: 36px; margin-top: 0; }
+  .proto-side--search:has(.proto-offer) .mf-brand,
+  .proto-side--search:has(.proto-offer) .mf-search__title,
+  .proto-side--search:has(.proto-offer) .mf-search__tip { display: none; }
+  .proto-side--search .mf-search { min-height: 0; }
+  .proto-side--search .mf-stop { flex-shrink: 0; }
 }
 
 @media (max-height: 520px) {

@@ -59,6 +59,7 @@ import { C2S } from '../../../shared/protocol.js';
 import { difficultyInfo, ProtoCard } from './lobby.js';
 import { ProtocolScene } from '../ui/protocolScene.js';
 import { SearchPanel, FoundPanel } from '../ui/matchFlow.js';
+import { MatchmakingOffer, matchmakingTitle } from '../ui/matchmaking.js';
 import { usePresence, useRise, afterLeave } from '../ui/transitions.js';
 import { PluginTag, isModdedRoom } from '../ui/pluginTag.js';
 import { hasScriptConsent, rememberScriptConsent } from '../content.js';
@@ -589,7 +590,7 @@ export function RoomScreen() {
   // the overlays stay mounted while they fade out; 离开同盟 fades the room before the request goes out
   const [searchShown, searchLeaving] = usePresence(searching && !found, 220);
   // 队友已集结 (server/matchmaking.js offer): every pooled human confirms before the room is committed
-  const offerShown = !!(searching && mm?.offerId && !mm?.accepted);
+  const offerShown = !!(searching && mm?.offerId);
   const [foundShown, foundLeaving] = usePresence(found, 320);
   const [protoShown, protoLeaving] = usePresence(picker && !!facts?.isHost, 220);
   const [optsShown, optsLeaving] = usePresence(opts, 160);
@@ -710,7 +711,7 @@ export function RoomScreen() {
     : facts.spectating
       ? html`<span class="t-lo"><${Icon} name="eye" />${t('观战中 · 不占博士席位，模拟开始后可切换观看各位博士')}</span>`
     : facts.searching
-      ? html`<span class="t-mint"><${Icon} name="hourglass" />${t('正在搜寻队友')} · ${mmView?.matched ?? 1}/${mmView?.target ?? MAX_SEATS} ${t('名博士')}</span>`
+      ? html`<span class="t-mint"><${Icon} name="hourglass" />${mm?.offerId ? matchmakingTitle(mm) : t('正在搜寻队友')} · ${mmView?.matched ?? 1}/${mmView?.target ?? MAX_SEATS} ${t('名博士')}</span>`
     : !coop
       ? html`<span class="t-mint">${t('*模拟协议已就绪，准许进入模拟')}</span>`
     : facts.modded && !facts.contentReady
@@ -852,13 +853,12 @@ export function RoomScreen() {
 
     ${offerShown ? html`<div class="rs-offer brackets" role="status">
       <div class="rs-offer__head"><${MicroLabel}>MATCH FOUND<//><h2>${t('队友已集结')}</h2></div>
-      <p>${t('全员确认后直接开局；超时未确认则继续等待队友')}</p>
-      <${Button} variant="primary" icon="check" disabled=${!online || !!busy} loading=${busy === 'accept-match'}
-        onClick=${acceptMatch}>${t('确认入场')}<//>
+      <${MatchmakingOffer} mm=${mm} online=${online} busy=${busy === 'accept-match'} onAccept=${acceptMatch} />
+      ${facts.isHost ? html`<${Button} variant="ghost" disabled=${!!busy} onClick=${cancelMatch}>${t('停止搜寻')}<//>` : null}
     </div>` : null}
-    ${searchShown ? html`<${SearchPanel} class=${`rs-searchpanel${searchLeaving ? ' is-leaving' : ''}`} elapsed=${searchElapsed}
+    ${searchShown && !offerShown ? html`<${SearchPanel} title=${matchmakingTitle(mm)} class=${`rs-searchpanel${searchLeaving ? ' is-leaving' : ''}`} elapsed=${searchElapsed}
       onStop=${facts.isHost ? cancelMatch : null} stopping=${busy === 'cancel-match'}
-      note=${facts.isHost ? t('搜寻期间可随时直接开始模拟') : t('创建者正在搜寻队友')}
+      note=${facts.isHost ? t('搜寻期间可随时停止搜寻') : t('创建者正在搜寻队友')}
       room=${true} hint=${false} tags=${[{ key: 'mode', label: t('精确搜寻'), icon: html`<${Icon} name="search" />` },
         { key: 'diff', label: t(DIFFICULTY_NAMES[room.difficulty]), color: DIFFICULTY_COLORS[room.difficulty], icon: html`<${DifficultyIcon} difficulty=${room.difficulty} />` }]}>
       ${portalEntry}

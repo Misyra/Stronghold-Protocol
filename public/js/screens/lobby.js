@@ -1,7 +1,7 @@
 import { LobbyMusicButton } from '../ui/lobbyMusic.js';
 import { AccountMeChip } from '../ui/accounts.js';
 import { decorateOwnerName } from '../ui/ownerName.js';
-import { MatchmakingCount } from '../ui/matchmaking.js';
+import { MatchmakingCount, MatchmakingOffer, matchmakingTitle } from '../ui/matchmaking.js';
 import { Emblem } from './title.js';
 import { useHubBackdrop, HubBackdrop, HubRadar, BackdropSettings, BackdropGlyph, backdropTheme } from '../ui/hubBackdrop.js';
 // Lobby screen — a hub (owner's request, 2026-10-13): an original backdrop (ui/hubBackdrop.js: generated night scenes or
@@ -471,7 +471,7 @@ function ProtocolSelect({ card, roomMode, random, variant, difficulty, onDifficu
   const info = difficultyInfo(roomMode, difficulty, { random, variant });
   const label = maint?.active ? t('维护中 · 暂停开局') : search ? t('开始搜寻') : random ? t('创建无限火力') : roomMode === 'solo' ? t('开始模拟') : t('创建同盟');
   const hint = !online ? t('正在连接服务器…') : maint?.active ? t('服务器即将停机维护，暂时停止开启新的同盟')
-    : search ? t('精确搜寻：只与选择相同难度的博士组成同盟，凑齐 4 人即开始')
+    : search ? t('精确搜寻：只与选择相同难度的博士组成同盟，凑齐后全员确认入场')
     : isSearching ? t('正在匹配真人队友，AI 补位已暂停') : roomMode === 'solo' ? t('独自调配阵容，按自己的节奏开始模拟') : t('创建后可邀请好友，AI 队友已暂停');
   // 搜寻队友: while the queue runs, the right column is the 搜寻中 panel (the server's elapsed / matched counts)
   if (search && isSearching) {
@@ -489,11 +489,9 @@ function ProtocolSelect({ card, roomMode, random, variant, difficulty, onDifficu
           ${offering ? html`<div class="proto-offer" role="status">
             <${MicroLabel}>MATCH FOUND<//>
             <h3>${t('队友已集结')}</h3>
-            <p>${t('全员确认后直接开局；超时未确认则继续等待队友')}</p>
-            <${Button} variant="primary" block=${true} icon="check" disabled=${!online || !!busy} loading=${busy === 'accept'}
-              onClick=${onAccept}>${t('确认入场')}<//>
+            <${MatchmakingOffer} mm=${mm} online=${online} busy=${busy === 'accept'} onAccept=${onAccept} />
           </div>` : null}
-          <${SearchPanel} elapsed=${mm?.elapsed || 0} onStop=${onCancel} stopping=${busy === 'cancel'}
+          <${SearchPanel} title=${matchmakingTitle(mm)} elapsed=${mm?.elapsed || 0} onStop=${onCancel} stopping=${busy === 'cancel'}
             note=${t('已找到 {matched}/{target} 名博士', { matched: mm?.players || 1, target: mm?.target || 4 })}
             tags=${[{ key: 'mode', label: t('精确搜寻'), icon: html`<${Icon} name="search" />` },
               { key: 'diff', label: t(DIFFICULTY_NAMES[d]), color: DIFFICULTY_COLORS[d], icon: html`<${DifficultyIcon} difficulty=${d} />` }]} />
@@ -802,10 +800,11 @@ export function LobbyScreen() {
 
       <section class="hub-entries" aria-label=${t('模拟方式')}>
         ${isSearching ? html`<div class="matching-panel brackets hub-searching" role="status">
-          <div class="matching-panel__head"><div><${MicroLabel}>SEARCHING FOR DOCTORS<//><h2>${t('正在搜寻队友')}</h2></div><span class="matching-panel__time num">${String(Math.floor((mmView?.elapsed || 0) / 60)).padStart(2, '0')}:${String((mmView?.elapsed || 0) % 60).padStart(2, '0')}</span></div>
+          <div class="matching-panel__head"><div><${MicroLabel}>ALLIANCE MATCH<//><h2>${mmView?.offerId ? matchmakingTitle(mmView) : t('正在搜寻队友')}</h2></div><span class="matching-panel__time num">${String(Math.floor((mmView?.elapsed || 0) / 60)).padStart(2, '0')}:${String((mmView?.elapsed || 0) % 60).padStart(2, '0')}</span></div>
           <div class="matching-panel__count"><${Spinner} label="SEARCHING" /><div><strong class="num">${mmView?.matched || 1}/${mmView?.target || MAX_SEATS} ${t('名博士')}</strong><p>${DIFFICULTY_NAMES[mmView?.difficulty] ? t(DIFFICULTY_NAMES[mmView.difficulty]) : ''} · ${t('当前站点')}</p></div></div>
           <progress class="matching-panel__progress" max=${mmView?.target || MAX_SEATS} value=${mmView?.matched || 1} aria-label=${t('匹配队列人数')}></progress>
-          <p class="matching-panel__note">${t('等待同站同难度的博士，凑齐 4 人后直接进入模拟。可随时取消，不添加 AI 队友。')}</p>
+          <p class="matching-panel__note">${t('等待同站同难度的博士，凑齐后全员确认入场。可随时取消，不添加 AI 队友。')}</p>
+          ${mmView?.offerId && !sheetOpen ? html`<div class="proto-offer"><h3>${matchmakingTitle(mmView)}</h3><${MatchmakingOffer} mm=${mmView} online=${online} busy=${busy === 'accept'} onAccept=${acceptMatch} /></div>` : null}
           <${RecruitHint} />
           <${Button} variant="ghost" size="lg" icon="chevronLeft" loading=${busy === 'cancel'} onClick=${cancelMatch}>${t('取消搜寻')}<//>
           <p class="matching-panel__foot">${t('匹配成功后无需房间准备，可在本局信息确认阶段查看同盟密钥。')}</p>
@@ -826,7 +825,7 @@ export function LobbyScreen() {
         online=${online} maint=${maint} busy=${busy} isSearching=${isSearching}
         onCreate=${create}
         purpose=${sheetPurpose} onSearch=${queueMatch} onCancel=${cancelMatch} onAccept=${acceptMatch}
-      offering=${!!mmView?.offerId && !mmView?.accepted} mm=${mmView} chained=${sheetChained} />` : null}
+      offering=${!!mmView?.offerId} mm=${mmView} chained=${sheetChained} />` : null}
 
     ${allyOpen ? html`<${AllianceSelect} onClose=${() => setAllyOpen(false)} code=${code} onCode=${(v) => setCode(normalizeCode(v))} codeOk=${codeOk}
       recent=${recent} online=${online} maint=${maint} busy=${busy} difficulty=${difficulty}

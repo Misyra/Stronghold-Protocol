@@ -73,19 +73,19 @@ export function RecruitHint({ room = false }) {
 /**
  * 搜寻中 panel.
  * @param {{ elapsed: number, tags?: Array<{ key: string, label: string, color?: string, icon?: any }>, onStop?: (() => void)|null,
- *   stopping?: boolean, note?: string|null, room?: boolean, hint?: boolean, children?: any, class?: string }} props
+ *   stopping?: boolean, note?: string|null, title?: string|null, room?: boolean, hint?: boolean, children?: any, class?: string }} props
  *   `room` only picks the recruit line’s wording (a room posts its own key). `hint: false` drops that line: the
  *   alliance screen already says the same thing as its portal entry (screens/room.js — 复制邀请链接 / 前往联机站
  *   with the entry’s own status line), and the two together read as one sentence said twice (the owner, 2026-10-16).
  */
-export function SearchPanel({ elapsed = 0, tags = [], onStop = null, stopping = false, note = null, room = false, hint = true, children, class: cls = '' }) {
+export function SearchPanel({ elapsed = 0, tags = [], onStop = null, stopping = false, note = null, title = null, room = false, hint = true, children, class: cls = '' }) {
   const [tips] = useState(tipList);
   const [i, setI] = useState(() => Math.floor(Math.random() * Math.max(1, tips.length)));
   useEffect(() => { const id = setInterval(() => setI((x) => x + 1), 5000); return () => clearInterval(id); }, []);
   const dots = '.'.repeat((Math.floor(elapsed) % 3) + 1);
   return html`<aside class=${`mf-search ${cls}`} role="status" aria-live="polite">
     <${BrandMark} />
-    <h3 class="mf-search__title">${t('搜寻中')}<span class="mf-search__dots" aria-hidden="true">${dots}</span><small class="num">(${searchClock(elapsed)})</small></h3>
+    <h3 class="mf-search__title"><span>${title || t('搜寻中')}</span><span class="mf-search__dots" aria-hidden="true">${dots}</span><small class="num">(${searchClock(elapsed)})</small></h3>
     ${tags.length ? html`<div class="mf-search__tags">${tags.map((g) => html`<span key=${g.key} class="mf-tag" style=${g.color ? `--tag:${g.color}` : undefined}>${g.icon || null}${g.label}</span>`)}</div>` : null}
     <div class="mf-search__scene"><i class="mf-cross mf-cross--tl"></i><i class="mf-cross mf-cross--tr"></i><${PixelScout} /><i class="mf-cross mf-cross--bl"></i><i class="mf-cross mf-cross--br"></i></div>
     <p key=${i} class="mf-search__tip">${tips.length ? tips[i % tips.length] : ''}</p>

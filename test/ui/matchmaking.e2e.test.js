@@ -84,11 +84,30 @@ test('hub queue UI: four solos search, see the count, confirm the offer and star
   await c.screenshot({ path: 'test/e2e/out/matchmaking-offer-phone.png' });
   const phoneOffer = await c.evaluate(() => {
     const stop = document.querySelector('.mf-stop').getBoundingClientRect();
-    return { bottom: stop.bottom, innerHeight };
+    const progress = document.querySelector('.matchmaking-offer__progress');
+    const button = document.querySelector('.proto-offer .btn');
+    return { bottom: stop.bottom, innerHeight, progressVisible: getComputedStyle(progress).display !== 'none',
+      progressBottom: progress.getBoundingClientRect().bottom, buttonTop: button.getBoundingClientRect().top,
+      buttonFont: parseFloat(getComputedStyle(button).fontSize), overflow: document.documentElement.scrollWidth > innerWidth + 1 };
   });
   assert.ok(phoneOffer.bottom <= phoneOffer.innerHeight, 'the offer card does not push 停止搜寻 off the phone');
+  assert.ok(phoneOffer.progressVisible, 'confirmation count and deadline remain visible on the phone');
+  assert.ok(phoneOffer.progressBottom <= phoneOffer.buttonTop, 'progress does not overlap the confirmation button');
+  assert.ok(phoneOffer.buttonFont >= 13, 'confirmation button remains readable');
+  assert.equal(phoneOffer.overflow, false, 'the offer does not overflow horizontally');
 
-  await Promise.all(players.map((p) => p.evaluate(() => document.querySelector('.proto-offer .btn').click())));
+  // Accepting must keep the offer visible while other humans decide, with live progress.
+  await a.evaluate(() => document.querySelector('.proto-offer .btn').click());
+  await poll(a, () => globalThis.__SP__.store.get().matchmaking?.accepted && document.querySelector('.proto-offer .btn')?.disabled);
+  assert.match(await a.$eval('.proto-offer', (el) => el.textContent), /已确认 1\/4.*剩余.*秒/);
+  assert.match(await a.$eval('.proto-offer .btn', (el) => el.textContent), /已确认，等待队友/);
+  assert.match(await a.$eval('.mf-search__title', (el) => el.textContent), /等待全员确认/);
+  await b.evaluate(() => document.querySelector('.proto-offer .btn').click());
+  await poll(a, () => globalThis.__SP__.store.get().matchmaking?.acceptedCount === 2);
+  assert.match(await a.$eval('.proto-offer', (el) => el.textContent), /已确认 2\/4/);
+  assert.equal(await a.evaluate(() => globalThis.__SP__.store.get().room?.inMatch === true), false, 'no entry before everyone accepts');
+  await c.screenshot({ path: 'test/e2e/out/matchmaking-confirming-phone.png' });
+  await Promise.all([c, d].map((p) => p.evaluate(() => document.querySelector('.proto-offer .btn').click())));
   await Promise.all(players.map((p) => poll(p, () => globalThis.__SP__.store.get().match.public?.phase === 'INFO_CHECK')));
   const states = await Promise.all(players.map((p) => p.evaluate(() => { const s = globalThis.__SP__.store.get(); return { code: s.room?.code, matching: s.matchmaking, seats: s.room?.seats, difficulty: s.room?.difficulty }; })));
   assert.equal(new Set(states.map((s) => s.code)).size, 1, 'one room for the cohort');

@@ -273,15 +273,23 @@ function wireNet() {
   // `waitingCount` is the pool the ticket waits in (its own party included) and `required` is that pool's capacity.
   // An offer rides the same shape plus { offerId, accepted }: 确认入场 answers queue.accept.
   net.on('queue.state', (msg) => {
+    const previous = store.get().matchmaking;
+    if (previous && msg.reason && (previous.offerId || previous.reason !== msg.reason)) {
+      const continuing = msg.state === 'queued';
+      if (msg.reason === 'confirmation_timeout' || msg.reason === 'unconfirmed') {
+        toast(continuing ? t('有队友未确认，已继续搜寻') : t('入场确认未完成，已退出搜寻，请重新发起匹配'), 'warn');
+      } else if (msg.reason === 'peer_cancelled' || msg.reason === 'peer_disconnected') {
+        toast(t('有队友离开，已继续搜寻'), 'warn');
+      } else if (msg.reason === 'allocation_failed' || msg.reason === 'allocation_timeout') {
+        toast(continuing ? t('对局准备失败，已继续搜寻') : t('匹配未能启动，已返回大厅'), 'warn');
+      }
+    }
     // 出价时池里已经没有等待人数（waitingCount 只在 queued 帧上），用 required 报「一组已凑满」。
     const queue = { ...payload(msg), status: 'searching',
       players: msg.waitingCount ?? (msg.state === 'offered' ? msg.required : null) ?? msg.partySize ?? 1,
       target: msg.required || MAX_SEATS };
     if (msg.state === 'queued' || msg.state === 'offered') { store.set({ matchmaking: queue }); return; }
     store.set({ matchmaking: null });
-    // allocation_failed / allocation_timeout: the group was formed but the room could not be committed; the
-    // original party (if any) is intact and the player is back in the lobby — say so instead of dropping silently.
-    if (msg.reason === 'allocation_failed' || msg.reason === 'allocation_timeout') toast(t('匹配未能启动，已返回大厅'), 'warn');
   });
   net.on('room.closed', (msg) => {
     backToLobby();

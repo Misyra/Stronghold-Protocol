@@ -167,7 +167,8 @@ export async function startServer(opts = {}) {
   const geoLiteFile = opts.geoLiteCountryFile ?? process.env.SP_GEOLITE_COUNTRY_DB;
   const geoipMode = parseGeoipMode(opts.geoipMode ?? process.env.SP_GEOIP_MODE);
   const netBlockMode = opts.netBlockMode ?? process.env.SP_NET_BLOCK;
-  // Parse once here: an unset variable means "on" (the default), and the ASN database is only worth opening then.
+  // Parse once here: an unset variable means "off" (the repository default), and the ASN database is only worth
+  // opening when the list is actually on.
   const netBlockEnabled = typeof netBlockMode === 'boolean' ? netBlockMode : parseNetBlockMode(netBlockMode);
   let countryLookup = opts.countryLookup ?? null;
   if (countryLookup !== null && typeof countryLookup !== 'function') throw new TypeError('countryLookup must be a function');
@@ -181,8 +182,8 @@ export async function startServer(opts = {}) {
     log.info(`[geoip] country database loaded in ${geoipMode} mode`);
     if (geoipMode === 'cn-only') log.warn('[geoip] mainland-only IPv4 mode: unmatched IPv6 addresses remain unknown and are not restricted as foreign');
   }
-  // 明确名单（server/netBlock.js）：默认开启，只用 ASN + 国家两份数据。ASN 库缺失时 ASN 那一层降级并警告，
-  // 不让一次 `git pull` 把服务器起不来；要彻底关掉用 SP_NET_BLOCK=off。
+  // 明确名单（server/netBlock.js）：默认关闭，要拦就显式 SP_NET_BLOCK=on，只用 ASN + 国家两份数据。
+  // ASN 库缺失时 ASN 那一层降级并警告，不让一次 `git pull` 把服务器起不来。
   let asnLookup = opts.asnLookup ?? null;
   if (asnLookup === null && netBlockEnabled) {
     const asnFile = path.resolve(opts.geoLiteAsnFile ?? process.env.SP_GEOLITE_ASN_DB ?? path.join(ROOT, 'geoip', 'GeoLite2-ASN.mmdb'));
@@ -201,8 +202,10 @@ export async function startServer(opts = {}) {
     try { apiCountryLookup = await openCountryLookup(path.join(ROOT, 'geoip', 'GeoLite2-Country.mmdb')); }
     catch (error) { log.error('[http] API mainland-only database unavailable; public API requests will return 503', error); }
   }
-  log.info(`[http] API mainland-only: ${apiMainlandOnly ? (apiCountryLookup ? 'on' : 'database unavailable') : 'off'}; permanent ban after ${publicApiLimits.banThreshold} requests/${publicApiLimits.banWindowMs}ms`);
-  log.info(`[ws] upgrade ban: after ${wsUpgradeLimits.threshold} attempts/${wsUpgradeLimits.windowMs}ms, ban for ${wsUpgradeLimits.banMs}ms`);
+  log.info(`[http] API mainland-only: ${apiMainlandOnly ? (apiCountryLookup ? 'on' : 'database unavailable') : 'off'}; ${
+    publicApiLimits.banThreshold > 0 ? `permanent ban after ${publicApiLimits.banThreshold} requests/${publicApiLimits.banWindowMs}ms` :
+      publicApiLimits.ratePerSec > 0 ? `rate ${publicApiLimits.ratePerSec}/s, no permanent ban` : 'rate limit off'}`);
+  log.info(`[ws] upgrade ban: ${wsUpgradeLimits.threshold > 0 ? `after ${wsUpgradeLimits.threshold} attempts/${wsUpgradeLimits.windowMs}ms, ban for ${wsUpgradeLimits.banMs}ms` : 'off'}`);
   log.info(`[bots] total AI population limit: ${lobbyOptions.maxBots}`);
   if (countryLookup) log.info(`[geoip] foreign AI population limit enabled: ${lobbyOptions.maxForeignBots}`);
   else log.warn('[geoip] no country database configured; foreign AI limit is disabled, total AI limit remains active');

@@ -129,44 +129,58 @@ test('ban file reloads indefinitely, deduplicates records, and fails closed on c
   fs.appendFileSync(file, '{broken'); assert.throws(() => createIpBanStore({ file, log: quiet }));
 });
 
-test('HTTP protection configuration rejects invalid or disabled budgets', () => {
-  assert.equal(publicApiLimitsFrom({}, {}).banThreshold, 600);
+test('HTTP protection ships off and rejects invalid budgets', () => {
+  assert.equal(publicApiLimitsFrom({}, {}).banThreshold, 0);
   assert.equal(publicApiLimitsFrom({}, { SP_HTTP_BAN_THRESHOLD: '300' }).banThreshold, 300);
-  for (const value of ['0', '-1', 'NaN', '', '1.5'])
+  for (const value of ['-1', 'NaN', '1.5'])
     assert.throws(() => publicApiLimitsFrom({}, { SP_HTTP_API_RATE: value }), /SP_HTTP_API_RATE/);
-  assert.equal(apiMainlandOnlyFrom(), true); assert.equal(apiMainlandOnlyFrom('off'), false);
+  assert.equal(publicApiLimitsFrom({}, { SP_HTTP_API_RATE: '0' }).ratePerSec, 0, 'zero is "off", not "429 everything"');
+  assert.equal(apiMainlandOnlyFrom(), false); assert.equal(apiMainlandOnlyFrom('on'), true);
   assert.throws(() => apiMainlandOnlyFrom('maybe'), /SP_HTTP_API_CN_ONLY/);
 });
 
 test('API mainland-only blocks US/TW/HK/JP before any work, ignores spoofed public headers, retains domestic budget', async () => {
-  const countries = { '8.8.8.8': 'US', '60.249.21.30': 'TW', '154.219.110.142': 'HK', '203.0.113.3': 'JP', '114.114.114.114': 'CN' };
+  const countries = { '192.0.2.8': 'US', '192.0.2.30': 'TW', '203.0.113.9': 'HK', '203.0.113.3': 'JP', '192.0.2.14': 'CN' };
   const f = fixture({ globalBurst: 1, healthBurst: 1 }, {
     apiMainlandOnly: true, apiCountryLookup: (ip) => countries[ip] ?? null,
   });
-  for (const ip of ['8.8.8.8', '60.249.21.30', '154.219.110.142', '203.0.113.3']) {
+  for (const ip of ['192.0.2.8', '192.0.2.30', '203.0.113.9', '203.0.113.3']) {
     for (const url of ['/healthz?build=1', '/api/ping', '/api/announcement', '/api/rooms/bad/status', '/api/portal-room']) {
-      const res = await f.call(url, 'GET', request(ip, { headers: { 'cf-connecting-ip': '114.114.114.114' } }));
+      const res = await f.call(url, 'GET', request(ip, { headers: { 'cf-connecting-ip': '192.0.2.14' } }));
       assert.equal(res.status, 403); assert.equal(JSON.parse(res.body).error, 'FOREIGN_IP_BLOCKED');
     }
   }
   assert.deepEqual(f.counts(), { scans: 0, reads: 0, statics: 0 });
-  assert.equal((await f.call('/healthz', 'GET', request('114.114.114.114'))).status, 200);
+  assert.equal((await f.call('/healthz', 'GET', request('192.0.2.14'))).status, 200);
   assert.equal((await f.call('/healthz', 'GET', request('127.0.0.1'))).status, 200);
   // The public address a local proxy forwards remains foreign.
-  assert.equal((await f.call('/api/ping', 'GET', request('127.0.0.1', { headers: { 'x-real-ip': '8.8.8.8' } }))).status, 403);
+  assert.equal((await f.call('/api/ping', 'GET', request('127.0.0.1', { headers: { 'x-real-ip': '192.0.2.8' } }))).status, 403);
 });
 
 test('foreign requests count towards permanent bans without using global tokens; unknown counts as overseas', async () => {
   const f = fixture({ banThreshold: 3, globalBurst: 1 }, { apiMainlandOnly: true,
-    apiCountryLookup: (ip) => ip === '8.8.8.8' ? 'US' : ip === '114.114.114.114' ? 'CN' : null });
-  for (let i = 0; i < 3; i++) assert.equal((await f.call('/healthz', 'GET', request('8.8.8.8'))).status, 403);
-  const banned = await f.call('/healthz', 'GET', request('8.8.8.8'));
+    apiCountryLookup: (ip) => ip === '192.0.2.8' ? 'US' : ip === '192.0.2.14' ? 'CN' : null });
+  for (let i = 0; i < 3; i++) assert.equal((await f.call('/healthz', 'GET', request('192.0.2.8'))).status, 403);
+  const banned = await f.call('/healthz', 'GET', request('192.0.2.8'));
   assert.equal(JSON.parse(banned.body).error, 'IP_BANNED');
-  // 2026-10-17: an address the database cannot place is refused like any overseas one.
+  // An address the database cannot place is refused like any overseas one.
   const unknown = await f.call('/healthz', 'GET', request('203.0.113.9'));
   assert.equal(unknown.status, 403);
   assert.equal(JSON.parse(unknown.body).error, 'FOREIGN_IP_BLOCKED');
-  assert.equal((await f.call('/healthz', 'GET', request('114.114.114.114'))).status, 200);
+  assert.equal((await f.call('/healthz', 'GET', request('192.0.2.14'))).status, 200);
+});
+
+test('a database that cannot see the address family abstains instead of calling it overseas', async () => {
+  // cn-only mode with a mainland-only IPv4 database answers `undefined` for every IPv6 client: that is "no verdict",
+  // not "abroad". Domestic IPv6 players were refused on /healthz, /api/ping and /api/announcement by this.
+  const f = fixture({}, { apiMainlandOnly: true,
+    apiCountryLookup: (ip) => ip === '2001:db8::14' ? undefined : ip === '192.0.2.14' ? 'CN' : 'US' });
+  assert.equal((await f.call('/healthz', 'GET', request('2001:db8::14'))).status, 200);
+  assert.equal((await f.call('/api/ping', 'GET', request('2001:db8::14'))).status, 200);
+  assert.equal((await f.call('/healthz', 'GET', request('192.0.2.14'))).status, 200);
+  // A real overseas address is still refused, and so is one placed nowhere.
+  assert.equal((await f.call('/healthz', 'GET', request('192.0.2.8'))).status, 403);
+  assert.equal((await f.call('/healthz', 'GET', request('203.0.113.9'))).status, 403);
 });
 
 test('missing or failed API GeoIP refuses public APIs with 503 while local monitoring remains available', async () => {
@@ -198,7 +212,13 @@ test('nginx opt-in redirects defense rejects only from trusted peers; direct cal
   assert.equal(JSON.parse(rejected.body).error, 'RATE_LIMITED');
 });
 
-test('real server: permanent ban survives restart and rejects HTTP and WebSocket; monitor stays reachable', async (t) => {
+// The bundled database is real, so the sample addresses come from the operator: none are written into the tree.
+const apiSamples = (name) => (process.env[name] || '').split(',').map((item) => item.trim()).filter(Boolean);
+const apiForeignIps = apiSamples('SP_GEOIP_TEST_FOREIGN');
+const apiMainlandIps = apiSamples('SP_GEOIP_TEST_MAINLAND');
+test('real server: permanent ban survives restart and rejects HTTP and WebSocket; monitor stays reachable', {
+  skip: apiForeignIps.length && apiMainlandIps.length > 1 ? false : 'Set SP_GEOIP_TEST_FOREIGN and two SP_GEOIP_TEST_MAINLAND sample addresses',
+}, async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-http-ban-server-'));
   let server;
   t.after(async () => { await server?.close(); fs.rmSync(dir, { recursive: true }); });
@@ -206,17 +226,17 @@ test('real server: permanent ban survives restart and rejects HTTP and WebSocket
     ipBanFile: path.join(dir, 'bans.jsonl'), publicApiLimits: { banThreshold: 3, burst: 2 } };
   server = await startServer(opts);
   // The source checkout's bundled database is loaded for APIs without changing the gameplay foreign gate.
-  for (const ip of ['8.8.8.8', '60.249.21.30']) {
+  for (const ip of apiForeignIps) {
     const overseas = await fetch(server.url + '/healthz', { headers: { 'X-Real-IP': ip } });
     assert.equal(overseas.status, 403); assert.equal((await overseas.json()).error, 'FOREIGN_IP_BLOCKED');
   }
-  const domestic = await fetch(server.url + '/healthz', { headers: { 'X-Real-IP': '114.114.114.114' } });
+  const domestic = await fetch(server.url + '/healthz', { headers: { 'X-Real-IP': apiMainlandIps[0] } });
   assert.equal(domestic.status, 200); await domestic.arrayBuffer();
-  // 2026-10-17: an address the database cannot place is refused like an overseas one, so the rate/ban walk uses a
-  // domestic address (same /24 as above, fresh key) and the unplaceable one is asserted on its own.
+  // An address the database cannot place is refused like an overseas one, so the rate/ban walk takes its own
+  // domestic address and the unplaceable one is asserted on its own.
   const unplaceable = await fetch(server.url + '/healthz', { headers: { 'X-Real-IP': '203.0.113.9' } });
   assert.equal(unplaceable.status, 403); assert.equal((await unplaceable.json()).error, 'FOREIGN_IP_BLOCKED');
-  const headers = { 'X-Real-IP': '114.114.114.115' };
+  const headers = { 'X-Real-IP': apiMainlandIps[1] };
   for (const status of [200, 200, 429, 403]) {
     const res = await fetch(server.url + '/healthz', { headers });
     assert.equal(res.status, status); await res.arrayBuffer();

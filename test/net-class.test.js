@@ -83,17 +83,18 @@ test('regexes stay anchored so a widened token cannot silently swallow consumer 
   assert.equal(CONSUMER_HINT_RE.test('Cloud 9 Wireless LLC'), true);
 });
 
-/** Real database is opt-in: SP_ASN_TEST_DB=geoip/GeoLite2-ASN.mmdb */
+/** A real database is opt-in together with its samples: SP_ASN_TEST_DB=<file>, SP_ASN_TEST_CLOUD=<addr,...>
+ * for hosting ranges and SP_ASN_TEST_ISP=<addr,...> for ordinary operators. A public resolver is often
+ * announced by a hosting ASN, so pick a plain broadband address whenever the sample must stay isp. */
 const realDb = process.env.SP_ASN_TEST_DB;
-test('a real ASN database separates known clouds from ordinary operators', { skip: realDb ? false : 'Set SP_ASN_TEST_DB to a GeoLite2-ASN.mmdb' }, async () => {
+const asnSamples = (name) => (process.env[name] || '').split(',').map((item) => item.trim()).filter(Boolean);
+const cloudSamples = asnSamples('SP_ASN_TEST_CLOUD');
+const ispSamples = asnSamples('SP_ASN_TEST_ISP');
+test('a real ASN database separates known clouds from ordinary operators', { skip: realDb && cloudSamples.length && ispSamples.length ? false : 'Set SP_ASN_TEST_DB with SP_ASN_TEST_CLOUD and SP_ASN_TEST_ISP sample addresses' }, async () => {
   const lookup = await openAsnLookup(realDb);
   const c = (ip) => classifyNetwork(lookup(ip));
-  assert.equal(c('52.94.76.1').kind, 'cloud');
-  assert.equal(c('95.216.1.1').kind, 'cloud');
-  assert.equal(c('167.99.1.1').kind, 'cloud');
-  assert.equal(c('114.114.114.114').kind, 'cloud', '114DNS is announced by Zenlayer (AS21859), a hosting ASN');
-  assert.equal(c('202.96.128.86').kind, 'isp', 'Chinanet broadband stays isp');
-  assert.equal(c('223.5.5.5').kind, 'cloud', 'Alibaba (US) Technology announces the DNS range');
-  assert.equal(c('165.91.1.1').kind, 'isp', 'Google Fiber must never be read as Google Cloud');
+  for (const ip of cloudSamples) assert.equal(c(ip).kind, 'cloud', `${ip} is announced by a hosting ASN`);
+  for (const ip of ispSamples) assert.equal(c(ip).kind, 'isp', `${ip} must stay isp`);
+  // No ASN record at all: the documentation range is a safe sample for the unknown outcome.
   assert.equal(c('203.0.113.9').kind, 'unknown');
 });

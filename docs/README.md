@@ -27,7 +27,6 @@
 | [部署指南（总入口）](../custom_docs/operations/DEPLOY.md) | 本分支 | Linux / Docker、统一配置、更新与验收 |
 | [Windows 与家用开服](../custom_docs/operations/HOME_SERVER.md) | 本分支 | Windows 自启、整合包更新与家用网络 |
 | [游戏内公告](../custom_docs/operations/ANNOUNCEMENTS.md) | 本分支 | 默认中央源、站点 ID、显式本地模式与排错 |
-| [监控接入](../custom_docs/operations/MONITORING.md) | 本分支 | 游戏、探针、中央面板的分工与接入 |
 | [房间审计与保护](../custom_docs/operations/ROOM_PROTECTION.md) | 本分支 | 网络额度、无人暂停、计算降级和私有查询 |
 | [公开接口限流与永久封禁](../custom_docs/operations/HTTP_PROTECTION.md) | 本分支 | API 请求频率、持久封禁名单与 Nginx 缓存前鉴权 |
 | [WebSocket 升级防护](../custom_docs/operations/WS_PROTECTION.md) | 本分支 | 升级尝试计数、Origin 校验与入口 jail |

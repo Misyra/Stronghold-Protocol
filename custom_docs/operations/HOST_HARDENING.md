@@ -65,19 +65,20 @@ journalctl -u sp-integrity.service
 
 ## 本次部署记录
 
-2026-10-17 应用到 `<节点地址>`，外部 SSH 10067、内部 SSH 22。Debian 11，Nginx 1.18；游戏只监听 127.0.0.1:3100，Nginx 保留 80/8080/3000。没有 CF 真实 IP 还原配置，入口覆盖上游 IP 头，当前为直连模式。国家集合已改为仓库 MMDB 的 CN 网络，整机包括 SSH 受其限制。没有发现 x-ui systemd 服务或监听。
+应用到 `<节点地址>`：外部 SSH 与内部 SSH 分端口（`<外部 SSH 端口>` / `<内部 SSH 端口>`）。`<发行版> <版本>`，Nginx `<版本>`；游戏只监听 `127.0.0.1:<游戏端口>`，Nginx 保留 80/8080/3000。没有 CF 真实 IP 还原配置，入口覆盖上游 IP 头，当前为直连模式。国家集合已改为仓库 MMDB 的 CN 网络，整机包括 SSH 受其限制。没有发现 x-ui systemd 服务或监听。
 
-首轮备份目录 `/root/sec-20261017-005839`，压缩包 `/root/srv-hardening-20261017.tar.gz`。本次 GeoLite 与健康缓存更新备份目录 `/root/sec-geoip-20261016-173349`（服务器采用 UTC 命名），指针 `/root/sp-geoip-current`；压缩包 `/root/srv-geoip-health-hardening-20261017.tar.gz`。包内包含应用前后快照、测试结果与回滚说明，权限 0600。
+部署前后快照、测试结果与回滚说明打成 0600 的私有备份包，只放 root 私有目录；目录指针与包名只记录在维护机的私有备注里，不进仓库或站点。
 
 验证包括新 SSH 会话成功、HTTP 页面 200、非回环请求六个已关闭接口接收零 HTTP 字节、昵称校验 200、本机健康 200、WS 升级 101、fail2ban 永久测试封禁跨服务重启恢复并清理，以及 nftables/Nginx/logrotate/systemd 配置检查。非回环入口测试使用本机绑定内部网卡源地址，不替代云端端口映射全链路测试。
 
 后续严格规则验证：隔离网络命名空间中真实测试国内 IPv4/IPv6 通过、海外/未知/已有海外入站被丢弃、服务器主动连接海外的回复正常；新国内 SSH 成功。真实 GeoIP2 Nginx 独立实例验证国别/伪造头、缓存填充锁、5 秒过期、参数规范化、诊断 BYPASS、错误不缓存、分布式全局限流与坏库校验失败。独立 fail2ban 测试 jail 验证 600 条 HIT 不封、601 封禁及重启恢复，已清理测试 jail 和地址。
 
-Nginx reload 的信号发送成功并不代表新配置已经加载。此次旧共享限流区变更了 key，运行中拒绝复用旧区；已改用新 zone 名并通过实际请求与新 worker 验证。以后修改计数 key 也须更换 zone 名，检查 error log，不能只看 `nginx -t`。
+Nginx reload 的信号发送成功并不代表新配置已经加载。这次旧共享限流区变更了 key，运行中拒绝复用旧区；已改用新 zone 名并通过实际请求与新 worker 验证。以后修改计数 key 也须更换 zone 名，检查 error log，不能只看 `nginx -t`。
 
 最终 301 阈值复验：独立测试 jail 中 400 条静态响应不计数、300 条业务响应不封，第 301 条业务 444 触发永久封禁；重启恢复后清理测试 jail 和地址。
 
-2026-10-17 已在国内源站叠加[自动浏览器验证](BROWSER_GATE.md)：未验证业务请求 444，浏览器导航显示验证页；公网健康、缓存、静态直出和 WS 均检查凭证，本机健康例外。当时 6 小时凭证仅由健康响应续期；2026-10-19 本地修复扩展到受保护 HTTP/WS 响应，新增明确恢复探针，尚需上线验证（见 BROWSER_GATE）。原游戏 PID 未改变；现场页面、图标、昵称校验为 200，WS 为 101，未验证和伪造头请求均拒绝。备份 `/root/srv-browser-gate-20261017.tar.gz` 含签名密钥，权限 0600；目录指针 `/root/sp-browser-gate-current`，内附回滚脚本。
+国内源站已叠加[自动浏览器验证](BROWSER_GATE.md)：未验证业务请求 444，浏览器导航显示验证页；公网健康、缓存、静态直出和 WS 均检查凭证，本机健康例外。凭证续期原先只由健康响应触发，现已扩展到受保护 HTTP/WS 响应并新增明确恢复探针，尚需上线验证（见 BROWSER_GATE）。游戏进程未重启；现场页面、图标、昵称校验为 200，WS 为 101，未验证和伪造头请求均拒绝。备份包含签名密钥，权限 0600，路径只记录在维护机私有备注里。
 
-2026-10-17 按后续要求**临时关闭昵称 HTTP 预检**：原 Node 和前端实现保留；前端 `NICKNAME_PREFLIGHT_ENABLED=false`，Nginx 注释 API 放行项并为 `/api/nickname/validate` 增加临时 `return 444`。WebSocket `hello` 最终检查保留。已重新构建并重启游戏服务，客户端版本为 `2caa3fd738fdaa6e`；验证接口的 GET/POST、查询参数及规范化路径均拒绝，原 Node 回环实现仍可用，页面 200、WS 101、升级封禁 jail 仍运行。私有备份及回滚脚本在 `/root/sec-nickname-pause-20261017-020414`，指针 `/root/sp-nickname-pause-current`，验证后已取消自动回滚。恢复步骤见 [HTTP_PROTECTION.md](HTTP_PROTECTION.md)。
+按后续要求**临时关闭昵称 HTTP 预检**：原 Node 和前端实现保留；前端 `NICKNAME_PREFLIGHT_ENABLED=false`，Nginx 注释 API 放行项并为 `/api/nickname/validate` 增加临时 `return 444`。WebSocket `hello` 最终检查保留。已重新构建并重启游戏服务；验证接口的 GET/POST、查询参数及规范化路径均拒绝，原 Node 回环实现仍可用，页面 200、WS 101、升级封禁 jail 仍运行。私有备份及回滚脚本只记录在维护机私有备注里，验证后已取消自动回滚。恢复步骤见 [HTTP_PROTECTION.md](HTTP_PROTECTION.md)。
+
 本地真实 Chrome 验证首次进入、WS 拒绝敏感昵称、修改代号及刷新后恢复均通过，全程没有请求昵称 API；原 HTTP 取消场景保留，开关恢复后重新启用。原接口的服务端测试、前端停用/恢复测试及 lint/imports/typecheck 通过。

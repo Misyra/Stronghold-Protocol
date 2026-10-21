@@ -33,6 +33,9 @@ export class ForeignSessions {
     let country;
     try { country = this.countryLookup(ip); }
     catch { this.counts.lookupErrors++; return undefined; }   // undefined = the lookup itself failed
+    // "This source cannot classify this address" (a mainland-only IPv4 table answering for IPv6) stays
+    // distinct from "the source placed it nowhere": connectionAdmission() fails open on undefined only.
+    if (country === undefined) return undefined;
     if (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country)) { this.counts.lookupMisses++; return null; }
     return country;
   }

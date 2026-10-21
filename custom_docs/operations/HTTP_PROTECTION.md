@@ -1,6 +1,6 @@
 # 公开接口限流与永久封禁
 
-默认启用，不依赖 Cloudflare，也不改变域名解析。修改 Node 环境配置后重启游戏进程；只改 Nginx 配置时通过 `nginx -t` 后 reload 即可。
+**默认关闭**：下面各项预算是 `0` 时这一维就不存在——不建计数桶、不封禁，请求直接进入业务。给任一预算填非零值才启用，且各维独立（只填速率就是只限速不封禁）。不依赖 Cloudflare，也不改变域名解析。修改 Node 环境配置后重启游戏进程；只改 Nginx 配置时通过 `nginx -t` 后 reload 即可。
 
 可叠加[自动浏览器入口验证](BROWSER_GATE.md)：在缓存、页面、API 和 WS 握手前检查签名凭证；通过验证也不会豁免本页的请求与连接限额。
 
@@ -10,19 +10,19 @@
 
 按当前部署选择，Nginx 对公网开放 `/api/ping`、`/api/announcement`、`/api/portal-room`、`/api/portal-room/status` 与 `/api/rooms/*`；游戏服务继续执行国家校验与 API 限流。其他 `/api` 路径和公网 `/metrics` 返回 444，不进入 Node、缓存或鉴权子请求。`/api/nickname/validate` 仍单独暂停，保留精确 Nginx 拒绝规则；本机监控只放行回环来源。`/healthz` 对国内来源开放，并使用下面的 5 秒缓存。将 `scripts/hardening/sp-public-api-map.conf` 安装为 `/etc/nginx/conf.d/sp-public-api-map.conf`，在目标 server 使用 `if ($sp_close_public_api) { return 444; }`。映射使用 Nginx 规范化的 `$uri`，查询参数、重复斜杠及编码字符不能绕过；不能接受客户端自报的本机地址。
 
-2026-10-17 临时停用 `/api/nickname/validate`：精确 location 用 `return 444` 阻断；前端 `NICKNAME_PREFLIGHT_ENABLED=false` 跳过 HTTP 预检。原代理配置、Node 接口实现和测试均保留。WebSocket `hello` 的最终昵称检查仍执行。公告拉取、延迟探测、门户登记与外部房间状态查询已按上方路由重新开放；本机 Node 监听与内部 `/_sp/ip-check` 继续工作。
+`/api/nickname/validate` 当前临时停用：精确 location 用 `return 444` 阻断；前端 `NICKNAME_PREFLIGHT_ENABLED=false` 跳过 HTTP 预检。原代理配置、Node 接口实现和测试均保留。WebSocket `hello` 的最终昵称检查仍执行。公告拉取、延迟探测、门户登记与外部房间状态查询已按上方路由重新开放；本机 Node 监听与内部 `/_sp/ip-check` 继续工作。
 
 下面的 Node 保护仍覆盖昵称接口和以后明确重新开放的 API；若要恢复公开探测，移除目标 server 的上述 `if`，保留下文限流和鉴权，然后检查配置并 reload。主机防火墙、fail2ban、内核与巡检部署见[主机加固](HOST_HARDENING.md)。
 
-## 主页多来源洪泛
+## 主页容量保护
 
-2026-10-17 增加 `scripts/hardening/sp-page-global.conf`（HTTP 级 include），并在游戏 server 的既有 `limit_req` 列表加入 `limit_req zone=sp_page_global burst=60 nodelay;`。`/`、`/play`、`/index.html`、`/build/index.html` 共用固定键，每台服务器合计 30 次/秒、突发 60 次；不同 IP、Host 和查询参数不能刷新总量预算。限流在 `auth_request` 前执行，超额 444，不生成验证页、不查询游戏封禁、不读取页面缓存。各 location 若自行声明 `limit_req` 会替换继承列表，新增主页入口时必须保留该全局 zone。素材与已有 WebSocket 消息不消耗主页额度。
+主页全站额度由 `scripts/hardening/sp-page-global.conf`（HTTP 级 include）提供，并在游戏 server 的既有 `limit_req` 列表加入 `limit_req zone=sp_page_global burst=60 nodelay;`。`/`、`/play`、`/index.html`、`/build/index.html` 共用固定键，每台服务器合计 30 次/秒、突发 60 次；不同 IP、Host 和查询参数不能刷新总量预算。限流在 `auth_request` 前执行，超额 444，不生成验证页、不查询游戏封禁、不读取页面缓存。各 location 若自行声明 `limit_req` 会替换继承列表，新增主页入口时必须保留该全局 zone。素材与已有 WebSocket 消息不消耗主页额度。
 
 这是一道容量保护：持续洪泛也可能抢占新访客的主页额度，并不能保证所有新访客仍能进入。访问日志中的拒绝请求仍然计数；不能把日志总请求数当成成功回源数。查看状态码、实际鉴权调用、游戏请求量和网卡吞吐一起判断。Nginx 只能处理已到达主机的流量；入口带宽被打满时，需要机房或运营商上游清洗，国内部署不需要依赖 Cloudflare。
 
 ## healthz 防刷与 5 秒缓存
 
-该接口匿名、无状态、响应快，攻击者无需建游戏会话即可反复请求；正常浏览器只在 `public/js/ui/buildGuard.js` 中每 60 秒检查一次版本。浏览器的 `cache: no-store` 只要求获取当前版本，不应让任意请求头或随机查询参数驱动昂贵回源。国内云主机、IPv6 轮换和多 IP 低频请求也能制造洪泛，所以国别限制和单 IP 限流都不足以单独解决。
+该接口匿名、无状态、响应快，正常浏览器只在 `public/js/ui/buildGuard.js` 中每 60 秒检查一次版本。浏览器的 `cache: no-store` 只要求获取当前版本，不应让任意请求头或随机查询参数驱动昂贵回源。国别限制和单 IP 限流对一个无状态接口都不足以单独解决，所以这里同时做全局预算与缓存。
 
 裸 `/healthz` 当前规则：单 IP 30/分（burst 10），所有来源共用 9/秒（burst 18），版本检查 `?build=1` 独立为单 IP 45/分（burst 12）、全站 40/秒（burst 120）；两类健康请求合计最多 48 个并发。超过额度 444。全局预算在 auth_request 和缓存读取之前执行，缓存命中仍受限流；内部封禁子请求不消耗这个预算。不能把服务总量限制误写成另一个按 IP 的 zone。
 
@@ -34,11 +34,11 @@ Nginx 仍在缓存读取前检查已有封禁。访问日志增加 `public_api=1
 
 ## 海外 API 来源过滤
 
-公开 API 默认拒绝识别为海外的公网来源：`SP_HTTP_API_CN_ONLY=on`。GeoIP 明确识别为非 `CN`（包括台湾、香港、澳门）的请求立即收到 `403 FOREIGN_IP_BLOCKED`，不读取健康状态、公告、房间信息或请求正文；这些被拒请求仍计入 600 次永久封禁阈值，但不消耗国内访客的全局请求额度。
+公开 API 默认不做来源过滤，要过滤用 `SP_HTTP_API_CN_ONLY=on`。打开后 GeoIP 明确识别为非 `CN`（包括台湾、香港、澳门）的请求立即收到 `403 FOREIGN_IP_BLOCKED`，不读取健康状态、公告、房间信息或请求正文；这些被拒请求仍计入 600 次永久封禁阈值，但不消耗国内访客的全局请求额度。
 
-这是独立的 API 规则，不改变原有 `SP_ALLOW_FOREIGN_CONNECTIONS`、游戏页面/WebSocket 的地区开关或房间设置。已配置的 `SP_GEOLITE_COUNTRY_DB` 或程序注入的国家查询优先复用；否则**只为 API**加载仓库自带的 `geoip/GeoLite2-Country.mmdb`（全球库、country 模式），不会因此启用游戏侧原本未配置的 GeoIP 门禁。明确使用 `SP_HTTP_API_CN_ONLY=off` 可关闭 API 地区过滤，限流和永久封禁仍生效。
+这是独立的 API 规则，不改变原有 `SP_ALLOW_FOREIGN_CONNECTIONS`、游戏页面/WebSocket 的地区开关或房间设置。已配置的 `SP_GEOLITE_COUNTRY_DB` 或程序注入的国家查询优先复用；否则**只为 API**加载仓库自带的 `geoip/GeoLite2-Country.mmdb`（全球库、country 模式），不会因此启用游戏侧原本未配置的 GeoIP 门禁。`SP_HTTP_API_CN_ONLY` 默认 `off`，本页的限流与永久封禁是另外两个独立开关，默认同样为 `off`，三者互不代表。
 
-本机和私网监控豁免，本机代理转发来的公网来源仍按真实 IP 判断。完整国家库没有结果的 IP **一律按海外拒绝**（2026-10-17 决定：未知不是国内；内核国别集合与 Nginx geoip2 映射本来就是这样）。数据库不可用是故障，返回 503，不静默放行；连数据库都没配的部署保持旧的 fail-open，避免把整机锁在门外。数据库不可用或查询异常时，公网 API 返回 `503 GEOIP_UNAVAILABLE`，不静默放开海外过滤，本机探针仍可用。GeoIP 不能阻止攻击者使用大陆代理出口。
+本机和私网监控豁免，本机代理转发来的公网来源仍按真实 IP 判断。完整国家库没有结果的 IP **一律按海外拒绝**（未知不是国内；内核国别集合与 Nginx geoip2 映射本来就是这样）。数据库不可用是故障，返回 503，不静默放行；连数据库都没配的部署保持旧的 fail-open，避免把整机锁在门外。数据库不可用或查询异常时，公网 API 返回 `503 GEOIP_UNAVAILABLE`，不静默放开海外过滤，本机探针仍可用。GeoIP 不能阻止攻击者使用大陆代理出口。
 
 玩家发行包不附带 GeoIP 数据库，使用发行包开公网服务时须单独配置有效的国家库；容器需保留仓库 `geoip/` 或挂载数据库。门户如果从海外服务器调用公开 API，同样会被拒绝，应把探测移到可信内网/本机，或采用已认证的独立接口，不以 User-Agent 或客户端自报地址放行。
 
@@ -54,23 +54,23 @@ Nginx 仍在缓存读取前检查已有封禁。访问日志增加 `public_api=1
 
 | 环境变量 | 默认值 | 含义 |
 | --- | --- | --- |
-| `SP_HTTP_API_RATE` | `5` | 每个网络每秒恢复的请求额度 |
-| `SP_HTTP_API_BURST` | `30` | 每个网络突发容量 |
-| `SP_HTTP_API_GLOBAL_RATE` | `200` | 所有公开 API 合计每秒恢复额度 |
-| `SP_HTTP_API_GLOBAL_BURST` | `400` | 所有公开 API 合计突发容量 |
-| `SP_HTTP_HEALTH_RATE` | `20` | 所有公网来源 `/healthz` 合计每秒恢复额度 |
-| `SP_HTTP_HEALTH_BURST` | `40` | `/healthz` 合计突发容量 |
-| `SP_HTTP_BAN_THRESHOLD` | `600` | 同一网络在滑动窗口内最多请求次数，最大 10000 |
+| `SP_HTTP_API_RATE` | `0` | 每个网络每秒恢复的请求额度，`0` = 不限制 |
+| `SP_HTTP_API_BURST` | `0` | 每个网络突发容量 |
+| `SP_HTTP_API_GLOBAL_RATE` | `0` | 所有公开 API 合计每秒恢复额度，`0` = 不限制 |
+| `SP_HTTP_API_GLOBAL_BURST` | `0` | 所有公开 API 合计突发容量 |
+| `SP_HTTP_HEALTH_RATE` | `0` | 所有公网来源 `/healthz` 合计每秒恢复额度，`0` = 不限制 |
+| `SP_HTTP_HEALTH_BURST` | `0` | `/healthz` 合计突发容量 |
+| `SP_HTTP_BAN_THRESHOLD` | `0` | 同一网络在滑动窗口内最多请求次数，最大 10000；`0` = 不封禁 |
 | `SP_HTTP_BAN_WINDOW_MS` | `60000` | 精确滑动窗口毫秒数，最大 86400000 |
 | `SP_HTTP_BAN_FILE` | `<项目目录>/.state/http-ip-bans.jsonl` | 持久封禁名单，必须在所有静态目录之外 |
 
 普通额度耗尽时，Node 返回小型 JSON `429 RATE_LIMITED`、`Retry-After: 1`，不再收集健康状态、读取公告或处理请求正文。按下节配置的 Nginx 会把防护拒绝转换为 444 静默断开，不向公网发送该 JSON。健康限额独立于其他 API，`?build=1`、`?traffic=1` 和任意随机查询参数仍共用健康限额，避免两百多个地址轮换刷健康接口。
 
-**到达 Node 的同一网络在任意连续 60 秒内的第 601 次 API 请求触发永久封禁**，包括已被 Node 限流后交给 Nginx 静默断开的请求。该请求及以后请求在 Node 端返回小型 JSON `403 IP_BANNED`，Nginx 公网入口静默断开；HTTP 页面、素材与新的 WebSocket 握手都受封禁检查。时间流逝不会解封，重启后从名单重新加载。正常页面、素材下载和已建立 WebSocket 内的游戏消息不计入这 600 次；已有 WebSocket 不因 HTTP 封禁主动断开，断线后不能再连接。
+**开启 `SP_HTTP_BAN_THRESHOLD` 后：到达 Node 的同一网络在任意连续 60 秒内的第 `阈值+1` 次 API 请求触发永久封禁**（默认 `600` 时即第 601 次），包括已被 Node 限流后交给 Nginx 静默断开的请求。该请求及以后请求在 Node 端返回小型 JSON `403 IP_BANNED`，Nginx 公网入口静默断开；HTTP 页面、素材与新的 WebSocket 握手都受封禁检查。时间流逝不会解封，重启后从名单重新加载。正常页面、素材下载和已建立 WebSocket 内的游戏消息不计入这 600 次；已有 WebSocket 不因 HTTP 封禁主动断开，断线后不能再连接。阈值为 `0` 时这一段整体不生效，没有永久封禁也没有 `IP_BANNED`。
 
-直接本机及内网监控沿用现有可信代理策略豁免；本机代理转发来的公网地址不豁免。学校、公司和家庭共用出口会共用计数与封禁，请按正常使用量调整阈值。不能依赖 `curl` User-Agent 判定攻击，攻击者可以任意伪造它。
+直接本机及内网监控沿用现有可信代理策略豁免；本机代理转发来的公网地址不豁免。学校、公司和家庭共用出口会共用计数与封禁，请按正常使用量调整阈值。User-Agent 不可信，不能作为判定依据。
 
-计数表最多 4096 个网络：闲置记录定期清理，表满时**淘汰最久未活跃的网络**而不是拒绝新来源（拒绝新来源等于让一个 4096 个 IP 的机器人群把真实玩家和监控一起锁在门外，而那些 bot 因为没有计数桶，既不会被计数也不会被封；被淘汰的洪泛源再回来时从零计数，仍在它自己的第 601 次请求上被封）。封禁表满（100000 条）时 `ban()` 返回 `false` 而不再抛异常：拒绝它的网络由限流器自己在同一个滑动窗口内继续拒绝，既不丢计数也不会把请求变成 500。封禁表最多 100000 条，名单文件最多加载 32 MiB；损坏名单或启动时不可写会阻止启动，避免静默丢失封禁。运行中写盘失败会记录错误并保留当前进程内封禁，此时需要修复磁盘和名单，不能认为重启仍会保留新封禁。
+计数表最多 4096 个网络：闲置记录定期清理，表满时**淘汰最久未活跃的网络**而不是拒绝新来源（拒绝新来源等于让一批无桶来源把真实玩家和监控一起锁在门外，那些来源因为没有计数桶，既不会被计数也不会被封；被淘汰的洪泛源再回来时从零计数，仍在它自己的第 601 次请求上被封）。封禁表满（100000 条）时 `ban()` 返回 `false` 而不再抛异常：拒绝它的网络由限流器自己在同一个滑动窗口内继续拒绝，既不丢计数也不会把请求变成 500。封禁表最多 100000 条，名单文件最多加载 32 MiB；损坏名单或启动时不可写会阻止启动，避免静默丢失封禁。运行中写盘失败会记录错误并保留当前进程内封禁，此时需要修复磁盘和名单，不能认为重启仍会保留新封禁。
 
 ## Nginx 部署
 

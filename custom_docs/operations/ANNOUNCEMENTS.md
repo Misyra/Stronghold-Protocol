@@ -1,6 +1,41 @@
 # 游戏内公告
 
-面板是唯一编辑入口。配置好探针后，在管理页发布即可写到对应游戏服务器，无需为游戏逐台绑定面板站点 ID。
+公告本身只要求一件事：**游戏进程能读到一份 JSON**。谁来写它都行——面板加探针只是自动化程度最高的一种写法，不是前提。没有探针的站点直接改仓库里的 `config/announcements.json` 就能发，见[没有探针时怎么发公告](#没有探针时怎么发公告)。
+
+下面的默认链路是「面板 + 探针」这条路，方便多台机器统一发布；它和你手工改文件写的是同一个位置（受管理的那份文件），探针只负责原子替换与版本号。
+
+## 没有探针时怎么发公告
+
+两条路，都不需要装任何东西：
+
+**1. 改 `config/announcements.json`（推荐，什么都不用配）**
+
+默认的 `agent` 模式先读探针那份受管理文件，**读不到就退到仓库自带的 `config/announcements.json`**（`server/http/config.js:76-80`、`server/announcement.js:111-115`）。一份干净 checkout 里它就是 `{"announcements": []}`，往里加条目即可：
+
+```json
+{
+  "announcements": [
+    {
+      "id": "maintenance-20261021",
+      "text": "服务器将于 17:00 开始维护，请提前结束模拟。",
+      "startAt": "2026-10-21T17:00:00+08:00",
+      "durationSeconds": 3600,
+      "level": "warning",
+      "enabled": true
+    }
+  ]
+}
+```
+
+`startAt` 和 `durationSeconds` 都必填（滚动公告 1–86400 秒，到期自动下；`endAt` 只给 `type: "popup"` 用）。`id` 唯一、1–64 位字母数字下划线连字符。`level` 取 `ANNOUNCEMENT_LEVELS`（默认 `info`），`text` 最多 500 字、单行折叠空白。**改文件不用重启**，游戏每秒最多读一次，10 秒内生效。写坏了不生效而不是发半条：整份文档原子校验，失败保留上一版有效内容。
+
+**2. `SP_ANNOUNCEMENT_SOURCE=file` + 根目录 `announcement.json`**
+
+单条公告的老格式，照 `announcement.example.json` 写（`enabled` / `title` / `text` / `displayMode` / `expiresAt`）。适合「整个服就一条维护公告、不想维护数组」的场合。
+
+两条路的区别只有一个：文件在哪、格式是数组还是单条。功能一样，都支持 `displayMode`、到期、`/api/announcement` 的版本提示。
+
+**什么时候才值得上探针**：多台机器、想让人在网页上点一下发布、想看到「面板保存 → 探针写入 → 游戏读到」三层状态。单机改文件的维护量低于装探针的维护量，就不该装。
 
 ## 默认链路
 
@@ -42,13 +77,17 @@ WS 提示仅为当前公开滚动/弹窗内容的 24 位哈希，不含 `_delive
 
 ## 接入和升级
 
-1. 游戏及中央 sp-portal 更新到支持探针推送的版本。探针不再随本仓库分发（2026-10-12 起）：先在 sp-portal 目录生成 `ops/` 产物树（`npm run sync:agent`，`npm run check:agent` 校验），整份拷到本站 `/opt/stronghold-ops`，见 [MONITORING.md](MONITORING.md)。
-2. 按 [MONITORING.md](MONITORING.md) 运行安装脚本。已有 env 保留，脚本自动补充独立的 `SP_ADMIN_TOKEN_RW`、公告目录及 systemd 写权限。
+**不装探针的站点什么都不用配**：默认 `agent` 模式读不到探针那份文件就会退到 `config/announcements.json`，改文件即发布（见[没有探针时怎么发公告](#没有探针时怎么发公告)）；要单条格式就设 `SP_ANNOUNCEMENT_SOURCE=file`。
+
+**要走面板发布才需要探针**。探针与面板都属于 sp-portal 项目，不随本仓库分发，本仓库只负责读那份文件：
+
+1. 在 sp-portal 目录生成 `ops/` 产物树（`npm run sync:agent`，`npm run check:agent` 校验），整份放到本站 `/opt/stronghold-ops`。
+2. 运行产物树里的 `/opt/stronghold-ops/deploy/install-agent.sh`。已有 env 保留，脚本自动补充独立的 `SP_ADMIN_TOKEN_RW`、公告目录及 systemd 写权限。中央面板的部署以 sp-portal 当前文档和模板为准。
 3. 在面板站点配置中填写本站探针 URL 和 `admin.env` 中的 `SP_ADMIN_TOKEN_RW`，测试连接后保存。它可读取监控并写公告；旧 `SP_ADMIN_TOKEN_RO` 仍只能读取监控。
 4. 升级已有 feed 部署时，把**游戏服务**环境设置为 `SP_ANNOUNCEMENT_SOURCE=agent` 后重启游戏。新安装不设置来源即可使用 agent。安装脚本不会擅自改动游戏服务环境。
 5. 在管理页发布并检查推送状态及线上内容。
 
-默认 Linux 公告目录为 `/var/lib/stronghold-announcement`，由 spmonitor 持有，目录 0755、公告文件 0644，只存放玩家可见内容。探针仅有该目录的写权限，不允许通过请求修改路径、游戏程序或服务配置。自定义目录需使用安装器支持的 /var/lib 下独立目录，并同时设置探针 `MON_ANNOUNCEMENT_FILE` 和游戏 `SP_ANNOUNCEMENT_AGENT_FILE`。
+走探针时，默认 Linux 公告目录为 `/var/lib/stronghold-announcement`，由 spmonitor 持有，目录 0755、公告文件 0644，只存放玩家可见内容。探针仅有该目录的写权限，不允许通过请求修改路径、游戏程序或服务配置。自定义目录需使用安装器支持的 /var/lib 下独立目录，并同时设置探针 `MON_ANNOUNCEMENT_FILE` 和游戏 `SP_ANNOUNCEMENT_AGENT_FILE`。
 
 Docker 游戏须将宿主机**整个公告目录**只读挂载到容器同一路径（不要只挂载单个文件，原子替换会更换 inode）；见 [DEPLOY.md](DEPLOY.md#docker)。Windows 游戏默认读项目 `.state/announcement.json`；若自行运行探针，请将两个进程的上述文件配置设成同一个绝对路径。
 
@@ -60,6 +99,8 @@ Docker 游戏须将宿主机**整个公告目录**只读挂载到容器同一路
 | `SP_PORTAL_URL` / `SP_SITE_ID` | panel 模式未指定完整 URL 时必填；没有绑定某一站点的默认值 |
 | `SP_ANNOUNCEMENT_POLL_MS` | feed 最短拉取间隔 10000 毫秒，限制 3000–600000 |
 | `SP_ANNOUNCEMENT_FILE` | 仅显式 file 模式使用；默认根目录 announcement.json |
+
+上表全部是**游戏服**读的。下面三个不属于本仓库，写进游戏的 `.env` 不会有任何效果：`MON_ANNOUNCEMENT_FILE`（探针写哪份文件）、`SP_ADMIN_TOKEN_RO` / `SP_ADMIN_TOKEN_RW`（面板连探针的凭据）。探针与面板都不随本仓库分发。
 
 ## 无探针站点的 feed 接入
 

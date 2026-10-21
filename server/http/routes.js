@@ -21,9 +21,9 @@
 //     outbound wire counters, state-delta and persistence accounting, chat log, rehearsal pressure and the
 //     per-instance process windows, plus bounded WebSocket latency diagnostics. Always collected fresh, and NOT
 //     public: only a loopback or private-network client gets it — every other caller falls through to the static
-//     files and sees the same 404 as an unknown path, so the route does not even advertise itself. The host's monitor
-//     reads it over 127.0.0.1 (sp-portal collector.mjs; MON_METRICS_URL, default derived as
-//     http://127.0.0.1:<game port>/metrics);
+//     files and sees the same 404 as an unknown path, so the route does not even advertise itself. Any process on the
+//     same host reads it over 127.0.0.1 (http://127.0.0.1:<game port>/metrics); no collector ships with this
+//     repository;
 //   * GET /api/ping → a tiny public latency probe ({ ok: true }, no session, CORS `*`);
 //   * GET /api/rooms/<code>/status → the room's read-only public projection (server/roomStatus.js), rate-limited per
 //     network; private enumeration and room controls live on the separate loopback listener (server/roomAdmin.js);

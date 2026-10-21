@@ -71,7 +71,7 @@ export const NET_DEFAULTS = Object.freeze({
   maxQueuedFrames: 1024,       // also bound tiny reliable frames while a peer cannot drain
   backpressurePollMs: 25,      // blocked peers do not spin the setImmediate send pump
   maxConnections: 2000,         // concurrent sockets (enforced by index.js at upgrade time)
-  maxConnectionsPerAddr: 64,    // concurrent sockets per client network key (0 = unlimited); see clientAddress
+  maxConnectionsPerAddr: 0,     // concurrent sockets per client network key (0 = unlimited, the repository default); see clientAddress
   maxSessions: 20_000,          // registry cap; oldest idle sessions are evicted first
   heavyPerSec: 2,               // refill of the bucket for resend-heavy intents (HEAVY_TYPES)
   heavyBurst: 6,
@@ -501,7 +501,7 @@ export function sanitizeName(raw) {
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * Canonical textual IP: lowercase, zone id stripped, IPv4-mapped IPv6 (`::ffff:1.2.3.4`) → IPv4.
+ * Canonical textual IP: lowercase, zone id stripped, IPv4-mapped IPv6 (`::ffff:192.0.2.4`) → IPv4.
  * @param {unknown} raw
  * @returns {string} '' when not an IP address
  */

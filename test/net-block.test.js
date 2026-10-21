@@ -9,9 +9,9 @@ const asnOf = (map) => (ip) => (ip in map ? { asn: map[ip], org: 'stub' } : null
 const countryOf = (map) => (ip) => map[ip] ?? null;
 const quietLog = () => { const lines = []; return { lines, info: (m) => lines.push(m), warn: (m) => lines.push(m), error: (m) => lines.push(m) }; };
 
-test('the deny list is 133 ASNs, 3 regions and 84 addresses, with no duplicates or junk', () => {
+test('the deny list is 133 ASNs, 3 regions and 83 addresses, with no duplicates or junk', () => {
   assert.equal(BLOCK_ASNS.size, 133);
-  assert.equal(BLOCK_IPS.size, 84);
+  assert.equal(BLOCK_IPS.size, 83);
   assert.deepEqual([...BLOCK_COUNTRIES].sort(), ['EC', 'TW', 'VE']);
   for (const asn of BLOCK_ASNS) assert.ok(Number.isSafeInteger(asn) && asn > 0, String(asn));
   for (const ip of BLOCK_IPS) assert.ok(BLOCK_IPS.has(normalizeBlockIp(ip)), ip);
@@ -48,7 +48,7 @@ test('a missing or broken ASN database disables only the ASN layer and says so',
   assert.equal(noAsn.check('5.101.96.1').blocked, false, 'ASN rules cannot fire without a database');
   assert.equal(noAsn.check('60.249.21.30').reason, 'ip', 'the other two layers still apply');
   const log = quietLog();
-  createNetBlock({ asnLookup: null, countryLookup: null, log });
+  createNetBlock({ mode: 'on', asnLookup: null, countryLookup: null, log });
   assert.ok(log.lines.some((l) => l.includes('ASN 库不可用')));
   assert.ok(log.lines.some((l) => l.includes('国家库不可用')));
   const broken = new NetBlock({ asnLookup: () => { throw new Error('bad records'); }, countryLookup: () => { throw new Error('bad records'); } });
@@ -58,15 +58,15 @@ test('a missing or broken ASN database disables only the ASN layer and says so',
 
 test('the consumer operators on the list are named in the startup warning', () => {
   const log = quietLog();
-  createNetBlock({ countryLookup: () => 'CN', asnLookup: () => null, log });
+  createNetBlock({ mode: 'on', countryLookup: () => 'CN', asnLookup: () => null, log });
   assert.ok(log.lines.some((l) => l.includes('ASN 6871')), log.lines.join(' | '));
   assert.ok(log.lines.some((l) => l.includes('ASN 4773')));
   assert.equal(CONSUMER_ASNS_IN_LIST.size, 2);
 });
 
-test('mode and address normalization: default on, off disables everything, junk stays junk', () => {
-  assert.equal(parseNetBlockMode(), true);
-  assert.equal(parseNetBlockMode(' OFF '), false);
+test('mode and address normalization: default off, on enables the list, junk stays junk', () => {
+  assert.equal(parseNetBlockMode(), false);
+  assert.equal(parseNetBlockMode(' ON '), true);
   assert.throws(() => parseNetBlockMode('maybe'), RangeError);
   assert.equal(normalizeBlockIp('::ffff:60.249.21.30'), '60.249.21.30');
   assert.equal(normalizeBlockIp('2001:0db8:0:0:0:0:0:1'), '2001:db8::1');
@@ -83,7 +83,7 @@ async function serve(t, options = {}) {
   const logs = [];
   const log = { info: (m) => logs.push(String(m)), warn: (m) => logs.push(String(m)), error: (m) => logs.push(String(m)), debug() {} };
   const srv = await startServer({ host: '127.0.0.1', port: 0, workers: 0, stateFile: 'off', log, trustProxy: true,
-    allowForeignConnections: true, limitForeignSessions: false, httpApiMainlandOnly: false,
+    allowForeignConnections: true, limitForeignSessions: false, httpApiMainlandOnly: false, netBlockMode: 'on',
     countryLookup: countryOf(stubCountry), asnLookup: asnOf(stubAsn), ...options });
   t.after(() => srv.close());
   return { srv, logs };
@@ -112,15 +112,15 @@ test('SP_NET_BLOCK=off turns the whole list off without touching the foreign gat
 });
 
 /**
- * Regression: with no SP_NET_BLOCK at all, the mode is "on" and the default database path must be opened.
- * The first version read the raw env value (undefined) as a condition and silently skipped the ASN layer,
- * leaving 133 rules inert while the log still said "on".
+ * Unset SP_NET_BLOCK means the list is off: a bare checkout must neither open the ASN database nor deny anyone.
+ * The old default was "on", and reading the raw env value as a condition silently skipped the ASN layer while the
+ * log still said "on" — both halves are asserted here, from the other side.
  */
 const localAsnDb = 'geoip/GeoLite2-ASN.mmdb';
-test('an unset SP_NET_BLOCK still opens the default ASN database', { skip: existsSync(localAsnDb) ? false : 'geoip/GeoLite2-ASN.mmdb not present' }, async (t) => {
+test('an unset SP_NET_BLOCK keeps the list off and never opens the ASN database', { skip: existsSync(localAsnDb) ? false : 'geoip/GeoLite2-ASN.mmdb not present' }, async (t) => {
   const { srv } = await serve(t, { asnLookup: undefined, netBlockMode: undefined, geoLiteAsnFile: localAsnDb });
-  assert.equal(srv.network.netBlock.asnAvailable, true, 'the ASN layer must not be silently disabled');
-  const verdict = srv.network.netBlock.check('1.12.16.1');
-  assert.equal(verdict.reason, 'asn'); assert.equal(verdict.asn, 45090);
-  assert.equal((await fetch(srv.url, { headers: { 'X-Real-IP': '1.12.16.1' } })).status, 403);
+  assert.equal(srv.network.netBlock.enabled, false, 'an unset switch must not turn the list on');
+  assert.equal(srv.network.netBlock.asnAvailable, false, 'the ASN database is only worth opening when the list is on');
+  assert.equal(srv.network.netBlock.check('1.12.16.1').blocked, false);
+  assert.equal((await fetch(srv.url, { headers: { 'X-Real-IP': '1.12.16.1' } })).status, 200);
 });

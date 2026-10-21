@@ -23,7 +23,10 @@ export function countryLookupFromReader(reader, mode = 'country') {
     const record = reader.get(ip);
     const code = record?.country?.iso_code;
     if (typeof code === 'string' && /^[A-Z]{2}$/.test(code)) return code;
-    // This source has no mainland IPv6 coverage. Do not mistake an IPv6 miss for an overseas address.
+    // This source has no mainland IPv6 coverage. An IPv6 address is therefore "this table cannot place
+    // it", not "overseas": answer undefined — the established "no verdict" channel that callers fail open
+    // on — so an IPv6 miss is never read as a foreign address (see foreignSessions.countryOf).
+    if (mode === 'cn-only' && family === 6) return undefined;
     // ZZ is a private policy marker for non-mainland, not an assertion of the address's actual country.
     return mode === 'cn-only' && family === 4 && record === null ? 'ZZ' : null;
   };

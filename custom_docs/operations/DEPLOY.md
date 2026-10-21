@@ -8,10 +8,9 @@
 | Linux 生产站点 | 本文的安装、systemd、反向代理和更新步骤 |
 | Docker | 本文的容器步骤 |
 | Windows / 家用小主机 / 整合包升级 | [HOME_SERVER.md](HOME_SERVER.md) |
-| 游戏内公告接入管理面板 | [ANNOUNCEMENTS.md](ANNOUNCEMENTS.md) |
+| 游戏内公告发布与接入 | [ANNOUNCEMENTS.md](ANNOUNCEMENTS.md) |
 | 素材 R2 发布、预载和清理缓存 | [CDN.md](CDN.md) |
 | 对局检查点与备份恢复 | [PERSISTENCE.md](PERSISTENCE.md) |
-| 监控探针与管理面板的分工 | [MONITORING.md](MONITORING.md) |
 | 制作发行包 / Windows 便携包 | [PACKAGING.md](PACKAGING.md) / [WINDOWS.md](../../docs/WINDOWS.md) |
 
 ## 安装
@@ -57,21 +56,22 @@ PORT=3000
 HOST=127.0.0.1
 SP_STATE_FILE=/var/lib/stronghold/game
 SP_ASSETS_CDN=https://assets.misyra.com
-SP_ANNOUNCEMENT_SOURCE=agent
 SP_MODERATION_KEY_FILE=/etc/stronghold/moderation.key
+# 公告来源：不填就是默认值，不需要探针也能发（见下）
+# SP_ANNOUNCEMENT_SOURCE=agent
 ```
 
-公告默认读取探针管理文件。在面板配置好本站探针和管理密钥即可发布，无需绑定游戏站点 ID。已有 feed 部署升级时显式改为 agent 并重启；无探针站点可保留 feed。完整步骤见[公告接入](ANNOUNCEMENTS.md)。
+**公告不依赖监控探针**。默认模式先读探针写的那份文件，读不到就退到仓库里的 `config/announcements.json`——直接改它就能发，不用重启，10 秒内生效。整个服只有一条维护公告时，这样就够了；`SP_ANNOUNCEMENT_SOURCE=file` 是另一种更简的单条格式。只有多台机器、想让人在网页上点一下发布、或者要「面板保存 → 探针写入 → 游戏读到」三层状态时，才值得另装探针——探针和面板都属于 sp-portal 项目，代码不在本仓库，本仓库只负责读那份文件。已有 feed 部署升级时显式改为 `panel` 并保留 URL。全部规则与示例见[公告接入](ANNOUNCEMENTS.md)。
 
 联机断线保留席位 10 分钟；单人对局可在断线后 24 小时内恢复。
 
 默认开启服务端检查点；保留状态目录可恢复最近的安全阶段，作战进行中重启可能重打该回合。状态目录包含私有重连身份，必须随配置一起备份。具体恢复边界见 [PERSISTENCE.md](PERSISTENCE.md)。
 
-### 明确屏蔽名单（ASN + 国家 + IP，默认开启）
+### 明确屏蔽名单（ASN + 国家 + IP，默认关闭）
 
 `server/netBlock.js` 里有一份枚举名单：133 个机房 / 云 / 廉价 VPS / 防弹主机的 ASN、TW/VE/EC 三个地区、
 84 个逐条来源 IP。命中任一条，游戏文档与 WebSocket 升级都返回 403（与既有海外门禁同一个响应体）。
-默认 **on**，用 `SP_NET_BLOCK=off` 关闭。
+默认 **off**，要拦就显式 `SP_NET_BLOCK=on`。
 
 ASN 库走 `SP_GEOLITE_ASN_DB`（默认 `geoip/GeoLite2-ASN.mmdb`）。这个文件不在仓库里，需要自己下载放到
 `geoip/`；**没有它时 ASN 那 133 条不生效，只降级不拦启动**，日志会打 `[netblock] ASN 库不可用`。
@@ -183,7 +183,7 @@ sudo systemctl enable --now sp-syn-ban
   conntrack 之后的后续处理都到不了。IPv4 与 IPv6 分成两个集合——nft 不替你按地址族分流，
   混在一起整份表都会校验失败。
 - **SYN 速率自动封**（`auto4`，24 小时）：同一 IP 超过 20 SYN/s（burst 40）就进集合。
-  阈值是按实测定的——真实玩家峰值 0.3 SYN/s，洪水最低 6/s，中间隔 20 倍。
+  阈值按真实玩家峰值上浮留余量：实测 0.3 SYN/s，20 SYN/s 是它的 6.7 倍，另见 `ops/sp-web-syn-guard.nft`。
 
 名单的维护方式和表结构见 [`ops/README.md`](../../ops/README.md)。
 
@@ -194,7 +194,7 @@ sudo systemctl enable --now sp-syn-ban
 ```
 
 它管的是「一个 IP 建连接的速率」，与上面的永久名单互补。默认值 30 次/分钟
-（真玩家实测峰值 18 次/分钟，洪水下限 360 次/分钟）。阈值依据写在文件头。
+（真玩家实测峰值 18 次/分钟，1.7 倍余量）。阈值依据写在文件头。
 
 ```bash
 sudo nft list table inet sp_syn_ban          # 看计数器
@@ -357,7 +357,7 @@ sudo systemctl start stronghold
 | 画面或声音缺失 | `node tools/doctor.mjs`；CDN 模式核对清单和资源 URL，本机模式补跑 setup |
 | 面板已发布，游戏无公告 | 核对 `/api/announcement.source`、探针推送状态、文件路径和日志 `[announcement]`；见[公告排错](ANNOUNCEMENTS.md#排错) |
 | 重启后无法恢复 | `/metrics.persist`（本机回环）和状态目录权限；是否挂载原持久卷；见[持久化说明](PERSISTENCE.md) |
-| 游戏能访问，面板监控无数据 | 探针、令牌及 nginx 管理路由；见[监控接入](MONITORING.md) |
+| 游戏能访问，但外部监控没有数据 | 本仓库只提供 `/healthz`（含 `?traffic=1`）和只给回环的 `/metrics`；采集端与面板属于 sp-portal 项目，不在本仓库 |
 | CPU / 内存过高 | Worker 数量、队列与校验模式，见[性能说明](../development/PERFORMANCE.md) |
 | 想知道开服电脑上传了多少流量 | 本机 / 局域网打开 `/healthz?traffic=1`，按类别看 `traffic.http` 与 `traffic.ws`；公网访问者只会拿到普通报告 |
 | 素材地址里出现 `/_v/<tag>/` 前缀 | 这是本仓库的版本化地址（`server/assetVersion.js`）：素材字节没变前缀就不变、浏览器长期缓存，属正常现象；怀疑素材没更新时先确认服务器上真的换了文件 |
@@ -421,7 +421,7 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 
 ## 昵称审查
 
-**临时停用 HTTP 预检（2026-10-17）**：`public/js/screens/title.js` 的 `NICKNAME_PREFLIGHT_ENABLED=false`；Nginx 注释 `/api/nickname/validate` 放行项，并对该精确路径返回 444。原 HTTP 实现、代理配置和以下说明保留，WebSocket 最终审查照常。恢复时同步打开前端开关、恢复放行并移除临时 return，重新构建部署。
+**临时停用 HTTP 预检**：`public/js/screens/title.js` 的 `NICKNAME_PREFLIGHT_ENABLED=false`；Nginx 注释 `/api/nickname/validate` 放行项，并对该精确路径返回 444。原 HTTP 实现、代理配置和以下说明保留，WebSocket 最终审查照常。恢复时同步打开前端开关、恢复放行并移除临时 return，重新构建部署。
 
 点击“开始”后，浏览器先向同源 `POST /api/nickname/validate` 提交 `{"name":"博士代号"}`，服务器通过才保存昵称并进入游戏。拒绝只回固定错误码，客户端显示“代号包含不适宜内容，请更换昵称”，并提示“如果你认为昵称没有问题，可以前往 GitHub 反馈”，提供本站仓库的 Bug 反馈链接；网络失败停留标题页，可重试。WebSocket `hello` 在创建会话、重连接管和改名前再次检查，不能靠跳过 HTTP 预检绕过。
 
@@ -464,8 +464,8 @@ Windows 开服步骤移至 [HOME_SERVER.md](HOME_SERVER.md)。
 
 可选的一键提交入口与两端鉴权、限流配置见 [PORTAL_ROOMS.md](PORTAL_ROOMS.md)。未配置时不启用。
 
-## 2026-10-17 事故后的模板默认值
+## 模板默认值
 
 2026-10-19 的 gate 恢复修复仍待上线，安装顺序、实际端口、续签头继承与验收步骤见 [BROWSER_GATE.md](BROWSER_GATE.md)（含安装顺序与验收步骤）。完整修复包含 `30437428`、`2ec469e9`、`70bba335`，不要只拣最后一条文档/探针修正提交部署。先更新 gate 与 Nginx 并在目标机通过 `nginx -t`，再发布对应前端；保留密钥、现场健康防护及手工封禁。旧标签页首次可能仍需刷新。
 
-当前模板参数、与 Node 的叠加关系、四人共网推荐配置及三机发布核验统一维护在 [LIMITS.md](LIMITS.md)。2026-10-17 事故当时的 3000/800、4000、4 条 WS、5 次/min 属于历史值，不能继续用作新部署默认。现场以 `nginx -T` 和应用有效配置为准，逐机验收步骤见 [LIMITS.md](LIMITS.md)。
+当前模板参数、与 Node 的叠加关系、四人共网推荐配置及三机发布核验统一维护在 [LIMITS.md](LIMITS.md)。早期模板的 3000/800、4000、4 条 WS、5 次/min 属于历史值，不能继续用作新部署默认。现场以 `nginx -T` 和应用有效配置为准，逐机验收步骤见 [LIMITS.md](LIMITS.md)。

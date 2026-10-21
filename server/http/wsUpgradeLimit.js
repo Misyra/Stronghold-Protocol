@@ -3,14 +3,16 @@ import { clientAddress } from '../net.js';
 import { createIpBanStore } from './ipBans.js';
 
 // The application sees admitted/rejected upgrade attempts, unlike the ingress jail's 444-only counter.
-// Allow shared-NAT reconnect bursts; deployments may still explicitly choose a stricter threshold.
-export const WS_UPGRADE_DEFAULTS = Object.freeze({ threshold: 100, windowMs: 60000, banMs: 3600000 });
+// threshold 0 means no counting at all, and that is the repository default: a bare checkout never bans a
+// source for reconnecting. Deployments that want a ban set a threshold at or above the floor below.
+export const WS_UPGRADE_DEFAULTS = Object.freeze({ threshold: 0, windowMs: 60000, banMs: 3600000 });
+/** 显式构造限流器、又没给阈值时用的那套值。服务器启动不会落到这里。 */
+export const WS_UPGRADE_BUDGETS = Object.freeze({ threshold: 100, windowMs: 60000, banMs: 3600000 });
 
 // One client must not be able to ban itself. The browser backs off 500ms → ×2 → 10s
 // (public/js/net.js BACKOFF), which is about ten upgrade attempts per minute before any jitter:
 // a threshold under 20/min is reachable by a single stuck tab, and a ban longer than an hour then
-// turns one bad reconnect into an outage for that network. 2026-10-18 ran 10/min with a 24h ban and
-// refused 78% of all /ws upgrades (16,442 429s against 4,604 accepted) until it was walked back.
+// turns one bad reconnect into an outage for that network.
 const MIN_THRESHOLD_PER_MINUTE = 20;
 const LONG_BAN_MS = 3600000;
 const LONG_BAN_MIN_THRESHOLD = 100;
@@ -19,11 +21,13 @@ export function wsUpgradeLimitsFrom(options = {}, env = process.env) {
   const names = { threshold: 'SP_WS_UPGRADE_THRESHOLD', windowMs: 'SP_WS_UPGRADE_WINDOW_MS', banMs: 'SP_WS_UPGRADE_BAN_MS' };
   const limits = {};
   for (const [key, name] of Object.entries(names)) {
-    const value = Number(options[key] ?? env[name] ?? WS_UPGRADE_DEFAULTS[key]);
+    const raw = options[key] ?? env[name];
+    const value = Number(raw ?? WS_UPGRADE_DEFAULTS[key]);
     const max = key === 'threshold' ? 10000 : key === 'windowMs' ? 86400000 : 30 * 86400000;
-    if (!Number.isSafeInteger(value) || value < 1 || value > max) throw new RangeError(`${name} must be an integer between 1 and ${max}`);
+    if (raw === '' || !Number.isSafeInteger(value) || value < 0 || value > max) throw new RangeError(`${name} must be an integer between 0 and ${max}`);
     limits[key] = value;
   }
+  if (limits.threshold === 0) return limits; // 没有阈值就没有计数：0 是这个维度关掉的意思，不是「立即封禁」
   const minThreshold = Math.ceil(MIN_THRESHOLD_PER_MINUTE * limits.windowMs / 60000);
   if (limits.threshold < minThreshold) {
     throw new RangeError(`${names.threshold} must be at least ${minThreshold} per ${limits.windowMs}ms window: one client's own reconnect ladder attempts ~10 upgrades per minute, so a lower threshold bans players for retrying`);
@@ -36,8 +40,10 @@ export function wsUpgradeLimitsFrom(options = {}, env = process.env) {
 
 /** Exact sliding window, bounded queues, no timers. Trusted clientAddress owns proxy and IPv6 /64 policy. */
 export function createWsUpgradeLimiter({ trustProxy = 'auto', now = Date.now, banStore = createIpBanStore(),
-  threshold = WS_UPGRADE_DEFAULTS.threshold, windowMs = WS_UPGRADE_DEFAULTS.windowMs,
-  banMs = WS_UPGRADE_DEFAULTS.banMs, maxKeys = 4096 } = {}) {
+  threshold = WS_UPGRADE_BUDGETS.threshold, windowMs = WS_UPGRADE_BUDGETS.windowMs,
+  banMs = WS_UPGRADE_BUDGETS.banMs, maxKeys = 4096 } = {}) {
+  // 阈值 0（默认）表示不计数：直接放行，连 Map 都不建。
+  if (!(threshold > 0)) return () => true;
   const sources = new Map();
   let sweptAt = now();
   const sweep = (at) => {

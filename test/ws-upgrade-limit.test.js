@@ -140,12 +140,13 @@ test('counter saturation admits new visitors and retains recently active sources
   assert.equal(allow(request('203.0.113.1')), false, 'local ban cannot be evicted');
 });
 
-test('upgrade configuration allows 100 attempts then bans one hour; invalid values fail before server allocation', () => {
-  assert.deepEqual(WS_UPGRADE_DEFAULTS, { threshold: 100, windowMs: 60000, banMs: 3600000 });
+test('upgrade counting ships off; turning it on allows 100 attempts then bans one hour; invalid values fail before allocation', () => {
+  assert.deepEqual(WS_UPGRADE_DEFAULTS, { threshold: 0, windowMs: 60000, banMs: 3600000 });
   assert.deepEqual(wsUpgradeLimitsFrom({}, {}), WS_UPGRADE_DEFAULTS);
+  assert.equal(wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '0' }).threshold, 0, 'zero is "off", not "ban immediately"');
   assert.equal(wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '20' }).threshold, 20);
   for (const name of ['SP_WS_UPGRADE_THRESHOLD', 'SP_WS_UPGRADE_WINDOW_MS', 'SP_WS_UPGRADE_BAN_MS'])
-    for (const value of ['0', '-1', 'NaN', '1.5', '']) assert.throws(() => wsUpgradeLimitsFrom({}, { [name]: value }), new RegExp(name));
+    for (const value of ['-1', 'NaN', '1.5', '']) assert.throws(() => wsUpgradeLimitsFrom({}, { [name]: value }), new RegExp(name));
   // One client's reconnect ladder (~10 attempts/min) must never be able to ban itself.
   assert.throws(() => wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '10' }), /SP_WS_UPGRADE_THRESHOLD/);
   assert.throws(() => wsUpgradeLimitsFrom({}, { SP_WS_UPGRADE_THRESHOLD: '19' }), /at least 20/);

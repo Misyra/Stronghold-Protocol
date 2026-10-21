@@ -28,6 +28,24 @@ def networks(reader, family):
     return list(ipaddress.collapse_addresses(result))
 
 
+
+def parse_probes(text):
+    """addr=cn|foreign pairs; the sample set belongs to the operator, not to the repository."""
+    probes = {}
+    for item in (text or '').split(','):
+        item = item.strip()
+        if not item:
+            continue
+        address, _, expected = item.partition('=')
+        try:
+            parsed = str(ipaddress.ip_address(address.strip()))
+        except ValueError as error:
+            raise ValueError('SP_COUNTRY_PROBES needs an address before the = sign') from error
+        verdict = expected.strip().lower()
+        if verdict not in ('cn', 'foreign'):
+            raise ValueError('SP_COUNTRY_PROBES needs cn or foreign after the = sign')
+        probes[parsed] = verdict == 'cn'
+    return probes
 def render(database, template, required_ip=None):
     with maxminddb.open_database(str(database)) as reader:
         metadata = reader.metadata()
@@ -36,10 +54,9 @@ def render(database, template, required_ip=None):
         v4, v6 = networks(reader, 4), networks(reader, 6)
         if len(v4) < 100 or not v6:
             raise ValueError('Refusing an unexpectedly small CN allowlist')
-        probes = {'114.114.114.114': True, '223.5.5.5': True, '240e::1': True,
-                  '8.8.8.8': False, '60.249.21.30': False, '1.36.0.1': False,
-                  '203.0.113.9': False, '2001:db8::1': False,
-                  '2001:4860:4860::8888': False, '172.16.0.42': False}
+        # Sample addresses belong to the operator, not to the repository; the prefix sweep below needs no literals.
+        # SP_COUNTRY_PROBES="addr=cn,addr=foreign,..." adds explicit expectations on top of --require-ip.
+        probes = parse_probes(os.environ.get('SP_COUNTRY_PROBES'))
         if required_ip:
             probes[str(ipaddress.ip_address(required_ip))] = True
         for text, expected in probes.items():

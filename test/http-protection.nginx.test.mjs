@@ -67,9 +67,11 @@ location = /ready { return 200 'ready'; }
       catch { await delay(25); }
     }
     assert.ok(ready);
-    // Four bare requests fit the initial burst. The fifth is blocked, but four players can still poll.
-    for (let i = 0; i < 4; i++) assert.equal(await request(''), 200);
-    assert.equal(await request('?nonce=bare'), 429);
+    // The bare-health burst is a player allowance, not a fixture constant: read it from the
+    // template, let the initial pass plus the whole burst through, and prove the next poll is refused.
+    const healthBurst = Number(template.match(/limit_req zone=sp_health burst=(\d+)/)[1]);
+    for (let i = 0; i <= healthBurst; i++) assert.equal(await request(''), 200);
+    assert.equal(await request(''), 429);
     for (let i = 0; i < 4; i++) assert.equal(await request(`?build=1&nonce=${i}`), 200);
     // Changing query arguments cannot buy another build burst; another source retains its own tokens.
     const flood = [];
@@ -77,9 +79,11 @@ location = /ready { return 200 'ready'; }
     assert.ok(flood.includes(429));
     assert.equal(await request('?build=1', '203.0.113.2'), 200);
     assert.equal(await request('', '203.0.113.2'), 200);
-    // Even independent IPs are subject to the shared build ceiling.
-    const distributed = [];
-    for (let i = 0; i < 200; i++) distributed.push(await request('?build=1', `198.51.100.${i + 1}`));
+    // Even independent IPs are subject to the shared build ceiling. It refills at 40r/s, so the
+    // flood has to arrive at once: a sequential loop hands tokens back faster than it spends them.
+    const buildGlobalBurst = Number(template.match(/limit_req zone=sp_build_global burst=(\d+)/)[1]);
+    const distributed = await Promise.all(Array.from({ length: buildGlobalBurst + 60 }, (_, i) =>
+      request('?build=1', `198.51.100.${i + 1}`)));
     assert.ok(distributed.includes(429), 'global build flood is bounded');
   });
 async function fetch(input, init) {
@@ -87,6 +91,14 @@ async function fetch(input, init) {
   catch (cause) { throw new Error(`${init?.method || 'GET'} ${input} failed`, { cause }); }
 }
 const read = (name) => fs.readFileSync(new URL(`../scripts/${name}`, import.meta.url), 'utf8');
+// nginx.conf.example loads the distribution mime map from an absolute path; a temporary tree has
+// to carry its own copy or nginx -t stops on a missing file.
+function mimeInclude(dir, prefix) {
+  const source = path.join(path.dirname(binary), 'conf', 'mime.types');
+  if (!fs.existsSync(source)) return '';
+  fs.copyFileSync(source, path.join(dir, 'mime.types'));
+  return `include "${prefix}mime.types";`;
+}
 async function listen(server) {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return server.address().port;
@@ -103,7 +115,7 @@ test('real nginx: defense rejections send zero HTTP bytes, retain 444 logs, pres
     const backend = http.createServer(createRequestHandler({ ipBans: bans, log: { error: assert.fail },
       apiMainlandOnly: true, apiCountryLookup: (ip) => {
         if (ip === '198.51.100.8') throw new Error('GeoIP fixture unavailable');
-        return ip === '60.249.21.30' ? 'TW' : ip === '198.51.100.9' ? null : 'CN';
+        return ip === '192.0.2.30' ? 'TW' : ip === '198.51.100.9' ? null : 'CN';
       },
       publicApiLimits: { burst: 3, banThreshold: 4 },
       health: { startedAt: Date.now(), network: { connectionCount: 0 }, registry: { size: 0 }, lobby: { stats: () => ({ rooms: 0 }) } },
@@ -125,11 +137,15 @@ test('real nginx: defense rejections send zero HTTP bytes, retain 444 logs, pres
     fs.writeFileSync(path.join(dir, 'page-global.conf'), read('hardening/sp-page-global.conf'));
     fs.writeFileSync(path.join(dir, 'game.conf'), read('nginx-game-cache.conf.example')
       .replaceAll('127.0.0.1:3000', `127.0.0.1:${port}`).replaceAll('/opt/sp-public', prefix + 'public'));
+    // Buy exactly the budget the shipped config grants, then one more: the assertion tracks the
+    // template instead of hardcoding a burst that drifts every time the budget is retuned.
+    const businessBurst = Number(read('nginx.conf.example').match(/limit_req zone=sp_business burst=(\d+)/)[1]);
     let config = read('nginx.conf.example')
       // The platform-independent suite exercises Node geography; the real GeoIP2 module has a Linux fixture.
       .replace('load_module /usr/lib/nginx/modules/ngx_http_geoip2_module.so;', '')
       .replace('include /etc/nginx/conf.d/sp-geoip-country.conf;', '')
       .replace('if ($sp_geoip_denied) { return 444; }', '')
+      .replace('include /etc/nginx/mime.types;', mimeInclude(dir, prefix))
       .replace('include /etc/nginx/conf.d/sp-log-format.conf;', `include "${prefix}log.conf";`)
       .replace('include /etc/nginx/conf.d/sp-business-limit-map.conf;', `include "${prefix}business-map.conf";`)
       .replace('include /etc/nginx/conf.d/sp-page-global.conf;', `include "${prefix}page-global.conf";`)
@@ -227,9 +243,9 @@ test('real nginx: defense rejections send zero HTTP bytes, retain 444 logs, pres
     const cached = await get(asset); assert.equal(cached.headers.get('x-asset-cache'), 'HIT'); await cached.text();
     assert.equal((await get('/_sp/ip-check')).status, 404, 'auth endpoint is nginx-internal');
     assert.equal((await get('/_sp/http-drop')).status, 404, 'drop endpoint is nginx-internal');
-    await dropped('/healthz', '60.249.21.30');
-    await dropped('/api/announcement', '60.249.21.30');
-    await dropped('/api/nickname/validate', '60.249.21.30', 'POST');
+    await dropped('/healthz', '192.0.2.30');
+    await dropped('/api/announcement', '192.0.2.30');
+    await dropped('/api/nickname/validate', '192.0.2.30', 'POST');
     for (let i = 0; i < 3; i++) {
       const res = await get('/healthz?nonce=' + i); assert.equal(res.status, 200); await res.text();
     }
@@ -307,7 +323,7 @@ test('real nginx: defense rejections send zero HTTP bytes, retain 444 logs, pres
     for (let i = 0; i < 160; i++) {
       const res = await get('/resource-sw.js?v=0123456789abcdef', '198.51.100.84'); assert.equal(res.status, 200); await res.text();
     }
-    const shared = await Promise.all(Array.from({ length: 40 }, (_, i) => get('/business-' + i % 2, '198.51.100.80')
+    const shared = await Promise.all(Array.from({ length: businessBurst + 8 }, (_, i) => get('/business-' + i % 2, '198.51.100.80')
       .then(async res => { await res.text(); return res.status; }, () => 0)));
     assert.ok(shared.includes(200) && shared.includes(0), 'different business paths share the admission bucket');
   });

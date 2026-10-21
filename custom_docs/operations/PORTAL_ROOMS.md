@@ -64,6 +64,8 @@ SP_GAME_ADMIN_TOKEN=与 SP_ROOM_ADMIN_TOKEN 相同
 MON_GAME_ADMIN_URL=http://127.0.0.1:3001/
 ```
 
+`# Agent 本机` 那三行属于 sp-portal 的 Agent，**本仓库一个都不读**，写进游戏 `.env` 不会有任何效果；列在这里只是为了让两边的值对上。
+
 - `SP_PORTAL_AGENT_URL` 只允许**回环地址上的 HTTP 根路径**，不能带用户名 / 密码 / query / fragment，端口后不要写子路径（桥接路径是固定的）。
 - `SP_PORTAL_BRIDGE_TOKEN` 必须与 `SP_ROOM_ADMIN_TOKEN` **不同**（凭据分离）：桥接凭据只能走分享入口，拿到它不等于拿到关房 / 改配置的资格。两把凭据都是 32–256 位非空白 ASCII。
 - Agent 与游戏必须**同宿主机回环**。Docker 分开部署时容器里的 `127.0.0.1` 互不相通，首版不支持这种拓扑（要支持得另立设计：限定网段 + 独立鉴权）。
@@ -155,6 +157,6 @@ legacy-http 两端成功均只返回 `{ "ok": true }`（游戏对浏览器的回
 - 按钮显示「暂不可用」：`GET /api/portal-room` 的 `available` 为假 —— 检查 Agent 进程是否在跑、`SP_PORTAL_AGENT_URL` 是否正确、`MON_GAME_BRIDGE_TOKEN` 与 `SP_PORTAL_BRIDGE_TOKEN` 是否一致（桥接未配置时 Agent 回 `BRIDGE_NOT_CONFIGURED`）。
 - 一直「登记结果待确认」：看状态查询的 `state`。`pending` 说明中央还没给回执；`unknown` 是查询本身失败（链路问题），不是「没登记」。
 - 界面上显示「已收录」但联机站列表里没有：确认双方的 `SP_SITE_ID` 一致，且联机站该站点的模式与凭据没被改过。房间码复用之后旧登记会被撤下，界面按 `roomId` 判断，不会串到新房间。
-- 探针与面板侧的接入见 [MONITORING.md](MONITORING.md)、[ROOM_PROTECTION.md](ROOM_PROTECTION.md)。
+- 探针与面板侧的接入见 [ROOM_PROTECTION.md](ROOM_PROTECTION.md)；Agent、桥接令牌和面板本身属于 sp-portal 项目，不在本仓库。
 
-验证命令：游戏服 `node --test test/portal-room.test.js test/portal-room-agent.test.js test/portal-room-config.test.js test/portal-room-admin.test.js test/room-config-v2.test.js test/ui/room-share.test.js`；联机站 `node --test test/game-room-publish.test.mjs test/rooms.test.mjs test/room-probes.test.mjs test/game-bridge.test.mjs test/room-share-e2e.test.mjs`。
+验证命令：游戏服（本仓库）`node --test test/portal-room.test.js test/portal-room-agent.test.js test/portal-room-config.test.js test/portal-room-admin.test.js test/room-config-v2.test.js test/ui/room-share.test.js`；联机站那侧的五个用例（`test/game-room-publish.test.mjs`、`test/rooms.test.mjs`、`test/room-probes.test.mjs`、`test/game-bridge.test.mjs`、`test/room-share-e2e.test.mjs`）在 sp-portal 仓库里跑，本仓库没有这些文件。

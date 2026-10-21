@@ -1,5 +1,5 @@
 # 由 tools/net-ban.mjs 生成，不要手改（改 server/netBlock.js 的 BLOCK_IPS 后重跑）
-# 源名单 84 条 · IPv4 84 条
+# 源名单 83 条 · IPv4 83 条
 # 同名单的 ASN 133 个、地区 [TW VE EC] 不在这里：内核层没有 ASN，
 # 地区走 scripts/hardening/render-country-firewall.py 那条链。应用层由 server/netBlock.js 实时判定。
 42.193.21.113
@@ -39,7 +39,6 @@
 152.175.8.45
 154.12.21.86
 154.40.61.235
-154.219.110.142
 158.247.220.241
 159.75.43.39
 163.61.30.46

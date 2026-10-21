@@ -266,9 +266,9 @@ test('failed room cleanup refuses the newcomer without revoking the old identity
 });
 
 test('foreign session policy validates its environment default and explicit option', () => {
-  assert.equal(lobbyOptionsFrom({}, {}).limitForeignSessions, true);
-  for (const value of ['off', 'false', '0'])
-    assert.equal(lobbyOptionsFrom({}, { SP_FOREIGN_SESSION_LIMIT: value }).limitForeignSessions, false);
+  assert.equal(lobbyOptionsFrom({}, {}).limitForeignSessions, false);
+  for (const value of ['on', 'true', '1'])
+    assert.equal(lobbyOptionsFrom({}, { SP_FOREIGN_SESSION_LIMIT: value }).limitForeignSessions, true);
   assert.equal(lobbyOptionsFrom({ limitForeignSessions: true }, { SP_FOREIGN_SESSION_LIMIT: 'off' }).limitForeignSessions, true);
   assert.throws(() => lobbyOptionsFrom({}, { SP_FOREIGN_SESSION_LIMIT: 'maybe' }), RangeError);
 });
@@ -446,7 +446,7 @@ test('known overseas sources receive HTTP 403 and never complete a WebSocket upg
     assert.equal(f.srv.network.foreignSessions.stats().connectionDenied, 1);
     assert.ok(f.logs.some(line => line.includes('connection.foreignPolicy.denied')));
   }
-  const tw = await fixture(t, () => 'TW', { allowForeignConnections: true });
+  const tw = await fixture(t, () => 'TW', { allowForeignConnections: true, netBlockMode: 'on' });
   assert.equal((await refusedUpgrade(tw.srv)).status, 403, 'TW 即使放开海外也被明确名单拒绝');
   assert.equal(tw.srv.network.foreignSessions.stats().connectionDenied, 0);
   assert.equal(tw.srv.network.netBlock.stats().byCountry, 1);

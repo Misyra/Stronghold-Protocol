@@ -93,7 +93,7 @@ ASN 库用来把地址粗分成 cloud / isp / unknown：`server/geoipAsn.js` 读
 `tools/geoip-classify.mjs` 出报告。它只在本地跑，不进玩家发行包，也没有接进任何准入判定。
 
 ```bash
-node tools/geoip-classify.mjs 8.8.8.8 202.96.128.86 154.219.110.142
+node tools/geoip-classify.mjs <地址> [<地址> …]
 node tools/geoip-classify.mjs --sample 300000        # 桶分布 + 命中的机房 ASN
 SP_ASN_TEST_DB=geoip/GeoLite2-ASN.mmdb node --test test/net-class.test.js
 ```

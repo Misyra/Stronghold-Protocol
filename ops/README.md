@@ -55,7 +55,7 @@ sudo systemctl restart sp-syn-ban  # 原子替换，不断流
 **一个代价**：整表替换会顺带清空 `auto4` 里已经积累的 24h 自动封（永久名单不受影响）。想保留就只加元素：
 
 ```bash
-sudo nft add element inet sp_syn_ban perm4 { 1.2.3.4, 5.6.7.0/24 }
+sudo nft add element inet sp_syn_ban perm4 { <地址>, <网段> }
 ```
 
 增量加会写进内核但不进文件，重启（或下次整表替换）就没了——临时封用这个，长期封改文件。
@@ -104,9 +104,8 @@ table inet sp_syn_ban
 ```
 
 **顺序有意义**：`perm4` 在 `jump syn` 之前，所以已在永久名单里的 IP 不会进
-meter —— `auto4` 只负责抓名单之外新冒头的。实测确认这两条都工作
-（2026-10-17：`perm4` 计数 9.3 万包，用临时表验证过 `meter … update @auto4` 真会
-把 IP 写进集合）。
+meter —— `auto4` 只负责抓名单之外新冒头的。两条规则要各自单独验证：用临时表
+确认 `meter … update @auto4` 真会把 IP 写进集合，再对比 `perm4` 的计数增长。
 
 ## 为什么不靠 `/etc/nftables.conf`
 
@@ -118,5 +117,5 @@ unit，不碰 nftables.service。
 ## cloudflare-net-block.rules
 
 三份可粘贴的 Cloudflare 自定义规则表达式（ASN 133 个、地区 TW/VE/EC、逐条 IP 84 个）。
-服务端 `server/netBlock.js` 是同一份名单、默认开启；改名单两边一起改。为什么名单里混着两个运营商号码，
+服务端 `server/netBlock.js` 是同一份名单、默认关闭（`SP_NET_BLOCK=on` 才生效）；改名单两边一起改。为什么名单里混着两个运营商号码，
 以及各条规则的边界，见 [`custom_docs/operations/IDC_PROTECTION.md`](../custom_docs/operations/IDC_PROTECTION.md)。

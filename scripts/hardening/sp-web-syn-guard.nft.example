@@ -1,4 +1,4 @@
-# Incident 2026-10-17: real players reached 18 SYN/minute; 5/minute dropped legitimate reconnects.
+# Real players reach 18 SYN/minute; a 5/minute gate drops legitimate reconnects.
 # Match the normative ops/sp-web-syn-guard.nft: 120/minute, burst 40. A cold page opens 200+ sockets
 # to one origin, so a retransmitting client alone can exceed 30/minute.
 # This is a token bucket, not a hard per-minute quota; tune from SYN measurements, not HTTP requests.

@@ -24,8 +24,12 @@ test('country mode preserves missing, malformed and actual country results', () 
 test('mainland-only mode classifies IPv4 misses as non-mainland without inventing IPv6 country coverage', () => {
   const lookup = countryLookupFromReader(reader(mainland), 'cn-only');
   assert.equal(lookup('114.114.114.114'), 'CN');
-  for (const ip of ['8.8.8.8', '1.1.1.1', '154.219.110.142']) assert.equal(lookup(ip), 'ZZ');
-  for (const ip of ['240e::1', '2001:4860:4860::8888', 'invalid', '']) assert.equal(lookup(ip), null);
+  for (const ip of ['8.8.8.8', '1.1.1.1', '198.51.100.7']) assert.equal(lookup(ip), 'ZZ');
+  // An IPv6 address against a mainland-only IPv4 table is "this source cannot classify it", not "overseas":
+  // undefined is the no-verdict channel ForeignSessions.connectionAdmission fails open on, so a domestic IPv6
+  // player is never refused by a database that simply cannot see them.
+  for (const ip of ['240e::1', '2001:4860:4860::8888']) assert.equal(lookup(ip), undefined);
+  for (const ip of ['invalid', '']) assert.equal(lookup(ip), null);
   const malformed = countryLookupFromReader(reader(ip => ip === '9.9.9.9' ? {} : mainland(ip)), 'cn-only');
   assert.equal(malformed('9.9.9.9'), null, 'malformed records are not trustworthy non-membership');
 });
@@ -71,35 +75,44 @@ test('invalid configured files and modes fail startup, rather than enabling an e
   await assert.rejects(startServer({ geoLiteCountryFile: file, geoipMode: 'cn-only' }));
 });
 
-/** A real database is opt-in: SP_GEOIP_TEST_DB=<file>; SP_GEOIP_TEST_MODE=country for a worldwide one. */
+/** A real database is opt-in along with its samples: SP_GEOIP_TEST_DB=<file> together with
+ * SP_GEOIP_TEST_MAINLAND=<addr,...> for mainland and SP_GEOIP_TEST_FOREIGN=<addr,...> for anything else;
+ * SP_GEOIP_TEST_MODE=country selects a worldwide file. Add an IPv6 address to a list to exercise IPv6. */
 const realDb = process.env.SP_GEOIP_TEST_DB;
 const realMode = process.env.SP_GEOIP_TEST_MODE === 'country' ? 'country' : 'cn-only';
+const geoipSamples = (name) => (process.env[name] || '').split(',').map((item) => item.trim()).filter(Boolean);
+const mainlandSamples = geoipSamples('SP_GEOIP_TEST_MAINLAND');
+const foreignSamples = geoipSamples('SP_GEOIP_TEST_FOREIGN');
+const ipv6Samples = [...mainlandSamples, ...foreignSamples].filter((ip) => ip.includes(':'));
 
 test(`a real ${realMode} database blocks an overseas entry but allows a mainland WebSocket client`, {
-  skip: realDb ? false : 'Set SP_GEOIP_TEST_DB to a downloaded Country.mmdb (SP_GEOIP_TEST_MODE=country for a worldwide one)',
+  skip: realDb && mainlandSamples.length && foreignSamples.length ? false : 'Set SP_GEOIP_TEST_DB with SP_GEOIP_TEST_MAINLAND and SP_GEOIP_TEST_FOREIGN sample addresses',
 }, async t => {
   const file = realDb, lookup = await openCountryLookup(file, { mode: realMode });
-  assert.equal(lookup('114.114.114.114'), 'CN'); assert.equal(lookup('124.223.31.113'), 'CN');
+  for (const ip of mainlandSamples) assert.equal(lookup(ip), 'CN', `${ip} must classify as mainland`);
   if (realMode === 'cn-only') {
     // The mainland-only source says nothing about a foreign country: an IPv4 miss is the marker 'ZZ'.
-    assert.equal(lookup('8.8.8.8'), 'ZZ'); assert.equal(lookup('154.219.110.142'), 'ZZ');
-    assert.equal(lookup('240e::1'), null, 'a mainland-only file carries no mainland IPv6 coverage to trust');
+    for (const ip of foreignSamples.filter((item) => !item.includes(':'))) assert.equal(lookup(ip), 'ZZ');
+    for (const ip of ipv6Samples) assert.equal(lookup(ip), null, 'a mainland-only file carries no trusted IPv6 coverage');
   } else {
-    // A worldwide file answers with real codes (HK/MO/TW included) and covers part of IPv6; the rest stays unknown.
-    assert.match(lookup('8.8.8.8'), /^[A-Z]{2}$/); assert.notEqual(lookup('8.8.8.8'), 'CN');
-    assert.match(lookup('154.219.110.142'), /^[A-Z]{2}$/); assert.notEqual(lookup('154.219.110.142'), 'CN');
-    assert.ok(['2001:4860:4860::8888', '2400:3200::1'].some(ip => lookup(ip)), 'the worldwide file resolves IPv6 samples');
+    // A worldwide file answers with real codes (US/HK/MO/TW included) and covers part of IPv6.
+    for (const ip of foreignSamples.filter((item) => !item.includes(':'))) {
+      assert.match(lookup(ip), /^[A-Z]{2}$/); assert.notEqual(lookup(ip), 'CN');
+    }
+    // When the sample set carries an IPv6 address, the worldwide file must resolve at least one of them.
+    if (ipv6Samples.length) assert.ok(ipv6Samples.some((ip) => lookup(ip)), 'the worldwide file resolves IPv6 samples');
   }
   assert.equal(lookup('invalid'), null);
   const srv = await startServer({ host: '127.0.0.1', port: 0, workers: 0, stateFile: 'off', quiet: true,
     geoLiteCountryFile: file, geoipMode: realMode, allowForeignConnections: false });
   let client;
   t.after(async () => { await client?.close(); await srv.close(); });
-  const blocked = await fetch(srv.url, { headers: { 'X-Real-IP': '8.8.8.8' } });
+  const blocked = await fetch(srv.url, { headers: { 'X-Real-IP': foreignSamples[0] } });
   assert.equal(blocked.status, 403);
   assert.equal((await blocked.json()).msg, '本服务器暂时仅对中国大陆服务');
-  // 114.114.114.114 是 Zenlayer（AS21859），已在 server/netBlock.js 的明确名单里；用普通家宽样本验"大陆放行"。
-  assert.equal((await fetch(srv.url, { headers: { 'X-Real-IP': '202.96.128.86' } })).status, 200);
-  client = await TestClient.connect(srv.url.replace('http:', 'ws:') + '/ws', { wsOptions: { headers: { 'X-Real-IP': '202.96.128.86' } } });
+  // Use the first mainland sample: it must classify as CN and must not sit in the explicit list in server/netBlock.js.
+  const mainland = mainlandSamples[0];
+  assert.equal((await fetch(srv.url, { headers: { 'X-Real-IP': mainland } })).status, 200);
+  client = await TestClient.connect(srv.url.replace('http:', 'ws:') + '/ws', { wsOptions: { headers: { 'X-Real-IP': mainland } } });
   assert.equal((await client.hello('Mainland')).t, 'welcome');
 });

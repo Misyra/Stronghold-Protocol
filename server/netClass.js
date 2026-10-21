@@ -16,7 +16,7 @@
 //   weak   只命中通用词(名字里带 CLOUD / HOSTING / SERVER / IDC 就算)—— 只是线索,不要单独拿来封禁
 //   none   没有记录
 //
-// 为什么名字匹配必须带边界、且只能当次一级证据(2026-10-17 用 1200 万随机地址实测的 64599 个 ASN):
+// 为什么名字匹配必须带边界、且只能当次一级证据(用 1200 万随机地址实测的 64599 个 ASN):
 //   * 裸 /CLOUD/ 会命中一大堆**家宽**品牌:Cloud Telecom、Cloudlink Communications、Cloudlasers Broadband、
 //     Cloud 9 Wireless、cloudsky superfast broadband …
 //   * 裸 /AMAZON/ 会命中巴西运营商:AMAZONET TELECOMUNICACOES、AMAZONIA TELECOM、AMAZONFIBER SERVICOS …

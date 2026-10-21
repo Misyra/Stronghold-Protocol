@@ -2135,7 +2135,7 @@ describe('platform units', () => {
   test('clientAddress: proxy headers only from local peers, IPv6 grouped by /64, local peers unlimited', () => {
     const req = (remoteAddress, headers = {}) => ({ socket: { remoteAddress }, headers });
     assert.equal(normalizeIp('::ffff:127.0.0.1'), '127.0.0.1');
-    assert.equal(normalizeIp('::ffff:0102:0304'), '1.2.3.4');
+    assert.equal(normalizeIp('::ffff:c000:0204'), '192.0.2.4');
     assert.equal(normalizeIp('[FE80::1%en0]'), 'fe80::1');
     assert.equal(normalizeIp('not-an-ip'), '');
     assert.equal(normalizeIp('203.0.113.4:5678'), '203.0.113.4');
@@ -2147,8 +2147,8 @@ describe('platform units', () => {
     assert.equal(limitKeyOf('203.0.113.1'), '203.0.113.1');
 
     // local reverse proxy (cloudflared): CF-Connecting-IP > X-Real-IP > rightmost X-Forwarded-For
-    assert.deepEqual(clientAddress(req('::ffff:127.0.0.1', { 'x-forwarded-for': '6.6.6.6, 203.0.113.7' })), { ip: '203.0.113.7', key: '203.0.113.7' });
-    assert.deepEqual(clientAddress(req('127.0.0.1', { 'cf-connecting-ip': '203.0.113.8', 'x-forwarded-for': '6.6.6.6' })), { ip: '203.0.113.8', key: '203.0.113.8' });
+    assert.deepEqual(clientAddress(req('::ffff:127.0.0.1', { 'x-forwarded-for': '192.0.2.6, 203.0.113.7' })), { ip: '203.0.113.7', key: '203.0.113.7' });
+    assert.deepEqual(clientAddress(req('127.0.0.1', { 'cf-connecting-ip': '203.0.113.8', 'x-forwarded-for': '192.0.2.6' })), { ip: '203.0.113.8', key: '203.0.113.8' });
     assert.deepEqual(clientAddress(req('127.0.0.1', { 'x-real-ip': '2001:db8:a:b::5' })), { ip: '2001:db8:a:b::5', key: '2001:db8:a:b::/64' });
     // local peers without a proxy header and LAN clients forwarded by a LAN proxy are not limited
     assert.deepEqual(clientAddress(req('127.0.0.1')), { ip: '127.0.0.1', key: null });

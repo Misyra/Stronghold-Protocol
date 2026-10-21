@@ -87,7 +87,7 @@ export const FOLDER = 'Stronghold-Protocol';
 /** Root files a player gets. */
 export const ROOT_FILES = ['package.json', 'package-lock.json', 'LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'CHANGELOG.md'];
 /** The player docs. */
-export const PLAYER_DOCS = ['docs/PLAYING.md', 'docs/DEPLOY.md', 'docs/OPERATOR-SKINS.md', 'docs/SKINS.md', 'docs/PLUGINS.md', 'docs/PLUGIN-GUIDE.md', 'docs/PLUGIN-DSL.md', 'docs/PLUGIN-API.md', 'docs/plugin-catalog.example.json', ...['DEPLOY', 'HOME_SERVER', 'ANNOUNCEMENTS', 'CDN', 'PERSISTENCE', 'MONITORING'].map(name => `custom_docs/operations/${name}.md`)];
+export const PLAYER_DOCS = ['docs/PLAYING.md', 'docs/DEPLOY.md', 'docs/OPERATOR-SKINS.md', 'docs/SKINS.md', 'docs/PLUGINS.md', 'docs/PLUGIN-GUIDE.md', 'docs/PLUGIN-DSL.md', 'docs/PLUGIN-API.md', 'docs/plugin-catalog.example.json', ...['DEPLOY', 'HOME_SERVER', 'ANNOUNCEMENTS', 'CDN', 'PERSISTENCE'].map(name => `custom_docs/operations/${name}.md`)];
 /** The author harness has no test-only dependencies; the rest of test/ stays out. */
 export const AUTHOR_TEST_FILES = ['test/helpers/battleHarness.js'];
 /** Only these repository-owned plugin resources ship, even if an owner's plugin was accidentally tracked. */

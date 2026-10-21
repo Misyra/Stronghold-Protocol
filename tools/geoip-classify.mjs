@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // tools/geoip-classify.mjs — 粗分类报告:把地址(或一批随机地址)分成 cloud / isp / unknown。
 //
-//   node tools/geoip-classify.mjs 8.8.8.8 154.219.110.142
+//   node tools/geoip-classify.mjs 8.8.8.8 1.1.1.1
 //   node tools/geoip-classify.mjs --sample 200000            # 桶分布 + 命中的主机 ASN(按地址空间权重)
 //   node tools/geoip-classify.mjs --sample 200000 --weak     # 把"只带通用词"的线索也算进 cloud
 //   node tools/geoip-classify.mjs <ip>… --json

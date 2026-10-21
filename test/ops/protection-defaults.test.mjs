@@ -1,4 +1,4 @@
-// Incident defaults: preserve player/static budgets and avoid classifying a CDN by untrusted headers.
+// Protection defaults: preserve player/static budgets and avoid classifying a CDN by untrusted headers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -55,15 +55,18 @@ test('portal budgets share room-code counters, exempt loopback and distinguish u
   assert.equal(mapped(api, 'sp_rooms_key', '0:/api/roomsmith'), '');
 });
 
-test('public resource manifest has one location in each alternative template and preserves isolation', () => {
+test('every public preload manifest has exactly one owner and preserves isolation', () => {
   const cache = read('nginx-game-cache.conf.example');
   const gate = read('hardening/sp-browser-gate.conf');
-  for (const source of [cache, gate]) {
-    for (const uri of ['/data/resource-manifest.json', '/assets-manifest.json']) {
-      assert.equal(source.split(`location = ${uri} {`).length - 1, 1, uri);
-      const block = source.split(`location = ${uri} {`)[1].split('\n}')[0];
-      assert.match(block, /auth_request off;/);
-    }
+  const publicManifests = read('hardening/sp-public-manifests.conf');
+  const count = (source, uri) => source.split(`location = ${uri} {`).length - 1;
+  for (const uri of ['/data/resource-manifest.json', '/assets-manifest.json']) {
+    // Two owners would be a duplicate location: nginx refuses to load and the reload silently
+    // keeps serving the old config, so this stays an exact ownership assertion.
+    assert.equal(count(cache, uri), 1, `cache template owns ${uri}`);
+    assert.equal(count(publicManifests, uri), 1, `gate-only template owns ${uri}`);
+    assert.equal(count(gate, uri), 0, `gate snippet must not redefine ${uri}`);
+    assert.match(publicManifests.split(`location = ${uri} {`)[1].split('\n}')[0], /auth_request off;/);
   }
   const location = cache.match(/location = \/data\/resource-manifest\.json \{([\s\S]*?)\n\}/)[1];
   assert.match(location, /proxy_cache_key .*\$host.*\$proxy_host.*\$request_uri/);
@@ -73,6 +76,20 @@ test('public resource manifest has one location in each alternative template and
   assert.doesNotMatch(source, /proxy_ignore_headers/,
     'upstream no-cache for bare simulation and private/error responses must remain authoritative');
   assert.match(source, /proxy_cache_lock on;/);
+});
+
+test('gate snippet declares every zone it references and refuses with a readable status', () => {
+  const gate = read('hardening/sp-browser-gate.conf');
+  const map = read('hardening/sp-browser-gate-map.conf');
+  // A referenced-but-undeclared zone aborts startup with "unknown limit_conn zone".
+  for (const zone of ['sp_gate_issue', 'sp_gate_global', 'sp_conn_ip'])
+    assert.match(map, new RegExp(`limit_(?:req|conn)_zone [^;]*zone=${zone}:`), zone);
+  const requests = gate.split('\n').filter(line => !line.trim().startsWith('#'));
+  // 444 sends no bytes: the verification page cannot tell a rate limit from a network failure.
+  assert.match(requests.join('\n'), /limit_req_status 429;/);
+  assert.match(requests.join('\n'), /limit_conn_status 429;/);
+  const nav = map.split('\n').find(line => line.includes('~*^navigate:GET:'));
+  assert.match(nav ?? '', /\s1;$/, 'top-level navigation is recognised without an Accept header');
 });
 
 test('icons and fonts skip per-IP static budgets while modules and APIs retain theirs', () => {

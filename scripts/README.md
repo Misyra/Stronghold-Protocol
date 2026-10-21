@@ -22,4 +22,4 @@
 
 数据生成、素材下载和诊断工具在 [`tools/`](../tools/README.md)。临时脚本与执行日志放入 `.cache/`。
 
-当前额度、共享 IP 风险、推荐覆盖和逐机验收统一见 [部署限额](../custom_docs/operations/LIMITS.md)。事故记录只表示当时现场值，不能用作当前配置表。修改前核对 Nginx、Node、面板与已启用 jail；静态预算只装在游戏源站，CDN 素材不限制次数。
+当前额度、共享 IP 风险、推荐覆盖和逐机验收统一见 [部署限额](../custom_docs/operations/LIMITS.md)。历史现场值只代表当时状态，不能用作当前配置表。修改前核对 Nginx、Node、面板与已启用 jail；静态预算只装在游戏源站，CDN 素材不限制次数。

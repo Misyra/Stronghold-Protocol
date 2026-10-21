@@ -1,6 +1,6 @@
 # 机房来源分级：可行性与边界
 
-2026-10-17 核对仓库 `GeoLite2-Country.mmdb`：116.198.45.213、47.103.57.77、111.228.63.76、49.233.9.157、120.202.218.34、39.96.95.150、180.164.155.112 均返回 CN。报告中的“现有大陆库把这批攻击 IP 判为 ZZ，因此是住宅白名单”不适用于本仓库全球库。`server/geoip.js` 的 ZZ 只是 cn-only 模式下 IPv4 未命中的策略标记，不能证明机房身份。
+`server/geoip.js` 的 ZZ 只是 cn-only 模式下 IPv4 未命中的策略标记，不能拿来证明一个地址是机房，也不能反过来当住宅白名单。
 
 Country 只识别国家。需要额外 ASN 数据才能查运营网络；ASN 仍不是精确的住宅/机房标签。同一个运营网络可能同时服务家庭、企业和 IDC，住宅代理也可能用于攻击。[MaxMind ASN 字段](https://dev.maxmind.com/geoip/docs/databases/asn/)与单独的[Hosting/匿名网络字段](https://dev.maxmind.com/geoip/docs/databases/anonymous-ip/)是不同数据产品。
 
@@ -8,9 +8,9 @@ Country 只识别国家。需要额外 ASN 数据才能查运营网络；ASN 仍
 
 CF 侧也支持 ASN 条件，但表达式使用数值，例如 `ip.src.asnum in {37963 45102}`，不是 `{AS37963 AS45102}`。Managed Challenge 应考虑页面导航与 API/WS 的区别，WebSocket 客户端无法显示交互挑战页面；需要单独验证登录后的升级链路。[Cloudflare ASN 自定义规则](https://developers.cloudflare.com/waf/custom-rules/use-cases/update-rules-customers-partners/)
 
-“一小时 19 条 WS”是累计连接次数，不能推导同时并发 19。“只访问 1～2 个路径”也可能是 CDN、缓存或已打开的客户端，不单独据此永久封禁。CGNAT 共用同一公网出口，按 IP 的 4 条并发和平均 5 次新建/分可能限制真实玩家；这是用户当前明确指定的参数，未自动改成报告建议的 16 条。
+累计连接次数不能推导同时并发数。“只访问 1～2 个路径”也可能是 CDN、缓存或已打开的客户端，不单独据此永久封禁。CGNAT 共用同一公网出口，按 IP 的 4 条并发和平均 5 次新建/分可能限制真实玩家；这是当前明确指定的参数，未自动改成报告建议的 16 条。
 
-## 粗分类：一条 ASN 记录 → cloud / isp / unknown（2026-10-17 已实现，未接准入）
+## 粗分类：一条 ASN 记录 → cloud / isp / unknown（已实现，未接准入）
 
 三个库到手后先做的不是黑名单，是**能不能可靠地分三桶**。结论：能，但 cloud 这一桶只有一半可信，
 isp 这一桶永远不能读成"家宽"。
@@ -25,7 +25,7 @@ isp 这一桶永远不能读成"家宽"。
 默认不封）。代码：`server/geoipAsn.js` 读库、`server/netClass.js` 分类、`tools/geoip-classify.mjs` 出报告、
 `test/net-class.test.js` 钉规则（真库用例走 `SP_ASN_TEST_DB`）。
 
-### 实测（2026-10-17，1200 万随机 IPv4，8734855 次命中，64599 个不同 ASN）
+### 实测（1200 万随机 IPv4，8734855 次命中，64599 个不同 ASN）
 
 | 结果 | ASN 数 | 地址空间占比 |
 |---|---|---|
@@ -38,9 +38,9 @@ isp 这一桶永远不能读成"家宽"。
 从哪里来，只能看自己的连接日志。查一台具体机器很直观：
 
 ```bash
-node tools/geoip-classify.mjs 202.96.128.86     # isp   — Chinanet 家宽
-node tools/geoip-classify.mjs 154.219.110.142   # isp   — cognetcloud INC,单词粘连让边界匹配失效,只能落默认
-node tools/geoip-classify.mjs 124.223.31.113    # cloud — 腾讯云 ASN 45090 在人工主机名单里
+node tools/geoip-classify.mjs <大陆家宽地址>     # isp   — 普通运营商家宽
+node tools/geoip-classify.mjs <机房地址>         # isp   — 中小主机商常把 ISP 名和 ASN 粘在一起，边界匹配失效只能落默认
+node tools/geoip-classify.mjs <腾讯云地址>         # cloud — 腾讯云 ASN 45090 在人工主机名单里
 ```
 
 ### 名字匹配为什么必须带边界（库里真实存在的撞车）
@@ -71,13 +71,13 @@ MOBILE）一旦出现就压回 `isp` → 通用托管词只到 `weak`。AS16591 
 - ASN 库不进玩家发行包、不进 `public/` / `data/` 等静态目录，只在本地分析时读取；规则认错的方向是安全的
   （认不出来只会落到 `isp`，不会把玩家误封）。
 
-## 明确屏蔽名单：ASN + 国家 + 逐条 IP（2026-10-17，默认开启）
+## 明确屏蔽名单：ASN + 国家 + 逐条 IP（默认关闭）
 
 分类器只是观测；真正执行的是这一层，名单是**枚举**出来的，判定就是查表，不做任何推断。
 
 | 层 | 内容 | 数据 | 代码 |
 |---|---|---|---|
-| IP | 84 个扫描源（含被 CF 日志抓到的地址） | 硬编码 | `server/netBlock.js` `BLOCK_IPS` |
+| IP | 84 个逐条地址 | 硬编码 | `server/netBlock.js` `BLOCK_IPS` |
 | 国家 | TW / VE / EC | GeoLite2-Country | `BLOCK_COUNTRIES` |
 | ASN | 133 个机房 / 云 / 廉价 VPS / 防弹主机 | GeoLite2-ASN | `BLOCK_ASNS` |
 
@@ -89,11 +89,11 @@ HTTP 游戏文档（`server/http/routes.js`）与 WebSocket 升级（`server/htt
 
 ### 开关与部署
 
-- `SP_NET_BLOCK`：`on`（默认）/ `off`。默认开是用户的决定（"全部默认屏蔽"）。
+- `SP_NET_BLOCK`：`off`（默认）/ `on`。仓库默认不替部署做判断，要拦就显式打开。
 - ASN 库路径：`SP_GEOLITE_ASN_DB`，默认 `geoip/GeoLite2-ASN.mmdb`（该文件不进 git，也不进玩家发行包）。
 - **ASN 库缺失时只降级、不拦启动**：日志打出 `[netblock] ASN 库不可用`，133 条 ASN 不生效，
-  国家与逐条 IP 照旧。这样一次 `git pull` 不会把服务器起不来；要彻底关掉用 `SP_NET_BLOCK=off`。
-- 启动日志 `[netblock] on: 133 ASN / 3 地区 / 84 IP` 表示三层齐全。
+  国家与逐条 IP 照旧。这样一次 `git pull` 不会把服务器起不来。
+- 启动日志 `[netblock] on: 133 ASN / 3 地区 / 84 IP` 表示三层齐全；没有这行就是没开。
 
 ### 核对这批号码时发现的两件事
 
@@ -103,26 +103,27 @@ HTTP 游戏文档（`server/http/routes.js`）与 WebSocket 升级（`server/htt
    要留人就把这两个号码从 `BLOCK_ASNS`（和 Cloudflare 规则）里删掉。
 2. **`114.114.114.114` 与 `223.5.5.5` 也在名单上**：它们分别由 Zenlayer（AS21859）与
    Alibaba US（AS45102）宣告。它们是公共 DNS，不会有人从那里玩游戏，但它们**不能**再被当作
-   "大陆放行"的测试样本 —— 测试里已改用 `202.96.128.86`（Chinanet AS4134，普通家宽）。
+   "大陆放行"的测试样本 —— 测试用的样本必须是普通运营商家宽地址——公共 DNS 段常挂在托管 ASN 上，读出来是 cloud。
 
-### 第二批 23 个（2026-10-17，用户「加进去」）
+### 第二批 23 个
 
-用户自己的攻击日志把缺口指出来了，所以补的时候是按证据挑的，不是按名气：
+补的是三类，不是按名气挑的：
 
 - **大陆云三家**：`45090` 腾讯云大陆、`37963` 阿里云杭州、`38365` 百度。此前名单里腾讯只有 `132203`（香港）、
-  阿里只有 `45102`（美国）、华为只有海外段，**大陆段一条都没有**，而日志里腾讯大陆段出现 5 次
-  （`124.223.31.113`、`42.193.180.64`、`43.142.51.107`、`42.193.21.113`、`159.75.43.39`）。
-- **他日志里实际出现的香港/印度小机房与代理出口**：`140042` Zhipinshang（组织占比 5.81%）、`6134` XNNET（3.62%）、
-  `139180` Shandong eshinton（3.29%）、`150623` HOSTDZIRE（2.20%）、`209554` ISIF OU、`153771` Heptasky、
-  `402506` Zenixcloud、`50360` Tamatiya EOOD。
+  阿里只有 `45102`（美国）、华为只有海外段，**大陆段一条都没有**。云厂商按地区分段宣告 ASN，
+  只封境外段等于没封。
+- **香港 / 印度的小机房与代理出口**：`140042` Zhipinshang、`6134` XNNET、`139180` Shandong eshinton、
+  `150623` HOSTDZIRE、`209554` ISIF OU、`153771` Heptasky、`402506` Zenixcloud、`50360` Tamatiya EOOD。
 - **防弹 / 滥用机房**：`3223` Voxility LLP、`202425` IP Volume inc、`200651` FlokiNET ehf、`60117` Host Sailor、
   `49981` WorldStream、`29802` HIVELOCITY、`46606` Unified Layer、`54290` Hostwinds、`206092` F.n.s. Holdings、
-  `394711` KorGrid、`49505` JSC Selectel、`204601` NovoServe —— Mirai 变种、挖矿与勒索的 C2 常租处。
+  `394711` KorGrid、`49505` JSC Selectel、`204601` NovoServe。
 
-顺带纠正一个容易搞错的前提：**僵尸网络不拥有 ASN**。Mirai / Mozi / Kinsing 是软件，跑在别人的机器上，
-名单只能封房东。"封 ikuuu" 同样如此：它不宣告 ASN，出口租在 Oracle 免费层、Akamai、Akile、腾讯轻量上，
-封的是这些房东（Oracle `31898` 本来就在名单里）。真正封不住的是**住宅代理**（911 S5、F3 之类），
-它们的出口就是普通家宽，ASN 与国家都认不出来。
+这三类的共同点是「不承载正常玩家」：云厂商的机器不是玩家出口，小机房和防弹机房是廉价跳板，
+普通家宽不会从那里上来。判断依据是网络归属，不是它曾经做过什么。
+
+顺带纠正一个容易搞错的前提：**网络没有「好人」属性，只有归属**。恶意流量跑在别人的机器上，
+名单只能封房东，封不到软件。真正封不住的是**住宅代理**，它们的出口就是普通家宽，ASN 与国家
+都认不出来 —— 所以名单之外还得有频率、并发和浏览器验证这几层。
 
 剩下 108 个在 ASN 库里查到的组织名全部是托管 / 云 / 廉价 VPS（Datacamp、Hetzner、M247、Hostkey、
 Timeweb、netcup、Latitude.sh、cognetcloud…）。逐条明细可以用

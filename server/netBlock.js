@@ -1,4 +1,4 @@
-// server/netBlock.js — 明确的网络屏蔽名单:ASN + 国家 + 单个 IP，默认开启（2026-10-17 用户拍板「全部默认屏蔽」）。
+// server/netBlock.js — 明确的网络屏蔽名单:ASN + 国家 + 单个 IP，默认关闭（SP_NET_BLOCK=on 才生效）。
 // (i18n-ignore-file: the list, its labels and its startup warnings are operator diagnostics; a blocked player
 //  receives the existing foreign-gate error verbatim (server/http/websocket.js) — docs/I18N.md)
 //
@@ -6,11 +6,11 @@
 // Anonymous IP，也不在这里做任何"像不像机房"的推断 —— 名单是**枚举**出来的，判定就是查表。
 //
 // 三个桶任一命中即拒绝，顺序是 IP → 国家 → ASN（代价从低到高）：
-//   * IP：用户给的逐条地址（含被 GFW/CF 日志抓到的扫描源）；
+//   * IP：逐条地址；
 //   * 国家：TW / VE / EC（另有既有的"仅中国大陆"门禁，两者互不替代）；
-//   * ASN：人工核对的机房 / 云 / 廉价 VPS / 防弹主机网络（133 条，2026-10-17）。
+//   * ASN：人工核对的机房 / 云 / 廉价 VPS / 防弹主机网络（133 条）。
 //
-// 两个坑写在这里备查（2026-10-17 用 ASN 库逐个核对这些号码时发现的）：
+// 两个坑写在这里备查（逐个用 ASN 库核对号码时发现的）：
 //   * AS6871 = British Telecommunications Limited，AS4773 = MobileOne（新加坡移动）—— **正经消费级运营商**，
 //     不是机房。它们在这个名单里，就意味着英国家宽和新加坡移动玩家会被一起挡住。启动日志会点名警告。
 //   * 名单里另外 65 个的 org 名字不含任何托管词（NetLab Global、GTT Host、InterServer…），靠名字分类会漏，
@@ -18,8 +18,8 @@
 
 /**
  * 机房 / 云 / 廉价 VPS / 防弹主机 ASN，逐个在 GeoLite2-ASN 里核对过组织名。
- * 第一批 110 个是用户 2026-10-17 给的清单；第二批 23 个当天补入（用户日志里实际出现的大陆云与香港小机房，
- * 加上 Mirai / 挖矿 / 勒索基础设施常租的防弹机房）。号码会过时，加条目前先看库里的组织名。
+ * 分两批补入：云厂商按地区分段的境内外段，以及不承载正常玩家的小机房与防弹机房。
+ * 号码会过时，加条目前先看库里的组织名。
  */
 export const BLOCK_ASNS = new Set(/** @type {number[]} */ ([
   31898, 63023, 20473, 33333, 14061, 30058, 16276, 132203,
@@ -36,20 +36,27 @@ export const BLOCK_ASNS = new Set(/** @type {number[]} */ ([
   204044, 198037, 49791, 216024, 26383, 47264, 396356, 8796,
   219357, 213535, 210329, 216154, 21769, 197196, 197703, 199741,
   53808, 46475, 4773, 38136, 400618, 215540,
-  // ——— 第二批（2026-10-17，用户拍板「加进去」）———
+  // ——— 第二批：境内外云段 + 小机房与代理出口 ———
   // 大陆云三家：名单此前只有境外段（45102 阿里美国、132203 腾讯香港、136907/55990 华为海外），
-  // 大陆段一条没有，而用户自己的攻击日志里腾讯大陆段出现 5 次。
+  // 大陆段一条没有，而大陆云主机是常见来源。
   45090, 37963, 38365,
-  // 用户日志里实际出现的香港 / 印度小机房与代理出口（对应他组织占比表的 5.81% / 3.62% / 3.29% / 2.20%）。
+  // 香港 / 印度一带的小机房与代理出口（组织名照抄 GeoLite2-ASN）。
   140042, 6134, 139180, 150623, 209554, 153771, 402506, 50360,
-  // 防弹 / 滥用机房：Mirai 变种、挖矿、勒索的 C2 常租处（组织名照抄 GeoLite2-ASN）。
+  // 防弹 / 滥用机房：网络归属本身就是「不承载正常玩家」（组织名照抄 GeoLite2-ASN）。
   3223, 202425, 200651, 60117, 49981, 29802, 46606, 54290, 206092, 394711, 49505, 204601,
 ]));
 
 /** 明确屏蔽的地区（ISO 3166-1 alpha-2）。 */
 export const BLOCK_COUNTRIES = new Set(['TW', 'VE', 'EC']);
 
-/** 逐条屏蔽的地址（用户 2026-10-17 提供的扫描源）。IPv6 会做一次规范化再比较。 */
+/**
+ * 逐条屏蔽的地址。IPv6 会做一次规范化再比较。
+ *
+ * 自家机器与服务出口地址**永远不能**进这份名单：名单同时喂给内核 nft 表
+ * （ops/sp-syn-ban-load）和 CF 边缘规则，写进去等于让机器自己把自己挡在门外。
+ * 跨区健康检查（境内节点 ↔ 港节点）会被 geoip 只放行 CN 的规则挡成 444，
+ * 看起来很像异常来源 —— 收条目前先确认它不是自己的出口。
+ */
 export const BLOCK_IPS = new Set(/** @type {string[]} */ ([
   '42.200.176.21', '60.249.21.30', '67.220.82.10', '86.53.110.15', '89.34.167.181', '103.218.173.218',
   '119.205.235.58', '123.111.169.70', '130.94.29.155', '131.186.26.94', '144.24.78.206', '147.90.229.163',
@@ -64,7 +71,7 @@ export const BLOCK_IPS = new Set(/** @type {string[]} */ ([
   '186.24.32.9', '186.24.0.241', '200.35.77.201', '186.24.49.218', '172.104.41.15', '200.35.77.33',
   '131.186.41.182', '146.56.102.6', '187.130.148.181', '186.24.62.241', '43.153.185.228', '201.96.79.201',
   '43.161.241.173', '154.12.21.86', '187.143.224.145', '209.248.1.17', '187.157.80.81', '42.193.21.113',
-  '58.187.79.213', '159.75.43.39', '45.205.31.134', '118.170.87.153', '79.124.40.158', '154.219.110.142',
+  '58.187.79.213', '159.75.43.39', '45.205.31.134', '118.170.87.153', '79.124.40.158',
 ]));
 
 /**
@@ -76,10 +83,10 @@ export const CONSUMER_ASNS_IN_LIST = new Map(/** @type {[number, string][]} */ (
   [4773, 'MobileOne Ltd.（新加坡移动 ISP）'],
 ]));
 
-/** SP_NET_BLOCK：on（默认）| off。列表本身不通过环境变量改，改名单就是改这个文件。 */
-export function parseNetBlockMode(value = 'on') {
+/** SP_NET_BLOCK：off（默认，仓库不替部署做判断）| on。列表本身不通过环境变量改，改名单就是改这个文件。 */
+export function parseNetBlockMode(value = 'off') {
   const mode = String(value ?? '').trim().toLowerCase();
-  if (mode === '') return true;
+  if (mode === '') return false;
   if (['1', 'true', 'on'].includes(mode)) return true;
   if (['0', 'false', 'off'].includes(mode)) return false;
   throw new RangeError(`SP_NET_BLOCK must be on or off (got ${value})`);
@@ -182,7 +189,7 @@ export class NetBlock {
  *   asns?: Iterable<number>, countries?: Iterable<string>, ips?: Iterable<string>,
  *   consumerAsns?: Iterable<number>, log?: { info: Function, warn: Function } }} init
  */
-export function createNetBlock({ mode = 'on', asnLookup = null, countryLookup = null, asns = BLOCK_ASNS,
+export function createNetBlock({ mode = 'off', asnLookup = null, countryLookup = null, asns = BLOCK_ASNS,
   countries = BLOCK_COUNTRIES, ips = BLOCK_IPS, consumerAsns = CONSUMER_ASNS_IN_LIST.keys(), log = console } = {}) {
   const enabled = typeof mode === 'boolean' ? mode : parseNetBlockMode(mode);
   const block = new NetBlock({ enabled, asns, countries, ips, asnLookup, countryLookup });

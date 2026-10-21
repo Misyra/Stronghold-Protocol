@@ -51,7 +51,7 @@ export function createTrialBench({ registry, files, spawn = fork, limits = TRIAL
         if (request.draft) temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-studio-trial-'));
         child = spawn(fileURLToPath(new URL('./trialChild.js', import.meta.url)), [], {
           detached: true, execArgv: [`--max-old-space-size=${limits.heapMb}`],
-          stdio: ['ignore', 'ignore', 'ignore', 'ipc'], serialization: 'json',
+          stdio: ['ignore', 'ignore', 'ignore', 'ipc'], serialization: 'json', windowsHide: true,
         });
         timer = setTimeout(() => finish(new StudioError('PLUGIN_STUDIO_TRIAL_TIMEOUT', 504)), limits.timeoutMs);
         child.once('error', () => finish(new StudioError('PLUGIN_STUDIO_TRIAL_FAILED', 500)));

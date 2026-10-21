@@ -1,6 +1,6 @@
 # 部署限额与正常游戏验收
 
-核对日期：2026-10-20。本文记录当前仓库模板和代码默认值；**不代表 A/B/C 已部署这些值**。部署总入口为 [DEPLOY.md](DEPLOY.md)，历史事故的现场值只作背景参考。实际值需核对 `nginx -T`、systemd/容器环境、面板保存的房间配置与本机健康指标；面板保存值可能覆盖环境默认值。
+核对日期：2026-10-20。本文记录当前仓库模板和代码默认值；**不代表 A/B/C 已部署这些值**。部署总入口为 [DEPLOY.md](DEPLOY.md)，历史现场值只作背景参考。实际值需核对 `nginx -T`、systemd/容器环境、面板保存的房间配置与本机健康指标；面板保存值可能覆盖环境默认值。
 
 ## 当前限额
 
@@ -12,19 +12,19 @@
 | Nginx 单 IP 静态 | 150/s，burst 1536；并发 384 | 源码模块、构建、清单、本地素材独立计数；小图标/字体有单独豁免映射 |
 | Nginx 页面 | 单 IP 180/min，burst 15；全站 30/s，burst 60 | 同时刷新大批页面仍可能耗尽全局突发 |
 | Nginx WS 握手 | 单 IP 30/min，burst 10 | 适合少量页面；共享出口多页面同时重连可能被拒 |
-| Nginx WS 并发 | 单 IP 8；全站 1600 | 比 Node 每网络 64 更紧；8 条不是允许 8 个游戏身份 |
+| Nginx WS 并发 | 单 IP 8；全站 1600 | 比 Node 的每网络不限更紧；8 条不是允许 8 个游戏身份 |
 | Nginx 总并发 | 4500；每 worker 16384，文件描述符上限 65535 | 包含长期占用的 WS；代理还占上游描述符，不能把 16384 当玩家人数 |
 | Nginx 裸健康 | 单 IP 30/min，burst 10；全站 9/s，burst 18 | 与版本检查分桶 |
 | Nginx 版本检查 | 单 IP 45/min，burst 12；全站 40/s，burst 120 | 前台页面每 60 秒检查；两类健康合计并发 48，源站缓存 5 秒 |
 | Nginx 门户 | ping 60/min，burst 15；房间查询 30/min，burst 8 | ping 不进入口业务永久封禁预算；Node 仍有自己的 API 计数 |
-| Node 公开 API | 每网络 5/s，burst 30；全局 200/s，burst 400 | 独立于游戏 WS 消息；到达 Node 的健康另有全局 20/s，burst 40 |
-| Node WS | 总连接 2000；每网络 64；每连接消息 40/s，burst 40 | 网络按 IPv4 或 IPv6 /64；普通操作不会经过 Nginx 握手桶 |
+| Node 公开 API | **默认关闭**（`SP_HTTP_API_*` 与 `SP_HTTP_BAN_THRESHOLD` 全为 `0`）；开启后每网络 5/s，burst 30；全局 200/s，burst 400 | 独立于游戏 WS 消息；到达 Node 的健康另有全局 20/s，burst 40；阈值为 `0` 时没有永久封禁 |
+| Node WS | 总连接 2000；每网络不限（`maxConnectionsPerAddr` 默认 `0`）；每连接消息 40/s，burst 40 | 网络按 IPv4 或 IPv6 /64；普通操作不会经过 Nginx 握手桶 |
 | Node 重状态消息 | 每连接 2/s，burst 6 | 包括 `state.resync`、`g.watch`、配装等；连续重同步/配装应先查请求来源 |
 | Node 在线身份 | `SP_IP_SESSION_LIMIT=on`、`SP_IP_SESSION_SCOPE=all`、`SP_IP_MAX_SESSIONS_PER_IP=1` | **默认会拒绝同一 IP 第二个新身份**，现有身份有效 token 重连另有接管规则 |
 | Node 建房/开局 | 两桶各 burst 4；每 15s / 30s 恢复 1 个 | 按网络共享；同时房间默认 16、进行中对局 8，与动作频率不同 |
 | Web SYN 防护 | 单 IP 120/min，burst 40；全局 50/s，burst 100 | 只限制新 TCP，HTTP/2 请求和既有 WS 消息不是新 SYN |
 
-依据：`scripts/nginx.conf.example`、`scripts/hardening/sp-*-map.conf`、`sp-page-global.conf`、`server/net.js`、`server/http/publicApiLimit.js`、`server/http/wsUpgradeLimit.js`、`server/roomConfig.js`；房间设置细节见 [ROOM_PROTECTION.md](ROOM_PROTECTION.md)。构造器选项不等于同名环境变量，不能凭名称新增一个环境变量就认为会生效。
+依据：`scripts/nginx.conf.example`、`scripts/hardening/sp-*-map.conf`、`sp-page-global.conf`、`server/net.js`、`server/http/publicApiLimit.js`、`server/http/wsUpgradeLimit.js`、`server/roomConfig.js`；房间设置细节见 [ROOM_PROTECTION.md](ROOM_PROTECTION.md)。构造器选项不等于同名环境变量，不能凭名称新增一个环境变量就认为会生效——完整环境变量清单见[开服指南 · 环境变量总表](../../开服指南.md#环境变量总表)。
 
 ## 是否过低及调整建议
 
@@ -44,7 +44,7 @@ SP_IP_MAX_SESSIONS_PER_IP=4
 
 ### 封禁不是限速
 
-入口 `sp-hardening-direct` 默认禁用，启用后累计所有业务响应（包括成功及 444），第 451 次/60s 永久封禁；Node 是到达应用的 API 第 601 次/60s 永久封禁。入口 WS jail 则仅累计 444 升级拒绝，第 100 次/60s 封 1h；Node 累计全部到达的升级尝试，第 101 次/60s 封 1h。这些数字不能互换。
+入口 `sp-hardening-direct` 默认禁用，启用后累计所有业务响应（包括成功及 444），第 451 次/60s 永久封禁；入口 WS jail 同样默认禁用，启用后仅累计 444 升级拒绝，第 100 次/60s 封 1h。Node 这两层（API 永久封禁、升级尝试封禁）默认也是关闭的：填 `SP_HTTP_BAN_THRESHOLD` 才是到达应用的 API 第 601 次/60s 永久封禁（默认 `600`），填 `SP_WS_UPGRADE_THRESHOLD` 才是累计全部到达的升级尝试第 101 次/60s 封 1h（默认 `100`）。这些数字不能互换。
 
 **451 并不天然安全地高于 450/min 的漏桶**：还存在 burst 45，漏桶可放过的短窗请求可能超过 451。入口累计普通业务成功请求还会把共享出口正常玩家加总。部署前用实际日志回放验证，调整时给持续量、突发、多人共网与重试留余量，并检查全部已启用 jail，避免旧 301 次永久封禁或低阈值 `nginx-limit-req` 抢先触发。日志缓冲和 fail2ban 处理还有延迟，不保证精确在某次握手时生效。
 

@@ -1,5 +1,4 @@
 # 永久封禁名单 —— 内核层 drop，source of truth
-# 依据：2026-10-17 抓包 SYN 速率 >=20/s、访问日志 paths=1（只打 /healthz）、全部阿里云/腾讯云段
 # 维护：加 IP 就追加一行，然后 systemctl restart sp-syn-ban
 47.121.139.13
 49.235.108.175

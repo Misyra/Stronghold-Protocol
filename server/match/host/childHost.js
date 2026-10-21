@@ -19,6 +19,8 @@ export function sandboxProcessOptions(memoryMb = 768) {
     cwd: INSTALL_ROOT,
     execArgv: ['--permission', `--allow-fs-read=${INSTALL_ROOT}`, `--max-old-space-size=${Math.max(64, Math.floor(memoryMb))}`],
     env: { NODE_ENV: 'production', SP_PLUGIN_SCRIPTS: 'sandbox', ...matchEnv },
+    // On Windows a plain fork() opens a console window per child; a running match must not flash one.
+    windowsHide: true,
   };
 }
 

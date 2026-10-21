@@ -29,10 +29,17 @@ export function parseWsOrigins(value) {
   return String(value ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 }
 
+// The packaged desktop client serves its own UI from a loopback listener and opens the socket with
+// `Origin: http://127.0.0.1:<port>`, where the port is chosen at launch. A page served from the web cannot
+// forge a loopback Origin — the browser writes that header — so this admits the app on the player's own
+// machine without opening the gate to a foreign site.
+const LOOPBACK_ORIGINS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+
 /**
  * Browser origin gate for /ws (the address limits cannot see this: a foreign page spends its *visitor's* address).
  * A request without an Origin header is not a browser (a game client, a probe, a test) and is left to the limits
- * below. A browser must name this very host, or one SP_WS_ORIGINS allowlists; 'Origin: null' is refused.
+ * below. A browser must name this very host, a loopback origin (the packaged desktop client's own UI), or one
+ * SP_WS_ORIGINS allowlists; 'Origin: null' is refused.
  * @param {import('node:http').IncomingMessage} req
  * @param {string[]} extra allowlisted `host[:port]` values
  * @returns {boolean}
@@ -48,6 +55,9 @@ export function wsOriginAllowed(req, extra = []) {
   const target = String(req.headers.host || '').toLowerCase();
   const bare = (h) => h.replace(/:\d+$/, '');
   if (host === target || bare(host) === bare(target)) return true;
+  // The desktop client's loopback UI is the player's own app, not another site (see LOOPBACK_ORIGINS): the
+  // upgrade still carries the game's host, so the name comparison above can never match its random port.
+  if (LOOPBACK_ORIGINS.has(bare(host))) return true;
   return extra.includes(host) || extra.includes(bare(host));
 }
 

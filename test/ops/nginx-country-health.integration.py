@@ -4,6 +4,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import re
 import socket
@@ -116,9 +117,17 @@ proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $connection_
                 time.sleep(0.05)
             else:
                 raise AssertionError('Fixture nginx failed to start')
-            for ip in ['114.114.114.114', '223.5.5.5', '240e::1', '127.0.0.1']:
+            # Sample addresses come from the operator; documentation and private ranges need no setup.
+            def samples(name):
+                return [item.strip() for item in os.environ.get(name, '').split(',') if item.strip()]
+
+            allow = samples('SP_COUNTRY_TEST_MAINLAND') + ['127.0.0.1']
+            refuse = samples('SP_COUNTRY_TEST_FOREIGN') + ['203.0.113.9', '2001:db8::1', '172.16.0.42']
+            for ip in allow:
                 assert request(ip=ip)[0] == 200, ip
-            for ip in ['8.8.8.8', '60.249.21.30', '1.36.0.1', '203.0.113.9', '2001:db8::1', '2001:4860:4860::8888', '172.16.0.42']:
+            for ip in refuse:
+                for path in ['/', '/healthz', '/ws', '/assets/file.js', '/api/nickname/validate']:
+                    assert request(path, ip)[0] == 0, (ip, path)
                 for path in ['/', '/healthz', '/ws', '/assets/file.js', '/api/nickname/validate']:
                     assert request(path, ip)[0] == 0, (ip, path)
             assert request('/ws', extra='Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n')[0] == 101

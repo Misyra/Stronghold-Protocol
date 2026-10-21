@@ -487,12 +487,14 @@ export class Lobby {
   pluginsChanged(vs, ids, kind = 'visual') {
     for (const room of this.rooms.values()) {
       if (room.disposed || (kind === 'content' ? room.content?.cs : room.content?.vs) !== vs) continue;
-      const noticeKey = `${room.content?.cs}|${room.content?.vs || ''}`;
-      if (room.pluginNoticeKeys[kind] === noticeKey) continue;
-      // the plugin studio's rooms (the author hosts, or plays alone): the same choice again at once (refreshPlugins)
+      // the plugin studio's rooms (the author hosts, or plays alone): the same choice again at once (refreshPlugins) —
+      // before the once-only notice below, because a set that failed to resolve and was mended reads as the same held vs:
+      // deduping first would leave the fixed plugin unapplied for good (only the first broken save would ever be seen).
       let auto;
       try { auto = !!this.autoApplyPlugins?.({ code: room.code, hostId: room.hostId, humans: room.activeHumans().length, inMatch: !!room.match }); } catch { auto = false; }
       if (kind === 'visual' && auto && this.refreshPlugins(room)) continue;
+      const noticeKey = `${room.content?.cs}|${room.content?.vs || ''}`;
+      if (room.pluginNoticeKeys[kind] === noticeKey) continue;
       room.pluginNoticeKeys[kind] = noticeKey;
       this.log.info(`[lobby] ${room.code} plugins changed on disk: ${ids.join(', ')} — the host is asked to apply them again`);
       // during a match the panel cannot change them: the host hears it once the room is back in its lobby (onMatchEnd)

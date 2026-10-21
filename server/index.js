@@ -340,7 +340,12 @@ export async function startServer(opts = {}) {
     clientBuild: opts.clientBuild ?? !process.argv.includes('--source-client') });
 
   // Persistence: SP_STATE_FILE (a directory → the sharded layout, a .json path → the single file, 'off' → memory only).
-  const stateFile = opts.stateFile !== undefined ? opts.stateFile : process.env.SP_STATE_FILE;
+  // A blank value is a typo in a hand-written env file, not a request for memory only: it falls back to the
+  // default path and says so, because "my rooms vanished after a restart" is not a debuggable outcome.
+  const stateFileRaw = opts.stateFile !== undefined ? opts.stateFile : process.env.SP_STATE_FILE;
+  const stateFile = typeof stateFileRaw === 'string' && stateFileRaw.trim() === ''
+    ? (() => { log.warn('[persist] SP_STATE_FILE 为空，改用默认路径 .state/server-<PORT>；要内存运行请显式写 off'); return path.join(ROOT, '.state', `server-${process.env.PORT || 3000}`); })()
+    : (typeof stateFileRaw === 'string' ? stateFileRaw.trim() : stateFileRaw);
   if (stateFile && stateFile !== 'off') {
     const absoluteState = path.resolve(stateFile);
     for (const root of [publicDir, dataDir, sharedDir]) {
@@ -478,10 +483,12 @@ export async function startServer(opts = {}) {
       try {
         network.beginDrain();
         lobby.beginDrain();
-        await roomAdmin?.drain();
-      try { hosts.close(); } catch (e) { log.error('[shutdown] match hosts', e); }
-      studio?.close();
-      await trustedRuntime?.close();
+        // Each step may throw and none of them may cost the one that saves the rooms: a drain or a
+        // runtime that fails on the way out is logged, and the shutdown still reaches the persister.
+        try { await roomAdmin?.drain(); } catch (e) { log.error('[shutdown] room drain', e); }
+        try { hosts.close(); } catch (e) { log.error('[shutdown] match hosts', e); }
+        try { studio?.close(); } catch (e) { log.error('[shutdown] studio', e); }
+        try { await trustedRuntime?.close(); } catch (e) { log.error('[shutdown] script runtime', e); }
         if (persister) {
           const saved = await persister.shutdown('shutdown');
           if (!saved) log.error('[persist] final state was NOT saved; check the state directory permissions and disk space');

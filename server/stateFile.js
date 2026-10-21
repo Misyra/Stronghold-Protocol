@@ -328,13 +328,23 @@ export class FileStateStore {
   }
 
   async removeShard(code) {
-    try { await fs.unlink(path.join(this.matchesDir, code + SHARD_SUFFIX)); }
-    catch (err) {
+    // Rename out of the live namespace, then delete. The loader lists only *.json, so the shard stops
+    // being readable at one instant instead of half-way, and a delete that fails leaves a tombstone the
+    // loader ignores rather than a live shard a retry has to race with.
+    const live = path.join(this.matchesDir, code + SHARD_SUFFIX);
+    const tomb = `${live}.stale-${process.pid}-${Date.now()}`;
+    try {
+      await fs.rename(live, tomb);
+    } catch (err) {
       if (err.code !== 'ENOENT') {
         this.staleShards.add(code);
         this.log.warn?.(`[persist] ${code}: shard removal failed`, err.message);
         return false;
       }
+    }
+    try { await fs.unlink(tomb); }
+    catch (err) {
+      if (err.code !== 'ENOENT') this.log.warn?.(`[persist] ${code}: a tombstone stayed behind`, err.message);
     }
     this.staleShards.delete(code);
     this.shards.delete(code);

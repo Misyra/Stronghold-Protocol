@@ -22,6 +22,7 @@ import { printBanner } from '../../server/http/boot.js';
 import { unzipFiles, zipFiles } from '../../server/plugins/zip.js';
 import { listPluginFiles, readPluginFolder, WALK_LIMITS } from '../../server/plugins/registry.js';
 import { buildPluginLock, zipPlugin } from '../../server/plugins/pack.js';
+import { linkDir, linkFile } from '../helpers/links.js';
 import { png, skel, atlas, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
 
 const req = (remoteAddress, headers = {}) => ({ socket: { remoteAddress }, headers: { host: 'localhost:3000', ...headers } });
@@ -70,7 +71,7 @@ test('gate: loopback and private networks with a local Host name; a public clien
   assert.equal(isStudioChange({ headers: { host: 'localhost:3000', 'x-sp-studio': '1', 'sec-fetch-site': 'cross-site' } }), false);
 });
 
-test('files: confined to plugins/<id>/ — ids, paths, links, types, sizes; a write is atomic', () => {
+test('files: confined to plugins/<id>/ — ids, paths, links, types, sizes; a write is atomic', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-studio-files-'));
   try {
     const plugins = path.join(dir, 'plugins');
@@ -94,8 +95,8 @@ test('files: confined to plugins/<id>/ — ids, paths, links, types, sizes; a wr
     const outside = path.join(dir, 'outside');
     fs.mkdirSync(outside);
     fs.writeFileSync(path.join(outside, 'secret.png'), 'secret');
-    fs.symlinkSync(path.join(outside, 'secret.png'), path.join(plugins, 'ab', 'link.png'));
-    fs.symlinkSync(outside, path.join(plugins, 'ab', 'out'));
+    if (!linkFile(t, path.join(outside, 'secret.png'), path.join(plugins, 'ab', 'link.png'))) return;
+    if (!linkDir(t, outside, path.join(plugins, 'ab', 'out'))) return;
     assert.equal(code(() => f.stat('ab', 'link.png')), 'PLUGIN_STUDIO_PATH:403');
     assert.equal(code(() => f.write('ab', 'link.png', png())), 'PLUGIN_STUDIO_PATH:403');
     assert.equal(code(() => f.write('ab', 'out/new.png', png())), 'PLUGIN_STUDIO_PATH:403');
@@ -107,7 +108,7 @@ test('files: confined to plugins/<id>/ — ids, paths, links, types, sizes; a wr
     const real = path.join(dir, 'elsewhere');
     fs.mkdirSync(real);
     fs.writeFileSync(path.join(real, 'secret.json'), '{"s":"SECRET"}');
-    fs.symlinkSync(real, path.join(plugins, 'linked'));
+    if (!linkDir(t, real, path.join(plugins, 'linked'))) return;
     for (const fn of [() => f.root('linked'), () => f.stat('linked', 'secret.json'), () => f.resolve('linked', 'secret.json'), () => f.write('linked', 'a.png', png()),
       () => f.remove('linked', 'secret.json'), () => f.list('linked'), () => f.readSidecar('linked', '.studio.json'), () => f.writeSidecar('linked', '.studio.json', Buffer.from('{}')),
       () => f.moveOut('linked', 'secret.json')]) {
@@ -354,7 +355,7 @@ describe('the studio over HTTP', () => {
     assert.equal(fs.existsSync(path.join(tmp, 'x.png')), false);
   });
 
-  test('links put into a plugin folder by hand: nothing is read or written through them (plugin.json, an overlay file, the lock, the studio\'s note, plugins/_moved)', async () => {
+  test('links put into a plugin folder by hand: nothing is read or written through them (plugin.json, an overlay file, the lock, the studio\'s note, plugins/_moved)', async (t) => {
     const outside = path.join(tmp, 'outside');
     fs.mkdirSync(outside, { recursive: true });
     const SECRET = '{"name":"SECRET-NAME","chars":"SECRET-VALUE"}';
@@ -365,7 +366,7 @@ describe('the studio over HTTP', () => {
     const leaks = (body) => /SECRET/.test(JSON.stringify(body));
     // plugin.json itself a link: its text is never sent; the check names the link; an edit is refused; the zip leaves it out
     fs.mkdirSync(path.join(plugins, 'lnk-manifest'));
-    fs.symlinkSync(secret, path.join(plugins, 'lnk-manifest', 'plugin.json'));
+    if (!linkFile(t, secret, path.join(plugins, 'lnk-manifest', 'plugin.json'))) return;
     let r = await call('GET', '/studio/api/plugins/lnk-manifest');
     assert.equal(r.status, 200);
     assert.equal(leaks(r.body), false, 'the state');
@@ -381,7 +382,7 @@ describe('the studio over HTTP', () => {
     assert.equal(r.status, 201);
     const dir = path.join(plugins, 'lnk-files');
     fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify(cosmetic({ assets: 'overlay.json' })));
-    fs.symlinkSync(secret, path.join(dir, 'overlay.json'));
+    if (!linkFile(t, secret, path.join(dir, 'overlay.json'))) return;
     r = await call('GET', '/studio/api/plugins/lnk-files');
     assert.equal(leaks(r.body), false, 'the state');
     assert.deepEqual(r.body.check.issues.map((i) => [i.code, i.file]), [['PLUGIN_FILE_LINK', 'overlay.json']]);
@@ -391,9 +392,9 @@ describe('the studio over HTTP', () => {
     fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify(cosmetic({ assets: { chars: { char_102_texas: {} } } })));
     // the studio's note and the lock as links to a file outside: saving and packing replace the link, never write through it
     fs.rmSync(path.join(dir, '.studio.json'));
-    fs.symlinkSync(victim, path.join(dir, '.studio.json'));
+    if (!linkFile(t, victim, path.join(dir, '.studio.json'))) return;
     fs.rmSync(path.join(dir, 'plugin.lock.json'), { force: true });
-    fs.symlinkSync(victim, path.join(dir, 'plugin.lock.json'));
+    if (!linkFile(t, victim, path.join(dir, 'plugin.lock.json'))) return;
     r = await call('POST', '/studio/api/plugins/lnk-files/sections', { sections: [{ template: 'art', target: 'operator:char_102_texas' }] });
     assert.equal(r.status, 200);
     r = await call('POST', '/studio/api/plugins/lnk-files/pack', {});
@@ -404,7 +405,7 @@ describe('the studio over HTTP', () => {
     // plugins/_moved a link to a folder outside: a file is never moved through it
     fs.writeFileSync(path.join(dir, 'notes.psd'), 'x');
     fs.rmSync(path.join(plugins, '_moved'), { recursive: true, force: true });
-    fs.symlinkSync(outside, path.join(plugins, '_moved'));
+    if (!linkDir(t, outside, path.join(plugins, '_moved'))) return;
     r = await call('POST', '/studio/api/plugins/lnk-files/fix', { code: 'PLUGIN_FILE_TYPE', file: 'notes.psd' });
     assert.deepEqual([r.status, r.body.error], [403, 'PLUGIN_STUDIO_PATH']);
     assert.ok(fs.existsSync(path.join(dir, 'notes.psd')), 'the file stays where it was');
@@ -412,7 +413,11 @@ describe('the studio over HTTP', () => {
   });
 
   test('files a plugin folder holds are served sandboxed and only of the types the studio writes (no page or script put there by hand); HEAD answers like GET', async () => {
+    // The link case above builds this folder; a machine that cannot make file links returns before
+    // it exists, so the folder is made here rather than assumed.
     const dir = path.join(plugins, 'lnk-files');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify(cosmetic({ assets: { chars: { char_102_texas: {} } } })));
     fs.writeFileSync(path.join(dir, 'page.html'), '<script>alert(1)</script>');
     fs.writeFileSync(path.join(dir, 'pic.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
     fs.writeFileSync(path.join(dir, 'x.js'), 'alert(1)');
@@ -432,11 +437,11 @@ describe('the studio over HTTP', () => {
     assert.deepEqual([hz.status, hz.text], [200, ''], 'HEAD of the zip builds none');
   });
 
-  test('a plugin folder that is itself a link: the studio never opens it (403 for every read and change, with the key or without; listed apart, nothing of the target sent); the game may still load it and serves only the files its overlay names', async () => {
+  test('a plugin folder that is itself a link: the studio never opens it (403 for every read and change, with the key or without; listed apart, nothing of the target sent); the game may still load it and serves only the files its overlay names', async (t) => {
     const target = path.join(tmp, 'linked-target');
     writePlugin(target, cosmetic({ assets: { chars: { char_102_texas: { avatar: 'a.png' } } } }), { 'a.png': png(4, 4, [9, 9, 9, 255]), 'secret.json': '{"s":"LEAK-JSON"}', 'notes.txt': 'LEAK-TXT' });
     const before = fs.readdirSync(target).sort();
-    fs.symlinkSync(target, path.join(plugins, 'linked-skin'));
+    if (!linkDir(t, target, path.join(plugins, 'linked-skin'))) return;
     srv.packs.rescan();
     const leaks = (b) => /LEAK/.test(Buffer.isBuffer(b) ? b.toString('latin1') : JSON.stringify(b));
     const NO = {};
@@ -510,6 +515,10 @@ describe('the studio over HTTP', () => {
     const wrong = await call('POST', '/studio/api/plugins', { template: 'art', id: 'no-key', name: 'x' }, { ...NOKEY, 'x-sp-studio': 'A'.repeat(22) });
     assert.deepEqual([wrong.status, wrong.body.error], [403, 'PLUGIN_STUDIO_KEY']);
     assert.equal(fs.existsSync(path.join(plugins, 'no-key')), false);
+    // The link case above leaves this folder behind; make it here so the refused DELETE is the only
+    // thing that could have removed the file, whatever a machine without file links did earlier.
+    fs.mkdirSync(path.join(plugins, 'lnk-files'), { recursive: true });
+    fs.writeFileSync(path.join(plugins, 'lnk-files', 'README.md'), 'x');
     for (const [m, u] of [['PUT', '/studio/api/plugins/lnk-files/files/x.png'], ['DELETE', '/studio/api/plugins/lnk-files/files/README.md'], ['POST', '/studio/api/authors'], ['POST', '/studio/api/plugins/lnk-files/pack']]) {
       assert.equal((await call(m, u, '{}', NOKEY)).status, 403, `${m} ${u}`);
     }

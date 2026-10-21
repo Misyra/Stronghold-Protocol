@@ -15,6 +15,7 @@ import { createPluginRegistry } from '../../server/plugins/registry.js';
 import { createPluginWatcher, treeWithin } from '../../server/studio/watch.js';
 import { StubMatch } from '../../server/match/StubMatch.js';
 import { TestClient } from '../helpers/wsClient.js';
+import { linkDir } from '../helpers/links.js';
 import { png, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
 
 const TOAST = '房间插件「{names}」的文件在服务器上变了，请在插件面板中点「重新应用」';
@@ -45,11 +46,11 @@ test('the watch: a change in a plugin folder → one rescan after the quiet time
   } finally { w.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('the watch: a plugins folder over the entry limit is not watched as a tree (links not followed in the count)', () => {
+test('the watch: a plugins folder over the entry limit is not watched as a tree (links not followed in the count)', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-watch-big-'));
   const plugins = path.join(dir, 'plugins');
   writePlugin(path.join(plugins, 'skin'), cosmetic({ assets: { chars: { char_102_texas: { avatar: 'a.png' } } } }), { 'a.png': png(2, 2) });
-  fs.symlinkSync(dir, path.join(plugins, 'loop')); // a link back up: never followed by the count
+  if (!linkDir(t, dir, path.join(plugins, 'loop'))) return; // a link back up: never followed by the count
   const registry = createPluginRegistry({ publicDir: path.join(dir, 'public'), dataDir: path.join(dir, 'data'), packsDir: path.join(dir, 'packs'), pluginsDir: plugins }, { recheckMs: 60000 });
   const warns = [];
   const w = createPluginWatcher({ pluginsDir: plugins, registry, log: { warn: (m) => warns.push(m) }, maxEntries: 2 });

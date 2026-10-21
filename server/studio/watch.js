@@ -81,20 +81,21 @@ export function createPluginWatcher({ pluginsDir, registry, log = {}, debounceMs
   let started = false;
 
   /** Read the folders again now and tell what changed (also after a write of the studio: no need to wait for the event). */
-  function rescan() {
+  async function rescan() {
     if (timer) { clearTimeout(timer); timer = null; }
     const before = states || pluginStates(registry);
-    try { registry.rescan(); } catch (e) { log.warn?.(`[studio] rescan failed: ${e?.message || e}`); }
+    try { await registry.rescan(); } catch (e) { log.warn?.(`[studio] rescan failed: ${e?.message || e}`); }
     const after = pluginStates(registry);
     states = after;
     const ids = [...new Set([...before.keys(), ...after.keys()])].filter((id) => before.get(id) !== after.get(id)).sort();
+
     if (ids.length) { try { onChange(ids); } catch (e) { log.warn?.(`[studio] change listener failed: ${e?.message || e}`); } }
     return ids;
   }
 
   const schedule = () => {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(rescan, debounceMs);
+    timer = setTimeout(() => { rescan().catch(() => {}); }, debounceMs);
     timer.unref?.();
   };
 

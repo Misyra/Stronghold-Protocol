@@ -490,7 +490,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
   }
 
   /** After a change: read the folders now (hot reload) and answer with the plugin's state. */
-  const changed = (id) => { watcher.rescan(); return stateOf(id, true); };
+  const changed = async (id) => { await watcher.rescan(); return stateOf(id, true); };
 
   /**
    * The open rooms that use the plugin `id` now, each with whether its match runs. The lobby is what knows it: each room's
@@ -520,7 +520,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
    * @param {any} body
    * @returns {{ removed: { id: string, to: string }[], refused: { id: string, error: string, params: Record<string, unknown> }[] }}
    */
-  function removePlugins(body) {
+  async function removePlugins(body) {
     const ids = body.ids;
     if (!Array.isArray(ids) || !ids.length || !ids.every((x) => typeof x === 'string')) throw new StudioError('PLUGIN_STUDIO_REQUEST', 400, { detail: 'ids: a list of plugin ids' });
     if (ids.length > REMOVE_MAX) throw new StudioError('PLUGIN_STUDIO_REQUEST', 400, { detail: `at most ${REMOVE_MAX} plugins at once` });
@@ -553,7 +553,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     if (removed.length) {
       // the change event, as after any change of the studio: the rescan names what it saw go; a folder the registry had
       // not read yet is named all the same
-      const told = new Set(watcher.rescan());
+      const told = new Set(await watcher.rescan());
       const rest = removed.map((r) => r.id).filter((id) => !told.has(id));
       if (rest.length) send(rest);
     }
@@ -594,7 +594,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
    * atlas under one name, its pages by theirs), the slot set to them, the files it named before removed when nothing
    * else names them.
    */
-  function putSlot(id, body) {
+  async function putSlot(id, body) {
     const at = body.at;
     if (!Array.isArray(at) || !at.every((k) => typeof k === 'string')) throw new StudioError('PLUGIN_STUDIO_REQUEST', 400, { detail: 'no slot' });
     const p = openPlugin(files, id);
@@ -674,7 +674,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
   }
 
   /** Run a one-click fix (POST …/fix). */
-  function fix(id, body) {
+  async function fix(id, body) {
     const code = text(body.code, 64);
     const name = isPluginErrorCode(code) ? PLUGIN_ERRORS[code].autofix : null;
     if (!name) throw new StudioError('PLUGIN_STUDIO_REQUEST', 400, { detail: `${code.slice(0, 40)} has no one-click fix` });
@@ -694,7 +694,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       p.save();
     }
     log.info?.(`[studio] ${id}: fix ${code} — ${did}`);
-    return { ...changed(id), fixed: { code, did } };
+    return { ...(await changed(id)), fixed: { code, did } };
   }
 
   /** Serve a file of the page (public/studio/). */
@@ -706,7 +706,10 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     if (!abs.startsWith(pageDir + path.sep)) return false;
     const st = await fsp.stat(abs).catch(() => null);
     if (!st || !st.isFile()) return false;
-    await serveFile(req, res, abs, st, 'studio', segments, compress, log, { cacheControl: 'no-cache' });
+    // serveFile(req, res, absPath, stat, mountName, segments, query, gzipCache, log, opts): the query is unused for the
+    // studio's own cache policy — passing compress one slot early made log stand in for the gzip cache and every
+    // compressible page file answered 500 (TypeError: gzipCache.get is not a function).
+    await serveFile(req, res, abs, st, 'studio', segments, '', compress, log, { cacheControl: 'no-cache' });
     return true;
   }
 
@@ -718,7 +721,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     const { abs, st } = files.stat(id, rel);
     if (!WRITABLE.includes(extOf(rel)) || (!MIME[path.extname(abs).toLowerCase()] && extOf(rel) !== '.skel')) throw new StudioError('PLUGIN_STUDIO_PATH', 404, { detail: rel });
     for (const [k, v] of Object.entries(FILE_HEADERS)) res.setHeader(k, v);
-    await serveFile(req, res, abs, st, 'studio', rel.split('/'), compress, log, { cacheControl: 'no-cache' });
+    await serveFile(req, res, abs, st, 'studio', rel.split('/'), '', compress, log, { cacheControl: 'no-cache' });
   }
 
   /** An InstallError as the studio's error shape. @param {unknown} e */
@@ -771,7 +774,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       const installed = await installFromUrl(url, {
         pluginsDir, sha256, force: body.force === true, expectedId, expectedBytes, fetch: fetchImpl,
       });
-      watcher.rescan();
+      await watcher.rescan();
       let plugin = null;
       try { plugin = stateOf(installed.id); } catch { plugin = null; }
       return { id: installed.id, replaced: installed.replaced ? path.basename(installed.replaced) : null, plugin };
@@ -887,12 +890,12 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       if (made.authoring) files.writeSidecar(id, SIDECAR, Buffer.from(manifestText({ v: 1, authoring: made.authoring })));
       else if (t) saveSections(id, [{ template: tpl.id, target: targetSpec(t) }]);
       log.info?.(`[studio] new plugin ${id} (${tpl.id}${t ? `, ${targetSpec(t)}` : ''})`);
-      return json(201, changed(id));
+      return json(201, await changed(id));
     }
     // (before the plugin id routes: POST plugins/<id> itself is none, so a plugin named "remove" keeps all of its own)
     if (route === 'plugins/remove' && method === 'POST') {
       if (!mayChange(req)) return false;
-      return json(200, removePlugins(await readJson(req, 16 * 1024)));
+      return json(200, await removePlugins(await readJson(req, 16 * 1024)));
     }
     if ((route === 'forge/preview' || route === 'forge/import') && method === 'POST') {
       if (!mayChange(req)) return false;
@@ -904,7 +907,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       });
       const safety = result.issues.find((i) => FORGE_SAFETY.has(i.code));
       if (safety) throw new StudioError(safety.code, 400, { detail: safety.detail }, safety.detail);
-      if (route === 'forge/import' && result.wrote) watcher.rescan();
+      if (route === 'forge/import' && result.wrote) await watcher.rescan();
       const products = Array.isArray(result.report?.products) ? result.report.products : [];
       return json(200, { report: result.report, plugins: products.map((p) => ({ id: p.id, class: p.class })) });
     }
@@ -940,20 +943,20 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       if (!isObj(v)) throw new StudioError('PLUGIN_MANIFEST_SHAPE', 400, {});
       files.root(id);
       files.write(id, PLUGIN_MANIFEST, Buffer.from(manifestText(v)));
-      return json(200, changed(id));
+      return json(200, await changed(id));
     }
     const fileRoute = /^files\/(.+)$/.exec(sub);
     if (fileRoute && (method === 'PUT' || method === 'DELETE')) {
       const rel = fileRoute[1].split('/').map(decodeURIComponent).join('/');
       if (method === 'DELETE') files.remove(id, rel);
       else files.write(id, rel, await readBody(req, STUDIO_LIMITS.fileBytes));
-      return json(200, changed(id));
+      return json(200, await changed(id));
     }
     if (method !== 'POST') return false;
-    if (sub === 'slot') return json(200, putSlot(id, await readJson(req, STUDIO_LIMITS.bodyBytes)));
+    if (sub === 'slot') return json(200, await putSlot(id, await readJson(req, STUDIO_LIMITS.bodyBytes)));
     const body = await readJson(req, 256 * 1024);
-    if (sub === 'authoring') { authoring.save(id, body); return json(200, changed(id)); }
-    if (sub === 'meta') { const p = openPlugin(files, id); editMeta(p, body.fields, typeof body.lang === 'string' ? body.lang : 'zh'); p.save(); return json(200, changed(id)); }
+    if (sub === 'authoring') { authoring.save(id, body); return json(200, await changed(id)); }
+    if (sub === 'meta') { const p = openPlugin(files, id); editMeta(p, body.fields, typeof body.lang === 'string' ? body.lang : 'zh'); p.save(); return json(200, await changed(id)); }
     if (sub === 'sections') { files.root(id); saveSections(id, body.sections); return json(200, stateOf(id)); }
     if (sub === 'ref') {
       const key = text(body.ref, 200);
@@ -965,7 +968,7 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       // the files the slot named before go when nothing names them now (as clear and a new file do)
       const still = filesOfOverlay(p.overlay);
       for (const rel of before) if (!still.has(rel)) { try { files.remove(id, rel); } catch { /* gone */ } }
-      return json(200, changed(id));
+      return json(200, await changed(id));
     }
     if (sub === 'clear') {
       const at = keyList(body.at);
@@ -975,15 +978,15 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       p.save();
       const still = filesOfOverlay(p.overlay);
       for (const rel of before) if (!still.has(rel)) { try { files.remove(id, rel); } catch { /* gone */ } }
-      return json(200, changed(id));
+      return json(200, await changed(id));
     }
-    if (sub === 'fix') return json(200, fix(id, body));
+    if (sub === 'fix') return json(200, await fix(id, body));
     if (sub === 'pack') {
       const r = packPlugin(files.root(id), { vanilla: registry.vanillaAssets(), dataDir });
       const list = issueList();
       list.take(r.build);
       log.info?.(`[studio] ${id}: pack — ${r.wrote ? 'plugin.lock.json written' : 'not written'}`);
-      return json(200, { ...changed(id), pack: { wrote: r.wrote, issues: list.issues } });
+      return json(200, { ...(await changed(id)), pack: { wrote: r.wrote, issues: list.issues } });
     }
     return false;
   }

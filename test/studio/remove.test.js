@@ -15,6 +15,7 @@ import { REMOVE_MAX } from '../../server/studio/index.js';
 import { PLUGIN_ERRORS } from '../../shared/plugins/errors.js';
 import { StubMatch } from '../../server/match/StubMatch.js';
 import { TestClient } from '../helpers/wsClient.js';
+import { linkDir } from '../helpers/links.js';
 import { png, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -73,7 +74,7 @@ describe('removing plugins in the studio', () => {
     assert.equal((await listed()).includes('_removed'), false, 'plugins/_removed/ is no plugin');
     // restored: the folder moved back and named by its id again
     fs.renameSync(at(to), path.join(plugins, 'old-skin'));
-    srv.packs.rescan();
+    await srv.packs.rescan();
     assert.equal(srv.packs.plugin('old-skin')?.status, 'loaded');
     assert.equal((await listed()).includes('old-skin'), true);
   });
@@ -94,14 +95,14 @@ describe('removing plugins in the studio', () => {
     assert.equal(info.limits.removeMax, REMOVE_MAX);
   });
 
-  test('refused one by one, the others removed — an invalid id, a missing folder, another case of a name, a "_" or dot folder, a symbolic link: 200 with each code, nothing of them touched', async () => {
+  test('refused one by one, the others removed — an invalid id, a missing folder, another case of a name, a "_" or dot folder, a symbolic link: 200 with each code, nothing of them touched', async (t) => {
     fs.mkdirSync(path.join(plugins, '_keep'));
     fs.writeFileSync(path.join(plugins, '_keep', 'notes.txt'), 'x');
     fs.mkdirSync(path.join(plugins, '.hidden'));
     skin(path.join(plugins, 'Mixed-Case'));
     const target = skin(path.join(tmp, 'linked-target'));
-    fs.symlinkSync(target, path.join(plugins, 'linked-skin'));
-    srv.packs.rescan();
+    if (!linkDir(t, target, path.join(plugins, 'linked-skin'))) return;
+    await srv.packs.rescan();
     const r = await remove(['Bad_ID', '../old-skin', 'nope-skin', 'mixed-case', '_keep', '.hidden', 'linked-skin', 'ok-skin']);
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.removed.map((x) => x.id), ['ok-skin']);
@@ -123,7 +124,7 @@ describe('removing plugins in the studio', () => {
     assert.deepEqual([none.status, none.body.removed, none.body.refused.map((x) => x.error)], [200, [], ['PLUGIN_UNKNOWN', 'PLUGIN_STUDIO_PATH']]);
     fs.rmSync(path.join(plugins, 'linked-skin'));
     fs.rmSync(path.join(plugins, 'Mixed-Case'), { recursive: true });
-    srv.packs.rescan();
+    await srv.packs.rescan();
   });
 
   test('a plugin an open room uses is refused (PLUGIN_STUDIO_IN_USE: the room, its match running too), and goes once the room is gone', async () => {
@@ -171,13 +172,13 @@ describe('removing plugins in the studio', () => {
     assert.ok(fs.existsSync(path.join(plugins, 'stuck-skin', 'plugin.json')));
   });
 
-  test('a move that fails is refused alone (PLUGIN_STUDIO_REMOVE): plugins/_removed a symbolic link is never written through', async () => {
+  test('a move that fails is refused alone (PLUGIN_STUDIO_REMOVE): plugins/_removed a symbolic link is never written through', async (t) => {
     const removed = path.join(plugins, '_removed');
     const kept = path.join(tmp, 'removed-kept');
     const elsewhere = path.join(tmp, 'elsewhere');
     fs.mkdirSync(elsewhere);
     if (fs.existsSync(removed)) fs.renameSync(removed, kept);
-    fs.symlinkSync(elsewhere, removed);
+    if (!linkDir(t, elsewhere, removed)) return;
     try {
       const r = await remove(['stuck-skin']);
       assert.equal(r.status, 200);

@@ -88,6 +88,8 @@ English summary: [below](#english).
 
 本分支生产部署使用下面的源码方式，统一流程见[部署指南](custom_docs/operations/DEPLOY.md)。上游整合包方便家用运行，其程序不包含本分支全部运维改造。
 
+**第一次开服先看[《开服指南》](开服指南.md)**：局域网、公网 systemd + nginx、Docker 三条路都给了可直接复制的命令，以及美术资源从哪来、五个必踩的坑。下面的章节是同一件事的细节版。
+
 ### 方式一：上游整合包（家用）
 
 [Releases](https://github.com/sganggs/Stronghold-Protocol/releases/latest) 里有两种整合包，代码和运行依赖完全相同，二选一；已经装好 0.2.x 的，升级时只下载更新包即可：

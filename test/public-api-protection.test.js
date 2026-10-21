@@ -135,6 +135,13 @@ test('HTTP protection ships off and rejects invalid budgets', () => {
   for (const value of ['-1', 'NaN', '1.5'])
     assert.throws(() => publicApiLimitsFrom({}, { SP_HTTP_API_RATE: value }), /SP_HTTP_API_RATE/);
   assert.equal(publicApiLimitsFrom({}, { SP_HTTP_API_RATE: '0' }).ratePerSec, 0, 'zero is "off", not "429 everything"');
+  // A rate without a burst admits nothing (TokenBucket starts empty and clamps to burst), so it is a startup error
+  // rather than a server that answers 429 to every public API while looking healthy.
+  assert.throws(() => publicApiLimitsFrom({}, { SP_HTTP_API_RATE: '5' }), /SP_HTTP_API_BURST/);
+  assert.throws(() => publicApiLimitsFrom({}, { SP_HTTP_API_GLOBAL_RATE: '5' }), /SP_HTTP_API_GLOBAL_BURST/);
+  assert.throws(() => publicApiLimitsFrom({}, { SP_HTTP_HEALTH_RATE: '5' }), /SP_HTTP_HEALTH_BURST/);
+  assert.equal(publicApiLimitsFrom({}, { SP_HTTP_API_RATE: '5', SP_HTTP_API_BURST: '30' }).burst, 30);
+  assert.equal(publicApiLimitsFrom({}, { SP_HTTP_API_BURST: '30' }).ratePerSec, 0, 'a burst alone stays off');
   assert.equal(apiMainlandOnlyFrom(), false); assert.equal(apiMainlandOnlyFrom('on'), true);
   assert.throws(() => apiMainlandOnlyFrom('maybe'), /SP_HTTP_API_CN_ONLY/);
 });

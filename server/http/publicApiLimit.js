@@ -29,6 +29,18 @@ export function publicApiLimitsFrom(options = {}, env = process.env) {
       throw new RangeError(`${name} must be an integer between 0 and ${max}`);
     limits[key] = value;
   }
+  // A rate without a burst is not a limit, it is a wall: TokenBucket starts empty and clamps to `burst`
+  // (net.js), so `rate > 0, burst = 0` admits nothing at all — every public API answers 429 forever, with no
+  // startup error. Refuse the combination instead of shipping a server that looks up and rejects everything.
+  const pairs = [
+    ['ratePerSec', 'burst', 'SP_HTTP_API_RATE', 'SP_HTTP_API_BURST'],
+    ['globalRatePerSec', 'globalBurst', 'SP_HTTP_API_GLOBAL_RATE', 'SP_HTTP_API_GLOBAL_BURST'],
+    ['healthRatePerSec', 'healthBurst', 'SP_HTTP_HEALTH_RATE', 'SP_HTTP_HEALTH_BURST'],
+  ];
+  for (const [rate, burst, rateName, burstName] of pairs) {
+    if (limits[rate] > 0 && limits[burst] === 0)
+      throw new RangeError(`${burstName} must be greater than 0 when ${rateName} is set (a bucket with no burst admits nothing)`);
+  }
   return limits;
 }
 

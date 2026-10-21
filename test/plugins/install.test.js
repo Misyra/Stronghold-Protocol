@@ -15,6 +15,7 @@ import {
   INSTALL_MAX_BYTES, fetchHttps, hostAllowed, installFromFile, installFromUrl, installPluginBytes,
   installedPluginVersion, isNonPublicAddress, isRemoteAddress, loadCatalogText, pinningLookup, readDownloadAllow,
 } from '../../server/plugins/install.js';
+import { linkDir } from '../helpers/links.js';
 import { main } from '../../tools/plugin.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -189,17 +190,17 @@ test('https install: hash required before fetch, redirect manual, http and a bad
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
-test('a symlink id is not followed: status has no version, and --force renames the link', () => {
+test('a symlink id is not followed: status has no version, and --force renames the link', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-install-link-'));
   const plugins = path.join(tmp, 'plugins');
   const real = path.join(tmp, 'real');
   fs.mkdirSync(plugins);
   fs.mkdirSync(path.join(real, 'elsewhere'), { recursive: true });
   fs.writeFileSync(path.join(real, 'elsewhere', 'plugin.json'), JSON.stringify({ version: '9.9.9' }));
-  fs.symlinkSync(path.join(real, 'elsewhere'), path.join(plugins, 'demo-skin'));
+  if (!linkDir(t, path.join(real, 'elsewhere'), path.join(plugins, 'demo-skin'))) return;
   const incoming = path.join(tmp, 'incoming-target');
   fs.mkdirSync(incoming);
-  fs.symlinkSync(incoming, path.join(plugins, '_incoming'));
+  if (!linkDir(t, incoming, path.join(plugins, '_incoming'))) return;
   try {
     assert.equal(installedPluginVersion(plugins, 'demo-skin'), null);
     assert.throws(() => installPluginBytes(pluginZip('demo-skin'), { pluginsDir: plugins }), (e) => e.code === 'PLUGIN_INSTALL_ZIP');

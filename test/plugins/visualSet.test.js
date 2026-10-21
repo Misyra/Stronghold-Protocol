@@ -24,6 +24,7 @@ import { CompressCache } from '../../server/http/files.js';
 import { splitUrl } from '../../server/http/common.js';
 import { checkVisualDoc, layVisualOps, prepareVisualDoc, visualHashOf, modelHashOf, VISUAL_LIMITS } from '../../shared/plugins/visual.js';
 import { main as pluginTool } from '../../tools/plugin.mjs';
+import { linkDir, linkFile } from '../helpers/links.js';
 import { png, skel, atlas, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -280,7 +281,7 @@ describe('the visual sets of a server', () => {
       assert.equal(r.status, 404, 'a link to a dot file of the folder');
       assert.doesNotMatch(r.body.toString('utf8'), /SECRET/);
       fs.rmSync(target);
-      fs.symlinkSync(path.join(dir, 'art', 'unused.png'), target);
+      if (!linkFile(t, path.join(dir, 'art', 'unused.png'), target)) return;
       assert.equal((await get(`/p/red/${own}/art/red.png`)).status, 404, 'a link to another file of the folder');
     } finally {
       fs.rmSync(target, { force: true });
@@ -292,7 +293,7 @@ describe('the visual sets of a server', () => {
     const mh = modelHashOf(['spine/t/t.skel', 'spine/t/t.atlas', 'spine/t/t.png'].map((rel) => red.served.get(rel).sha256)).slice(0, 8);
     fs.renameSync(path.join(dir, 'spine', 't'), path.join(dir, 'spine', 't-moved'));
     try {
-      fs.symlinkSync(path.join(dir, 'spine', 't-moved'), path.join(dir, 'spine', 't'));
+      if (!linkDir(t, path.join(dir, 'spine', 't-moved'), path.join(dir, 'spine', 't'))) return;
       assert.equal((await get(`/p/red/${mh}/spine/t/t.png`)).status, 404);
     } finally {
       fs.rmSync(path.join(dir, 'spine', 't'), { force: true });

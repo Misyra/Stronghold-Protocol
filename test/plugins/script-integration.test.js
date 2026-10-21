@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import {linkDir} from '../helpers/links.js';
 import {scriptFixture} from '../helpers/scriptFixtures.js';
 import {createContentSets} from '../../server/plugins/contentSets.js';
 import {createMatchHosts} from '../../server/match/host/index.js';
@@ -37,7 +38,7 @@ test('same script battle is bit-identical in match child and loadBrowserSim, spe
  const spectator=await loadContentSet(built.cs,{fetch,retryDelays:[]});assert.equal(spectator.canSim,false);assert.equal(spectator.scripts.length,0);assert.ok(!calls.some(x=>x.includes('/scripts/')));
  const accepted=await loadContentSet(built.cs,{fetch,consent:true,retryDelays:[]});assert.equal(accepted.scripts.length,1);
  const runtime=path.join(f.root,'runtime');fs.mkdirSync(path.join(runtime,'server'),{recursive:true});
- fs.cpSync('server/sim',path.join(runtime,'server/sim'),{recursive:true,filter:src=>path.basename(src) !== 'nodeData.js'});
+ fs.cpSync('server/sim',path.join(runtime,'server/sim'),{recursive:true,filter:src=>path.basename(src) !== 'nodeData.js'});fs.cpSync('server/sim',path.join(runtime,'sim'),{recursive:true,filter:src=>path.basename(src) !== 'nodeData.js'});
  fs.cpSync('shared',path.join(runtime,'shared'),{recursive:true});
  fs.writeFileSync(path.join(runtime,'package.json'),'{"type":"module"}');fs.writeFileSync(path.join(runtime,'server/data.js'),DATA_SHIM_JS);
  const base=pathToFileURL(path.join(runtime,'server/sim')).href+'/';
@@ -82,10 +83,10 @@ test('CLI test runs the template harness with composed data',t=>{
  fs.mkdirSync(path.join(dir,'test'));let source=fs.readFileSync('plugins/_template/script/test/guard.test.js','utf8');
  source=source.replace('../../../test/helpers/battleHarness.js',pathToFileURL(path.join(ROOT,'test/helpers/battleHarness.js')).href);
  fs.writeFileSync(path.join(dir,'test/guard.test.js'),source);
- fs.symlinkSync(path.join(ROOT,'data'),path.join(f.root,'data'));fs.symlinkSync(path.join(ROOT,'server'),path.join(f.root,'server'));fs.symlinkSync(path.join(ROOT,'shared'),path.join(f.root,'shared'));
+ for (const name of ['data','server','shared']) if (!linkDir(t,path.join(ROOT,name),path.join(f.root,name))) return;
  // This explicit local command ignores both server mode and the pin (even after test files changed).
  fs.writeFileSync(path.join(f.pluginsDir,'config.json'),JSON.stringify({trusted:{'script-demo':'wrong-pin'}}));
  const env={...process.env,SP_PLUGIN_SCRIPTS:'sandbox'};delete env.NODE_TEST_CONTEXT;
  const r=spawnSync(process.execPath,['tools/plugin.mjs','test','script-demo','--root',f.root],{encoding:'utf8',timeout:20000,env});
- assert.equal(r.status,0,r.stdout+r.stderr);assert.match(r.stdout,/# pass 1/);
+ assert.equal(r.status,0,r.stdout+r.stderr);assert.match(r.stdout,/(?:#|ℹ) pass 1/);
 });

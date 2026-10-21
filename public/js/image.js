@@ -51,7 +51,8 @@ export function loadImageElement(url, { refresh = false, timeoutMs = 15000 } = {
       clearTimeout(timer);
       if (current) {
         current.onload = current.onerror = null;
-        if (error?.name === 'TimeoutError') current.src = '';
+        // Detaching the URL cancels a pending load; src = '' would ask for the current document again.
+        if (error?.name === 'TimeoutError') current.removeAttribute('src');
       }
       if (error) reject(error); else resolve(value);
     };

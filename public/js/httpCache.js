@@ -1,6 +1,6 @@
 // public/js/httpCache.js — a memory-only cache for the few endpoints a page polls.
 //
-// Those endpoints (`/healthz`, `/api/announcement`) answer differently over time without changing their URL, so the
+// Those endpoints (`/healthz?build=1`) answer differently over time without changing their URL, so the
 // browser must never keep them: the requests still go out with `cache: 'no-store'`. What is pure waste is one page
 // asking twice inside a few seconds — a tab restored from the background, a visibility resume right after a tick,
 // two components reading the same counter. Each call site owns its TTL; a body is never older than that TTL.

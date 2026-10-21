@@ -135,6 +135,7 @@ test('a stalled image has a deadline and late callbacks cannot complete it', asy
   globalThis.Image = class {
     constructor() { image = this; }
     set src(value) { this.url = value; }
+    removeAttribute(name) { if (name === 'src') this.url = ''; }
   };
   const pending = loadImageElement('/stalled.png', { timeoutMs: 50 });
   const lateLoad = image.onload;

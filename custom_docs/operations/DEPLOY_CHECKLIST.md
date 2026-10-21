@@ -87,7 +87,7 @@ curl -sk -o /dev/null -D - -H "Host: <域名>" -H "Accept-Encoding: gzip" "https
 | `announcement.json` | 公告空 |
 | `public/fonts`（7 文件） | 字体回退 |
 | `public/assets`（线上有本地美术时） | 静态图 404 |
-| `ops/agent.mjs` + collector（每台机器各自的采集节点） | `sp-admin` 的 `ExecStart` 指绝对路径，翻链接后文件不在 → 服务重启失败 |
+| `/opt/stronghold-ops/`（`agent.mjs` + collector，sp-portal 产物，不在本仓库） | `sp-admin` 的 `ExecStart` 指绝对路径，翻链接后文件不在 → 服务重启失败 |
 | `.assets-manifest.json` | `/healthz` 的 `assetsManifest` 变 `null`，CDN 逐文件 `?v=` 全丢 |
 
 ### `.assets-manifest.json` 不是构建产物

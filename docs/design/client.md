@@ -245,7 +245,7 @@ Title-screen asset download and asset-pack import (downstream request, 2026-10-1
 Upstream's **下载完整素材** predownloads the served manifest and **导入素材包** takes a local folder or zip; both keep
 what they took in Cache Storage and let `public/sw.js` answer hashed `/assets/`, `/fonts/` and `/media/` URLs. This fork
 serves no content-hash path segment (`/_v/<tag>/` locally, `?v=<file hash>` on a CDN — see
-[ASSETS.md](../ASSETS.md) and [MERGE_0.3.0.md](../../custom_docs/development/MERGE_0.3.0.md)), so that worker would never match. What this
+  [ASSETS.md](../ASSETS.md)), so that worker would never match. What this
 fork has instead is Settings → 资源: `public/js/resources/**` with `public/resource-sw.js` and
 `/data/resource-manifest.json`. Reviving the pair is a port of its own, not a re-wire.
 

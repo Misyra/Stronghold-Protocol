@@ -107,7 +107,7 @@
 ### 开服流量
 - 静音或把背景音乐音量调到 0 时不再下载背景音乐，重新打开声音后才下载当前该放的曲子（关音乐的玩家每局少下约 7–14 MB）。
 - 1 KB 以上的 WebSocket 消息用 permessage-deflate 压缩，一局单人对局的服务器消息实测从 173 KB 降到 60 KB。
-- 素材地址版本化：浏览器把图片、模型和音频缓存一年，服务器更新、重新解压或 Docker 重建后只要字节没变就不重下（本机模式发 `/_v/<tag>/` 整棵素材树的内容哈希；CDN 模式按文件哈希发 `<base>/assets/…?v=<hash>`）。上游 0.2.6 另做的服务端内容哈希索引（`/assets/~<hash>/…`）本分支不接入，理由见 [MERGE_0.2.6.md](custom_docs/development/MERGE_0.2.6.md)。
+- 素材地址版本化：浏览器把图片、模型和音频缓存一年，服务器更新、重新解压或 Docker 重建后只要字节没变就不重下（本机模式发 `/_v/<tag>/` 整棵素材树的内容哈希；CDN 模式按文件哈希发 `<base>/assets/…?v=<hash>`）。上游 0.2.6 另做的服务端内容哈希索引（`/assets/~<hash>/…`）本分支不接入，理由见 [docs/ASSETS.md](docs/ASSETS.md) 的「Manifest URLs and cache busting (this fork)」。
 - 支持 brotli 压缩（浏览器只在 HTTPS 页面和 localhost 上使用），`.skel` 和数据文件比 gzip 再小约四分之一。
 - 本地提取的「玩法说明」教程图另存 WebP（质量 90，25.6 MB → 4.2 MB），看说明时只预载下一页。
 - 流量统计：`/healthz?traffic=1` 显示服务器发出的各类流量（只对本机和局域网的访问显示）；「问题反馈」的诊断信息增加本页下载量。

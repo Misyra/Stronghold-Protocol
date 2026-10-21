@@ -788,8 +788,8 @@ manifest every page loads stays small; DESIGN §33.1) hold plain URLs. How they 
   page's URL must stay in its atlas's folder.
 - Upstream's **content-hash path segment** (`/assets/~<hash>/…`: a background index in `server/http/assetIndex.js` and
   `assetViews.js`, added in 0.2.6 and kept in 0.3.0) is deliberately **not** served here: `?v=<file hash>` (CDN) and
-  `/_v/<tag>/` (local) are this fork's two forms. See [MERGE_0.2.6.md](../custom_docs/development/MERGE_0.2.6.md) and [MERGE_0.3.0.md](../custom_docs/development/MERGE_0.3.0.md)
-  for the reason, and for what a future per-file improvement for local installs would have to do (strip `/_v/` first, then the segment; gate the manifest views on `!cdn.base`).
+    `/_v/<tag>/` (local) are this fork's two forms. A future per-file improvement for local installs would have to strip
+    the `/_v/` prefix first, then the segment, and gate the manifest views on `!cdn.base`.
 - **Cosmetic plugins** (0.3.0, [PLUGINS.md](PLUGINS.md) §9, DESIGN §32) use neither form: a room whose host switched them
   on draws with the served `data/assets.json` above and the room's visual set over it, composed by the page itself
   (`public/js/assets.js` cosmetic layers, `public/js/content.js`). `GET /vs/<vs16>/overlay.json`

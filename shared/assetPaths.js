@@ -5,7 +5,7 @@
 // busting on the CDN (<base>/assets/…?v=<file hash>, shared/assetCdn.js, .assets-manifest.json) and serves a
 // cosmetic plugin is written as a plain sentence: its /p/<id>/<hash8>/… files (DESIGN §32) sit beside the release
 // prefix. Upstream content-hash *segment* (/assets/~<hash>/…, a server-side index) is deliberately not served here:
-// the reason and the seam list are in custom_docs/development/MERGE_0.2.6.md.
+// see docs/ASSETS.md, "Manifest URLs and cache busting (this fork)", for the reason.
 
 /** The release prefix of a versioned URL: `/_v/` + 16 hex digits (server/assetVersion.js VERSION_PREFIX). */
 const VERSION_PREFIX_RE = /^\/_v\/[a-f0-9]{16}/;

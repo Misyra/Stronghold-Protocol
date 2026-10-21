@@ -23,7 +23,6 @@
 | [DEPLOY.md](operations/DEPLOY.md) | 部署总入口：Linux / Docker、统一配置、更新与验收 |
 | [HOME_SERVER.md](operations/HOME_SERVER.md) | Windows 与家用开服：自启、整合包更新、家用网络 |
 | [ANNOUNCEMENTS.md](operations/ANNOUNCEMENTS.md) | 游戏内公告：中央源、站点 ID、显式本地模式 |
-| [MONITORING.md](operations/MONITORING.md) | 监控探针与管理面板的分工、接入与版本同步 |
 | [PACKAGING.md](operations/PACKAGING.md) | 维护者制作完整包、精简包与更新包 |
 | [PERSISTENCE.md](operations/PERSISTENCE.md) | 对局持久化：检查点、索引、运行时钟与恢复 |
 | [CDN.md](operations/CDN.md) | 素材 CDN：分发、预载、缓存与版本化 |
@@ -47,22 +46,11 @@
 | [FORK_MAINTENANCE.md](development/FORK_MAINTENANCE.md) | 维护边界：模块归属、合并流程、冲突处理与推迟清单 |
 | [CUSTOM_API.md](development/CUSTOM_API.md) | 本分支服务端 API：房间查询、匹配与扩展接口 |
 | [TEST_WORKFLOW.md](development/TEST_WORKFLOW.md) | 三个测试入口、已知常年红的用例、各套基线 |
-| [MODEL-RECOVERY.md](development/MODEL-RECOVERY.md) | 模型消失：已确认的原因与回归覆盖 |
 | [PERFORMANCE.md](development/PERFORMANCE.md) | Worker 池、预载与性能优化 |
 | [LATENCY.md](development/LATENCY.md) | 健康检查、网络诊断与多房间调度 |
 | [STATE_DELTA.md](development/STATE_DELTA.md) | WebSocket 状态增量传输 |
 | [STATE_SYNC_BENCHMARK.md](development/STATE_SYNC_BENCHMARK.md) | 状态同步链路基线与优先级验证；§十一 是增量传输的首轮逐轮对照 |
 | [MOBILE_UI.md](development/MOBILE_UI.md) | 管理界面移动端密度 |
-
-### 上游合并记录
-
-合并记录留着是因为它们是"代码为什么长这样"的依据，上游文件与 `shared/` 的注释直接指向它们。
-
-| 文档 | 内容 |
-|---|---|
-| [MERGE_0.2.6.md](development/MERGE_0.2.6.md) | v0.2.6 合并执行方案（素材地址与 seams 的决定） |
-| [MERGE_0.3.0.md](development/MERGE_0.3.0.md) | v0.3.0 合并记录 |
-| [MERGE_0.3.1.md](development/MERGE_0.3.1.md) | v0.3.1 合并记录：四个交互特性 |
 
 ## 玩法（guides/）
 
@@ -76,7 +64,6 @@
 | 文档 | 内容 |
 |---|---|
 | [CHANGELOG.md](history/site/CHANGELOG.md) | 本站更新记录 |
-| [0.3.0-release.md](history/site/0.3.0-release.md) | 0.3.0 发布说明 |
 
 ## 阅读顺序
 

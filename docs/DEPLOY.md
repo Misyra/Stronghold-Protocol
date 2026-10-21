@@ -235,7 +235,7 @@ https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://�
 
 ### 2.5 玩家导入已有素材（需要 HTTPS）
 
-上游 0.3.0 的「下载完整素材」与「导入素材包」两个按钮在本分支**没有**：它们只收带内容哈希的 `/assets/~<哈希>/…` 地址，而本分支按 0.2.6 的决定不服务这种地址（见 [ASSETS.md](ASSETS.md) 的「Manifest URLs and cache busting (this fork)」，以及 [MERGE_0.3.0.md](../custom_docs/development/MERGE_0.3.0.md) 里的推迟清单）。请以标题画面实际有的按钮为准。
+上游 0.3.0 的「下载完整素材」与「导入素材包」两个按钮在本分支**没有**：它们只收带内容哈希的 `/assets/~<哈希>/…` 地址，而本分支不服务这种地址（见 [ASSETS.md](ASSETS.md) 的「Manifest URLs and cache busting (this fork)」）。请以标题画面实际有的按钮为准。
 
 本分支的预载在「设置 → 资源」里（`public/js/resources/**`、`public/resource-sw.js`、`/data/resource-manifest.json`），不需要 HTTPS：局域网 http 打开也能用，还包括皮肤预载的可选开关。
 

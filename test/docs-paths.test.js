@@ -84,7 +84,7 @@ for (const [docPath, least] of DOCS) {
 
 /**
  * Markdown with fenced blocks and inline code taken out: a doc may quote link syntax as an example
- * (custom_docs/development/MERGE_0.3.0.md quotes DESIGN.md's index row), and that is not a link.
+ * (a doc that quotes link syntax as an example), and that is not a link.
  */
 const proseOf = (md) => md.replace(/^```[\s\S]*?^```/gm, '').replace(/`[^`\n]*`/g, '');
 

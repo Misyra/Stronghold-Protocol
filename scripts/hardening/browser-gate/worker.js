@@ -1,4 +1,5 @@
-/* global importScripts, self, Date */
+/* global importScripts, self */
+// Date already comes from eslint's Node globals for this tree; redeclaring it here is what tripped no-redeclare.
 importScripts('/_gate/assets/sha256.js');
 // Progress is reported against the expected work for this difficulty (2^bits hashes on
 // average) and is capped at 99 so it never claims completion. The cap below stays under the

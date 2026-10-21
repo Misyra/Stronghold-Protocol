@@ -1,4 +1,6 @@
-/* global document, Worker, location, performance, setInterval, clearInterval, fetch */
+/* global document, Worker, location */
+// performance / setInterval / clearInterval / fetch already come from eslint's Node globals for this tree;
+// redeclaring them here is what tripped no-redeclare.
 const status=document.getElementById('status'), button=document.getElementById('retry');
 let running=false, timer=0;
 

@@ -328,13 +328,16 @@ async function main() {
     const r = await installSkins(ids);
     for (const f of r.failed) console.error(`[skins] ✗ ${f.id}: ${f.why}`);
     console.log(`\n已安装 ${r.installed.length} 套`);
-    return 0;
+    // Every id failing means nothing changed on disk: an exit code of 0 would tell a script that it worked.
+    return r.installed.length ? 0 : 1;
   }
 
   console.error(`未知命令: ${cmd}（可用: list / add / remove / add-char）`);
   return 2;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// fileURLToPath gives the real path; argv[1] may differ in case or separators, so compare the platform's own way.
+const selfPath = (p) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
+if (process.argv[1] && selfPath(process.argv[1]) === selfPath(fileURLToPath(import.meta.url))) {
   main().then((c) => { process.exitCode = c; }, (e) => { console.error(e?.stack || e); process.exitCode = 1; });
 }

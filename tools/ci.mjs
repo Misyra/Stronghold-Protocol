@@ -331,7 +331,8 @@ async function runStep(step, env) {
       const vendor = await node(['tools/vendor.mjs'], env);
       return vendor === 0 ? node([binPath('vite', 'vite'), 'build'], env) : vendor;
     }
-    case 'test': return node(['--import', './test/helpers/test-setup.js', '--test', '--test-concurrency=4'], env);
+    // The same globs as `npm test`: node --test with no paths discovers a different (larger) set.
+    case 'test': return node(['--import', './test/helpers/test-setup.js', '--test', '--test-concurrency=4', 'test/**/*.test.js', 'test/**/*.test.mjs'], env);
     case 'smoke': return smoke(env);
     case 'lint': return node([binPath('eslint', 'eslint'), '.'], env);
     case 'imports': return node(['tools/check-fork-boundaries.mjs'], env);

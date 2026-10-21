@@ -240,7 +240,12 @@ if (DRY) {
 }
 
 const CONFIG_ACCOUNT = readToken();
-const ACCOUNT = flag('--account', CONFIG_ACCOUNT || '66c7c5b7bad286a799db484a5ba4a7fb');
+// No default account here: an account id in the source is somebody's deployment, not a value this tool can guess.
+const ACCOUNT = flag('--account', CONFIG_ACCOUNT || process.env.R2_ACCOUNT_ID || '');
+if (!ACCOUNT) {
+  console.error('缺少 R2 账户 ID：用 --account <id> 或环境变量 R2_ACCOUNT_ID（wrangler login 后可从 `wrangler whoami` 查到）。');
+  process.exit(2);
+}
 const API = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/r2/buckets/${BUCKET}/objects`;
 
 // ---- upload only what changed ----

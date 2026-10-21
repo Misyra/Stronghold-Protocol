@@ -141,7 +141,11 @@ async function main() {
   process.on('SIGINT', () => {});
   for (const sig of ['SIGTERM', 'SIGHUP', 'SIGBREAK']) { try { process.on(sig, () => forward(sig === 'SIGBREAK' ? 'SIGTERM' : sig)); } catch { /* unsupported here */ } }
 
-  const exited = new Promise((resolve) => child.on('exit', (code, signal) => resolve(code ?? (signal ? 0 : 1))));
+  // A child killed by a signal did not stop on its own: only the signals forwarded above count as a clean stop.
+  // Everything else (SIGKILL from an OOM killer or a service manager's timeout) is a failure, so scripts and
+  // systemd see it as one instead of reporting a successful run.
+  const STOP_SIGNALS = new Set(['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']);
+  const exited = new Promise((resolve) => child.on('exit', (code, signal) => resolve(code ?? (STOP_SIGNALS.has(signal) ? 0 : 1))));
   if (await waitHealthy(o.port, child)) {
     printShare(o.port);
     if (o.open && !openBrowser(localUrl)) console.log(c.dim(`（未能自动打开浏览器，请手动访问 ${localUrl}）`));

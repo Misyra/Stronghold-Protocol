@@ -1,4 +1,4 @@
-﻿<#
+<#
   卫戍协议：盟约 · 开机自动在后台运行服务器（Windows 任务计划程序）+ 防火墙规则。文档：docs\operations\DEPLOY.md
   用法（会自动请求管理员权限）：
     powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1              # 安装并立即启动
@@ -42,7 +42,7 @@ function Test-Admin {
 function Stop-ServerProcesses {
   # the task runs cmd.exe (run-server.cmd, a restart loop) → node.exe: stop the loop first, then its children
   $runners = @(Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -like '*run-server.cmd*' })
+    Where-Object { $_.CommandLine -like '*run-server.cmd*' -and $_.CommandLine -like "*$Root*" })
   foreach ($r in $runners) {
     $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($r.ProcessId)" -ErrorAction SilentlyContinue)
     Stop-Process -Id $r.ProcessId -Force -ErrorAction SilentlyContinue

@@ -209,7 +209,7 @@ sudo systemctl status sp-syn-ban             # 是否加载过
 
 游戏必须在域名根路径运行；转发 WebSocket `/ws`，其余请求交给同一个 Node 实例。完整 nginx 配置使用 [scripts/nginx.conf.example](../../scripts/nginx.conf.example)，替换域名、证书及 Node 端口。`worker_processes auto;` 放在主配置顶层；`map` 放在 `http` 中。
 
-首次采用或升级到该 nginx 示例时，先安装 GeoIP2 模块与 HTTP 级片段：`sp-business-limit-map.conf`、`sp-log-format.conf`、`sp-public-api-map.conf`、`sp-health-cache-map.conf`、`sp-geoip-country.conf`，每份只加载一次（已有 `conf.d/*.conf` 通配 include 时不要重复 include）。完整独立示例显式 load_module；Debian 已经通过 `modules-enabled` 加载时不要重复。缺少模块、国家库或片段会导致 `nginx -t` 失败。当前示例仅允许国家库命中 CN 的公网来源，关闭可选公开 API（昵称 HTTP 预检临时停用，原实现保留），保留 5 秒源站缓存的健康接口；本机监控绕过缓存。详见[接口防护](HTTP_PROTECTION.md)和[主机加固](HOST_HARDENING.md)。
+首次采用或升级到该 nginx 示例时，先安装 GeoIP2 模块与 HTTP 级片段：`sp-business-limit-map.conf`、`sp-log-format.conf`、`sp-public-api-map.conf`、`sp-health-cache-map.conf`、`sp-page-global.conf`、`sp-geoip-country.conf`，每份只加载一次（已有 `conf.d/*.conf` 通配 include 时不要重复 include）。完整独立示例显式 load_module；Debian 已经通过 `modules-enabled` 加载时不要重复。缺少模块、国家库或片段会导致 `nginx -t` 失败。当前示例仅允许国家库命中 CN 的公网来源，关闭可选公开 API（昵称 HTTP 预检临时停用，原实现保留），保留 5 秒源站缓存的健康接口；本机监控绕过缓存。详见[接口防护](HTTP_PROTECTION.md)和[主机加固](HOST_HARDENING.md)。
 
 Caddy 的最小配置：
 
@@ -260,6 +260,7 @@ sudo install -m 644 scripts/nginx-log-format.conf.example /etc/nginx/conf.d/sp-l
 sudo install -m 644 scripts/hardening/sp-public-api-map.conf /etc/nginx/conf.d/sp-public-api-map.conf
 sudo apt-get install libnginx-mod-http-geoip2
 sudo install -m 644 scripts/hardening/sp-health-cache-map.conf /etc/nginx/conf.d/sp-health-cache-map.conf
+sudo install -m 644 scripts/hardening/sp-page-global.conf /etc/nginx/conf.d/sp-page-global.conf
 sudo install -m 644 scripts/hardening/sp-geoip-country.conf.example /etc/nginx/conf.d/sp-geoip-country.conf
 # 编辑片段的端口、图标 root，并合入上面的 server include 后：
 sudo nginx -t

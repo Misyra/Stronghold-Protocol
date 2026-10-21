@@ -558,7 +558,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 来源：[konsheng/Sensitive-lexicon](https://github.com/konsheng/Sensitive-lexicon)，固定提交 `d967c30b053fa40b06c5a0dddf0be493f2dfae46`，MIT License，Copyright (c) 2024~2099 Konsheng。
 
-上游 17 份 `Vocabulary/*.txt` 与本站补充词经归一化、长度筛选、普通词豁免和去重，合并为服务端唯一词表 `server/moderation/lexicon/words.txt`。完整许可证见同目录 `LICENSE`，上游版本、原始文件 SHA-256、筛选记录和合并文件摘要见 `SOURCE.json`。不再保存散落的原词表，运行时只读取合并文件，不向浏览器分发词表。
+上游 17 份 `Vocabulary/*.txt` 与本站补充词经归一化、长度筛选、普通词豁免和去重，合并为服务端唯一词表，AES 加密后存为 `server/moderation/lexicon/words.enc`（运行时用 `SP_MODERATION_KEY` 解密，明文不落盘、不进发行包）。完整许可证见同目录 `LICENSE`，上游版本、原始文件 SHA-256、筛选记录和合并文件摘要见 `SOURCE.json`。不再保存散落的原词表，运行时只读取合并文件，不向浏览器分发词表。
 
 ### Acorn — MIT
 

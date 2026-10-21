@@ -56,8 +56,10 @@ Hackl0us/GeoIP2-CN）也不能按 `country` 模式用，否则海外来源会被
 ```bash
 curl -fL -o /tmp/GeoLite2-Country.mmdb "https://github.com/P3TERX/GeoLite.mmdb/releases/download/<tag>/GeoLite2-Country.mmdb"
 
-# 校验：真库样本（CN / 非 CN / IPv6）与模式校验一起跑，失败会退出非 0
+# 校验：真库样本（CN / 非 CN / IPv6）与模式校验一起跑，失败会退出非 0。
+# 两个样本清单是必填的：缺任何一个，真实库那条用例会被跳过（跳过在 node --test 里算通过）。
 SP_GEOIP_TEST_DB=/tmp/GeoLite2-Country.mmdb SP_GEOIP_TEST_MODE=country \
+SP_GEOIP_TEST_MAINLAND=223.5.5.5,2400:3200::1 SP_GEOIP_TEST_FOREIGN=8.8.8.8,2606:4700:4700::1111 \
   node --test test/geoip.test.js
 
 mv /tmp/GeoLite2-Country.mmdb geoip/GeoLite2-Country.mmdb
@@ -77,7 +79,8 @@ sudo systemctl restart stronghold
 
 ```bash
 # 只验这一个库而不启动服务器
-SP_GEOIP_TEST_DB=geoip/GeoLite2-Country.mmdb SP_GEOIP_TEST_MODE=country node --test test/geoip.test.js
+SP_GEOIP_TEST_DB=geoip/GeoLite2-Country.mmdb SP_GEOIP_TEST_MODE=country \
+SP_GEOIP_TEST_MAINLAND=223.5.5.5 SP_GEOIP_TEST_FOREIGN=8.8.8.8 node --test test/geoip.test.js
 ```
 
 ## 本地可选数据库
@@ -95,7 +98,8 @@ ASN 库用来把地址粗分成 cloud / isp / unknown：`server/geoipAsn.js` 读
 ```bash
 node tools/geoip-classify.mjs <地址> [<地址> …]
 node tools/geoip-classify.mjs --sample 300000        # 桶分布 + 命中的机房 ASN
-SP_ASN_TEST_DB=geoip/GeoLite2-ASN.mmdb node --test test/net-class.test.js
+SP_ASN_TEST_DB=geoip/GeoLite2-ASN.mmdb SP_ASN_TEST_CLOUD=104.16.0.1 SP_ASN_TEST_ISP=223.5.5.5 \
+  node --test test/net-class.test.js
 ```
 
 ASN 仍不是住宅/机房标签（同一条运营商 ASN 里同时坐着家宽、企业专线和中小机房），规则与实测精度见

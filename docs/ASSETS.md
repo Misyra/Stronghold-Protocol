@@ -786,8 +786,8 @@ manifest every page loads stays small; DESIGN §33.1) hold plain URLs. How they 
 - A Spine model keeps its `{ skel, atlas, textures }` folder together (hash of the model's files, `tools/r2-sync.mjs`
   and `tools/published-assets.mjs`): pixi-spine finds the atlas by the skeleton's name and the pages beside it, so a
   page's URL must stay in its atlas's folder.
-- Upstream's **content-hash path segment** (`/assets/~<hash>/…`: a background index in `server/http/assetIndex.js` and
-  `assetViews.js`, added in 0.2.6 and kept in 0.3.0) is deliberately **not** served here: `?v=<file hash>` (CDN) and
+- Upstream's **content-hash path segment** (`/assets/~<hash>/…`: a background index, added in 0.2.6 and kept in 0.3.0;
+  this fork's equivalent lives in `server/assetVersion.js`) is deliberately **not** served here: `?v=<file hash>` (CDN) and
     `/_v/<tag>/` (local) are this fork's two forms. A future per-file improvement for local installs would have to strip
     the `/_v/` prefix first, then the segment, and gate the manifest views on `!cdn.base`.
 - **Cosmetic plugins** (0.3.0, [PLUGINS.md](PLUGINS.md) §9, DESIGN §32) use neither form: a room whose host switched them

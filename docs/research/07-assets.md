@@ -396,7 +396,7 @@ Avoid redistributing Georgia and Times New Roman (Microsoft fonts) from that rep
 ## 9. Build and delivery plan (recommended)
 
 1. **Keep assets out of git.** Add `client/public/assets/` to `.gitignore`.
-2. Write `scripts/fetch-assets.mjs`. It reads `docs/research/07-assets.json` and downloads, with concurrency of about 16, retry ×3 and a jsDelivr mirror when raw fails:
+2. Write `tools/fetch-assets.mjs`. It reads `docs/research/07-assets.json` and downloads, with concurrency of about 16, retry ×3 and a jsDelivr mirror when raw fails:
    - `assets/char/avatar/{charId}.webp`, choosing E2 if present, else base.
    - `assets/char/portrait/{charId}.webp`.
    - `assets/skill/{iconId}.webp`.

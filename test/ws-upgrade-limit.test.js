@@ -180,9 +180,12 @@ test('real upgrades: successful reconnects and refused paths/origins count; bans
   assert.equal(await attempt('203.0.113.10'), 101);
   for (let i = 0; i < 10; i++) assert.equal(await attempt('203.0.113.11', '/wrong'), 404);
   for (let i = 0; i < 10; i++) assert.equal(await attempt('203.0.113.11', '/ws', 'https://other.example'), 403);
-  assert.equal(await attempt('203.0.113.11'), 403, 'refused upgrades count toward the same threshold');
+  // A page on another origin can open sockets in a visitor's browser: if those attempts spent the
+  // visitor's budget, any site could ban the visitor here for an hour. Path and origin are decided
+  // before the counter, so a refused path or a foreign origin is refused without cost.
+  assert.equal(await attempt('203.0.113.11'), 101, 'refused paths and foreign origins never count');
   const records = fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-  assert.equal(records.length, 2);
+  assert.equal(records.length, 1);
   for (const record of records) { assert.equal(record.reason, 'WS_UPGRADE_FLOOD'); assert.equal(record.expiresAt - record.bannedAt, 3600000); }
   await server.close(); server = await startServer(opts);
   assert.equal(await attempt(), 403);

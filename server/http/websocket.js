@@ -198,7 +198,10 @@ export function attachWebSocket(server, { network, log, wsCompression, wsOrigins
       try { socket.end(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); } catch { socket.destroy(); }
     };
     if (isIpBanned(req)) { reject(403, 'Forbidden'); return; }
-    if (!allowUpgrade(req)) { reject(403, 'Forbidden'); return; }
+    // Path and origin are checked before the flood counter on purpose. allowUpgrade() bans the address in the
+    // shared HTTP ban store when it trips, and WebSocket has no same-origin policy: any page a player visits can
+    // open wss://<this host>/anything from the player's browser. Counting those rejected handshakes let a drive-by
+    // page push one visitor's IP (behind CGNAT, a whole building) into the site-wide ban list for an hour.
     if (!parts || parts.rawPath !== '/ws') { reject(404, 'Not Found'); return; }
     const address = clientAddress(req, network.opts.trustProxy);
     const netBlocked = network.networkBlocked(address);
@@ -214,6 +217,7 @@ export function attachWebSocket(server, { network, log, wsCompression, wsOrigins
       return;
     }
     if (!wsOriginAllowed(req, wsOrigins)) { reject(403, 'Forbidden'); return; }
+    if (!allowUpgrade(req)) { reject(403, 'Forbidden'); return; }
     const refused = network.admission(req);
     if (refused === 'per-address') { reject(429, 'Too Many Requests'); return; }
     if (refused) { reject(503, 'Service Unavailable'); return; }

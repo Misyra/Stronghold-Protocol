@@ -15,6 +15,14 @@ const binary = process.env.NGINX_PATH;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const normalized = file => file.replaceAll('\\', '/');
 const read = file => fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8');
+// nginx.conf.example loads the distribution mime map from an absolute path; a temporary tree has
+// to carry its own copy or nginx -t stops on a missing file.
+function mimeInclude(dir, prefix) {
+  const source = path.join(path.dirname(binary), 'conf', 'mime.types');
+  if (!fs.existsSync(source)) return '';
+  fs.copyFileSync(source, path.join(dir, 'mime.types'));
+  return `include "${prefix}mime.types";`;
+}
 
 // 探针不再随本仓库分发（2026-10-12）：它由 sp-portal 生成到自己的 ops/ 产物树，部署时整份拷到服务器。
 // 这个用例要真起一个 Agent、并用 nginx 示例片段，所以按顺序找：SP_PROBE_DIR → 同级的 sp-portal 检出 →
@@ -99,6 +107,7 @@ test('real nginx examples: manifest caching, current health, log metadata and au
       .replace('load_module /usr/lib/nginx/modules/ngx_http_geoip2_module.so;', '')
       .replace('include /etc/nginx/conf.d/sp-geoip-country.conf;', '')
       .replace('if ($sp_geoip_denied) { return 444; }', '')
+      .replace('include /etc/nginx/mime.types;', mimeInclude(dir, prefix))
       .replace('include /etc/nginx/conf.d/sp-log-format.conf;', `include "${prefix}log.conf";`)
       .replace('include /etc/nginx/conf.d/sp-business-limit-map.conf;', `include "${prefix}business-map.conf";`)
       .replace('include /etc/nginx/conf.d/sp-page-global.conf;', `include "${prefix}page-global.conf";`)

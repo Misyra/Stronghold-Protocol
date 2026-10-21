@@ -35,6 +35,16 @@ export function resourceManifestUrl(version = globalThis.__spAssetVersion) {
   return '/data/resource-manifest.json' + (/^[a-f0-9]{16}$/.test(version || '') ? `?v=${version}` : '');
 }
 export const MANIFEST_URL = resourceManifestUrl();
+/**
+ * A `?v=<release>` manifest URL is content-addressed: the server derives that tag from the files it serves,
+ * so one URL can never describe two different manifests. It may therefore be answered from the browser's own
+ * cache; only the unversioned fallback has to revalidate. Without this split the client re-downloads the whole
+ * multi-megabyte manifest on every page load, because `cache: 'no-cache'` on a fetch outranks every response
+ * header a proxy or the origin can send.
+ */
+export function isVersionedManifestUrl(url) {
+  return /[?&]v=[a-f0-9]{16}(?:&|$)/.test(String(url ?? ''));
+}
 export const SW_URL = '/resource-sw.js';
 // Vite replaces this only in the page build; the independent worker build keeps the source fallback.
 const BUILT_SW_URL = '';

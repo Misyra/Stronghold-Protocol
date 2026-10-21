@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checkBuildOnce, startBuildGuard, fetchBuild, probeGateRequired, BUILD_CHECK_MS, BUILD_FETCH_TIMEOUT_MS,
-  GATE_PROBE_URL, GATE_RELOAD_KEY } from '../../public/js/ui/buildGuard.js';
+  HEALTH_CACHE_MS, GATE_PROBE_URL, GATE_RELOAD_KEY } from '../../public/js/ui/buildGuard.js';
 
 /** A fake fetch answering /healthz with `build` (null → the frame carries none). */
 const fetchOf = (build) => async (url, init) => {
@@ -19,10 +19,11 @@ const fetchOf = (build) => async (url, init) => {
 test('hidden tabs pause build polling, resume immediately and detach listeners on stop', async () => {
   const doc = new EventTarget(); doc.hidden = true;
   const settle = () => new Promise(resolve => setTimeout(resolve, 0));
-  let tick, calls = 0, reloads = 0, build = 'aaa';
+  let tick, calls = 0, reloads = 0, build = 'aaa', clock = 0;
   const guard = startBuildGuard({ document: doc,
     fetchFn: async () => { calls++; return { ok: true, json: async () => ({ build }) }; },
     setInterval: fn => { tick = fn; return 1; }, clearInterval: () => {}, reload: () => reloads++,
+    now: () => clock,
   });
   await settle(); tick(); await settle();
   assert.equal(calls, 0);
@@ -34,10 +35,38 @@ test('hidden tabs pause build polling, resume immediately and detach listeners o
   tick(); await settle(); assert.equal(calls, 2);
   doc.hidden = false; doc.dispatchEvent(new Event('visibilitychange')); await settle();
   assert.equal(reloads, 0, 'returning to a tab still requires two fresh agreeing checks');
+  assert.equal(calls, 2, 'a resume inside the cache window does not re-ask the server');
+  await guard.check(); assert.equal(reloads, 0, 'one server read after the resume is not two');
   await guard.check(); assert.equal(reloads, 1);
-  doc.dispatchEvent(new Event('visibilitychange')); await settle(); assert.equal(calls, 4);
+  doc.dispatchEvent(new Event('visibilitychange')); await settle();
+  assert.equal(calls, 4, 'the reload ended the watch: a stopped guard never asks again');
   guard.stop();
-  doc.dispatchEvent(new Event('visibilitychange')); await settle(); assert.equal(calls, 4);
+});
+
+test('build polling: a resume inside the cache window reuses the last read, and never counts it twice', async () => {
+  const doc = new EventTarget(); doc.hidden = false;
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  let calls = 0, reloads = 0, build = 'aaa', clock = 0;
+  const guard = startBuildGuard({ document: doc,
+    fetchFn: async () => { calls++; return { ok: true, json: async () => ({ build }) }; },
+    setInterval: () => 1, clearInterval: () => {}, reload: () => reloads++,
+    now: () => clock,
+  });
+  await settle();
+  assert.equal(calls, 1, 'the page reads its build on load');
+  build = 'bbb';
+  clock += 1_000;
+  doc.dispatchEvent(new Event('visibilitychange')); await settle();
+  clock += 1_000;
+  doc.dispatchEvent(new Event('visibilitychange')); await settle();
+  assert.equal(calls, 1, 'two resumes inside the window are one server read');
+  assert.equal(reloads, 0, 'and one read is not the two agreeing checks a reload needs');
+  clock += HEALTH_CACHE_MS * 2;                                 // past the window the next read is real, and it agrees
+  doc.dispatchEvent(new Event('visibilitychange')); await settle();
+  assert.equal(calls, 2, 'a resume after the window reads the server');
+  assert.equal(reloads, 0, 'a cached sighting before it was not the second confirmation');
+  await guard.check(); assert.equal(reloads, 1);
+  guard.stop();
 });
 
 test('a build request completing after the tab becomes hidden cannot reload it', async () => {
@@ -78,6 +107,7 @@ function manual({ inMatch = false } = {}) {
   let build = 'aaa';
   let reachable = true;
   let busy = inMatch;
+  let clock = 0;                                               // the fake interval fires a minute apart
   const guard = startBuildGuard({
     fetchFn: async () => {
       if (!reachable) throw new Error('offline');
@@ -87,6 +117,7 @@ function manual({ inMatch = false } = {}) {
     inMatch: () => busy,
     setInterval: (fn) => { ticks.push(fn); return ticks.length; },
     clearInterval: () => {},
+    now: () => clock,
     onStale: (info) => calls.stale.push(info),
   });
   return {
@@ -95,7 +126,7 @@ function manual({ inMatch = false } = {}) {
     setReachable: (b) => { reachable = b; },
     setInMatch: (b) => { busy = b; },
     /** run the interval callback and let its await settle */
-    tick: async () => { for (const fn of ticks) fn(); await new Promise((r) => setTimeout(r, 0)); },
+    tick: async () => { clock += BUILD_CHECK_MS; for (const fn of ticks) fn(); await new Promise((r) => setTimeout(r, 0)); },
   };
 }
 
@@ -215,13 +246,15 @@ test('onHealth: told every /healthz body a check reads — what else the page re
 // ---------------------------------------------------------------------------------------------------------------
 
 /** A guard whose /healthz and ungated probe fail independently. */
-function gated({ inMatch = false, storage = null, now = () => Date.now() } = {}) {
+function gated({ inMatch = false, storage = null, now } = {}) {
   const ticks = [];
   const calls = { reload: 0, gate: [], recovered: [] };
   let build = 'aaa';
   let healthUp = true;
   let probeUp = true;
   let busy = inMatch;
+  let clock = Date.now();                               // the fake interval fires a minute apart
+  const currentTime = typeof now === 'function' ? now : () => clock;
   const guard = startBuildGuard({
     fetchFn: async (url) => {
       if (url === GATE_PROBE_URL) {
@@ -235,7 +268,7 @@ function gated({ inMatch = false, storage = null, now = () => Date.now() } = {})
     reload: () => { calls.reload++; },
     inMatch: () => busy,
     storage,
-    now,
+    now: currentTime,
     setInterval: (fn) => { ticks.push(fn); return ticks.length; },
     clearInterval: () => {},
     onStale: () => {},
@@ -247,7 +280,7 @@ function gated({ inMatch = false, storage = null, now = () => Date.now() } = {})
     setHealthUp: (v) => { healthUp = v; },
     setProbeUp: (v) => { probeUp = v; },
     setInMatch: (v) => { busy = v; },
-    tick: async () => { for (const fn of ticks) fn(); await new Promise((r) => setTimeout(r, 0)); },
+    tick: async () => { clock += BUILD_CHECK_MS; for (const fn of ticks) fn(); await new Promise((r) => setTimeout(r, 0)); },
   };
 }
 

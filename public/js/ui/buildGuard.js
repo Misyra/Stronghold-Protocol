@@ -38,9 +38,18 @@
 //
 // Kept dependency-free and injectable (fetch / reload / inMatch / timers / storage) so test/ui/buildGuard.test.js can
 // drive it.
+//
+// WHY (polling): every open page asks `/healthz` this way, and a single page can ask several times within a second —
+// a tab restored from the background fires `visibilitychange` the instant the interval tick also fires. Those repeat
+// reads cannot report anything new, so a body read less than HEALTH_CACHE_MS ago is reused for the timer/visibility
+// path. An explicit `check()` (a player pressing 重试, a test) always reads the server. A cached sighting is also not
+// counted as one of the BUILD_CONFIRMATIONS: the confirmations must be two reads of the server, not one read twice.
+import { cachedJson } from '../httpCache.js';
 
 /** How often a page re-asks the server for its build tag. */
 export const BUILD_CHECK_MS = 60_000;
+/** A `/healthz` body read less than this long ago is reused by the timer and visibility paths (never by `check()`). */
+export const HEALTH_CACHE_MS = 5_000;
 /** Give up on a `/healthz` that does not answer: a request left hanging must not stop the guard from ever checking again. */
 export const BUILD_FETCH_TIMEOUT_MS = 5_000;
 /** How many checks in a row must report the same NEW build before the page acts on it. */
@@ -74,27 +83,44 @@ function abortable(o, timeoutMs) {
 }
 
 /**
- * Fetch `/healthz` and return its `build` tag (null when unavailable, not reported, or too slow). Never throws.
+ * One `/healthz` read: the build tag it reported and whether that came from the client-side cache. Never throws.
  * @param {Function} fetchFn
- * @param {{ timeoutMs?: number, setTimeout?: Function, clearTimeout?: Function, onHealth?: (body: any) => void }} [o]
- *   onHealth: told the body it read (see the header)
- * @returns {Promise<string|null>}
+ * @param {{ timeoutMs?: number, setTimeout?: Function, clearTimeout?: Function, onHealth?: (body: any) => void,
+ *   ttlMs?: number, now?: () => number }} [o]
+ * @returns {Promise<{ build: string|null, cached: boolean }>}
  */
-export async function fetchBuild(fetchFn, o = {}) {
+async function readHealth(fetchFn, o = {}) {
   const timeoutMs = Number.isFinite(o.timeoutMs) && o.timeoutMs > 0 ? o.timeoutMs : BUILD_FETCH_TIMEOUT_MS;
   const race = abortable(o, timeoutMs);
   try {
     // Older servers ignore the query and return full health, whose build field still works.
-    const res = await Promise.race([fetchFn('/healthz?build=1', { cache: 'no-store', signal: race.signal }), race.timeout]);
-    if (!res || !res.ok) return null;
-    const body = await res.json();
-    try { if (body && typeof body === 'object') o.onHealth?.(body); } catch { /* the listener's own trouble */ }
-    return body && typeof body.build === 'string' && body.build ? body.build : null;
+    const got = await Promise.race([
+      cachedJson(fetchFn, '/healthz?build=1', { ttlMs: o.ttlMs, now: o.now, init: { cache: 'no-store', signal: race.signal } }),
+      race.timeout,
+    ]);
+    if (!got.ok) return { build: null, cached: false };
+    const body = got.value;
+    // A cached body was reported to onHealth when it was read; reporting it twice would double-fire that listener.
+    if (!got.cached) { try { if (body && typeof body === 'object') o.onHealth?.(body); } catch { /* the listener's own trouble */ } }
+    const build = body && typeof body.build === 'string' && body.build ? body.build : null;
+    return { build, cached: got.cached };
   } catch {
-    return null;
+    return { build: null, cached: false };
   } finally {
     race.clear();
   }
+}
+
+/**
+ * Fetch `/healthz` and return its `build` tag (null when unavailable, not reported, or too slow). Never throws.
+ * @param {Function} fetchFn
+ * @param {{ timeoutMs?: number, setTimeout?: Function, clearTimeout?: Function, onHealth?: (body: any) => void,
+ *   ttlMs?: number, now?: () => number }} [o]
+ *   onHealth: told the body it read (see the header)
+ * @returns {Promise<string|null>}
+ */
+export async function fetchBuild(fetchFn, o = {}) {
+  return (await readHealth(fetchFn, o)).build;
 }
 
 /**
@@ -119,12 +145,15 @@ export async function probeGateRequired(fetchFn, o = {}) {
 /**
  * One check, against the build this page already knows.
  * @param {{ fetchFn?: Function, known?: string|null, timeoutMs?: number, setTimeout?: Function, clearTimeout?: Function,
- *   onHealth?: (body: any) => void }} [o]
+ *   onHealth?: (body: any) => void, ttlMs?: number, now?: () => number,
+ *   onRead?: (info: { cached: boolean }) => void }} [o]
  * @returns {Promise<{ status: 'first'|'current'|'new'|'unknown', build: string|null }>}
  */
 export async function checkBuildOnce(o = {}) {
   const fetchFn = o.fetchFn || ((url, init) => globalThis.fetch(url, init));
-  const build = await fetchBuild(fetchFn, o);
+  const read = await readHealth(fetchFn, o);
+  try { o.onRead?.({ cached: read.cached }); } catch { /* ignore */ }
+  const build = read.build;
   if (!build) return { status: 'unknown', build: null };            // unreachable / not reported: never a reload
   if (!o.known) return { status: 'first', build };
   return { status: o.known === build ? 'current' : 'new', build };
@@ -139,8 +168,8 @@ export async function checkBuildOnce(o = {}) {
  *           onGateLost?: (info: { waiting: boolean, exhausted: boolean }) => void,
  *           onGateRecovered?: () => void,
  *           onHealth?: (body: any) => void }} [o]  onHealth: every /healthz body a check reads (see the header)
- * @returns {{ stop: () => void, check: () => Promise<object>, stale: () => boolean, gateLost: () => boolean,
- *   known: () => string|null }}
+ * @returns {{ stop: () => void, check: (opts?: { ttlMs?: number }) => Promise<object>, stale: () => boolean,
+ *   gateLost: () => boolean, known: () => string|null }}
  */
 export function startBuildGuard(o = {}) {
   const fetchFn = o.fetchFn || ((url, init) => globalThis.fetch(url, init));
@@ -174,14 +203,16 @@ export function startBuildGuard(o = {}) {
     return true;
   };
 
-  const check = async () => {
+  const check = async (opts = {}) => {
     if (stopped) return { status: 'stopped', build: null };
     if (doc?.hidden) return { status: 'paused', build: null };
     if (pending) return { status: 'pending', build: null };
     pending = true;
-    let r;
-    try { r = await checkBuildOnce({ fetchFn, known, timeoutMs: o.timeoutMs, setTimeout: o.setTimeout, clearTimeout: o.clearTimeout, onHealth: o.onHealth }); }
-    finally { pending = false; }
+    let r, cached = false;
+    try {
+      r = await checkBuildOnce({ fetchFn, known, timeoutMs: o.timeoutMs, setTimeout: o.setTimeout, clearTimeout: o.clearTimeout,
+        onHealth: o.onHealth, ttlMs: opts.ttlMs, now, onRead: (info) => { cached = info.cached; } });
+    } finally { pending = false; }
     if (stopped) return { status: 'stopped', build: null };
     if (doc?.hidden) { candidate = null; seen = 0; return { status: 'paused', build: null }; }
     if (r.status === 'unknown') {
@@ -207,6 +238,8 @@ export function startBuildGuard(o = {}) {
     if (r.status === 'current') { candidate = null; seen = 0; return r; }
     // a different build: only BUILD_CONFIRMATIONS checks in a row with the SAME tag count (a deploy that is still
     // copying files exposes a tag that keeps moving, and must not ping-pong the page)
+    // A body served from the client cache is the SAME server read, so it can never be the second confirmation.
+    if (cached) return { status: 'new', build: r.build, cached: true };
     if (candidate !== r.build) { candidate = r.build; seen = 1; } else { seen++; }
     if (seen < BUILD_CONFIRMATIONS) return { status: 'new', build: r.build };
     const first = !stale;
@@ -217,7 +250,7 @@ export function startBuildGuard(o = {}) {
     return { status: 'stale', build: r.build, known };
   };
 
-  const tick = () => { check().catch(() => {}); };
+  const tick = () => { check({ ttlMs: HEALTH_CACHE_MS }).catch(() => {}); };
   const visibility = () => {
     if (doc?.hidden) { candidate = null; seen = 0; }
     else tick();

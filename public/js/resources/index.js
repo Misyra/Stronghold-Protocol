@@ -10,7 +10,7 @@
 // The settings panel (public/js/ui/resourcePanel.js) renders `resourceState()`; main.js calls `syncResources()` with the
 // persisted setting at boot and on every settings change.
 
-import { CACHE_PREFIX, MANIFEST_URL, resourceWorkerUrl, isResourceWorker, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest, validateResourcePacks } from './common.js';
+import { CACHE_PREFIX, MANIFEST_URL, isVersionedManifestUrl, resourceWorkerUrl, isResourceWorker, TIER_ESSENTIAL, TIER_REST, checkAbort, formatBytes, isQuotaError, resourceGroup, validateManifest, validateResourcePacks } from './common.js';
 import { ResourceStore, normalizeSkinScope } from './store.js';
 import { createWorkerCache } from './workerCache.js';
 import { ResourceSchedule } from './schedule.js';
@@ -238,9 +238,11 @@ export function resourceContext() {
     for (let attempt = 0; attempt < 2; attempt++) {
       const signal = typeof globalThis.AbortSignal?.timeout === 'function' ? AbortSignal.timeout(30000) : undefined;
       try {
-        // Revalidate the HTTP cache on every page load: on a 304 the browser supplies the cached body instead of
-        // re-downloading the manifest (the server answers with a strong ETag over the full response).
-        const res = await fetch(MANIFEST_URL, { cache: 'no-cache', signal });
+        // A release-pinned URL may be served straight from the browser cache: a new release changes
+        // __spAssetVersion, hence the URL, so nothing can go stale. The unversioned fallback still revalidates
+        // and takes the 304 body from cache. `no-cache` on a versioned URL is what forced a full re-download
+        // of the manifest on every page load, no matter what the origin or the proxy sent in Cache-Control.
+        const res = await fetch(MANIFEST_URL, { cache: isVersionedManifestUrl(MANIFEST_URL) ? 'default' : 'no-cache', signal });
         if (!res.ok) return { error: t('无法读取资源清单：HTTP {status}', { status: res.status }),
           retryable: res.status === 408 || res.status === 429 || res.status >= 500 };
         doc = await res.json();

@@ -22,7 +22,7 @@ test('worker URLs carry validated versions and ownership includes legacy and wai
   }
 });
 
-test('a restarted versioned worker revalidates the manifest and concurrent consumers share one read', async () => {
+test('a versioned worker reuses its content-addressed manifest and concurrent consumers share one read', async () => {
   const calls = [];
   const create = () => createWorkerManifestLoader({ scriptUrl: origin + resourceWorkerUrl(tag), fetcher: async (url, options) => {
     calls.push([url, options.cache]); return body();
@@ -30,8 +30,11 @@ test('a restarted versioned worker revalidates the manifest and concurrent consu
   const load = create();
   const results = await Promise.all([load(), load(), load()]);
   assert.ok(results.every(result => result === results[0])); await load();
-  assert.deepEqual(calls, [[origin + '/data/resource-manifest.json?v=' + tag, 'no-cache']]);
-  await create()(); assert.equal(calls.length, 2, 'worker restart permits HTTP revalidation, not no-store');
+  // The release tag is derived from the files the server serves, so one URL can never describe two manifests:
+  // the browser cache may answer it. 'no-cache' forced a revalidation on every load, and a proxy that cannot
+  // answer 304 (nginx proxy_cache replays the stored 200) turned that into a full multi-megabyte download.
+  assert.deepEqual(calls, [[origin + '/data/resource-manifest.json?v=' + tag, 'default']]);
+  await create()(); assert.equal(calls.length, 2, 'worker restart may ask again, but the HTTP cache answers it');
 });
 
 test('only a retired version 404 falls back to the plain manifest; legacy workers also revalidate', async () => {

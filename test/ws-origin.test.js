@@ -24,6 +24,17 @@ test('the /ws origin gate: absent Origin passes, same host passes, anything else
   assert.deepEqual(parseWsOrigins(' a.example ,B.example, '), ['a.example', 'b.example']);
 });
 
+test('the /ws origin gate admits the packaged desktop client, whose UI is served from a loopback port', () => {
+  // 2026-10-21: a desktop player's upgrade arrived as `Origin: http://127.0.0.1:47821` with `Host: sp.rainya.me`
+  // and was refused 403 — the port is picked at launch, so no SP_WS_ORIGINS list can name it.
+  assert.equal(wsOriginAllowed(req('http://127.0.0.1:47821')), true, 'the app on the player\'s own machine');
+  assert.equal(wsOriginAllowed(req('http://localhost:52100')), true);
+  assert.equal(wsOriginAllowed(req('http://[::1]:52100')), true);
+  assert.equal(wsOriginAllowed(req('https://127.0.0.1:47821')), true, 'scheme does not decide it; the host does');
+  assert.equal(wsOriginAllowed(req('http://127.0.0.1.evil.example:47821')), false, 'a lookalike name is still another site');
+  assert.equal(wsOriginAllowed(req('http://127.0.0.2:47821')), false, 'only loopback, not the whole 127/8 block');
+});
+
 test('a real server refuses an upgrade from another origin and accepts its own host and bare clients', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-ws-origin-'));
   const server = await startServer({ host: '127.0.0.1', port: 0, quiet: true, workers: 0, store: null,

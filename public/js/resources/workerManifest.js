@@ -1,7 +1,13 @@
-import { resourceManifestUrl, validateManifest } from './common.js';
+import { resourceManifestUrl, isVersionedManifestUrl, validateManifest } from './common.js';
 import { fetchResource } from './network.js';
 
-/** One shared read per worker lifetime; errors cool down without poisoning future attempts. */
+/**
+ * One shared read per worker lifetime; errors cool down without poisoning future attempts.
+ * A release-pinned URL is content-addressed and may be answered from the HTTP cache like any
+ * immutable asset; only the plain fallback has to revalidate.
+ */
+const manifestCacheMode = (target) => (isVersionedManifestUrl(target) ? 'default' : 'no-cache');
+
 export function createWorkerManifestLoader({ scriptUrl, fetcher = globalThis.fetch?.bind(globalThis), now = Date.now,
   retryDelayMs = 10000, timeoutMs = 10000 }) {
   const script = new URL(scriptUrl);
@@ -10,13 +16,13 @@ export function createWorkerManifestLoader({ scriptUrl, fetcher = globalThis.fet
   let pending = null, retryAt = 0;
   async function load() {
     let response;
-    try { response = await fetchResource(url, { fetcher, timeoutMs, retries: 0, cache: 'no-cache' }); }
+    try { response = await fetchResource(url, { fetcher, timeoutMs, retries: 0, cache: manifestCacheMode(url) }); }
     catch (error) {
       // A surviving old worker can outlive its release. Only a version 404 permits fallback;
       // transient failures keep the original URL and must not fan out duplicate requests.
       if (error?.status !== 404 || url === plain) throw error;
       url = plain;
-      response = await fetchResource(url, { fetcher, timeoutMs, retries: 0, cache: 'no-cache' });
+      response = await fetchResource(url, { fetcher, timeoutMs, retries: 0, cache: manifestCacheMode(url) });
     }
     return validateManifest(await response.json());
   }

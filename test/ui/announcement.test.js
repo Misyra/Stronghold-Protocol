@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { announcementSnapshot, startAnnouncementPolling } from '../../public/js/ui/announcementClient.js';
+import { announcementSnapshot, startAnnouncementPolling, ANNOUNCEMENT_CACHE_MS } from '../../public/js/ui/announcementClient.js';
 import { createAnnouncementDisplay } from '../../public/js/ui/announcementDisplay.js';
 
 test('announcement detail uses the shared utility close button, without a second custom close', () => {
@@ -51,7 +51,8 @@ test('polling updates and withdrawal do not require reloading, failures retain s
   let response = body;
   let fail = false;
   let calls = 0;
-  const stop = startAnnouncementPolling({ doc, now: () => 50, intervalMs: 60_000, onChange: (a) => received.push(a),
+  let clock = 50;                                              // the page's monotonic clock drives the cache window
+  const stop = startAnnouncementPolling({ doc, now: () => clock, intervalMs: 60_000, onChange: (a) => received.push(a),
     fetchFn: async (url, init) => {
       calls++;
       assert.ok(url === '/api/announcement' || url === '/api/announcement?nocache=1');
@@ -63,6 +64,7 @@ test('polling updates and withdrawal do not require reloading, failures retain s
     await settle();
     assert.equal(received.length, 1);
     fail = true;
+    clock += ANNOUNCEMENT_CACHE_MS + 1;
     doc.fire();
     await settle();
     assert.equal(received.length, 1);
@@ -71,6 +73,7 @@ test('polling updates and withdrawal do not require reloading, failures retain s
     assert.equal(calls, 2);
     doc.hidden = false;
     fail = false;
+    clock += ANNOUNCEMENT_CACHE_MS + 1;
     response = { announcement: null };
     doc.fire();
     await settle();
@@ -124,7 +127,23 @@ test('WS hints suppress unchanged polls, fetch edits, and fall back after heartb
     assert.equal(calls, 2, 'unchanged live heartbeats avoid the regular HTTP poll');
     pong('b'.repeat(24)); await settle(); assert.equal(calls, 3, 'an edit/withdrawal triggers content refresh');
     doc.hidden = true; pong('c'.repeat(24)); await settle(); assert.equal(calls, 3);
-    doc.hidden = false; now += 20000; doc.fire(); await settle(); assert.equal(calls, 4, 'missing hints restore ordinary polling');
+    doc.hidden = false; now += 20000; doc.fire(); await settle(); assert.equal(calls, 3, 'a resume inside the window is not a request');
+    now += ANNOUNCEMENT_CACHE_MS; doc.fire(); await settle(); assert.equal(calls, 4, 'missing hints restore ordinary polling');
   } finally { stop(); }
   assert.equal(listeners.size, 0);
+});
+
+test('announcement polling: one request per cache window, however often the tab comes back', async () => {
+  const doc = documentStub();
+  let calls = 0, clock = 0;
+  const stop = startAnnouncementPolling({ doc, now: () => clock, intervalMs: 60_000, onChange() {},
+    fetchFn: async () => { calls++; return { ok: true, json: async () => body }; } });
+  try {
+    await settle(); assert.equal(calls, 1, 'the page reads the notice on load');
+    clock += 1_000; doc.fire(); await settle();
+    clock += 1_000; doc.fire(); await settle();
+    assert.equal(calls, 1, 'two resumes inside the window are one request');
+    clock += ANNOUNCEMENT_CACHE_MS; doc.fire(); await settle();
+    assert.equal(calls, 2, 'a resume after the window asks the server again');
+  } finally { stop(); }
 });

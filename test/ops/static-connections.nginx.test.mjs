@@ -18,6 +18,9 @@ test('static module concurrency has its own bounded per-IP budget and retains th
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-static-connections-'));
     const prefix = dir.replaceAll('\\', '/') + '/';
     fs.mkdirSync(path.join(dir, 'logs'));
+    // nginx creates its own temp subdirectories but not their parent; on Windows a missing
+    // <prefix>/temp stops `nginx -t` before the test can report anything useful.
+    fs.mkdirSync(path.join(dir, 'temp'), { recursive: true });
     const pending = new Set(), requests = new Set();
     const backend = http.createServer((req, res) => {
       if (req.url === '/ready') { res.end('ready'); return; }

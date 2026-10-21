@@ -88,7 +88,7 @@ export function nameError(raw) {
 /** @param {any} raw @returns {boolean} */
 export const isValidName = (raw) => nameError(raw) === null;
 
-// Temporary suspension (2026-10-17): restore true together with the Nginx API exception.
+// Temporary suspension: restore true together with the Nginx API exception.
 // Keep the HTTP implementation for re-enabling; WebSocket hello still validates names on the server.
 export const NICKNAME_PREFLIGHT_ENABLED = false;
 

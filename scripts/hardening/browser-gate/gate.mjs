@@ -8,7 +8,10 @@ import { performance } from 'node:perf_hooks';
 const SIX_HOURS=21600000, CHALLENGE_MS=120000;
 const cookieName=req=>req.headers['x-gate-scheme']==='https'?'__Host-sp_browser_gate':'sp_browser_gate';
 const escapeHtml=s=>s.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-export function createGate({key,bits=18,now=Date.now,banCheck=async()=>204,maxSpent=10000}={}){
+// 16 leading zero bits is ~65k hashes: under a second on a desktop, ~8s on a mid-range phone
+// and ~20s on a low-end in-app WebView running this pure-JS SHA-256. 18 bits cost real players
+// 30-75s on those devices while only tripling an attacker's work, so 16 is the default now.
+export function createGate({key,bits=16,now=Date.now,banCheck=async()=>204,maxSpent=10000}={}){
   if(!Buffer.isBuffer(key)||key.length<32)throw new Error('Gate signing key must be at least 32 bytes');
   if(!Number.isInteger(bits)||bits<8||bits>22)throw new Error('Invalid proof difficulty');
   const spent=new Map();
@@ -141,6 +144,6 @@ if(process.argv[1]&&pathToFileURL(process.argv[1]).href===import.meta.url){
   const key=Buffer.from(process.env.SP_GATE_KEY||'','base64');
   const banCheck=createCachedBanCheck(backendBanCheck(Number(process.env.SP_GATE_GAME_PORT||3100)),
     {ttlMs:Number(process.env.SP_GATE_BAN_CACHE_MS??2000)});
-  createGate({key,bits:Number(process.env.SP_GATE_BITS||18),banCheck})
+  createGate({key,bits:Number(process.env.SP_GATE_BITS||16),banCheck})
     .listen(Number(process.env.SP_GATE_PORT||3101),'127.0.0.1',()=>process.stdout.write('Browser gate listening on loopback\n'));
 }

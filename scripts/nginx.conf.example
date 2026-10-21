@@ -13,6 +13,11 @@ events {
 }
 
 http {
+    # Nothing here maps extensions to types without this include: any file served from disk
+    # (favicon, robots.txt, a stray .css) goes out as application/octet-stream and the browser
+    # downloads it instead of using it. Proxied responses keep the upstream Content-Type.
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
     # Explicitly fit the public API/bootstrap map keys on platforms with 32-byte defaults too.
     map_hash_bucket_size 64;
     # ---- 转发缓冲与连接复用：默认值按小站点定，游戏源站按 1200 前台页面定 ----
@@ -36,6 +41,11 @@ http {
     include /etc/nginx/conf.d/sp-health-cache-map.conf;
     include /etc/nginx/conf.d/sp-page-global.conf;
     include /etc/nginx/conf.d/sp-geoip-country.conf;
+    # 浏览器验证（可选，默认关闭）。启用顺序固定：把 scripts/hardening/sp-browser-gate-map.conf
+    # 装到下面这个路径并取消本行注释，再把 scripts/hardening/sp-browser-gate.conf 装成 server 级
+    # snippet（见 server{} 里注明的位置）。只装一半必然起不来：缺 map 报 unknown "sp_gate_navigation"，
+    # 缺 sp_conn_ip 区报 unknown limit_conn zone。没装验证服务的节点不要取消注释，否则 include 不存在的文件直接失败。
+    # include /etc/nginx/conf.d/sp-browser-gate-map.conf;
     map $http_upgrade $connection_upgrade {
         default upgrade;
         ''      close;
@@ -81,11 +91,30 @@ http {
 
     server {
         listen 443 ssl;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
-    ssl_prefer_server_ciphers off;
-    ssl_session_tickets off;
+        # HTTP/2 matters here: one page pulls ~200 modules over one origin. The directive differs
+        # per version and the wrong one stops nginx from starting, so uncomment exactly one:
+        #   nginx >= 1.25.1 ->  http2 on;                  (keep `listen 443 ssl;` as it is)
+        #   nginx <= 1.24.x ->  listen 443 ssl http2;
+        # Debian bookworm ships 1.22, so the second form is the safe default there.
+        # IPv6: add the `[::]` listeners below once the host has a working ::/0 route. The gate,
+        # the rate limits and the GeoIP check all work per address, both families included.
+        #   listen [::]:443 ssl;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+        ssl_prefer_server_ciphers off;
+        ssl_session_tickets off;
+        # Without a cache and a timeout, every connection pays a full handshake; a page opening
+        # more than one connection to the same origin pays it repeatedly. 10m holds ~40000 sessions.
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 1h;
         server_name game.example.com;
+        # Behind a CDN or an L7 balancer $remote_addr is the edge address, so limit_req, limit_conn,
+        # the gate credential binding and every fail2ban rule key on the proxy instead of the player:
+        # one visitor's burst throttles all of them, and a ban blocks the whole edge. Enable this only
+        # when traffic genuinely arrives through that proxy, otherwise a client can forge the header:
+        #   include /etc/nginx/conf.d/sp-real-ip.conf;   # set_real_ip_from <edge ranges>;
+        #                                                 real_ip_header    CF-Connecting-IP;
+        #                                                 real_ip_recursive on;
         # The global Country DB must positively identify CN; covers assets and WS too.
         if ($sp_geoip_denied) { return 444; }
         # Close unused public APIs before auth_request, cache lookup or Node work.
@@ -117,6 +146,10 @@ http {
 
         # Check bans before cached responses and direct files too (requires http_auth_request_module).
         # Restore $remote_addr from trusted upstreams first; never trust arbitrary forwarding headers.
+        # 浏览器验证（可选）：装了验证服务时，把下面这行换成 `auth_request /_sp/gate-check;`
+        # （绝对不能两条并存），并在 server{} 内取消下一行注释。验证服务放行后才回查 /_sp/ip-check，
+        # 原封禁名单逻辑不丢。
+        # include /etc/nginx/snippets/sp-browser-gate.conf;
         auth_request /_sp/ip-check;
         error_page 403 = @sp_ip_banned;
         location @sp_ip_banned {
@@ -251,7 +284,7 @@ http {
 
         # Nickname preflight belongs to the game, including on hosts where /api/ serves the portal.
         location = /api/nickname/validate {
-            # Temporary suspension (2026-10-17). Remove with the API map/client switch to re-enable.
+            # Temporary suspension. Remove with the API map/client switch to re-enable.
             return 444;
             proxy_pass http://127.0.0.1:3000;
             proxy_set_header Host $host;

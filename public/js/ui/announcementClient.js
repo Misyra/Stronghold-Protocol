@@ -1,5 +1,13 @@
 // HTTP remains the content source; optional WS revision hints suppress unchanged polling.
-export const ANNOUNCEMENT_CHECK_MS = 30_000;
+//
+// Every open page polls this, so a page must not ask twice within ANNOUNCEMENT_CACHE_MS: a tab restored from the
+// background, a visibility resume landing beside the interval tick, the boot read of a page that just reloaded — all of
+// those reuse the last body. The WS revision hint (`?nocache=1`) is the one reader that bypasses the window, because it
+// is told the content actually changed.
+/** How often a page polls the announcement. */
+export const ANNOUNCEMENT_CHECK_MS = 60_000;
+/** A body read less than this long ago satisfies a check without a request (the revision hint bypasses it). */
+export const ANNOUNCEMENT_CACHE_MS = 60_000;
 
 /** Use a monotonic deadline based on server time, even when the player's wall clock is wrong. */
 export function announcementSnapshot(body, now = performance.now()) {
@@ -37,6 +45,8 @@ export function startAnnouncementPolling({ onChange, fetchFn = globalThis.fetch,
   async function check(force = false, bypassCache = false) {
     if (stopped || busy || doc?.hidden) return;
     if (!force && hint && hint === appliedHint && now() - hintedAt < 12000 && now() - lastReadAt < 180000) return;
+    // The window is about reads, not about the content being current: a second check inside it gets no request.
+    if (!bypassCache && now() - lastReadAt < ANNOUNCEMENT_CACHE_MS) return;
     busy = true;
     const requestedHint = hint;
     controller = new AbortController();
@@ -82,7 +92,8 @@ export function startAnnouncementPolling({ onChange, fetchFn = globalThis.fetch,
     }
   });
   const timer = setInterval(check, intervalMs);
-  const onVisible = () => { void check(true, true); };
+  // A returning tab re-asks even when the last hint says "unchanged" — but not twice inside the cache window.
+  const onVisible = () => { void check(true, false); };
   doc?.addEventListener('visibilitychange', onVisible);
   void check();
   return () => {

@@ -18,7 +18,7 @@ test('real Nginx checks admission before static files, cache, API and WS; real b
     const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sp-browser-gate-')),prefix=dir.replaceAll('\\','/')+'/';
     fs.mkdirSync(path.join(dir,'logs'));fs.mkdirSync(path.join(dir,'cache'));fs.mkdirSync(path.join(dir,'temp'));fs.writeFileSync(path.join(dir,'icon.svg'),'<svg/>');
     let banned=false,hits=0,clock=Date.now();
-    const gate=createGate({key:randomBytes(32),bits:18,now:()=>clock,banCheck:async()=>banned?403:204});
+    const gate=createGate({key:randomBytes(32),bits:16,now:()=>clock,banCheck:async()=>banned?403:204});
     t.after(()=>gate.close());
     const gatePort=await listen(gate);
     const backend=http.createServer((req,res)=>{hits++;res.setHeader('Content-Type','text/html; charset=utf-8');res.end('GAME_OK');});
@@ -26,10 +26,9 @@ test('real Nginx checks admission before static files, cache, API and WS; real b
     const ws=new WebSocketServer({server:backend});ws.on('connection',socket=>socket.send('WELCOME'));
     const backendPort=await listen(backend), portProbe=net.createServer(),port=await listen(portProbe);await new Promise(r=>portProbe.close(r));
     let snippet=fs.readFileSync(new URL('../../scripts/hardening/sp-browser-gate.conf',import.meta.url),'utf8');
-    // The shared cache snippet owns this public bootstrap location; avoid duplicate live locations.
-    const cacheSnippet=fs.readFileSync(new URL('../../scripts/nginx-game-cache.conf.example',import.meta.url),'utf8');
-    snippet=snippet.replace(/location = \/data\/resource-manifest\.json \{[\s\S]*?\n\}/,'');
-    snippet+='\n'+cacheSnippet.match(/location = \/data\/resource-manifest\.json \{[\s\S]*?\n\}/)[0].replace('proxy_cache sp_assets;','proxy_cache gate_cache;');
+    // The gate snippet owns neither public preload manifest; a deployment without the shared cache
+    // installs this server-level snippet instead. Using it here also proves the split works.
+    snippet+='\n'+fs.readFileSync(new URL('../../scripts/hardening/sp-public-manifests.conf',import.meta.url),'utf8');
     const main=fs.readFileSync(new URL('../../scripts/nginx.conf.example',import.meta.url),'utf8');
     snippet+='\n'+main.match(/location = \/api\/ping \{[\s\S]*?\n        \}/)[0];
     snippet+='\n'+main.match(/location ~ \^\/api\/rooms[\s\S]*?\n        \}/)[0];
@@ -38,7 +37,6 @@ test('real Nginx checks admission before static files, cache, API and WS; real b
       .map(name=>fs.readFileSync(new URL('../../scripts/hardening/'+name,import.meta.url),'utf8')).join('\n');
     fs.writeFileSync(path.join(dir,'nginx.conf'),`worker_processes 1;pid nginx.pid;error_log logs/error.log notice;
 events {worker_connections 128;} http {map_hash_bucket_size 64;${map}
-limit_conn_zone $binary_remote_addr zone=sp_conn_ip:1m;
 proxy_cache_path "${prefix}cache" keys_zone=gate_cache:1m;
 server {listen 127.0.0.1:${port}; server_name localhost;auth_request /_sp/gate-check;
 set_real_ip_from 127.0.0.1;real_ip_header X-Test-IP;limit_req_status 444;
@@ -68,10 +66,16 @@ location / {proxy_pass http://127.0.0.1:${backendPort};proxy_http_version 1.1;pr
     assert.equal(await raw('/healthz','X-Gate-IP: 127.0.0.1\r\nX-Gate-Entry: 1\r\n'),'');
     assert.equal(hits,9,'public bootstrap requests alone reached the backend');hits=0;
     const page=await fetch(base+'/?room=abc',{headers:{Accept:'text/html'}});assert.match(await page.text(),/进入游戏前验证/);assert.equal(hits,0);
+    // An in-app WebView sends `Accept: */*` for a top-level navigation and only Sec-Fetch-Mode
+    // identifies it; without that the request used to be dropped with 444 and looked like a hang.
+    // Raw sockets, because fetch() overwrites Sec-Fetch-Mode with "cors" for script requests.
+    assert.match(await raw('/?room=wv','Accept: */*\r\nSec-Fetch-Mode: navigate\r\n'),/^HTTP\/1\.1 200/,'a WebView navigation gets the page');
+    assert.equal(hits,0);
+    assert.equal(await raw('/?room=wv','Accept: */*\r\n'),'','a script GET with a wide Accept is still dropped');
     for(const uri of ['/resource-sw.js?v=test','/manifest.json','/js/resources/common.js','/js/resources/workerManifest.js','/js/resources/readThrough.js','/shared/i18n.js','/shared/i18nPacks.js','/shared/resourcePaths.js','/data/resource-manifest.json?v=test']){
       const response=await fetch(base+uri);assert.equal(response.status,200,uri);assert.equal(await response.text(),'GAME_OK');
     }
-    assert.equal(hits,8,'only explicit public bootstrap paths bypass the gate; the manifest reuses its cache fill');
+    assert.equal(hits,9,'only explicit public bootstrap paths bypass the gate; the manifest is uncached here');
     assert.match(await raw('/api/ping'),/^HTTP\/1\.1 200/,'portal ping needs no browser cookie');
     assert.match(await raw('/api/ping','','HEAD'),/^HTTP\/1\.1 200/);
     assert.equal(await raw('/api/ping','','POST'),'');
@@ -81,7 +85,7 @@ location / {proxy_pass http://127.0.0.1:${backendPort};proxy_http_version 1.1;pr
     assert.equal(await raw('/api/ping',portalIp),'','a public ping flood exhausts its own burst');
     const headers={'User-Agent':'GateTest'};
     const proof=await(await fetch(base+'/_gate/challenge',{headers})).json();
-    let counter=0;while(createHash('sha256').update(proof.token+'.'+counter).digest().readUInt32BE(0)>=16384)counter++;
+    let counter=0;while(createHash('sha256').update(proof.token+'.'+counter).digest().readUInt32BE(0)>=65536)counter++;
     const verify=await fetch(base+'/_gate/verify',{method:'POST',headers:{...headers,Origin:base,'Content-Type':'application/json'},body:JSON.stringify({token:proof.token,counter})});
     assert.equal(verify.status,204);headers.Cookie=verify.headers.get('set-cookie').split(';')[0];
     assert.equal(await(await fetch(base+'/icon.svg',{headers})).text(),'<svg/>');

@@ -87,7 +87,7 @@ curl -sk -o /dev/null -D - -H "Host: <域名>" -H "Accept-Encoding: gzip" "https
 | `announcement.json` | 公告空 |
 | `public/fonts`（7 文件） | 字体回退 |
 | `public/assets`（线上有本地美术时） | 静态图 404 |
-| `ops/agent.mjs` + collector（h2/h3/h4） | `sp-admin` 的 `ExecStart` 指绝对路径，翻链接后文件不在 → 服务重启失败 |
+| `ops/agent.mjs` + collector（每台机器各自的采集节点） | `sp-admin` 的 `ExecStart` 指绝对路径，翻链接后文件不在 → 服务重启失败 |
 | `.assets-manifest.json` | `/healthz` 的 `assetsManifest` 变 `null`，CDN 逐文件 `?v=` 全丢 |
 
 ### `.assets-manifest.json` 不是构建产物
@@ -124,7 +124,7 @@ curl -sk -o /dev/null -D - -H "Host: <域名>" -H "Accept-Encoding: gzip" "https
 4. **`keepalive_requests` 默认 1000。** 长开标签页重载几次就撞 `GOAWAY`，在途请求被打断。设 100000。
 5. **`add_header` 在 location 里出现一次，父级的全部失效。** 安全头要在每个自带 `add_header` 的 location 里重新 include，不能指望继承。
 6. **`^~` 前缀 location 优先于正则 location。** 想用正则命中 `/build/assets/` 必须先确认没有被 `^~ /build/` 截走。
-7. **同补丁要按机落点。** 同一个 `snippets/fleet-game-locations.inc` 在 h2 上是活的，在 h3 上是孤儿文件（只被 `conf.d.legacy-*` 引用），改它完全无效。改之前先 `nginx -T | grep 'configuration file'` 确认活文件集合。
+7. **同补丁要按机落点。** 同一份 include 在 A 机上是活的，在 B 机上可能是孤儿文件（只被 `conf.d.legacy-*` 引用），改它完全无效。改之前先 `nginx -T | grep 'configuration file'` 确认活文件集合，别假设多台机器的 include 结构一致。
 8. **`/healthz`、`/build/`、`/icons/` 必须 `auth_request off`。** 否则探活和首屏静态被浏览器闸门挡住（表现为首屏图标 444、探活失败）。
 9. **闸门判定别只认 `Accept`。** `Accept: */*` 的 WebView 会被一律 444 白屏。用 `Sec-Fetch-Mode: navigate`。
 
@@ -149,7 +149,7 @@ systemctl start stronghold
 
 回滚 = `rm` 链接 + `mv` 回旧目录 + `daemon-reload` + `start`。
 
-**没有 `sp-public`/`sp-data` 链接的机器**（h1 就是这样）要把 `/opt/Stronghold-Protocol` 变成链接并补建这两个，否则 nginx 三处硬编码的 `root /opt/Stronghold-Protocol/public` 会一直发旧文件。
+**没有 `sp-public`/`sp-data` 这两个链接的机器**要把 `/opt/Stronghold-Protocol` 变成链接并补建它们，否则 nginx 里写死的 `root /opt/Stronghold-Protocol/public` 会一直发旧文件。
 
 ---
 

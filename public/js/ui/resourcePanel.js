@@ -363,7 +363,7 @@ export function ResourceHost({ enabled, optional, voices = optional, allVoices, 
         <ul>${st.failures.map((failure) => html`<li>${new URL(failure.url, window.location.href).pathname} — ${failure.message}</li>`)}</ul>
       </details>` : null}
       ${st.storage?.low ? html`<p class="resource-manager__warn">${t('预计可用空间可能不足。可先清理可选资源；浏览器仍可能因存储限制而停止处理，已保存进度会保留。')}</p>` : null}
-      ${st.persistence && st.persistence.supported && !st.persistence.granted ? html`<p class="resource-manager__warn">${t('浏览器未授予持久化存储：空间紧张时可能自动清理已预载的资源。')}</p>` : null}
+      ${st.persistence && st.persistence.supported && !st.persistence.granted ? html`<p class="resource-manager__warn">${t('浏览器未授予持久化存储：空间紧张时可能自动清理已预载的资源。')} ${t('推荐使用 Edge 或 Chrome 浏览器。')}</p>` : null}
       <details class="resource-cache">
         <summary><span class="resource-cache__title">${t('缓存清理')}</span><span class="resource-cache__storage">${storageText(st.storage)}</span></summary>
         <div class="resource-cache__body">

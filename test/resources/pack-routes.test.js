@@ -5,7 +5,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isResourcePackUrl, parseResourcePackRoutes, resourcePackUrls, routeResourcePacks } from '../../shared/resourcePackRoutes.js';
+import { DEFAULT_RESOURCE_PACK_ROUTES, isResourcePackUrl, parseResourcePackRoutes, resourcePackUrls, routeResourcePacks } from '../../shared/resourcePackRoutes.js';
 import { fetchTransportPack } from '../../public/js/resources/transport.js';
 import { createStaticHandler } from '../../server/http/static.js';
 import fs from 'node:fs';
@@ -50,6 +50,13 @@ describe('SP_RESOURCE_PACK_ROUTES 的解析', () => {
 });
 
 describe('清单里的分包地址', () => {
+  test('本部署默认使用 Misyra ModelScope，R2/CDN 始终兜底', () => {
+    const [routed] = routeResourcePacks([pack], 'https://assets.misyra.com', parseResourcePackRoutes(DEFAULT_RESOURCE_PACK_ROUTES));
+    assert.deepEqual(routed.urls, [
+      'https://modelscope.cn/datasets/Misyra/Arknight_Assets/resolve/master/ui-01-0123456789ab.zip',
+      'https://assets.misyra.com/packs/ui-01-0123456789ab.zip',
+    ]);
+  });
   test('CDN 基址只改写站内地址，绝对地址与非素材文件不动', () => {
     const [routed] = routeResourcePacks([{ ...pack, files: [...pack.files, { url: '/packs/inner.json' }] }], 'https://cdn.example/');
     assert.equal(routed.url, 'https://cdn.example/packs/ui-01-0123456789ab.zip', 'the pack itself follows the CDN, without a double slash');
@@ -98,7 +105,7 @@ describe('客户端的镜像回退', () => {
         'not a url.zip',                            // dropped by isResourcePackUrl
       ],
     };
-    await assert.rejects(fetchTransportPack(pack, { fetcher, idleMs: 0, timeoutMs: 10_000 }), /资源分包 HTTP 503/);
+    await assert.rejects(fetchTransportPack(pack, { fetcher, retries: 0, idleMs: 0, timeoutMs: 10_000 }), /资源分包 HTTP 503/);
     assert.deepEqual(seen, [
       'https://mirror.example/packs/ui-01-0123456789ab.zip',
       'https://backup.example/packs/ui-01-0123456789ab.zip',

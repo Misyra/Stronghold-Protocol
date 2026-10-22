@@ -2,12 +2,10 @@
 // public/js/resources/store.js — the preload store: downloads the manifest's files into Cache Storage and reports what
 // is already there (docs/ASSETS.md「Preload」).
 //
-// One cache per preload card (`resourceScope`, common.js) holds that card's assets, whatever manifest they came from, and
-// each file's *hash* decides whether the stored bytes are still current: an asset update re-downloads the changed files
-// only (~310 MiB → a few MiB), and a re-run of the extraction or a redeploy with unchanged art costs nothing. Each card
-// keeps its own index entry (`/__sp-resource-index__`, absolute URL → hash), written as the run advances — an interrupted
-// run keeps the progress it flushed. The cards also keep every listing enumerable: the browser refuses one `Cache.keys()`
-// above ~10 MiB of keys, which a complete 干员语音 + 干员皮肤 + 官方特效 preload reaches (docs/ASSETS.md「Preload」).
+// Each logical card has its own cache/index; effects use eight path-hashed caches (common.js). Files are replaced
+// by content hash so unchanged art survives releases. The old unsplit effects cache remains readable until migration;
+// destination bytes and indexes are checkpointed before deleting their old copies. Large legacy listings use their
+// independent index rather than asking Cache.keys() for an answer exceeding the browser's query budget.
 //
 // The current worker verifies/writes once and acknowledges over a private channel; the page owns the index.
 // Without a compatible worker the page does the downloading (`fetch` plus `cache.put`), so a page without a Service Worker
@@ -19,7 +17,7 @@ import { markResourceHeaders, cacheIndex, readCacheIndex } from './cacheMetadata
 import { resourceIdentity } from '../../../shared/resourcePaths.js';
 import { VOICE_LANGS } from '../voicePrefs.js';
 import { selectedVoiceLanguages } from './voices.js';
-import { absoluteUrl, CACHE_NAME, CACHE_PREFIX, cacheNameForScope, checkAbort, CONTENT_HASH_RE, indexUrl, isCacheQueryLimit, isQuotaError, isSkinKey, MAX_FILE_BYTES, RESOURCE_GROUPS, RESOURCE_SCOPES, resourceGroup, resourceScope, resourceType, SHARD_CACHE_NAMES, TIER_ESSENTIAL, TIER_REST } from './common.js';
+import { absoluteUrl, CACHE_NAME, CACHE_PREFIX, cacheKeysOverBudget, cacheNameForFile, checkAbort, CONTENT_HASH_RE, indexUrl, isCacheQueryLimit, isQuotaError, isSkinKey, LEGACY_FX_CACHE_NAME, MAX_FILE_BYTES, READABLE_CACHE_NAMES, RESOURCE_GROUPS, RESOURCE_SCOPES, resourceGroup, resourceScope, resourceType, TIER_ESSENTIAL, TIER_REST } from './common.js';
 import { resourceDigests, verifiedResourceBytes } from './integrity.js';
 import { fetchResource, isTransientResourceError } from './network.js';
 import { runtimeIndexUrl, updateRuntimeIndex } from './runtimeIndex.js';
@@ -32,6 +30,7 @@ const MAX_FAILURES = 10;
 const INDEX_FLUSH_EVERY = 64;
 const SMALL_IMPORT_BYTES = 256 * 1024;
 const IMPORT_BUFFER_BYTES = 4 * SMALL_IMPORT_BYTES;
+const MIGRATION_BATCH_BYTES = 4 << 20;
 
 /** Large metadata scans share the page with input/animation; workers and Node have no page to yield to. */
 function scanBudget() {
@@ -465,6 +464,31 @@ export class ResourceStore {
     return new Response(response.body, { status: 200, statusText: 'OK', headers });
   }
 
+  /** Full local presence check for a background pass under the download lock.
+   * Eight metadata reads at a time; no resource bodies or network requests.
+   * Repair only missing records, keeping cached bytes and stale fingerprints. */
+  async verifyCachedResources({ signal } = {}) {
+    let removed = 0;
+    for (const { cache } of await this.#shards()) {
+      checkAbort(signal);
+      const index = await this.#readIndex(cache);
+      const keys = Object.keys(index.files);
+      let next = 0;
+      let changed = false;
+      await Promise.all(Array.from({ length: Math.min(8, keys.length) }, async () => {
+        for (let i = next++; i < keys.length; i = next++) {
+          checkAbort(signal);
+          const response = await cache.match(keys[i]);
+          if (!response) { delete index.files[keys[i]]; changed = true; removed++; }
+          else void response.body?.cancel().catch(() => {});
+        }
+      }));
+      checkAbort(signal);
+      if (changed) await this.#writeIndex(cache, index.files, this.manifest.version);
+    }
+    return { ...await this.status(), removed };
+  }
+
   /**
    * What is already cached *and current*: `present` holds the absolute URLs whose stored bytes match the manifest's
    * hash, plus every counter the settings panel shows. An entry of another revision (or with no index record yet) does
@@ -493,20 +517,26 @@ export class ResourceStore {
    * browser-side eviction of an *indexed* entry — `ensureCached`/`#adopt` verify those bytes again on the next run.
    * Only that refusal falls back: any other failure of the query is a real failure and has to surface (a status that
    * quietly reported "nothing is cached" would hide it).
+   *
+   * The refusal is a size class, not one unlucky call, and the index read needed anyway already says which class a card
+   * is in: a card whose records would spend the budget is answered from them without asking (and without being
+   * remembered as refused — a card that shrinks, or a cleared one, is enumerated again).
    * @param {any} cache
-   * @param {string} name cache name (a refusal is remembered per name — size class, not one unlucky call)
+   * @param {string} name cache name (a refusal is remembered per name)
+   * @param {Promise<{ files: Record<string, string> }>} [index] the card's index, already being read by the caller
    */
-  async #keyUrls(cache, name) {
-    if (!this.#keysRefused.has(name)) {
-      try { return new Set((await cache.keys()).map((key) => key.url)); }
-      catch (err) {
-        if (!isCacheQueryLimit(err)) throw err;
-        this.#keysRefused.add(name);
-        console.warn('[resources] Cache.keys() refused — reading the resource index instead', err);
-      }
+  async #keyUrls(cache, name, index) {
+    const indexed = Object.keys((await (index || this.#readIndex(cache))).files);
+    if (this.#keysRefused.has(name) || cacheKeysOverBudget(indexed)) {
+      return new Set(indexed);
     }
-    const index = await this.#readIndex(cache);
-    return new Set(Object.keys(index.files));
+    try { return new Set((await cache.keys()).map((key) => key.url)); }
+    catch (err) {
+      if (!isCacheQueryLimit(err)) throw err;
+      this.#keysRefused.add(name);
+      console.warn(`[resources] Cache.keys() refused in ${name} — reading the resource index instead`, err);
+      return new Set(indexed);
+    }
   }
 
   /** Which card a manifest entry lives in (`essential` / `voice` / `skin` / `fx`). */
@@ -516,20 +546,20 @@ export class ResourceStore {
 
   /** The Cache Storage name of that card. */
   shardName(file) {
-    return cacheNameForScope(resourceScope(file));
+    return cacheNameForFile(file);
   }
 
   /** Every cache of this app: the four cards first, then the leftovers of older layouts. */
   async #cacheNames() {
     const names = ((await this.caches.keys()) || []).filter((n) => n.startsWith(CACHE_PREFIX));
-    return [...SHARD_CACHE_NAMES.filter((n) => names.includes(n)), ...names.filter((n) => !SHARD_CACHE_NAMES.includes(n))];
+    return [...READABLE_CACHE_NAMES.filter((n) => names.includes(n)), ...names.filter((n) => !READABLE_CACHE_NAMES.includes(n))];
   }
 
   /** The cards this browser has right now, in panel order. Reading status must not create one. */
   async #shards() {
     const existing = new Set((await this.caches.keys()) || []);
     const shards = [];
-    for (const name of SHARD_CACHE_NAMES) {
+    for (const name of READABLE_CACHE_NAMES) {
       if (existing.has(name)) shards.push({ name, cache: await this.caches.open(name) });
     }
     return shards;
@@ -592,16 +622,17 @@ export class ResourceStore {
       byKey.set(this.keyOf(file.url), file);
     }
     await Promise.all((await this.#shards()).map(async ({ name, cache }) => {
-      // One query for the keys and one index read, started together: the pair is what makes a status check a
-      // single round of cache metadata reads, and a refused enumeration must not delay the index by a whole query.
-      // The two timers are read where each promise settles — reading them after `Promise.all` would report the
-      // slower of the pair twice and hide which half a slow status check actually spent its time in.
-      const keysStart = performance.now();
-      const keysRead = this.#keyUrls(cache, name).then((value) => { keysMs += performance.now() - keysStart; return value; });
+      // The index read starts first and the keys query waits for it: the index is what tells whether that query is
+      // within the budget the browser will serialize, so a doomed one is never started (it used to be paid for in
+      // full, then answered from the index anyway). Both timers are read where each promise settles — reading them
+      // after `Promise.all` would report the slower of the pair twice and hide which half a slow check spent its time in.
       const indexStart = performance.now();
       const indexRead = this.#readIndex(cache).then((value) => { indexMs += performance.now() - indexStart; return value; });
+      const keysStart = performance.now();
+      const keysRead = this.#keyUrls(cache, name, indexRead).then((value) => { keysMs += performance.now() - keysStart; return value; });
       const [keys, index] = await Promise.all([keysRead, indexRead]);
-      if (this.#keysRefused.has(name)) refused = true;
+      // Answered from the index either because the browser refused the query or because the index proved it would.
+      if (this.#keysRefused.has(name) || cacheKeysOverBudget(Object.keys(index.files))) refused = true;
       for (const key of keys) {
         const pause = checkpoint(); if (pause) await pause;
         cached.add(key);
@@ -612,7 +643,9 @@ export class ResourceStore {
       }
       for (const [key, hash] of Object.entries(index.files)) {
         const pause = checkpoint(); if (pause) await pause;
-        files.set(key, hash);
+        // An interrupted migration may leave a duplicate with an older hash.
+        const expected = byKey.get(key)?.hash;
+        if (!files.has(key) || hash === expected || files.get(key) !== expected) files.set(key, hash);
         if (!byKey.has(key)) stale = true; // a record of a file the manifest dropped
       }
     }));
@@ -641,7 +674,7 @@ export class ResourceStore {
 
   /** Caches of earlier builds this app wrote: their entries carry no hash record and are verified before being kept. */
   async #olderCaches() {
-    return (await this.#cacheNames()).filter((n) => !SHARD_CACHE_NAMES.includes(n));
+    return (await this.#cacheNames()).filter((n) => !READABLE_CACHE_NAMES.includes(n));
   }
 
   /** Fetch a file and hand back a storable response (an opaque or empty or failed answer throws). */
@@ -831,9 +864,9 @@ export class ResourceStore {
   /**
    * Move entries that sit in a card they do not belong to: an install from before the split keeps every byte in the
    * catch-all cache, and such a file must not be downloaded a second time. One file at a time — copy it with its index
-   * record, then delete the old copy — so an interrupted pass never leaves two copies and the extra storage the pass
-   * needs is one file. An entry that had no index record does not gain one: the next run verifies its bytes like any
-   * other unindexed entry.
+   * record, then delete the old copy. Destination indexes are persisted before deleting sources; an interrupted pass
+   * can leave recoverable duplicates but never loses its only indexed copy. At most 64 files await that checkpoint.
+   * Unindexed entries are authenticated against the manifest before gaining a current index record.
    * @returns {Promise<number>} how many entries moved
    */
   async #tidy({ signal } = {}) {
@@ -854,38 +887,80 @@ export class ResourceStore {
     const flush = async () => {
       for (const state of await Promise.all(cards.values())) {
         if (!state.dirty) continue;
-        state.dirty = false;
         await this.#writeIndex(state.cache, state.index.files, this.manifest.version);
+        state.dirty = false;
       }
     };
     const wanted = new Map(this.files.map((f) => [this.keyOf(f.url), f]));
     let moved = 0;
-    for (const { name, cache } of await this.#shards()) {
-      const source = await card(name);
-      for (const key of await this.#keyUrls(cache, name)) {
-        checkAbort(signal);
-        const file = wanted.get(key);
-        if (!file || this.shardName(file) === name) continue;
-        const hit = await cache.match(key);
-        if (!hit) {
-          if (key in source.index.files) { delete source.index.files[key]; source.dirty = true; }
-          continue;
-        }
-        const destination = await card(this.shardName(file));
-        await destination.cache.put(key, hit);
-        if (key in source.index.files) destination.index.files[key] = source.index.files[key];
-        destination.dirty = true;
-        await cache.delete(key);
-        if (key in source.index.files) delete source.index.files[key];
+    const moves = [];
+    let pendingBytes = 0;
+    const commitMoves = async () => {
+      await flush(); // Publish destination records before releasing any source bytes.
+      for (const { source, key } of moves) {
+        await source.cache.delete(key);
+        delete source.index.files[key];
         source.dirty = true;
-        moved++;
-        if (moved % INDEX_FLUSH_EVERY === 0) await flush();
       }
-      // Smaller now (or verified empty): let the next status try one-shot enumeration again.
-      this.#keysRefused.delete(name);
+      moves.length = 0;
+      pendingBytes = 0;
+      await flush();
+    };
+    try {
+      for (const { name, cache } of await this.#shards()) {
+        const source = await card(name);
+        const recordsBefore = Object.keys(source.index.files).length;
+        const movedBefore = moved;
+        const keys = await this.#keyUrls(cache, name, Promise.resolve(source.index));
+        // A legacy cache with a lost index may also refuse enumeration. Its known
+        // manifest paths can still recover cached bytes through single-key matches.
+        if (name === LEGACY_FX_CACHE_NAME && this.#keysRefused.has(name)) {
+          for (const file of this.files) if (file.fx) keys.add(this.keyOf(file.url));
+        }
+        for (const key of keys) {
+          checkAbort(signal);
+          const file = wanted.get(key);
+          if (!file || this.shardName(file) === name) continue;
+          const hit = await cache.match(key);
+          if (!hit) {
+            if (key in source.index.files) { delete source.index.files[key]; source.dirty = true; }
+            continue;
+          }
+          const destination = await card(this.shardName(file));
+          // A resumed move must preserve a newer copy already stored in its destination.
+          const current = file.hash && destination.index.files[key] === file.hash ? await destination.cache.match(key) : null;
+          if (!current) {
+            let hash = source.index.files[key];
+            if (!hash && CONTENT_HASH_RE.test(file.hash || '') && await digestOf(hit) === file.hash) hash = file.hash;
+            // Cache.put consumes its response: authentication must finish first.
+            await destination.cache.put(key, this.storable(hit, hash || ''));
+            if (hash) destination.index.files[key] = hash;
+            else delete destination.index.files[key];
+            destination.dirty = true;
+          } else {
+            void current.body?.cancel().catch(() => {});
+            void hit.body?.cancel().catch(() => {});
+          }
+          moves.push({ source, key });
+          pendingBytes += file.size || 0;
+          moved++;
+          if (moves.length >= INDEX_FLUSH_EVERY || pendingBytes >= MIGRATION_BATCH_BYTES) await commitMoves();
+        }
+        await commitMoves();
+        // Only a source that actually shrank can safely retry whole-cache enumeration.
+        if (moved > movedBefore || Object.keys(source.index.files).length < recordsBefore) this.#keysRefused.delete(name);
+      }
+      return moved;
+    } finally {
+      // Cancellation/put failure retains source bytes; completed copies remain indexed for resumption.
+      await flush();
     }
-    if (moved) await flush();
-    return moved;
+  }
+
+  /** Local-only layout migration. The page holds its download lock and pauses worker writes around this pass. */
+  async migrateCaches({ signal } = {}) {
+    if (this.running) throw new Error('请先暂停资源下载');
+    return this.#tidy({ signal });
   }
 
   /**
@@ -1129,7 +1204,7 @@ export class ResourceStore {
   /** Drop the caches of other versions (a new asset manifest frees the files of the previous one). */
   async pruneOld() {
     const names = (await this.caches.keys()) || [];
-    const stale = names.filter((n) => n.startsWith(CACHE_PREFIX) && !SHARD_CACHE_NAMES.includes(n));
+    const stale = names.filter((n) => n.startsWith(CACHE_PREFIX) && !READABLE_CACHE_NAMES.includes(n));
     const removed = [];
     for (const name of stale) {
       if (this.voiceScope) {

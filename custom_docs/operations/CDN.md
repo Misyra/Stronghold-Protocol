@@ -131,6 +131,9 @@ python tools/resource_delta.py --base <旧.zip> --target <新.zip> --output <del
 报告里 `summary.added / changed / unchanged / absentFromTarget / delta` 分别给出条数与字节数，`--analyze-only` 只比对不产出。客户端没有自动吃增量包的入口：它是给「手动导入」和 CDN 分发决策用的。
 ### 3.2 资源分包的镜像线路（SP_RESOURCE_PACK_ROUTES）
 
+本站默认使用 ModelScope 数据集 `Misyra/Arknight_Assets` 作为 ZIP 首选线路，当前素材 CDN 兜底。
+分包生成、发布命令与旧版大 ZIP 兼容说明见 [ModelScope 资源分包](MODELSCOPE.md)。
+
 预载用的资源分包是整包 ZIP（见 [预载说明](#4-浏览器预载)）。`SP_RESOURCE_PACK_ROUTES` 让游戏服务器把**镜像地址**写进清单：客户端按顺序试，失败就换下一条，**当前地址永远留一个在最后**，所以镜像挂了不会让预载整体失败。
 
 值是一段 JSON 数组，每一项可以是目录（`https://mirror.example/packs`，自动补 `/{file}`）、裸主机（补成 https 并补 `/{file}`）、同源目录（`/local/packs`），或一个模板（`https://m.example/p/{id}/{file}`，`{id}` 是分包 id，`{file}` 是文件名），或某个固定的整包 ZIP。写错的值（不是数组、不是 http(s) 的 `.zip`、模板里有未知占位符）在**启动时**就报 `SP_RESOURCE_PACK_ROUTES` 错误，不会把坏地址发给浏览器。
@@ -142,7 +145,7 @@ npm start
 
 服务端产出的是清单里的 `pack.urls`（顺序 = 配置顺序 + 当前地址），并把 `pack.url` 与包内 `/assets/…` 的地址按 `SP_ASSETS_CDN` / `SP_DATA_CDN` 改写；客户端 `fetchTransportPack` 逐条尝试，只有整包指纹校验通过才导入缓存，所以镜像返回的错误内容不会被当成有效分包。部署清单里自带的 `urls` 会被忽略 —— 线路只有服务器配置说了算。
 
-不配置时行为不变：清单里没有 ${B}urls${B} 字段，客户端直接用当前地址。
+未配置环境变量时使用本站默认 ModelScope 线路；设置 `SP_RESOURCE_PACK_ROUTES='[]'` 可显式关闭镜像。
 **可选的回源优化**：[Smart Tiered Cache](https://developers.cloudflare.com/smart-shield/configuration/smart-tiered-cache/) 让多个边缘节点未命中时先查询上层缓存，减少各自直接读取 R2。实际节省取决于流量分布与缓存命中情况，应根据 R2 的 Class B 用量验证；不能仅凭 TTL 或单个 URL 的 HIT 推算月费用。
 
 ### 3.3 数据也放 CDN（SP_DATA_CDN）

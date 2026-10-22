@@ -183,6 +183,21 @@ describe('the vanilla content of a server (server/plugins/identity.js)', () => {
     assert.throws(() => computeVanillaContent({ ...opts(), shim: undefined }), /shim/);
   });
 
+  test('adding or replacing the resource ZIP index preserves the identity of existing games', () => {
+    const file = path.join(fx, 'data/resource-packs.json');
+    const saved = fs.readFileSync(file);
+    fs.rmSync(file);
+    const before = computeVanillaContent(opts()).cs;
+    try {
+      for (const packs of [[{ id: 'old-small-skin' }], [{ id: 'skin-01' }, { id: 'fx-01' }]]) {
+        put(fx, 'data/resource-packs.json', JSON.stringify({ format: 'stronghold-resource-pack-index', packs }));
+        const content = computeVanillaContent(opts());
+        assert.equal(content.cs, before);
+        assert.equal(content.data['resource-packs'], undefined);
+      }
+    } finally { fs.writeFileSync(file, saved); }
+  });
+
   test('this checkout: the vanilla content names the served sim, shared code, the stand-in and the gameplay data', () => {
     const c = computeVanillaContent({ simDir: path.join(ROOT, 'server/sim'), sharedDir: path.join(ROOT, 'shared'), dataDir: path.join(ROOT, 'data'), shim: DATA_SHIM_JS });
     assert.ok(isContentHash(c.cs));

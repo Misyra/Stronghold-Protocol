@@ -31,6 +31,64 @@ class MemoryCaches {
 
 const ORIGIN = 'https://game.example';
 
+test('background verification repairs evicted index records with at most eight local reads and no body/network reads', async () => {
+  const files = Array.from({ length: 24 }, (_, i) => ({ url: `/assets/verify/${i}.png`, tier: 1, size: 1, hash: 'h0' }));
+  const caches = new MemoryCaches();
+  for (const file of files) await seed(caches, ORIGIN + file.url, 'x', 'h0');
+  const cache = await caches.open(CACHE_NAME);
+  await cache.delete(ORIGIN + files[0].url);
+  let active = 0, maximum = 0;
+  const match = cache.match.bind(cache);
+  cache.match = async (key) => {
+    if (!key.includes('/assets/')) return match(key);
+    maximum = Math.max(maximum, ++active);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    const response = await match(key); active--;
+    if (response) response.arrayBuffer = () => { throw new Error('must not read asset bodies'); };
+    return response;
+  };
+  const s = new ResourceStore(manifest(files), { caches, origin: ORIGIN,
+    fetcher: async () => { throw new Error('verification must not fetch'); } });
+  const status = await s.verifyCachedResources();
+  assert.equal(status.removed, 1);
+  assert.equal(status.count, 23);
+  assert.ok(maximum > 1 && maximum <= 8, String(maximum));
+  assert.equal((await (await cache.match(indexUrl(ORIGIN))).json()).files[ORIGIN + files[0].url], undefined);
+});
+
+test('background verification aborts without committing a partial index repair', async () => {
+  const caches = new MemoryCaches();
+  const cache = await seed(caches, ORIGIN + '/assets/missing.png', 'x', 'h0');
+  await cache.delete(ORIGIN + '/assets/missing.png');
+  const controller = new AbortController(); controller.abort();
+  const s = new ResourceStore(manifest([{ url: '/assets/missing.png', tier: 1, size: 1, hash: 'h0' }]), { caches, origin: ORIGIN });
+  await assert.rejects(s.verifyCachedResources({ signal: controller.signal }), { name: 'AbortError' });
+  assert.equal((await (await cache.match(indexUrl(ORIGIN))).json()).files[ORIGIN + '/assets/missing.png'], 'h0');
+});
+
+test('an over-budget index may look complete until local verification repairs eviction and only the missing file downloads', async () => {
+  const files = await Promise.all(['a', 'b'].map(async (body) => ({ url: `/assets/large/${body}.png`, tier: 1, size: 1, hash: await digest(body) })));
+  const caches = new MemoryCaches();
+  for (const file of files) await seed(caches, ORIGIN + file.url, file.url.includes('/a.') ? 'a' : 'b', file.hash);
+  const cache = await caches.open(CACHE_NAME);
+  const index = await (await cache.match(indexUrl(ORIGIN))).json();
+  for (let i = 0; i < 20000; i++) index.files[`${ORIGIN}/assets/evicted/${i}.png`] = 'h0';
+  await cache.put(indexUrl(ORIGIN), new Response(JSON.stringify(index)));
+  await cache.delete(ORIGIN + files[0].url);
+  const calls = [];
+  const s = new ResourceStore(manifest(files), { caches, origin: ORIGIN, fetcher: async (url) => {
+    calls.push(url); return new Response('a', { headers: { 'Content-Length': '1' } });
+  } });
+  assert.equal((await s.status()).complete, true, 'the provisional index still records the evicted file');
+  const checked = await s.verifyCachedResources();
+  assert.equal(checked.complete, false);
+  assert.equal(checked.count, 1);
+  assert.equal(checked.removed, 20001);
+  assert.deepEqual(calls, []);
+  assert.equal((await s.download()).complete, true);
+  assert.deepEqual(calls, [ORIGIN + files[0].url]);
+});
+
 test('preload language selection persists multiple dubs and native without changing playback or discarding cached languages', async () => {
   const langs = ['cn', 'jp', 'en', 'kr', 'native'];
   const files = langs.map((lang) => ({ url: `/assets/audio/voice/${lang}/test.mp3`, tier: 2, size: 8 }));
@@ -130,19 +188,21 @@ describe('ResourceStore', () => {
     const cache = await caches.open(CACHE_NAME);
     const keys = cache.keys.bind(cache);
     const match = cache.match.bind(cache);
-    const keysStarted = Promise.withResolvers();
     const indexStarted = Promise.withResolvers();
     const release = Promise.withResolvers();
     let keyReads = 0;
     let indexReads = 0;
-    cache.keys = async () => { keyReads++; keysStarted.resolve(); await release.promise; return keys(); };
+    cache.keys = async () => { keyReads++; await release.promise; return keys(); };
     cache.match = async (key) => { indexReads++; indexStarted.resolve(); await release.promise; return match(key); };
     const s = store(m, { caches });
     const pending = [s.status(), s.status(), s.status()];
-    await Promise.all([keysStarted.promise, indexStarted.promise]);
-    assert.deepEqual([keyReads, indexReads], [1, 1], 'key enumeration and index reading start in parallel, once');
+    await indexStarted.promise;
+    // The index read is the cheap probe that says whether the cache is enumerable at all, so the query waits for it: a
+    // card over the budget must never pay for a keys() the browser then refuses (11 s of a page load in production).
+    assert.deepEqual([keyReads, indexReads], [0, 1], 'the index read starts at once; nothing is enumerated blind');
     release.resolve();
     const [a, b, c] = await Promise.all(pending);
+    assert.deepEqual([keyReads, indexReads], [1, 1], 'one keys query and one index read per pass, still');
     assert.deepEqual([a.count, b.count, c.count], [1, 1, 1]);
     a.present.clear();
     a.groups[0].present = 99;
@@ -180,6 +240,29 @@ test('a cache the browser refuses to enumerate in one query is read from the ind
     // A refusal is a size class, not one unlucky call: the doomed query is not paid again.
     assert.equal((await s.status()).count, 1);
     assert.equal(reads, 1);
+  });
+
+  test('an index that already proves the query would be refused is answered without asking', async () => {
+    const m = manifest([{ url: '/assets/a.png', tier: 1, size: 4 }]);
+    const caches = new MemoryCaches();
+    const cache = await seed(caches, `${ORIGIN}/assets/a.png`, 'aaaa', 'h0');
+    // Records alone can cross Chrome's ~10 MiB `Cache.keys()` budget (≈474 bytes per entry plus its URL): 20 000
+    // records of this length do, which is the size class a complete 特效 / 皮肤 preload used to reach. The page never
+    // sees the AbortError here — the doomed query is not started, so no seconds are spent waiting for the refusal.
+    const filler = Array.from({ length: 20_000 }, (_, i) => `${ORIGIN}/assets/filler/${i}.png`);
+    const writeIndex = (urls) => cache.put(indexUrl(ORIGIN), new Response(JSON.stringify({ version: 1, manifest: '', files: Object.fromEntries(urls.map((url) => [url, 'h0'])) })));
+    await writeIndex([...filler, `${ORIGIN}/assets/a.png`]);
+    let reads = 0;
+    const keys = cache.keys.bind(cache);
+    cache.keys = async () => { reads++; throw new DOMException(`Failed to execute 'keys' on 'Cache': Operation too large.`, 'AbortError'); };
+    const s = store(m, { caches });
+    const st = await s.status();
+    assert.deepEqual([st.count, st.scan], [1, 'index'], 'the index answers, and its record still decides freshness');
+    assert.equal(reads, 0, 'the query the budget refuses is never paid for');
+    // Not remembered as refused: a card that no longer fills the budget is enumerated again (a clear, an eviction).
+    await writeIndex([`${ORIGIN}/assets/a.png`]);
+    cache.keys = keys;
+    assert.deepEqual([(await s.status()).scan, reads], ['keys', 0], 'a smaller card is enumerated again');
   });
 
   test('a run over such a cache downloads only what the index lacks, and still cleans up', async () => {

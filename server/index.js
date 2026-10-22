@@ -93,7 +93,7 @@ import { SimulationPool, workerSettings } from './workers/pool.js';
 import { RoomWorkerPool } from './workers/roomPool.js';
 import { MatchWorkerPool } from './workers/matchPool.js';
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
-import { parseResourcePackRoutes } from '../shared/resourcePackRoutes.js';
+import { DEFAULT_RESOURCE_PACK_ROUTES, parseResourcePackRoutes } from '../shared/resourcePackRoutes.js';
 import { listenRoomAdmin, loadRoomConfigDocument } from './roomAdmin.js';
 import { saveRoomConfigDocument } from './roomConfig.js';
 import { openCountryLookup, parseGeoipMode } from './geoip.js';
@@ -333,9 +333,10 @@ export async function startServer(opts = {}) {
   // xinhai 的 static.js 只认「原样拼在 /assets/ 前的 CDN 基址」，与其 parseAssetCdn 同一套语义（本分支直接复用）
   // 静态服务与 CDN 由 server/http/static.js（取自 xinhai 分支）负责：它按 cdnBase / dataCdnBase 改写数据与清单里的素材地址，
   // 并在请求时生成 /js/asset-cdn.js（客户端 CDN 模块）。我们自己的 cdn/assetsManifest 只留给 /metrics 与日志。
+  const resourcePackRoutes = parseResourcePackRoutes(opts.resourcePackRoutes ?? process.env.SP_RESOURCE_PACK_ROUTES ?? DEFAULT_RESOURCE_PACK_ROUTES);
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, visual, contents, log,
     cdnBase: parseAssetCdn(cdn.base || cdnBase), dataCdnBase: parseAssetCdn(opts.dataCdn ?? process.env.SP_DATA_CDN),
-    resourcePackRoutes: parseResourcePackRoutes(opts.resourcePackRoutes ?? process.env.SP_RESOURCE_PACK_ROUTES),
+    resourcePackRoutes,
     assetsManifest,
     clientBuild: opts.clientBuild ?? !process.argv.includes('--source-client') });
 
@@ -399,7 +400,7 @@ export async function startServer(opts = {}) {
   // reachable through GET /healthz?traffic=1 for a loopback or private-network client only (http/routes.js).
   const traffic = createTrafficCounter();
   const server = http.createServer(createRequestHandler({
-    serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base),
+    serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes),
     health: { startedAt, gameBootId, network, registry, lobby, workerPool, matchWorkers: matchWorkerPool, persister, store, serveStatic, cdn, assetsManifest, chatLog, traffic, content, trusted: trustedRuntime?.health },
     log, allowStatus, allowNickname, publicApiLimits, ipBans, apiMainlandOnly, apiCountryLookup,
     readAnnouncement, announcementSource: announcementOptions.source,

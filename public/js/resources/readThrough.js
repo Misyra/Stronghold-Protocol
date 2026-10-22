@@ -1,16 +1,18 @@
 import { cachedResourceHash, markResourceHeaders } from './cacheMetadata.js';
 import { resourceIdentity } from '../../../shared/resourcePaths.js';
 // Manifest-whitelisted read-through cache. The worker owns in-flight sharing; the page remains the sole index writer.
-import { CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, absoluteUrl, cacheNameForScope, mediaCandidates, rangeResponse, resourceScope } from './common.js';
+import { CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, absoluteUrl, cacheNameForFile, mediaCandidates, rangeResponse } from './common.js';
 import { resourceDigests } from './integrity.js';
 import { fetchResource } from './network.js';
 import { queueRuntimeIndexEntry } from './runtimeIndex.js';
 import { handleResourceRequest } from './service.js';
+import { createVersionedCacheReader } from './versionedCache.js';
 
 export function createResourceResponder({ caches = globalThis.caches, fetcher = globalThis.fetch?.bind(globalThis),
   getManifest, origin = globalThis.location?.origin || 'http://localhost', network = {} }) {
   const pending = new Map();
   const writes = new Set();
+  const readVersionedCache = createVersionedCacheReader(caches);
   let enabled = true;
   let epoch = 0;
   let indexedManifest;
@@ -63,7 +65,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
 
   async function load(file, key, generation, allowOrigin = true) {
     let openError;
-    const own = cacheNameForScope(resourceScope(file));
+    const own = cacheNameForFile(file);
     const cache = await caches.open(own).catch((error) => { openError = error; return null; });
     // The file's own card first, then any other cache this app owns: an install from before the cards were split still
     // holds these bytes in the catch-all cache (the page's tidy pass moves them), and they must not be fetched again.
@@ -124,7 +126,7 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     if (!enabled || generation !== epoch) return null;
     let result;
     if (cachedOnly) {
-      const cache = await caches.open(cacheNameForScope(resourceScope(file)));
+      const cache = await caches.open(cacheNameForFile(file));
       const cached = await cache.match(url);
       // Only local writers issue this marker after verification. Raw network headers cannot reach this branch.
       if (cachedResourceHash(cached) !== hash) return null;
@@ -139,6 +141,13 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     const url = new URL(request.url);
     // The store's integrity retry must reach the network even when a previous request is in flight.
     if (url.searchParams.has('sp')) return fetcher(request);
+    // Preload keys are canonical bare URLs, while renderers request ?v=<SHA-256>.
+    // Authenticate that exact revision locally, even during a cold worker start.
+    const local = await readVersionedCache(request).catch(() => null);
+    if (local) {
+      const range = request.headers.get('Range');
+      return range ? rangeResponse(local, range) : local;
+    }
     let file;
     try { file = await lookup(url); } catch { /* manifest unavailable: preserve normal game loading */ }
     if (!file || !enabled) return (await handleResourceRequest(request, { caches }).catch(() => null)) || fetcher(request);

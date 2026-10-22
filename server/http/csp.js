@@ -24,7 +24,7 @@ function addInlineHashes(hashes, html) {
   }
 }
 /** The page policy: every response carries it, and it may only allow scripts this server writes itself. */
-export function siteCsp(publicDir, transformPage = null, cdnBase = '') {
+export function siteCsp(publicDir, transformPage = null, cdnBase = '', resourcePackRoutes = []) {
   const hashes = new Set();
   for (const rel of CANDIDATES) {
     let html;
@@ -39,6 +39,20 @@ export function siteCsp(publicDir, transformPage = null, cdnBase = '') {
   // fetches. `script-src` never gains it — a CDN may ship art, never code.
   let art = '';
   if (cdnBase) { try { art = ` ${new URL(cdnBase).origin}`; } catch { art = ''; } }
+  // Pack mirrors are download endpoints only. ModelScope redirects public ZIPs
+  // to cdn-lfs-cn-*.modelscope.cn; scripts and workers remain on this site.
+  const packOrigins = new Set();
+  for (const route of resourcePackRoutes) {
+    if (route.startsWith('/')) continue;
+    try {
+      const url = new URL(route);
+      packOrigins.add(url.origin);
+      if (url.protocol === 'https:' && (url.hostname === 'modelscope.cn' || url.hostname.endsWith('.modelscope.cn'))) {
+        packOrigins.add('https://*.modelscope.cn');
+      }
+    } catch {}
+  }
+  const packConnect = packOrigins.size ? ' ' + [...packOrigins].join(' ') : '';
   // `connect-src` names `blob:` for the object URLs public/js/resourceNetwork.js hands to Pixi: a runtime texture
   // page is downloaded by our transport and then decoded by Pixi 7.4, which fetches the blob when
   // `createImageBitmap` exists. `'self'` does not cover a blob: URL, so every Spine page failed in the texture
@@ -46,5 +60,5 @@ export function siteCsp(publicDir, transformPage = null, cdnBase = '') {
   // `connect-src` names `data:` because Pixi probes `isImageBitmapSupported` by fetching a 1×1 data: PNG in a
   // Worker; without it the probe throws, the Spine texture loader takes the failure path, and the battle units
   // fall back to their tokens (2026-10-19 console: "Fetch API cannot load data:image/png;base64,…").
-  return `default-src 'self'; script-src 'self'${hashes.size ? ' ' + [...hashes].join(' ') : ''}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com${art}; font-src 'self' https://fonts.gstatic.com${art}; img-src 'self' data: blob:${art}; media-src 'self'${art}; connect-src 'self' blob: data:${art}; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'`;
+  return `default-src 'self'; script-src 'self'${hashes.size ? ' ' + [...hashes].join(' ') : ''}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com${art}; font-src 'self' https://fonts.gstatic.com${art}; img-src 'self' data: blob:${art}; media-src 'self'${art}; connect-src 'self' blob: data:${art}${packConnect}; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'`;
 }

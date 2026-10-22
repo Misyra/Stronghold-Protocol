@@ -6,7 +6,7 @@
 // only from caches this app wrote (`X-SP-Resource`): code, data, API responses, manifests and WebSocket traffic never
 // pass through this module.
 
-import { CACHE_PREFIX, SHARD_CACHE_NAMES, absoluteUrl, isResourcePath, mediaCandidates, rangeResponse } from './common.js';
+import { CACHE_PREFIX, SHARD_CACHE_NAMES, absoluteUrl, fxCacheName, isResourcePath, mediaCandidates, rangeResponse } from './common.js';
 
 /**
  * @param {Request} request
@@ -58,7 +58,9 @@ function cacheKeys(url) {
 async function matchResource(url, caches) {
   const keys = cacheKeys(url);
   const names = (await caches.keys()).filter((n) => n.startsWith(CACHE_PREFIX));
-  names.sort((a, b) => (SHARD_CACHE_NAMES.includes(a) ? 0 : 1) - (SHARD_CACHE_NAMES.includes(b) ? 0 : 1));
+  const preferred = url.pathname.includes('/assets/local/fx/') ? fxCacheName(url.href) : '';
+  const rank = (name) => name === preferred ? -1 : Number(!SHARD_CACHE_NAMES.includes(name));
+  names.sort((a, b) => rank(a) - rank(b));
   for (const name of names) {
     const cache = await caches.open(name);
     for (const key of keys) {

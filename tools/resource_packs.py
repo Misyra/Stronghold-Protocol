@@ -13,6 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import sys
 from urllib.parse import unquote
 import zipfile
 
@@ -20,11 +21,19 @@ MAX_PACK_BYTES = 16_000_000
 MANIFEST = "stronghold-resources.json"
 PACK_FORMAT = "stronghold-resource-pack-index"
 RESOURCE_FORMAT = "stronghold-resource-zip"
-EXTENSIONS = set("png jpg jpeg webp gif svg mp3 ogg wav m4a mp4 woff woff2 ttf otf css atlas obj skel bin".split())
+EXTENSIONS = set("png jpg jpeg webp gif svg mp3 ogg wav m4a aac oga opus mp4 woff woff2 ttf otf css atlas obj skel bin".split())
 
 
 def digest(data):
     return hashlib.sha1(data).hexdigest()
+
+
+def file_digest(file):
+    checksum = hashlib.sha1()
+    with file.open('rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            checksum.update(chunk)
+    return checksum.hexdigest()
 
 
 def write_stored(archive, name, data):
@@ -49,9 +58,13 @@ def canonical(url):
 
 
 def group(row):
+    # Share the ordinary 16 MB budget across outfits instead of producing a
+    # separate sub-megabyte ZIP for every skin.
+    if row.get("skin"):
+        return "skin"
     path = row["url"]
     if row["tier"] == 2:
-        if "/assets/local/fx/" in path:
+        if row.get("fx") or "/assets/local/fx/" in path:
             return "fx"
         for key in ("voice/cn", "voice/jp", "voice/en", "voice/kr", "voice", "sfx", "bgm"):
             if f"/audio/{key}/" in path:
@@ -76,11 +89,19 @@ def make_rows(files):
 
 def package_size(files):
     rows = make_rows(files)
-    manifest = json.dumps({"format": RESOURCE_FORMAT, "version": 2, "resourceVersion": "",
+    manifest = json.dumps({"format": RESOURCE_FORMAT, "version": 2, "resourceVersion": "0" * 12,
                            "files": rows}, ensure_ascii=False, separators=(",", ":")).encode()
-    # Local headers + central directory are stable enough to reserve exactly; the
-    # final ZIP size is still checked after writing.
-    return len(manifest) + sum(len(row["url"].encode()) + row["size"] + 128 for row in rows) + 22
+    return len(manifest) + 76 + 2 * len(MANIFEST) + sum(
+        row["size"] + 76 + 2 * len(row["path"]) for row in rows) + 22
+
+
+def entry_size(row, index):
+    """Incremental ZIP size, including this entry's row in the JSON manifest."""
+    record = {"path": f"resources/{index}", "url": canonical(row["url"]),
+              "size": row["size"], "hash": row["hash"], "sha1": row["sha1"]}
+    return (row["size"] + 76 + 2 * len(record["path"])
+            + len(json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode())
+            + (1 if index else 0))
 
 
 def main():
@@ -105,19 +126,26 @@ def main():
         if full[:12] != row.get("hash") or (row.get("size") is not None and row["size"] != len(data)):
             raise SystemExit(f"manifest mismatch: {url}")
         files.append({"url": url, "tier": row["tier"], "size": len(data), "hash": full[:12],
-                      "sha1": full, "data": data})
+                      "sha1": full, "source": path, "skin": row.get("skin"), "fx": row.get("fx")})
+        del data
     args.output.mkdir(parents=True, exist_ok=True)
     packs = []
     for key in sorted({group(row) for row in files}):
         selected = sorted((row for row in files if group(row) == key), key=lambda row: row["url"])
+        limit = args.max_bytes
         chunks = []
         current = []
+        current_size = package_size([])
         for row in selected:
-            if current and package_size(current + [row]) > args.max_bytes:
-                chunks.append(current); current = []
+            if package_size([]) + entry_size(row, 0) > limit:
+                print(f"individual download (larger than pack limit): {row['url']}", file=sys.stderr)
+                continue
+            addition = entry_size(row, len(current))
+            if current and current_size + addition > limit:
+                chunks.append(current); current = []; current_size = package_size([])
+                addition = entry_size(row, 0)
             current.append(row)
-            if package_size(current) > args.max_bytes:
-                raise SystemExit(f"single resource cannot fit in pack: {row['url']}")
+            current_size += addition
         if current: chunks.append(current)
         for number, chunk in enumerate(chunks, 1):
             pack_id = f"{key}-{number:02d}"
@@ -129,23 +157,30 @@ def main():
             temporary = args.output / f".{pack_id}.zip.tmp"
             with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED) as archive:
                 for row, original in zip(rows, chunk):
-                    write_stored(archive, row["path"], original["data"])
+                    data = original["source"].read_bytes()
+                    if digest(data) != original["sha1"]:
+                        raise SystemExit(f"resource changed while packing: {row['url']}")
+                    write_stored(archive, row["path"], data)
+                    del data
                 write_stored(archive, MANIFEST, json.dumps(manifest, ensure_ascii=False, separators=(",", ":")))
-            if temporary.stat().st_size > args.max_bytes:
+            if temporary.stat().st_size > limit:
                 temporary.unlink()
                 raise SystemExit(f"pack exceeds limit: {temporary}")
-            package_hash = digest(temporary.read_bytes())[:12]
+            full_package_hash = file_digest(temporary)
+            package_hash = full_package_hash[:12]
             target = args.output / f"{pack_id}-{package_hash}.zip"
             temporary.replace(target)
             packs.append({"id": pack_id, "url": f"/resource-packs/{target.name}",
                           "group": key, "tier": min(row["tier"] for row in chunk),
                           "count": len(chunk), "bytes": sum(row["size"] for row in chunk),
-                          "size": target.stat().st_size, "sha1": digest(target.read_bytes()),
+                          "size": target.stat().st_size, "sha1": full_package_hash,
                           "files": [{"url": row["url"], "size": row["size"], "hash": row["hash"]} for row in rows]})
     index = {"format": PACK_FORMAT, "version": 1, "resourceVersion": source["version"],
              "maxBytes": args.max_bytes, "packs": packs}
     args.index.parent.mkdir(parents=True, exist_ok=True)
-    args.index.write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary_index = args.index.with_suffix(args.index.suffix + ".tmp")
+    temporary_index.write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+    temporary_index.replace(args.index)
     print(json.dumps({"packs": len(packs), "bytes": sum(pack["size"] for pack in packs)}, ensure_ascii=False))
 
 

@@ -35,6 +35,8 @@
     "build-data": "node tools/build-data.mjs",
     "assets": "node tools/vendor.mjs && node tools/fetch-assets.mjs",
     "manifest": "node tools/build-assets-manifest.mjs",
+    "resources:packs": "node tools/build-resource-packs.mjs",
+    "resources:publish": "python tools/modelscope-packs.py",
     "geoip": "node tools/fetch-geoip.mjs",
     "postinstall": "node tools/vendor.mjs",
     "setup": "node tools/setup.mjs",

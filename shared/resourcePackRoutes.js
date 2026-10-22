@@ -1,4 +1,8 @@
 // ZIP transport locations never change the identities of resources inside a pack.
+export const DEFAULT_RESOURCE_PACK_ROUTES = Object.freeze([
+  'https://modelscope.cn/datasets/Misyra/Arknight_Assets/resolve/master/{file}',
+]);
+
 export function isResourcePackUrl(value) {
   if (typeof value !== 'string' || !value || value.length > 2048
     || /[\s\\?#\u0000-\u001f]/.test(value)

@@ -47,6 +47,11 @@ npm run build
 
 `public/assets/local/` 从 2026-10-19 起不再随 Git 下载（65 MB）：用 CDN，或在本机跑 `node tools/setup.mjs --local` 提取，或从同版本完整包复制；之后 `npm run manifest` 生成指纹清单。CDN-only 游戏节点确认清单与 CDN 对象齐全后可删除 `public/assets/` 和字体二进制，只保留 `public/fonts/fonts.css` 供服务器改写字体 URL；CDN 不可用时源站素材回退会 404。资源来源、客户端提取和清单见[素材说明](../../docs/ASSETS.md)。源码部署不要混用上游发行包中的程序文件。
 
+每个新发布目录都必须复制 `public/fonts/fonts.css`；仅复制代码、Vite 构建和素材指纹不会包含这个被 Git 忽略的生成文件。
+上线验收应同时检查 `/fonts/fonts.css` 和首页实际引用的 `/_v/<artVersion>/fonts/fonts.css`：
+两者都必须返回 `200`、`Content-Type: text/css`，且 CSS 中的字体地址已改写到配置的 CDN。
+只检查首页或 `/healthz` 无法发现这个缺失；404 返回的 HTML 错误页会引起浏览器的样式 MIME 错误。
+
 ## 配置
 
 推荐把线上配置放在 `/etc/stronghold/game.env`，由服务管理器加载。`npm start` 不会自动读取根目录 `.env`。

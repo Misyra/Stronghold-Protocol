@@ -87,6 +87,17 @@ test('export/import round trip includes only cached files and serves imported by
   assert.equal((await importResourceZip(target.store, exported.blob)).imported, 1, 'a damaged cached copy is replaced by verified package bytes');
 });
 
+test('legacy v1 and v2 full ZIPs larger than the 16 MB transport cap remain importable', async () => {
+  const files = [file('/assets/large.png', Buffer.alloc(16_000_001, 7))];
+  const target = store(files);
+  const legacy = await packageZip(files, { version: 1 });
+  assert.ok(legacy.size > 16_000_000);
+  assert.equal((await importResourceZip(target.store, legacy)).imported, 1);
+  const current = await packageZip(files, { version: 2 });
+  assert.equal((await importResourceZip(target.store, current)).already, 1);
+  assert.deepEqual(target.calls, [], 'old full ZIPs populate the same cache without network requests');
+});
+
 test('export recovers current game-cached bytes without an index and excludes stale unindexed bytes', async () => {
   const files = [file('/assets/game.png', 'current'), file('/assets/old.png', 'new-version')];
   const source = store(files);

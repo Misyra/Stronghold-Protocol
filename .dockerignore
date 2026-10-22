@@ -38,6 +38,9 @@ scripts/service.env.cmd
 Thumbs.db
 .env
 .env.*
+.local/
+.resource-packs-published.json
+public/resource-packs/
 .state
 *.state.json
 *.state.json.lock

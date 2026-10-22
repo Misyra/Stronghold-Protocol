@@ -1,17 +1,15 @@
 // Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
 import { N_ } from '../../../shared/i18n.js';
-import { canonicalResourceUrl } from '../../../shared/resourcePaths.js';
+import { canonicalResourceUrl, resourceIdentity } from '../../../shared/resourcePaths.js';
 // public/js/resources/common.js — shared pieces of the optional asset preload (docs/ASSETS.md「Preload」).
 //
 // No DOM and no Preact: the page (store.js / index.js), the Service Worker (service.js) and the Node tests all import
 // this module. It owns the manifest shape, the URL/MIME rules and byte formatting — the same rules the server applies
 // when it generates /data/resource-manifest.json (server/resources.js).
 
-/** Cache Storage names this app owns. One cache per preload card (`resourceScope`): a browser refuses a single
- * `Cache.keys()` over roughly 10 MiB of keys (Chromium's `kMaxQueryCacheResultBytes`), and a complete preload
- * (≈22 000 files) is far past that — per-card caches stay enumerable, so each card can also be measured, cleared or
- * exported on its own. Entries are still replaced per file (by hash), so an asset update re-downloads the changed
- * files only (docs/ASSETS.md「Preload」). */
+/** Cache Storage names this app owns. Cards have separate caches; effects use eight stable path shards.
+ * This keeps today's whole-cache queries below the browser's ~10 MiB result budget. Independent indexes remain
+ * a fallback for larger future sets and legacy caches. Entries are still replaced per file by content hash. */
 export const CACHE_PREFIX = 'stronghold-resources-v1-';
 /** The catch-all card (map/character/spine/ui, plus sfx/music/other) keeps the pre-split name `…-all`: an install that
  * predates the split already has those bytes in this cache, under exactly this name. */
@@ -104,7 +102,7 @@ export function resourceGroup(file) {
   return 'ui';
 }
 
-/** The four preload cards, in panel order — one Cache Storage cache each (`cacheNameForScope`). */
+/** The four logical preload cards, independent of their physical cache count. */
 export const RESOURCE_SCOPES = Object.freeze(['essential', 'voice', 'skin', 'fx']);
 
 /** Which card a manifest entry belongs to: 官方特效, 干员皮肤 and 干员语音 have a card of their own, everything else
@@ -114,14 +112,33 @@ export function resourceScope(file) {
   return group === 'voice' || group === 'skin' || group === 'fx' ? group : 'essential';
 }
 
-/** Cache Storage name of a card. `essential` keeps the legacy `CACHE_NAME` — see its comment. */
+/** Original card cache name; new writers use cacheNameForFile for the effects shards. */
 export function cacheNameForScope(scope) {
   return scope === 'essential' ? CACHE_NAME : CACHE_PREFIX + String(scope || 'essential');
 }
 
-/** Every card cache name: these are the caches a current preload lives in (`pruneOld()` keeps them and deletes the
- *  version-named caches of older builds). */
-export const SHARD_CACHE_NAMES = Object.freeze(RESOURCE_SCOPES.map((scope) => cacheNameForScope(scope)));
+export const LEGACY_FX_CACHE_NAME = cacheNameForScope('fx');
+export const FX_CACHE_NAMES = Object.freeze(Array.from({ length: 8 }, (_, i) => `${LEGACY_FX_CACHE_NAME}-${i}`));
+
+/** Hash the canonical path only: CDN hosts, release prefixes, queries and URL escaping never move a file.
+ * Keep this hash and the shard count stable across releases so additions do not reshuffle cached effects. */
+export function fxCacheName(url) {
+  const path = resourceIdentity(url) || String(url);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < path.length; i++) hash = Math.imul(hash ^ path.charCodeAt(i), 0x01000193);
+  return FX_CACHE_NAMES[(hash >>> 0) % FX_CACHE_NAMES.length];
+}
+
+export function cacheNameForFile(file) {
+  const scope = resourceScope(file);
+  return scope === 'fx' ? fxCacheName(file.url) : cacheNameForScope(scope);
+}
+
+/** Current write destinations, followed by the old effects card for read/migration compatibility. */
+export const SHARD_CACHE_NAMES = Object.freeze([
+  ...RESOURCE_SCOPES.filter((scope) => scope !== 'fx').map(cacheNameForScope), ...FX_CACHE_NAMES,
+]);
+export const READABLE_CACHE_NAMES = Object.freeze([...SHARD_CACHE_NAMES, LEGACY_FX_CACHE_NAME]);
 
 /** The extension-less audio route the game asks audio through (`shared/media.js`; a test keeps the two lists identical).
  * The manifest keeps the real `/assets/audio/….mp3` URLs — a plain static host (the CDN) cannot resolve `/media/…` — and
@@ -283,6 +300,30 @@ export function isCacheQueryLimit(err) {
   if (err.name === 'AbortError') return true;
   // Chromium's own wording, as a second signal for an error a layer has already wrapped.
   return /operation too large/i.test(String(err.message || ''));
+}
+
+/**
+ * What one entry costs inside a `Cache.keys()` answer: Chrome's `kMaxQueryCacheResultBytes` (10 MiB) is spent as ≈474
+ * bytes of serialized request per entry (462–498 measured) plus the request's own URL — about 18 200 entries at this
+ * manifest's 89-byte keys, the ceiling `isCacheQueryLimit` documents.
+ */
+export const CACHE_KEY_QUERY_BUDGET = 10 * 1024 * 1024;
+export const CACHE_KEY_ENTRY_COST = 474;
+
+/**
+ * Whether a `Cache.keys()` answer over these URLs would pass the budget — the same question the browser answers with an
+ * AbortError, asked before the query is paid for. The formula rounds in the browser's favour (it over-counts capacity
+ * by a few percent), so the budget is applied with a margin: a card this predicts over budget is refused for real.
+ * @param {Iterable<string>} urls the keys the cache would answer with (the page-owned index knows them without a query)
+ * @param {number} [budget]
+ */
+export function cacheKeysOverBudget(urls, budget = CACHE_KEY_QUERY_BUDGET * 0.95) {
+  let used = 0;
+  for (const url of urls) {
+    used += CACHE_KEY_ENTRY_COST + String(url).length;
+    if (used > budget) return true;
+  }
+  return false;
 }
 
 /** An AbortError for a caller-supplied reason (used to stop a run without a thrown DOMException). */

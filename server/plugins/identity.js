@@ -24,7 +24,7 @@ import { APP_VERSION } from '../../shared/constants.js';
 import { CONTENT_HASH_VERSION, contentHashOf, simHashOf } from '../../shared/plugins/identity.js';
 
 /** data/*.json files that only the browser's presentation reads (never part of `cs`). */
-export const PRESENTATION_DATA = Object.freeze(['assets', 'local-assets', 'local-fx', 'emotes']);
+export const PRESENTATION_DATA = Object.freeze(['assets', 'local-assets', 'local-fx', 'emotes', 'resource-packs']);
 /** server/sim files that are never served (lower-case; static.js SIM_PRIVATE). */
 const SIM_PRIVATE = new Set(['nodedata.js']);
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };

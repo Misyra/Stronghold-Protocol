@@ -33,6 +33,9 @@ const FILES = [
  * map and the release-tag script, so an inline module would be blocked, while `script-src 'self'` serves this one.
  */
 const FIXTURE_MODULE = [
+  "import { ASSETS_CDN, DATA_CDN, ASSETS_MANIFEST } from '/js/asset-cdn.js';",
+  "globalThis.__spAssetCdn = { base: ASSETS_CDN, dataBase: DATA_CDN, manifest: ASSETS_MANIFEST, version: '' };",
+  "globalThis.__spManifestReady = ASSETS_MANIFEST ? fetch(ASSETS_MANIFEST).then(r => r.json()).then(doc => { globalThis.__spAssetCdn.hashes = doc.hashes; return doc; }) : Promise.resolve(null);",
   "import { render } from '/vendor/preact.module.js';",
   "import { html } from '/js/ui/components.js';",
   "import { ResourceLauncher, ResourceHost } from '/js/ui/resourcePanel.js';",
@@ -96,7 +99,7 @@ function makeInstall({ voices = false, dynamic = false, skins = false, fx = fals
   fs.copyFileSync(path.join(ROOT, 'public', 'resource-sw.js'), path.join(publicDir, 'resource-sw.js'));
   const voiceFiles = voices ? ['cn', 'jp', 'en', 'kr', 'native'].map((lang) => ({ url: `/assets/audio/voice/${lang}/char_e2e/test.mp3`, body: `${lang}-voice` })) : [];
   const dynamicFiles = dynamic ? [{ url: '/fonts/fonts.css', body: 'body { color: white; }' },
-    { url: '/assets/local/map/common/materials.json', body: '{ "material": true }' }] : [];
+    { url: '/assets/local/map/autochess/materials.json', body: '{ "material": true }' }] : [];
   // One installed 干员皮肤 (custom_docs/SKINS.md): two files under a `chars.<charId>.skins.<skinId>…` key path, which is what
   // the resource manifest marks `skin: '<charId>/<skinId>'`.
   const skinFiles = skins ? [{ url: '/assets/e2e/skin/boc.skel', body: 'skin-skel-bytes' },
@@ -113,11 +116,17 @@ function makeInstall({ voices = false, dynamic = false, skins = false, fx = fals
   fs.writeFileSync(path.join(dataDir, 'assets.json'), JSON.stringify({
     version: 1,
     hash: 'e2e0000',
+    ...(dynamic ? { fonts: { css: '/fonts/fonts.css' } } : {}),
     ui: { 'e2e/panel': FILES[0].url, ...(dynamic ? { dynamic: dynamicFiles.map((f) => f.url) } : {}) },
     audio: { bgm: { e2e: { loop: FILES[1].url } }, ...(voices ? { voice: voiceFiles.map((f) => f.url) } : {}) },
     chars: { char_e2e: { portrait: FILES[2].url,
       ...(skins ? { skins: { 'char_e2e@boc#1': { front: { skel: skinFiles[0].url, textures: [skinFiles[1].url] } } } } : {}) } },
   }));
+  // Real deployments publish content fingerprints. Synthetic catalog versions
+  // cannot authenticate ZIP imports or cross-origin preload handoffs.
+  fs.writeFileSync(path.join(dataDir, 'asset-hashes.json'), JSON.stringify({ version: 1,
+    files: Object.fromEntries([...FILES, ...voiceFiles, ...dynamicFiles, ...skinFiles, ...fxFiles]
+      .map((f) => [f.url, createHash('sha1').update(f.body).digest('hex').slice(0, 12)])) }));
   if (fx) {
     fs.writeFileSync(path.join(dataDir, 'local-fx.json'), JSON.stringify({
       version: 1, format: 'fx-manifest', set: 'used',
@@ -240,6 +249,38 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.deepEqual(problems, []);
   });
 
+  test('background verification repairs an over-budget index and downloads only the evicted asset', { timeout: 45000 }, async (t) => {
+    const context = await browser.createBrowserContext();
+    t.after(() => context.close());
+    const page = await context.newPage();
+    await page.goto(srv.url + '/index.html'); await ready(page, []);
+    await page.bringToFront();
+    await page.evaluate(() => window.__preload(true));
+    await page.waitForFunction('window.__res.state().complete && window.__res.state().phase === "ready"');
+    const requests = [];
+    const record = (req) => { if (req.url.startsWith('/assets/')) requests.push(req.url); };
+    srv.server.on('request', record); t.after(() => srv.server.off('request', record));
+    const before = await page.evaluate(async () => {
+      const { store } = await (await import('/js/resources/index.js')).resourceContext();
+      const cache = await caches.open(store.cacheName);
+      const victim = store.files[0]; const key = store.keyOf(victim.url);
+      await cache.delete(key);
+      const url = location.origin + '/__sp-resource-index__';
+      const index = await (await cache.match(url)).json();
+      for (let i = 0; i < 20000; i++) index.files[location.origin + '/assets/evicted/' + i + '.png'] = 'h0';
+      await cache.put(url, new Response(JSON.stringify(index)));
+      return { complete: (await store.status()).complete, victim: new URL(key).pathname };
+    });
+    assert.equal(before.complete, true, 'the index-only snapshot still counts the deleted bytes');
+    await page.waitForFunction(async (victim) => {
+      const { store } = await (await import('/js/resources/index.js')).resourceContext();
+      return window.__res.state().complete && !!await (await caches.open(store.cacheName)).match(location.origin + victim);
+    }, { timeout: 40000 }, before.victim)
+      .catch(async (cause) => { throw new Error(JSON.stringify(await page.evaluate(() => ({ hidden: document.hidden, state: window.__res.state() }))), { cause }); });
+    assert.deepEqual(requests, [before.victim]);
+    await page.evaluate(async () => { window.__preload(false); await window.__res.clearResources(); });
+  });
+
   test('versioned worker requests versioned manifests and cleanup unregisters its query URL', async (t) => {
     const context = await browser.createBrowserContext();
     t.after(() => context.close());
@@ -265,7 +306,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
     assert.match(result.version, /^[a-f0-9]{16}$/);
     assert.equal(result.workerVersion, result.version);
     assert.equal(result.registrations, 0);
-    assert.ok(requests.length >= 2, 'page and worker both load their manifests');
+    assert.ok(requests.length >= 1, 'the page loads its pinned manifest; the worker may reuse the immutable HTTP cache');
     assert.ok(requests.every(url => url === '/data/resource-manifest.json?v=' + result.version));
   });
 
@@ -561,6 +602,9 @@ describe('offline resources in headless Chrome', { skip }, () => {
   });
   for (const perFile of [false, true]) test(`${perFile ? 'per-file query' : 'versioned'} resources on a separate CDN origin are served from the game cache`, async (t) => {
     const { startServer } = await import('../../server/index.js');
+    const cors = (_req, res) => res.setHeader('Access-Control-Allow-Origin', '*');
+    srv.server.prependListener('request', cors);
+    t.after(() => srv.server.off('request', cors));
     const health = await (await fetch(srv.url + '/healthz')).json();
     const manifestFile = path.join(install.dir, perFile ? 'assets-manifest.json' : 'no-assets-manifest.json');
     if (perFile) fs.writeFileSync(manifestFile, JSON.stringify({ format: 1, tag: '0123456789abcdef',
@@ -577,17 +621,97 @@ describe('offline resources in headless Chrome', { skip }, () => {
     await page.waitForFunction('window.__res.state().complete === true', { timeout: 20000 })
       .catch(async (err) => { const st = await page.evaluate(() => window.__res.state()); throw new Error(`${err.message} — phase=${st.phase} done=${st.done}/${st.total} wanted=${st.wanted} msg=${st.message} failures=${JSON.stringify(st.failures).slice(0, 300)}`); });
     await page.waitForFunction('!!navigator.serviceWorker.controller');
-    const paths = await page.evaluate(() => fetch('/data/resource-manifest.json').then((r) => r.json()).then((m) => m.files.map((f) => f.url)));
-    assert.ok(paths.every((p) => perFile ? p.startsWith(srv.url + '/assets/') && /\?v=[a-f0-9]{16}$/.test(p)
-      : p.startsWith(srv.url + '/_v/' + health.artVersion + '/assets/')));
+    const paths = await page.evaluate(async () => {
+      const { resourceReady, resourceUrl } = await import('/js/resourceUrl.js');
+      await resourceReady();
+      const manifest = await (await fetch('/data/resource-manifest.json')).json();
+      return { preload: manifest.files.map((f) => f.url), runtime: manifest.files.map((f) => resourceUrl(f.url)) };
+    });
+    assert.ok(paths.preload.every((p) => p.startsWith(srv.url + '/assets/') && !new URL(p).search), 'preload keys remain canonical');
+    assert.ok(paths.runtime.every((p) => !perFile || /\?v=[a-f0-9]{16}$/.test(p)), 'renderer requests carry their per-file revision');
     await page.setOfflineMode(true);
     const result = await page.evaluate(async (urls) => {
       const res = await fetch(urls.find((p) => new URL(p).pathname.endsWith('bgm.mp3')), { headers: { Range: 'bytes=0-2' } });
       return { status: res.status, body: await res.text(), cached: res.headers.get('X-SP-Resource') };
-    }, paths);
+    }, paths.runtime);
     assert.deepEqual(result, { status: 206, body: 'bgm', cached: '1' });
     await page.setOfflineMode(false);
     await page.evaluate(async () => { await window.__res.syncResources(false); await window.__res.clearResources(); });
+  });
+
+  for (const lostIndex of [false, true]) test(`a ${lostIndex ? 'lost-index' : 'completed'} legacy effects preload migrates into eight shards without CDN reads and survives a cold offline worker`, async (t) => {
+    const { startServer } = await import('../../server/index.js');
+    const { build } = await import('esbuild');
+    const own = makeInstall({ fx: true });
+    const extra = Array.from({ length: 32 }, (_, i) => ({ url: `/assets/local/fx/prefabs/migration_${i}.json`, body: `effect-${i}` }));
+    const fxDoc = JSON.parse(fs.readFileSync(path.join(own.dataDir, 'local-fx.json'), 'utf8'));
+    const hashes = JSON.parse(fs.readFileSync(path.join(own.dataDir, 'asset-hashes.json'), 'utf8'));
+    for (const [i, file] of extra.entries()) {
+      fs.mkdirSync(path.dirname(path.join(own.publicDir, file.url)), { recursive: true });
+      fs.writeFileSync(path.join(own.publicDir, file.url), file.body);
+      fxDoc.groups.fx[`migration_${i}`] = { path: file.url };
+      hashes.files[file.url] = createHash('sha1').update(file.body).digest('hex').slice(0, 12);
+    }
+    fs.writeFileSync(path.join(own.dataDir, 'local-fx.json'), JSON.stringify(fxDoc));
+    fs.writeFileSync(path.join(own.dataDir, 'asset-hashes.json'), JSON.stringify(hashes));
+    const worker = await build({ entryPoints: [path.join(ROOT, 'public/resource-sw.js')], bundle: true,
+      format: 'esm', platform: 'browser', target: 'es2022', write: false });
+    fs.writeFileSync(path.join(own.publicDir, 'resource-sw.js'), worker.outputFiles[0].contents);
+    const game = await startServer({ port: 0, host: '127.0.0.1', quiet: true, workers: 0, store: null,
+      publicDir: own.publicDir, dataDir: own.dataDir, log: { info() {}, warn() {}, error() {}, debug() {} } });
+    t.after(async () => { await game.close(); fs.rmSync(own.dir, { recursive: true, force: true }); });
+    const page = await browser.newPage();
+    t.after(() => page.close());
+    await page.goto(game.url + '/index.html');
+    await page.waitForFunction('window.__ready === true');
+    const samples = await page.evaluate(async (lostIndex) => {
+      const { cacheNameForFile, LEGACY_FX_CACHE_NAME, indexUrl } = await import('/js/resources/common.js');
+      const { ResourceStore } = await import('/js/resources/store.js');
+      const manifest = await (await fetch('/data/resource-manifest.json')).json();
+      const store = new ResourceStore(manifest);
+      const indexes = new Map(), samples = [];
+      for (const file of manifest.files) {
+        const url = store.keyOf(file.url), body = await (await fetch(url)).arrayBuffer();
+        const name = file.fx ? LEGACY_FX_CACHE_NAME : cacheNameForFile(file);
+        const cache = await caches.open(name);
+        await cache.put(url, store.storable(new Response(body, { headers: { 'Content-Length': String(body.byteLength) } }), file.hash));
+        if (!indexes.has(name)) indexes.set(name, {});
+        indexes.get(name)[url] = file.hash;
+        if (file.fx) {
+          const sha = await crypto.subtle.digest('SHA-256', body);
+          const version = [...new Uint8Array(sha)].slice(0, 8).map((n) => n.toString(16).padStart(2, '0')).join('');
+          samples.push({ url: url + '?v=' + version, body: new TextDecoder().decode(body) });
+        }
+      }
+      for (const [name, files] of indexes) {
+        if (lostIndex && name === LEGACY_FX_CACHE_NAME) continue;
+        await (await caches.open(name)).put(indexUrl(), new Response(JSON.stringify({ version: 1, files })));
+      }
+      return samples;
+    }, lostIndex);
+    let assetReads = 0;
+    game.server.prependListener('request', (req) => { if (req.url.includes('/assets/')) assetReads++; });
+    await page.evaluate(() => window.__preload(true));
+    await page.waitForFunction(async () => {
+      const { FX_CACHE_NAMES, LEGACY_FX_CACHE_NAME } = await import('/js/resources/common.js');
+      const names = await caches.keys();
+      const old = await caches.open(LEGACY_FX_CACHE_NAME);
+      return window.__res.state().phase === 'ready' && FX_CACHE_NAMES.every((name) => names.includes(name))
+        && !(await old.keys()).some((key) => new URL(key.url).pathname.includes('/assets/'));
+    }, { timeout: 20000 });
+    assert.equal(assetReads, 0, 'ready-path migration uses only cached resource bytes');
+    await page.waitForFunction('!!navigator.serviceWorker.controller');
+    const session = await page.createCDPSession();
+    await session.send('ServiceWorker.enable');
+    await session.send('ServiceWorker.stopAllWorkers');
+    await page.setOfflineMode(true);
+    const received = await page.evaluate(async (samples) => {
+      const values = [];
+      for (const sample of samples) values.push(await (await fetch(sample.url)).text());
+      return values;
+    }, samples);
+    assert.deepEqual(received, samples.map((sample) => sample.body));
+    assert.equal(assetReads, 0, 'a restarted worker serves all eight shards without CDN requests');
   });
 
   test('effects card stays mounted while the manifest loads, fails and confirms no effects are installed', async (t) => {

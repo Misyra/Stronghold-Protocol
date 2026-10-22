@@ -105,6 +105,10 @@ desktop.ini
 # Build output: the per-file art manifest (`node tools/build-assets-manifest.mjs`); tools/r2-sync.mjs
 # used to commit it on every art change.
 /.assets-manifest.json
+# Generated preload ZIPs, deployment index and R2 upload resume state.
+/public/resource-packs/
+/data/resource-packs.json
+/.resource-packs-published.json
 # tools/install-skins.mjs writes this machine's installed skin set
 /data/skins-installed.json
 # This checkout's own scratchpad

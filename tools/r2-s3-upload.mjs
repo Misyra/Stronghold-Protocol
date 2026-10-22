@@ -13,6 +13,7 @@ import path from 'node:path';
 import { createHash, createHmac } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { fingerprintPublishedAsset, publishedAssetsManifest } from './published-assets.mjs';
+import { prepareResourcePackUpload } from './resource-pack-publish.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PUBLIC = path.join(ROOT, 'public');
@@ -64,7 +65,7 @@ const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const uriEncode = (s) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 const canonicalKey = (key) => key.split('/').map(uriEncode).join('/');
 
-async function putObject(key, body, contentType) {
+async function putObject(key, body, contentType, cacheControl) {
   const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
   const dateStamp = amzDate.slice(0, 8);
   const payloadHash = sha256(body);
@@ -87,6 +88,7 @@ async function putObject(key, body, contentType) {
       'content-type': contentType,
       'x-amz-content-sha256': payloadHash,
       'x-amz-date': amzDate,
+      'cache-control': cacheControl,
     },
     body,
   });
@@ -103,7 +105,7 @@ async function uploadWithRetry(job) {
   const contentType = MIME[path.extname(job.key).toLowerCase()] ?? 'application/octet-stream';
   for (let attempt = 1; ; attempt++) {
     try {
-      await putObject(job.key, body, contentType);
+      await putObject(job.key, body, contentType, job.cc);
       return;
     } catch (e) {
       const retriable = !e.status || e.status >= 500 || e.status === 429;
@@ -141,7 +143,9 @@ try {
 } catch {}
 
 const jobs = (previous ? files.filter((f) => previous.hashes[`/${f.key}`] !== f.hash) : files)
-  .map((f) => ({ key: f.key, abs: f.abs }));
+  .map((f) => ({ key: f.key, abs: f.abs, cc: 'public, max-age=3600' }));
+const packUpload = await prepareResourcePackUpload(ROOT);
+jobs.push(...packUpload.jobs);
 const bytes = jobs.reduce((s, j) => s + fs.statSync(j.abs).size, 0);
 console.log(`Manifest tag: ${manifest.tag}${previous ? ` (previous ${previous.tag})` : ' (no previous manifest)'}`);
 console.log(`Bucket ${BUCKET} · ${jobs.length} PUT(s), ${(bytes / 1048576).toFixed(1)} MiB, ${files.length} files tracked`);
@@ -152,6 +156,7 @@ if (DRY) {
 }
 if (!jobs.length) {
   fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest) + '\n');
+  await packUpload.commit();
   console.log('Nothing to upload; manifest refreshed.');
   process.exit(0);
 }
@@ -181,4 +186,5 @@ if (failed) {
   process.exit(2);
 }
 fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest) + '\n');
+await packUpload.commit();
 console.log(`Uploaded ${done} object(s) in ${((Date.now() - started) / 1000).toFixed(1)}s; manifest -> ${manifest.tag}`);

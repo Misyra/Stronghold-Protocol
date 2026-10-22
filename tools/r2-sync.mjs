@@ -34,6 +34,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fingerprintPublishedAsset, publishedAssetsManifest } from './published-assets.mjs';
+import { prepareResourcePackUpload } from './resource-pack-publish.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -111,6 +112,7 @@ const MIME = {
   '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain',
   '.atlas': 'text/plain', '.obj': 'text/plain', '.mtl': 'text/plain',
   '.html': 'text/html', '.js': 'text/javascript',
+  '.zip': 'application/zip',
 };
 
 function walk(dir, prefix, out) {
@@ -221,12 +223,17 @@ try {
 const jobs = previous
   ? files.filter((f) => previous.hashes[`/${f.key}`] !== f.hash).map((f) => ({ key: f.key, abs: f.abs, cc: 'public, max-age=3600' }))
   : files.map((f) => ({ key: f.key, abs: f.abs, cc: 'public, max-age=3600' }));
+const packUpload = args.includes('--metadata-only') ? { jobs: [], commit: async () => {} } : await prepareResourcePackUpload(ROOT);
+jobs.push(...packUpload.jobs);
 
 console.log(`Manifest tag: ${tag}${previous ? ` (previous ${previous.tag})` : ' (no previous manifest — uploading every file)'}`);
 if (args.includes('--metadata-only') && jobs.length) throw new Error('Unpublished asset changes found; metadata-only cannot authorize bytes not yet uploaded.');
 if (!jobs.length) {
   // Old releases lack preload metadata. Refresh it locally even when no object needs uploading.
-  if (!DRY) fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest) + '\n');
+  if (!DRY) {
+    fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest) + '\n');
+    await packUpload.commit();
+  }
   console.log(`All ${files.length} files already published to bucket '${BUCKET}'. No object uploads; preload fingerprints ${DRY ? 'checked' : 'updated'}.`);
   if (!DRY && args.includes('--push')) pushManifest(tag);
   process.exit(0);
@@ -276,6 +283,7 @@ if (failed) {
   process.exit(1);
 }
 fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest) + '\n');
+await packUpload.commit();
 console.log(`\nAll ${files.length} files published to R2 bucket '${BUCKET}' (manifest ${tag}).`);
 console.log(`Wrote ${path.basename(MANIFEST_FILE)} — 它不入库：用 CDN 的服务器要拷这份清单过去，然后重启游戏服务器。`);
 if (args.includes('--push')) pushManifest(tag);

@@ -50,7 +50,7 @@ function install(files = FILES) {
     const abs = path.join(assetsRoot, file.url.slice(1));
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, file.body);
-    manifest.files.push({ url: file.url, tier: file.tier, size: file.body.length, hash: sha1(file.body).slice(0, 12) });
+    manifest.files.push({ url: file.url, tier: file.tier, size: file.body.length, hash: sha1(file.body).slice(0, 12), ...(file.skin ? { skin: file.skin } : {}) });
   }
   const manifestPath = path.join(dir, 'resource-manifest.json');
   fs.writeFileSync(manifestPath, JSON.stringify(manifest));
@@ -69,6 +69,39 @@ function build(inst) {
 }
 
 describe('资源分包生成器 → 客户端读取', { skip }, () => {
+  test('多套皮肤共享普通大小的合并分包，不按每套生成小 ZIP', () => {
+    const inst = install([
+      { url: '/assets/spine/op/a/outfit/front/a.skel', tier: 2, skin: 'char_a/outfit', body: Buffer.from('skin-a') },
+      { url: '/assets/char/avatar/skin/a.png', tier: 2, skin: 'char_a/outfit', body: Buffer.from('avatar-a') },
+      { url: '/assets/spine/op/b/outfit/front/b.skel', tier: 2, skin: 'char_b/outfit', body: Buffer.from('skin-b') },
+    ]);
+    try {
+      build(inst);
+      const { packs } = JSON.parse(fs.readFileSync(inst.index, 'utf8'));
+      assert.equal(packs.length, 1);
+      assert.equal(packs[0].count, 3);
+      assert.equal(packs[0].id, 'skin-01');
+      assert.ok(packs.every((p) => p.group === 'skin' && p.tier === 2));
+    } finally { inst.cleanup(); }
+  });
+
+  test('皮肤沿用 16 MB 上限，装不下的剩余内容另成尾包', () => {
+    const inst = install(Array.from({ length: 4 }, (_, i) => ({
+      url: `/assets/spine/op/char_${i}/skin/front/a.skel`, tier: 2,
+      skin: `char_${i}/outfit`, body: Buffer.alloc(5_000_000, i),
+    })));
+    try {
+      build(inst);
+      const { packs } = JSON.parse(fs.readFileSync(inst.index, 'utf8'));
+      assert.equal(packs.length, 2);
+      assert.equal(packs.reduce((sum, pack) => sum + pack.count, 0), 4);
+      assert.ok(packs.every((pack) => pack.size <= 16_000_000));
+      assert.deepEqual(packs.map((pack) => pack.count), [3, 1]);
+      assert.equal(packs[0].bytes, 15_000_000);
+      assert.equal(packs[1].bytes, 5_000_000);
+    } finally { inst.cleanup(); }
+  });
+
   test('分类切包：索引形状、分组、整包 SHA-1 与文件名', () => {
     const inst = install();
     try {

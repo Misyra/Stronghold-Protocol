@@ -726,35 +726,58 @@ Chromium refuses a single `Cache.keys()` whose result exceeds a fixed query budg
 `kMaxQueryCacheResultBytes` in `content/browser/cache_storage/cache_storage_cache.cc`), rejecting it with
 `AbortError: Operation too large.` Measured on Chrome 155 the budget is spent as ≈474 bytes per entry (462–498) plus the
 request URL, which puts the ceiling near 18 200 entries at 89-byte keys and near 19 400 at the 72-byte mean of this
-manifest, while a full selection (all voices + every installed outfit + 官方特效) reaches ~22 500 entries: a complete
-install is the one case the browser will not enumerate in a single query. Preload therefore keeps one cache **per card**
-(`resourceScope` / `cacheNameForScope`, `resources/common.js`): `stronghold-resources-v1-all` holds the essential card —
-maps, portraits, Spine, UI, sound, music, guides — and `stronghold-resources-v1-voice` / `-skin` / `-fx` hold the three
-optional cards. The name of the essential card is the pre-split one on purpose, so every byte cached before the split
-stays where it is; the largest card (特效, ~12 500 entries ≈ 6.8 MiB of keys) sits under the budget, so cards enumerate
-normally. `status()` lists the four cards, never the caches of earlier builds — those are still migrated file by file
-through `#adopt` — and merges them into the single count the manager shows. Before the network phase of a run, `#tidy`
-moves any file that sits in the wrong card (an install older than the split keeps its voice and effect bytes inside
-`-all`) with a per-file `put` + `delete`, so nothing is downloaded again and peak usage grows by one file.
+manifest. The current catalog has 23,720 official-effect files, whose unsplit listing is estimated at 12.5 MiB.
+The logical preload cards still appear as essential / voice / skin / fx, but `cacheNameForFile` writes effects to
+`stronghold-resources-v1-fx-0` through `-fx-7`. FNV-1a over the canonical resource path assigns each file to one of eight
+fixed shards; CDN host changes, release prefixes, version queries and URL escaping do not change its shard. Existing
+essential, voice and skin cache names remain unchanged. The ZIP download layout and 16,000,000-byte pack cap are independent.
 
-`ResourceStore#keyUrls` stays as the safety net for a card that ever exceeds the budget anyway (a longer URL lowers the
-ceiling): it tries `cache.keys()` once, and on `AbortError` records that card in `#keysRefused` and answers from the index
-record the page itself writes (`/__sp-resource-index__`, one per card), which costs one entry regardless of catalog size.
-Status counting, 清理可选资源 (`clear({ optionalOnly })`), stale pruning and ZIP export (`ResourceStore#cachedKeys` /
-`cachedResponse`, used by `archive.js`) keep working, and `status().scan` reports `index` while any card is refused. Only
-`isCacheQueryLimit` (`common.js`) falls back — `AbortError`, or a message mentioning the limit — so a genuine cache
-failure still surfaces as `无法访问资源缓存`. An optional-only cleanup drops the flag once the cache is small enough to
-enumerate again. `pruneOld` deliberately keeps indexing out of it: a legacy cache has no index, and an empty listing must
-never be read as "this language is disposable". Because the browser raises `AbortError` for this limit too, a download
-pause is judged by `signal.aborted` (`index.js`), never by the DOMException name — otherwise a query-budget failure looked
-like the player cancelling, which is how 「资源包处理已取消，已保存的资源保留。」 could appear for a cache the browser simply
-refused to list.
+`status()` includes current shards and the legacy unsplit `stronghold-resources-v1-fx` cache, so old cached effects still
+count and remain usable immediately. The page migrates misplaced entries under its cross-tab download lock with worker
+writes paused, including when preload already reports complete. `#tidy` copies verified cache entries and checkpoints
+destination indexes before deleting source entries. A checkpoint contains at most 64 files or roughly 4 MiB (plus the
+last file); cancellation, quota errors or interruption may leave recoverable duplicates, and a newer destination wins
+over an old duplicate. Unindexed entries are checked locally before becoming verified index records. A legacy cache
+that refuses enumeration can recover known manifest paths individually without downloading their bodies. The old
+unsplit cache is retained by pruning, including with the effects switch off; explicit optional/full cleanup still clears
+its resource entries. Runtime, versioned cold-worker requests, ZIP import/export and background presence checks all use
+these same shard destinations, with the matching effects shard searched first by the runtime reader.
+
+`ResourceStore#keyUrls` never asks a question the budget already answers. `status()` reads each card's index first (one
+metadata match — ~140 ms for the whole pass, against ~11 s per refused query measured in production) and
+`cacheKeysOverBudget` (`common.js`, charging the same ≈474 bytes per entry plus its URL, with a 5 % margin) decides
+whether that card's `Cache.keys()` answer could fit at all. A card whose index records alone exceed the budget is
+answered from those records without issuing the query — the page used to pay for the doomed call in full, then fall back
+to the index anyway. The index is the record the page itself writes (`/__sp-resource-index__`, one per card), so reading
+it costs one entry regardless of catalog size. Because it is only a prediction, `keyUrls` keeps the refusal as a safety
+net for a card that exceeds the budget anyway (a longer URL lowers the ceiling): `AbortError` records that card in
+`#keysRefused` and the enumeration is not tried again — but a pre-check is *not* remembered, so a card that shrinks
+(清理可选资源, browser eviction) is enumerated again on the next check. Status counting, 清理可选资源
+(`clear({ optionalOnly })`), stale pruning and ZIP export (`ResourceStore#cachedKeys` / `cachedResponse`, used by
+`archive.js`) keep working, and `status().scan` reports `index` while any card is answered from its index. Only
+`isCacheQueryLimit` (`common.js`) counts as a refusal — `AbortError`, or a message mentioning the limit — so a genuine
+cache failure still surfaces as `无法访问资源缓存`. `pruneOld` deliberately keeps indexing out of it: a legacy cache has
+no index, and an empty listing must never be read as "this language is disposable". Because the browser raises
+`AbortError` for this limit too, a download pause is judged by `signal.aborted` (`index.js`), never by the DOMException
+name — otherwise a query-budget failure looked like the player cancelling, which is how
+「资源包处理已取消，已保存的资源保留。」 could appear for a cache the browser simply refused to list.
 
 The read paths discover cards dynamically: `public/js/resources/service.js` answers from any `stronghold-resources-v1-*`
 cache (cards of the current build first, then earlier ones), and `readThrough.js` opens the card of the file and then
 looks for the key in the remaining preload caches, so an unmoved copy still serves and cannot shadow the write that
 follows. Each card keeps an index record of its own, written when a download or an import verified a file and flushed in
 batches of 64 (the page remains the sole index writer).
+
+An index-only status is provisional: browser eviction can remove a resource while its index record remains.
+After a ready preload, a background check runs once per store after five seconds, with at most eight local
+`Cache.match` calls in flight. It reads no resource bodies, repairs missing index records under the download/worker
+write locks and downloads only missing selected files. Combat, pause, import and clear cancel the pass.
+
+CDN render URLs may carry a 16-hex SHA-256 `?v=` while preload ZIPs retain bare canonical cache keys.
+`resources/versionedCache.js` can serve such a request without waiting for a cold worker's manifest: it proves the
+exact requested SHA-256 prefix from cached bytes first (two verification lanes), then memoizes that proof for the
+worker lifetime. Old caches remain usable; different revisions, extra query parameters and release-prefix tags
+never gain this shortcut. Cached bytes still need image decoding and model/texture initialization before rendering.
 
 Preload also asks for persistent storage once per visit (`ensurePersistence`, `resources/storage.js`: `persisted()` →
 `persist()`, memoized per storage object, failures ignored) before a download or an import starts: without it a

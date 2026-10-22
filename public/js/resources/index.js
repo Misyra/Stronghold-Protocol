@@ -83,6 +83,14 @@ const set = stateStore.set;
 let current = false;
 const tasks = new ResourceTasks();
 const recovery = new ResourceRecovery();
+const backgroundVerified = new WeakSet();
+let backgroundTimer = null;
+let backgroundController = null;
+let backgroundPending = null;
+function cancelBackgroundCheck() {
+  clearTimeout(backgroundTimer); backgroundTimer = null;
+  backgroundController?.abort();
+}
 let recoveryAttempts = 0;
 let contextPromise = null;
 let optional = true;
@@ -112,7 +120,9 @@ export function updateResourcePriority(context) {
  * clear it, and it never pauses the simulation, runtime art or ZIP work.
  */
 export function syncResourceCombat(active) {
+  if (active) cancelBackgroundCheck();
   if (schedule.setCombat(active)) set({ combat: schedule.combat });
+  if (!active && current) void contextPromise?.then((ctx) => { if (ctx.store) scheduleBackgroundCheck(ctx.store); });
 }
 
 /** Suspend worker writes before imports/deletes, including writes already started in another tab. */
@@ -321,6 +331,7 @@ export async function syncResources(enabled, includeOptional = optional, languag
     || !sameSkinScope({ keys: skinKeys, all: allSkins }, nextScope) || fx !== nextFx || voices !== nextVoices
     || JSON.stringify(nextVoiceLanguages) !== JSON.stringify(preloadVoiceLanguages);
   if (enabled === current && !changed) { set({ enabled }); return; }
+  cancelBackgroundCheck();
   recovery.cancel();
   recoveryAttempts = 0;
   tasks.invalidate();
@@ -394,9 +405,42 @@ export const DOWNLOAD_LOCK = 'stronghold-resources-preload';
 
 /** Run `job` while holding the download lock; `{ busy: true }` when another tab has it. Unsupported ⇒ just run it. */
 async function withDownloadLock(job) {
+  if (backgroundController?.signal.aborted && backgroundPending) await backgroundPending.catch(() => {});
   const locks = globalThis.navigator?.locks;
   if (!locks || typeof locks.request !== 'function') return job();
   return locks.request(DOWNLOAD_LOCK, { ifAvailable: true }, async (lock) => (lock ? job() : { busy: true }));
+}
+
+/** A fast index may outlive browser eviction. Verify local presence once per
+ * store in the background, sharing the same locks as import/clear/download. */
+function scheduleBackgroundCheck(store) {
+  if (typeof globalThis.window?.setTimeout !== 'function' || backgroundVerified.has(store)) return;
+  clearTimeout(backgroundTimer);
+  const revision = tasks.revision;
+  backgroundTimer = setTimeout(async () => {
+    backgroundTimer = null;
+    if (!current || revision !== tasks.revision) return;
+    if (backgroundPending || schedule.combat || tasks.download.promise || tasks.archive.promise || tasks.clear || document.hidden) {
+      scheduleBackgroundCheck(store); return;
+    }
+    const controller = new AbortController(); backgroundController = controller;
+    try {
+      const pending = withDownloadLock(() => withWorkerWritesPaused(() => store.verifyCachedResources({ signal: controller.signal })));
+      backgroundPending = pending;
+      const status = await pending;
+      checkAbort(controller.signal);
+      if (status.busy) { scheduleBackgroundCheck(store); return; }
+      backgroundVerified.add(store);
+      if (!current || revision !== tasks.revision) return;
+      set(counters(status));
+      if (!status.complete) void startResources();
+    } catch (error) {
+      if (!controller.signal.aborted) console.warn('[resources] background cache verification failed', error);
+    } finally {
+      if (backgroundController === controller) backgroundController = null;
+      backgroundPending = null;
+    }
+  }, 5000);
 }
 
 /** Another tab owns the download: refresh while visible and take over when it releases the lock. */
@@ -439,43 +483,110 @@ function start() {
  * @param {any} status 已知的 store.status() 结果（用它的 present 集合）
  * @param {AbortSignal} signal
  */
-export async function preloadTransportPacks(store, packs, tiers, status, signal) {
+export async function preloadTransportPacks(store, packs, tiers, status, signal, onProgress) {
   const list = validateResourcePacks(packs);
   if (!list.length) return { imported: 0 };
+  status ??= await store.status();
   const present = status?.present instanceof Set ? status.present : new Set(status?.present || []);
   const byKey = new Map(store.selectedFiles.map((file) => [store.keyOf(file.url), file]));
+  const catalogFiles = new Map(store.files.map((file) => [store.keyOf(file.url), file]));
   const plans = [];
   for (const pack of list) {
     checkAbort(signal);
     if (!tiers.includes(pack.tier)) continue;
+    const mergedSkins = pack.group === 'skin' && pack.files.every((entry) => {
+      const file = catalogFiles.get(store.keyOf(entry.url));
+      return !file || !!file.skin;
+    });
     const candidates = [];
     for (const entry of pack.files) {
       const file = byKey.get(store.keyOf(entry.url));
       if (file && file.hash === entry.hash && (file.size == null || file.size === entry.size) && file.tier === pack.tier) candidates.push(file);
     }
-    // A mixed-language/skin pack must not download bytes the player did not select. Fill those files individually.
-    if (!candidates.length || candidates.length !== pack.files.length) continue;
+    // Known but unselected languages/skins still exclude a mixed pack. Retired
+    // catalog rows and outdated fingerprints are skipped inside the ZIP instead
+    // of forcing hundreds of otherwise current members into individual fetches.
+    if (!candidates.length || !mergedSkins && pack.files.some((entry) => {
+      const key = store.keyOf(entry.url);
+      return catalogFiles.has(key) && !byKey.has(key);
+    })) continue;
     const selected = candidates.reduce((sum, file) => sum + (file.size || 0), 0);
     const missing = candidates.reduce((sum, file) => present.has(store.keyOf(file.url)) ? sum : sum + (file.size || 0), 0);
-    if (!selected || missing < selected * 0.25) continue;   // 缺得少就逐文件补，别为几个文件拉整包
+    // Skin preload explicitly uses the merged ZIP even for a partially cached
+    // selection. Unselected outfits are streamed past and never imported.
+    if (!selected || !missing || !mergedSkins && missing < selected * 0.25) continue;
     plans.push({ pack, candidates });
   }
   if (!plans.length) return { imported: 0 };
-  const { fetchTransportPack } = await import('./transport.js');   // 它内部已经调用 readTransportPack
-  let imported = 0;
-  for (const { pack, candidates } of plans) {
-    checkAbort(signal);
-    const byUrl = new Map(candidates.map((file) => [file.url, file]));
-    const selectedPaths = new Set(candidates.map((file) => file.url));
-    const entries = await fetchTransportPack(pack, { signal, selectedPaths });
-    const rows = entries.map(({ row, bytes }) => ({ file: byUrl.get(row.url), bytes })).filter((r) => r.file);
-    if (!rows.length) continue;
-    const result = await store.importEntries((async function* () {
-      for (const { file, bytes } of rows) yield { files: [file], size: bytes.byteLength, read: () => bytes };
-    })(), { signal });
-    imported += result?.imported ?? rows.length;
+  plans.sort((a, b) => a.pack.tier - b.pack.tier);
+  const { downloadTransportPack } = await import('./transport.js');
+  const { resourcePath, readTransportPack } = await import('./archive.js');
+  const { downloadedPacks } = await import('./packQueue.js');
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal.reason);
+  if (signal?.aborted) abort();
+  else signal?.addEventListener('abort', abort, { once: true });
+  const planNumbers = new Map(plans.map((plan, index) => [plan, index + 1]));
+  const fetchPlan = async (plan, index, signal) => {
+    const { pack } = plan;
+    checkAbort(controller.signal);
+    const progress = (extra) => onProgress?.({ phase: 'transport', pack: pack.id, packNumber: planNumbers.get(plan) || index + 1,
+      packTotal: plans.length, total: pack.size, ...extra });
+    const bytes = await downloadTransportPack(pack, { signal,
+      onRoute: (route) => progress({ loaded: 0, ...route }),
+      onProgress: (loaded) => progress({ loaded }) });
+    progress({ loaded: bytes.byteLength, queued: true });
+    return bytes;
+  };
+  // Two independent download lanes feed one validator/importer. Two queued ZIPs
+  // plus the lanes' in-flight payloads bound memory while the importer is slow.
+  let yielded = 0;
+  const entries = async function* () {
+    let roundPlans = plans;
+    for (let round = 0; round < 2 && roundPlans.length; round++) {
+      const deferred = [];
+      for await (const result of downloadedPacks(roundPlans, fetchPlan, controller.signal)) {
+        checkAbort(controller.signal);
+        const { pack, candidates } = result.plan;
+        let rows;
+        try {
+          if (result.error) throw result.error;
+          onProgress?.({ phase: 'transport', processing: true, pack: pack.id, packNumber: planNumbers.get(result.plan), packTotal: plans.length });
+          // The stream shares the queued buffer instead of copying another ZIP.
+          const response = new Response(new ReadableStream({ start(stream) { stream.enqueue(result.value); stream.close(); } }));
+          rows = await readTransportPack(response, pack, { signal: controller.signal,
+            selectedPaths: new Set(candidates.map((file) => resourcePath(file.url))) });
+        } catch (error) {
+          checkAbort(controller.signal);
+          if (round === 0 && result.error?.retryable) {
+            deferred.push(result.plan);
+            onProgress?.({ phase: 'transport', deferred: true, pack: pack.id, packNumber: planNumbers.get(result.plan), packTotal: plans.length });
+            console.warn(`[resources] 分包 ${pack.id} 线路暂不可用，将在其他分包后重试`, error);
+            continue;
+          }
+          console.warn(`[resources] 分包 ${pack.id} 下载或校验失败，将逐文件补齐`, error);
+          continue;
+        }
+        const byUrl = new Map(candidates.map((file) => [file.url, file]));
+        for (const { row, bytes } of rows) {
+          checkAbort(controller.signal);
+          const file = byUrl.get(row.url);
+          if (!file) continue;
+          yielded++;
+          yield { files: [file], size: bytes.byteLength, read: () => bytes };
+        }
+      }
+      roundPlans = deferred;
+    }
+  };
+  try {
+    const result = await store.importEntries(entries(), { signal: controller.signal, concurrency: 1,
+      onProgress: (progress) => onProgress?.({ phase: 'transport', status: progress.getStatus() }) });
+    return { imported: result?.imported ?? yielded };
+  } finally {
+    signal?.removeEventListener('abort', abort);
+    controller.abort();
   }
-  return { imported };
 }
 
 async function startDownload(task) {
@@ -512,7 +623,7 @@ async function startDownload(task) {
     console.warn('[resources] service worker not registered — the cached assets cannot be served without the network', err);
     set({ worker: t('预载服务未启用（{0}），资源仍会下载，但不会从本机缓存读取。', { 0: err?.message || err }) });
   });
-  const before = await store.status();
+  let before = await store.status();
   await updateStorage(store, before, undefined, set);
   console.info('[resources] preload check timings', { manifestMs: manifestReady - checkStart,
     ...before.checkTimings, durationMs: performance.now() - checkStart, cached: before.count, files: before.total });
@@ -520,9 +631,36 @@ async function startDownload(task) {
   const ready = !!before.complete;
   set({ ...counters(before), phase: ready ? 'ready' : 'download', failed: 0, failures: [],
     message: ready ? restWanted ? t('资源已全部预载完成。') : t('必备资源已预载完成；可选资源按需加载。') : '' });
-  if (ready) { if (before.complete) await withDownloadLock(() => store.prune()); return; }
+  const migrate = async () => {
+    if (!before.misplaced) return;
+    set({ phase: 'checking', message: t('正在整理已保存的资源（无需重新下载）…') });
+    await withWorkerWritesPaused(() => store.migrateCaches({ signal }));
+    checkAbort(signal);
+    before = await store.status();
+  };
+  if (ready) {
+    await withDownloadLock(async () => { await migrate(); await store.prune(); });
+    checkAbort(signal);
+    set({ ...counters(await store.status()), phase: 'ready', message: t('资源已全部预载完成。') });
+    scheduleBackgroundCheck(store);
+    return;
+  }
   const onProgress = (p) => {
     if (signal.aborted) return;
+    if (p.phase === 'transport') {
+      const message = p.packNumber ? p.deferred
+        ? t('资源包 {pack}/{total} 暂时无法连接，先下载其他包，稍后重试。', { pack: p.packNumber, total: p.packTotal })
+        : p.processing
+        ? t('正在校验并导入资源包 {pack}/{total}；下载在后台继续。', { pack: p.packNumber, total: p.packTotal })
+        : p.queued ? t('资源包 {pack}/{total} 下载完成，等待校验导入。', { pack: p.packNumber, total: p.packTotal }) : p.retrying
+        ? t('资源包 {pack}/{total} 响应超时或暂不可用，正在重试…', { pack: p.packNumber, total: p.packTotal })
+        : t('正在下载资源包 {pack}/{total}：{loaded} / {size}（{percent}%）', { pack: p.packNumber, total: p.packTotal,
+          loaded: formatBytes(p.loaded || 0), size: formatBytes(p.total), percent: Math.min(100, Math.floor((p.loaded || 0) / p.total * 100)) })
+        : t('正在校验并保存资源包…');
+      set({ ...(p.status ? counters(p.status) : {}), phase: 'download', error: false,
+        message });
+      return;
+    }
     // "整理" instead of "下载" when the files came out of an older cache: nothing is being fetched (store.js 的迁移).
     const message = p.adopted > 0 && p.downloaded === 0 ? t('正在整理已保存的资源（无需重新下载）…') : '';
     set({ ...counters(p), phase: 'download', failed: p.failed, failures: p.failures || [], error: false, message });
@@ -531,14 +669,13 @@ async function startDownload(task) {
     // Required visuals first, then the optional set (额外资源 / 干员皮肤 / 官方特效 — whichever switches are on).
     const outcome = await withDownloadLock(async () => {
       checkAbort(signal);
-      // 分包优先（只有部署端配了 SP_RESOURCE_PACK_ROUTES 且清单带 packs 时才有内容）；失败就退回逐文件。
-      try { await preloadTransportPacks(store, store.manifest?.packs, [TIER_ESSENTIAL], before, signal); }
-      catch (err) { if (signal.aborted) throw err; console.warn('[resources] 分包预载失败，退回逐文件下载', err); }
+      await migrate();
+      // 清单带 packs 就优先分包；SP_RESOURCE_PACK_ROUTES 只用于可选的镜像线路。
+      // Keep essential packs first in the queue, but let the free lane continue
+      // into optional packs while a slow essential route is retrying.
+      await preloadTransportPacks(store, store.manifest?.packs,
+        restWanted ? [TIER_ESSENTIAL, TIER_REST] : [TIER_ESSENTIAL], before, signal, onProgress);
       const essential = await store.download({ tiers: [TIER_ESSENTIAL], signal, onProgress });
-      if (restWanted) {
-        try { await preloadTransportPacks(store, store.manifest?.packs, [TIER_REST], null, signal); }
-        catch (err) { if (signal.aborted) throw err; console.warn('[resources] 分包预载失败，退回逐文件下载', err); }
-      }
       const rest = restWanted ? await store.download({ tiers: [TIER_REST], signal,
         onProgress: (p) => onProgress({ ...p, failed: p.failed + essential.failed, failures: [...essential.failures, ...p.failures].slice(0, 10) }) }) : { failed: 0, failures: [] };
       return { busy: false, failed: essential.failed + rest.failed, failures: [...essential.failures, ...rest.failures].slice(0, 10),
@@ -561,6 +698,7 @@ async function startDownload(task) {
         : t('已保存 {count}/{total} 个文件；未完成的会在下次开启时重试。', { count: after.count, total: after.total }),
     });
     if (!after.complete) recoverDownload(task, { retryable: outcome.retryable, retryAfter: outcome.retryAfter });
+    else scheduleBackgroundCheck(store);
   } catch (err) {
     // Only our own abort pauses: the browser's own AbortErrors (a refused Cache Storage query, an aborted stream that
     // is not ours) are failures and must not read as "the player pressed pause".
@@ -579,6 +717,7 @@ async function startDownload(task) {
 
 /** Stop downloading (keeps what is cached). */
 export function pauseResources() {
+  cancelBackgroundCheck();
   recovery.cancel();
   tasks.invalidate();
   wantRun = false;
@@ -619,6 +758,7 @@ export async function exportResources(scope) {
 }
 
 function transferArchive(kind, file, scope) {
+  cancelBackgroundCheck();
   if (tasks.archive.promise || tasks.clear) return Promise.reject(new Error('资源包正在处理中'));
   recovery.cancel();
   wantRun = false;
@@ -695,6 +835,7 @@ function transferArchive(kind, file, scope) {
  * Delete every cached resource (all versions) and stop.
  */
 export function clearResources({ optionalOnly = false } = {}) {
+  cancelBackgroundCheck();
   if (tasks.clear) return tasks.clear;
   recovery.cancel();
   tasks.invalidate();

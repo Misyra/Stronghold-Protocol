@@ -69,6 +69,8 @@ import { createRequestHandler } from './http/routes.js';
 import { createTrafficCounter } from './http/traffic.js';
 import { createAssetIndex } from './http/assetIndex.js';
 import { createManifestViews } from './http/assetViews.js';
+// eslint-disable-next-line no-unused-vars -- assetIndex/assetViews 保留在盘上(工具与回滚用),但不再在启动时构建:
+// 用户分支的预载/CDN 缓存体系(/_v/ 发布层 + 每文件指纹 + 分包)取代了内容哈希索引的职责。
 import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { DEFAULT_RESOURCE_PACK_ROUTES, parseResourcePackRoutes } from '../shared/resourcePackRoutes.js';
 import { readAssetsCdnVersionFile, readAssetsManifestFile } from './assetVersion.js';
@@ -142,10 +144,11 @@ export async function startServer(opts = {}) {
   const scriptMode = process.env.SP_PLUGIN_SCRIPTS;
   const packs = createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log, scriptHost:host, scriptMode });
   packs.refresh(true);
-  // the content hashes of the art (built in the background once listening) and the manifests served with them
-  const indexOptions = assetIndexOptionsFrom(opts, publicDir);
-  const assetIndex = indexOptions ? createAssetIndex({ publicDir, log, ...indexOptions }) : null;
-  const views = createManifestViews({ dataDir, index: assetIndex, log });
+  // the content hashes of the art (built in the background once listening) and the manifests served with them —
+  // 不再构建(用户分支的预载/CDN 缓存体系取代了它,见上方的 import 说明): assetIndex 与 views 保持 null,
+  // /healthz 的 assetHashes 报告 null,清单由静态层按 CDN/发布语义改写后原样送出。
+  const assetIndex = null;
+  const views = null;
   // the visual sets of the cosmetic plugins (DESIGN §32 P1a): what a room's host switches on, served at /vs/ and /p/
   const visual = createVisualSets({ registry: packs, log });
   // the server owner's policy (plugins/config.json), the content sets of the gameplay plugins (served at /cs/<cs16>/…),

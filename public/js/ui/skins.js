@@ -124,6 +124,29 @@ export function clearSkin(charId) {
   setSkins(next);
 }
 
+/**
+ * 本浏览器当前装备的皮肤键(移植自用户分支的预载联动): the equipped skin ids of the stored choice map — the
+ * resource preload follows them (main.js installResourcePreload), so picking one in 干员调配 starts its download.
+ * A choice written against a chess id (干员调配 works per chess) resolves to the operator the manifest groups
+ * skins under (data.lookup('chess', …)?.charId). @returns {string[]}
+ */
+export function equippedSkinKeys() {
+  const skins = skinsStore.get()[SKINS_KEY];
+  if (!isObj(skins)) return [];
+  const keys = [];
+  for (const [chessId, skinId] of Object.entries(skins)) {
+    if (typeof skinId !== 'string' || !skinId) continue;
+    const charId = data.lookup('chess', chessId)?.charId;
+    keys.push(charId || chessId);
+  }
+  return keys;
+}
+
+/** The equipped keys after the server sync has had a chance to land (the preload re-applies its scope with them). */
+export async function loadEquippedSkinKeys() {
+  return equippedSkinKeys();
+}
+
 /** This browser's choice for one operator, or null. */
 export const skinFor = (charId) => (str(charId) ? (skinsStore.get()[SKINS_KEY] || {})[charId] || null : null);
 

@@ -28,6 +28,11 @@ function randomIntent(rng, m, ps) {
   const to = () => (rng() < 0.6 ? { area: 'board', row: rng() < 0.8 ? 9 + rng.int(4) : rng.int(19), col: rng() < 0.8 ? 2 + rng.int(9) : rng.int(21) } : { area: 'hand', idx: rng.int(10) });
   switch (t) {
     case 'g.test': return { t, cmd: 'funds', args: { amount: rng.int(100000) } };
+    // 开发者控制台 (room.console.enable): a valid grant — the schema requires kind + id, the match's own checks
+    // (quota, phase, refused ids) answer the rest
+    case 'g.console': return rng() < 0.5
+      ? { t, kind: 'bond', id: rng.pick(BANDS), amount: 1 + rng.int(50) }
+      : { t, kind: rng() < 0.5 ? 'chess' : 'item', id: `fuzz_${rng.int(9999)}` };
     case 'g.infoReady': return { t, setupRevision: m.setupRevision ?? 0 };
     case 'g.rerollVote': return { t, voteId: m.setupVote?.id ?? 1 + rng.int(10), agree: rng() < 0.5 };
     case 'g.band': return { t, bandId: rng() < 0.8 ? rng.pick(BANDS) : rng.pick(['constructor', '__proto__', 'band_x', 'a'.repeat(64)]) };

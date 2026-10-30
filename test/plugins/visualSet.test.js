@@ -21,11 +21,10 @@ import { createPluginRegistry } from '../../server/plugins/registry.js';
 import { createVisualSets } from '../../server/plugins/visualSet.js';
 import { createStaticHandler } from '../../server/http/static.js';
 import { CompressCache } from '../../server/http/files.js';
-import { createAssetIndex } from '../../server/http/assetIndex.js';
-import { createManifestViews } from '../../server/http/assetViews.js';
 import { splitUrl } from '../../server/http/common.js';
 import { checkVisualDoc, layVisualOps, prepareVisualDoc, visualHashOf, modelHashOf, VISUAL_LIMITS } from '../../shared/plugins/visual.js';
 import { main as pluginTool } from '../../tools/plugin.mjs';
+import { linkDir, linkFile } from '../helpers/links.js';
 import { png, skel, atlas, writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -69,7 +68,6 @@ describe('the visual sets of a server', () => {
   let root;
   let registry;
   let visual;
-  let assetIndex;
   let server;
   const get = (rawPath, headers = {}) => new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port: server.address().port, path: rawPath, headers, agent: false }, (res) => {
@@ -90,19 +88,13 @@ describe('the visual sets of a server', () => {
     try { assert.equal(await pluginTool(['pack', path.join(root, 'plugins', 'red'), '--root', root]), 0); } finally { console.log = log; }
     const dirs = { publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), packsDir: path.join(root, 'packs'), pluginsDir: path.join(root, 'plugins') };
     registry = createPluginRegistry(dirs, { recheckMs: 0 });
-    assetIndex = createAssetIndex({ publicDir: dirs.publicDir, delayMs: 0, cacheFile: null });
-    assetIndex.start();
-    await assetIndex.whenReady();
-    const views = createManifestViews({ dataDir: dirs.dataDir, index: assetIndex });
-    await views.rebuildAll();
     visual = createVisualSets({ registry });
-    const serveStatic = createStaticHandler({ ...dirs, sharedDir: path.join(ROOT, 'shared'), packs: registry, views, assetIndex, visual });
+    const serveStatic = createStaticHandler({ ...dirs, sharedDir: path.join(ROOT, 'shared'), packs: registry, visual });
     server = http.createServer((req, res) => { const p = splitUrl(req.url); serveStatic(req, res, p.rawPath, p.query).catch(() => res.destroy()); });
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
   });
   after(async () => {
     await new Promise((r) => server.close(r));
-    assetIndex.close();
     fs.rmSync(root, { recursive: true, force: true });
   });
 
@@ -129,7 +121,7 @@ describe('the visual sets of a server', () => {
     assert.equal(tight.resolve(['red']).error, 'PLUGIN_LIMIT');
   });
 
-  test('GET /vs/<vs16>/overlay.json: the composition and each plugin\'s writes (no URL); composed on the served manifest, the installation\'s URLs keep their hash segment', async () => {
+  test('GET /vs/<vs16>/overlay.json: the composition and each plugin\'s writes (no URL); composed on the served manifest, an entry no plugin changes keeps the URL the page loaded', async () => {
     const { set } = visual.resolve(['red', 'blue']);
     const url = `/vs/${set.vs.slice(0, 16)}/overlay.json`;
     const r = await get(url);
@@ -145,7 +137,7 @@ describe('the visual sets of a server', () => {
     assert.ok(r.body.length < 4096, `a few KB, not the manifest (${r.body.length} bytes)`);
     // what a page draws: the document composed on the manifest it loaded (the served view)
     const view = JSON.parse((await get('/data/assets.json')).body.toString('utf8'));
-    assert.match(view.chars.char_112_siege.avatar, /^\/assets\/~[0-9a-f]{16}\/char\/avatar\/char_112_siege\.png$/, 'the served manifest (0.2.6)');
+    assert.match(view.chars.char_112_siege.avatar, /^(?:\/_v\/[0-9a-f]{16})?\/assets\/char\/avatar\/char_112_siege\.png$/, 'the served manifest (this fork: the plain path or /_v/<tag>, never a hash segment)');
     const prep = prepareVisualDoc(doc);
     assert.equal(prep.droppedCount, 0, prep.dropped.join('; '));
     const m = layVisualOps(view, [prep]).manifest;
@@ -289,7 +281,7 @@ describe('the visual sets of a server', () => {
       assert.equal(r.status, 404, 'a link to a dot file of the folder');
       assert.doesNotMatch(r.body.toString('utf8'), /SECRET/);
       fs.rmSync(target);
-      fs.symlinkSync(path.join(dir, 'art', 'unused.png'), target);
+      if (!linkFile(t, path.join(dir, 'art', 'unused.png'), target)) return;
       assert.equal((await get(`/p/red/${own}/art/red.png`)).status, 404, 'a link to another file of the folder');
     } finally {
       fs.rmSync(target, { force: true });
@@ -301,7 +293,7 @@ describe('the visual sets of a server', () => {
     const mh = modelHashOf(['spine/t/t.skel', 'spine/t/t.atlas', 'spine/t/t.png'].map((rel) => red.served.get(rel).sha256)).slice(0, 8);
     fs.renameSync(path.join(dir, 'spine', 't'), path.join(dir, 'spine', 't-moved'));
     try {
-      fs.symlinkSync(path.join(dir, 'spine', 't-moved'), path.join(dir, 'spine', 't'));
+      if (!linkDir(t, path.join(dir, 'spine', 't-moved'), path.join(dir, 'spine', 't'))) return;
       assert.equal((await get(`/p/red/${mh}/spine/t/t.png`)).status, 404);
     } finally {
       fs.rmSync(path.join(dir, 'spine', 't'), { force: true });
@@ -400,12 +392,12 @@ describe('the visual sets of a server', () => {
     fs.writeFileSync(file, 'A'.repeat(2000));
     fs.utimesSync(file, T, T);
     const cache = new CompressCache();
-    assert.equal(zlib.gunzipSync(await cache.get(file, fs.statSync(file), 'gzip')).toString()[0], 'A');
+    assert.equal(zlib.gunzipSync(await cache.get(file, fs.statSync(file), null, '', 'gzip')).toString()[0], 'A');
     fs.writeFileSync(file, 'B'.repeat(2000));
     fs.utimesSync(file, T, T);
     const st = fs.statSync(file);
     assert.deepEqual([st.size, st.mtimeMs], [2000, T.getTime()], 'size and mtime as before');
-    assert.equal(zlib.gunzipSync(await cache.get(file, st, 'gzip')).toString()[0], 'B', 'the new bytes, not the cached old ones');
+    assert.equal(zlib.gunzipSync(await cache.get(file, st, null, '', 'gzip')).toString()[0], 'B', 'the new bytes, not the cached old ones');
   });
 
   test('a plugins folder spelled in another case than on disk (macOS, Windows) still serves its files', async (t) => {
@@ -425,10 +417,10 @@ describe('the visual sets of a server', () => {
     } finally { await new Promise((r) => s2.close(r)); }
   });
 
-  test('no plugin changes the vanilla manifest a page loads (/data/assets.json is the served view as without plugins)', async () => {
+  test('no plugin changes the vanilla manifest a page loads (/data/assets.json is the same file with plugins on)', async () => {
     const withPlugins = await get('/data/assets.json');
     const plain = createStaticHandler({ publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(ROOT, 'shared'),
-      packsDir: path.join(root, 'packs'), pluginsDir: path.join(root, 'no-plugins'), views: createManifestViews({ dataDir: path.join(root, 'data'), index: assetIndex }), assetIndex });
+      packsDir: path.join(root, 'packs'), pluginsDir: path.join(root, 'no-plugins') });
     const s2 = http.createServer((req, res) => { const p = splitUrl(req.url); plain(req, res, p.rawPath, p.query); });
     await new Promise((r) => s2.listen(0, '127.0.0.1', r));
     try {

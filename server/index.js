@@ -46,7 +46,7 @@ import path from 'node:path';
 import { getData, loadData } from './data.js';
 import { getBotStrategy } from './match/botStrategies.js';
 import { noteLlmIgnored, releaseIgnoresExternalAi, validateExternalConfig } from './match/llmGate.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, assetIndexOptionsFrom, versionsFrom, parseRoomCode } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, parseAssetCdn, assetIndexOptionsFrom, versionsFrom, parseRoomCode } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { siteCsp } from './http/csp.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
@@ -69,6 +69,9 @@ import { createRequestHandler } from './http/routes.js';
 import { createTrafficCounter } from './http/traffic.js';
 import { createAssetIndex } from './http/assetIndex.js';
 import { createManifestViews } from './http/assetViews.js';
+import { assetCdnSettings, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
+import { DEFAULT_RESOURCE_PACK_ROUTES, parseResourcePackRoutes } from '../shared/resourcePackRoutes.js';
+import { readAssetsCdnVersionFile, readAssetsManifestFile } from './assetVersion.js';
 import { answerClientError } from './http/common.js';
 import { createEventLoopMonitor } from './health/eventLoop.js';
 import { createRoomWorkerPool } from './workers/roomPool.js';
@@ -183,7 +186,35 @@ export async function startServer(opts = {}) {
         phase: [...phases].sort().join('+') || 'idle', rehearsals };
     },
   });
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, assetIndex, views, visual, contents, versions });
+  // 资源 CDN 与分包预载（移植自用户分支，xinhai 系 static.js 的配套接线）：
+  // SP_ASSETS_CDN 未配置时全部为空值，static.js 按原站同源模式工作。
+  // The per-file art manifest (`.assets-manifest.json`, generated on the publishing machine by
+  // tools/r2-sync.mjs or from local art by tools/build-assets-manifest.mjs; not in Git)
+  // supersedes the release-tag lookup: with it, art URLs carry a per-file `?v=` query and no version is
+  // needed. Without it the legacy chain applies — the repo's `.assets-cdn-version` (travels with
+  // `git pull`), then the CDN's own `/_v/latest` publication — and a CDN without either simply stays
+  // unversioned.
+  const cdnBase = opts.assetsCdn ?? process.env.SP_ASSETS_CDN;
+  const assetsManifest = cdnBase ? readAssetsManifestFile(opts.assetsManifestFile) : null;
+  let cdnVersion = '';
+  if (cdnBase && !assetsManifest) {
+    cdnVersion = opts.assetsCdnVersion ?? process.env.SP_ASSETS_CDN_VERSION;
+    if (!cdnVersion) {
+      cdnVersion = readAssetsCdnVersionFile(opts.assetsVersionFile);
+      if (cdnVersion) log.info(`assets CDN ${cdnBase} release ${cdnVersion} (from the version file)`);
+      else {
+        cdnVersion = await resolveAssetsCdnVersion(cdnBase);
+        log.info(cdnVersion ? `assets CDN ${cdnBase} release ${cdnVersion} (from /_v/latest)` : `assets CDN ${cdnBase} publishes no release tag, serving unversioned URLs`);
+      }
+    }
+  }
+  const cdn = assetCdnSettings(cdnBase, cdnVersion);
+  if (assetsManifest) log.info(`assets CDN ${cdnBase} manifest ${assetsManifest.tag} (${Object.keys(assetsManifest.hashes).length} files, per-file ?v= busting)`);
+  const resourcePackRoutes = parseResourcePackRoutes(opts.resourcePackRoutes ?? process.env.SP_RESOURCE_PACK_ROUTES ?? DEFAULT_RESOURCE_PACK_ROUTES);
+  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, visual, contents, versions,
+    cdnBase: parseAssetCdn(cdn.base || cdnBase), dataCdnBase: parseAssetCdn(opts.dataCdn ?? process.env.SP_DATA_CDN),
+    resourcePackRoutes,
+    assetsManifest });
   // the plugin studio (DESIGN §32.9): its page and API for this machine and the local network; it watches plugins/ only
   // once it is used (hot reload), and rooms whose host is the author or alone follow a plugin's changes by themselves
   const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log, fetch: opts.fetch });

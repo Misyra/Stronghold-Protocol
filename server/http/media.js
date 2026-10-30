@@ -6,7 +6,6 @@ import path from 'node:path';
 import { AUDIO_EXTS } from '../../shared/media.js';
 import { sendError } from './common.js';
 import { serveFile } from './files.js';
-import { hashedFileOpts } from './assetIndex.js';
 
 /**
  * Extension-less audio route: `/media/bgm/act1` → `public/assets/audio/bgm/act1.mp3`.
@@ -16,12 +15,13 @@ import { hashedFileOpts } from './assetIndex.js';
  * Requests for the direct `/assets/audio/…` URLs keep working (they are the fallback for plain static hosts).
  * `MEDIA_PREFIX` / `AUDIO_EXTS` live in `shared/media.js`: the browser decides which URLs to rewrite with the
  * same two values, and they must not drift apart.
- * `/media/~<hash>/bgm/act1` (a served manifest's `/assets/~<hash>/audio/bgm/act1.mp3`, public/js/media.js): static.js
- * strips the segment and hands it over as `urlHash`; the answer is `immutable` when it names the resolved file's bytes
- * (assetIndex.js), else `no-cache`, and the ETag is the file's content hash when the index has it.
- * @param {{ urlHash?: string | null, assetIndex?: ReturnType<typeof import('./assetIndex.js').createAssetIndex> | null }} [hashing]
+ * This fork serves the audio under its release namespace (`/_v/<tag>/media/…`, server/assetVersion.js) and keeps
+ * the per-file cache busting on the CDN (`?v=<file hash>`, shared/assetCdn.js); the upstream 0.2.6 path-segment
+ * hash form (`/media/~<hash>/…`) is deliberately not served here.
+ * @param {object | null} [release] the release versioning (server/assetVersion.js); a versioned request whose bytes changed answers 503
+ * @param {boolean} [versioned] the request came in through the validated `/_v/<tag>/` namespace
  */
-export async function serveMedia(req, res, rest, query, publicDir, gzipCache, log, { urlHash = null, assetIndex = null } = {}) {
+export async function serveMedia(req, res, rest, publicDir, gzipCache, log, release = null, versioned = false, query = '') {
   const root = path.join(path.resolve(publicDir), 'assets', 'audio');
   const segments = String(rest || '').split('/').filter((s) => s.length > 0);
   if (!segments.length || rest.endsWith('/')) { sendError(req, res, 404, '页面不存在 · Not found'); return; }
@@ -44,16 +44,20 @@ export async function serveMedia(req, res, rest, query, publicDir, gzipCache, lo
     if (!absPath.startsWith(root + path.sep)) continue;
     let stat;
     try {
-      // eslint-disable-next-line no-await-in-loop
       stat = await fsp.stat(absPath);
     } catch { continue; }
     if (!stat.isFile()) continue;
+    if (versioned && release && !release.matchesFile(absPath, stat)) {
+      sendError(req, res, 503, '资源文件已变更，请重启服务器 · Restart required');
+      return;
+    }
     // serveFile decides Content-Type from the resolved name (`.mp3` → audio/mpeg) — Range/ETag handling is shared.
     // Cache policy is that of the public path the client would otherwise have asked for (`/assets/audio/…`, 1 day),
-    // or that of its content-hashed form.
-    const rel = ['assets', 'audio', ...segments.slice(0, -1), stem + ext].join('/');
-    // eslint-disable-next-line no-await-in-loop
-    await serveFile(req, res, absPath, stat, 'public', ['assets', 'audio', ...segments], query, gzipCache, log, hashedFileOpts(assetIndex, rel, stat, urlHash));
+    // or immutable for a validated release path.
+    // serveFile 的第 7 个参数是 query：漏掉它会把 gzipCache 当成 query、log 当成 gzipCache、opts 整个丢掉
+    // （版本化地址因此拿不到 immutable，Range/ETag 也只剩默认路径）。
+    await serveFile(req, res, absPath, stat, 'public', ['assets', 'audio', ...segments], query, gzipCache, log,
+      { variant: versioned ? release.tag : '', versioned });
     return;
   }
   sendError(req, res, 404, '页面不存在 · Not found');

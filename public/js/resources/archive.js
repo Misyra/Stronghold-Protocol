@@ -1,0 +1,412 @@
+// Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later), commit 5d8e91e.
+// Lazy ZIP support. Packages describe bytes, never executable code or trusted cache index records.
+// Only the CURRENT server manifest can authorize an imported resource; old packages may contribute unchanged files.
+import { BlobReader, BlobWriter, ZipReader, ZipWriter } from '../../vendor/zip.module.js';
+import { Crc32 } from '../../vendor/zip-crc32.module.js';
+import { CONTENT_HASH_RE, MAX_FILE_BYTES, checkAbort, isResourceUrl, RESOURCE_PACK_MAX_BYTES } from './common.js';
+import { Sha1Stream } from './sha1Stream.js';
+import { resourceDigests, verifyResourceBytes } from './integrity.js';
+import { ResourceZipReader } from './zipReader.js';
+import { canonicalResourceUrl, resourceIdentity } from '../../../shared/resourcePaths.js';
+
+export const ARCHIVE_MANIFEST = 'stronghold-resources.json';
+export const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_MANIFEST_BYTES = 32 * 1024 * 1024;
+const MAX_FILES = 50000;
+const OPTIONS = { useWebWorkers: false };
+
+/** Stable resource identity across origins/CDN prefixes; only current manifest URLs are ever cache destinations. */
+export function resourcePath(url) {
+  if (!isResourceUrl(url)) throw new Error('资源路径无效');
+  const identity = resourceIdentity(url);
+  if (!identity || !/^\/(?:assets|fonts)\//.test(identity)) throw new Error('资源路径无效');
+  return canonicalResourceUrl(identity);
+}
+
+/** Enforce the limit on actual decompressed bytes as well as untrusted central-directory sizes. */
+async function extract(entry, limit, signal, source, timings) {
+  checkAbort(signal);
+  if (entry.encrypted || !Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize > limit) {
+    throw new Error(`ZIP 文件大小超限或已加密：${entry.filename}`);
+  }
+  if (entry.compressionMethod === 0) {
+    if (entry.compressedSize !== entry.uncompressedSize || !Number.isInteger(entry.crc32) || entry.crc32 < 0 || entry.crc32 > 0xffffffff) {
+      throw new Error(`ZIP 文件大小或 CRC 无效：${entry.filename}`);
+    }
+    // zip.js supplies a validated offset; retain its local-header/descriptor/bounds/overlap checks without its
+    // stream-copy pipeline. The body reads reuse shared file blocks and the library's existing CRC implementation.
+    let start = performance.now();
+    try { await entry.getData(null, { ...OPTIONS, signal, checkOverlappingEntryOnly: true }); }
+    finally { if (timings) timings.metadataMs += performance.now() - start; }
+    const offset = entry.localDirectory?.dataOffset;
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset + entry.uncompressedSize > source.size) {
+      throw new Error(`ZIP 文件边界无效：${entry.filename}`);
+    }
+    checkAbort(signal);
+    start = performance.now();
+    let bytes;
+    try { bytes = await source.readUint8Array(offset, entry.uncompressedSize); }
+    finally { if (timings) timings.bodyReadMs += performance.now() - start; }
+    checkAbort(signal);
+    if (bytes.byteLength !== entry.uncompressedSize) throw new Error(`ZIP 文件不完整：${entry.filename}`);
+    start = performance.now();
+    const crc = new Crc32();
+    let yieldAt = start + 12;
+    try {
+      for (let i = 0; i < bytes.byteLength; i += 1024 * 1024) {
+        checkAbort(signal);
+        crc.append(bytes.subarray(i, i + 1024 * 1024));
+        if (performance.now() >= yieldAt && globalThis.document?.visibilityState === 'visible') {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          yieldAt = performance.now() + 12;
+        }
+      }
+    } finally { if (timings) timings.crcMs += performance.now() - start; }
+    checkAbort(signal);
+    if ((crc.get() >>> 0) !== entry.crc32) throw new Error(`ZIP CRC 校验失败：${entry.filename}`);
+    if (timings) timings.storedFiles++;
+    return bytes;
+  }
+  const bytes = new Uint8Array(entry.uncompressedSize);
+  let size = 0;
+  await entry.getData(new WritableStream({
+    write(chunk) {
+      checkAbort(signal);
+      size += chunk.byteLength;
+      if (size > limit || size > entry.uncompressedSize) throw new Error(`ZIP 解压大小超限：${entry.filename}`);
+      bytes.set(chunk, size - chunk.byteLength);
+    },
+  }), { ...OPTIONS, signal, checkSignature: true, checkOverlappingEntry: true });
+  if (size !== entry.uncompressedSize) throw new Error(`ZIP 文件不完整：${entry.filename}`);
+  return bytes;
+}
+
+// One package per card: a whole install is close to the 2 GiB package limit, and a phone should never be asked to
+// build or parse a single blob that large (docs/ASSETS.md). `scope` picks the card; omitting it exports everything.
+export async function exportResourceZip(store, { scope, signal, onProgress } = {}) {
+  checkAbort(signal);
+  const status = await store.status();
+  const read = await store.entryReader();
+  const cached = await store.cachedKeys();
+  // Game requests also populate the cards, without updating the page-owned index. Recover those bytes by digest;
+  // an unindexed older version is simply unavailable, while an indexed current file failing verification is damage.
+  const files = store.files.filter((f) => (!scope || store.scopeOf(f) === scope) && store.eligible(f)
+    && (status.present.has(store.keyOf(f.url)) || (CONTENT_HASH_RE.test(f.hash || '') && cached.has(store.keyOf(f.url)))));
+  if (!files.length) throw new Error('没有已缓存的资源，请先预载或导入资源');
+  const writer = new ZipWriter(new BlobWriter('application/zip'), { ...OPTIONS, level: 0 });
+  const rows = [];
+  const paths = new Map();
+  let total = 0;
+  let done = 0;
+  try {
+    onProgress?.({ phase: 'export', done: 0, total: files.length });
+    for (const file of files) {
+      checkAbort(signal);
+      const response = await read(store.keyOf(file.url), store.shardName(file));
+      if (!response || response.type === 'opaque' || !response.ok) {
+        if (status.present.has(store.keyOf(file.url))) throw new Error('缓存资源不可读取，请重新预载');
+        onProgress?.({ phase: 'export', done: ++done, total: files.length });
+        continue;
+      }
+      const chunks = [];
+      let size = 0;
+      await response.body.pipeTo(new WritableStream({ write(chunk) {
+        checkAbort(signal);
+        size += chunk.byteLength;
+        if (size > MAX_FILE_BYTES) throw new Error(`资源大小超限：${file.url}`);
+        chunks.push(chunk);
+      } }), { signal });
+      const blob = new Blob(chunks);
+      const digest = await resourceDigests(new Uint8Array(await blob.arrayBuffer()));
+      checkAbort(signal);
+      if (CONTENT_HASH_RE.test(file.hash || '') && digest.hash !== file.hash) {
+        if (status.present.has(store.keyOf(file.url))) throw new Error(`缓存资源校验失败，请清理后重新预载：${file.url}`);
+        onProgress?.({ phase: 'export', done: ++done, total: files.length });
+        continue;
+      }
+      const url = resourcePath(file.url);
+      const previous = paths.get(url);
+      if (previous && previous !== digest.sha1) throw new Error(`同一资源存在不同内容，无法导出：${url}`);
+      if (!previous) {
+        if (rows.length >= MAX_FILES) throw new Error('资源包文件数量超限');
+        total += blob.size;
+        if (total > MAX_ARCHIVE_BYTES - MAX_MANIFEST_BYTES) throw new Error('资源包超过 2 GiB，请减少预载资源后导出');
+        const path = `resources/${rows.length}`;
+        rows.push({ path, url, hash: digest.hash, sha1: digest.sha1, size: blob.size });
+        paths.set(url, digest.sha1);
+        await writer.add(path, new BlobReader(blob), { signal });
+      }
+      onProgress?.({ phase: 'export', done: ++done, total: files.length });
+    }
+    if (!rows.length) throw new Error('没有已缓存的当前资源，请先预载或导入资源');
+    const manifest = new Blob([JSON.stringify({ format: 'stronghold-resource-zip', version: 2,
+      resourceVersion: store.manifest.version, files: rows })]);
+    if (manifest.size > MAX_MANIFEST_BYTES) throw new Error('资源包清单过大');
+    await writer.add(ARCHIVE_MANIFEST, new BlobReader(manifest), { signal });
+    const blob = await writer.close();
+    if (blob.size > MAX_ARCHIVE_BYTES) throw new Error('资源包超过 2 GiB');
+    return { blob, count: rows.length, version: store.manifest.version };
+  } catch (err) {
+    // The partial ZIP never escapes to the UI.
+    await writer.close().catch(() => {});
+    throw err;
+  }
+}
+
+export async function importResourceZip(store, blob, { signal, onProgress, onDiagnostics, onPlan, concurrency = 4 } = {}) {
+  if (!blob || typeof blob.slice !== 'function' || !Number.isSafeInteger(blob.size) || blob.size > MAX_ARCHIVE_BYTES) {
+    throw new Error('请选择不超过 2 GiB 的资源 ZIP 包');
+  }
+  if (!globalThis.crypto?.subtle) throw new Error('当前浏览器不支持资源校验');
+  const source = new ResourceZipReader(blob, signal);
+  const reader = new ZipReader(source, { ...OPTIONS, checkSignature: true });
+  try {
+    const entries = new Map();
+    let total = 0;
+    for await (const entry of reader.getEntriesGenerator()) {
+      checkAbort(signal);
+      if (entries.size >= MAX_FILES + 1) throw new Error('ZIP 文件数量超限');
+      if (entries.has(entry.filename)) throw new Error('ZIP 包包含重复路径');
+      if (entry.directory || entry.encrypted || (entry.filename !== ARCHIVE_MANIFEST && !/^resources\/\d{1,5}$/.test(entry.filename))) {
+        throw new Error(`ZIP 包包含无效路径或加密文件：${entry.filename}`);
+      }
+      const limit = entry.filename === ARCHIVE_MANIFEST ? MAX_MANIFEST_BYTES : MAX_FILE_BYTES;
+      if (!Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize < 0 || entry.uncompressedSize > limit) {
+        throw new Error('ZIP 解压大小超限');
+      }
+      total += entry.uncompressedSize;
+      if (total > MAX_ARCHIVE_BYTES) throw new Error('ZIP 解压总大小超限');
+      entries.set(entry.filename, entry);
+    }
+    const manifestEntry = entries.get(ARCHIVE_MANIFEST);
+    if (!manifestEntry) throw new Error('ZIP 包缺少预载资源清单，请使用本功能导出的资源包');
+    const doc = JSON.parse(new TextDecoder().decode(await extract(manifestEntry, MAX_MANIFEST_BYTES, signal, source)));
+    if (doc?.format !== 'stronghold-resource-zip' || (doc.version !== 1 && doc.version !== 2) || !Array.isArray(doc.files)
+      || doc.files.length > MAX_FILES || !doc.files.length) throw new Error('资源包清单格式不受支持');
+    if (entries.size !== doc.files.length + 1) throw new Error('资源包清单与文件数量不一致');
+
+    const paths = new Set();
+    const urls = new Set();
+    for (const row of doc.files) {
+      if (!row || typeof row.path !== 'string' || !/^resources\/\d{1,5}$/.test(row.path) || paths.has(row.path)
+        || typeof row.url !== 'string' || resourcePath(row.url) !== canonicalResourceUrl(row.url) || urls.has(resourcePath(row.url))
+        || typeof row.hash !== 'string' || !CONTENT_HASH_RE.test(row.hash)
+        || (doc.version === 1 ? typeof row.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(row.sha256)
+          : typeof row.sha1 !== 'string' || !/^[0-9a-f]{40}$/.test(row.sha1) || row.sha1.slice(0, 12) !== row.hash)
+        || !Number.isSafeInteger(row.size) || row.size < 0 || row.size > MAX_FILE_BYTES
+        || entries.get(row.path)?.uncompressedSize !== row.size) throw new Error('资源包清单条目无效或缺少文件');
+      paths.add(row.path);
+      urls.add(resourcePath(row.url));
+    }
+
+    const available = new Map(doc.files.map((row) => [`${resourcePath(row.url)}|${row.hash}`, row]));
+    const compatible = store.files.filter((f) => store.eligible(f) && CONTENT_HASH_RE.test(f.hash || '')
+      && available.has(`${resourcePath(f.url)}|${f.hash}`)
+      && (f.size == null || f.size === available.get(`${resourcePath(f.url)}|${f.hash}`).size));
+    const currentPaths = new Map();
+    for (const file of store.files) {
+      const key = resourcePath(file.url);
+      if (!currentPaths.has(key)) currentPaths.set(key, []);
+      currentPaths.get(key).push(file);
+    }
+    const skipReasons = { removed: 0, fingerprint: 0, changed: 0, size: 0, oversized: 0 };
+    const matched = new Set(compatible.map((f) => resourcePath(f.url)));
+    for (const row of doc.files) {
+      const key = resourcePath(row.url);
+      if (matched.has(key)) continue;
+      const current = currentPaths.get(key);
+      if (!current) skipReasons.removed++;
+      else if (!current.some((f) => CONTENT_HASH_RE.test(f.hash || ''))) skipReasons.fingerprint++;
+      else if (!current.some((f) => store.eligible(f))) skipReasons.oversized++;
+      else if (!current.some((f) => f.hash === row.hash)) skipReasons.changed++;
+      else skipReasons.size++;
+    }
+    const existing = await store.status();
+    const additional = new Map(compatible.filter((f) => !existing.present.has(store.keyOf(f.url)))
+      .map((f) => [store.keyOf(f.url), available.get(resourcePath(f.url) + '|' + f.hash).size]));
+    await onPlan?.({ packageCount: doc.files.length, compatible: compatible.length, skipReasons,
+      requiredBytes: [...additional.values()].reduce((sum, size) => sum + size, 0) });
+    checkAbort(signal);
+    const destinations = new Map();
+    for (const file of compatible) {
+      const row = available.get(`${resourcePath(file.url)}|${file.hash}`);
+      if (!destinations.has(row)) destinations.set(row, []);
+      destinations.get(row).push(file);
+    }
+    const timings = { readMs: 0, hashMs: 0, metadataMs: 0, bodyReadMs: 0, crcMs: 0, storedFiles: 0,
+      files: doc.files.length, formatVersion: doc.version };
+    // A descriptor starts reading only after the store reserves its bounded slot. Large resources are exclusive.
+    const candidates = function* () {
+      for (const row of doc.files) {
+        yield { files: destinations.get(row) || [], size: row.size, verify: async () => {
+          let start = performance.now();
+          let bytes;
+          try { bytes = await extract(entries.get(row.path), MAX_FILE_BYTES, signal, source, timings); }
+          finally { timings.readMs += performance.now() - start; }
+          start = performance.now();
+          try { return await verifyResourceBytes(bytes, row, doc.version); }
+          catch (err) {
+            if (err.message === '资源包校验失败') throw new Error(`资源包校验失败：${row.url}`, { cause: err });
+            throw err;
+          } finally { timings.hashMs += performance.now() - start; }
+        } };
+      }
+    };
+    const outcome = await store.importEntries(candidates(), {
+      signal, concurrency,
+      onProgress: ({ processed, file, getStatus }) => onProgress?.({ phase: 'import', done: processed,
+        total: doc.files.length, file, getStatus }),
+      onDiagnostics: (metrics) => onDiagnostics?.({ ...timings, ...metrics, ...source.timings }),
+    });
+    return { ...outcome, skipReasons, packageCount: doc.files.length, compatible: compatible.length,
+      skippedPackage: doc.files.length - new Set(compatible.map((f) => resourcePath(f.url))).size };
+  } finally {
+    await reader.close();
+  }
+}
+
+// ---- 部署端分包（取自 xinhai 的 archive.js）：逐条流式读取、校验整包指纹后交给 store 导入 ----
+class PackStreamReader {
+  constructor(stream, { signal, onProgress, maxBytes } = {}) {
+    this.reader = stream.getReader();
+    this.signal = signal;
+    this.onProgress = onProgress;
+    this.maxBytes = maxBytes;
+    this.hash = new Sha1Stream();
+    this.chunk = new Uint8Array();
+    this.offset = 0;
+    this.bytes = 0;
+    this.done = false;
+  }
+
+  async pull() {
+    checkAbort(this.signal);
+    if (this.done) return false;
+    const result = await this.reader.read();
+    if (result.done) { this.done = true; return false; }
+    this.chunk = result.value instanceof Uint8Array ? result.value : new Uint8Array(result.value);
+    if (this.bytes + this.chunk.byteLength > this.maxBytes) throw new Error('资源分包超过索引声明大小');
+    this.offset = 0;
+    this.bytes += this.chunk.byteLength;
+    this.hash.update(this.chunk);
+    this.onProgress?.(this.bytes);
+    return true;
+  }
+
+  async readExact(size) {
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error('资源包 ZIP 长度无效');
+    const output = new Uint8Array(size);
+    let written = 0;
+    while (written < size) {
+      if (this.offset >= this.chunk.byteLength && !(await this.pull())) throw new Error('资源包 ZIP 不完整');
+      const count = Math.min(size - written, this.chunk.byteLength - this.offset);
+      output.set(this.chunk.subarray(this.offset, this.offset + count), written);
+      written += count;
+      this.offset += count;
+    }
+    return output;
+  }
+
+  async skipExact(size) {
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error('资源包 ZIP 长度无效');
+    let skipped = 0;
+    while (skipped < size) {
+      if (this.offset >= this.chunk.byteLength && !(await this.pull())) throw new Error('资源包 ZIP 不完整');
+      const count = Math.min(size - skipped, this.chunk.byteLength - this.offset);
+      skipped += count;
+      this.offset += count;
+    }
+  }
+
+  async drain() {
+    this.offset = this.chunk.byteLength;
+    while (await this.pull()) this.offset = this.chunk.byteLength;
+  }
+
+  async close() {
+    if (!this.done) await this.reader.cancel().catch(() => {});
+    this.reader.releaseLock();
+  }
+}
+
+/** Stream the server-built stored ZIP: unpack entries as network chunks arrive, then authenticate the whole ZIP once. */
+export async function readTransportPack(response, pack, { signal, onProgress, selectedPaths = null } = {}) {
+  if (!response?.body?.getReader || !pack || !Number.isSafeInteger(pack.size) || pack.size <= 0
+    || pack.size > RESOURCE_PACK_MAX_BYTES || !Array.isArray(pack.files)
+    || !/^[0-9a-f]{40}$/.test(pack.sha1 || '')) throw new Error('资源分包缺少可校验的整包指纹或流');
+  let lastProgressAt = -Infinity;
+  const source = new PackStreamReader(response.body, { signal, maxBytes: pack.size, onProgress: (loaded) => {
+    const now = performance.now();
+    if (loaded < pack.size && now - lastProgressAt < 250) return;
+    lastProgressAt = now;
+    onProgress?.(loaded);
+  } });
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  const entries = [];
+  try {
+    const local = async (expectedName, maxBytes, { skip = false } = {}) => {
+      const header = await source.readExact(30);
+      const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+      if (view.getUint32(0, true) !== 0x04034b50) throw new Error('资源分包 ZIP 本地文件头无效');
+      const flags = view.getUint16(6, true);
+      const method = view.getUint16(8, true);
+      const compressed = view.getUint32(18, true);
+      const uncompressed = view.getUint32(22, true);
+      const nameLength = view.getUint16(26, true);
+      const extraLength = view.getUint16(28, true);
+      if (flags !== 0 || method !== 0 || compressed !== uncompressed || extraLength !== 0
+        || !nameLength || nameLength > 4096 || uncompressed > maxBytes) {
+        throw new Error('资源分包 ZIP 格式或大小无效');
+      }
+      const name = decoder.decode(await source.readExact(nameLength));
+      if (name !== expectedName) throw new Error(`资源分包 ZIP 条目顺序无效：${name}`);
+      if (skip) { await source.skipExact(uncompressed); return null; }
+      return source.readExact(uncompressed);
+    };
+
+    let unpackedBytes = 0;
+    for (let i = 0; i < pack.files.length; i++) {
+      const row = pack.files[i];
+      if (!row || !Number.isSafeInteger(row.size) || row.size < 0 || row.size > MAX_FILE_BYTES
+        || !CONTENT_HASH_RE.test(row.hash || '')) throw new Error('资源分包文件索引无效');
+      unpackedBytes += row.size;
+      if (unpackedBytes > pack.size) throw new Error('资源分包解压大小超限');
+      // Unselected category members still participate in the package digest,
+      // but do not need a second in-memory copy while this pack is unpacked.
+      const selected = !selectedPaths || selectedPaths.has(resourcePath(row.url));
+      if (selected) {
+        const bytes = await local(`resources/${i}`, MAX_FILE_BYTES);
+        if (bytes.byteLength !== row.size) throw new Error(`资源分包文件大小不符：${row.url}`);
+        entries.push({ row, bytes });
+      } else {
+        await local(`resources/${i}`, MAX_FILE_BYTES, { skip: true });
+      }
+    }
+
+    const manifestBytes = await local(ARCHIVE_MANIFEST,
+      Math.min(MAX_MANIFEST_BYTES, Math.max(0, pack.size - unpackedBytes)));
+    if (unpackedBytes + manifestBytes.byteLength > pack.size) throw new Error('资源分包解压大小超限');
+    let doc;
+    try { doc = JSON.parse(decoder.decode(manifestBytes)); } catch { throw new Error('资源分包内清单无效'); }
+    if (doc?.format !== 'stronghold-resource-zip' || doc.version !== 2
+      || !Array.isArray(doc.files) || doc.files.length !== pack.files.length) {
+      throw new Error('资源分包内清单格式无效');
+    }
+    for (let i = 0; i < pack.files.length; i++) {
+      const expected = pack.files[i];
+      const row = doc.files[i];
+      if (!row || row.path !== `resources/${i}` || resourcePath(row.url) !== resourcePath(expected.url)
+        || row.hash !== expected.hash || row.size !== expected.size) {
+        throw new Error(`资源分包内清单与索引不符：${expected.url}`);
+      }
+    }
+    // The central directory and end record are authenticated by the package digest;
+    // no individual entry digest/CRC pass is needed for these server-indexed packs.
+    await source.drain();
+    if (source.bytes !== pack.size || source.hash.digest() !== pack.sha1) throw new Error('资源分包整包校验失败');
+    return entries;
+  } finally {
+    await source.close();
+  }
+}
+

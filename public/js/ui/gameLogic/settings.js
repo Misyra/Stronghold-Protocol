@@ -2,6 +2,7 @@
 
 import { VOICE_LANGS, sanitizeVoiceOverrides } from '../../voicePrefs.js';
 export { VOICE_LANGS } from '../../voicePrefs.js';
+import { normalizePreloadVoiceLanguages } from '../../resources/voices.js';
 
 import { clamp, isObj } from './shared.js';
 import { DEFAULT_HOTKEYS, sanitizeHotkeys } from './shortcuts.js';
@@ -41,8 +42,12 @@ export const TEXT_SIZES = Object.freeze(['sm', 'md', 'lg', 'xl']);
  *  'off', 'lite' (精简), 'full' (完整); only shown when effects were extracted from the local client.
  *  otherSkins: 设置「显示其他玩家的皮肤」 (docs/SKINS.md), ON by default — draw the appearance another player chose instead
  *  of the operator's own model. A pure client preference (never sent): off, only this player's own pieces wear a skin.
+ *  preload / preloadOptional / preloadVoices / preloadAllVoices / preloadVoiceLanguages / preloadSkins /
+ *  preloadSkinsAll / preloadFx (移植自用户分支): independent resource scopes of the asset preload
+ *  (public/js/resources/index.js). The master stays off on first visit; voices migrate from the older
+ *  optional-audio choice; `preloadVoiceLanguages` is a normalized subset of VOICE_LANGS + 'native' or null (all).
  */
-export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', voiceNative: false, voiceOverrides: Object.freeze({}), muted: false, damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, fullscreenWakeLock: false, bondTimers: false, combatMetrics: false, prepDeployFold: true, quality: 'high', officialFx: 'auto', otherSkins: true, textSize: 'sm', keys: DEFAULT_HOTKEYS });
+export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', voiceNative: false, voiceOverrides: Object.freeze({}), muted: false, damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, fullscreenWakeLock: false, bondTimers: false, combatMetrics: false, prepDeployFold: true, quality: 'high', officialFx: 'auto', otherSkins: true, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadVoiceLanguages: null, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: DEFAULT_HOTKEYS });
 const QUALITIES = ['high', 'medium', 'low'];
 /** The values of 设置「官方特效」 (render/vfx/tier.js OFFICIAL_FX). Display order in the dialog is low / medium / high. */
 export const OFFICIAL_FX_MODES = Object.freeze(['auto', 'off', 'lite', 'full']);
@@ -86,6 +91,17 @@ export function sanitizeSettings(raw) {
     officialFx: OFFICIAL_FX_MODES.includes(r.officialFx) ? r.officialFx : DEFAULT_SETTINGS.officialFx,
     otherSkins: r.otherSkins !== false,
     textSize: TEXT_SIZES.includes(r.textSize) ? r.textSize : DEFAULT_SETTINGS.textSize,
+    preload: r.preload === true,
+    preloadOptional: typeof r.preloadOptional === 'boolean' ? r.preloadOptional : DEFAULT_SETTINGS.preloadOptional,
+    preloadVoices: typeof r.preloadVoices === 'boolean' ? r.preloadVoices
+      : typeof r.preloadOptional === 'boolean' ? r.preloadOptional : DEFAULT_SETTINGS.preloadVoices,
+    preloadAllVoices: r.preloadAllVoices === true,
+    preloadVoiceLanguages: normalizePreloadVoiceLanguages(r.preloadVoiceLanguages),
+    // 皮肤 and 特效 default to on (DEFAULT_SETTINGS): only the master switch starts off, so a first visit caches
+    // nothing until it is turned on — a saved `false` is respected either way. (user fork)
+    preloadSkins: typeof r.preloadSkins === 'boolean' ? r.preloadSkins : DEFAULT_SETTINGS.preloadSkins,
+    preloadSkinsAll: r.preloadSkinsAll === true,
+    preloadFx: typeof r.preloadFx === 'boolean' ? r.preloadFx : DEFAULT_SETTINGS.preloadFx,
     keys: sanitizeHotkeys(r.keys),
   };
 }

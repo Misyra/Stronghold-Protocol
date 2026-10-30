@@ -58,17 +58,23 @@ export const unhashedUrl = (url) => (typeof url === 'string' ? splitHashedPath(u
 /** Traffic categories, in report order. */
 export const TRAFFIC_CATEGORIES = Object.freeze(['assets', 'audio', 'code', 'data', 'other']);
 
+/** The release prefix of a versioned URL (ported from the user fork, server/assetVersion.js VERSION_PREFIX):
+ * `/_v/` + 16 hex digits — stripped before categorising, so a versioned request counts under the same
+ * category as the plain one. */
+const VERSION_PREFIX_RE = /^\/_v\/[a-f0-9]{16}/;
+
 /**
- * The traffic category of a request path (the content-hash segment does not matter): `audio` (/media/,
- * /assets/audio/, a cosmetic plugin's .mp3 / .ogg at /p/ — also without the extension), `assets` (/assets/, /fonts/,
- * /icons/, the art of a content pack, a cosmetic plugin's other files at /p/ — DESIGN §32), `data` (/data/*.json, the
- * UI language packs /i18n/, the pack index, a visual set /vs/…json, other JSON), `code` (the page, scripts, styles: /,
- * *.js, *.css, *.html, /vendor/, /sim/, /shared/), `other` (/healthz, error pages for anything else).
+ * The traffic category of a request path (the content-hash segment and the /_v/<tag>/ release prefix do not
+ * matter): `audio` (/media/, /assets/audio/, a cosmetic plugin's .mp3 / .ogg at /p/ — also without the
+ * extension), `assets` (/assets/, /fonts/, /icons/, the art of a content pack, a cosmetic plugin's other files
+ * at /p/ — DESIGN §32), `data` (/data/*.json, the UI language packs /i18n/, the pack index, a visual set
+ * /vs/…json, other JSON), `code` (the page, scripts, styles: /, *.js, *.css, *.html, /vendor/, /sim/,
+ * /shared/), `other` (/healthz, error pages for anything else).
  * @param {string} path a URL path (no query)
  * @returns {'assets'|'audio'|'code'|'data'|'other'}
  */
 export function trafficCategory(path) {
-  const p = splitHashedPath(path).path;
+  const p = splitHashedPath(String(path ?? '').replace(VERSION_PREFIX_RE, '')).path;
   if (p.startsWith('/media/') || p.startsWith('/assets/audio/')) return 'audio';
   // a plugin's audio, with its extension or without (public/js/media.js: only audio is asked for without one)
   if (p.startsWith('/p/')) return /\.(?:mp3|ogg)$/i.test(p) || !/\.[A-Za-z0-9]+$/.test(p) ? 'audio' : 'assets';

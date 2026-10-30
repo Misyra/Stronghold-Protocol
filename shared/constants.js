@@ -3,6 +3,8 @@
 import { N_ } from './i18n.js';
 
 export const PROTOCOL_VERSION = 1;
+/** Public matchmaking capability/data contract; bump when queued clients cannot share a match. */
+export const MATCHMAKING_VERSION = 'alliance-2';
 /** Release version shown to players (title screen, server banner, /healthz). Kept equal to package.json "version"
  * (test/version.test.js); PROTOCOL_VERSION above is the separate wire-format number. */
 export const APP_VERSION = '0.3.3';
@@ -18,6 +20,12 @@ export const DEV_BUILD = /-dev$/.test(APP_VERSION);
  */
 export const PLUGIN_API = Object.freeze({ current: 2, min: 1 });
 
+/**
+ * 重刷本局 (PR #860, DESIGN §28.21 [ASSUMED]): each seat may open one setup-reroll vote per this many ms. Shared so the
+ * client's refusal toast (ui/toasts.js) names the server's value (server/match/match/setupVote.js).
+ */
+export const SETUP_REROLL_COOLDOWN_MS = 30_000;
+
 export const MAX_SEATS = 4;
 /**
  * Spectator seats of a co-op room (community report #26, owner's decision 2026-10-04) — a remake feature: the official
@@ -26,13 +34,11 @@ export const MAX_SEATS = 4;
  * server/match/match/watch.js addSpectator).
  */
 export const MAX_SPECTATORS = 2;
-/**
- * 重刷本局 (PR #860, DESIGN §28.21 [ASSUMED]): each seat may open one setup-reroll vote per this many ms. Shared so the
- * client's refusal toast (ui/toasts.js) names the server's value (server/match/match/setupVote.js).
- */
-export const SETUP_REROLL_COOLDOWN_MS = 30_000;
 export const ROOM_CODE_LEN = 4;
 export const NAME_MAX_LEN = 12;
+/** In-match developer console quotas: a grant is one use, and both limits are per player (server/match/match/intents.js). */
+export const CONSOLE_ROUND_LIMIT = 5;
+export const CONSOLE_TOTAL_LIMIT = 50;
 
 export const DIFFICULTIES = ['FUNNY', 'NORMAL', 'HARD', 'ABYSS'];
 export const DIFFICULTY_NAMES = { FUNNY: N_('标准模拟'), NORMAL: N_('险境模拟'), HARD: N_('绝境模拟'), ABYSS: N_('终极模拟') };
@@ -140,6 +146,10 @@ export const UF = Object.freeze({
 export const ANIM = Object.freeze({ IDLE: 0, MOVE: 1, ATTACK: 2, SKILL: 3, DIE: 4, STUN: 5, DEPLOY: 6 });
 
 export const ERR = Object.freeze({
+  CHAT_DISABLED: 'CHAT_DISABLED',
+  CHAT_MUTED: 'CHAT_MUTED',
+  CHAT_BLOCKED: 'CHAT_BLOCKED',
+  NICKNAME_SENSITIVE: 'NICKNAME_SENSITIVE', // nickname rejected by the shared word policy
   BAD_MSG: 'BAD_MSG',             // malformed / unknown message
   SESSION_IN_USE: 'SESSION_IN_USE', // a local recovery candidate cannot replace the connected holder
   RATE: 'RATE',                   // rate limited
@@ -148,10 +158,13 @@ export const ERR = Object.freeze({
   ROOM_FULL: 'ROOM_FULL',
   SERVER_FULL: 'SERVER_FULL',     // the online cap (SP_MAX_ONLINE) has no seat for a new player
   ROOM_STARTED: 'ROOM_STARTED',
-  // a fixed alliance key (--room-code): one room at a time can hold it
-  ROOM_CODE_TAKEN: 'ROOM_CODE_TAKEN',
   NOT_HOST: 'NOT_HOST',
   NOT_READY: 'NOT_READY',
+  BOTS_DISABLED: 'BOTS_DISABLED',
+  AI_POPULATION_LIMIT: 'AI_POPULATION_LIMIT',
+  FOREIGN_AI_POPULATION_LIMIT: 'FOREIGN_AI_POPULATION_LIMIT',
+  FOREIGN_SESSION_LIMIT: 'FOREIGN_SESSION_LIMIT',
+  FOREIGN_CONNECTIONS_DISABLED: 'FOREIGN_CONNECTIONS_DISABLED',
   WRONG_PHASE: 'WRONG_PHASE',
   NO_FUNDS: 'NO_FUNDS',
   HAND_FULL: 'HAND_FULL',
@@ -164,7 +177,13 @@ export const ERR = Object.freeze({
   ALREADY: 'ALREADY',
   TEMP_NOT_EMPTY: 'TEMP_NOT_EMPTY',
   ELIMINATED: 'ELIMINATED',
+  QUEUED: 'QUEUED',               // leave matchmaking before creating/joining a private room
+  CONSOLE_ON: 'CONSOLE_ON',       // the room opted into the developer console: it may not enter the queue
+                                  // (server/matchmakingRooms.js matchmakingMembers; the console opts out first)
   SPECTATOR: 'SPECTATOR',         // a spectator seat only watches (MAX_SPECTATORS)
+  MAINTENANCE: 'MAINTENANCE',     // the server is not taking new matches right now
+  // a fixed alliance key (--room-code): one room at a time can hold it
+  ROOM_CODE_TAKEN: 'ROOM_CODE_TAKEN',
   // room.setPlugins (DESIGN §32): a plugin this server has not installed; one a room cannot switch on in this version
   // (not a cosmetic or content plugin it loads, not of the room's scope, or not allowed by the server owner's
   // plugins/config.json); a requirement missing or out of range, or a load-order cycle; two plugins in conflict; a set
@@ -189,6 +208,7 @@ export const ERR = Object.freeze({
   PLUGIN_INCOMPATIBLE: 'PLUGIN_INCOMPATIBLE',
   PLUGIN_BUSY: 'PLUGIN_BUSY',
   CONTENT_NOT_READY: 'CONTENT_NOT_READY',
+  INTERNAL: 'INTERNAL',
   // match test mode (DESIGN §34.8 phase 2): the process switch is off, or this room was not created as a test room
   TEST_CONFIRM: 'TEST_CONFIRM',
   TEST_DISABLED: 'TEST_DISABLED',
@@ -199,10 +219,18 @@ export const ERR = Object.freeze({
   VERSION_UNKNOWN: 'VERSION_UNKNOWN',
   VERSION_UNSUPPORTED: 'VERSION_UNSUPPORTED',
   VERSION_VOTE: 'VERSION_VOTE',
-  INTERNAL: 'INTERNAL',
 });
 
 export const ERR_TEXT = {
+  BOTS_DISABLED: N_('当前服务器禁止添加 AI 队友'),
+  AI_POPULATION_LIMIT: N_('当前服务器AI队友数量异常，可能正在被攻击，暂停AI 队友创建。'),
+  FOREIGN_AI_POPULATION_LIMIT: N_('由于你的ip属于海外，当前AI队友达到上限，如果你开了代理请关闭代理，或者前往联机大厅匹配队友'),
+  FOREIGN_SESSION_LIMIT: N_('当前 IP 已有在线玩家，请关闭原窗口后重试'),
+  FOREIGN_CONNECTIONS_DISABLED: N_('本服务器暂时仅对中国大陆服务'),
+  CHAT_DISABLED: N_('当前服务器未开启聊天'),
+  CHAT_MUTED: N_('你因多次发送不适宜内容被暂停聊天，请稍后再试'),
+  CHAT_BLOCKED: N_('聊天包含不适宜内容，请文明交流'),
+  NICKNAME_SENSITIVE: N_('代号包含不适宜内容，请更换昵称'),
   SESSION_IN_USE: N_('此对局仍在其他窗口中，或当前浏览器无法安全恢复。请关闭原窗口后重试。'),
   BAD_MSG: N_('无效的请求'), RATE: N_('操作过于频繁'), NOT_IN_ROOM: N_('你不在房间中'), ROOM_NOT_FOUND: N_('未找到该同盟密钥对应的房间'),
   ROOM_FULL: N_('房间已满'), SERVER_FULL: N_('服务器已满'), ROOM_STARTED: N_('模拟已开始'), NOT_HOST: N_('只有房主可以操作'), NOT_READY: N_('仍有玩家未就绪'),
@@ -210,11 +238,13 @@ export const ERR_TEXT = {
   WRONG_PHASE: N_('当前阶段无法进行该操作'), NO_FUNDS: N_('资金不足'), HAND_FULL: N_('整备区已满'), BOARD_FULL: N_('已达到部署上限'),
   BAD_TILE: N_('无法部署在该位置'), BAD_TARGET: N_('无效的目标'), SOLD_OUT: N_('已售出'), MAX_LEVEL: N_('调度中心已达最高等级'),
   NOT_YOUR_TURN: N_('尚未轮到你'), ALREADY: N_('已完成该操作'), TEMP_NOT_EMPTY: N_('临时整备区不为空'), ELIMINATED: N_('你已被淘汰'),
+  QUEUED: N_('正在匹配中，请先取消匹配'), MAINTENANCE: N_('服务器即将维护，暂停开启新的模拟'),
+  CONSOLE_ON: N_('房间已开启开发者控制台，无法进入匹配队列'),
   SPECTATOR: N_('观战中无法进行该操作'), INTERNAL: N_('服务器内部错误'),
   PLUGIN_UNKNOWN: N_('本服务器没有安装该插件'), PLUGIN_BLOCKED: N_('该插件不能在房间中启用'), PLUGIN_DEPENDENCY: N_('缺少该插件需要的其他插件'),
   PLUGIN_CONFLICT: N_('所选插件互相冲突'), PLUGIN_LIMIT: N_('所选插件的素材总量超出本服务器的上限'),
-  PLUGIN_RULE_CONFLICT: N_('两个插件把同一个规则开关设成了不同的选项'),
   PLUGIN_INCOMPATIBLE: N_('该插件不适配本服务器的游戏版本'), PLUGIN_BUSY: N_('本服务器同时运行的插件组合已达上限，请稍后再试'),
+  PLUGIN_RULE_CONFLICT: N_('两个插件把同一个规则开关设成了不同的选项'),
   PLUGIN_CONSENT: N_('还有玩家未同意运行受信任插件'),
   PLUGIN_SCRIPTS_DISABLED: N_('服主没有启用脚本插件'),
   PLUGIN_TRUST_PIN: N_('插件的锁文件或文件内容与服主钉住的哈希不符'),
@@ -243,7 +273,7 @@ export const ERR_TEXT = {
 // local picture first, then the mirror copy, and shows a neutral glyph when neither is there. The picId is not
 // derived from the id (autochess_battle_fooldoctor_03…06 → pic_fooldoctor_04/05/06/08_battle).
 const emo = (id, sortId, picId, label) => Object.freeze({ id, sortId, picId, label });
-export const EMOTE_THEMES = Object.freeze([
+export const OFFICIAL_EMOTE_THEMES = Object.freeze([
   { themeId: 'emoticon_autochess_basic', dir: 'basic', sortId: 100000, isBasic: true, name: N_('表情套组：卫戍协议'), emotes: [
     emo('autochess_battle_happy', 1001, 'pic_happy_battle', N_('开心')),
     emo('autochess_battle_scared', 1002, 'pic_scared_battle', N_('害怕')),
@@ -293,9 +323,22 @@ export const EMOTE_THEMES = Object.freeze([
     emo('autochess_battle_foolwisdel_06', 1065, 'pic_foolwisdel_06_battle', N_('维维美 6')),
   ] },
 ].map((t) => Object.freeze({ ...t, emotes: Object.freeze(t.emotes) })));
+/** Site-supplied images ship with the code; never fetch them from the official game mirror. */
+export const CUSTOM_EMOTE_THEME = Object.freeze({
+  themeId: 'emoticon_site_ciallo', dir: 'ciallo', sortId: 100003, isBasic: false, name: N_('表情套组：Ciallo'),
+  emotes: Object.freeze([
+    emo('autochess_battle_ciallo_murasame', 20001, 'pic_ciallo_murasame_battle', N_('丛雨 Ciallo')),
+    emo('autochess_battle_ciallo_yoshino', 20002, 'pic_ciallo_yoshino_battle', N_('芳乃 Ciallo')),
+    emo('autochess_battle_ciallo_lena', 20003, 'pic_ciallo_lena_battle', N_('蕾娜 Ciallo')),
+    emo('autochess_battle_ciallo_mako', 20004, 'pic_ciallo_mako_battle', N_('茉子 Ciallo')),
+    emo('autochess_battle_ciallo_nene', 20005, 'pic_ciallo_nene_battle', N_('宁宁 Ciallo')),
+    emo('autochess_battle_ciallo_meguri', 20006, 'pic_ciallo_meguri_battle', N_('巡 Ciallo')),
+  ]),
+});
+export const EMOTE_THEMES = Object.freeze([...OFFICIAL_EMOTE_THEMES, CUSTOM_EMOTE_THEME]);
 /** Every emote with its theme: `{ id, sortId, picId, label, themeId, dir }`, in wheel order. */
-export const EMOTE_CATALOG = Object.freeze(EMOTE_THEMES.flatMap((t) => t.emotes.map((e) => Object.freeze({ ...e, themeId: t.themeId, dir: t.dir }))));
-/** The 36 official emote ids (protocol whitelist: `EMOTES.includes(id)`). */
+export const EMOTE_CATALOG = Object.freeze(EMOTE_THEMES.flatMap((t) => t.emotes.map((e) => Object.freeze({ ...e, themeId: t.themeId, dir: t.dir, custom: t === CUSTOM_EMOTE_THEME }))));
+/** Official and site emote ids (protocol whitelist: `EMOTES.includes(id)`). */
 export const EMOTES = Object.freeze(EMOTE_CATALOG.map((e) => e.id));
 const EMOTE_INDEX = new Map(EMOTE_CATALOG.map((e) => [e.id, e]));
 /** Catalog record of an emote id, or null (safe for any input, including '__proto__'). */
@@ -312,3 +355,5 @@ export const emoteArtGroup = (id) => { const e = emoteInfo(id); return e ? `emot
 export const emoteArtPath = (id) => { const e = emoteInfo(id); return e ? `/assets/local/emoticon/${e.dir}/${e.picId}.png` : null; };
 export const EMOTE_COOLDOWN_MS = 1000; // activity_table autoChessData.constData.chatCD (s)
 export const EMOTE_BUBBLE_MS = 3000;   // constData.chatTime (s): how long a bubble stays up
+
+export const REPOSITORY_URL = 'https://github.com/Misyra/Stronghold-Protocol';

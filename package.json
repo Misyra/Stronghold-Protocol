@@ -55,7 +55,8 @@
     "ses": "2.3.0",
     "three": "^0.186.1",
     "ws": "^8.22.0",
-    "acorn": "8.18.0"
+    "acorn": "8.18.0",
+    "@zip.js/zip.js": "^2.23.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

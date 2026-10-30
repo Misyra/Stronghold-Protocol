@@ -238,6 +238,19 @@ export function versionsFrom(opts, log = null) {
   return { enabled, default: def, maxHosts };
 }
 
+/**
+ * 取自 xinhai-ai/Stronghold-Protocol（同许可证）：静态层只认「原样拼在 /assets/ 前的基址」—— 取走尾斜杠，
+ * 非 http(s)/根路径的值当作未配置（返回空串）。与 server/index.js 的 CDN 分发、shared/cdn.js 的拼址保持一致。
+ * @param {unknown} v
+ * @returns {string}
+ */
+export function parseAssetCdn(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  if (!/^(https?:\/\/|\/)/i.test(s)) return '';
+  return s.replace(/\/+$/, '');
+}
+
 /** TRUST_PROXY env → net.js trustProxy ('auto' unless explicitly on/off). @param {string | undefined} v */
 export function parseTrustProxy(v) {
   const s = String(v ?? '').trim().toLowerCase();

@@ -1,0 +1,390 @@
+// Adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later).
+import { N_ } from '../../../shared/i18n.js';
+import { canonicalResourceUrl, resourceIdentity } from '../../../shared/resourcePaths.js';
+// public/js/resources/common.js — shared pieces of the optional asset preload (docs/ASSETS.md「Preload」).
+//
+// No DOM and no Preact: the page (store.js / index.js), the Service Worker (service.js) and the Node tests all import
+// this module. It owns the manifest shape, the URL/MIME rules and byte formatting — the same rules the server applies
+// when it generates /data/resource-manifest.json (server/resources.js).
+
+/** Cache Storage names this app owns. Cards have separate caches; effects use eight stable path shards.
+ * This keeps today's whole-cache queries below the browser's ~10 MiB result budget. Independent indexes remain
+ * a fallback for larger future sets and legacy caches. Entries are still replaced per file by content hash. */
+export const CACHE_PREFIX = 'stronghold-resources-v1-';
+/** The catch-all card (map/character/spine/ui, plus sfx/music/other) keeps the pre-split name `…-all`: an install that
+ * predates the split already has those bytes in this cache, under exactly this name. */
+export const CACHE_NAME = CACHE_PREFIX + 'all';
+/** The one synthetic entry of each card cache: absolute URL → the hash of the bytes stored for it. */
+export const INDEX_PATH = '/__sp-resource-index__';
+/** A hash as the server writes it (hex digest, the `syn-` fallback, a `sha1-…` label). */
+export const HASH_RE = /^[A-Za-z0-9._:-]{1,64}$/;
+/** A *content* digest (12 hex of a SHA-1): the only hashes the store can verify against cached bytes. */
+export const CONTENT_HASH_RE = /^[0-9a-f]{12}$/;
+export const RESOURCES_FORMAT = 1;
+/** Never store a single file bigger than this (mirrors server/resources.js). */
+export const MAX_FILE_BYTES = 24 * 1024 * 1024;
+export const RESOURCE_PACK_MAX_BYTES = 16_000_000;
+/** Required visuals: maps, portraits, Spine, fonts, UI and icons. */
+export const TIER_ESSENTIAL = 1;
+/** Optional: voices, sound effects, music and tutorial illustrations. */
+export const TIER_REST = 2;
+/** Release-scoped shared cache; old/static pages and the worker can still use the short-lived plain route. */
+export function resourceManifestUrl(version = globalThis.__spAssetVersion) {
+  return '/data/resource-manifest.json' + (/^[a-f0-9]{16}$/.test(version || '') ? `?v=${version}` : '');
+}
+export const MANIFEST_URL = resourceManifestUrl();
+/**
+ * A `?v=<release>` manifest URL is content-addressed: the server derives that tag from the files it serves,
+ * so one URL can never describe two different manifests. It may therefore be answered from the browser's own
+ * cache; only the unversioned fallback has to revalidate. Without this split the client re-downloads the whole
+ * multi-megabyte manifest on every page load, because `cache: 'no-cache'` on a fetch outranks every response
+ * header a proxy or the origin can send.
+ */
+export function isVersionedManifestUrl(url) {
+  return /[?&]v=[a-f0-9]{16}(?:&|$)/.test(String(url ?? ''));
+}
+export const SW_URL = '/resource-sw.js';
+// Vite replaces this only in the page build; the independent worker build keeps the source fallback.
+const BUILT_SW_URL = '';
+/** Keep the worker at the root scope while passing the page's release into its independent global. */
+export function resourceWorkerUrl(version = globalThis.__spAssetVersion) {
+  return (BUILT_SW_URL || SW_URL) + (/^[a-f0-9]{16}$/.test(version || '') ? `?v=${version}` : '');
+}
+/** Both old unversioned and new versioned workers speak the hash-checked resource protocol. */
+export function isResourceWorker(scriptUrl, origin) {
+  try {
+    const url = new URL(scriptUrl, origin);
+    return url.origin === origin && (url.pathname === SW_URL || /^\/build\/assets\/resource-sw-[A-Za-z0-9_-]+\.js$/.test(url.pathname));
+  } catch { return false; }
+}
+
+export const RESOURCE_GROUPS = Object.freeze({
+  map: { name: N_('地图与棋盘'), tier: TIER_ESSENTIAL },
+  character: { name: N_('干员与敌人图片'), tier: TIER_ESSENTIAL },
+  spine: { name: N_('Spine 模型与特效'), tier: TIER_ESSENTIAL },
+  ui: { name: N_('界面、图标与字体'), tier: TIER_ESSENTIAL },
+  voice: { name: N_('角色语音'), tier: TIER_REST },
+  sfx: { name: N_('音效'), tier: TIER_REST },
+  music: { name: N_('背景音乐'), tier: TIER_REST },
+  other: { name: N_('玩法说明与其他资源'), tier: TIER_REST },
+  // 干员皮肤 is optional like the rest, but it is the one group the player picks item by item (custom_docs/SKINS.md):
+  // the manifest marks those entries with `skin`, and the store keeps only the chosen skins in its selection.
+  skin: { name: N_('干员皮肤'), tier: TIER_REST },
+  // 官方特效 (`data/local-fx.json`, docs/design/vfx-format.md) is the second group with a preload switch of its own:
+  // ~185 MiB of effect prefabs, textures and meshes — the largest optional set after 干员皮肤. `optional` does not
+  // cover it; `ResourceStore#inScope` keeps the two switches apart.
+  fx: { name: N_('官方特效'), tier: TIER_REST },
+});
+
+/** `charId/skinId` as the server writes it (`server/resources.js` `skinKeyForPath`): both halves are key-path segments,
+ *  so a dot is what separates them and can never appear inside one. */
+export const SKIN_KEY_RE = /^[A-Za-z0-9_@#-]{1,80}\/[A-Za-z0-9_@#-]{1,80}$/;
+/** Whether a manifest entry's `skin` field is a key this client accepts. */
+export function isSkinKey(key) {
+  return typeof key === 'string' && SKIN_KEY_RE.test(key);
+}
+
+export function resourceGroup(file) {
+  if (isSkinKey(file?.skin)) return 'skin';
+  // 官方特效 is marked by the server (`server/resources.js` `collectFxFiles`), so an unrelated texture that happens
+  // to sit under some `fx/` directory is not mistaken for the official extraction.
+  if (file?.fx) return 'fx';
+  const path = new URL(file.url, 'https://resources.invalid').pathname;
+  if (file.tier === TIER_REST) {
+    if (/\/voice\//.test(path)) return 'voice';
+    if (/\/sfx\//.test(path)) return 'sfx';
+    if (/\/bgm\//.test(path)) return 'music';
+    return 'other';
+  }
+  if (/\/spine\/|\.(?:skel|atlas)$/.test(path)) return 'spine';
+  if (/\/(?:map|maps|mesh|board)\/|\.obj$/.test(path)) return 'map';
+  if (/\/(?:char|chars|enemy|enemies|token|tokens)\//.test(path)) return 'character';
+  return 'ui';
+}
+
+/** The four logical preload cards, independent of their physical cache count. */
+export const RESOURCE_SCOPES = Object.freeze(['essential', 'voice', 'skin', 'fx']);
+
+/** Which card a manifest entry belongs to: 官方特效, 干员皮肤 and 干员语音 have a card of their own, everything else
+ *  (including the optional 音效 / 音乐 / 玩法说明) shares the catch-all card. */
+export function resourceScope(file) {
+  const group = resourceGroup(file);
+  return group === 'voice' || group === 'skin' || group === 'fx' ? group : 'essential';
+}
+
+/** Original card cache name; new writers use cacheNameForFile for the effects shards. */
+export function cacheNameForScope(scope) {
+  return scope === 'essential' ? CACHE_NAME : CACHE_PREFIX + String(scope || 'essential');
+}
+
+export const LEGACY_FX_CACHE_NAME = cacheNameForScope('fx');
+export const FX_CACHE_NAMES = Object.freeze(Array.from({ length: 8 }, (_, i) => `${LEGACY_FX_CACHE_NAME}-${i}`));
+
+/** Hash the canonical path only: CDN hosts, release prefixes, queries and URL escaping never move a file.
+ * Keep this hash and the shard count stable across releases so additions do not reshuffle cached effects. */
+export function fxCacheName(url) {
+  const path = resourceIdentity(url) || String(url);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < path.length; i++) hash = Math.imul(hash ^ path.charCodeAt(i), 0x01000193);
+  return FX_CACHE_NAMES[(hash >>> 0) % FX_CACHE_NAMES.length];
+}
+
+export function cacheNameForFile(file) {
+  const scope = resourceScope(file);
+  return scope === 'fx' ? fxCacheName(file.url) : cacheNameForScope(scope);
+}
+
+/** Current write destinations, followed by the old effects card for read/migration compatibility. */
+export const SHARD_CACHE_NAMES = Object.freeze([
+  ...RESOURCE_SCOPES.filter((scope) => scope !== 'fx').map(cacheNameForScope), ...FX_CACHE_NAMES,
+]);
+export const READABLE_CACHE_NAMES = Object.freeze([...SHARD_CACHE_NAMES, LEGACY_FX_CACHE_NAME]);
+
+/** The extension-less audio route the game asks audio through (`shared/media.js`; a test keeps the two lists identical).
+ * The manifest keeps the real `/assets/audio/….mp3` URLs — a plain static host (the CDN) cannot resolve `/media/…` — and
+ * the worker maps a `/media/…` request back to the entry it stored (`mediaCandidates`). */
+export const MEDIA_PREFIX = '/media/';
+/** Extensions a `/media/…` request may resolve to, in the order the server tries them (`shared/media.js AUDIO_EXTS`). */
+export const AUDIO_EXTS = Object.freeze(['.mp3', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.wav']);
+
+/** Extension → MIME type (mirrors server/resources.js; used to validate URLs, responses carry their own type). */
+export const RESOURCE_MIME = Object.freeze({
+  json: 'application/json; charset=utf-8',
+  aac: 'audio/aac',
+  oga: 'audio/ogg',
+  opus: 'audio/ogg',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  mp3: 'audio/mpeg',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
+  m4a: 'audio/mp4',
+  mp4: 'video/mp4',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
+  ttf: 'font/ttf',
+  otf: 'font/otf',
+  css: 'text/css; charset=utf-8',
+  atlas: 'text/plain; charset=utf-8',
+  obj: 'text/plain; charset=utf-8',
+  skel: 'application/octet-stream',
+  bin: 'application/octet-stream',
+});
+
+/** MIME type of a resource URL, or null when the extension is not a resource type. */
+export function resourceType(url) {
+  const m = /\.([A-Za-z0-9]+)$/.exec(String(url || ''));
+  return m ? RESOURCE_MIME[m[1].toLowerCase()] || null : null;
+}
+
+/** Whether a request path belongs to the trees the preload may answer from the cache: the asset/font trees and the
+ * extension-less audio route (answered from the stored `/assets/audio/…` entry — `mediaCandidates`). */
+export function isResourcePath(pathname) {
+  const p = String(pathname || '');
+  return /\/(?:assets|fonts)\//.test(p) || /^\/(?:_v\/[a-f0-9]{16}\/)?media\//.test(p);
+}
+
+/**
+ * The canonical files a `/media/…` request may resolve to, as site paths: `/media/bgm/act1` → `/assets/audio/bgm/act1.mp3`
+ * (then `.m4a`, …), and `/media/bgm/act1.ogg` → only that one. Mirrors `serveMedia()` in server/index.js, which refuses
+ * dot segments and dot-leading or dot-trailing names, so those yield nothing here either.
+ * @param {string} pathname
+ * @returns {string[]} empty when the path is not that route
+ */
+export function mediaCandidates(pathname) {
+  const raw = String(pathname || '');
+  const version = /^\/_v\/[a-f0-9]{16}/.exec(raw)?.[0] || '';
+  const p = raw.slice(version.length);
+  if (!p.startsWith(MEDIA_PREFIX)) return [];
+  const rest = p.slice(MEDIA_PREFIX.length);
+  if (!rest || rest.endsWith('/')) return [];
+  const segments = rest.split('/').filter((s) => s.length > 0);
+  if (!segments.length || segments.some((s) => s === '.' || s === '..' || s.startsWith('.') || s.endsWith('.'))) return [];
+  const last = segments[segments.length - 1];
+  const given = AUDIO_EXTS.find((e) => last.toLowerCase().endsWith(e)) || '';
+  const stem = given ? last.slice(0, -given.length) : last;
+  if (!stem) return [];
+  const name = [...segments.slice(0, -1), stem].join('/');
+  const order = given ? [given, ...AUDIO_EXTS.filter((e) => e !== given)] : AUDIO_EXTS;
+  return order.map((ext) => `${version}/assets/audio/${name}${ext}`);
+}
+
+/** A file this client may request and cache: a site path or an absolute http(s) CDN URL with a known extension.
+ *  The one allowed query is the per-file cache-bust the manifest mode appends itself (`?v=<16 hex>`). */
+export function isResourceUrl(url) {
+  if (typeof url !== 'string' || url.length === 0 || url.length > 512) return false;
+  const bare = url.replace(/\?v=[0-9a-f]{16}$/, '');
+  if (/[\s?#\\"'<>\u0000-\u001f]/.test(bare)) return false;
+  let pathname = bare;
+  if (!bare.startsWith('/') || bare.startsWith('//')) {
+    if (!/^https?:\/\//i.test(bare)) return false;
+    try { pathname = new URL(bare).pathname; } catch { return false; }
+  }
+  // The manifest never carries `/media/…` URLs (the worker maps them to these instead): they name no file a static host
+  // can serve, so an entry listing one is a manifest this client will not chase 4 000 times.
+  if (/^\/(?:_v\/[a-f0-9]{16}\/)?media\//.test(pathname)) return false;
+  return isResourcePath(pathname) && !!resourceType(pathname);
+}
+
+/** A version-named cache of the pre-hash layout (`pruneOld()` cleans those up). The store itself uses the card caches
+ * (`cacheNameForScope`). */
+export function cacheName(version) {
+  return CACHE_PREFIX + String(version || 'none');
+}
+
+/** Absolute URL of a manifest entry (the cache key): `/assets/x.png` → `https://site/assets/x.png`. */
+export function absoluteUrl(url, origin = globalThis.location?.origin || 'http://localhost') {
+  try { return new URL(canonicalResourceUrl(url), origin).href; } catch { return null; }
+}
+
+/** Absolute URL of the preload index entry (`INDEX_PATH` lives in the same cache as the files it describes). */
+export function indexUrl(origin = globalThis.location?.origin || 'http://localhost') {
+  return absoluteUrl(INDEX_PATH, origin) || INDEX_PATH;
+}
+
+/** `1.5 GiB` / `820 KiB` / `900 B` — progress text (binary units, the ones browsers report storage in). */
+export function formatBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return '—';
+  if (n < 1024) return `${Math.round(n)} B`;
+  const units = ['KiB', 'MiB', 'GiB', 'TiB'];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
+/**
+ * Validate the manifest the server served. Throws on a shape this client cannot trust (it drives thousands of
+ * requests and the cache), so a broken manifest disables the preload instead of hammering the origin.
+ * @returns {any} the manifest
+ */
+export function validateManifest(m) {
+  if (!m || typeof m !== 'object' || m.format !== RESOURCES_FORMAT) throw new Error('资源清单格式不受支持');
+  if (typeof m.version !== 'string' || !m.version) throw new Error('资源清单缺少版本号');
+  if (!Array.isArray(m.files)) throw new Error('资源清单缺少文件列表');
+  if (m.files.length > 50000) throw new Error('资源清单过大');
+  for (const f of m.files) {
+    if (!f || typeof f !== 'object' || !isResourceUrl(f.url)) throw new Error(`资源清单条目无效：${String(f && f.url).slice(0, 80)}`);
+    if (f.tier !== TIER_ESSENTIAL && f.tier !== TIER_REST) throw new Error(`资源清单条目缺少分层：${f.url.slice(0, 80)}`);
+    if (f.size != null && (!Number.isSafeInteger(f.size) || f.size < 0)) throw new Error(`资源大小无效：${f.url.slice(0, 80)}`);
+    // Optional: without a hash an entry keeps the old "a new manifest replaces the whole cache" rule.
+    if (f.hash != null && (typeof f.hash !== 'string' || !HASH_RE.test(f.hash))) throw new Error(`资源指纹无效：${f.url.slice(0, 80)}`);
+    // Optional too: 干员皮肤 files carry the skin they belong to, which is what the panel scopes by.
+    if (f.skin != null && !isSkinKey(f.skin)) throw new Error(`资源皮肤标识无效：${f.url.slice(0, 80)}`);
+    // Optional too: 官方特效 entries carry the server's `fx` marker, which is what its own switch scopes by.
+    if (f.fx != null && typeof f.fx !== 'boolean') throw new Error(`资源特效标识无效：${f.url.slice(0, 80)}`);
+  }
+  return m;
+}
+
+/** Whether an error means "the browser is out of storage" (a quota failure must stop the run, not retry 4 000 times). */
+export function isQuotaError(err) {
+  if (!err) return false;
+  if (err.name === 'QuotaExceededError') return true;
+  return /quota|disk|storage.*(?:full|exceed)/i.test(String(err.message || ''));
+}
+
+/**
+ * Whether a failed whole-cache query means "the browser will not serialize that answer": Chrome's
+ * `CacheStorageError::kErrorQueryTooLarge` — `Cache.keys()` once the answer would pass its ~10 MiB query budget
+ * (`kMaxQueryCacheResultBytes`, about 16 000 entries at this manifest's URL length) — arrives as an AbortError whose
+ * message reads "Operation too large.". Only this refusal may be answered from the page-owned index instead
+ * (docs/ASSETS.md「Preload」); every other Cache Storage failure has to surface as one.
+ */
+export function isCacheQueryLimit(err) {
+  if (!err) return false;
+  if (err.name === 'AbortError') return true;
+  // Chromium's own wording, as a second signal for an error a layer has already wrapped.
+  return /operation too large/i.test(String(err.message || ''));
+}
+
+/**
+ * What one entry costs inside a `Cache.keys()` answer: Chrome's `kMaxQueryCacheResultBytes` (10 MiB) is spent as ≈474
+ * bytes of serialized request per entry (462–498 measured) plus the request's own URL — about 18 200 entries at this
+ * manifest's 89-byte keys, the ceiling `isCacheQueryLimit` documents.
+ */
+export const CACHE_KEY_QUERY_BUDGET = 10 * 1024 * 1024;
+export const CACHE_KEY_ENTRY_COST = 474;
+
+/**
+ * Whether a `Cache.keys()` answer over these URLs would pass the budget — the same question the browser answers with an
+ * AbortError, asked before the query is paid for. The formula rounds in the browser's favour (it over-counts capacity
+ * by a few percent), so the budget is applied with a margin: a card this predicts over budget is refused for real.
+ * @param {Iterable<string>} urls the keys the cache would answer with (the page-owned index knows them without a query)
+ * @param {number} [budget]
+ */
+export function cacheKeysOverBudget(urls, budget = CACHE_KEY_QUERY_BUDGET * 0.95) {
+  let used = 0;
+  for (const url of urls) {
+    used += CACHE_KEY_ENTRY_COST + String(url).length;
+    if (used > budget) return true;
+  }
+  return false;
+}
+
+/** An AbortError for a caller-supplied reason (used to stop a run without a thrown DOMException). */
+export function abortError(reason = 'aborted') {
+  const err = new Error(reason);
+  err.name = 'AbortError';
+  return err;
+}
+
+/** Throw when the signal was aborted (fails fast between two files). */
+export function checkAbort(signal) {
+  if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : abortError(String(signal.reason ?? 'aborted'));
+}
+
+/**
+ * Reply to a `Range` request from a cached full response (media elements probe/seek with byte ranges; a 200 answer is
+ * accepted for plain playback but Safari refuses to seek without 206).
+ * @param {Response} response full cached response
+ * @param {string} range the request's Range header
+ */
+export async function rangeResponse(response, range) {
+  const data = await response.arrayBuffer();
+  const length = data.byteLength;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(range || '').trim());
+  let start;
+  let end;
+  if (m && (m[1] || m[2])) {
+    start = m[1] ? Number(m[1]) : Math.max(0, length - Number(m[2]));
+    end = m[1] && m[2] ? Math.min(length - 1, Number(m[2])) : length - 1;
+  }
+  const headers = new Headers(response.headers);
+  headers.set('Accept-Ranges', 'bytes');
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= length) {
+    headers.set('Content-Range', `bytes */${length}`);
+    return new Response(null, { status: 416, statusText: 'Range Not Satisfiable', headers });
+  }
+  headers.set('Content-Range', `bytes ${start}-${end}/${length}`);
+  headers.set('Content-Length', String(end - start + 1));
+  return new Response(data.slice(start, end + 1), { status: 206, statusText: 'Partial Content', headers });
+}
+
+// 取自 xinhai 的 common.js：部署端分包索引（/data/resource-packs.json 或清单里的 packs 数组）的校验。
+import { isResourcePackUrl } from '../../../shared/resourcePackRoutes.js';
+
+export function validateResourcePacks(doc) {
+  // The standalone deployment index has an envelope, while /data/resource-manifest.json
+  // embeds only its already-validated `packs` array. Accept both wire shapes.
+  const packs = Array.isArray(doc) ? doc
+    : doc?.format === 'stronghold-resource-pack-index' && doc.version === 1
+      && doc.maxBytes === RESOURCE_PACK_MAX_BYTES && Array.isArray(doc.packs) ? doc.packs : [];
+  return packs.filter((pack) => {
+    if (!pack || typeof pack.id !== 'string' || typeof pack.url !== 'string') return false;
+    let parsed;
+    try { parsed = new URL(pack.url, globalThis.location?.origin || 'https://resources.invalid'); } catch { return false; }
+    if (!isResourcePackUrl(pack.url)
+      || !/\/resource-packs\/[A-Za-z0-9._-]+\.zip$/.test(parsed.pathname)
+      || parsed.username || parsed.password || parsed.search || parsed.hash
+      || !Number.isSafeInteger(pack.size) || pack.size <= 0 || pack.size > RESOURCE_PACK_MAX_BYTES
+      || !Array.isArray(pack.files) || pack.files.length === 0) return false;
+    return /^[0-9a-f]{40}$/.test(pack.sha1 || '')
+      && pack.files.every((file) => file && typeof file.url === 'string' && CONTENT_HASH_RE.test(file.hash)
+        && Number.isSafeInteger(file.size) && file.size >= 0);
+  });
+}

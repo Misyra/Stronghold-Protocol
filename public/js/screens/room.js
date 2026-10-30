@@ -386,10 +386,39 @@ function AiTakeoverToggle({ option, busy, onToggle }) {
 }
 
 /**
+ * 开发者控制台 (room.console.enable, server/match/match/intents.js consoleGrant, 移植自用户分支): a private room may
+ * grant itself in-match 干员 / 装备 / 盟约层数, quota-limited and broadcast to the team. A solo room's own seat may
+ * switch it; every other room needs its host, and a matchmaking room can never use it.
+ * @param {any} room room.state payload
+ * @param {any} myId
+ * @returns {{ on: boolean, editable: boolean }}
+ */
+export function consoleOption(room, myId) {
+  if (!room) return { on: false, editable: false };
+  const personal = room.mode === 'solo' && (room.seats || []).some((s) => s && !s.isBot && s.playerId === myId);
+  return { on: room.consoleEnabled === true, editable: room.hostId != null ? (personal || room.hostId === myId) : personal };
+}
+
+/** The developer console switch: host-only (a solo room's own seat too), disabled while the room is matchmaking. */
+function ConsoleToggle({ option, busy, onToggle, matching }) {
+  return html`<div class="ailast">
+    <${Tooltip} text=${t('对局内可发放干员、装备与盟约层数（每回合 {round} 次，全场 {total} 次），全队可见', { round: 5, total: 50 })}>
+      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-console"
+          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy || (matching && !option.on)}
+          onClick=${() => option.editable && onToggle(!option.on)}>
+        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('开发者控制台')}
+      </button>
+    <//>
+    ${option.on ? html`<span class="t-dim">${t('不能进入匹配队列')}</span>` : null}
+    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
+  </div>`;
+}
+
+/**
  * ⚙ of the bottom pill (co-op): 同盟设置 — the 模拟难度 (opens 选择模拟协议: the host's 确认, the others' read-only view)
  * and the 「AI 队友最后选择」 switch. Closes on a click outside it or Esc.
  */
-function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, room, isHost, busy, onAiLast, onSoloUnlimited, onDifficulty, onClose, version = null }) {
+function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, room, isHost, busy, onAiLast, onSoloUnlimited, onConsole, consoleOpt, onDifficulty, onClose, version = null }) {
   const info = difficultyInfo(room.mode, room.difficulty);
   const title = soloOption ? t('模拟设置') : t('同盟设置');
   useEffect(() => {
@@ -424,6 +453,7 @@ function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, 
     ${soloOption
       ? html`<${SoloUnlimitedToggle} option=${soloOption} busy=${busy} onToggle=${onSoloUnlimited} />`
       : html`<${AiLastToggle} option=${option} busy=${busy} onToggle=${onAiLast} />`}
+    <${ConsoleToggle} option=${consoleOpt} busy=${busy} matching=${!!room.matchmaking} onToggle=${onConsole} />
   </div>`;
 }
 
@@ -545,6 +575,13 @@ export function RoomScreen() {
   const setDifficulty = (difficulty) => run('diff', () => net.request('room.setDifficulty', { difficulty }));
   const setAiTakeover = (on) => run('aihandover', () => net.request('room.setAiTakeover', { on }));
   const setAiLast = (on) => run('ailast', () => net.request('room.setAiPicksLast', { on }));
+  // 开发者控制台 (移植自用户分支): two messages, host-only on the server (a solo room's own seat may toggle it).
+  // Turning it ON costs the room its place in the 同盟匹配 queue, and that is worth saying out loud for five
+  // seconds: the switch itself sits in the ⚙ sheet, far from the 开始搜寻 button it disables.
+  const setConsole = (on) => run('console', async () => {
+    await net.request(on ? 'room.console.enable' : 'room.console.disable', {});
+    if (on) toast(t('开发者控制台已开启：本房间不会进入匹配队列'), 'warn', { ttl: 5000 });
+  });
   // the room is the authority; the lobby card reads the same pref the next time this browser creates a solo room
   const setSoloUnlimited = async (on) => {
     const sent = await run('solofree', () => net.request('room.setSoloUnlimited', { on }));
@@ -626,6 +663,7 @@ export function RoomScreen() {
     ? t('确认后将退出插件模式「{name}」', { name: pluginMode })
     : facts.humans.length > 1 ? t('更改难度后，其他博士需要重新准备就绪') : '';
   const aiLast = aiLastOption(room, me.playerId);
+  const consoleOpt = consoleOption(room, me.playerId);
   const soloTimed = soloTimedOf(pageVersion() === roomVersion(room) ? getConfig() : null, roomVersion(room));
   const soloOpt = soloUnlimitedOption(room, me.playerId, soloTimed);
   const soloBrief = soloTimeMsgid('brief', { timed: soloTimed, unlimited: room.soloUnlimited === true });
@@ -727,10 +765,10 @@ export function RoomScreen() {
             title=${facts.isHost ? t('更改模拟难度') : t('由创建者选择')}><${DifficultyIcon} difficulty=${room.difficulty} />${DIFFICULTY_NAMES[room.difficulty] ? t(DIFFICULTY_NAMES[room.difficulty]) : ''}<span class="num rs-pill__code">${info.code}</span></button>
           ${versionCtl ? html`<${Tooltip} text=${versionCtl.why} class="rs-pill__version"><button type="button" class=${`rs-pill__ver${versionCtl.editable ? '' : ' is-ro'}`} data-testid="room-version"
             disabled=${versionCtl.disabled} onClick=${versionCtl.onOpen} aria-label=${t('游戏版本：{name}', { name: versionLabel(curVersion) })}><${Icon} name="book" /><span class="rs-pill__vername">${versionLabel(curVersion)}</span></button><//>` : null}
-          ${aiLast || soloOpt ? html`<button type="button" class=${`rs-pill__gear${opts ? ' is-on' : ''}`} onClick=${() => setOpts((v) => !v)} title=${aiLast ? t('同盟设置') : t('模拟设置')} aria-label=${aiLast ? t('同盟设置') : t('模拟设置')}
+          ${opts ? html`<button type="button" class=${`rs-pill__gear${opts ? ' is-on' : ''}`} onClick=${() => setOpts((v) => !v)} title=${aiLast ? t('同盟设置') : t('模拟设置')} aria-label=${aiLast ? t('同盟设置') : t('模拟设置')}
             aria-expanded=${opts ? 'true' : 'false'}><${GearGlyph} /></button>` : null}
-          ${opts && (aiLast || soloOpt) ? html`<${RoomOptions} takeoverOption=${aiTakeoverOption(room, me.playerId)} onAiTakeover=${setAiTakeover} option=${aiLast} soloOption=${soloOpt} room=${room} isHost=${facts.isHost} busy=${busy} onAiLast=${setAiLast}
-            onSoloUnlimited=${setSoloUnlimited} onDifficulty=${openProto} onClose=${() => setOpts(false)} version=${versionCtl} />` : null}
+          ${opts ? html`<${RoomOptions} takeoverOption=${aiTakeoverOption(room, me.playerId)} onAiTakeover=${setAiTakeover} option=${aiLast} soloOption=${soloOpt} room=${room} isHost=${facts.isHost} busy=${busy} onAiLast=${setAiLast}
+            onConsole=${setConsole} consoleOpt=${consoleOpt} onSoloUnlimited=${setSoloUnlimited} onDifficulty=${openProto} onClose=${() => setOpts(false)} version=${versionCtl} />` : null}
         </div>
       </div>
       <div class="room-bar__right rs-foot__right">

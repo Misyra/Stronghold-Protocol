@@ -150,6 +150,9 @@ export class PlayerState {
     this.connected = this.isBot ? true : !!seat.connected;
     this.left = false;
     this.autoplay = false;
+    // 开发者控制台配额(移植自用户分支): each grant is one use, both per player (MatchIntents.consoleGrant)
+    this.consoleRoundUses = 0;
+    this.consoleTotalUses = 0;
     this.alive = true;
     this.lp = 0;
     this.bandId = null;

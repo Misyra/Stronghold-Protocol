@@ -52,12 +52,13 @@ function contentSets(lobby) {
  *   and their match hosts (DESIGN §35.23)
  * @param {boolean} [withTraffic]
  */
-export function healthReport({ startedAt, network, registry, lobby, content = null, traffic, assetIndex, views, trusted, versions = null, versionHosts = null }, withTraffic = false) {
+export function healthReport({ startedAt, network, registry, lobby, content = null, traffic, assetIndex, views, trusted, versions = null, versionHosts = null, serveStatic = null }, withTraffic = false) {
   const report = {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-    // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
-    // older than this reloads itself, so a deploy reaches clients that never reload
-    build: buildTag(),
+    // the release the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
+    // older than this reloads itself, so a deploy reaches clients that never reload. 移植自用户分支: the
+    // static layer's release tag is the authority — its /_v/<tag>/ namespace validates against exactly this.
+    build: (serveStatic && serveStatic.version) || buildTag(),
     // what its rooms play (DESIGN §32): the vanilla content hash, and how many content sets with gameplay plugins rooms
     // hold now (P1c, §32.6 — a room's cosmetic plugins leave its cs the vanilla one, §32.3); how many unofficial plugins
     // it has, when it has some (a page's title screen says so; P1a)

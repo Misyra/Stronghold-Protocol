@@ -72,6 +72,17 @@ export function loadArtImage(url) {
 import { isObj, str, get, bareAssetUrl, baseCharId, localAssetUrl, validSpine, hasBackSpine, spineEntry, localSpineEntry } from './spineManifest.js';
 import { manifestSkinKey } from '../../shared/skins.js';
 export { baseCharId, localAssetUrl, validSpine, hasBackSpine, spineEntry, localSpineEntry };
+// 0.3.3 原版的皮肤辅助(用户的资源栈删了这几个导出,原版 ui/skins、测试与导入流程仍在用) —— 按原版补回。
+// (loadImageElement 已在上方 re-export。)
+export const EMPTY_SKINS = Object.freeze({});
+
+/** The skins map of one operator, or the shared empty object. */
+export function skinsOf(m, charId) {
+  const rec = get(get(m, 'chars'), str(charId) || '');
+  return rec && isObj(rec.skins) ? rec.skins : EMPTY_SKINS;
+}
+
+export const skinHasModel = (skin) => !!skin && isObj(skin.spine) && typeof skin.spine.front === 'object' && skin.spine.front !== null && typeof skin.spine.front.skel === 'string';
 
 
 // ---- pure URL helpers (manifest first) ---------------------------------------------------------------------
@@ -93,11 +104,16 @@ export function avatarUrl(m, id, opts) {
   }
   if (rec) {
     // 干员皮肤 (docs/SKINS.md): an installed skin may ship its own avatar; `opts.skin` is a catalogued id (or its official
-    // id), and an unknown one (this install does not have it) falls back to the operator's own avatar rather than failing
-    const skinKey = opts ? manifestSkinKey(opts.skin) : null;
+    // id), and an unknown one (this install does not have it) falls back to the operator's own avatar rather than failing.
+    // 0.3.3 的回退(移植): a skin the catalogue does not know still resolves through the manifest's own skins map
+    // (a test fixture, a skin installed ahead of a catalogue refresh).
+    const skinKey = opts ? (manifestSkinKey(opts.skin) ?? (str(opts.skin) || null)) : null;
     if (skinKey) {
       const skin = get(get(rec, 'skins'), skinKey);
-      if (skin && str(skin.avatar)) return str(skin.avatar);
+      if (skin) {
+        const art = str(e2 && skin.avatarE2) || str(skin.avatar);
+        if (art) return art;
+      }
     }
     return str(e2 && rec.avatarE2) || str(rec.avatar) || null;
   }
@@ -114,7 +130,29 @@ export function portraitUrl(m, id, opts) {
     if (rec && /_2$/.test(s)) e2 = true;
   }
   if (!rec) return null;
+  // 皮肤立绘优先(0.3.3 的读取顺序,移植回用户分支的资源栈): the skin's own portrait beats the operator's own
+  const wanted = opts && str(opts.skin) ? String(opts.skin) : null;
+  const skin = wanted ? get(get(rec, 'skins'), wanted) : null;
+  if (skin) {
+    const art = str(e2 && skin.portraitE2) || str(skin.portrait) || str(skin.illust);
+    if (art) return art;
+  }
   return str(e2 && rec.portraitE2) || str(rec.portrait) || null;
+}
+
+/**
+ * The illustration (立绘) of an operator or of one of its appearances (docs/SKINS.md): `opts.skin` first, else the
+ * operator's own `illust`, else null — a detail view falls back to the portrait itself. (0.3.3 原版导出,用户的
+ * 资源栈把它丢了;skins.test.js 与干员调配的立绘跟随依赖它。)
+ */
+export function illustUrl(m, id, opts) {
+  const s = str(id);
+  if (!s) return null;
+  const rec = get(get(m, 'chars'), s) || get(get(m, 'chars'), baseCharId(s));
+  if (!rec) return null;
+  const wanted = opts && str(opts.skin) ? String(opts.skin) : null;
+  const skin = wanted ? get(get(rec, 'skins'), wanted) : null;
+  return (skin && str(skin.illust)) || str(rec.illust) || null;
 }
 
 export function enemyIconUrl(m, enemyId) {
@@ -294,7 +332,9 @@ export class RefLru {
   acquire(key, arg, opts) {
     let e = this.map.get(key);
     let fresh = false;
-    if (e && e.state === 'failed' && e.refs === 0 && (this.now() - e.failedAt > this.failTtl || opts?.retry)) { this.map.delete(key); e = null; fresh = true; }
+    // 0.3.3 的重试语义(移植回用户分支的缓存): a stale failure retries after failTtl even while an unreleased
+    // reference shares it; `opts.retry` forces it early only once nobody references the failure any more.
+    if (e && e.state === 'failed' && (this.now() - e.failedAt > this.failTtl || (opts && opts.retry && e.refs === 0))) { this.map.delete(key); e = null; fresh = true; }
     if (!e) {
       e = { key, promise: null, value: null, state: 'loading', refs: 0, used: ++this._tick, weight: 0, idleSince: null, attempt: 0, abort: null, settle: null };
       this.map.set(key, e);

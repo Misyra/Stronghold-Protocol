@@ -351,6 +351,11 @@ export class Match {
     /** the room's current host (opts.hostId; server/lobby.js room.hostId — setHost follows a migration) */
     this.hostId = typeof opts.hostId === 'string' ? opts.hostId : null;
     /**
+     * 开发者控制台 (opts.consoleEnabled, room.console.enable — 移植自用户分支): the room's opt-in, fixed for the whole
+     * match. The grants (MatchIntents.consoleGrant) check the per-player quotas (CONSOLE_ROUND_LIMIT / CONSOLE_TOTAL_LIMIT).
+     */
+    this.consoleEnabled = opts.consoleEnabled === true;
+    /**
      * Match test mode (DESIGN §34.8 phase 2). opts.test is only forwarded for a room created with the flag.
      * The extra state exists only then, and public / result views omit the keys while this is false, so a
      * normal match stays byte-identical.

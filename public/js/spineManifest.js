@@ -42,8 +42,9 @@ export function spineEntry(m, id, opts) {
     // 干员皮肤 (docs/SKINS.md): an installed skin replaces the operator's own model. `opts.skin` is a catalogued skin id
     // (or its official id, the form a preference written before the catalogue became a code module holds); when it is
     // absent — or names a skin this install does not have — the operator's default model is used, so a client meeting a
-    // manifest without that skin still works.
-    const skinKey = opts ? manifestSkinKey(opts.skin) : null;
+    // manifest without that skin still works. 0.3.3 的回退(移植): a skin the catalogue does not know still resolves
+    // through the manifest's own skins map.
+    const skinKey = opts ? (manifestSkinKey(opts.skin) ?? (str(opts.skin) || null)) : null;
     const skin = skinKey ? get(get(ch, 'skins'), skinKey) : null;
     const src = (skin && isObj(skin.spine)) ? skin.spine : ch.spine;
     if (isObj(src)) {

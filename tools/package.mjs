@@ -108,6 +108,7 @@ import {
 import {
   LLM_RELEASE_EXCLUDE, LLM_RELEASE_MARKER, LLM_RELEASE_MARKER_TEXT, isLlmReleasePath, omitLlmFromRelease,
 } from '../server/match/llmRelease.js';
+import { CUSTOM_EMOTE_THEME } from '../shared/constants.js';
 export { LLM_RELEASE_EXCLUDE, LLM_RELEASE_MARKER, LLM_RELEASE_MARKER_TEXT, isLlmReleasePath, omitLlmFromRelease };
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -226,6 +227,9 @@ export function isPlayerFile(rel) {
   if (!p || isRefused(p) || isJunk(p) || p === 'data/local-assets.json' || p === 'data/local-fx.json' || p === GENERATED_PACK_INDEX) return false;
   // The marker is generated into the stage. The LLM paths stay on dev even if a later allowlist would have taken them.
   if (p === LLM_RELEASE_MARKER || isLlmReleasePath(p)) return false;
+  // Site emotes (the ciallo set, 移植自用户分支) are small tracked runtime assets, included even in the lite
+  // package without an extraction manifest — before the public/assets/ refusal below.
+  if (p.startsWith(`public/assets/local/emoticon/${CUSTOM_EMOTE_THEME.dir}/`) && p.endsWith('.png')) return true;
   if (NOT_TRACKED_SHIP.some((d) => p.startsWith(d))) return false;
   if (isPluginResource(p) || AUTHOR_TEST_FILES.includes(p)) return true;
   if (RUNTIME_DIRS.some((d) => p.startsWith(d)) || PLAYER_TOOL_DIRS.some((d) => p.startsWith(d))) return true;

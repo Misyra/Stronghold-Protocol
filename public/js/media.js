@@ -30,6 +30,9 @@ import { MEDIA_PREFIX, AUDIO_EXTS } from '../../shared/media.js';
 import { PLUGIN_AUDIO_EXTS } from '../../shared/plugins/manifest.js';
 
 const AUDIO_PATH = /^(\/_v\/[a-f0-9]{16})?\/assets\/audio\/(.+)$/i;
+// 旧版清单的内容哈希段(/assets/~<hash>/…,shared/assetPaths.js): 兼容原版 assetDownload 的输入 —— 和旧版
+// mediaUrl 一样把哈希段带进 /media/ 路径(内容寻址;用户分支的清单不再带哈希段,这里只为旧数据结构兜底)。
+const HASHED_AUDIO_PATH = /^(\/_v\/[a-f0-9]{16})?\/assets\/~([0-9a-f]{16})\/audio\/(.+)$/i;
 /** A cosmetic plugin audio file: /p/<id>/<hash8>/<path>.<mp3 | ogg> (shared/plugins/visual.js pluginFileUrl). */
 const PLUGIN_AUDIO = /^\/p\/[a-z0-9][a-z0-9-]{1,31}\/[0-9a-f]{8}\/(.+)$/;
 
@@ -60,13 +63,17 @@ export function mediaUrl(url, origin = globalThis.location?.origin) {
     if (!ext || /\.[A-Za-z0-9]+$/.test(stem) || stem.endsWith('/') || stem.split('/').some((x) => x === '.' || x === '..')) return url;
     return stem + u.search;
   }
-  const m = AUDIO_PATH.exec(u.pathname);
+  const hm = HASHED_AUDIO_PATH.exec(u.pathname);
+  const m = hm || AUDIO_PATH.exec(u.pathname);
   if (!m) return url;
-  let rest = m[2];
+  // 旧清单的哈希段进入 /media/ 路径本身(/media/~<hash>/…,内容寻址的下载队列);新清单没有段。
+  const prefix = m[1] || '';
+  const hash = hm ? hm[2] : '';
+  let rest = hm ? hm[3] : m[2];
   const ext = AUDIO_EXTS.find((e) => rest.toLowerCase().endsWith(e));
   if (!ext) return url;             // not a file we serve as audio (e.g. "x.mp3.bak") — leave it alone
   rest = rest.slice(0, -ext.length);
   const segments = rest.split('/');
   if (!rest || segments.some((s) => !s || s === '.' || s === '..' || s.startsWith('.'))) return url;
-  return `${m[1] || ''}${MEDIA_PREFIX}${rest}${u.search}`;
+  return `${prefix}${MEDIA_PREFIX}${hash ? `~${hash}/` : ''}${rest}${u.search}`;
 }

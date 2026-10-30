@@ -261,19 +261,24 @@ describe('static http server', () => {
     assert.equal((await httpReq(srv.port, '/js/app.js', { headers: { 'accept-encoding': 'br', 'if-none-match': brEtag } })).status, 304);
     assert.equal((await httpReq(srv.port, '/js/app.js', { headers: { 'accept-encoding': 'gzip', 'if-none-match': brEtag } })).status, 200, 'not the gzip variant');
 
-    // unversioned art/fonts/vendor: cached for a day (files can be rewritten in place by the asset tools); the art and
-    // fonts carry their content hash as ETag (server/http/assetIndex.js), so a rewrite with the same bytes is a 304
+    // unversioned art/fonts/vendor: cached for a day (files can be rewritten in place by the asset tools); the ETag is
+    // size + mtime here — the per-file content hash lives on the CDN (shared/assetCdn.js ?v=) and the whole-release
+    // hashes on the validated /_v/<tag>/ paths, never in an unversioned URL (移植自用户分支的静态层语义)
     const asset = await httpReq(srv.port, '/assets/img/a.png');
     assert.equal(asset.headers['cache-control'], 'public, max-age=86400');
-    assert.match(asset.headers.etag, /^"[0-9a-f]{16}"$/);
+    assert.match(asset.headers.etag, /^"[0-9a-f]+-[0-9a-f]+"$/);
     const font = await httpReq(srv.port, '/fonts/f.woff2');
     assert.equal(font.headers['cache-control'], 'public, max-age=86400');
     const assetV = await httpReq(srv.port, '/assets/img/a.png?v=abc');
-    assert.match(assetV.headers['cache-control'], /immutable/);
+    assert.equal(assetV.headers['cache-control'], 'public, max-age=86400', 'arbitrary query versions cannot pin bytes for a year');
     const assetRoot = await httpReq(srv.port, '/assets');
     assert.equal(assetRoot.status, 301, 'directory redirect, not cached content');
-    const versioned = await httpReq(srv.port, '/js/app.js?v=123');
+    // 版本化地址(移植自用户分支): 只有经过校验的 /_v/<tag>/ 发布路径才 immutable —— 任意 ?v= 查询参数不能钉死字节
+    const tag = JSON.parse((await httpReq(srv.port, '/healthz')).body).build;
+    const versioned = await httpReq(srv.port, `/_v/${tag}/js/app.js`);
     assert.match(versioned.headers['cache-control'], /immutable/);
+    const unversionedQuery = await httpReq(srv.port, '/js/app.js?v=123');
+    assert.equal(unversionedQuery.headers['cache-control'], 'no-cache');
     const html = await httpReq(srv.port, '/index.html?v=1');
     assert.equal(html.headers['cache-control'], 'no-cache');
   });

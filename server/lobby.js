@@ -400,6 +400,12 @@ export class Room {
      * opts.soloUnlimited. room.state omits the key unless this is true.
      */
     this.soloUnlimited = false;
+    /**
+     * 开发者控制台 (room.console.enable/disable, 移植自用户分支): the match's grants are authorized by this room flag
+     * (server/match/match/intents.js consoleGrant), fixed when the match starts. Off by default and never available
+     * to a matchmaking room.
+     */
+    this.consoleEnabled = false;
     /** @type {string | null} */
     this.hostId = null;
     /** @type {(Seat | null)[]} */
@@ -502,6 +508,9 @@ export class Room {
       ...(this.test ? { test: true } : {}),
       // 「不限时」 (header): omitted unless on, so a default room.state stays identical
       ...(this.soloUnlimited === true ? { soloUnlimited: true } : {}),
+      // 开发者控制台 (room.console.enable, 移植自用户分支): always a boolean — the room screen's switch and the
+      // client's HUD console button read it
+      consoleEnabled: this.consoleEnabled === true,
     };
   }
 }
@@ -813,6 +822,8 @@ export class Lobby {
       case 'room.setDifficulty': return this.setDifficulty(session, msg);
       case 'room.setAiPicksLast': return this.setAiPicksLast(session, msg);
       case 'room.setSoloUnlimited': return this.setSoloUnlimited(session, msg);
+      case 'room.console.enable': return this.enableConsole(session);
+      case 'room.console.disable': return this.disableConsole(session);
       case 'room.setAiTakeover': return this.setAiTakeover(session, msg);
       case 'room.aiRequest':
       case 'room.aiVote': return aiTakeover(this, session, msg);
@@ -1148,6 +1159,41 @@ export class Lobby {
       room.soloUnlimited = next;
       this.broadcastState(room);
     }
+    return OK;
+  }
+
+  /**
+   * 开发者控制台 (room.console.enable/disable, 移植自用户分支; in-match grants: server/match/match/intents.js
+   * consoleGrant). The browser owns the warning countdown; the server decides who may switch it on, and a matchmaking
+   * room can never use it. A solo room's own seat may toggle it; every other room needs its host.
+   */
+  enableConsole(session) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    if (room.matchmaking) return fail(ERR.QUEUED);
+    if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
+    const personal = room.mode === 'solo' && !!room.seatOf(session.playerId);
+    if (!personal && room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.consoleEnabled) return fail(ERR.ALREADY);
+    room.consoleEnabled = true;
+    this.broadcastState(room);
+    this.log.info(`[lobby] ${room.code} console enabled by ${session.name}`);
+    return OK;
+  }
+
+  /** The opt-out while the room is still in its lobby: a running match keeps the authorization it started with. */
+  disableConsole(session) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
+    const personal = room.mode === 'solo' && !!room.seatOf(session.playerId);
+    if (!personal && room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (!room.consoleEnabled) return fail(ERR.ALREADY);
+    room.consoleEnabled = false;
+    this.broadcastState(room);
+    this.log.info(`[lobby] ${room.code} console disabled by ${session.name}`);
     return OK;
   }
 
@@ -2008,6 +2054,8 @@ export class Lobby {
         ...(versioned ? { version: room.version } : {}),
         // 「不限时」 (header): only while the room's flag is on, so a default match's opts keep their keys
         ...(room.mode === 'solo' && room.soloUnlimited === true ? { soloUnlimited: true } : {}),
+        // 开发者控制台 (room.console.enable, user fork): only while the room's flag is on
+        ...(room.consoleEnabled === true ? { consoleEnabled: true } : {}),
         // The list the lobby just checked the picks with (kittedFor). Vanilla rooms omit it: setDiy stays on
         // KITTED_CHARS, and the worker payload / test journal of a normal match do not grow a key.
         ...(modded ? { kitted: this.kittedFor(room) } : {}),

@@ -1,4 +1,4 @@
-// Emotes (交流, research 09 §4): the 36 official in-match emotes of 盟约 — 6 themes × 6 (shared/constants.js
+// Emotes (交流, research 09 §4): 36 official plus 6 bundled Ciallo emotes — 7 themes × 6 (shared/constants.js
 // EMOTE_THEMES / EMOTES, generated reference data/emotes.json). Official emotes are pictures only: nothing here ever
 // renders an emote's text (our labels are aria-labels only).
 //
@@ -20,12 +20,13 @@
 // Styles: public/css/emotes.css (injected on first use when the page does not link it).
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
-import { EMOTE_THEMES, EMOTE_COOLDOWN_MS, EMOTE_BUBBLE_MS, emoteInfo, emoteArtGroup } from '../../../shared/constants.js';
+import { EMOTE_THEMES, EMOTE_COOLDOWN_MS, EMOTE_BUBBLE_MS, emoteInfo, emoteArtGroup, emoteArtPath } from '../../../shared/constants.js';
 import { html } from './components.js';
 import { GIcon } from './gameComponents.js';
 import { data, useData, localAsset, artUrls, nextArtUrl } from '../data.js';
 import { loadPref, savePref } from '../store.js';
 import { t } from '../../../shared/i18n.js';
+import { recoverImageError } from '../image.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -59,7 +60,7 @@ export function ensureEmoteCss(doc = globalThis.document) {
  */
 export function emoteArtUrls(id) {
   const e = emoteInfo(id);
-  return e ? artUrls(emoteArtGroup(id), e.picId) : [];
+  return e?.custom ? [emoteArtPath(id)] : e ? artUrls(emoteArtGroup(id), e.picId) : [];
 }
 
 /**
@@ -174,40 +175,42 @@ export function EmoteArt({ id, class: cls }) {
   const [bad, setBad] = useState(() => new Set()); // URLs that failed to load
   const src = nextArtUrl(emoteArtUrls(id), bad);
   if (src) {
-    return html`<img key=${src} class=${cx('eart', cls)} src=${src} alt="" draggable=${false} decoding="async"
-      onError=${() => setBad((s) => new Set(s).add(src))} />`;
+    return html`<img crossorigin="anonymous" key=${src} class=${cx('eart', cls)} src=${src} alt="" draggable=${false} decoding="async"
+      onError=${(event) => recoverImageError(event, () => setBad((s) => new Set(s).add(src)))} />`;
   }
   if (emoteInfo(id) && artManifestsPending()) return html`<span class=${cx('eart', 'eart--pending', cls)} aria-hidden="true"></span>`;
   return html`<${EmoteGlyph} class=${cls} />`;
 }
 
 /**
- * Pop bubble (picture only) beside the sender's avatar. Unknown ids show the neutral glyph. Key it by the emote's seq
+ * Pop bubble beside the sender's avatar: an emote picture or server-checked chat text. Key it by the event's seq
  * (a newer emote replaces the bubble and pops again).
- * @param {{ id: string, class?: string, ttl?: number, at?: number }} props ttl = display time in ms (fade-out at the
+ * @param {{ id?: string, text?: string, class?: string, ttl?: number, at?: number }} props ttl = display time in ms (fade-out at the
  *   end); at = when the emote arrived (Date.now() clock): a bubble mounted after that resumes its pop / fade timeline
  *   instead of restarting it.
  */
-export function EmoteBubble({ id, class: cls, ttl = EMOTE_BUBBLE_MS, at }) {
+export function EmoteBubble({ id, text, class: cls, ttl = EMOTE_BUBBLE_MS, at }) {
   useData('local');
   useEffect(() => { ensureEmoteCss(); }, []);
   const life = Math.max(300, Number(ttl) || EMOTE_BUBBLE_MS);
   const [age] = useState(() => bubbleAge(at, Date.now(), life)); // fixed at mount: the CSS animation runs from there
-  const bg = emoteUiSprite('emoji_bubble_bkg');
+  const isText = typeof text === 'string';
+  const bg = isText ? null : emoteUiSprite('emoji_bubble_bkg');
   const e = emoteInfo(id);
   const style = [`--ebubble-ttl:${life}ms`, age && `--ebubble-age:${Math.round(age)}ms`, bg && `--ebubble-bg:url("${bg}")`].filter(Boolean).join(';');
-  return html`<div class=${cx('ebubble', bg && 'has-sprite', cls)} style=${style} role="img"
-    aria-label=${e ? t(e.label) : t('表情')} data-emote=${e ? e.id : ''}>
-    <span class="ebubble__icon"><${EmoteArt} id=${id} /></span>
+  return html`<div class=${cx('ebubble', isText && 'ebubble--chat', bg && 'has-sprite', cls)} style=${style} role=${isText ? 'status' : 'img'}
+    aria-label=${e ? t(e.label) : isText ? undefined : t('表情')} data-emote=${isText ? undefined : e ? e.id : ''}>
+    ${isText ? html`<span class="ebubble__message">${text}</span>` : html`<span class="ebubble__icon"><${EmoteArt} id=${id} /></span>`}
   </div>`;
 }
 
 /**
  * 交流 button + emote panel.
  * @param {{ onSend: (id:string)=>void, open: boolean, onToggle: (open:boolean)=>void, disabled?: boolean,
- *   cooldownMs?: number }} props
+ *   cooldownMs?: number, toolbar?: any, navigation?: any, content?: any, footer?: any }} props
  */
-export function EmoteWheel({ onSend, open, onToggle, disabled = false, cooldownMs = EMOTE_COOLDOWN_MS }) {
+export function EmoteWheel({ onSend, open, onToggle, disabled = false, cooldownMs = EMOTE_COOLDOWN_MS,
+  toolbar = null, navigation = null, content = null, footer = null }) {
   useData('local');
   useEffect(() => { ensureEmoteCss(); }, []);
   const [page, setPage] = useState(lastThemeIndex);
@@ -218,7 +221,7 @@ export function EmoteWheel({ onSend, open, onToggle, disabled = false, cooldownM
   const swallowClick = useRef(false);
   const wheelAcc = useRef({ x: 0, t: -Infinity, spent: false });
   const live = useRef({});
-  live.current = { page, onToggle };
+  live.current = { page, onToggle, emotesVisible: !content };
 
   const go = (to) => {
     const next = clampPage(to);
@@ -244,6 +247,8 @@ export function EmoteWheel({ onSend, open, onToggle, disabled = false, cooldownM
     const onDown = (e) => { if (!(e.target instanceof Element) || !e.target.closest('.ewheel')) live.current.onToggle(false); };
     const onKey = (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'Escape') { e.preventDefault(); live.current.onToggle(false); return; }
+      if (!live.current.emotesVisible) return;
       const t = e.target;
       if (t instanceof Element && t.closest('input, textarea, select, [contenteditable="true"]')) return;
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -313,7 +318,11 @@ export function EmoteWheel({ onSend, open, onToggle, disabled = false, cooldownM
       aria-expanded=${open ? 'true' : 'false'} aria-haspopup="dialog" disabled=${disabled || cooling}>
       ${btnSprite ? null : html`<${GIcon} name="emote" />`}<span class="ewheel__label">${t('交流')}</span>
     </button>
-    ${open ? html`<div class=${cx('ewheel__panel', panelBg && 'has-sprite', cellBg && 'has-cell')} style=${panelStyle} role="dialog" aria-label=${t('交流')}>
+    ${open ? html`<div class=${cx('ewheel__popup', footer && 'has-chat')} role="dialog" aria-label=${t('交流')}>
+      ${toolbar}${navigation}
+      <div class="ewheel__content">
+      ${content || html`
+      <div class=${cx('ewheel__panel', panelBg && 'has-sprite', cellBg && 'has-cell')} style=${panelStyle}>
       <div class="ewheel__viewport" onPointerDown=${onPointerDown} onPointerMove=${onPointerMove}
         onPointerUp=${(e) => endDrag(e, false)} onPointerCancel=${(e) => endDrag(e, true)} onWheel=${onWheel}>
         <div key=${theme.themeId} class=${cx('ewheel__page', dir > 0 && 'is-from-right', dir < 0 && 'is-from-left', dx !== 0 && 'is-dragging')}
@@ -324,12 +333,17 @@ export function EmoteWheel({ onSend, open, onToggle, disabled = false, cooldownM
           </button>`)}
         </div>
       </div>
+      <div class="ewheel__pager">
       <button type="button" class="ewheel__nav is-prev" aria-label=${t('上一组表情')} disabled=${page <= 0} onClick=${() => go(page - 1)}><${GIcon} name="chevronLeft" /></button>
-      <button type="button" class="ewheel__nav is-next" aria-label=${t('下一组表情')} disabled=${page >= EMOTE_THEMES.length - 1} onClick=${() => go(page + 1)}><${GIcon} name="chevronRight" /></button>
       <div class="ewheel__dots" role="tablist" aria-label=${t('表情主题')}>
         ${EMOTE_THEMES.map((th, i) => html`<button key=${th.themeId} type="button" role="tab" class=${cx('ewheel__dot', i === page && 'is-on')}
           aria-selected=${i === page ? 'true' : 'false'} aria-label=${`${t(th.name)} ${i + 1}/${EMOTE_THEMES.length}`} onClick=${() => go(i)}></button>`)}
       </div>
+      <button type="button" class="ewheel__nav is-next" aria-label=${t('下一组表情')} disabled=${page >= EMOTE_THEMES.length - 1} onClick=${() => go(page + 1)}><${GIcon} name="chevronRight" /></button>
+      </div>
+      </div>`}
+      </div>
+      ${footer}
     </div>` : null}
   </div>`;
 }

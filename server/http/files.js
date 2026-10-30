@@ -265,6 +265,9 @@ function cacheControlFor(ext, mountName, segments, query, versioned = false) {
   // 只有经过校验的发布地址（/_v/<tag>/，见 static.js）才是 immutable：一个随便写的 ?v= 钉不住任何东西，
   // 它没法对照磁盘上的字节。素材的每文件 ?v=<哈希> 是 CDN 的缓存键，源站按 LONG_CACHE 处理即可。
   if (versioned) return IMMUTABLE_CACHE;
+  // 例外(0.3.3 的多版本服务,移植回用户分支的缓存策略): 另一个官方版本的数据文件 —— /data/versions/ 下的
+  // 路径只在该版本启用时才被服务(见 static.js isVersionData),它的 ?v= 是服务器自己算的,可信。
+  if (mountName === 'data' && segments[0] === 'versions' && /(^|&)v=/.test(query)) return IMMUTABLE_CACHE;
   // Vite 的内容寻址产物与带整包指纹的资源分包：文件名里就有内容哈希。
   if (mountName === 'public' && segments.length === 3 && segments[0] === 'build' && segments[1] === 'assets'
     && /-[A-Za-z0-9_-]{8,}\.(js|css|json|webmanifest|svg|png|ico)$/.test(segments[2])) return IMMUTABLE_CACHE;

@@ -524,6 +524,11 @@ export const C2S = {
   // Remake-only spectator handover: host opt-in before play, default off (§35.100).
   'room.setAiTakeover': { on: isBool },
   'room.aiRequest': { botId: isId },
+  // 开发者控制台 (server/lobby.js enableConsole, 移植自用户分支; the grants leave through g.console): a private room
+  // opts in before the match — a solo room's own seat may toggle it, every other room needs its host, and a room
+  // waiting on the matchmaking queue may not (the console grants what the official rules do not).
+  'room.console.enable': {},
+  'room.console.disable': {},
   'room.aiVote': { voteId: (v) => typeof v === 'string' && v.length <= 16, approve: isBool },
   'room.addBot': {},
   'room.removeBot': { seat: (v) => isInt(v, 0, MAX_SEATS - 1) },
@@ -616,6 +621,14 @@ export const C2S = {
   // the stats the own board's units start their next battle with (user playtest #4 item 7; prep phases): answered by
   // the push m.unitStats { seq, round, units: [unitStatsEntry] }; `seq` is echoed so the client keeps the newest answer
   'g.unitStats': { seq: (v) => isInt(v, 0, 2 ** 31), $optional: ['seq'] },
+  // 开发者控制台 (room.console.enable, 移植自用户分支): one grant intent; only a server-authorized private/solo
+  // room match accepts it. `amount` is the bond layers (kind 'bond' only).
+  'g.console': {
+    kind: (v) => v === 'item' || v === 'chess' || v === 'bond',
+    id: isId,
+    amount: optional((v) => isNum(v, 1, 1e9)),
+    $optional: ['amount'],
+  },
   'g.leave': {},
   // host test commands (DESIGN §34.8 phase 2). The server applies them only in a test match. `args` is checked
   // again by shared/testMode.js parseTestArgs (ids, bounds). Unknown keys inside args fail there, not here.

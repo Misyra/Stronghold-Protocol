@@ -19,9 +19,17 @@ export function sanitizeVoiceOverrides(raw) {
   return out;
 }
 
+/**
+ * The manifest tree of a dub: `audio.voice` / VOICE_TREES — or, in a manifest of this fork's earlier releases, its
+ * `voiceByLang` alias ({ cn, jp, en }).
+ */
+export function dubTree(audio, lang) {
+  return audio?.[TREE[lang]] ?? audio?.voiceByLang?.[lang] ?? null;
+}
+
 /** This server's manifest lists at least one line of `charId` in `lang`. */
 function hasTree(audio, charId, lang) {
-  const slots = audio?.[TREE[lang]]?.[charId];
+  const slots = dubTree(audio, lang)?.[charId];
   return !!slots && typeof slots === 'object' && !Array.isArray(slots) && Object.keys(slots).length > 0;
 }
 

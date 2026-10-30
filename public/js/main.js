@@ -46,7 +46,7 @@ import { ConnectionBanner } from './ui/connBanner.js';
 import { ToastHost, toast, toastError, describeError } from './ui/toasts.js';
 import { net, identity, NetError } from './net.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating } from './store.js';
-import { data } from './data.js';
+import { data, getChess } from './data.js';
 import { GAME_FILES } from './ui/gameComponents.js';
 import { TitleScreen, sanitizeName } from './screens/title.js';
 import { LobbyScreen, rememberRoom, parseRoomParam, joinKnown } from './screens/lobby.js';
@@ -55,7 +55,11 @@ import { GameScreen } from './screens/game.js';
 import { preloadBootArt } from './ui/protocolBoot.js';
 import { audio, installAudio } from './audio.js';
 import { installLobbyMedia } from './ui/lobbyMedia.js';
-import { settingsStore } from './ui/settings.js';
+import { settingsStore, updateSettings, useSettings } from './ui/settings.js';
+import { skinsStore } from './ui/skins.js';
+import { bindResourceCombat } from './resources/combat.js';
+import { matchResourceUrls } from './resources/schedule.js';
+import { ResourceHost } from './ui/resourcePanel.js';
 import { GuideHost } from './ui/guide.js';
 import { installDeviceSupport, useFullscreen, useScreenWakeLock } from './ui/device.js';
 import { isCombatPhase } from './ui/gameLogic/phases.js';
@@ -73,6 +77,22 @@ import { recordError, installTrafficMeter } from './diag.js';
 import { installContent, installContentSet } from './content.js';
 import { cosmetics } from './cosmetics.js';
 import { sanitizeVersions, roomVersion, isDefaultVersion, matchFrameVersion } from './versions.js';
+
+// CDN 配置由服务端在请求时生成（/js/asset-cdn.js，取 SP_ASSETS_CDN / SP_DATA_CDN，移植自用户分支）。
+// 这里把它挂到 globalThis.__spAssetCdn 上，resourceUrl / 资源预载 / 渲染层再读；没有该模块（静态托管）时
+// 保持同源路径。
+import('/js/asset-cdn.js').then((m) => {
+  if (globalThis.__spAssetCdn) return;
+  const base = String(m.ASSETS_CDN || '').replace(/\/+$/, '');
+  const dataBase = String(m.DATA_CDN || '').replace(/\/+$/, '');
+  // 每文件指纹清单（服务端给的 `?v=<tag>`）：落地后 resourceUrl 会给每个素材补 `?v=<哈希>`，
+  // 内容不变 URL 不变，CDN 与浏览器都按文件缓存。取不到就一直用不带版本的同源地址。
+  const manifest = String(m.ASSETS_MANIFEST || '');
+  if (base || dataBase || manifest) globalThis.__spAssetCdn = { base, dataBase, version: globalThis.__spAssetVersion || '', manifest };
+  if (manifest && !globalThis.__spManifestReady) {
+    globalThis.__spManifestReady = fetch(manifest).then((r) => (r.ok ? r.json() : null), () => null);
+  }
+}).catch(() => { /* 没有该模块（静态托管）时保持同源路径 */ });
 
 const RESTORE_GRACE_MS = 1500;
 const JOIN_DELAY_MS = 350;
@@ -372,8 +392,28 @@ function App() {
     <${GuideHost} />
     <${LoadoutHost} />
     <${StatsHost} />
+    <${ResourceManagerHost} />
     <${VoteOverOverlays} />
   </div>`;
+}
+
+/** 资源管理面板（移植自用户分支,ui/resourcePanel.js):设置 → 预载资源的宿主,渲染 resourceState()。 */
+function ResourceManagerHost() {
+  const settings = useSettings();
+  // 干员皮肤 is two switches: the master follows whatever 干员调配 has equipped — the choice list lives
+  // there, not here — and 「全部皮肤」 widens that to every outfit the manifest offers. 官方特效 has one switch of its
+  // own (docs/ASSETS.md): ~185 MiB of effect prefabs, textures and meshes, never implied by 额外资源.
+  return html`<${ResourceHost} enabled=${settings.preload} optional=${settings.preloadOptional} voices=${settings.preloadVoices} allVoices=${settings.preloadAllVoices}
+    voiceLang=${settings.voiceLang} voicePreloadLanguages=${settings.preloadVoiceLanguages}
+    onVoiceLanguages=${(v) => updateSettings({ preloadVoiceLanguages: v, preloadAllVoices: false })} skinPreload=${settings.preloadSkins}
+    skinPreloadAll=${settings.preloadSkinsAll}
+    fxPreload=${settings.preloadFx}
+    onChange=${(v) => updateSettings({ preload: v })} onOptional=${(v) => updateSettings({ preloadOptional: v })}
+    onFxPreload=${(v) => updateSettings({ preloadFx: v })}
+    onVoices=${(v) => updateSettings({ preloadVoices: v })} onPreset=${updateSettings}
+    onAllVoices=${(v) => updateSettings({ preloadAllVoices: v })}
+    onSkinPreload=${(v) => updateSettings({ preloadSkins: v })}
+    onSkinPreloadAll=${(v) => updateSettings({ preloadSkinsAll: v })} />`;
 }
 
 /** The room's version vote above 干员调配 / 统计数据 while one covers the room (ui/versionVote.js CoveredVersionVote). */
@@ -397,8 +437,50 @@ async function waitForFonts(ms) {
   await Promise.race([Promise.all(loads), new Promise((r) => setTimeout(r, ms))]);
 }
 
-function installGlobalErrorHandlers() {
-  window.addEventListener('unhandledrejection', (ev) => {
+/** 本浏览器当前装备的皮肤键(ui/skins.js 的 charId→skinId 映射;用户分支的 equippedSkinKeys 适配版):
+ * 预载跟随这些皮肤,换皮肤自动补拉。 */
+const equippedSkinKeys = () => {
+  const skins = skinsStore.get().skins;
+  return skins && typeof skins === 'object' ? Object.values(skins).filter((v) => typeof v === 'string' && v) : [];
+};
+
+function installResourcePreload() {
+  // Resume only when the player enabled preload; a saved pause survives page reloads.
+  import('./resources/index.js').then((r) => {
+    // 干员皮肤: with `preloadSkins` on, the preload follows the outfits equipped in this browser — picking one in
+    // 干员调配 is what starts its download — and `preloadSkinsAll` replaces that scope with every outfit
+    // in the manifest. The chess table resolves chessId → charId, so an equipped choice has no manifest key to follow
+    // until it is in; that one load re-applies the scope below.
+    const apply = (s) => {
+      const keys = s.preloadSkins ? equippedSkinKeys() : [];
+      const all = !!(s.preloadSkins && s.preloadSkinsAll);
+      // 官方特效 rides its own switch: it is not part of `preloadOptional` in either direction.
+      r.syncResources(s.preload, s.preloadOptional, s.voiceLang, s.preloadAllVoices, { keys, all, fx: s.preloadFx, voices: s.preloadVoices, voiceLanguages: s.preloadVoiceLanguages })
+        .catch((err) => console.warn('[resources] sync failed', err));
+    };
+    // Installed before the enabled settings sync: a page restored straight into a fight must not briefly
+    // start bulk downloads (public/js/resources/combat.js).
+    bindResourceCombat(store, r, (err) => console.warn('[resources] combat gate failed', err));
+    apply(settingsStore.get());
+    settingsStore.subscribe(apply);
+    // Equipping a different skin changes what the preload wants, with no settings change to announce it.
+    skinsStore.subscribe(() => apply(settingsStore.get()));
+    let timer;
+    const priority = () => {
+      const s = store.get();
+      r.updateResourcePriority({ active: selectRoute(s) === 'game',
+        urls: matchResourceUrls(s.match, data.get('assets'), getChess, data.get('local')) });
+    };
+    const schedule = () => { timer ??= setTimeout(() => { timer = null; priority(); }, 300); };
+    store.subscribe((s, prev) => {
+      if (s.match.public !== prev.match.public || s.match.private !== prev.match.private || s.match.field !== prev.match.field) schedule();
+    });
+    data.subscribe((name) => { if (['assets', 'local', 'chess'].includes(name)) schedule(); });
+    priority();
+  }).catch((err) => console.warn('[resources] unavailable', err));
+}
+
+function installGlobalErrorHandlers() {  window.addEventListener('unhandledrejection', (ev) => {
     const err = ev.reason;
     // Media autoplay/abort rejections (audio.play() before a user gesture, interrupted loads) are
     // expected browser behaviour, not app errors: log quietly, never toast.
@@ -468,6 +550,9 @@ async function boot() {
   cosmetics.subscribe(() => audio.refreshBgm());
   // 自定义大厅背景与音乐 (ui/lobbyMedia.js): the player's own files of this browser, the music from the title on
   installLobbyMedia();
+  // 资源预载(移植自用户分支,public/js/resources/index.js):按设置的分包/语音/皮肤/特效范围
+  // 下载并进 Cache Storage;战斗期自动暂停。从不阻塞进入或进行一场对局。
+  installResourcePreload();
   data.load('assets').catch(() => {});
   // Warm the data cache in the background (missing files are tolerated).
   data.loadAll('config').catch(() => {});

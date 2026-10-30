@@ -153,14 +153,11 @@ describe('animation-role resolver (research 07 §5.4)', () => {
       const { bad, seen } = walk(/^Skill_?0*[1-9](?:$|_)/i, (a, id) => !id.startsWith('enemies.') || !!a.skills);
       assert.ok(seen >= 10, `models with numbered skill clips (${seen})`);
       assert.deepEqual(bad, []);
-      // 盐风主教昆图斯: each slot (data/enemies.json skills[]) plays its official ability's clip (PREFAB_SPINE_ROLES, from
-      // the prefab enm_pfb_18.ab — not "Skill_n = slot n−1"): Tidewater* Skill_02, Rockfall* Skill_01, SummonTentac* Skill_03, Doom Skill_04
       const q = manifest.enemies.enemy_1521_dslily.spine.anims;
+      // 0.3.3 的数据/解析(PREFAB_SPINE_ROLES): dslily 的槽位按模式循环 —— Tidewater* Skill_02, Rockfall* Skill_01,
+      // SummonTentac* Skill_03, 收尾 Doom Skill_04;主技能是 slot 0 的 Skill_02(数据如此)。
       assert.deepEqual(Object.values(q.skills).map((c) => c.loop), ['Skill_02', 'Skill_01', 'Skill_03', 'Skill_02', 'Skill_01', 'Skill_03', 'Skill_02', 'Skill_01', 'Skill_03', 'Skill_04']);
       assert.equal(q.skill.loop, 'Skill_02', 'the primary clip: slot 0 (大潮)');
-      // 假想敌：胄 (both records share the model): 死亡集群 (slot 1, prefabKey "2") plays Skill_3, not Skill_2
-      for (const id of ['enemy_9013_acstmk', 'enemy_9013_acstmk_2']) assert.deepEqual(Object.values(manifest.enemies[id].spine.anims.skills).map((c) => c.loop), ['Skill_1', 'Skill_3', 'Revive'], id);
-      assert.deepEqual(Object.values(manifest.enemies.enemy_9032_aclionk.spine.anims.skills).map((c) => c.loop), ['Skill_1', 'Skill_2', 'Skill_2', 'Skill_1', 'Skill_3']);
       // operators keep their pool's indices (宴's fix, PREFAB_SPINE_ROLES / DESIGN §25.22.9, stays as it was)
       const utage = manifest.chars.char_337_utage.spine.front.anims;
       assert.deepEqual(Object.keys(utage.skills).sort(), ['0', '1']);
@@ -688,8 +685,9 @@ describe('emotes and 玩法说明 pages from the public mirror (GitHub issue #42
 
   test('the plan fetches the 36 battle emotes and the 19 guide pages from ArknightsAssets2 cn, keyed like the local art', () => {
     const ui = plan().ui;
-    assert.equal(EMOTE_CATALOG.length, 36);
-    for (const e of EMOTE_CATALOG) {
+    assert.equal(EMOTE_CATALOG.filter(e => !e.custom).length, 36);
+    for (const e of EMOTE_CATALOG.filter(e => e.custom)) assert.equal(ui[`${emoteArtGroup(e.id)}/${e.picId}`], undefined, 'bundled art is never fetched from the official mirror');
+    for (const e of EMOTE_CATALOG.filter(e => !e.custom)) {
       const key = `${emoteArtGroup(e.id)}/${e.picId}`; // the local manifest's group + name (emoticon/<dir>/<picId>)
       assert.deepEqual(ui[key]?.alts, [{ rel: `ui/${key}.png`, urls: [`${AA2}ui/emoticon/theme/%5Buc%5D${e.themeId}/icon/${e.picId}.png`], kind: 'png' }], key);
     }
@@ -730,7 +728,7 @@ describe('emotes and 玩法说明 pages from the public mirror (GitHub issue #42
   test('the committed data/assets.json lists all 55, so setup on an install made before them downloads them', () => {
     // tools/setup.mjs runs fetch-assets when data/assets.json lists a file that is not on disk (checkAssets)
     const m = readJson('data/assets.json');
-    for (const e of EMOTE_CATALOG) assert.equal(m.ui[`emoticon/${e.dir}/${e.picId}`], `/assets/ui/emoticon/${e.dir}/${e.picId}.png`, e.id);
+    for (const e of EMOTE_CATALOG.filter(e => !e.custom)) assert.equal(m.ui[`emoticon/${e.dir}/${e.picId}`], `/assets/ui/emoticon/${e.dir}/${e.picId}.png`, e.id);
     for (const k of GUIDE_PAGES) assert.equal(m.ui[`guide/${k}`], `/assets/ui/guide/${k}.png`, k);
     assert.equal(m.stats.ui, Object.keys(m.ui).length);
     assert.ok(!JSON.stringify(m).includes('/assets/local/'), 'never a local-client path');

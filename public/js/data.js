@@ -38,12 +38,9 @@
 // texts (the set's own i18n/<lang>.json: a plugin's operators named in that language); `setContent(null)` gives the
 // server's files back (the entries the set replaced, kept meanwhile — nothing is downloaded again) and its overlays. The
 // subscribers of every file that changed hands are told. One content set at a time: the next one replaces it.
-//
-// Versions (DESIGN §35.22.4): files whose config carries `version` (another official version's, e.g. 上半 as a content set)
-// take only their content set's own game texts, never the language folder's data/i18n overlays, which are keyed by the
-// default data's record ids (versionFiles). `localeName` still maps Chinese names.
 
 import { useEffect, useReducer } from '../vendor/hooks.module.js';
+import { resourceUrl, resourceCache, dataBasePath } from './resourceUrl.js';
 import { applyFileOverlay } from '../../shared/i18nData.js';
 import { canonicalLang } from '../../shared/i18nPacks.js';
 
@@ -140,7 +137,8 @@ const transientFailure = (err) => {
  *   `timeoutMs` 0 turns the art-manifest clock off. `setTimeout` / `clearTimeout` let a test fire that clock.
  */
 export function createDataStore(opts = {}) {
-  const base = opts.base ?? '/data/';
+  // 显式 base 优先；否则跟随运行时数据 CDN（public/js/resourceUrl.js dataBasePath）
+  const base = opts.base ?? dataBasePath();
   const doFetch = opts.fetch || ((...a) => globalThis.fetch(...a));
   const retryDelays = Array.isArray(opts.retryDelays) ? opts.retryDelays : RETRY_DELAYS_MS;
   const wait = opts.wait || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
@@ -184,7 +182,17 @@ export function createDataStore(opts = {}) {
     }
   };
 
-  const urlFor = (name) => base + (DATA_FILES[name] || `${name}.json`);
+  const urlFor = (name) => resourceUrl(base + (DATA_FILES[name] || `${name}.json`));
+
+  /**
+   * The game host's own copy of a data URL. SP_DATA_CDN can sit behind the same browser challenge the asset CDN
+   * does (Cloudflare "Under Attack" refuses a fetch that carries no `cf_clearance`), and /data/ is always served
+   * by the game host — so a failed data-CDN read falls back here instead of losing the file.
+   */
+  const siteCopyOf = (url) => {
+    if (base === '/data/' || !/^https?:\/\//.test(base) || !url.startsWith(base)) return '';
+    return resourceUrl('/data/' + url.slice(base.length).split(/[?#]/)[0]);
+  };
 
   /**
    * One attempt at a file. Art manifests reject with a transient `{ timeout: true }` when the clock fires; a response
@@ -192,12 +200,23 @@ export function createDataStore(opts = {}) {
    */
   function readJson(name) {
     const run = async () => {
-      const res = await doFetch(urlFor(name), { cache: 'no-cache' });
-      if (!res || !res.ok) throw Object.assign(new Error(`HTTP ${res ? res.status : '???'}`), { status: res ? res.status : null });
+      const url = urlFor(name);
+      const readAt = async (target) => {
+        const res = await doFetch(target, { cache: resourceCache(target) });
+        if (!res || !res.ok) throw Object.assign(new Error(`HTTP ${res ? res.status : '???'}`), { status: res ? res.status : null });
+        try {
+          return await res.json();
+        } catch (err) {
+          throw Object.assign(err instanceof Error ? err : new Error(String(err)), { badJson: true });
+        }
+      };
       try {
-        return await res.json();
+        return await readAt(url);
       } catch (err) {
-        throw Object.assign(err instanceof Error ? err : new Error(String(err)), { badJson: true });
+        if (err?.badJson) throw err;
+        const host = siteCopyOf(url);
+        if (!host || host === url) throw err;
+        return readAt(host);
       }
     };
     if (!ART_MANIFESTS.has(name) || !(timeoutMs > 0)) return run();
@@ -275,38 +294,22 @@ export function createDataStore(opts = {}) {
   }
 
   /**
-   * Whether the files in effect are another official version's (their config carries `version`, DESIGN §35.22.4). The
-   * language folder's overlays are keyed by the default data's record ids, which a version reuses for other records
-   * (上半's chess_item_2_03_e_b is not 下半's hammer), and the per-text hash cannot tell them apart: such files take
-   * only their content set's own texts (setContent `overlay`; a per-version overlay is M3), the same gate as the
-   * server's (server/ai/knowledge.js). The config arrives with the content set's other files, so the gate is known
-   * when they are localized.
-   */
-  const versionFiles = () => !!entries.get('config')?.value?.version;
-
-  /**
    * The localized copy of a ready file (null in Chinese or without an overlay for the file): the overlays of the chain
    * applied from the last to the first, each text checked against the Chinese file, so the best overlay wins per text.
-   * Another version's files take only their content set's own overlays (versionFiles).
    */
   function localizedEntry(name) {
     if (locale === 'zh' || !chain.length) return null;
     const e = entries.get(name);
     if (!e || e.status !== 'ready') return null;
-    const versioned = versionFiles();
-    const fileOverlays = chain.flatMap((c) => {
-      const o = overlays.get(c);
-      if (!o || (versioned && !(content && o.contentId === content.id))) return [];
-      return [o.pluginOverlay?.files?.[name], o.files?.[name]];
-    }).filter(Boolean);
+    const fileOverlays = chain.map((c) => overlays.get(c)?.files?.[name]).filter(Boolean);
     if (!fileOverlays.length) return null;
     let l = localized.get(name);
-    if (!l || l.lang !== locale || l.base !== e.value || l.versioned !== versioned) {
+    if (!l || l.lang !== locale || l.base !== e.value) {
       let value = e.value;
       for (const fo of fileOverlays.reverse()) {
         try { value = applyFileOverlay(e.value, fo, value).value; } catch (err) { console.warn(`[data] ${name}: overlay not applied`, err); }
       }
-      l = { lang: locale, base: e.value, versioned, value, index: null };
+      l = { lang: locale, base: e.value, value, index: null };
       localized.set(name, l);
     }
     return l;
@@ -329,7 +332,7 @@ export function createDataStore(opts = {}) {
    * the language folder's data/i18n/<lang>.json, or — a content set with texts of its own for the language (setContent) —
    * the set's i18n/<lang>.json through its `overlay` loader; resolves to it, or null when unavailable.
    */
-  function loadOverlay(lang, url = `${base}i18n/${lang}.json`, overlayUrl = null) {
+  function loadOverlay(lang, url = `${base}i18n/${lang}.json`) {
     const own = content && content.overlay && content.langs.has(lang) ? content : null;
     const key = own ? `${own.id}|${lang}` : lang;
     if (overlayLoads.has(key)) return overlayLoads.get(key);
@@ -337,28 +340,23 @@ export function createDataStore(opts = {}) {
       if (own) {
         let json = null;
         try { json = await own.overlay(lang); } catch (err) { console.warn(`[data] the content set's ${lang} texts are not applied`, err); }
-        // tagged with the set's id: another version's files take only their own set's texts (versionFiles)
-        if (json && typeof json === 'object' && json.files) { const tagged = { ...json, contentId: own.id }; overlays.set(lang, tagged); return tagged; }
+        if (json && typeof json === 'object' && json.files) { overlays.set(lang, json); return json; }
         overlayLoads.delete(key);
         return null;
       }
       for (let attempt = 0; ; attempt++) {
         try {
-          const res = await doFetch(url, { cache: 'no-cache' });
+          let target = url;
+          let res = await doFetch(target, { cache: 'no-cache' });
+          if ((!res || !res.ok) && siteCopyOf(url)) {
+            target = siteCopyOf(url);
+            res = await doFetch(target, { cache: 'no-cache' });
+          }
           if (!res || !res.ok) throw Object.assign(new Error(`HTTP ${res ? res.status : '???'}`), { status: res ? res.status : null });
           const json = await res.json();
           if (!json || typeof json !== 'object' || !json.files) throw Object.assign(new Error('not an overlay'), { badJson: true });
-          let pluginOverlay = null;
-          if (overlayUrl) {
-            try {
-              const extra = await doFetch(overlayUrl, { cache: 'no-cache' });
-              const value = extra?.ok ? await extra.json() : null;
-              if (value?.version === 1 && value.lang === lang && value.files) pluginOverlay = value;
-            } catch { /* [ASSUMED] A missing overlay leaves built-in text available. */ }
-          }
-          const result = pluginOverlay ? { ...json, pluginOverlay } : json;
-          overlays.set(lang, result);
-          return result;
+          overlays.set(lang, json);
+          return json;
         } catch (err) {
           if (transientFailure(err) && attempt < retryDelays.length) { await wait(retryDelays[attempt]); continue; }
           console.warn(`[data] ${url} unavailable (${err?.message || err}); its game texts are not applied`);
@@ -409,8 +407,7 @@ export function createDataStore(opts = {}) {
     load,
     /** A content set's files instead of the server's, or the server's again (null) — see the header. */
     setContent,
-    /** The id of the content set the files come from (its cs), or null. The open roster memos key on it
-     *  (loadout.js, ownership.js; PR #852): a room version switch (versions M1) must change it or join their deps. */
+    /** The id of the content set the files come from (its cs), or null. */
     contentId: () => content?.id ?? null,
     /** Load several files; resolves when all settled. */
     loadAll: (...names) => Promise.all(names.flat().map(load)),
@@ -481,7 +478,7 @@ export function createDataStore(opts = {}) {
      * locale does not change (the texts stay as they are); an empty chain (a pack without game texts) switches with
      * the Chinese texts. Every loaded file's subscribers are notified. Resolves to the locale in effect.
      * @param {string} lang
-     * @param {(string | { code: string, url?: string, overlayUrl?: string })[]} [chainIn] overlay languages, best first (with the URL of
+     * @param {(string | { code: string, url?: string })[]} [chainIn] overlay languages, best first (with the URL of
      *   each overlay when it is not the language folder's data/i18n/<code>.json)
      * @returns {Promise<string>}
      */
@@ -494,7 +491,7 @@ export function createDataStore(opts = {}) {
       const asked = want === 'zh' ? [] : items.filter((c) => c && canonicalLang(c.code) === c.code && c.code !== 'zh' && !seen.has(c.code) && seen.add(c.code));
       const ask = asked.map((c) => c.code);
       const seq = ++switches;
-      const got = await Promise.all(asked.map((c) => loadOverlay(c.code, typeof c.url === 'string' && c.url ? c.url : undefined, c.overlayUrl)));
+      const got = await Promise.all(asked.map((c) => loadOverlay(c.code, typeof c.url === 'string' && c.url ? c.url : undefined)));
       if (seq !== switches) return locale; // a later switch is under way
       // each language's overlay from the source in effect now (a content set's, or the server's again — a cached load
       // of either is not set again by loadOverlay)
@@ -520,9 +517,8 @@ export function createDataStore(opts = {}) {
     localeName(zh) {
       if (locale === 'zh' || typeof zh !== 'string') return zh;
       for (const c of chain) {
-        for (const names of [overlays.get(c)?.pluginOverlay?.names, overlays.get(c)?.names]) {
-          if (names && Object.prototype.hasOwnProperty.call(names, zh) && typeof names[zh] === 'string' && names[zh]) return names[zh];
-        }
+        const names = overlays.get(c)?.names;
+        if (names && Object.prototype.hasOwnProperty.call(names, zh) && names[zh]) return names[zh];
       }
       return zh;
     },
@@ -624,9 +620,6 @@ export function useData(...names) {
     let alive = true;
     const unsub = data.subscribe((n) => { if (alive && names.includes(n)) force(); });
     for (const n of names) data.load(n);
-    // A warm-up can settle between render and this effect's subscription (e.g. a resumed match).
-    // Read the statuses again even when those loads already finished and will send no more notifications.
-    force();
     return () => { alive = false; unsub(); };
   }, [key]);
   return names.every((n) => {

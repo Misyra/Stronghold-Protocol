@@ -5,7 +5,7 @@
 //   detects dead sockets (a ping left unanswered — no inbound frame at all — for DEAD_AFTER_MS ⇒
 //   close ⇒ reconnect). Measured from the oldest unanswered ping, not from the last inbound frame,
 //   so a background tab whose timers the browser throttles to ~1/min is not mistaken for dead.
-// - On every (re)connect, once a player name is known, sends `hello {name, token, version}`;
+// - On every (re)connect, once a player name is known, sends `hello {name, token, version, stateDelta}`;
 //   the session is "online" after `welcome`.
 // - `request(t, fields)` adds a `rid` and resolves on the matching `ok` (or any reply carrying the
 //   rid), rejects with a NetError on `error` or after REQUEST_TIMEOUT_MS. Requests made while
@@ -29,18 +29,59 @@
 // Shared modules are imported relatively: in the browser '../../shared/x.js' from /js/ resolves
 // to /shared/x.js (URL resolution clamps at the root); under Node it resolves to <repo>/shared.
 
-import { PROTOCOL_VERSION, ERR_TEXT } from '../../shared/constants.js';
+import { PROTOCOL_VERSION, ERR_TEXT, ERR, MATCHMAKING_VERSION } from '../../shared/constants.js';
+import { PLAYER_CAPACITY_VERSION } from '../../shared/playerCapacity.js';
 import { validateC2S } from '../../shared/protocol.js';
 import { N_ } from '../../shared/i18n.js';
-import { STATE_DELTA_VERSION, StateReceiver } from '../../shared/stateDelta.js';
+import { StateReceiver, STATE_DELTA_VERSION } from '../../shared/stateDelta.js';
 
 export const REQUEST_TIMEOUT_MS = 8000;
 export const HELLO_TIMEOUT_MS = 8000;
 export const PING_INTERVAL_MS = 4000;
 export const DEAD_AFTER_MS = 15000;
-/** Minimum gap between two `state.resync` requests: a gap in one channel is answered by the full frame of the next one. */
-export const RESYNC_GAP_MS = 1000;
 export const BACKOFF = Object.freeze({ base: 500, factor: 2, max: 10000, jitter: 0.2 });
+
+/**
+ * Gate-aware reconnect. A refused WebSocket handshake hands JS only `code: 1006` — browsers never
+ * expose the HTTP status of a failed upgrade — so a page whose gate cookie went stale cannot tell
+ * "the gate wants a challenge" from "the socket died" and retries the same refused upgrade forever.
+ * Seen in the field: one address attempted 4,172 `/ws` upgrades in half a day at the 10 s backoff
+ * cap, never once loading a page, while nginx answered 429 to every attempt.
+ * After a few failures fetch /_gate/status. Only its explicit X-Gate-Required marker triggers a
+ * navigation to the challenge; rate limits and upstream failures never trigger a reload.
+ * The caps keep the cure from becoming the disease.
+ */
+export const GATE_PROBE = Object.freeze({
+  afterAttempt: 2,             // from this `attempt` value on, each further failure probes (interval-throttled)
+  intervalMs: 10000,           // at most one probe per window, per page
+  reloadAfterFailureMs: 20000, // a brief flap must not reload the page out from under a player
+  reloadGapMs: 60000,          // never two reloads this close together
+  maxReloadsPerWindow: 3,      // counted across page loads (sessionStorage): the 4th means we are the problem
+  windowMs: 600000,
+});
+const GATE_RELOAD_KEY = 'sp.gateReload';
+
+/** nginx passes this read-only probe to the gate even when the page's cookie is invalid. */
+async function defaultGateProbe() {
+  const res = await fetch('/_gate/status', { cache: 'no-store', credentials: 'same-origin',
+    signal: AbortSignal.timeout(3000) });
+  return res.status === 200 && res.headers.get('X-Gate-Required') === '1';
+}
+
+function defaultReload() { globalThis.location?.reload?.(); }
+
+function defaultHidden() { return globalThis.document?.hidden === true; }
+
+function defaultStorage() {
+  try {
+    const store = globalThis.sessionStorage;
+    store.getItem(GATE_RELOAD_KEY);
+    return store;
+  } catch {
+    const mem = new Map();
+    return { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { mem.set(k, String(v)); } };
+  }
+}
 
 /** Client-side error codes (in addition to shared ERR codes). */
 export const CLIENT_ERR_TEXT = Object.freeze({
@@ -50,12 +91,14 @@ export const CLIENT_ERR_TEXT = Object.freeze({
   CLOSED: N_('连接已关闭'),
   REPLACED: N_('该身份已在其他页面登录'),
   VERSION: N_('客户端版本与服务器不一致，请刷新页面'),
+  GATE_REQUIRED: N_('浏览器验证已失效，需要刷新页面'),
 });
 
 /** Server close code: the session was taken over by another socket (server/net.js CLOSE.REPLACED). */
 export const CLOSE_REPLACED = 4001;
 /** Server close code: the socket never sent `hello` (server/net.js CLOSE.HELLO_TIMEOUT, ~30–60 s). */
 export const CLOSE_HELLO_TIMEOUT = 4002;
+export const CLOSE_FOREIGN_BLOCKED = 4003;
 /** A pre-hello socket must have lived this long before a 4002 close is swapped quietly (no loop). */
 const QUIET_SWAP_MIN_AGE_MS = 5000;
 
@@ -135,10 +178,22 @@ export class Net {
       setInterval: (fn, ms) => globalThis.setInterval(fn, ms),
       clearInterval: (id) => globalThis.clearInterval(id),
     };
+    // Gate probe (see GATE_PROBE): all four are injectable so the reconnect ladder is testable offline.
+    this.gateProbe = typeof opts.gateProbe === 'function' ? opts.gateProbe : defaultGateProbe;
+    this.reload = typeof opts.reload === 'function' ? opts.reload : defaultReload;
+    this.storage = opts.storage || defaultStorage();
+    this.isHidden = typeof opts.isHidden === 'function' ? opts.isHidden : defaultHidden;
+    this._failedSince = 0;         // first failure of the current outage (0 = not failing)
+    this._gateProbeAt = 0;         // last probe time
+    this._gateProbeInFlight = false;
+    this._gateRequired = false;
+    this._gateRetryTimer = null;
+    this._gateReloadAt = 0;        // last reload time (this page)
 
     /** @type {'idle'|'connecting'|'connected'|'handshaking'|'online'|'reconnecting'|'closed'} */
     this.status = 'idle';
     this.ws = null;
+    this._states = new StateReceiver();
     this.name = null;          // desired player name (hello is sent when set)
     this.helloName = null;     // name we sent in the hello that got the last welcome
     this.serverName = null;    // name as normalised by the server
@@ -160,18 +215,13 @@ export class Net {
     this._reconnectTimer = null;
     this._pingTimer = null;
     this._helloTimer = null;
+    this._stateResyncTimer = null;
     this._helloRid = null;
     this._helloSentName = null;
     this._helloToken = null;
     this._lastRx = 0;
     this._unansweredSince = null; // time of the oldest ping sent since the last inbound frame
     this._clockSamples = [];   // [{ offset, rtt }]
-    // State-delta decoding (shared/stateDelta.js): only ever fed frames a server chose to send this client after its
-    // hello named STATE_DELTA_VERSION. A missed frame blocks that channel, and one resync request per RESYNC_GAP_MS
-    // asks for a full one — the server answers it like a repeated hello (and throttles it the same way).
-    this._receiver = new StateReceiver();
-    this._stateRoom = null;
-    this._resyncAt = 0;        // epoch ms of the last resync request we sent
   }
 
   // ---- events ----------------------------------------------------------------------------------
@@ -250,6 +300,7 @@ export class Net {
   close() {
     this._manualClose = true;
     this._clearTimer('_reconnectTimer', 'clearTimeout');
+    this._clearTimer('_gateRetryTimer', 'clearTimeout');
     this.retryAt = 0;
     const ws = this.ws;
     this._teardownSocket();
@@ -261,6 +312,12 @@ export class Net {
   /** Skip the backoff wait and reconnect right now (used on `online` / tab focus / retry button). */
   retryNow() {
     if (this._manualClose) return;
+    if (this._gateRequired) {
+      this._clearTimer('_gateRetryTimer', 'clearTimeout');
+      this._gateProbeAt = 0;
+      this._probeGate();
+      return;
+    }
     if (this.ws && (this.ws.readyState === WS_OPEN || this.ws.readyState === WS_CONNECTING)) return;
     this.connect();
   }
@@ -299,10 +356,13 @@ export class Net {
   }
 
   _onOpen() {
+    this._gateRequired = false;
+    this._clearTimer('_gateRetryTimer', 'clearTimeout');
     this._openedAt = this.now();
     this._lastRx = this._openedAt;
     this._unansweredSince = null;
     this.retryAt = 0;
+    this._failedSince = 0;
     this._startHeartbeat();
     if (this.name) {
       this._setStatus('handshaking');
@@ -318,6 +378,15 @@ export class Net {
     this._teardownSocket();
     this._failPending('DISCONNECTED', false);
     if (this._manualClose) { this._setStatus('closed'); return; }
+    if (ev?.code === CLOSE_FOREIGN_BLOCKED) {
+      this._manualClose = true;
+      this.retryAt = 0;
+      this.lastError = new NetError(ERR.FOREIGN_CONNECTIONS_DISABLED);
+      this._failPending(ERR.FOREIGN_CONNECTIONS_DISABLED, true);
+      this._setStatus('closed');
+      this._emit('helloError', this.lastError);
+      return;
+    }
     if (ev && ev.code === CLOSE_REPLACED) {
       // Another tab/socket took this session over: don't fight it; the user may reconnect manually.
       this._manualClose = true;
@@ -339,9 +408,13 @@ export class Net {
 
   _scheduleReconnect() {
     if (this._manualClose) return;
+    if (this._gateRequired) { this._scheduleGateCheck(); return; }
+    const now = this.now();
+    if (!this._failedSince) this._failedSince = now;
+    if (this.attempt >= GATE_PROBE.afterAttempt) this._probeGate();
     const delay = backoffDelay(this.attempt, this.random);
     this.attempt += 1;
-    this.retryAt = this.now() + delay;
+    this.retryAt = now + delay;
     this._clearTimer('_reconnectTimer', 'clearTimeout');
     this._reconnectTimer = this.timers.setTimeout(() => {
       this._reconnectTimer = null;
@@ -350,7 +423,87 @@ export class Net {
     this._setStatus('reconnecting');
   }
 
+  /**
+   * Ask the gate directly whether this page must verify again (see GATE_PROBE).
+   * Fire-and-forget until gate failure is confirmed; confirmed failures pause WS retries in favour of this probe.
+   */
+  _probeGate() {
+    if (this._gateProbeInFlight || this._manualClose || this.isHidden()) return;
+    const now = this.now();
+    if (now - this._gateProbeAt < GATE_PROBE.intervalMs) return;
+    this._gateProbeAt = now;
+    const failedSince = this._failedSince;
+    let probe;
+    try {
+      probe = Promise.resolve(this.gateProbe());
+    } catch {
+      return;
+    }
+    this._gateProbeInFlight = true;
+    probe.then((required) => {
+      this._gateProbeInFlight = false;
+      if (this._manualClose || !failedSince || this._failedSince !== failedSince) return;
+      if (required === true) {
+        this._gateRequired = true;
+        this._clearTimer('_reconnectTimer', 'clearTimeout');
+        this.retryAt = 0;
+        this._reloadForGate();
+        this._scheduleGateCheck();
+      } else if (this._gateRequired) {
+        this._gateRequired = false;
+        this._clearTimer('_gateRetryTimer', 'clearTimeout');
+        this._scheduleReconnect();
+      }
+    }, () => { this._gateProbeInFlight = false; if (this._gateRequired) this._scheduleGateCheck(); });
+  }
+
+  /** Once gate failure is confirmed, retry the small probe instead of refused WS upgrades. */
+  _scheduleGateCheck() {
+    if (this._manualClose || this._gateRetryTimer != null || this.isHidden()) return;
+    this._gateRetryTimer = this.timers.setTimeout(() => {
+      this._gateRetryTimer = null;
+      this._probeGate();
+    }, GATE_PROBE.intervalMs);
+  }
+
+  /** Reload only for explicit gate failure, after a real outage, a few times per session. */
+  _reloadForGate() {
+    if (this._manualClose || this.isHidden()) return;
+    const now = this.now();
+    if (!this._failedSince || now - this._failedSince < GATE_PROBE.reloadAfterFailureMs) return;
+    if (now - this._gateReloadAt < GATE_PROBE.reloadGapMs) return;
+    const history = this._reloadHistory(now);
+    if (history.some((at) => now - at < GATE_PROBE.reloadGapMs)) return;
+    if (history.length >= GATE_PROBE.maxReloadsPerWindow) {
+      this.lastError = new NetError('GATE_REQUIRED');
+      this.close(); // A refused cookie must not leave another page retrying WS all night.
+      this._emit('gateBlocked', { at: now });
+      return;
+    }
+    history.push(now);
+    this._writeReloadHistory(history);
+    this._gateReloadAt = now;
+    this._emit('gateReload', { at: now });
+    try { this.reload(); } catch { /* nothing left to try */ }
+  }
+
+  /** Reload timestamps inside the current window, kept across page loads. */
+  _reloadHistory(now) {
+    let raw;
+    try { raw = this.storage.getItem(GATE_RELOAD_KEY); } catch { raw = null; }
+    let list;
+    try { list = raw ? JSON.parse(raw) : []; } catch { list = []; }
+    if (!Array.isArray(list)) return [];
+    return list.filter((at) => Number.isFinite(at) && now - at >= 0 && now - at < GATE_PROBE.windowMs);
+  }
+
+  _writeReloadHistory(list) {
+    try { this.storage.setItem(GATE_RELOAD_KEY, JSON.stringify(list)); } catch { /* storage disabled */ }
+  }
+
   _teardownSocket() {
+    this._states.reset();
+    this._clearTimer('_stateResyncTimer', 'clearTimeout');
     const ws = this.ws;
     if (ws) {
       ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
@@ -361,11 +514,6 @@ export class Net {
     this._clearTimer('_helloTimer', 'clearTimeout');
     this._helloRid = null;
     this._helloSentName = null;
-    // A new socket is a new negotiation (server/net.js onHelloMsg re-baselines per connection): the sequences the old
-    // one used mean nothing here, so a stale baseline must never make the first full frame of the new one look old.
-    this._receiver?.reset();
-    this._stateRoom = null;
-    this._resyncAt = 0;
   }
 
   _clearTimer(field, fn) {
@@ -380,9 +528,9 @@ export class Net {
   _sendHello() {
     if (!this.name) return;
     const rid = this._nextRid();
-    // `delta` says this build decodes `m.state` frames (shared/stateDelta.js). A server that does not speak it ignores
-    // the field, and the client then keeps receiving the plain m.public / m.private frames it always got.
-    const msg = { t: 'hello', rid, name: this.name, version: PROTOCOL_VERSION, delta: STATE_DELTA_VERSION };
+    // Capability versions the queue compares (server/matchmaking.js): a stale tab rejoins instead of mixing pools.
+    const msg = { t: 'hello', rid, name: this.name, version: PROTOCOL_VERSION, stateDelta: STATE_DELTA_VERSION,
+      matchmakingVersion: MATCHMAKING_VERSION, playerCapacityVersion: PLAYER_CAPACITY_VERSION };
     let token = null;
     try { token = this.getToken(); } catch { token = null; }
     if (typeof token === 'string' && token.length > 0 && token.length <= 64) {
@@ -428,6 +576,7 @@ export class Net {
     this._clearTimer('_helloTimer', 'clearTimeout');
     this._helloRid = null;
     this.lastError = new NetError(msg.code, msg.msg, msg.detail);
+    if (msg.code === ERR.NICKNAME_SENSITIVE) this.name = ''; // wait for a replacement, even after reconnect
     this._setStatus('connected');
     // Queued requests can't be sent without a session.
     this._failPending('OFFLINE', true);
@@ -543,19 +692,6 @@ export class Net {
 
   // ---- incoming --------------------------------------------------------------------------------
 
-  /**
-   * Ask the server for one full state frame (the answer to a gap in the delta stream). Rate-limited: one request per
-   * RESYNC_GAP_MS covers every channel, because the server re-sends the whole room state at once. Silent while offline —
-   * the next welcome resyncs anyway.
-   */
-  requestResync() {
-    const now = this.now();
-    if (now - this._resyncAt < RESYNC_GAP_MS) return;
-    this._resyncAt = now;
-    try { this.request('state.resync').catch(() => { /* the next full frame fixes it, or the room resyncs */ }); }
-    catch { /* offline: the reconnect resyncs the room from scratch */ }
-  }
-
   _onMessage(data) {
     this._lastRx = this.now();
     this._unansweredSince = null;
@@ -567,22 +703,23 @@ export class Net {
       return;
     }
     if (!msg || typeof msg !== 'object' || Array.isArray(msg) || typeof msg.t !== 'string') return;
-    // State-delta transport (shared/stateDelta.js): a negotiated server may compress the two big views into `m.state`
-    // frames. They are decoded here and continue as the ordinary m.public / m.private messages every listener already
-    // handles, so nothing above this line notices the difference. A frame that cannot be applied (a gap, a lost or
-    // reordered delta, an older full frame) is dropped and one rate-limited `state.resync` asks for a full one.
-    if (msg.t === 'room.closed' || (msg.t === 'room.state' && msg.code !== this._stateRoom)) {
-      this._stateRoom = msg.t === 'room.state' ? msg.code : null;
-      this._receiver.reset();
-      this._resyncAt = 0;
-    }
     if (msg.t === 'm.state') {
-      const { message, resync } = this._receiver.receive(msg);
-      if (resync) this.requestResync();
-      if (message == null) return;
-      msg = message;
+      const decoded = this._states.receive(msg);
+      if (decoded.resync) this._recoverState();
+      if (!this._states.missing.size) this._clearTimer('_stateResyncTimer', 'clearTimeout');
+      if (!decoded.message) return;
+      msg = decoded.message;
+    } else if (msg.t === 'room.closed' || msg.t === 'm.result') {
+      this._states.reset();
+      this._clearTimer('_stateResyncTimer', 'clearTimeout');
     }
     const { t } = msg;
+    if (t === 'error' && msg.code === ERR.FOREIGN_CONNECTIONS_DISABLED) {
+      this.lastError = new NetError(msg.code, msg.msg);
+      this.close();
+      this._emit('helloError', this.lastError);
+      return;
+    }
     const rid = msg.rid;
     const isHelloError = t === 'error' && rid != null && rid === this._helloRid;
 
@@ -620,6 +757,16 @@ export class Net {
   }
 
   // ---- heartbeat & clock -----------------------------------------------------------------------
+
+  _recoverState() {
+    if (this._stateResyncTimer != null || !this._states.missing.size) return;
+    // Retry a rate-limited recovery quietly, once per second until a full state arrives.
+    this._stateResyncTimer = this.timers.setTimeout(() => {
+      this._stateResyncTimer = null;
+      this._recoverState();
+    }, 1000);
+    this.request('state.resync', {}, { timeout: 1000 }).catch(() => {});
+  }
 
   _startHeartbeat() {
     this._clearTimer('_pingTimer', 'clearInterval');

@@ -236,6 +236,7 @@ import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
 import { Matchmaking } from './matchmaking.js';
 import { RoomActionLimiter } from './roomProtection.js';
+import { RoomReclamation } from './roomReclamation.js';
 import { chatEnabled, moderateChat } from './moderation/chat.js';
 import { allocateMatchmakingGroup, queuePartyMatchmaking, cancelPartyMatchmaking, dropMatchmakingParty, matchmakingAvailable, matchmakingMembers, matchmakingSend } from './matchmakingRooms.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
@@ -634,6 +635,8 @@ export class Lobby {
       allocate: (sessions, difficulty) => this.allocateMatchmaking(sessions, difficulty), options: this.opts.matchmaking || {} });
     /** log lines said once (warnOnce) */
     this.told = new Set();
+    /** 房间回收 (server/roomReclamation.js, 移植自用户分支): 容量压力下回收全员离线的房间 */
+    this.roomReclamation = new RoomReclamation(this);
     /** a held visual set whose plugins changed on disk: its rooms' hosts are told (header "The room's plugins") */
     this.offStale = typeof plugins?.onStale === 'function' ? plugins.onStale((vs, ids) => this.pluginsChanged(vs, ids)) : null;
     /**
@@ -755,8 +758,14 @@ export class Lobby {
       for (const s of r.seats) if (s && !s.left) (s.isBot ? bots++ : humans++);
       spectators += r.spectators.length;
     }
-    return { rooms: this.rooms.size, matches, humans, bots, spectators };
+    return { rooms: this.rooms.size, matches, humans, bots, spectators, roomPressure: this.roomReclamation.stats() };
   }
+
+  /** 房间回收(移植自用户分支): pressure overrides reconnect grace, but never removes a room with an online player or spectator. */
+  reclaimOfflineRooms(options) { return this.roomReclamation.reclaim(options); }
+
+  /** Reclamation counters for /healthz (stats spreads this too). */
+  get roomPressure() { return this.roomReclamation.state; }
 
   // ---------------------------------------------------------------------------------------------------
   // net.js handler interface
@@ -971,6 +980,7 @@ export class Lobby {
    */
   shutdown(reason = 'shutdown') {
     this.matchmaking.close();
+    this.roomReclamation.stop();
     this.offStale?.();
     this.offContentStale?.();
     this.offStale = null;
@@ -999,6 +1009,8 @@ export class Lobby {
     const difficulty = this.fallbackDifficulty(version, mode, DIFFICULTIES.includes(asked) ? asked : DEFAULT_DIFFICULTY);
     const cur = this.roomOf(session);
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
+    // 房间回收(移植自用户分支): capacity pressure frees fully-offline rooms before the hard limit refuses
+    this.reclaimOfflineRooms();
     if (this.rooms.size >= this.opts.maxRooms) return fail(ERR.INTERNAL, 'too many rooms');
     const key = session.limitKey || null;
     // The room being left disappears with this create when the creator is its only human (a spectator is none).
@@ -1062,6 +1074,8 @@ export class Lobby {
     session.pendingResult = null;
     this.log.info(`[lobby] ${code} created (${mode}/${difficulty}${version !== DEFAULT_VERSION ? `, ${version}` : ''}${room.test ? ', test' : ''}) by ${session.name}`);
     this.broadcastState(room);
+    // 房间回收(移植自用户分支): the new room's own seats are online, so this can only free older offline ones
+    this.reclaimOfflineRooms();
     return OK;
   }
 
@@ -2635,6 +2649,8 @@ export class Lobby {
    */
   disposeRoom(room, reason) {
     if (room.disposed) return;
+    // 房间回收(移植自用户分支)顺带的审计面: every disposal is auditable, the capacity reclamation's included
+    this.audit('room.disposed', this.registry.byId(room.hostId), room, { reason });
     // A cohort under allocation keeps its tickets: server/matchmaking.js breaks the offer itself and reports the
     // real reason, so the healthy accepted tickets survive a failed start for a retry (移植自用户分支).
     const queued = room.activeHumans().map((s) => this.registry.byId(s.playerId)).find((s) => s && this.matchmaking.has(s));

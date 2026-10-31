@@ -4,9 +4,10 @@
 //   /sim/      server/sim/**/*.js but nodeData.js (under any spelling), no dot file — server/http/static.js's rules
 //   /shared/   shared/**/*.js, no dot file
 //   /data.js   the browser stand-in of server/data.js (server/http/static.js DATA_SHIM_JS, passed in as `shim`)
-//   data/      every data/<name>.json that server/data.js loads, but the presentation files (PRESENTATION_DATA:
+//   data/      every data/<name>.json that server/data.js loads, but the presentation/build files (PRESENTATION_DATA:
 //              assets — the art manifest —, local-assets / local-fx — this machine's extracted art and official
-//              effects —, emotes)
+//              effects —, emotes, resource-packs / asset-hashes / skins-installed — this machine's preload-pack
+//              index, per-file art hashes and skin selection: build inputs the tools read, never gameplay data)
 //
 // Until rooms can choose gameplay plugins (P1c) it is the identity of every room — a room's cosmetic plugins change no
 // battle, so they leave it (DESIGN §32.3): welcome.content, room.state.content, /healthz
@@ -25,8 +26,12 @@ import { createHash } from 'node:crypto';
 import { APP_VERSION } from '../../shared/constants.js';
 import { CONTENT_HASH_VERSION, contentHashOf, simHashOf } from '../../shared/plugins/identity.js';
 
-/** data/*.json files that only the browser's presentation reads (never part of `cs`). */
-export const PRESENTATION_DATA = Object.freeze(['assets', 'local-assets', 'local-fx', 'emotes']);
+/** data/*.json files that are presentation or per-machine build state (never served as game data, never part of
+ *  `cs`): the art manifest, this machine's extracted art / effects / emotes, and the preload stack's pack index,
+ *  per-file art hashes and skin selection — the latter three are build inputs the tools and server/resources.js
+ *  read from disk (合并自用户分支; the resource round's data files would otherwise ride into the manifest and the
+ *  content hash of every machine that happens to hold them). */
+export const PRESENTATION_DATA = Object.freeze(['assets', 'local-assets', 'local-fx', 'emotes', 'resource-packs', 'asset-hashes', 'skins-installed']);
 /** server/sim files that are never served (lower-case; static.js SIM_PRIVATE). */
 const SIM_PRIVATE = new Set(['nodedata.js']);
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };

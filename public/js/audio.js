@@ -70,7 +70,8 @@
 //   board, a purchase, a move onto or across the board) makes its battle deploy sound once (`deployCue`): the same file
 //   and gain through the SFX channel's volume and mute, in its own voices (LAND_VOICES) instead of the battle limiter —
 //   a full pool hands the oldest landing's voice to the newest, so every piece of the chain is heard.
-// - Buffers are fetched once and cached (LRU); failed fetch/decode ⇒ silent (logged once as a warning). A cosmetic
+// - Buffers are fetched once and cached (LRU); failed fetch/decode ⇒ silent (logged once as a warning). A transient
+//   fetch failure can retry on the next use after 5 s; missing files and invalid audio stay suppressed. A cosmetic
 //   plugin's sound that fails (DESIGN §32 P1a) is reported (`onFailed`, main.js: the cosmetic layers — its entry falls
 //   back to the art beneath it) and the entry the manifest names then plays instead, once: the BGM track, the voice line
 //   of the same slot, the same UI / battle / unit sound, the bond cue (`fellBack`). When the manifest changes under the music (a room's
@@ -84,6 +85,7 @@ import { sanitizeVoiceOverrides, voiceLangFor, VOICE_LANGS, VOICE_TREES, VOICE_P
 export { VOICE_TREES } from './voicePrefs.js';
 import { PHASE } from '../../shared/constants.js';
 import { mediaUrl } from './media.js';
+import { resourceUrl } from './resourceUrl.js';
 import { unhashedUrl } from '../../shared/assetPaths.js';
 
 const MAX_VOICES = 8;
@@ -105,6 +107,8 @@ const POOL_DECODE_MAX_MS = 2500; // [ASSUMED] Older undecoded attacks are obsole
  */
 const LEAK_SFX_GAP_MS = 1500;
 const BUFFER_CACHE = 180;
+/** Retry transient network failures on a later use, never on every repeated sound event. */
+const BUFFER_RETRY_MS = 5000;
 /** Decoded-PCM budget of the buffer cache beside its entry count: a voice line decodes to 0.4–1.3 MB (see _buffer). */
 const BUFFER_BYTES = 64 * 1024 * 1024;
 /**
@@ -237,13 +241,20 @@ export function unitSoundClass(info) {
 }
 
 /**
- * URL of the generic token death sound (b_char_tokendead): sfx.battle.tokenDie, else next to charDie — without charDie's
- * content-hash segment, which names charDie's bytes, not this file's (the plain URL is cached for a day).
+ * URL of the generic token death sound (b_char_tokendead): the manifest's own `sfx.battle.tokenDie` entry first; else
+ * derived from `charDie` beside it. The derivation takes charDie's *path* only — its cache-busting names charDie's
+ * bytes, not this file's — then drops any `~<hash>/` segment (same reason) and resolves the sibling as any other
+ * asset, with its own version, never charDie's.
  */
 function tokenDieUrl(manifest) {
   const b = manifest?.audio?.sfx?.battle;
   if (typeof b?.tokenDie === 'string') return b.tokenDie;
-  return typeof b?.charDie === 'string' && /b_char_dead\.mp3$/.test(b.charDie) ? unhashedUrl(b.charDie).replace(/b_char_dead\.mp3$/, 'b_char_tokendead.mp3') : null;
+  const charDie = b?.charDie;
+  if (typeof charDie !== 'string') return null;
+  // `([^?#]*\/)` keeps the origin and the /_v/<tag>/ release prefix, and drops the query and fragment with the name.
+  const m = /^([^?#]*\/)b_char_dead\.mp3(?:[?#].*)?$/.exec(charDie);
+  if (!m) return null;
+  return resourceUrl(unhashedUrl(`${m[1]}b_char_tokendead.mp3`));
 }
 
 /**
@@ -572,7 +583,7 @@ function isAudioResponse(res) {
 }
 export class AudioManager {
   /**
-   * @param {{ getManifest?: () => any, win?: any, onFailed?: (url: string) => boolean }} [opts]
+   * @param {{ getManifest?: () => any, win?: any, now?: () => number, onFailed?: (url: string) => boolean }} [opts]
    *   onFailed: a sound did not load — whether that made the manifest fall back (a cosmetic plugin's file: see the header)
    */
   constructor(opts = {}) {
@@ -590,6 +601,8 @@ export class AudioManager {
     this.volumes = { bgm: 0.6, sfx: 0.8, voice: 0.8, muted: false };
     this.buffers = new Map(); // url → Promise<AudioBuffer|null> (insertion order = LRU)
     this.bufBytes = new Map(); // url → decoded PCM bytes (the byte budget of the LRU, see _buffer)
+    this.bufRetryAfter = new Map(); // failed URL → next allowed retry (Infinity for definite missing/bad audio)
+    this.now = typeof opts.now === 'function' ? opts.now : () => Date.now(); // the retry clock of bufRetryAfter
     this.warned = new Set();
     this.limiter = new SfxLimiter();
     this.poolVoices = new Map(); // official bank id → playing instances in start order
@@ -811,15 +824,21 @@ export class AudioManager {
     return false;
   }
 
-  /** Fetch + decode (cached, LRU). Resolves null on failure. */
+  /** Fetch + decode (cached, LRU). Resolves null on failure; a transient network failure retries on a later use. */
   _buffer(url) {
     if (!this.ctx || typeof url !== 'string' || !url) return Promise.resolve(null);
     const hit = this.buffers.get(url);
-    if (hit) {
+    if (hit && this.now() < (this.bufRetryAfter.get(url) ?? Infinity)) {
       this.buffers.delete(url);
       this.buffers.set(url, hit);
       return hit;
     }
+    if (hit) {
+      this.buffers.delete(url);
+      this.bufBytes.delete(url);
+      this.bufRetryAfter.delete(url);
+    }
+    let retryable = false;
     const p = (async () => {
       try {
         let ab;
@@ -837,13 +856,15 @@ export class AudioManager {
             try { await res.body?.cancel?.(); } catch { /* the fallback request matters more than draining this one */ }
             res = await fetch(url);
           }
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
           ab = await res.arrayBuffer();
         }
         const buf = await this.decodeBytes(ab);
         if (!buf && !url.startsWith(LOCAL_BGM)) this._failed(url);
         return buf;
       } catch (err) {
+        const status = Number(err?.status);
+        retryable = !(status >= 400 && status < 500 && status !== 408 && status !== 429);
         this._warn(url, err);
         if (!url.startsWith(LOCAL_BGM)) this._failed(url);
         return null;
@@ -854,7 +875,14 @@ export class AudioManager {
       // a decode that finishes after its entry left the cache (evicted while loading, or the player's own track
       // replaced or switched off meanwhile — setLobbyTrack) records nothing: bufBytes only ever counts entries of
       // `buffers`, so the budget of _trimBuffers can never keep a size it has no entry to evict (#814 review)
-      if (!buf || this.buffers.get(url) !== p) return;
+      if (this.buffers.get(url) !== p) return;
+      if (!buf) {
+        // missing files and invalid audio stay suppressed instead of being polled; the player's own track reads no
+        // network and always retries on the next use
+        if (!url.startsWith(LOCAL_BGM)) this.bufRetryAfter.set(url, retryable ? this.now() + BUFFER_RETRY_MS : Infinity);
+        return;
+      }
+      this.bufRetryAfter.delete(url);
       try {
         this.bufBytes.set(url, pcmBytes(buf));
         this._trimBuffers();

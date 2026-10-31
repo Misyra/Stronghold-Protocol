@@ -777,36 +777,61 @@ bandwidth, layer 1) the server hands out a view of each (`server/http/assetIndex
   and are laid over whatever the page draws. Neither committed manifest, nor the views above, ever change with a plugin:
   without one a page loads exactly what it loaded before.
 
-## Player-initiated predownload
+## Player-initiated preload
 
-The title screen's **下载完整素材** button (`public/js/ui/assetDownload.js`, queue in
-`public/js/assetDownload.js`) downloads every unique art/font URL in the server's current `assets.json` and optional
-`local-assets.json`, including Spine skeletons, atlases, pages, scene files, and audio. Audio uses the same `/media/`
-URLs as playback. Four concurrent requests consume complete response bodies without decoding them or retaining
-all files in memory. This warms the existing browser HTTP cache and works over HTTP as well as HTTPS; it does not
-require a service worker. Freshness and eviction remain under the browser's control, so completion is not persisted
-as a permanent/offline guarantee. A later check reads current manifests and uses ordinary HTTP cache validation.
+The title screen's preload entry is the **预载资源** pill at its bottom right (`public/js/ui/resourcePanel.js`
+ResourceLauncher, merged from the user branch): a small card above the footer that shows the preload state at a
+glance (checking → per-scope progress, or 未开启). Pressing it — or 设置 → 预载资源 (`public/js/main.js` mounts the
+same dialog as `ResourceHost`) — opens the **预载资源管理** manager. Four scopes choose what is cached ahead of play:
+必备 (tier 1: maps, operator images, Spine, UI, fonts), 干员语音 (tier 2, per language), 干员皮肤 (the selected
+skins' models and portraits, or all installed ones) and 额外特效 (battle VFX). The presets 仅必备 / 日常推荐 /
+完整预载 set the toggles in one press. Selected files download through `public/js/resourceNetwork.js` into Cache
+Storage shard caches named `stronghold-resources-v1-*` (`public/js/resources/common.js CACHE_PREFIX`); progress,
+failures and resume live in `public/js/resources/index.js` and `store.js`, and the cleanup card's 清理可选资源 /
+清理全部资源 delete by scope (`resources/storage.js` surfaces `navigator.storage.estimate()` and the persist answer).
 
-The dialog shows successful file count, progress, and bytes read (including cache hits). Closing it or leaving the
-title screen pauses and aborts pending requests. Resume keeps completed files for this page; retry requests only
-unfinished files. Network errors/timeouts/5xx/408/429 receive at most two retries; a 404, HTML fallback, empty body,
-or partial response is never counted as successful. A missing optional local manifest is disclosed, while a failed
-base manifest or any listed missing file prevents successful completion. Server owners still install missing art
-with setup; this button only transfers files already supplied by the server.
+Serving is an opt-in module service worker: `public/resource-sw.js` — registered with `type: 'module'` by
+`public/js/resources/index.js` when the preload turns on and unregistered when its retained caches are cleared —
+answers GETs for `/assets/**`, `/fonts/**` and the extension-less `/media/**` audio route from the shard caches with
+network fall-through (`public/js/resources/service.js handleResourceRequest`, `readThrough.js`). Code, `/data/`, API
+calls and WebSocket upgrades pass through untouched, so a stale worker can never serve a stale game. On `http://` to
+a LAN IP (`isSecureContext` false) the controls say so and preload stays off; playback falls back to the network.
 
-## Importing a local asset pack
+### ZIP resource packs
 
-The title screen's **导入素材包** button (`public/js/ui/assetImport.js`), beside 下载完整素材, opens its own dialog. Opening it requests nothing from the server and never starts the download queue; the manifests are read once an import starts. It imports art the player already has: the example asset pack `node tools/package.mjs --assets` writes (one folder holding `public/assets/…`, `public/fonts/…` and a `README.txt`; the maintainer offers it for download outside the GitHub release), a setup `public/assets` folder, or a published full zip whose paths contain `public/assets/`. The page reads a zip's central directory in the browser, and a picked or dropped zip File slice by slice, so a whole pack (some 700 MB) is never held in memory at once. Method 0 (stored) is copied. Method 8 is inflated with `DecompressionStream('deflate-raw')`. Any other method, and an encrypted entry, is counted and skipped. Nothing is uploaded.
+The maintainer builds the packs (`npm run resources:packs` = `tools/build-resource-packs.mjs` + `tools/resource_packs.py`):
+category ZIPs under `public/resource-packs/`, indexed at `GET /data/resource-packs.json`
+(`shared/resourcePackRoutes.js`; each pack carries its own manifest and a whole-pack fingerprint). The manager's
+ZIP card works with them three ways:
 
-Verification uses the served manifests (`GET /data/assets.json`, and `GET /data/local-assets.json` and `GET /data/local-fx.json` when the server has them). A hashed URL maps back to a plain `assets/…` or `fonts/…` path. A file is stored only when the first 16 hex digits of its SHA-256 equal the hash in that URL. A Spine model is accepted only as a whole group, with the same model hash the server uses: SHA-256 of the members' file hashes joined by newlines (skeleton, atlas, then pages — the default `<skel>.png` when the manifest lists no textures). A mismatch, or a file the manifest does not list, is not stored. A path with no hash segment cannot be checked, so it is not imported; the download queue can still fetch it.
+- **导入 ZIP** — a pack file the player already has (`public/js/resources/archive.js importResourceZip`): entries
+  stream in one by one, the pack fingerprint is verified first, and every file is stored only when its content hash
+  matches the pack's manifest (already-cached files are skipped), so even a several-hundred-MB pack is never held in
+  memory at once. Nothing is uploaded.
+- **前往下载** — opens the maintainer's pack page (the card explains the distributions: lite = base art, full =
+  voices/audio included; a server with `public/resource-packs/` in place also serves its own packs at
+  `/resource-packs/<pack>.zip`).
+- **导出已缓存资源** — `archive.js exportResourceZip` writes one scope's cached files back into a zip for sharing.
 
-Accepted bytes go into Cache Storage under the name `sp-imported-assets-v1`, at the hashed `/assets/` or `/fonts/` URL and, for audio, also at the `/media/~<hash>/…` URL playback requests. As an import ends, the pathnames it stored are added to one JSON entry of that cache, `/sp-imported-index.json`, which the dialog's count and the download queue read: Chrome refuses `Cache.keys()` for a cache of more than about 15,000 entries ("Operation too large"), and a whole pack stores some 43,000. Import completion and old-version pruning hold the same exclusive Web Lock (`sp-imported-assets-v1:index`) from reading the index through writing its replacement, so cooperating same-origin tabs cannot overwrite each other's index updates. The cache name and JSON format are unchanged. `public/sw.js` is a classic service worker (not a module, so the browsers this project already supports can register it). `public/js/main.js` registers it on a secure context only (`updateViaCache: 'none'`, scope `/`). It intercepts same-origin GET whose path matches `/assets/~<16 hex>/`, `/fonts/~<16 hex>/` or `/media/~<16 hex>/`. A cache hit is returned. A miss is fetched from the network and is not written into this cache. A request with a `Range` header is not intercepted. HTML, scripts, `/data/`, `/sim/` and `/ws` are never handled.
+## Legacy imported-asset cache (compatibility)
 
-A browser without Web Locks (`navigator.locks`) keeps the previous sequential behaviour: the same updates, without cross-tab serialization. The project lists no browser minimums (DEPLOY.md: Firefox and Safari have not been specifically tested). Already-open pages running older code do not participate in the lock; refresh those pages. This lock covers index mutations only: it does not coordinate clearing the entire cache, recover earlier orphan entries, or make an in-progress import's asset writes atomic with pruning.
+0.3.3's title screen had a **下载完整素材** dialog (`public/js/ui/assetDownload.js`, queue in
+`public/js/assetDownload.js`) and a **导入素材包** dialog (`public/js/ui/assetImport.js`, import in
+`public/js/assetPack.js`); both are gone — the resource manager's scopes and ZIP card cover them. What remains is
+read/prune-only compatibility for caches those dialogs created (a browser that imported before this change keeps
+its art): `public/sw.js` (classic worker, not a module, registered by `public/js/main.js` on a secure context only
+with `updateViaCache: 'none'`, scope `/`) still intercepts same-origin GET whose path matches `/assets/~<16 hex>/`,
+`/fonts/~<16 hex>/` or `/media/~<16 hex>/` and returns the `sp-imported-assets-v1` cache's hit; a miss is fetched
+from the network and not written back. A request with a `Range` header is not intercepted; HTML, scripts, `/data/`,
+`/sim/` and `/ws` are never handled. 设置 → 素材存储 (`public/js/ui/settings.js` StorageSection) still asks the
+browser to persist storage, shows the current answer, and offers 清理旧版本素材 (`public/js/assetPack.js`
+pruneImportedAssets): it deletes every entry a fresh import from the current manifests would not store — the same
+three manifests, a plan file's alternative hashes and the /media alias included; a manifest it cannot read deletes
+nothing — and the index is rewritten to what remains under the same Web Lock the imports used
+(`sp-imported-assets-v1:index`). Nothing writes that cache any more; new imports go through the resource manager's
+ZIP card into the shard caches.
 
 `worker-src 'self' blob:` was already the site policy (`server/http/csp.js`). `'self'` is what `/sw.js` needs. `blob:` stays for the simulation worker the page already starts. No remote worker origin is added, and `SIM_WORKER_CSP` does not gain this worker.
-
-On `http://` to a LAN IP, `isSecureContext` is false. The import controls explain why and do not throw. Download still works over plain HTTP. The download queue does not request a URL already present in the import cache. Closing the import dialog cancels an in-progress import; closing the download dialog pauses the download. Clear deletes only this cache. `navigator.storage.estimate()` is the whole origin, and `navigator.storage.persist()` is a request the browser may refuse. The dialog asks once, as an import ends; 设置 → 素材存储 (`public/js/ui/settings.js` StorageSection, 0.3.1) shows the current answer (`navigator.storage.persisted()`) and asks again on demand. A changed file gets a new hash, so its imported copy is never served again, but it stays in the cache until 设置 → 素材存储 → 清理旧版本素材 (0.3.1; `public/js/assetPack.js` pruneImportedAssets) deletes every entry a fresh import from the current manifests would not store — the same three manifests an import reads, a plan file's alternative hashes and the /media alias included; a manifest it cannot read deletes nothing — or 清除已导入的素材 deletes them all. The index is rewritten to what remains.
 
 ## Verification
 

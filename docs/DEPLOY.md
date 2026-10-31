@@ -246,14 +246,15 @@ server {
 
 https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://同一域名/ws`；http 时用 `ws://`。服务器本身只提供 http，证书由代理 / 隧道负责。代理与服务器在同一台机器或内网时，`TRUST_PROXY=auto` 会信任它的 `X-Forwarded-For` / `X-Real-IP`；代理在公网另一台机器上时设 `TRUST_PROXY=1`（同时确保游戏端口只对代理开放）。
 
-### 2.5 玩家导入已有素材（需要 HTTPS）
+### 2.5 玩家侧素材预载（资源管理面板，合并自用户分支）
 
-标题画面登录框下面并排有两个按钮：「下载完整素材」从这台服务器下载全部素材（打开窗口就开始）；「导入素材包」读取玩家自己的文件夹或 zip，用来少传重复的美术。打开导入窗口不会向服务器请求任何素材，也不会开始下载；真正开始导入时，浏览器只向服务器读取三份素材清单。
+标题画面右下角有一张「预载资源」卡：显示预载状态，点开（或从 设置 → 预载资源）进入**预载资源管理**。玩家按范围选择要提前缓存的素材——必备（地图、干员图片、Spine、界面与字体）、干员语音（可选语种）、干员皮肤（跟随已选皮肤或全部收录套数）、额外特效——快捷方案「仅必备 / 日常推荐 / 完整预载」一键设置，然后点「开始预载」。
 
-- 只有 **HTTPS** 或 **localhost** 能导入。浏览器只在安全上下文里提供 Service Worker 和可用的 Cache Storage。`http://局域网IP:3000` 可以正常玩游戏，也可以用「下载完整素材」，但不能导入；按钮下面和导入窗口里都会说明原因，而不是报错。
-- 玩家导入的是自己已经有的文件：维护者另外提供的素材包 `Stronghold-Protocol-v<版本>-assets.zip`（见第 7 节，不在 GitHub Releases 里），setup 得到的 `public/assets`，或完整发布包 zip。校验通过的文件存在这台浏览器里，并且按地址分开：换了域名或端口就要重新导入。整套素材包约 3.1 万个文件，桌面版 Chrome 导入约 1–2 分钟；zip 分段读取，不会整个读进内存。
-- 和服务器清单里 SHA-256 一致的文件不再向这台服务器请求。整套美术大约 1 GB（下载的约 720 MB，加本地提取的场景和官方战斗特效）；玩家第一局真正用到的通常约 20–50 MB。导入能省下的，是这些本来会从你的机器发出去的字节。哈希对不上的旧版本文件会被拒绝，仍走下载。
-- 导入不经过服务器，服务器日志里看不到这些文件。Service Worker 只回答带内容哈希的 `/assets/`、`/fonts/`、`/media/`。页面、脚本、`/data/`、`/sim/` 和 `/ws` 仍每次走网络。
+- 只有 **HTTPS** 或 **localhost** 能预载。浏览器只在安全上下文里提供 Service Worker 和可用的 Cache Storage。`http://局域网IP:3000` 可以正常玩游戏，但不能预载；面板会说明原因，而不是报错。
+- 预载的文件进这台浏览器的分片缓存（`stronghold-resources-v1-*`），之后由可选的模块 Service Worker（`public/resource-sw.js`）就近应答 `/assets/`、`/fonts/` 和 `/media/` 的请求，未命中走网络；页面、脚本、`/data/`、`/sim/` 和 `/ws` 仍每次走网络。关闭预载即注销该 Worker，清理用面板底部的「清理可选资源 / 清理全部资源」。
+- **ZIP 资源包**：维护者用 `npm run resources:packs` 把素材打成类别 zip（`public/resource-packs/`，索引 `GET /data/resource-packs.json`，构建见 docs/ASSETS.md「Preload」）。玩家点「导入 ZIP」读自己已有的包：整包指纹校验通过后逐文件按哈希写入缓存，已有的自动跳过，整套包也不必整个读进内存；「前往下载」打开维护者发布的下载页（`SP_RESOURCE_PACK_ROUTES`，见第 12 节），「导出已缓存资源」把一个范围的已缓存文件打包分享。导入不经过服务器逻辑，服务器日志里看不到这些文件。
+- 预载能省下的，是这些本来会从你的机器发出去的字节：整套美术约 1 GB，玩家第一局真正用到的通常约 20–50 MB。
+- 0.3.3 及更早版本的标题屏按钮「下载完整素材 / 导入素材包」已由本面板取代。更早版本导入过的素材（`sp-imported-assets-v1` 缓存）仍会被旧的 `/sw.js` 读取，「设置」→「素材存储」的「清理旧版本素材」可以清理；详见 docs/ASSETS.md「Legacy imported-asset cache」。
 
 ## 3. Docker
 
@@ -376,7 +377,6 @@ npm run package -- --dry-run --list   # 只检查：列出每个文件和大小�
 npm run package -- --out <目录>        # 完整包 Stronghold-Protocol-v<版本>.zip
 npm run package:lite -- --out <目录>   # 精简包 Stronghold-Protocol-v<版本>-lite.zip
 npm run package -- --update --from <旧版本的完整包>[,<…>] --out <目录>   # 更新包 Stronghold-Protocol-v<版本>-update.zip
-node tools/package.mjs --assets --out <目录>   # 素材包 Stronghold-Protocol-v<版本>-assets.zip（给「导入素材包」用，不放进 Releases）
 ```
 
 完整包在打包机已经提取战场场景时带上 `public/assets/local/scene/`（`--dry-run` 摘要里的 `battlefield scenes` 一行）。还没有提取时完整包仍能打，棋盘用金属地块。要带上 11 个官方场景，先运行 `python3 tools/local-extract/fetch_scenes.py`，再用提取环境的 Python 运行 `tools/local-extract/extract.py --only scene`（或 `node tools/setup.mjs --scenes`），然后再 `npm run package`。精简包不带场景。`.cache/official-scenes/` 在拒绝名单里，不会打进任何包。`tools/local-extract/scenes.py` 和 `fetch_scenes.py` 必须先提交：打包读的是 `git ls-files`，未提交的脚本不会进玩家包。
@@ -388,7 +388,7 @@ node tools/package.mjs --assets --out <目录>   # 素材包 Stronghold-Protocol
 - **MANIFEST.json**：三种包的根目录都有（`npm ci` 之后写入）：除素材（`public/assets/`、`public/fonts/`、`data/assets.json`、`data/local-assets.json`，归 setup 管）以外每个文件的大小和 sha256，同一版本的三种包内容相同。`npm run doctor` 和更新包的启动检查（`server/update.js`）用它核对安装。
 - **更新包**（0.2.1 起，每个版本都发）：`--from` 后面列出**此次支持升级的每个旧版本完整包**（Releases 上的 zip，或它解压出来、没动过的文件夹；逗号分隔或写多个 `--from`），例如发布 0.2.2 时 `--from Stronghold-Protocol-v0.2.0.zip,Stronghold-Protocol-v0.2.1.zip`。工具照常构建完整包的临时目录（`npm ci` 等），逐个文件（大小 + sha256）和每个旧版本比较：和任何一个旧版本不同、或旧版本没有的文件都打进去，所以一个更新包能覆盖在列出的每个版本上；旧版本有、新版本没有的文件记进 `UPDATE.json` 的 `removed`（连同各旧版本里的 sha256，玩家那边只删内容一致的文件；只差大小写的同名文件和 `.env` 之类的本机文件名不删，摘要里会列出）。旧版本必须比当前版本旧、带素材（不能是精简包或更新包）、每个版本只给一次，`--dry-run` 只读取并检查旧版本。更新包里还有新版本的 `MANIFEST.json` 和 `UPDATE.json`（适用的旧版本、文件数、字节数、文件列表和 `removed`），同样经过拒绝名单和个人信息检查；摘要列出和每个旧版本相比改动 / 新增 / 删除的文件数和更新包里各类文件的数量。发布时在 Releases 说明里写明更新包适用的版本（即 `--from` 列出的版本）。0.3.0 至少以 0.2.6 完整包为基线；新增的插件模块、Schemas、作者工具、模板、SES / Acorn 与前端库都会作为新增或改变的文件进入更新包。删除列表以实际基线比较为准，不要凭开发过程里曾出现过的页面名手写。`--keep-stage` 保留更新包目录和完整包的临时目录（`<目录>/Stronghold-Protocol-v<版本>-update/` 里的 `Stronghold-Protocol/` 和 `.full/`）。
 - **素材包**（`--assets`，0.3.0 起，可选）：给标题画面「导入素材包」用的范例，只含这个版本导入时能收下的美术——`data/assets.json`、`data/local-assets.json`、`data/local-fx.json` 列出的文件（字体也在其中），按打包机上的语音和官方特效开关取舍，和完整包一致；不含清单本身（浏览器读的是服务器上的清单）、清单没有列出的本地提取残留文件，也不含任何代码。zip 里只有一个文件夹 `Stronghold-Protocol-v<版本>-assets/`，里面是 `public/assets/…`、`public/fonts/…` 和中英文说明 `README.txt`（是什么、对应哪个版本的清单、怎么导入；其他版本的服务器上，内容变了的文件校验不符、不会收下）。每个路径都带 `public/`，导入时整包按同一个前缀识别；说明文件是导入结果里唯一「跳过」的文件。打包前做和完整包相同的检查：清单列出的文件都在、没有只差大小写的路径、个人信息扫描（素材也查）、`data/assets.json` 已提交（`--allow-dirty` 跳过这一项）、开发版本要加 `--allow-dev`；`--dry-run [--list]` 只检查、不写文件。不运行 `npm ci`，也没有 `MANIFEST.json`。素材包要和发布的完整包用同一份素材来打：打包后又重新提取过本地素材（例如官方特效）就要重打，改过的文件在别人的服务器上会校验不符；本地提取的那部分（场景、官方特效等）也只对提供同一份提取结果的服务器（这个版本的完整包）有效，自己从其他客户端版本提取的服务器会拒收这些文件，其余照常导入。0.3.0 的素材包是 30936 个文件、990 MB，zip 约 711 MB。素材包**不附在 GitHub Release 上，也不提交到仓库**：维护者可以把它放到网盘等处另行提供下载；Releases 仍然只有完整包、精简包和更新包。
-- **需要**：已下载素材的仓库（完整包）——打包前先联网运行一次 `node tools/fetch-assets.mjs`，补齐清单计划但本机还没有的素材（清单只列出磁盘上有的文件，打包工具看不出缺了哪些；`data/assets.json` 有变化就先提交）；能访问 npm 的网络（`npm ci`）；`zip`（或 bsdtar 的 `tar`，Windows 10 起自带）；更新包还要之前各版本的完整包（工具自己读 zip，不需要 `unzip`；Releases 上可以重新下载）。`--out` 默认是系统临时目录下的 `stronghold-protocol-release`，不能在仓库里面；`--force` 覆盖已有的 zip，`--keep-stage` 保留打包用的目录供检查。
+- **需要**：已下载素材的仓库（完整包）——打包前先联网运行一次 `node tools/fetch-assets.mjs`，补齐清单计划但本机还没有的素材（清单只列出磁盘上有的文件，打包工具看不出缺了哪些；`data/assets.json` 有变化就先提交）；能访问 npm 的网络（`npm ci`）；`zip`（或 bsdtar 的 `tar`，Windows 10 起自带）；更新包还要之前各版本的完整包（工具自己读 zip，不需要 `unzip`；Releases 上可以重新下载）。`--out` 默认是系统临时目录下的 `stronghold-protocol-release`，不能在仓库里面；`--force` 覆盖已有的 zip，`--keep-stage` 保留打包用的目录供检查。玩家侧按需取美术改走资源管理面板的预载 / ZIP 资源包（`npm run resources:packs`，见 2.5 节），0.3.0–0.3.2 的 `--assets` 素材包随旧导入界面一并移除。
 
 ## 8. 插件：服主策略文件（0.3.0 起）
 
@@ -559,6 +559,10 @@ Node 22 的 `--permission` **不限制网络**（TCP/UDP/DNS/监听均可能可�
 | `SP_MAX_CONNECTIONS` | 2000 | 并发 WebSocket 连接数（`0` = 全部拒绝）。全局满员时新连接在升级阶段返回 **503** |
 | `SP_MAX_CONNECTIONS_PER_ADDR` | 64 | 单个客户端网络的并发连接数（`0` = 不限）。单个网络超限时在升级阶段返回 **429** |
 | `SP_MAX_ONLINE` | 0 | 同时在线的**已认证玩家**上限（`0` = 不限）。满了只拒绝新会话（玩家看到「服务器已满」），重新连回来的 token 照常放行（只限在线人数这一层，见下面「重连不会被拒」的两条前提） |
+| `SP_ROOM_CREATE_BURST` | 4 | 每网络「创建房间」动作的令牌桶容量（`server/roomProtection.js`，合并自用户分支；与上面的并发上限互补，限制的是*节奏*）。取 `0` 会因配置非法**拒绝启动** |
+| `SP_ROOM_CREATE_REFILL_MS` | 15000 | 上述令牌的回填周期（ms） |
+| `SP_MATCH_START_BURST` | 4 | 每网络「开始模拟」动作的令牌桶容量（匹配入场也走这里）。取 `0` 拒绝启动 |
+| `SP_MATCH_START_REFILL_MS` | 30000 | 上述令牌的回填周期（ms） |
 
 几点运维提醒：
 
@@ -574,3 +578,14 @@ Node 22 的 `--permission` **不限制网络**（TCP/UDP/DNS/监听均可能可�
 - 房间要等它被真正从大厅移除（`disposeRoom`）才归还配额，玩家掉线不算：大厅断线宽限（`lobbyGraceMs`）和对局中的会话重连窗口是两只独立的时钟。
   前者管理未开局房间中的断线成员，后者管理对局重连；不能用其中一个期限推断另一个期限或整个房间的销毁时间。
   排查「明明没人了还开不出房」时，先看房间是否仍存在、是否正在等待断线成员。
+
+### 预载 / 公告相关变量（合并自用户分支）
+
+| 变量 | 默认 | 含义 |
+| --- | --- | --- |
+| `SP_RESOURCE_PACK_ROUTES` | ModelScope 的 `Misyra/Arknight_Assets` 数据集模板 | 资源包发布位置：JSON 数组，元素是目录 URL、`….zip` 直链或含 `{file}` 的模板（2.5 节的「前往下载」与客户端分包索引按它取包）。设为空串关闭全部路由 |
+| `SP_ASSETS_CDN` | （空 = 同源） | 素材 CDN 基地址；配置后素材 URL 走 CDN，`static.js` 不再从本机发素材 |
+| `SP_ASSETS_CDN_VERSION` | 逐级回退 | CDN 发布版本：发布机生成的逐文件 `.assets-manifest.json` 优先（每个文件自己的 `?v=`），否则仓库的 `.assets-cdn-version`，再否则问 CDN 的 `/_v/latest`；都没有就发不带版本的 URL |
+| `SP_DATA_CDN` | （空 = 同源 `/data/`） | 游戏数据 JSON 的 CDN 基地址 |
+| `SP_ANNOUNCEMENT_FILE` | `config/announcements.json` | 公告排程文件（单源，热加载；`announcementFile: null` 关闭公告） |
+| `SP_ANNOUNCEMENT_POLL_MS` | 10000 | 排程文件的热加载轮询间隔（ms） |

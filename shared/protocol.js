@@ -505,6 +505,8 @@ export const C2S = {
     matchmakingVersion: isId, playerCapacityVersion: isId,
     $optional: ['token', 'version', 'noReplace', 'claimAt', 'delta', 'matchmakingVersion', 'playerCapacityVersion'] },
   ping: { c: (v) => typeof v === 'number' && Number.isFinite(v) },
+  // pong may include announcementRevision (24 hex of the public active notice content, server/announcement.js —
+  // 合并自用户分支): a hint to refetch HTTP content; the client suppresses unchanged polling without it.
   // test: only the literal true (DESIGN §34.8). Omit it for a normal room — `false` is a bad field, so a
   // string cannot sneak in as "not a test". The server still refuses it unless SP_TEST_MODE is on.
   // difficulty: may be left out — the room starts at the server's default (server/lobby.js DEFAULT_DIFFICULTY) and the

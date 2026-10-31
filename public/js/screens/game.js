@@ -88,6 +88,7 @@ import { html, Spinner, PhaseBanner, ResultDialog, Icon, Button, confirmDialog, 
 import { useGameData, GIcon } from '../ui/gameComponents.js';
 import { useFieldView } from '../ui/fieldHost.js';
 import { TopBar, liveLp, ownLeaks, uniteRemaining, tempInfo, tempReadyReason } from '../ui/hud.js';
+import { AnnouncementButton } from '../ui/announcement.js';
 import { BondStrip, BondPopup } from '../ui/bondStrip.js';
 import { TeamPanel } from '../ui/teamPanel.js';
 import { ShopBar } from '../ui/shopBar.js';
@@ -1918,6 +1919,7 @@ function MatchScreen() {
       onClick=${() => setConsoleOpen(true)}><${GIcon} name="console" /></button>` : null}
     <button type="button" class="gm__gear" aria-label=${t('设置')} title=${t('设置')} onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label=${t('玩法说明')} title=${t('玩法说明')} onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
+        <${AnnouncementButton} class="gm__gear gm__announcement" square=${true} />
         <${FullscreenButton} class="gm__gear gm__fs" />
       </div>
 

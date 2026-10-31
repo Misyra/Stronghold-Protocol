@@ -650,6 +650,10 @@ export class Network {
     if (msg.t === 'ping') {
       const pong = { t: 'pong', c: msg.c, s: now };
       if (validRid(rid)) pong.rid = rid;
+      // 运维公告的内容指纹（server/announcement.js, 合并自用户分支）: pong may include announcementRevision (24 hex
+      // of the public active notice content) — a hint to refetch HTTP content; the client suppresses unchanged polling.
+      const revision = this.announcementRevision?.();
+      if (revision) pong.announcementRevision = revision;
       this.reply(conn, pong);
       return;
     }

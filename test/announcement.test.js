@@ -1,0 +1,256 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import { parseAnnouncement, createAnnouncementReader } from '../server/announcement.js';
+import { startServer } from '../server/index.js';
+import { announcementOptionsFrom } from '../server/http/config.js';
+
+const config = { enabled: true, title: '维护公告', text: '17:00 开始维护，请提前结束模拟。', expiresAt: '2099-10-04T17:00:00+08:00' };
+test('display policy preserves legacy revisions and changes only for visit mode', () => {
+  const legacy = parseAnnouncement(config);
+  assert.deepEqual(parseAnnouncement({ ...config, displayMode: 'once' }), legacy);
+  const visit = parseAnnouncement({ ...config, displayMode: 'visit' });
+  assert.equal(visit.displayMode, 'visit');
+  assert.notEqual(visit.id, legacy.id);
+  for (const displayMode of ['cooldown', '', 1, {}]) assert.throws(() => parseAnnouncement({ ...config, displayMode }));
+});
+async function fixture(t) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'sp-announcement-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  return path.join(dir, 'announcement.json');
+}
+function upstream(t, handler) {
+  return new Promise((resolve) => {
+    const server = http.createServer(handler);
+    server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}/` }));
+    t.after(() => new Promise((r) => server.close(r)));
+  });
+}
+
+test('announcement configuration is bounded, timezone explicit, and revisions follow content edits', () => {
+  const a = parseAnnouncement(config);
+  assert.equal(a.expiresAt, Date.parse('2099-10-04T09:00:00Z'));
+  assert.equal(parseAnnouncement({ ...config, expiresAt: '2099-10-04T09:00:00Z' }).id, a.id, 'same instant is the same revision');
+  assert.equal(parseAnnouncement({ ...config, adminToken: 'never-public' }).id, a.id);
+  assert.notEqual(parseAnnouncement({ ...config, text: '维护延后' }).id, a.id);
+  assert.notEqual(parseAnnouncement({ ...config, expiresAt: '2099-10-04T18:00:00+08:00' }).id, a.id);
+  assert.equal(parseAnnouncement({ enabled: false }), null);
+  assert.equal(parseAnnouncement({ ...config, title: undefined }).title, '维护公告');
+  for (const value of [null, [], {}, { ...config, enabled: 'true' }, { ...config, text: '' },
+    { ...config, text: 'a'.repeat(2001) }, { ...config, title: 'a'.repeat(81) },
+    { ...config, expiresAt: '2099-10-04T17:00:00' }, { ...config, expiresAt: '2099-99-04T17:00:00Z' },
+    { ...config, expiresAt: '2099-02-30T17:00:00Z' }, { ...config, expiresAt: '2099-10-04T24:00:00Z' }]) {
+    assert.throws(() => parseAnnouncement(value));
+  }
+});
+
+test('hot reader expires cached notices, reloads edits, handles removal and malformed/oversized files', async (t) => {
+  const filePath = await fixture(t);
+  let now = 0;
+  const warnings = [];
+  const read = createAnnouncementReader({ filePath, now: () => now, log: { warn: (...args) => warnings.push(args) } });
+  assert.equal(await read(), null, 'missing file disables notices');
+  assert.equal(warnings.length, 0);
+  const short = { ...config, expiresAt: '1970-01-01T00:00:01.500Z' };
+  await writeFile(filePath, JSON.stringify(short));
+  now = 1000;
+  const a = await read();
+  assert.ok(a);
+  now = 1499;
+  assert.equal((await read()).id, a.id);
+  now = 1500;
+  assert.equal(await read(), null, 'expiry is checked before the cache refresh');
+  await writeFile(filePath, '\uFEFF' + JSON.stringify(config));
+  now = 2000;
+  assert.ok(await read(), 'accept the UTF-8 BOM used by Windows editors');
+  await writeFile(filePath, '{');
+  now = 3000;
+  assert.deepEqual(await Promise.all([read(), read(), read()]), [null, null, null]);
+  assert.equal(warnings.length, 1, 'concurrent players share a read');
+  now = 4000;
+  assert.equal(await read(), null);
+  assert.equal(warnings.length, 1, 'unchanged errors do not flood logs');
+  await writeFile(filePath, 'a'.repeat(16 * 1024 + 1));
+  now = 5000;
+  assert.equal(await read(), null);
+  assert.equal(warnings.length, 2);
+  await writeFile(filePath, JSON.stringify({ enabled: false }));
+  now = 6000;
+  assert.equal(await read(), null);
+  await writeFile(filePath, JSON.stringify(config));
+  now = 7000;
+  assert.ok(await read(), 'valid updates recover without restarting');
+  await rm(filePath);
+  now = 8000;
+  assert.equal(await read(), null);
+});
+
+test('remote reader polls the panel on its interval and coalesces concurrent reads', async (t) => {
+  let polls = 0;
+  const source = await upstream(t, (req, res) => { polls++; res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(config)); });
+  let now = 1000;
+  const read = createAnnouncementReader({ announcementUrl: source.url, now: () => now, pollMs: 10000 });
+  const a = await read();
+  assert.equal(a.title, config.title);
+  assert.equal(a.id, parseAnnouncement(config).id);
+  assert.equal(polls, 1);
+  assert.deepEqual(await Promise.all([read(), read(), read()]), [a, a, a]);
+  now = 5000;
+  assert.equal((await read()).id, a.id, 'reads inside the interval skip polling');
+  assert.equal(polls, 1);
+  now = 12000;
+  await read();
+  assert.equal(polls, 2, 'the interval elapsing triggers exactly one new poll');
+});
+
+test('remote reader keeps the last good notice during outages and honors explicit disable and expiry', async (t) => {
+  let body = JSON.stringify(config), status = 200, warnings = 0;
+  const source = await upstream(t, (req, res) => {
+    if (status >= 500) warnings++;
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(body);
+  });
+  let now = 1000;
+  const read = createAnnouncementReader({ announcementUrl: source.url, now: () => now, pollMs: 10000, log: { warn: () => warnings++ } });
+  const a = await read();
+  status = 503; now = 12000;
+  assert.equal((await read()).id, a.id, 'an unreachable source keeps the last good notice');
+  body = 'not json'; status = 200; now = 22000;
+  assert.equal((await read()).id, a.id, 'invalid payloads keep the last good notice too');
+  body = JSON.stringify({ ...config, text: 'x'.repeat(70000) }); now = 32000;
+  assert.equal((await read()).id, a.id, 'oversized responses keep the last good notice');
+  body = JSON.stringify({ enabled: false }); now = 42000;
+  assert.equal(await read(), null, 'an explicit disable clears the notice immediately');
+  body = JSON.stringify(config); now = 52000;
+  assert.ok(await read(), 're-enabling restores the notice');
+  body = JSON.stringify({ ...config, expiresAt: '1970-01-01T00:00:01.000Z' }); now = 62000;
+  assert.equal(await read(), null, 'expiry is still enforced against the wall clock');
+  body = JSON.stringify(config); now = 72000;
+  assert.ok(await read(), 'a fresh deadline serves again');
+  assert.ok(warnings > 0, 'outages are logged');
+});
+
+test('startServer serves the central announcement source through the URL mode', async (t) => {
+  let body = JSON.stringify({ ...config, secret: 'internal-only' });
+  const source = await upstream(t, (req, res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(body); });
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementUrl: source.url });
+  t.after(() => srv.close());
+  const out = await (await fetch(`${srv.url}/api/announcement`)).json();
+  assert.deepEqual(out.announcement, parseAnnouncement(config));
+  assert.ok(!JSON.stringify(out).includes('internal-only'), 'only the public projection leaves the game');
+});
+
+test('announcement HTTP API is read-only, not cached, and exposes only the public projection', async (t) => {
+  const filePath = await fixture(t);
+  await writeFile(filePath, JSON.stringify({ ...config, secret: 'never-public' }));
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementSource: 'file', announcementFile: filePath });
+  t.after(() => srv.close());
+  const res = await fetch(`${srv.url}/api/announcement`);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  const body = await res.json();
+  assert.deepEqual(body.announcement, parseAnnouncement(config));
+  assert.ok(Math.abs(Date.now() - body.serverTime) < 5000);
+  assert.equal(JSON.stringify(body).includes('never-public'), false);
+  const head = await fetch(`${srv.url}/api/announcement`, { method: 'HEAD' });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), '');
+  assert.equal((await fetch(`${srv.url}/api/announcement`, { method: 'POST', body: '{}' })).status, 405);
+  assert.equal((await fetch(`${srv.url}/announcement.json`)).status, 404, 'local configuration is outside public/');
+  assert.equal(srv.registry.size, 0);
+});
+
+test('probe-managed file is the default; existing explicit feed URLs remain compatible', () => {
+  for (const env of [{}, { SP_ANNOUNCEMENT_URL: '' }, { SP_ANNOUNCEMENT_FILE: 'old-notice.json' }]) {
+    const options = announcementOptionsFrom({}, env);
+    assert.equal(options.announcementUrl, null);
+    assert.deepEqual(options.source, { mode: 'agent', siteId: null });
+    assert.ok(options.filePath.endsWith('announcement.json'));
+    assert.ok(!options.filePath.endsWith('old-notice.json'));
+  }
+  // 合并注: 用户分支的 panel 源还能用 SP_SITE_ID + SP_PORTAL_URL 推导运维面板 feed（portal 域不在本次移植范围）;
+  // 这里 panel 就是一份显式的 SP_ANNOUNCEMENT_URL。
+  const env = { SP_ANNOUNCEMENT_SOURCE: 'panel', SP_ANNOUNCEMENT_URL: 'https://panel.example/api/announce/v1/aliyun', SP_ANNOUNCEMENT_POLL_MS: '30000' };
+  assert.equal(announcementOptionsFrom({}, env).announcementUrl, 'https://panel.example/api/announce/v1/aliyun');
+  assert.equal(announcementOptionsFrom({}, env).pollMs, 30000);
+  const explicit = announcementOptionsFrom({ announcementUrl: 'https://old.example/api/announce/v1/shiyan', announcementPollMs: 5000 }, {});
+  assert.equal(explicit.announcementUrl, 'https://old.example/api/announce/v1/shiyan');
+  assert.equal(explicit.pollMs, 5000);
+  const local = announcementOptionsFrom({}, { ...env, SP_ANNOUNCEMENT_SOURCE: 'file', SP_ANNOUNCEMENT_URL: 'https://unused.example/' });
+  assert.equal(local.announcementUrl, null);
+  assert.deepEqual(local.source, { mode: 'file', siteId: null });
+  const managed = announcementOptionsFrom({ announcementSource: 'agent' }, { SP_ANNOUNCEMENT_URL: 'https://unused.example/' });
+  assert.equal(managed.announcementUrl, null);
+  for (const bad of [{ SP_ANNOUNCEMENT_SOURCE: 'files' }, { SP_ANNOUNCEMENT_SOURCE: 'panel' },
+    { ...env, SP_ANNOUNCEMENT_POLL_MS: 'bad' },
+    { SP_ANNOUNCEMENT_URL: 'file:///tmp/notice' }, { SP_ANNOUNCEMENT_URL: 'https://user:secret@example.com/' }]) {
+    assert.throws(() => announcementOptionsFrom({}, bad));
+  }
+});
+
+test('default server hot-reads the managed file and ignores a manual local notice', async (t) => {
+  const filePath = await fixture(t), managed = filePath + '.managed';
+  await writeFile(filePath, JSON.stringify({ ...config, text: 'manual notice' }));
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementFile: filePath, announcementAgentFile: managed });
+  t.after(() => srv.close());
+  const first = await (await fetch(srv.url + '/api/announcement')).json();
+  assert.equal(first.announcement, null);
+  assert.deepEqual(first.source, { mode: 'agent', siteId: null });
+  await writeFile(managed, JSON.stringify({ ...config, _delivery: { revision: 1 } }));
+  await new Promise(resolve => setTimeout(resolve, 1050));
+  const second = await (await fetch(srv.url + '/api/announcement')).json();
+  assert.deepEqual(second.announcement, parseAnnouncement(config));
+  assert.ok(!JSON.stringify(second).includes('_delivery'));
+});
+
+test('读到的公告 revision 会投影出去（三层状态里的第三层），id 与展示策略不变', async (t) => {
+  const managed = await fixture(t);
+  await writeFile(managed, JSON.stringify({ ...config, _delivery: { revision: 7 } }));
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementSource: 'agent', announcementAgentFile: managed });
+  t.after(() => srv.close());
+  const body = await (await fetch(srv.url + '/api/announcement')).json();
+  assert.equal(body.observedRevision, 7, 'Agent 靠它知道「游戏真的读到第 7 版了」');
+  assert.ok(Number.isFinite(body.observedAt));
+  assert.deepEqual(body.announcement, parseAnnouncement(config), '公告本身与展示策略一个字都没变');
+  assert.ok(!JSON.stringify(body).includes('_delivery'), '交付记录不进公开投影');
+
+  // 手工写的文件（没有 _delivery）→ null，而不是 0：说「不知道」比说「读到第 0 版」安全。
+  const plain = await fixture(t);
+  await writeFile(plain, JSON.stringify(config));
+  const other = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementSource: 'agent', announcementAgentFile: plain });
+  t.after(() => other.close());
+  const answer = await (await fetch(other.url + '/api/announcement')).json();
+  assert.equal(answer.observedRevision, null);
+  assert.ok(Number.isFinite(answer.observedAt), '读到了文件，只是文件没说自己是哪一版');
+  // enabled:false（撤下公告）也要留下「读到过哪一版」：撤下也是它读到的一份文件。
+  await writeFile(plain, JSON.stringify({ enabled: false, _delivery: { revision: 9 } }));
+  await new Promise(resolve => setTimeout(resolve, 1050));
+  const cleared = await (await fetch(other.url + '/api/announcement')).json();
+  assert.equal(cleared.announcement, null);
+  assert.equal(cleared.observedRevision, 9);
+});
+
+test('panel 源也投影读到的 revision（来源不同，语义相同）', async (t) => {
+  const source = await upstream(t, (req, res) => { res.end(JSON.stringify({ ...config, _delivery: { revision: 4 } })); });
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true,
+    announcementSource: 'panel', announcementUrl: source.url + 'feed/hongkong' });
+  t.after(() => srv.close());
+  const body = await (await fetch(srv.url + '/api/announcement')).json();
+  assert.equal(body.observedRevision, 4);
+  assert.ok(!JSON.stringify(body).includes('_delivery'));
+});
+
+test('the explicit panel feed is polled as configured (合并注: URL 直连, siteId/portal 推导未随 portal 域移植)', async (t) => {
+  let requested;
+  const source = await upstream(t, (req, res) => { requested = req.url; res.end(JSON.stringify(config)); });
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true,
+    announcementSource: 'panel', announcementUrl: source.url + 'api/announce/v1/new-domestic' });
+  t.after(() => srv.close());
+  const body = await (await fetch(`${srv.url}/api/announcement`)).json();
+  assert.equal(requested, '/api/announce/v1/new-domestic');
+  assert.deepEqual(body.source, { mode: 'panel', siteId: null });
+  assert.deepEqual(body.announcement, parseAnnouncement(config));
+});

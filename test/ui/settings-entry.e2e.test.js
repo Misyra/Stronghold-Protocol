@@ -32,11 +32,13 @@ describe('the settings entry of the lobby and the room', { skip: !ENABLED && 'se
     await srv?.close();
   });
 
-  /** Is the 设置 button the sibling right before the 玩法说明 button of `screen`'s top bar? */
+  /** Does the 设置 button sit left of the 玩法说明 button of `screen`'s top bar (公告 between them, 合并自用户分支)? */
   const settingsBeforeGuide = (page, screen, guideClass) => page.evaluate((s, g) => {
     const btn = document.querySelector(`${s} [data-testid="settings-btn"]`);
     const guide = document.querySelector(`${s} .${g}`);
-    return !!btn && !!guide && btn.nextElementSibling === guide && /设置/.test(btn.getAttribute('aria-label') || btn.textContent) && btn.querySelector('svg.btn__icon') != null;
+    let el = btn;
+    while (el && el !== guide) el = el.nextElementSibling;
+    return !!btn && !!guide && el === guide && /设置/.test(btn.getAttribute('aria-label') || btn.textContent) && btn.querySelector('svg.btn__icon') != null;
   }, screen, guideClass);
   const modalText = (page) => page.evaluate(() => document.querySelector('.modal')?.textContent.replace(/\s+/g, ' ').trim() ?? null);
 

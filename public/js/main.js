@@ -43,6 +43,7 @@ import { render } from '../vendor/preact.module.js';
 import { useErrorBoundary } from '../vendor/hooks.module.js';
 import { html, UiHosts, Button, MicroLabel, closeAllDialogs } from './ui/components.js';
 import { ConnectionBanner } from './ui/connBanner.js';
+import { AnnouncementBanner } from './ui/announcement.js';
 import { ToastHost, toast, toastError, describeError } from './ui/toasts.js';
 import { net, identity, NetError } from './net.js';
 import { MAX_SEATS } from '../../shared/constants.js';
@@ -412,6 +413,7 @@ function App() {
     ${error ? html`<${ScreenCrashed} error=${error} reset=${resetError} />` : html`<${Screen} key=${route} />`}
     <${TrustedNotice} />
     <${ConnectionBanner} />
+    <${AnnouncementBanner} />
     <${ToastHost} />
     <${UiHosts} />
     <${GuideHost} />

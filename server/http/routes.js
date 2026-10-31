@@ -64,6 +64,8 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
     // it has, when it has some (a page's title screen says so; P1a)
     ...(content ? { content: { vanilla: content.cs, sets: contentSets(lobby), ...pluginCount(lobby) } } : {}),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
+    // the per-network action budgets (server/roomProtection.js, 合并自用户分支): allowed / denied counts per action
+    roomProtection: lobby.roomActions?.stats() || null,
   };
   if (trusted && Object.keys(trusted).length) report.plugins = trusted;
   // the official versions (DESIGN §35.23): only when another one than 第二期下半 is enabled
@@ -91,7 +93,7 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  *   plugin studio (server/studio/index.js), or none
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto', studio = null, csp = null, trustedRuntime = null }) {
+export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto', studio = null, csp = null, trustedRuntime = null, readAnnouncement = null, announcementSource = null }) {
   async function handleRequest(req, res) {
     const url = req.url || '/';
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
@@ -107,6 +109,18 @@ export function createRequestHandler({ serveStatic, health, log, trustProxy = 'a
     if (parts.rawPath === '/healthz') {
       const withTraffic = wantsTraffic(parts.query) && isLocalIp(clientAddress(req, trustProxy).ip);
       sendJson(req, res, 200, healthReport(health, withTraffic));
+      return;
+    }
+    // The hot-loaded maintenance notice (server/announcement.js, 合并自用户分支): every open page polls this, so the
+    // body is the public projection only — no file paths, no delivery internals beyond the observed revision.
+    if (parts.rawPath === '/api/announcement' && readAnnouncement) {
+      // 顺序重要（用户分支同款）: 先真的读一次，再取「读到的是哪一版」——A schedule document may also carry a popup
+      // (shared/announcements.js): the same read serves both, so the two never disagree about which notices are live.
+      const announcement = await readAnnouncement();
+      const popupAnnouncement = readAnnouncement.popup?.() ?? null;
+      const delivery = readAnnouncement.delivery?.() ?? { revision: null, observedAt: null };
+      sendJson(req, res, 200, { announcement, popupAnnouncement, serverTime: Date.now(), source: announcementSource,
+        observedRevision: delivery.revision, observedAt: delivery.observedAt });
       return;
     }
     await serveStatic(req, res, parts.rawPath, parts.query);

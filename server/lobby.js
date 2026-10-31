@@ -235,6 +235,7 @@ import { encode, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
 import { Matchmaking } from './matchmaking.js';
+import { RoomActionLimiter } from './roomProtection.js';
 import { allocateMatchmakingGroup, queuePartyMatchmaking, cancelPartyMatchmaking, dropMatchmakingParty, matchmakingAvailable, matchmakingMembers, matchmakingSend } from './matchmakingRooms.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
 
@@ -254,6 +255,11 @@ export const LOBBY_DEFAULTS = Object.freeze({
   maxRooms: 1000,
   maxRoomsPerAddr: 16,    // rooms created from one client network that may exist at once (0 = unlimited)
   maxMatchesPerAddr: 8,   // matches started from one client network that may run at once (0 = unlimited)
+  // the rate half (server/roomProtection.js, 合并自用户分支): bursts with refill, on top of the concurrency caps
+  roomCreateBurst: 4,     // room creations from one client network per roomCreateRefillMs window
+  roomCreateRefillMs: 15_000,
+  matchStartBurst: 4,     // match starts from one client network per matchStartRefillMs window
+  matchStartRefillMs: 30_000,
   resyncMinGapMs: 1000,   // heavy resyncs (match state / result replay) per session at most this often on repeated hellos
   soloReconnectWindowMs: null, // a dropped solo run stays resumable this long (null = data singleReconnectTime, 24 h)
   versionVoteMs: 60_000,  // an open version vote is cancelled after this long (header "Official versions") [ASSUMED]
@@ -606,6 +612,11 @@ export class Lobby {
     this.resyncTimers = new Map();
     /** per-network limit warnings: at most one log line per 10 s (the rest are counted) */
     this.limitLog = { at: -Infinity, suppressed: 0 };
+    /** per-network room-action budgets (server/roomProtection.js, 合并自用户分支): the *rate* half of the per-network
+     *  limits — the concurrency caps above bound how much one network may hold at once, this bounds how fast it acts. */
+    this.roomActions = new RoomActionLimiter({ now, createBurst: this.opts.roomCreateBurst,
+      createRefillMs: this.opts.roomCreateRefillMs, startBurst: this.opts.matchStartBurst,
+      startRefillMs: this.opts.matchStartRefillMs });
     /** 匹配队列 (server/matchmaking.js, 移植自用户分支): 同容量真人匹配,组队 indivisible,全员确认后原子开局 */
     this.matchmaking = new Matchmaking({ now, send: (session, msg) => this.sendQueue(session, msg),
       available: (session, entry) => matchmakingAvailable(this, session, entry),
@@ -708,6 +719,19 @@ export class Lobby {
       roomCode: room?.code || null,
       ...(room ? { roomCreatedAt: room.createdAt, matchCount: room.matchCount, mode: room.mode,
         difficulty: room.difficulty, bots: room.seats.filter((s) => s?.isBot && !s.left).length } : {}), ...extra }));
+  }
+
+  /** The action-budget half of the per-network limits (server/roomProtection.js, 合并自用户分支). */
+  denyRoomAction(session, action, room, reason) {
+    const suppressed = this.roomActions.denied(session?.limitKey, action);
+    if (suppressed !== null) this.audit(action === 'create' ? 'room.create.denied' : 'match.start.denied',
+      session, room, { reason, suppressed });
+  }
+
+  allowRoomAction(session, action, room = null) {
+    if (this.roomActions.take(session?.limitKey, action)) return true;
+    this.denyRoomAction(session, action, room, 'action_budget');
+    return false;
   }
 
   /** Counters for /healthz. */
@@ -1006,6 +1030,9 @@ export class Lobby {
         this.warnOnce(`[lobby] the default plugins (${defaults.join(', ')}) cannot be applied${version !== DEFAULT_VERSION ? ` to ${version}` : ''}: ${r.error}${r.detail ? ` (${r.detail})` : ''}`);
       } else initial = r.content;
     }
+    // the action-budget half (server/roomProtection.js, 合并自用户分支): the last refusal before any side effect
+    // (the leave below), so a create refused here never spends the per-network budget nor drops the old room
+    if (!this.allowRoomAction(session, 'create', cur)) return fail(ERR.RATE, 'room creation rate exceeded');
     this.leaveQueue(session, 'cancelled');
     if (cur) this.removeMember(cur, session.playerId);
     const room = new Room(code, mode, difficulty, this.now(), version);
@@ -1775,6 +1802,10 @@ export class Lobby {
       this.limitWarn(`match limit (${this.opts.maxMatchesPerAddr}) reached for ${session.addr}`);
       return fail(ERR.RATE, 'too many running matches from your network');
     }
+    // the action-budget half (server/roomProtection.js, 合并自用户分支): match starts are budgeted like creations —
+    // a matchmaking allocation spends its host's budget too (用户分支同款: only a checkpoint restart skips, that
+    // domain is not ported)
+    if (!this.allowRoomAction(session, 'start', room)) return fail(ERR.RATE, 'match start rate exceeded');
     return this.startMatch(room, key);
   }
 

@@ -27,12 +27,54 @@ import { DEFAULT_VERSION, VERSIONS, versionById } from '../../shared/versions.js
 /** Repository root. */
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+// The probe writes public notice content here; the game never writes this directory (合并自用户分支).
+export const DEFAULT_AGENT_ANNOUNCEMENT_FILE = process.platform === 'win32'
+  ? path.join(ROOT, '.state', 'announcement.json') : '/var/lib/stronghold-announcement/announcement.json';
+
+/**
+ * The maintenance-announcement source (server/announcement.js, 合并自用户分支). The default source is the managed
+ * probe file (`agent`); an explicit feed URL reads from it instead (`panel`); `file` reads a repo-relative JSON the
+ * operator edits (SP_ANNOUNCEMENT_FILE). An `announcementFile: null` / `announcementAgentFile: null` startServer()
+ * option (tests) names no file — the reader then finds nothing and the notice stays empty.
+ * @param {{ announcementSource?: string, announcementFile?: string | null, announcementAgentFile?: string | null,
+ * announcementPollMs?: number, announcementUrl?: string }} opts
+ * @param {Record<string, string | undefined>} env
+ */
+export function announcementOptionsFrom(opts = {}, env = process.env) {
+  const explicitUrl = opts.announcementUrl || env.SP_ANNOUNCEMENT_URL;
+  const source = opts.announcementSource ?? env.SP_ANNOUNCEMENT_SOURCE ?? (explicitUrl ? 'panel' : 'agent');
+  if (!['agent', 'panel', 'file'].includes(source)) throw new RangeError('SP_ANNOUNCEMENT_SOURCE must be agent, panel or file');
+  const rawFile = source === 'agent'
+    ? opts.announcementAgentFile ?? env.SP_ANNOUNCEMENT_AGENT_FILE ?? DEFAULT_AGENT_ANNOUNCEMENT_FILE
+    : opts.announcementFile ?? env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json';
+  const filePath = rawFile == null ? null : path.resolve(ROOT, rawFile);
+  const pollMs = opts.announcementPollMs ?? Number(env.SP_ANNOUNCEMENT_POLL_MS || 10000);
+  if (!Number.isFinite(pollMs)) throw new RangeError('invalid SP_ANNOUNCEMENT_POLL_MS');
+  if (source !== 'panel') {
+    // The managed file wins; `config/announcements.json` (shipped with the repo) is the default schedule it falls back
+    // to when nothing was written yet — so a fresh deployment still has somewhere to put notices (shared/announcements.js).
+    const fallbackFilePath = filePath == null ? null : path.resolve(ROOT, 'config', 'announcements.json');
+    return { filePath, pollMs, announcementUrl: null,
+      ...(fallbackFilePath && fallbackFilePath !== filePath ? { fallbackFilePath } : {}),
+      source: { mode: source, siteId: null } };
+  }
+  // 用户分支的 panel 源还能从 SP_PORTAL_URL + SP_SITE_ID 推导运维面板的 feed（portal 域不在本次移植范围）;
+  // 这里 panel 就是一份明确的 HTTP(S) feed 地址。
+  let url;
+  try { url = new URL(explicitUrl ?? ''); } catch { throw new RangeError('panel source requires a valid SP_ANNOUNCEMENT_URL'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) {
+    throw new RangeError('announcement URL must be HTTP(S) without credentials or a fragment');
+  }
+  return { filePath, pollMs, announcementUrl: url.href, source: { mode: 'panel', siteId: null } };
+}
+
 export const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
 /** startServer() options handed on to net.js Network / lobby.js Lobby (an absent one keeps that module's default). */
 const NET_OPTION_KEYS = ['reconnectWindowMs', 'heartbeatMs', 'helloTimeoutMs', 'ratePerSec', 'rateBurst', 'maxConnections', 'maxOnline', 'abuseDropsPerSec',
   'maxConnectionsPerAddr', 'heavyPerSec', 'heavyBurst', 'trustProxy'];
-const LOBBY_OPTION_KEYS = ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMatchesPerAddr', 'resyncMinGapMs', 'soloReconnectWindowMs', 'versionVoteMs', 'versionRetryMs'];
+const LOBBY_OPTION_KEYS = ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMatchesPerAddr', 'resyncMinGapMs', 'soloReconnectWindowMs', 'versionVoteMs', 'versionRetryMs',
+  'roomCreateBurst', 'roomCreateRefillMs', 'matchStartBurst', 'matchStartRefillMs'];
 
 /**
  * Bind address used when neither the `host` option nor `HOST` says otherwise: one dual-stack socket, so the server
@@ -155,7 +197,11 @@ export function lobbyOptionsFrom(opts, log = null) {
 /** Socket caps that SP_MAX_CONNECTIONS / SP_MAX_CONNECTIONS_PER_ADDR may override (net.js). */
 const NET_LIMIT_ENV = [['maxConnections', 'SP_MAX_CONNECTIONS'], ['maxConnectionsPerAddr', 'SP_MAX_CONNECTIONS_PER_ADDR'], ['maxOnline', 'SP_MAX_ONLINE']];
 /** Room / match caps that SP_MAX_ROOMS / SP_MAX_ROOMS_PER_ADDR / SP_MAX_MATCHES_PER_ADDR may override (lobby.js). */
-const LOBBY_LIMIT_ENV = [['maxRooms', 'SP_MAX_ROOMS'], ['maxRoomsPerAddr', 'SP_MAX_ROOMS_PER_ADDR'], ['maxMatchesPerAddr', 'SP_MAX_MATCHES_PER_ADDR']];
+const LOBBY_LIMIT_ENV = [['maxRooms', 'SP_MAX_ROOMS'], ['maxRoomsPerAddr', 'SP_MAX_ROOMS_PER_ADDR'], ['maxMatchesPerAddr', 'SP_MAX_MATCHES_PER_ADDR'],
+  // the action-budget half (server/roomProtection.js, 合并自用户分支): '0' reaches the limiter's RangeError and
+  // refuses to boot — a burst cap of 0 is a misconfiguration, not "unlimited"
+  ['roomCreateBurst', 'SP_ROOM_CREATE_BURST'], ['roomCreateRefillMs', 'SP_ROOM_CREATE_REFILL_MS'],
+  ['matchStartBurst', 'SP_MATCH_START_BURST'], ['matchStartRefillMs', 'SP_MATCH_START_REFILL_MS']];
 
 /**
  * One limit out of the environment: an empty or absent value keeps `fallback`; an unusable one warns and keeps it too,

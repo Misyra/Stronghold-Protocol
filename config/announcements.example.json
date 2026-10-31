@@ -1,0 +1,32 @@
+{
+  "announcements": [
+    {
+      "id": "maintenance-example",
+      "type": "scroll",
+      "text": "服务器将在今晚 22:00 进行维护，请提前完成当前对局。",
+      "startAt": "2026-10-05T21:50:00+08:00",
+      "durationSeconds": 60,
+      "level": "warning",
+      "enabled": false
+    },
+    {
+      "id": "popup-example",
+      "type": "popup",
+      "title": "更新公告",
+      "format": "markdown",
+      "text": "## 本次更新\n\n欢迎使用 **新版本**。\n\n- 支持标题、列表和表格\n- 正文可以放多个 [链接](https://github.com/xinhai-ai/Stronghold-Protocol)\n\n![项目图标](/icons/app-192.png)\n\n> 本公告未设置时间，启用后一直显示，直到关闭或撤回。",
+      "url": "https://github.com/xinhai-ai/Stronghold-Protocol",
+      "autoPopup": false,
+      "level": "info",
+      "enabled": false
+    },
+    {
+      "id": "popup-file-example",
+      "type": "popup",
+      "title": "Markdown 文件公告",
+      "textFile": "announcement-popup.example.md",
+      "autoPopup": false,
+      "enabled": false
+    }
+  ]
+}

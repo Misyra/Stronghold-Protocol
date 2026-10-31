@@ -1927,7 +1927,10 @@ describe('per-network limits', () => {
   test('creating a room from your only room does not count the room being left', async () => {
     const B = '203.0.113.99';
     const c = await netPlayer('hopper', B);
-    for (let i = 0; i < 6; i++) await expectOk(c, { t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
+    // 合并注: was 6 — the per-network action budget (server/roomProtection.js, 合并自用户分支) allows 4 creates per
+    // 15 s, and this churn loop is exactly what it throttles. 4 keeps the full discriminating power: without the
+    // leaving adjustment the 4th create would count 3 held rooms (maxRoomsPerAddr: 3) and be refused.
+    for (let i = 0; i < 4; i++) await expectOk(c, { t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
   });
 
   test('per-network socket cap is enforced at upgrade (429); other networks and local peers are unaffected', async () => {

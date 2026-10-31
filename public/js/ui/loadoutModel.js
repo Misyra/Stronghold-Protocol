@@ -267,7 +267,7 @@ export const LOADOUT_IMPORT_MAX_BYTES = 256 * 1024;
  * @param {Record<string, any>} byChar the stored choices by charId
  * @param {{ now?: number, ops?: Record<string, any>, skins?: Record<string, string>, portraits?: Record<string, string> }} [o]
  */
-export function exportPayload(byChar, { now = Date.now(), ops = {}, skins = null, portraits = null } = {}) {
+export function exportPayload(byChar, { now = Date.now(), ops = {}, skins = {}, portraits = {} } = {}) {
   const clean = {};
   for (const [id, e] of Object.entries(byChar || {})) if (isObj(e)) clean[id] = { ...e };
   const cleanOps = {};
@@ -284,8 +284,10 @@ export function exportPayload(byChar, { now = Date.now(), ops = {}, skins = null
     count: Object.keys(clean).length,
     byChar: clean,
     ops: cleanOps,
-    ...(skins ? { skins: cleanMap(skins) } : {}),
-    ...(portraits ? { portraits: cleanMap(portraits) } : {}),
+    // always carried, empty included (an import then resets the choices); an older export omits the fields entirely
+    // (合并自用户分支)
+    skins: cleanMap(skins),
+    portraits: cleanMap(portraits),
   };
 }
 

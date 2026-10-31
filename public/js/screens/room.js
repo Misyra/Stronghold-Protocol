@@ -59,6 +59,7 @@ import { copyText } from '../ui/clipboard.js';
 import { GuideButton } from '../ui/guide.js';
 import { openStats } from './stats.js';
 import { SettingsButton } from '../ui/settings.js';
+import { AnnouncementButton } from '../ui/announcement.js';
 import { LoadoutButton } from './loadout.js';
 import { PluginTag, VersionTag, isModdedRoom } from '../ui/pluginTag.js';
 import { VersionVote, versionVoteOf } from '../ui/versionVote.js';
@@ -769,6 +770,7 @@ export function RoomScreen() {
         <div class="rs-tools">
           <${Button} variant="secondary" size="sm" square=${true} icon="chart" class="stats-entry" onClick=${openStats} title=${t('统计数据')} aria-label=${t('统计数据')} />
           <${SettingsButton} class="room-settings" variant="secondary" square=${true} />
+          <${AnnouncementButton} class="room-announce" variant="secondary" square=${true} />
           <${GuideButton} class="room-guide" variant="secondary" square=${true} />
         </div>
         <${PluginTag} room=${room} myId=${me.playerId} />

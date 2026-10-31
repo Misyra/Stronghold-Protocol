@@ -52,6 +52,7 @@ import { AchievementDialog, useStatsOpen } from './stats.js';
 import { SweepReport } from './sweep.js';
 import { Emblem } from './title.js';
 import { SettingsButton } from '../ui/settings.js';
+import { AnnouncementButton, AnnouncementCard } from '../ui/announcement.js';
 import { PwaInstallButton, detectFeatures, useMediaQuery, SHORT_SCREEN_QUERY } from '../ui/device.js';
 import { LoadoutButton } from './loadout.js';
 import { net, identity } from '../net.js';
@@ -785,6 +786,7 @@ export function LobbyScreen() {
         <div class="topbar__tools">
           <${NoticesButton} />
           <${SettingsButton} class="lobby-settings" variant="secondary" square=${true} />
+          <${AnnouncementButton} variant="secondary" square=${true} />
           <${GuideButton} class="lobby-guide" variant="secondary" square=${true} />
           <${LobbyMediaButton} />
           <${PwaInstallButton} class="lobby-pwa" square=${true} />
@@ -804,6 +806,7 @@ export function LobbyScreen() {
         <${TipsPanel} />
       </aside>
       <aside class="hub-right">
+        <${AnnouncementCard} />
         <${SweepPlate} onClick=${() => setSweepOpen(true)} />
         <${LoadoutButton} from="lobby" size="lg" class="hub-plate hub-plate--loadout lobby-loadout" label=${t('干员调配')} />
         <${AchievementPlate} onOpen=${() => setAchOpen(true)} />

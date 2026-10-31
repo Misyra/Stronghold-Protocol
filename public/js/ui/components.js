@@ -401,7 +401,7 @@ const modalStack = []; // open modals, topmost last: only the topmost handles ke
  *   width?: string, closeOnBackdrop?: boolean, class?: string, veilClass?: string, children?: any }} props
  * `veilClass` styles the backdrop itself (e.g. a dialog that dims the field without blurring it).
  */
-export function Modal({ open, title, micro, tone = 'mint', onClose, actions, width, closeOnBackdrop = true, class: cls, veilClass, children }) {
+export function Modal({ open, title, micro, tone = 'mint', onClose, actions, width, closeOnBackdrop = true, utility = false, class: cls, veilClass, children }) {
   const boxRef = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -453,13 +453,14 @@ export function Modal({ open, title, micro, tone = 'mint', onClose, actions, wid
   if (!open) return null;
   return html`<div class=${cx('modal', veilClass)} role="presentation"
       onMouseDown=${(e) => { if (closeOnBackdrop && e.target === e.currentTarget && onClose) onClose(); }}>
-    <div ref=${boxRef} class=${cx('modal__box', 'brackets', `modal__box--${tone}`, cls)} role="dialog" aria-modal="true" tabindex="-1"
-         style=${width ? `width:${width}` : undefined}>
+    <div ref=${boxRef} class=${cx('modal__box', 'brackets', `modal__box--${tone}`, utility && 'utility-modal', cls)} role="dialog" aria-modal="true" tabindex="-1"
+         style=${width ? utility ? `--utility-width:${width}` : `width:${width}` : undefined}>
       <div class="modal__stripe" aria-hidden="true"></div>
       ${title || micro ? html`<header class="modal__head">
         ${micro ? html`<${MicroLabel}>${micro}<//>` : null}
         ${title ? html`<h2 class="modal__title">${title}</h2>` : null}
       </header>` : null}
+      ${utility && onClose ? html`<button type="button" class="utility-modal__close" aria-label=${t('关闭')} onClick=${onClose}><${Icon} name="close" /></button>` : null}
       <div class="modal__body">${children}</div>
       ${actions ? html`<footer class="modal__actions">${actions}</footer>` : null}
     </div>

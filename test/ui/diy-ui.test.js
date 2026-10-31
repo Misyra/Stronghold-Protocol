@@ -122,8 +122,9 @@ describe('自选编队 model (ui/diyModel.js)', () => {
     const text = M.serializeDiy({ [T5A]: SIEGE_PICK }, { now: 0 });
     const env = JSON.parse(text);
     assert.deepEqual([env.kind, env.v, env.count, env.picks], [M.DIY_EXPORT_KIND, 1, 1, { [T5A]: SIEGE_PICK }]);
-    assert.deepEqual(M.parseDiyImport(text), { ok: true, picks: { [T5A]: SIEGE_PICK } });
-    assert.deepEqual(M.parseDiyImport({ v: 1, picks: {} }), { ok: true, picks: {} });
+    // the envelope carries the slots' 皮肤 / 立绘 maps too (present-empty when none; 合并自用户分支)
+    assert.deepEqual(M.parseDiyImport(text), { ok: true, picks: { [T5A]: SIEGE_PICK }, skins: {}, portraits: {} });
+    assert.deepEqual(M.parseDiyImport({ v: 1, picks: {} }), { ok: true, picks: {} }); // absent = an older export
     for (const bad of ['', '{nope', { v: 9, picks: {} }, { kind: 'stronghold.ownership', v: 1, notOwned: [] }, 'x'.repeat(M.DIY_IMPORT_MAX_BYTES + 1), [1]]) {
       assert.equal(M.parseDiyImport(bad).ok, false, JSON.stringify(bad).slice(0, 30));
     }

@@ -838,7 +838,9 @@ function LoadoutScreen({ st }) {
   const openExport = () => setIo(tab === 'ownership'
     // (by operator, every version's — DESIGN §35.23; a v1 store still migrating exports what it has)
     ? { mode: 'export', kind: 'ownership', text: serializeOwnership(loadoutStore.get().notOwnedChars || []) }
-    : tab === 'diy' ? { mode: 'export', kind: 'diy', text: serializeDiy(loadoutStore.get().diy, { version: loadoutStore.get().diyVersion }) }
+    : tab === 'diy' ? { mode: 'export', kind: 'diy', text: serializeDiy(loadoutStore.get().diy, { version: loadoutStore.get().diyVersion,
+        // the slots' own 皮肤 / 商店立绘 choices ride along (合并自用户分支): a slot's pick and its skin belong together
+        skins: slotSkinMap(skinsStore.get().entries), portraits: slotSkinMap(skinsStore.get().portraits) }) }
       : { mode: 'export', kind: 'loadout', text: serializeExport(loadoutStore.get().byChar || {}, { ops: loadoutStore.get().ops,
           skins: rosterSkinMap(skinsStore.get().entries), portraits: rosterSkinMap(skinsStore.get().portraits) }) });
   const openImport = () => setIo({ mode: 'import', kind: tab, text: '' });
@@ -882,6 +884,20 @@ function LoadoutScreen({ st }) {
       const { applied, dropped } = applyDiyImport(r.picks, diyData(), loadoutStore.get().diyKitted || []);
       // a re-pick (or a dropped one) drops the slot's 皮肤 / 商店立绘 choice: it names a skin of the OLD operator
       syncDiySkins(oldPicks, loadoutStore.get().diy);
+      // and the file's own choices apply to the slots whose pick survived — the file's state for those slots, other
+      // keys (the roster's, the other slots') untouched (合并自用户分支)
+      if (r.skins || r.portraits) {
+        const keepIds = new Set(Object.keys(loadoutStore.get().diy));
+        const replace = (map, next) => {
+          const merged = { ...map };
+          const inFile = {};
+          for (const [slotId, v] of Object.entries(next)) if (keepIds.has(slotId)) inFile[slotId] = v;
+          for (const slotId of keepIds) delete merged[slotId];
+          return { ...merged, ...inFile };
+        };
+        setSkins(replace(skinsStore.get().entries, cleanSkinsMap(r.skins)));
+        setPortraits(replace(skinsStore.get().portraits, cleanSkinsMap(r.portraits)));
+      }
       setIo(null);
       toast(applied ? t('已导入 {n} 个自选名额', { n: applied }) + (dropped ? t('（另有 {n} 项不可用，未导入）', { n: dropped }) : '') : t('已导入：全部名额为空'), dropped ? 'warn' : 'success');
       return;

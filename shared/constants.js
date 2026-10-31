@@ -146,10 +146,6 @@ export const UF = Object.freeze({
 export const ANIM = Object.freeze({ IDLE: 0, MOVE: 1, ATTACK: 2, SKILL: 3, DIE: 4, STUN: 5, DEPLOY: 6 });
 
 export const ERR = Object.freeze({
-  CHAT_DISABLED: 'CHAT_DISABLED',
-  CHAT_MUTED: 'CHAT_MUTED',
-  CHAT_BLOCKED: 'CHAT_BLOCKED',
-  NICKNAME_SENSITIVE: 'NICKNAME_SENSITIVE', // nickname rejected by the shared word policy
   BAD_MSG: 'BAD_MSG',             // malformed / unknown message
   SESSION_IN_USE: 'SESSION_IN_USE', // a local recovery candidate cannot replace the connected holder
   RATE: 'RATE',                   // rate limited
@@ -160,11 +156,6 @@ export const ERR = Object.freeze({
   ROOM_STARTED: 'ROOM_STARTED',
   NOT_HOST: 'NOT_HOST',
   NOT_READY: 'NOT_READY',
-  BOTS_DISABLED: 'BOTS_DISABLED',
-  AI_POPULATION_LIMIT: 'AI_POPULATION_LIMIT',
-  FOREIGN_AI_POPULATION_LIMIT: 'FOREIGN_AI_POPULATION_LIMIT',
-  FOREIGN_SESSION_LIMIT: 'FOREIGN_SESSION_LIMIT',
-  FOREIGN_CONNECTIONS_DISABLED: 'FOREIGN_CONNECTIONS_DISABLED',
   WRONG_PHASE: 'WRONG_PHASE',
   NO_FUNDS: 'NO_FUNDS',
   HAND_FULL: 'HAND_FULL',
@@ -222,15 +213,6 @@ export const ERR = Object.freeze({
 });
 
 export const ERR_TEXT = {
-  BOTS_DISABLED: N_('当前服务器禁止添加 AI 队友'),
-  AI_POPULATION_LIMIT: N_('当前服务器AI队友数量异常，可能正在被攻击，暂停AI 队友创建。'),
-  FOREIGN_AI_POPULATION_LIMIT: N_('由于你的ip属于海外，当前AI队友达到上限，如果你开了代理请关闭代理，或者前往联机大厅匹配队友'),
-  FOREIGN_SESSION_LIMIT: N_('当前 IP 已有在线玩家，请关闭原窗口后重试'),
-  FOREIGN_CONNECTIONS_DISABLED: N_('本服务器暂时仅对中国大陆服务'),
-  CHAT_DISABLED: N_('当前服务器未开启聊天'),
-  CHAT_MUTED: N_('你因多次发送不适宜内容被暂停聊天，请稍后再试'),
-  CHAT_BLOCKED: N_('聊天包含不适宜内容，请文明交流'),
-  NICKNAME_SENSITIVE: N_('代号包含不适宜内容，请更换昵称'),
   SESSION_IN_USE: N_('此对局仍在其他窗口中，或当前浏览器无法安全恢复。请关闭原窗口后重试。'),
   BAD_MSG: N_('无效的请求'), RATE: N_('操作过于频繁'), NOT_IN_ROOM: N_('你不在房间中'), ROOM_NOT_FOUND: N_('未找到该同盟密钥对应的房间'),
   ROOM_FULL: N_('房间已满'), SERVER_FULL: N_('服务器已满'), ROOM_STARTED: N_('模拟已开始'), NOT_HOST: N_('只有房主可以操作'), NOT_READY: N_('仍有玩家未就绪'),
@@ -355,5 +337,3 @@ export const emoteArtGroup = (id) => { const e = emoteInfo(id); return e ? `emot
 export const emoteArtPath = (id) => { const e = emoteInfo(id); return e ? `/assets/local/emoticon/${e.dir}/${e.picId}.png` : null; };
 export const EMOTE_COOLDOWN_MS = 1000; // activity_table autoChessData.constData.chatCD (s)
 export const EMOTE_BUBBLE_MS = 3000;   // constData.chatTime (s): how long a bubble stays up
-
-export const REPOSITORY_URL = 'https://github.com/Misyra/Stronghold-Protocol';

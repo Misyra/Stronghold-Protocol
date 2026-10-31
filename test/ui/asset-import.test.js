@@ -6,7 +6,6 @@ import vm from 'node:vm';
 import { hash16 } from '../../server/http/assetIndex.js';
 import { rewriteManifest } from '../../server/http/assetViews.js';
 import { siteCsp, SIM_WORKER_CSP } from '../../server/http/csp.js';
-import { createAssetDownload } from '../../public/js/assetDownload.js';
 import {
   IMPORTED_ASSET_CACHE, IMPORTED_ASSET_CACHE_PREFIX, IMPORTED_ASSET_PATH, IMPORTED_INDEX_URL,
   addImportedPaths, askPersistStorage, countImportedFiles, importSupport, listImportedPaths, pruneImportedPaths, shouldServeImportedAsset,
@@ -491,25 +490,6 @@ test('cancel keeps bytes already accepted and does not store the file still bein
   assert.deepEqual([...await listImportedPaths(caches)], [new URL(assets()[0], 'http://x').pathname], 'a cancelled import indexes what it stored');
 });
 
-test('the download queue does not request a URL the import cache already has', async () => {
-  const calls = [];
-  const queue = createAssetDownload({
-    lookupImported: async () => new Set(['/media/~1234567890abcdef/bgm/a']),
-    fetch: async (url) => {
-      calls.push(url);
-      if (url === '/data/assets.json') return Response.json({ audio: '/assets/~1234567890abcdef/audio/bgm/a.mp3' });
-      if (url === '/data/local-assets.json') return Response.json({ groups: {} });
-      if (url === '/data/local-fx.json') return new Response('', { status: 404 });
-      return new Response('x', { headers: { 'content-type': 'application/octet-stream' } });
-    },
-  });
-  await queue.start();
-  assert.equal(queue.get().phase, 'complete');
-  assert.equal(queue.get().cached, 1);
-  assert.equal(queue.get().bytes, 0);
-  assert.equal(calls.includes('/media/~1234567890abcdef/bgm/a'), false);
-});
-
 test('the worker answers only hashed asset GET, and its copy matches the module', async () => {
   const sw = fs.readFileSync(path.resolve('public/sw.js'), 'utf8');
   assert.ok(sw.includes(`const IMPORTED_ASSET_CACHE = '${IMPORTED_ASSET_CACHE}';`));
@@ -643,7 +623,7 @@ test('mergeLocalManifests: the effects manifest\'s groups join the local ones fo
   assert.ok(plan.rels.has('assets/local/scene/a.bin'));
 });
 
-test('a whole pack is too large for Cache.keys() in Chrome: the import\'s index keeps the count and the download queue\'s skips', async () => {
+test('a whole pack is too large for Cache.keys() in Chrome: the import\'s index keeps the count', async () => {
   const files = Array.from({ length: 12 }, (_, i) => bytesOf(`file-${i}`));
   const manifest = Object.fromEntries(files.map((_, i) => [`f${i}`, `/assets/f${i}.png`]));
   const map = Object.fromEntries(files.map((b, i) => [`assets/f${i}.png`, hash16(b)]));
@@ -666,21 +646,6 @@ test('a whole pack is too large for Cache.keys() in Chrome: the import\'s index 
   assert.equal(paths.size, 14);
   assert.ok(paths.has(`/media/~${hash16(audio)}/bgm/a`));
   assert.equal(await countImportedFiles(mem.caches), 13, '/assets/ and /fonts/ only, not the /media/ alias');
-
-  const requested = [];
-  const queue = createAssetDownload({
-    lookupImported: () => listImportedPaths(mem.caches),
-    fetch: async (url) => {
-      if (url === '/data/assets.json') return Response.json(view.doc);
-      if (url === '/data/local-assets.json' || url === '/data/local-fx.json') return new Response('', { status: 404 });
-      requested.push(url);
-      return new Response('x', { headers: { 'content-type': 'application/octet-stream' } });
-    },
-  });
-  await queue.start();
-  assert.equal(queue.get().phase, 'complete');
-  assert.equal(queue.get().cached, 13);
-  assert.deepEqual(requested, [], 'nothing imported is downloaded again');
 });
 
 test('the import index merges imports, seeds itself from the keys once, and never lists itself', async () => {

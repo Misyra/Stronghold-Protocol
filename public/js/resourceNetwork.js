@@ -2,9 +2,9 @@
 // Runtime art only: bounded, shared requests. Bulk preload and game-data requests retain their own integrity,
 // scheduling and combat-pause contracts.
 //
-// This fork adds the assets-CDN lesson (custom_docs/operations/CDN.md §5): a CDN host behind a browser challenge
-// refuses a credentials-less fetch forever, so a failed attempt switches to the game host's own copy of the path
-// before the retry ladder spends itself on a 403.
+// This port adds the assets-CDN lesson (the user deployment's CDN operations notes): a CDN host behind a browser
+// challenge refuses a credentials-less fetch forever, so a failed attempt switches to the game host's own copy of
+// the path before the retry ladder spends itself on a 403.
 import { assetSiteUrl } from '../../shared/assetCdn.js';
 import { takeOriginBudget } from './resources/network.js';
 

@@ -89,19 +89,18 @@ export async function fetchResource(url, options) {
     if (tripped) { cdnFails = 0; cdnBlockedUntil = Date.now() + CDN_COOL_OFF_MS; }
     // Bulk preload stops here: one clear failure beats 27 000 origin downloads (and the owner's bandwidth).
     if (!allowOrigin) throw unavailable(err, tripped);
-    return fromOrigin(twin, options, signal, tripped);
+    return fromOrigin(twin, options, signal);
   }
 }
 
 /** The game host's copy within this page's fallback budget; a fatal error stops a bulk run instead of draining it. */
-async function fromOrigin(twin, options, signal, tripped = false) {
+async function fromOrigin(twin, options, signal) {
   if (!takeOriginBudget(0)) {
     throw Object.assign(new Error('素材 CDN 不可用，源站回退已达本次会话上限；稍后再试'), { transient: true, fatal: true });
   }
   const response = await attempt(twin, options);
   originBytes += Number(response.headers.get('Content-Length')) || 0;
   checkAbort(signal);
-  if (tripped) void 0;
   return response;
 }
 

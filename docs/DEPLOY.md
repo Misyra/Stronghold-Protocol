@@ -589,3 +589,33 @@ Node 22 的 `--permission` **不限制网络**（TCP/UDP/DNS/监听均可能可�
 | `SP_DATA_CDN` | （空 = 同源 `/data/`） | 游戏数据 JSON 的 CDN 基地址 |
 | `SP_ANNOUNCEMENT_FILE` | `config/announcements.json` | 公告排程文件（单源，热加载；`announcementFile: null` 关闭公告） |
 | `SP_ANNOUNCEMENT_POLL_MS` | 10000 | 排程文件的热加载轮询间隔（ms） |
+
+### 局内聊天（合并自用户分支）
+
+局内聊天（交流面板的文字消息、敏感词过滤、违规禁言）**默认关闭**。打开后服务器在启动期就要求一套可用的
+审核配置——缺密钥或词表解不开会**拒绝启动**，而不是等第一句话上线才发现；关闭时不要求任何密钥。
+
+| 变量 | 默认 | 含义 |
+| --- | --- | --- |
+| `SP_CHAT_ENABLED` | `off` | `on`/`1` 开启局内聊天；取其它值拒绝启动（写错比静默关闭安全） |
+| `SP_MODERATION_KEY` | （无） | 词表解密密钥，64 位十六进制。与 `SP_MODERATION_KEY_FILE` 二选一，环境变量优先 |
+| `SP_MODERATION_KEY_FILE` | `.state/moderation.key` | 密钥文件路径（内容同样是 64 位十六进制）。**密钥不入 Git、不进任何公开目录** |
+| `SP_MODERATION_LEXICON_FILE` | `server/moderation/lexicon/words.enc` | 加密词表路径（AES-256-GCM，`SPLEX001` 头） |
+| `SP_CHAT_LOG_DIR` | `.state/chat-logs/` | 聊天审计日志目录（JSONL，逐条记录被拒/被禁言的消息）。目录绝不对外服务——指到公开目录会拒绝启动 |
+| `SP_CHAT_LOG_COMPRESS_AFTER_DAYS` | 1 | 日志按天归档 gzip 前保留的天数 |
+| `SP_CHAT_LOG_RETENTION_DAYS` | 30 | 日志保留天数；`0` 是显式永久保留（启动时告警一次） |
+
+**词表要部署方自己重加密。** 仓库里的出厂 `words.enc` 是用作者私钥加密的，任何其它密钥都解不开它——
+准备一份自己的 UTF-8 词表（一行一词，可含注释），生成密钥后重加密：
+
+```
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))" > .state/moderation.key
+node tools/encrypt-lexicon.mjs private-words.txt server/moderation/lexicon/words.enc
+```
+
+（`tools/encrypt-lexicon.mjs` 用 `.state/moderation.key` 或 `SP_MODERATION_KEY` 里的密钥加密，全程不回显密钥与词表内容。）
+词表内容不入库——入库的只有密文 `words.enc`，明文词表留在部署机私有位置。
+
+两点运维口径：禁言状态（违规计数与剩余禁言时长）只存在会话内存里，**服务器重启即清零**，审计日志是唯一的
+追溯手段；聊天没有跨服共享的在线名单或 Redis 之类的依赖，审核全在本进程内完成（`server/moderation/`，
+玩法描述见 [PLAYING.md](PLAYING.md) 的「交流」一节）。

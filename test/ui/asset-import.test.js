@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import { hash16 } from '../../server/http/assetIndex.js';
 import { rewriteManifest } from '../../server/http/assetViews.js';
 import { siteCsp, SIM_WORKER_CSP } from '../../server/http/csp.js';
+import { registerImportedAssetWorker } from '../../public/js/assetCache.js';
 import {
   IMPORTED_ASSET_CACHE, IMPORTED_ASSET_CACHE_PREFIX, IMPORTED_ASSET_PATH, IMPORTED_INDEX_URL,
   addImportedPaths, askPersistStorage, countImportedFiles, importSupport, listImportedPaths, pruneImportedPaths, shouldServeImportedAsset,
@@ -810,5 +811,25 @@ test('清理旧版本素材 deletes nothing when a served manifest cannot be rea
     await assert.rejects(pruneImportedAssets({ fetch, caches: mem.caches }), { code: 'manifest' });
     assert.deepEqual(mem.assets(), ['/assets/~0000000000000000/a.png']);
   }
-});
 
+test('registerImportedAssetWorker stands down while the resource preload worker is registered', async () => {
+  const reg = (scriptURL) => ({ active: { scriptURL }, installing: null, waiting: null });
+  const registered = [];
+  const nav = (regs) => ({
+    serviceWorker: {
+      getRegistrations: async () => regs,
+      register: async (script) => { registered.push(script); return {}; },
+    },
+  });
+  assert.equal(await registerImportedAssetWorker(nav([reg('/resource-sw.js')]), true), false, 'the preload worker owns the scope');
+  assert.deepEqual(registered, [], 'nothing registered behind it');
+  assert.equal(await registerImportedAssetWorker(nav([reg('/build/assets/resource-sw-deadbeef.js')]), true), false, 'the built variant counts too');
+  assert.equal(await registerImportedAssetWorker(nav([reg('/sw.js')]), true), true, 'only the legacy worker: register as before');
+  assert.deepEqual(registered, ['/sw.js']);
+  assert.equal(await registerImportedAssetWorker(nav([]), true), true, 'no registrations: register as before');
+  assert.deepEqual(registered, ['/sw.js', '/sw.js']);
+  assert.equal(await registerImportedAssetWorker({ serviceWorker: { getRegistrations: async () => { throw Error('denied'); }, register: async () => ({}) } }, true), true,
+    'a failing listing behaves like the old unconditional register');
+  assert.equal(await registerImportedAssetWorker(nav([]), false), false, 'insecure context: nothing happens');
+});
+});

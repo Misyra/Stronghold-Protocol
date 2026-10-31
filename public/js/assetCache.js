@@ -8,6 +8,7 @@
 // this cache. A miss goes to the network and is not written here. HTML, scripts, /data/, /sim/ and /ws are never
 // matched. A Range request is left to the network so audio seeking still reaches the server. What an import stored is
 // also listed in one index entry of the cache (IMPORTED_INDEX_URL): Chrome cannot list a cache that large.
+import { isResourceWorker } from './resources/common.js';
 
 /** Cache Storage name. Bump the suffix to drop previously imported bytes on the next activation. */
 export const IMPORTED_ASSET_CACHE = 'sp-imported-assets-v1';
@@ -50,11 +51,23 @@ export function importSupport(nav = globalThis.navigator, secure = globalThis.is
 /**
  * Register public/sw.js. Failures are swallowed: a missing worker must not stop the game.
  * Call only from boot. Unit tests import the downloader and must not register a worker as a side effect.
+ *
+ * Stands down while the preload stack's worker (public/js/resources/index.js, same `/` scope) is registered: two
+ * workers would keep taking the controller from each other across reloads. Once that worker exists the newer
+ * registration always wins anyway; the legacy caches keep serving only while `/sw.js` is the controller
+ * (docs/ASSETS.md「Legacy imported-asset cache」).
  * @returns {Promise<boolean>}
  */
 export function registerImportedAssetWorker(nav = globalThis.navigator, secure = globalThis.isSecureContext) {
   if (!secure || !nav?.serviceWorker?.register) return Promise.resolve(false);
-  return nav.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).then(() => true, () => false);
+  const origin = globalThis.location?.origin ?? 'https://sp.invalid';
+  const hasResourceWorker = (regs) => regs.some((reg) =>
+    [reg.active, reg.installing, reg.waiting].some((w) => isResourceWorker(w?.scriptURL, origin)));
+  return nav.serviceWorker.getRegistrations()
+    .then(async (regs) => {
+      if (hasResourceWorker(regs)) return false;
+      return nav.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).then(() => true, () => false);
+    }, () => nav.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).then(() => true, () => false));
 }
 
 /** Content-Type stored with an imported response, chosen from the URL the game will request. */

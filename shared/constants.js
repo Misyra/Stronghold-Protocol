@@ -8,6 +8,8 @@ export const MATCHMAKING_VERSION = 'alliance-2';
 /** Release version shown to players (title screen, server banner, /healthz). Kept equal to package.json "version"
  * (test/version.test.js); PROTOCOL_VERSION above is the separate wire-format number. */
 export const APP_VERSION = '0.3.3';
+/** The project's GitHub repository (title screen's 关于 panel, ui/about.js — 移植自用户分支). */
+export const REPOSITORY_URL = 'https://github.com/Misyra/Stronghold-Protocol';
 /** A development build (the public `dev` branch): the title screen, the boot banner and the README say so, and
  * tools/package.mjs refuses to build a release zip from it without --allow-dev. */
 export const DEV_BUILD = /-dev$/.test(APP_VERSION);

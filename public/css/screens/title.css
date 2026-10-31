@@ -326,3 +326,28 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
 .notice-card__meta { margin: 0; font-size: calc(.13 * var(--t)); color: var(--text-dim); overflow-wrap: anywhere; }
 .notice-card__title { margin: .02rem 0; font-size: calc(.16 * var(--t)); color: var(--text-hi); overflow-wrap: anywhere; }
 .notice-card__body { margin: 0; font-size: calc(.15 * var(--t)); color: var(--text-md); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+
+/* 关于本项目 (ui/about.js, 移植自用户分支): the utility modal's own scale var --utility-text keeps its text readable at
+   every 文字大小; the grid collapses on a phone. */
+.about-panel { max-width: calc(100vw - .4rem); }
+.about-panel .modal__body { font-size: calc(.17 * var(--utility-text, var(--t))); line-height: 1.8; color: var(--text-md); }
+.about-panel p { margin: 0 0 .16rem; }
+.about-intro { color: var(--text-hi); font-size: calc(.22 * var(--utility-text, var(--t))); font-weight: 700; }
+.about-intro .num { margin-left: .08rem; color: var(--mint-400); font-size: calc(.17 * var(--utility-text, var(--t))); }
+.about-links { display: grid; grid-template-columns: 1fr 1fr; gap: .2rem .28rem; margin: .2rem 0 .24rem; }
+.about-links div { min-width: 0; }
+.about-links dt { color: var(--text-lo); font-size: calc(.15 * var(--utility-text, var(--t))); }
+.about-links dd { margin: .04rem 0 0; }
+.about-panel a { color: var(--mint-400); text-decoration: underline; overflow-wrap: anywhere; }
+.about-panel a:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 3px; }
+.about-section { margin-top: .22rem; padding-top: .18rem; border-top: 1px solid var(--line-2); }
+.about-section h3 { margin: 0 0 .12rem; color: var(--text-hi); font-size: calc(.18 * var(--utility-text, var(--t))); }
+.about-credits { display: flex; flex-direction: column; gap: .05rem; }
+.about-credits h3 { margin-bottom: .04rem; }
+.about-credits__row { display: flex; align-items: center; flex-wrap: wrap; gap: .06rem .12rem; }
+.about-panel .about-star { display: inline-flex; align-items: center; gap: .05rem; flex: none; height: max(.26rem, 1.6em);
+  padding: 0 .11rem; border: 1px solid var(--mint-a35); color: var(--mint-400); text-decoration: none;
+  font-size: calc(.16 * var(--utility-text, var(--t))); font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+.about-panel .about-star:hover { border-color: var(--mint-400); background: var(--mint-a10); }
+.about-links dd .about-star { margin-left: .12rem; vertical-align: middle; }
+@media (max-width: 600px) { .about-links { grid-template-columns: 1fr; } }

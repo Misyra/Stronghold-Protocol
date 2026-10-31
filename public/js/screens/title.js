@@ -40,6 +40,7 @@ import { t, N_ } from '../../../shared/i18n.js';
 import { scriptOf } from '../../../shared/i18nPacks.js';
 import { GIcon } from '../ui/gameComponents.js';
 import { SettingsModal } from '../ui/settings.js';
+import { AboutModal } from '../ui/about.js';
 import { useSettings, updateSettings } from '../ui/settings.js';
 import { installedCount } from '../content.js';
 import { NoticesButton } from '../ui/notices.js';
@@ -176,6 +177,8 @@ export function TitleScreen() {
     if (currentName) setName((draft) => draft || currentName);
   }, [currentName]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 关于本项目 (ui/about.js, 移植自用户分支)
+  const [aboutOpen, setAboutOpen] = useState(false);
   const settings = useSettings(); // 预载启动器(移植自用户分支)读 preload 开关
   // the list of the server's plugins once loaded (ui/pluginPanel.js — a component in state: set through an updater)
   const [Installed, setInstalled] = useState(null);
@@ -268,6 +271,7 @@ export function TitleScreen() {
           ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
           <${GuideButton} class="title-guide" label=${t('玩法说明')} />
           <${AnnouncementButton} class="title-announce" />
+          <${Button} class="title-about" variant="ghost" size="sm" icon="info" onClick=${() => setAboutOpen(true)}>${t('关于')}<//>
           <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
             onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
           <${FullscreenButton} class="title-fs" />
@@ -277,6 +281,7 @@ export function TitleScreen() {
 
     <div class="title-preload"><${ResourceLauncher} enabled=${settings.preload} onChange=${(v) => updateSettings({ preload: v })} /></div>
     <${SettingsModal} open=${settingsOpen} onClose=${() => setSettingsOpen(false)} />
+    <${AboutModal} open=${aboutOpen} onClose=${() => setAboutOpen(false)} />
     ${Installed ? html`<${Installed} open=${true} onClose=${() => setInstalled(null)} />` : null}
 
     <footer class="title-foot">

@@ -93,28 +93,19 @@ export function announcementLive(notice, now) {
       || Number.isFinite(notice.endAt) && now < notice.endAt);
 }
 
-/** Higher severity first; earliest start first among equals. Original file order breaks exact ties. */
+/** Higher severity first; earliest start first among equals. Original file order breaks exact ties.
+ *  The popup lane only surfaces notices the page can actually show: this port has no announcement centre (the
+ *  fork's manual surface for `autoPopup: false` rows), so such a row would render nowhere — and, worse, could take
+ *  the lane from an auto popup that would have shown. It stays valid in the schedule and is skipped here. */
 export function activeAnnouncement(rows, now, type = 'scroll') {
   let best = null;
   for (const row of rows) {
     if ((row.type || 'scroll') !== type || !row.enabled || !announcementLive(row, now)) continue;
+    if (type === 'popup' && row.autoPopup === false) continue;
     if (!best || ANNOUNCEMENT_LEVELS[row.level] > ANNOUNCEMENT_LEVELS[best.level]
         || (row.level === best.level && row.startAt < best.startAt)) best = row;
   }
   if (!best) return null;
   const { enabled, ...notice } = best;
   return notice;
-}
-
-/** Incoming public frame: accept only display fields; expiry is checked independently by the UI. */
-export function announcementFromMessage(msg, type = 'scroll') {
-  const n = type === 'popup' ? msg?.popupAnnouncement : msg?.announcement;
-  if (!n || typeof n.id !== 'string' || !validText(n.text, type === 'popup' ? POPUP_MAX_TEXT : ANNOUNCEMENT_MAX_TEXT)
-      || typeof n.level !== 'string' || !own(ANNOUNCEMENT_LEVELS, n.level) || !Number.isFinite(n.startAt)
-      || !(type === 'popup' && n.endAt === null || Number.isFinite(n.endAt) && n.endAt > n.startAt)
-      || (n.type || 'scroll') !== type) return null;
-  try {
-    if (type === 'scroll' && (own(n, 'url') || own(n, 'autoPopup') || own(n, 'format'))) return null;
-    return { id: n.id, ...(type === 'popup' ? { type } : {}), ...displayOptions(n), text: n.text, level: n.level, startAt: n.startAt, endAt: n.endAt };
-  } catch { return null; }
 }

@@ -14,7 +14,6 @@ export function popupContentUrl(value) {
   return validAnnouncementUrl(value) ? value : null;
 }
 
-const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
 const unescapeEntities = (text) => text.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (raw, entity) => {
   const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' };
   const key = entity.toLowerCase();
@@ -150,5 +149,3 @@ function renderBlocks(lines, budget) {
   }
   return out;
 }
-
-export { ESCAPES };

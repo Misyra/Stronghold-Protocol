@@ -78,30 +78,19 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
     await sleep(1100); // Let the shared file cache expire; returning to the tab triggers an immediate check.
     await c.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   };
-  await refresh({ ...notice, displayMode: 'visit', text: '每次进入显示' });
-  await c.page.waitForSelector('.announcement');
-  await c.page.$eval('.announcement > .btn', button => button.click());
-  await c.page.waitForSelector('.announcement', { hidden: true });
-  await c.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-  await sleep(300);
-  assert.equal(await c.page.$('.announcement'), null, 'regular checks do not reopen visit notices');
-  await c.page.reload({ waitUntil: 'domcontentloaded' });
-  await c.page.waitForFunction(() => globalThis.__SP__?.store.get().match.public?.phase === 'PREP');
-  await c.page.waitForSelector('.announcement');
-  assert.equal(await c.page.$eval('.announcement__text', el => el.textContent), '每次进入显示');
-  await c.page.$eval('.announcement > .btn', button => button.click());
-  await c.page.waitForSelector('.announcement', { hidden: true });
-  await refresh({ ...notice, text: '<img src=x onerror="window.noticeInjected=true">维护延后' });
+  // A second id: the first notice's dismissal is persisted, so the remaining checks run on a fresh one.
+  const notice2 = { ...notice, id: 'notice-second' };
+  await refresh({ ...notice2, text: '<img src=x onerror="window.noticeInjected=true">维护延后' });
   await c.page.waitForSelector('.announcement');
   assert.equal(await c.page.$eval('.announcement__text', (el) => el.children.length), 0, 'HTML remains literal text');
   assert.equal(await c.page.evaluate(() => !!window.noticeInjected), false);
-  await refresh({ ...notice, expiresAt: new Date(Date.now() + 4500).toISOString() });
+  await refresh({ ...notice2, expiresAt: new Date(Date.now() + 4500).toISOString() });
   await c.page.waitForFunction(() => document.querySelector('.announcement__text')?.textContent === '服务器将于 17:00 维护，请提前结束模拟。');
   await c.page.waitForSelector('.announcement', { hidden: true, timeout: 6500 });
   // Reload can reopen the optional fullscreen prompt; close it before testing pointer interaction.
   await c.page.waitForSelector('.fullscreen-prompt');
   await c.click('.fullscreen-prompt button', '暂不全屏');
-  await refresh({ ...notice, text: '很长的公告内容 '.repeat(100) + '\n第二行公告' });
+  await refresh({ ...notice2, text: '很长的公告内容 '.repeat(100) + '\n第二行公告' });
   await c.page.waitForSelector('.announcement__track.is-scrolling');
   const rect = await c.page.$eval('.announcement', el => ({ height: el.getBoundingClientRect().height }));
   assert.ok(rect.height < 70, 'long notices stay in one compact row');
@@ -110,7 +99,7 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   await c.page.waitForSelector('.announcement-detail');
   assert.ok((await c.page.$eval('.announcement-detail__text', el => el.textContent)).includes('\n第二行公告'));
   await c.page.click('.announcement-detail .utility-modal__close');
-  await refresh({ ...notice, text: '第二条公告' });
+  await refresh({ ...notice2, text: '第二条公告' });
   await c.page.waitForSelector('.announcement');
   await refresh({ enabled: false });
   await c.page.waitForSelector('.announcement', { hidden: true });

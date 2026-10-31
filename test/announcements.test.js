@@ -2,7 +2,7 @@
 // and selection: the transport (server/announcement.js: panel file / central URL, delivery revision) stays this fork's.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAnnouncements, activeAnnouncement, announcementLive, announcementFromMessage } from '../shared/announcements.js';
+import { parseAnnouncements, activeAnnouncement, announcementLive } from '../shared/announcements.js';
 
 const BASE = Date.parse('2026-10-05T12:00:00+08:00');
 const row = (overrides = {}) => ({ id: 'maintenance', text: '维护通知', startAt: new Date(BASE).toISOString(), durationSeconds: 60, level: 'info', enabled: true, ...overrides });
@@ -41,17 +41,20 @@ test('absolute start/expiry, severity and same-level ordering never extend a hid
   assert.equal(announcementLive(rows[0], BASE + 60000), false);
 });
 
-test('title, link and popup options round trip; a scroll notice refuses popup-only fields', () => {
+test('title, link and popup options; the popup lane skips autoPopup:false rows; a scroll notice refuses popup-only fields', () => {
   const options = { type: 'popup', title: '  更新公告  ', url: 'https://example.com/notice?a=1&b=2', autoPopup: true };
   const notice = activeAnnouncement(parseAnnouncements(doc(row(options))), BASE, 'popup');
-  assert.deepEqual(announcementFromMessage({ popupAnnouncement: notice }, 'popup'), notice);
   assert.equal(notice.title, '更新公告');
   assert.equal(notice.url, options.url);
   assert.equal(notice.autoPopup, true);
-  const manual = activeAnnouncement(parseAnnouncements(doc(row({ type: 'popup', autoPopup: false }))), BASE, 'popup');
-  assert.equal(announcementFromMessage({ popupAnnouncement: manual }, 'popup').autoPopup, false);
+  // no announcement centre in this port: an autoPopup:false row renders nowhere, so it neither wins the lane
+  // nor suppresses the auto popup behind it
+  const manual = parseAnnouncements(doc(row({ type: 'popup', id: 'manual', level: 'urgent', autoPopup: false })));
+  assert.equal(activeAnnouncement(manual, BASE, 'popup'), null);
+  const both = doc(row({ type: 'popup', id: 'manual', level: 'urgent', autoPopup: false }),
+    row({ type: 'popup', id: 'auto', level: 'info', durationSeconds: 30 }));
+  assert.equal(activeAnnouncement(parseAnnouncements(both), BASE, 'popup').id, 'auto');
   const scroll = activeAnnouncement(parseAnnouncements(doc(row())), BASE);
-  assert.deepEqual(announcementFromMessage({ announcement: scroll }), scroll);
   assert.equal(scroll.autoPopup, undefined);
   assert.equal(parseAnnouncements(doc(row({ type: 'popup', url: 'http://localhost:3000/notice' })))[0].url, 'http://localhost:3000/notice');
   for (const changes of [{ type: 'both' }, { autoPopup: true }, { url: 'https://example.com' }]) {
@@ -61,6 +64,5 @@ test('title, link and popup options round trip; a scroll notice refuses popup-on
     ...['javascript:alert(1)', 'data:text/html,hello', '//example.com', '/notice', 'https://user:secret@example.com/',
       'https://example.com/\nnotice', 'https://example.com/a b', '', 42, 'https://example.com/' + 'a'.repeat(2048)].map((url) => ({ url }))]) {
     assert.throws(() => parseAnnouncements(doc(row({ type: 'popup', ...changes }))));
-    assert.equal(announcementFromMessage({ popupAnnouncement: { ...notice, ...changes } }, 'popup'), null);
   }
 });

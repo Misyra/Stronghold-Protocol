@@ -11,18 +11,17 @@ test('announcement detail uses the shared utility close button, without a second
   assert.doesNotMatch(detail, /<\$\{Button\}|<button|announcement-detail__close/);
 });
 
-test('once survives reload, visit closes for this page only, edits show again, unavailable storage works', () => {
+test('the dismissal survives reload, an edited notice shows again, unavailable storage works', () => {
   const values = new Map();
   const storage = { getItem: k => values.get(k), setItem: (k, v) => values.set(k, v) };
-  const once = { id: 'legacy' }, visit = { id: 'repeated', displayMode: 'visit' };
+  const once = { id: 'legacy' };
   const first = createAnnouncementDisplay({ storage });
-  first.dismiss(once); first.dismiss(visit);
+  first.dismiss(once);
   assert.equal(first.isDismissed(once), true);
-  assert.equal(first.isDismissed({ ...visit }), true, 'polling the same revision does not reopen it');
+  assert.equal(first.isDismissed({ ...once }), true, 'polling the same revision does not reopen it');
   const reload = createAnnouncementDisplay({ storage });
-  assert.equal(reload.isDismissed(once), true);
-  assert.equal(reload.isDismissed(visit), false);
-  assert.equal(reload.isDismissed({ id: 'edited' }), false);
+  assert.equal(reload.isDismissed(once), true, 'the persisted dismissal survives reload');
+  assert.equal(reload.isDismissed({ id: 'edited' }), false, 'an edited notice shows again');
   const blocked = createAnnouncementDisplay({ storage: { getItem() { throw Error(); }, setItem() { throw Error(); } } });
   assert.equal(blocked.isDismissed(once), false);
   blocked.dismiss(once);

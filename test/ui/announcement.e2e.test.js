@@ -16,7 +16,7 @@ test('server announcement: shown from the title screen, hot edits, dismissal acr
   const notice = { enabled: true, title: '维护公告', text: '服务器将于 17:00 维护，请提前结束模拟。',
     expiresAt: new Date(Date.now() + 120_000).toISOString() };
   await writeFile(filePath, JSON.stringify(notice));
-  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementSource: 'file', announcementFile: filePath });
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, announcementFile: filePath });
   t.after(() => srv.close());
   const puppeteer = (await import('puppeteer-core')).default;
   const c = new Client(puppeteer, srv.url, 'announcement', { prefix: 'announcement' });

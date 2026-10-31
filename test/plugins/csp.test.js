@@ -34,10 +34,11 @@ function handler(csp = siteCsp(publicDir)) {
 test('page import maps hash exact bytes; no inline executable script/events; page forbids eval', () => {
   const csp = siteCsp(publicDir);
   assert.ok(!csp.includes('unsafe-eval')); assert.match(csp, /worker-src 'self' blob:/);
-  assert.match(csp,/connect-src 'self';/);assert.ok(!/script-src[^;]*(?:data:|blob:)/.test(csp));
-  // the player's own lobby video (ui/lobbyMedia.js) plays from an object URL; no remote media origin
-  assert.match(csp, /media-src 'self' blob:;/);
-  for (const file of ['index.html', 'studio/index.html', 'studio/console.html', 'dev/game-mock.html', 'dev/render-demo.html', 'dev/battle-perf.html', 'dev/uikit.html']) {
+  // blob: in connect-src is the object URL public/js/resourceNetwork.js hands to Pixi for texture decoding: Pixi 7.4
+  // loads an image through `fetch` when `createImageBitmap` exists, and `'self'` does not cover a blob: URL. It is a
+  // data origin only — script-src never gains it.
+  assert.match(csp,/connect-src 'self' blob: data:;/);assert.ok(!/script-src[^;]*(?:data:|blob:)/.test(csp));
+  for (const file of ['index.html', 'studio/index.html', 'dev/game-mock.html', 'dev/render-demo.html', 'dev/battle-perf.html', 'dev/uikit.html']) {
     const html = fs.readFileSync(path.join(publicDir, file), 'utf8');
     assert.ok(!/<[^>]+\son(?:load|error|click)=/i.test(html), file);
     for (const m of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)) {
@@ -47,6 +48,39 @@ test('page import maps hash exact bytes; no inline executable script/events; pag
   }
 });
 
+test('pack mirror origins and ModelScope redirect hosts are allowed only for downloads', () => {
+  const csp = siteCsp(publicDir, null, 'https://assets.example', [
+    'https://modelscope.cn/datasets/Misyra/Arknight_Assets/resolve/master/{file}',
+    'https://mirror.example/packs/{file}', '/resource-packs/{file}',
+  ]);
+  assert.match(csp, /connect-src[^;]*https:\/\/modelscope\.cn https:\/\/\*\.modelscope\.cn https:\/\/mirror\.example;/);
+  for (const directive of ['script-src', 'worker-src', 'img-src', 'media-src']) {
+    assert.ok(!csp.split(';').find((part) => part.trim().startsWith(directive)).includes('modelscope'));
+  }
+  assert.ok(!siteCsp(publicDir).includes('modelscope'));
+  assert.ok(!siteCsp(publicDir, null, '', ['https://evilmodelscope.cn/{file}']).includes('https://*.modelscope.cn'));
+});
+
+test('the served page passes its own policy: every inline script the release layer writes is hashed', async () => {
+  // Regression (2026-10-16): the policy hashed the import map as it sits on disk, while the release layer
+  // hands the browser a rewritten one plus an injected release-tag script. Both were rejected, the module
+  // graph never resolved and the client booted to 游戏脚本加载失败 while /healthz reported correct tags.
+  // Both the source client and the built one go through the same transform, so both must pass their own policy.
+  for (const clientBuild of [false, true]) {
+    const serveStatic = createStaticHandler({ publicDir, dataDir: path.resolve('data'), sharedDir: path.resolve('shared'), clientBuild });
+    const csp = siteCsp(publicDir, serveStatic.transformPage);
+    const serve = createRequestHandler({ serveStatic, health: {}, log: console, csp });
+    const page = await request(serve, '/');
+    assert.equal(page.status, 200, `clientBuild=${clientBuild}`);
+    assert.equal(page.headers['content-security-policy'], csp);
+    assert.match(page.body, /globalThis\.__spRuntimeVersion=/, `clientBuild=${clientBuild} carries the release tag`);
+    const inline = [...page.body.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)].filter(m => !/\bsrc=/.test(m[1]) && m[2].trim());
+    // The source client also carries the import map inline; the built one bundles its imports away.
+    assert.ok(inline.length >= 1, `clientBuild=${clientBuild} serves the release tag as an inline script`);
+    if (!clientBuild) assert.match(page.body, /<script type="importmap">/, 'the source client keeps its import map');
+    for (const m of inline) assert.ok(csp.includes(createHash('sha256').update(m[2]).digest('base64')), `clientBuild=${clientBuild}: ${m[2].slice(0, 60)}`);
+  }
+});
 test('native script HTTP routes serve exact descriptor bytes and JavaScript MIME under site CSP',async t=>{
   const f=scriptFixture(t);
   f.put('native',"import {kit} from 'sp:sdk@1'; export default sp => {};",

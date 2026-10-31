@@ -10,7 +10,6 @@ test('announcement heartbeats share one read and signal edits, popup changes and
   let now = 0, calls = 0, notice = null, popup = null, fail = false;
   const read = async () => { calls++; if (fail) throw Error(); return notice; };
   read.popup = () => popup;
-  read.delivery = () => ({ revision: 'private' });
   const signal = createAnnouncementSignal(read, { now: () => now });
   for (let i = 0; i < 50; i++) assert.equal(signal(), null);
   await settle();

@@ -111,16 +111,13 @@ export function createRequestHandler({ serveStatic, health, log, trustProxy = 'a
       sendJson(req, res, 200, healthReport(health, withTraffic));
       return;
     }
-    // The hot-loaded maintenance notice (server/announcement.js, 合并自用户分支): every open page polls this, so the
-    // body is the public projection only — no file paths, no delivery internals beyond the observed revision.
+    // The hot-loaded maintenance notice (server/announcement.js, 合并自用户分支): every open page polls this, so
+    // the body is the public projection only. A schedule document may also carry a popup
+    // (shared/announcements.js): the same read serves both, so the two never disagree about which notices are live.
     if (parts.rawPath === '/api/announcement' && readAnnouncement) {
-      // 顺序重要（用户分支同款）: 先真的读一次，再取「读到的是哪一版」——A schedule document may also carry a popup
-      // (shared/announcements.js): the same read serves both, so the two never disagree about which notices are live.
       const announcement = await readAnnouncement();
       const popupAnnouncement = readAnnouncement.popup?.() ?? null;
-      const delivery = readAnnouncement.delivery?.() ?? { revision: null, observedAt: null };
-      sendJson(req, res, 200, { announcement, popupAnnouncement, serverTime: Date.now(), source: announcementSource,
-        observedRevision: delivery.revision, observedAt: delivery.observedAt });
+      sendJson(req, res, 200, { announcement, popupAnnouncement, serverTime: Date.now(), source: announcementSource });
       return;
     }
     await serveStatic(req, res, parts.rawPath, parts.query);

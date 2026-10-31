@@ -27,45 +27,23 @@ import { DEFAULT_VERSION, VERSIONS, versionById } from '../../shared/versions.js
 /** Repository root. */
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-// The probe writes public notice content here; the game never writes this directory (合并自用户分支).
-export const DEFAULT_AGENT_ANNOUNCEMENT_FILE = process.platform === 'win32'
-  ? path.join(ROOT, '.state', 'announcement.json') : '/var/lib/stronghold-announcement/announcement.json';
-
 /**
- * The maintenance-announcement source (server/announcement.js, 合并自用户分支). The default source is the managed
- * probe file (`agent`); an explicit feed URL reads from it instead (`panel`); `file` reads a repo-relative JSON the
- * operator edits (SP_ANNOUNCEMENT_FILE). An `announcementFile: null` / `announcementAgentFile: null` startServer()
- * option (tests) names no file — the reader then finds nothing and the notice stays empty.
- * @param {{ announcementSource?: string, announcementFile?: string | null, announcementAgentFile?: string | null,
- * announcementPollMs?: number, announcementUrl?: string }} opts
+ * The maintenance-announcement file (server/announcement.js, 合并自用户分支; 单源精简: the fork's three-source
+ * resolution — probe-managed agent file / central feed / explicit file — collapses to the one source this
+ * deployment shape needs). One JSON schedule, hot-reloaded every `SP_ANNOUNCEMENT_POLL_MS`:
+ * `config/announcements.json` ships with the repo (every row disabled), `SP_ANNOUNCEMENT_FILE` or the
+ * `announcementFile` option names another one. `announcementFile: null` names no file — the notice stays empty.
+ * @param {{ announcementFile?: string | null, announcementPollMs?: number }} opts
  * @param {Record<string, string | undefined>} env
  */
 export function announcementOptionsFrom(opts = {}, env = process.env) {
-  const explicitUrl = opts.announcementUrl || env.SP_ANNOUNCEMENT_URL;
-  const source = opts.announcementSource ?? env.SP_ANNOUNCEMENT_SOURCE ?? (explicitUrl ? 'panel' : 'agent');
-  if (!['agent', 'panel', 'file'].includes(source)) throw new RangeError('SP_ANNOUNCEMENT_SOURCE must be agent, panel or file');
-  const rawFile = source === 'agent'
-    ? opts.announcementAgentFile ?? env.SP_ANNOUNCEMENT_AGENT_FILE ?? DEFAULT_AGENT_ANNOUNCEMENT_FILE
-    : opts.announcementFile ?? env.SP_ANNOUNCEMENT_FILE ?? 'announcement.json';
+  // `??` would swallow an explicit null (the "no file" opt-out), so the option is read with !== undefined.
+  const rawFile = opts.announcementFile !== undefined ? opts.announcementFile
+    : env.SP_ANNOUNCEMENT_FILE || 'config/announcements.json';
   const filePath = rawFile == null ? null : path.resolve(ROOT, rawFile);
   const pollMs = opts.announcementPollMs ?? Number(env.SP_ANNOUNCEMENT_POLL_MS || 10000);
   if (!Number.isFinite(pollMs)) throw new RangeError('invalid SP_ANNOUNCEMENT_POLL_MS');
-  if (source !== 'panel') {
-    // The managed file wins; `config/announcements.json` (shipped with the repo) is the default schedule it falls back
-    // to when nothing was written yet — so a fresh deployment still has somewhere to put notices (shared/announcements.js).
-    const fallbackFilePath = filePath == null ? null : path.resolve(ROOT, 'config', 'announcements.json');
-    return { filePath, pollMs, announcementUrl: null,
-      ...(fallbackFilePath && fallbackFilePath !== filePath ? { fallbackFilePath } : {}),
-      source: { mode: source, siteId: null } };
-  }
-  // 用户分支的 panel 源还能从 SP_PORTAL_URL + SP_SITE_ID 推导运维面板的 feed（portal 域不在本次移植范围）;
-  // 这里 panel 就是一份明确的 HTTP(S) feed 地址。
-  let url;
-  try { url = new URL(explicitUrl ?? ''); } catch { throw new RangeError('panel source requires a valid SP_ANNOUNCEMENT_URL'); }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) {
-    throw new RangeError('announcement URL must be HTTP(S) without credentials or a fragment');
-  }
-  return { filePath, pollMs, announcementUrl: url.href, source: { mode: 'panel', siteId: null } };
+  return { filePath, pollMs, source: 'file' };
 }
 
 export const noopLog = { info() {}, warn() {}, error() {}, debug() {} };

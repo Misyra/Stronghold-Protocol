@@ -398,8 +398,10 @@ const modalStack = []; // open modals, topmost last: only the topmost handles ke
 /**
  * Modal dialog (declarative). Esc / backdrop click call onClose.
  * @param {{ open: boolean, title?: any, micro?: string, tone?: string, onClose?: Function, actions?: any,
- *   width?: string, closeOnBackdrop?: boolean, class?: string, veilClass?: string, children?: any }} props
+ *   width?: string, closeOnBackdrop?: boolean, utility?: boolean, class?: string, veilClass?: string, children?: any }} props
  * `veilClass` styles the backdrop itself (e.g. a dialog that dims the field without blurring it).
+ * `utility` (合并自用户分支): a management surface (公告/设置/资源…) — the box keeps a `utility-modal` hook class,
+ * `width` moves to `--utility-width` for the css hooks, and an own close button joins the head.
  */
 export function Modal({ open, title, micro, tone = 'mint', onClose, actions, width, closeOnBackdrop = true, utility = false, class: cls, veilClass, children }) {
   const boxRef = useRef(null);

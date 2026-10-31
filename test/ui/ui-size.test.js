@@ -110,8 +110,11 @@ describe('the stylesheet side', () => {
   const EXEMPT = new Set(['font-size', 'line-height', 'letter-spacing', '--t']);
   const SIZE = new Set(['width', 'height', 'min-width', 'min-height', 'flex', 'flex-basis', 'grid-template-columns', 'grid-template-rows',
     'grid-auto-rows', 'grid-auto-columns', 'inline-size', 'block-size', 'min-inline-size', 'min-block-size']);
-  // Listed exemptions beyond the readability properties: none today. Add `file:property:argument` with a reason.
-  const LISTED = new Set([]);
+  // Listed exemptions beyond the readability properties: the resource manager's --utility-text floor (合并自用户分支,
+  // components.css `.utility-modal.resource-modal`) — a text-scale floor exactly like font-size (the panel is dense:
+  // below 92 px of root scale its 0.10–0.14× utility text falls under readability), and scaling it by --sp-ui would
+  // double-apply a UI scale it must not follow. Add `file:property:argument` with a reason.
+  const LISTED = new Set([`${path.join('public', 'css', 'components.css')}:--utility-text:92px`]);
   function* cssFiles(dir) {
     for (const f of readdirSync(dir)) {
       const p = path.join(dir, f);

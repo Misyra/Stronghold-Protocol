@@ -453,7 +453,7 @@ export function Modal({ open, title, micro, tone = 'mint', onClose, actions, wid
     };
   }, [open]);
   if (!open) return null;
-  return html`<div class=${cx('modal', veilClass)} role="presentation"
+  return html`<div class=${cx('modal', utility && 'modal--utility', veilClass)} role="presentation"
       onMouseDown=${(e) => { if (closeOnBackdrop && e.target === e.currentTarget && onClose) onClose(); }}>
     <div ref=${boxRef} class=${cx('modal__box', 'brackets', `modal__box--${tone}`, utility && 'utility-modal', cls)} role="dialog" aria-modal="true" tabindex="-1"
          style=${width ? utility ? `--utility-width:${width}` : `width:${width}` : undefined}>

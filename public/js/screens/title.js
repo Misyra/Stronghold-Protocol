@@ -20,13 +20,15 @@
 // the page never asks for its catalogue — and the title page loads none of the panel's code.
 
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
-import { AssetDownloadButton } from '../ui/assetDownload.js';
-import { AssetImportButton } from '../ui/assetImport.js';
+// The title screen's preload entry is the resource manager's pill (ui/resourcePanel.js, 合并自用户分支): the
+// original 下载完整素材 / 导入素材包 dialogs (ui/assetDownload.js / assetImport.js) are gone from this screen —
+// the manager's ZIP card covers both.
 import { useEffect, useMemo, useState } from '../../vendor/hooks.module.js';
 import { NAME_MAX_LEN, APP_VERSION, DEV_BUILD } from '../../../shared/constants.js';
 import { html, Button, Icon, MicroLabel, TextField, PingPill } from '../ui/components.js';
 import { GuideButton } from '../ui/guide.js';
 import { AnnouncementButton } from '../ui/announcement.js';
+import { ResourceLauncher } from '../ui/resourcePanel.js';
 import { openStats } from './stats.js';
 import { toast } from '../ui/toasts.js';
 import { net, identity } from '../net.js';
@@ -39,7 +41,6 @@ import { scriptOf } from '../../../shared/i18nPacks.js';
 import { GIcon } from '../ui/gameComponents.js';
 import { SettingsModal } from '../ui/settings.js';
 import { useSettings, updateSettings } from '../ui/settings.js';
-import { ResourceLauncher } from '../ui/resourcePanel.js';
 import { installedCount } from '../content.js';
 import { NoticesButton } from '../ui/notices.js';
 import { sanitizeName, isValidName } from '../ui/playerName.js';
@@ -271,10 +272,6 @@ export function TitleScreen() {
             onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
           <${FullscreenButton} class="title-fs" />
         </div>
-      </div>
-      <div class="title-assets">
-        <${AssetDownloadButton} />
-        <${AssetImportButton} />
       </div>
     </main>
 

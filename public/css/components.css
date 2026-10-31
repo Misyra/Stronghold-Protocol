@@ -1315,3 +1315,175 @@
   .announcement__track.is-scrolling { animation: none; }
 }
 
+
+/* ---- 预载资源管理 (ui/resourcePanel.js, docs/ASSETS.md「Preload」; 合并自用户分支 —— 分门别类的四卡面板样式) ---- */
+.res-actions { display: flex; align-items: center; gap: .12rem; flex-wrap: wrap; }
+.res-link {
+  padding: 0; background: none; border: 0; color: var(--text-dim); font-size: calc(.13 * var(--utility-text, var(--t)));
+  text-decoration: underline dotted; cursor: pointer;
+}
+.res-link:hover { color: var(--text-hi); }
+
+/* Resource manager adapted from xinhai-ai/Stronghold-Protocol (GPL-3.0-or-later). */
+.resource-modal {
+  width: min(10.4rem, calc(100vw - .4rem));
+  max-height: min(90vh, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - .4rem));
+}
+.resource-modal .modal__head { flex: none; }
+.resource-modal .modal__body { min-height: 0; padding-top: .12rem; padding-bottom: .16rem; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.resource-modal .modal__actions { flex-wrap: wrap; }
+
+/* On a desktop viewport the wide tier cards share one row, so the panel takes the room the phone layout never has —
+   a little under two thirds of the width: enough for both cards, short of filling the screen. The compact layer keeps
+   its own min(12rem, 100%) and loads later, so it still wins when it applies. Note that 1rem is 1/19.2 of the viewport
+   width (theme.css), so these rem figures are viewport fractions: 12rem ≈ 62.5vw. */
+@media (min-width: 1001px) {
+  .modal--utility .resource-modal { width: min(12rem, calc(100vw - 1.4rem)); max-height: min(80vh, calc(100dvh - 1.2rem)); }
+}
+.resource-manager { display: flex; flex-direction: column; gap: .09rem; font-size: calc(.14 * var(--utility-text, var(--t))); }
+.resource-manager p { margin: 0; line-height: 1.55; }
+.resource-manager__intro { color: var(--text-dim); }
+.resource-manager__tiers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: .09rem; }
+.resource-tier, .resource-archive { padding: .1rem .12rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .18); }
+.resource-tier h3, .resource-archive h3 { margin: 0; color: var(--text-hi); font-size: calc(.16 * var(--utility-text, var(--t))); }
+.resource-tier__head { display: flex; gap: .1rem; align-items: flex-start; justify-content: space-between; }
+.resource-tier__head p { margin-top: .04rem; font-size: calc(.13 * var(--utility-text, var(--t))); color: var(--text-dim); }
+.resource-archive p { font-size: calc(.12 * var(--utility-text, var(--t))); color: var(--text-md); }
+.resource-choice { display: flex; align-items: center; gap: .06rem; white-space: nowrap; color: var(--mint-400); cursor: pointer; }
+.resource-choice input { accent-color: var(--mint-400); }
+/* 预载范围 (docs/ASSETS.md): selected-download summary and presets, followed by the four resource cards. */
+.resource-scope { display: flex; flex-direction: column; gap: .06rem; padding: .1rem .12rem; border: 1px solid var(--line-2); background: rgba(23, 249, 183, .03); }
+.resource-scope__head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .04rem .12rem; }
+.resource-scope__head h3 { margin: 0; color: var(--text-hi); font-size: calc(.16 * var(--utility-text, var(--t))); }
+.resource-scope__total { color: var(--text-dim); font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-choice__size { color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-manager .resource-choice.is-off { color: var(--text-dim); }
+.resource-tier__list li.is-off, .resource-tier__list li.is-off > .num, .resource-tier__list li.is-off small { color: var(--text-dim); }
+.resource-tier__summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .06rem; margin: .07rem 0 .04rem; font-size: calc(.13 * var(--utility-text, var(--t))); line-height: 1.5; }
+.resource-tier__summary > span { line-height: inherit; }
+.resource-tier__list { list-style: none; margin: .08rem 0 0; padding: 0; }
+.resource-tier__list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: .08rem; padding: .055rem 0; border-bottom: 1px solid var(--line); font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-tier__list li:last-child { border-bottom: 0; padding-bottom: 0; }
+.resource-tier__list li > .num { color: var(--text-md); }
+.resource-tier__list li span:first-child { overflow-wrap: anywhere; }
+.resource-tier__list li.is-importing { color: var(--mint-400); }
+.resource-tier__list small { display: block; font-size: calc(.12 * var(--utility-text, var(--t))); color: var(--mint-400); }
+.resource-manager__status { padding: .08rem .12rem; border-left: 2px solid currentColor; background: rgba(23, 249, 183, .05); color: var(--mint-400); overflow-wrap: anywhere; font-size: calc(.14 * var(--utility-text, var(--t))); }
+.resource-manager__status.is-error, .resource-manager__warn { color: var(--amber); }
+.resource-archive__toolbar { display: flex; align-items: center; justify-content: space-between; gap: .12rem; flex-wrap: wrap; }
+.resource-archive__toolbar .res-actions { gap: .08rem; }
+.resource-archive__toolbar > p { flex: 1; min-width: 0; }
+.resource-archive__secondary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .05rem .18rem; margin-top: .07rem; font-size: calc(.12 * var(--utility-text, var(--t))); color: var(--text-dim); }
+.resource-archive__secondary > details[open] { flex-basis: 100%; }
+.resource-archive__secondary .resource-archive__help { margin: 0; }
+.resource-archive { border-color: rgba(23, 249, 183, .22); background: rgba(23, 249, 183, .025); }
+.resource-archive__help { margin-top: .06rem; font-size: calc(.13 * var(--utility-text, var(--t))); color: var(--text-dim); }
+.resource-archive__help p { margin-top: .08rem; }
+.resource-archive__scope { display: flex; align-items: center; flex-wrap: wrap; gap: .06rem .12rem; margin-top: .1rem; }
+.resource-archive__scope-label { color: var(--text-md); font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-archive__scope-size { margin-left: auto; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-archive__scope .resource-presets { gap: .05rem; }
+.resource-archive .pbar { margin-top: .1rem; }
+.resource-manager summary { cursor: pointer; }
+.resource-manager summary:hover { color: var(--text-hi); }
+.resource-manager summary:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 3px; }
+.resource-manager__maintenance { display: flex; align-items: center; gap: .15rem; flex-wrap: wrap; color: var(--text-dim); font-size: calc(.14 * var(--utility-text, var(--t))); }
+@media (max-width: 680px) {
+  .resource-manager__tiers { grid-template-columns: minmax(0, 1fr); }
+  .resource-modal .modal__head, .resource-modal .modal__body, .resource-modal .modal__actions { padding-left: .16rem; padding-right: .16rem; }
+  .resource-archive__toolbar { align-items: flex-start; flex-direction: column; }
+  .resource-archive__scope-size { margin-left: 0; }
+  .resource-cache__storage { flex-basis: 100%; padding-left: .18rem; }
+}
+@media (pointer: coarse) {
+  .resource-choice, .resource-modal .btn, .resource-manager__maintenance .res-link,
+  .resource-manager summary { min-height: 44px; }
+  .resource-archive__help summary { display: flex; align-items: center; gap: .08rem; }
+  .resource-archive__help summary::before { content: '+'; }
+  .resource-archive__help[open] summary::before { content: '−'; }
+}
+
+.resource-cache { border-top: 1px solid var(--line-2); color: var(--text-dim); font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-cache > summary { display: flex; align-items: center; flex-wrap: wrap; gap: .06rem .1rem; padding: .1rem 0 0; list-style: none; }
+.resource-cache > summary::-webkit-details-marker { display: none; }
+.resource-cache > summary::before { content: '+'; color: var(--text-md); }
+.resource-cache[open] > summary::before { content: '−'; }
+.resource-cache__title { flex-shrink: 0; color: var(--text-md); }
+.resource-cache__storage { margin-left: auto; overflow-wrap: anywhere; }
+.resource-cache__body { padding-top: .12rem; }
+.resource-cache p { font-size: calc(.14 * var(--utility-text, var(--t))); color: var(--text-dim); }
+.resource-cache .resource-manager__maintenance { margin-top: .12rem; }
+.resource-manager__voice { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .04rem .16rem; padding: .08rem .12rem; background: rgba(23, 249, 183, .025); }
+.resource-manager__voice-head { display: flex; align-items: center; gap: .12rem; }
+.resource-manager__voice h3 { margin: 0; color: var(--text-md); font-size: calc(.14 * var(--utility-text, var(--t))); font-weight: 500; }
+.resource-voice-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 100px), 1fr)); gap: .05rem; width: 100%; }
+.resource-voice-option { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 .06rem; min-width: 0; padding: .055rem .075rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .12); color: var(--text-md); cursor: pointer; font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-voice-option input { grid-row: span 2; margin: 0; accent-color: var(--mint-400); }
+.resource-voice-option small { grid-column: 2; color: var(--text-dim); font-size: calc(.105 * var(--utility-text, var(--t))); overflow-wrap: anywhere; }
+.resource-voice-option.is-selected { color: var(--mint-400); border-color: rgba(23, 249, 183, .45); background: rgba(23, 249, 183, .06); }
+.resource-voice-option.is-unavailable { opacity: .5; cursor: default; }
+.resource-voice-option:focus-within { outline: 2px solid var(--mint-400); outline-offset: 2px; }
+.resource-voice-option:not(.is-unavailable):hover { border-color: var(--mint-400); }
+.resource-voice-all { font-size: calc(.13 * var(--utility-text, var(--t))); color: var(--text-md); white-space: normal; }
+@media (pointer: coarse) { .resource-voice-option { min-height: 44px; } }
+.resource-cache .res-actions { margin-top: .1rem; }
+.resource-archive__result { margin-top: .12rem; padding: .12rem; background: rgba(23, 249, 183, .05); overflow-wrap: anywhere; }
+.resource-archive__result.is-error, .resource-manager__failures { color: var(--amber); }
+.resource-manager__failures ul { margin: .08rem 0; padding-left: .2rem; overflow-wrap: anywhere; }
+
+/* Skin selection follows the loadout; this card measures selected outfits and reports the catalog separately. */
+.resource-skins { padding: .1rem .12rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .18); }
+.resource-skins h3 { margin: 0; color: var(--text-hi); font-size: calc(.16 * var(--utility-text, var(--t))); }
+.resource-skins .resource-choice { color: var(--amber); }
+.resource-skins .resource-choice input { accent-color: var(--amber); }
+
+/* Resource cards keep the choice, its cost and its cache progress together. The overview is scoped to this run. */
+.resource-presets { display: flex; flex-wrap: wrap; gap: .06rem; }
+.resource-presets button { min-height: .32rem; padding: .055rem .12rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .15); color: var(--text-md); font: inherit; font-size: calc(.13 * var(--utility-text, var(--t))); cursor: pointer; }
+.resource-presets button[aria-pressed="true"] { color: var(--mint-400); border-color: var(--mint-400); background: rgba(23, 249, 183, .08); }
+.resource-presets button:hover { color: var(--text-hi); border-color: var(--text-md); }
+.resource-presets button:disabled { opacity: .5; cursor: default; }
+.resource-presets button:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
+.resource-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .1rem; padding: .03rem 0; }
+.resource-overview > div { display: flex; flex-direction: column; gap: .025rem; min-width: 0; }
+.resource-overview > div + div { border-left: 1px solid var(--line-2); padding-left: .14rem; }
+.resource-overview span { color: var(--text-md); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-overview strong { color: var(--text-hi); font-size: calc(.21 * var(--utility-text, var(--t))); line-height: 1.3; overflow-wrap: anywhere; }
+.resource-overview > div:last-child strong { color: var(--mint-400); }
+.resource-overview__state { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .04rem .1rem; color: var(--text-md); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-manager__tiers > section { min-width: 0; border-top: 2px solid var(--mint-400); }
+.resource-manager__tiers .resource-tier__head { min-height: .35rem; align-items: center; }
+.resource-manager__tiers > .resource-skins { border-top-color: var(--amber); }
+.resource-manager__tiers > section.is-off { border-top-color: var(--line-2); }
+.resource-tier__head .micro { display: block; margin: 0 0 .035rem; color: var(--text-dim); }
+.resource-tier__head .resource-choice { flex-shrink: 0; font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-badge { padding: .025rem .06rem; color: var(--mint-400); background: rgba(23, 249, 183, .08); white-space: nowrap; font-size: calc(.11 * var(--utility-text, var(--t))); }
+.resource-manager .resource-card__description { margin-top: .065rem; color: var(--text-md); font-size: calc(.125 * var(--utility-text, var(--t))); }
+.resource-manager .resource-card__note { margin-top: .07rem; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-card__details { margin-top: .08rem; font-size: calc(.13 * var(--utility-text, var(--t))); color: var(--text-md); }
+.resource-extra { border-top: 1px solid var(--line-2); margin-top: .1rem; padding-top: .08rem; }
+.resource-extra > .resource-choice { white-space: normal; font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-tier .resource-manager__voice { padding: 0; margin-top: .07rem; background: none; flex-direction: column; align-items: flex-start; gap: .06rem; }
+.resource-skins__all { margin-top: .1rem; white-space: normal; font-size: calc(.13 * var(--utility-text, var(--t))); }
+.resource-archive > summary { display: flex; align-items: center; justify-content: space-between; gap: .1rem; color: var(--text-hi); font-size: calc(.14 * var(--utility-text, var(--t))); list-style: none; }
+.resource-archive > summary::-webkit-details-marker { display: none; }
+.resource-archive > summary::before { content: '+'; color: var(--mint-400); }
+.resource-archive[open] > summary::before { content: '−'; }
+.resource-archive > summary > span { margin-left: auto; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.resource-archive__toolbar { margin-top: .07rem; }
+.resource-footer__hint { flex: 1; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
+.utility-modal.resource-modal { --utility-text: max(var(--t), 92px); }
+.resource-modal .modal__title { font-size: calc(.22 * var(--utility-text)); }
+.resource-modal .resource-presets button { min-height: 30px; }
+
+/* The utility-dialog close button (Modal `utility` prop, 合并自用户分支; the mobile refinements of
+   utility-mobile.css stay with that domain). The box takes position: relative so the close button anchors to it. */
+.utility-modal { position: relative; width: var(--utility-width, min(6.4rem, 94vw)); max-width: 100%; min-height: 0; }
+.utility-modal .modal__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.utility-modal__close {
+  position: absolute; top: .12rem; right: .12rem; display: grid; place-items: center; flex: none;
+  width: max(.36rem, 32px); height: max(.36rem, 32px); padding: 0;
+  background: var(--bg-1); border: 1px solid var(--line-2); color: var(--text-md);
+}
+.utility-modal__close .icon { width: 50%; height: 50%; }
+.utility-modal__close:hover { color: var(--mint-400); border-color: var(--mint-700); }

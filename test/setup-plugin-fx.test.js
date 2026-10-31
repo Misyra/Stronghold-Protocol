@@ -18,7 +18,7 @@ test('setup notices installed official references absent from data/index, withou
   f.put('public/assets/local/fx/index.json', { units: { char_4217_makoto: {} } });
   assert.deepEqual(checkPluginFx(f.root), ids.slice(1));
   f.put('plugins/linked/plugin.json', { operators: ['linked.json'] });
-  fs.symlinkSync(path.join(f.root, 'plugins/demo/ops.json'), path.join(f.root, 'plugins/linked/linked.json'));
+  try { fs.symlinkSync(path.join(f.root, 'plugins/demo/ops.json'), path.join(f.root, 'plugins/linked/linked.json')); } catch { /* no links here (win32 without the symlink privilege): an absent operators file contributes nothing either */ }
   assert.deepEqual(installedFxReferences(f.root), ids);
   const r = spawnSync(process.execPath, ['tools/local-extract/plugin-fx.mjs', f.root], { encoding: 'utf8' });
   assert.equal(r.status, 0); assert.deepEqual(JSON.parse(r.stdout), ids, 'extractor uses exactly the setup reference reader');

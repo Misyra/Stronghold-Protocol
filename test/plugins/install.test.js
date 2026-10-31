@@ -1,7 +1,7 @@
 // test/plugins/install.test.js — install a plugin zip (DESIGN §32.13, docs/PLUGINS.md §17).
 // Downloads use an injected fetch. Nothing here contacts the public network. The production cap
-// INSTALL_MAX_BYTES is asserted equal to PLUGIN_LIMITS.pluginBytes; oversized cases pass a small maxBytes
-// or declare an uncompressed size over the real cap before inflate.
+// INSTALL_MAX_BYTES is asserted equal to PLUGIN_MAX_BYTES (the largest class ceiling); oversized cases pass a small
+// maxBytes or declare an uncompressed size over the real cap before inflate.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { PLUGIN_LIMITS } from '../../shared/plugins/manifest.js';
+import { PLUGIN_LIMITS, PLUGIN_MAX_BYTES } from '../../shared/plugins/manifest.js';
 import { crc32, readPluginZip, zipFiles } from '../../server/plugins/zip.js';
 import {
   INSTALL_MAX_BYTES, fetchHttps, hostAllowed, installFromFile, installFromUrl, installPluginBytes,
@@ -64,9 +64,10 @@ const rejects = async (fn, code, status) => {
   });
 };
 
-test('the production download cap is PLUGIN_LIMITS.pluginBytes', () => {
-  assert.equal(INSTALL_MAX_BYTES, PLUGIN_LIMITS.pluginBytes);
-  assert.equal(INSTALL_MAX_BYTES, 209715200);
+test('the production download cap is PLUGIN_MAX_BYTES, the largest class ceiling', () => {
+  assert.equal(INSTALL_MAX_BYTES, PLUGIN_MAX_BYTES);
+  assert.equal(INSTALL_MAX_BYTES, 536870912);
+  assert.ok(INSTALL_MAX_BYTES > PLUGIN_LIMITS.pluginBytes);
 });
 
 test('a local zip installs, a bad hash is refused, an existing id is kept, --force moves the old folder', () => {
@@ -137,7 +138,7 @@ test('path traversal, a symbolic link, a hidden name, a declared size and a file
     const hidden = zipFiles([{ name: 'demo-skin/.secret', data: Buffer.from('no') }, { name: 'demo-skin/plugin.json', data: Buffer.from('{}') }]);
     assert.throws(() => installPluginBytes(hidden, { pluginsDir: plugins }), (e) => e.code === 'PLUGIN_INSTALL_ZIP');
     const huge = patchCentral(pluginZip('demo-skin'), 'demo-skin/plugin.json', (z, at) => {
-      z.writeUInt32LE(PLUGIN_LIMITS.pluginBytes + 1, at + 24);
+      z.writeUInt32LE(PLUGIN_MAX_BYTES + 1, at + 24);
     });
     assert.throws(() => installPluginBytes(huge, { pluginsDir: plugins }), (e) => e.code === 'PLUGIN_INSTALL_ZIP' && /uncompressed size/.test(e.message));
     const bomb = zipFiles(Array.from({ length: PLUGIN_LIMITS.files + 1 }, (_, i) => ({ name: `n/${String(i).padStart(4, '0')}.png`, data: Buffer.from([1]) })));
@@ -196,10 +197,11 @@ test('a symlink id is not followed: status has no version, and --force renames t
   fs.mkdirSync(plugins);
   fs.mkdirSync(path.join(real, 'elsewhere'), { recursive: true });
   fs.writeFileSync(path.join(real, 'elsewhere', 'plugin.json'), JSON.stringify({ version: '9.9.9' }));
-  fs.symlinkSync(path.join(real, 'elsewhere'), path.join(plugins, 'demo-skin'));
+  // (win32: 目录链用 junction —— 免权限, lstat 照样报 symlink, 下面被拒的语义不变; chat-log.test.js 同款。)
+  fs.symlinkSync(path.join(real, 'elsewhere'), path.join(plugins, 'demo-skin'), process.platform === 'win32' ? 'junction' : 'dir');
   const incoming = path.join(tmp, 'incoming-target');
   fs.mkdirSync(incoming);
-  fs.symlinkSync(incoming, path.join(plugins, '_incoming'));
+  fs.symlinkSync(incoming, path.join(plugins, '_incoming'), process.platform === 'win32' ? 'junction' : 'dir');
   try {
     assert.equal(installedPluginVersion(plugins, 'demo-skin'), null);
     assert.throws(() => installPluginBytes(pluginZip('demo-skin'), { pluginsDir: plugins }), (e) => e.code === 'PLUGIN_INSTALL_ZIP');

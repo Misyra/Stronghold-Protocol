@@ -272,8 +272,9 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
   // 本仓 (0.3.3) 特有、fork 清单里没有的重建面: the bot strategy adapter and the external-AI gate (rebuilt from
   // opts/env by the constructor), the plugin-offer windows (an open window does not survive a restart — the same
   // class as a solo pause; the pool rebuilds from its round schedule), rehearsal counters, the reroll cooldown map
-  // and the boss-pairing round marker (derived from the round)
-  'bot', 'externalAI', 'offers', 'offerWin', '_offerTimers', '_offerResume', 'offerSeq', 'rehearsalPoolStats', '_rerollStartAt', 'bossPairsRound',
+  // and the boss-pairing round marker (derived from the round); seatBots (0.3.4 的按席位 bot 策略) 同理 ——
+  // opts.botStrategySeats ?? SP_BOT_STRATEGY_SEATS 在恢复时的构造期重新求值
+  'bot', 'externalAI', 'seatBots', 'offers', 'offerWin', '_offerTimers', '_offerResume', 'offerSeq', 'rehearsalPoolStats', '_rerollStartAt', 'bossPairsRound',
   // the persistence version (persistVersion): a derived counter, never part of the document
   '_persistRev',
 ]);

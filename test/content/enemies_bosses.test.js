@@ -1423,15 +1423,19 @@ for (const key of ['enemy_1425_lrcmra', 'enemy_1425_lrcmra_2']) {
   });
 }
 
-test(`${nm('enemy_1430_lrrook')}: absorbs ${tb('enemy_1430_lrrook', 'takeDmg.damage_scale') * 100} % of the damage dealt to nearby ground enemies`, () => {
+test(`${nm('enemy_1430_lrrook')}: a nearby ground enemy keeps ${tb('enemy_1430_lrrook', 'takeDmg.damage_scale') * 100} % of its damage, the chalice takes the rest as true damage`, () => {
   const h = arena();
   h.step();
   const c = put(h, 'enemy_1430_lrrook', [10, 7], { route: 2 });
   const o = put(h, 'enemy_1007_slime', [10, 6]);
   h.b.dealDamage(null, o, { amount: 100, type: 'true' });
   const share = tb('enemy_1430_lrrook', 'takeDmg.damage_scale');
-  approx(o.s.maxHp - o.hp, 100 * (1 - share));
-  approx(c.s.maxHp - c.hp, 100 * share);
+  approx(o.s.maxHp - o.hp, 100 * share);
+  approx(c.s.maxHp - c.hp, 100 * (1 - share));
+  // the chalice's part is true damage: an arts hit loses nothing to the chalice's RES
+  const before = c.hp;
+  h.b.dealDamage(null, o, { amount: 100, type: 'arts' });
+  approx(before - c.hp, 100 * (1 - share));
 });
 
 test(`${nm('enemy_1025_reveng')}: ATK +${tb('enemy_1025_reveng', 'atkup.atk') * 100} % below half HP`, () => {

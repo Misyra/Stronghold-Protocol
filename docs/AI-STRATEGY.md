@@ -671,3 +671,165 @@ The independent-seed rehearsal is §35.64 (counted leaks first; leader damage br
 more layers on the main remain open. RESEARCH §10 Q1 (co-op leader HP 4× too low) does not hold for the current pools:
 they match `activity_table.json` `bossInfoDict` (§35.64).
 
+
+
+### Cycle 6 layer audit (§37.24, round54)
+
+The default legacy bot's solo ABYSS seeds 1–40 still win 0/40. Of 28 boards entering R13, the main selected by
+`_botFocusId` has 74.96 layers after preparation; the 24 surviving R13 have 93.54 after settlement and 102.25
+at R14 after preparation. These are different cutoffs and cohorts, not conflicting estimates. R13 survivors'
+main layers come 57.55% from combat, 15.95% from acquisition, 15.68% from recurring prep/refresh traits,
+9.18% from 助力, and the rest from items/cards. 投资人 activates in none of the 523 ended preps.
+
+Three **[ASSUMED]** trials were measured separately and withdrawn: a cheaper main-layer trade after ordinary
+purchases decline; pricing already-owned refresh traits into refresh value; retaining/buying a second bench
+refresh stacker. Full deployment and a leak-free preceding round did not prevent lost development or guard
+regressions. There is no new production weight, difficulty exception or resource grant. Use
+`node tools/botbench.mjs --configs solo:ABYSS --seeds 40 --jobs 4 --layers --json layers.json` to reproduce the
+source ledger; history §37.24 gives all five configurations and the source/target comparisons.
+
+### Cycle 7: 职业队 (§37.35, round54)
+
+The maintainer (2026-10-28): judge on 终极 only; unless a 职业队 strategy reliably supplies the main bond's operators, the
+draws decide whether layers can be stacked, so no leader-specific (physical / Arts) drafting. The legacy bots now take a
+职业队 strategy's core bond (`gd.bandBondIds`) as the focus from round 1, spend its rigged refreshes (杜遥夜's first two,
+佩佩's after a 2 / 4 / 6 level-up) before levelling, trade every 获得时 layer trait plus the deployed 小满 / 夕 gain count,
+and refresh for 阿罗玛 / 安洁莉娜 / 拉普兰德 layers. Forced 职业队 strategies (9 × 40 solo 终极 seeds): main layers
+20 → 75, pool completion 15.9 → 20.1 %. The Final Assault share rises with the main bond's layers (31 % below 75, 46 % at
+125–200, 59 % at 200+), so roughly 400–500 main layers clear the pool — the community's 「400层保底」. A 职业队-only band
+pick on 终极 lost (solo 19.4 %, co-op 8.5 % completion): the low-LP strategies do not survive rounds 11–13 yet. Open levers,
+per bond: 炎's gain count (the bots gain 2.4–3.5 operators a round with 小满 out), 阿戈尔's battle-start devour placement,
+谢拉格 freeze collectors, 卡西米尔's 远牙 row, and two tank-grade blockers beside a 6-member core.
+
+### Cycle 8: engine-first (§37.36, round54)
+
+A piece whose recurring or battle trait adds layers to the focus bond (its text names the bond, or adds to its own bonds)
+is worth ENGINE_BONUS more to buy and to field until the Final Assault. Normal band picks: solo 终极 1–160 pool completion
+25.1 → 30.7 % (wins 4 → 8), co-op 1–80 24.6 → 23.0 % (noise; 40-seed co-op runs swing about 5 points). Withdrawn: counting
+the most-layered-bond engines (co-op fell), bench engines kept for their per-copy layers (+0.44 pieces a round, flat), a
+two-heavy-blocker floor (more 职业队 boards reach the Final Assault, less damage there, co-op fell) and economy-item values
+(精打细算 still loses to three refreshes on a full board). Front-tile placements (凛御银灰, 阿戈尔's devour, 魔王, 空弦)
+remain open.
+
+### Cycle 9: R11–R13 diagnosis, positional traits, layer-gain rehearsal ties, engine merges (§37.37, round54)
+
+The rounds before the Final Assault leak because boards are outclassed, not misplaced: 79 % of R11–R13 leaks were never
+blocked and walked off with 70 % of their HP, 1599 of 1812 after the first blocker fell; co-op 终极's official enemy HP is
+×3.58 / ×4.30 at R7 / R8 against solo's ×1.73. Wider layout rehearsals and bench 重装 / healer swaps did not help. A Final
+Assault lab (the same seeds replayed with one change at the boss prep) put the lever on layers: all active bonds ×2 lifted
+the leader pool share 40.8 → 58.1 % (wins 3 → 13), +150 focus layers to 57.8 %, +20 LP to 45.4 %, +20 funds to 42.7 %.
+Changes: positional traits (front / behind / row / rightmost / copies / 阿戈尔's devour) arranged first in the rehearsal,
+which now breaks leak and leader-damage ties by the layers the battle gained; skill points on skill-start engines and
+equipment on 维多利亚 members; an engine's second and third copies worth more (an elite doubles its layers); Final
+Assault lineups with a strong bench piece rehearsed. Normal picks: solo 1–160 30.7 → 32.0 %, co-op 1–80 23.0 → 27.4 %;
+职业队 forced 22.3 → 26.4 %, focus layers 90 → 100. Withdrawn: 助力 valued for its +2 / +4 on every active bond (its
+members crowd the main bond out: co-op 27.4 → 20.3 %), an engine-first layout candidate (co-op fell), engine merges ×2.
+The focus bond still activates late (median R6–R8; its members come slowly at shop levels 1–2), the next lever.
+
+### Cycle 10: no level 6 (§37.38, round54)
+
+The gold flow showed little waste (1.6 pieces a game sold without ever being deployed), so the level curve was swept with
+paired standard errors (handoff/round54/band/paired.mjs; 80 co-op seeds carry about 3–4 points of SE, 160 solo seeds 1–2).
+Capping the bots at shop level 5 (still at R9) was the clear winner: the R11 level-up's 10–11 funds and the tier-6 copies
+in every later shop cost more than tier 6 brings. Solo 终极 1–320 pool completion 30.9 → 38.7 % (+7.8 ± 1.5 paired), co-op
+1–160 25.7 → 30.0 % (+4.4 ± 2.0), 职业队 forced 26.4 → 29.0 % (focus layers 100 → 111); 绝境 flat. Later or earlier curves,
+an L4 cap, and holding the level while leaking were worse or flat. Co-op's R7–R9 (enemy HP ×3.58 / ×4.30) leave 0.3–0.9
+perfect seats a game, so 联防 rarely runs then and the team loses 18–23 LP a round: a defensive anchor seat is the open lever.
+
+
+### Cycle 11: co-op band pick and no shop equipment (§37.39, round54)
+
+A per-seat co-op diagnosis (handoff/diag/seatdiag.mjs) found perfect and leaking seats in R7–R9 nearly alike in level, units
+and tiers, and a funds lab showed a richer seat carries the team (one seat +4 funds a round: Final Assault reached 19 → 28 of
+40) — but the rules have no way to move funds between teammates, and teammates yielding bonds to the sturdiest seat did not
+help. What did: (1) the band draft gives 歌利亚 (45 LP, no other effect) to one seat at most, and co-op games with one reach
+the Final Assault 52 % vs 36 %; the cubed LP weight (as on solo 终极) seats one in 94 % of games (co-op 1–320 +3.2 ± 2.5).
+(2) Bots bought nearly every shop item a carrier could hold (8.4 on the board at R13); not buying them turns 2–4 funds a round
+into refreshes, and refreshes at the capped level are worth far more (capping them at 2 a prep cost 7–12 points): merges 4.6 →
+5.4 a game, more elites, more wins everywhere. Together: co-op 30.6 → 35.9 % (+5.3 ± 2.7), solo 38.7 → 40.4 %, 职业队 forced
+29.0 → 33.4 % (+4.5 ± 1.9). Withdrawn: merge farming at level 5, level timing tweaks, expected-layer engine values, the Grok
+band-fix bundle, freezing engines, a higher full-board buy floor. Solo bots would gain ~4 more points by always taking 歌利亚
+(43.0 % vs 34.5 % for the other bands), a benchmark gain rather than better play — left to the owner.
+
+### Cycle 12: co-op play (§37.40, round54)
+
+A long sweep of economy knobs and ablations around §37.39 (items before level 5, buy floors, bench budgets, junk sales, no
+layer trades, no layer refreshes, Grok's second-pass misallocation list, a 远见 economy, collecting 投资人, greedy engines
+with spare LP, a damage-only Final Assault lineup) found nothing for solo: the economy looks near a local optimum. Three
+co-op-only signals that were each inside the noise — no healer term in the lineup, a bench budget of 4, the bounty card
+with the least enemy HP — together lifted 终极 co-op 1–320 from 35.9 to 43.7 % (+7.8 ± 2.5 paired, wins 46 → 73), and
+leaving any one out cost 3.4–4.3 points. Co-op enemies carry 2–2.5× the solo HP from R7, so a dealer is worth more than a
+healer there, and a bounty enemy at that scale costs the seat its perfect battle as well as LP.
+
+### Cycle 13: elite items, dolls, 9 炎, a solo focus prior (§37.41, round55)
+
+The owner's experience (buy little equipment except the 转职 item the plan needs; 缪尔赛思 converted to 炎 gives 9 炎 with 8
+deployed; 精打细算玩偶 early and 见钱眼开玩偶 any time) and Grok's community research (handoff/round55) gave about a dozen
+literal rules; most were null or negative for the bots, because they cost refreshes (§37.39) or a bench slot — 缪尔赛思
+valued as a focus member, morphs held for a carrier, bond items for every focus (a held 维多利亚 hammer cost 哈洛德 15
+points), 维多利亚 equipment, 寻呼模块, community secondary bonds per focus. What held: the two shop items that make an elite
+(博士投影, 拟态物质) in every mode; in solo, the dolls plus a prior on the focus bond taken from the bots' own results by final
+focus (each inside the noise, together +4.3); and the 9 炎 conversion for the one bond whose top tier exceeds the deploy
+cap (杜遥夜 +6.8). 终极 solo 1–320 40.4 → 46.0 % (+5.7 ± 1.8, wins 31 → 44), 职业队 9×80 30.5 → 32.8 % (wins 59 → 79).
+Co-op bundles that differ only slightly swing 2–4 points even on 320 seeds, so co-op keeps only the changes with a
+consistent sign.
+
+### Cycle 14: 缪尔赛思 sold on arrival, the immediate 博士投影 kept for a tier-4 piece (§37.42, round56)
+
+The owner sells 缪尔赛思 at once outside 炎 (her 变形同构体 stays, the copy returns to the pool). For the bots this is neutral:
+they meet her only in the R10–R14 tier-6 merge rewards and took her 8 times in 68, so few games change (solo +0.2, co-op
++1.0, 职业队 0). Farming her for morphs — taking her over the other tier-6 picks, holding morphs, buying the bond item that
+gives one a use — lost: the morphs mostly converted into small bonds, because the focus already stood at its top tier when
+she came. A per-round review of lost games (handoff/diag/review.mjs) found the clear mistake of the round instead: her
+strategy's round-1 item, an advanced 博士投影 that promotes at once, went on a tier-1 piece; kept for a tier-4 piece it lifts
+that strategy from 37.0 to 47.5 % (160 forced seeds, wins 10 → 22). Rehearsal-judged lineup alternatives (a strong bench piece or a whole
+power lineup instead of weak focus members) kept more seats alive but cost solo wins in every version, and late tier-6
+picks by lineup gain lost to buyScore's merge and engine value. 9 炎 stalled at the 7th real 炎 member although the
+bots owned seven or more 炎 in most late rounds: one-swap climbs never cross from 6 to 9 and the 9 tier counted as one more
+tier; a seed from 调和 plus just enough members and a bonus for that tier (§37.43) lift 杜遥夜 by +2.3, nothing else moves.
+A forced sweep of the weak strategies then found the second clear mistake: 娜仁图亚 replaces the 6 萨尔贡 tier with lending a
+skill-starting member's equipment, and §37.39 left the bots with nothing to lend; buying combat items for the 萨尔贡 members
+lifts it from 24.4 to 31.4 % (§37.44). Strategy effects the bots ignore are the cheapest gains left.
+
+### Cycle 15: all 40 strategies forced, 突变细胞 on the highest tier (§37.45, round57)
+
+Forcing each of the 40 strategies for 40 solo 终极 games ranks them for the bots (mean 40.5 %): passive combat buffs lead
+(阿米娅 57, 华法琳 55, 埃芒加德 53; 歌利亚 50 despite its 45 LP), effects the bots barely use trail (克莱门莎 20, 老鲤 24,
+巫恋 26, 铃兰 28). The clear misuse this time was 昆图斯's 突变细胞: it comes back after every transformation, and the bots
+kept injecting their least valuable 1–2阶 piece; injecting the highest tier outside the focus walks a piece from 1阶 to
+6阶 in five battles and lifts that strategy by +6.6 (320 forced seeds, wins 42 → 52). 杜宾's 教鞭 is worth about nothing by the bots' own
+estimate (the best of three 战术特训 cards pays 1–3 funds only on a perfect battle), yet never using it, or using it only
+when that estimate is positive, cost wins; 夕's same-name pairs and not valuing worn recruit items moved nothing. The
+contributed ioleta strategy (opt-in) is 30 points below legacy on forced 伊奥莱塔.
+
+The sweep also says which bands the bots should take. Until now only the starting LP chose (cubed on 终极), so bands the
+bots play badly (杜宾, 梓兰, 马克维茨) were drawn as often as good ones. Multiplying the LP weight by the measured strength
+(80 forced games per band, shrunk toward the mean, to the 6th power; §37.46, the owner's choice among three options)
+lifts solo pool completion by about 3.5 points over three seed sets (wins 65 → 77) and leaves co-op about even: the table
+measures solo play. 歌利亚 keeps the lead on its LP (57 % of solo picks).
+
+Rehearsing every distinct layout instead of the first three (§37.47) was the cheapest general gain of the round: the
+winner sat past the third candidate in one rehearsal of six, and the leaks it saves in rounds 1–13 carry into the Final
+Assault (320 seeds: solo +2.2 ± 0.9, co-op +5.6 ± 1.7 with wins 73 → 92); more layouts in the Final Assault alone changed
+nothing. With §37.46 the round lifts 终极 solo from 46.4 to 50.4 % and co-op from 46.5 to 51.5 %.
+
+### Cycle 16: rehearsals that know the summons, the solo trade bar (§37.60, round58)
+
+Every rehearsal misprediction came from a round whose real board differed from the rehearsed one — mostly 伺夜's wolf
+pack, placed after the layout and planned on an empty field. Putting the pack into the rehearsal made the predictions
+right and the results worse (−1.8 solo): the pack-less rehearsal was the harder test and picked layouts with margin,
+while the obvious margin tie-breaks (fewer own knock-downs, more HP left) lost to the layer-gain one. Re-tuning the layer
+trade bar after §37.47 found the clear gain of the round: alone, a trade or a layer refresh now has to pay 4 layers per
+fund instead of 3 (solo +2.2 over three seed sets, wins 63 → 75); co-op keeps 3.
+
+### Cycle 17: the Final Assault's self-bound leaders (§37.61, round59)
+
+A second-by-second trace of the Final Assault (handoff/diag/fatrace.mjs) showed that in solo losses 4–6 of the 8 deployed
+units never touched the leader. Five of the seven leaders are self-bound huge units: they stand on their spawn tile all
+fight and are hit anywhere on a 5 × 3 body, but the planner walked them down their official route after a 30 s dwell and
+valued them as 10 × 40 000 HP that are soon "killed", so the dealers went to the escorts' road. One more boss candidate
+planned on the body (linear in the DPS that reaches it) joined the rehearsal, which now ranks leader damage less a
+leak's cost (a leak there is about one second of the fight) instead of leaks first: solo +3.9, co-op +3.6, no leader
+worse. Replacing the old candidates instead lost the leader chain that 萨米的意志's column attack needs (crowding the body
+is punished there). A heat-map candidate (where the leader actually stood in the first candidate) adds +0.5, mostly on
+the walking leaders, but cannot be delegated as it is.

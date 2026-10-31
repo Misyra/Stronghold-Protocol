@@ -35,6 +35,16 @@ function randomIntent(rng, m, ps) {
       : { t, kind: rng() < 0.5 ? 'chess' : 'item', id: `fuzz_${rng.int(9999)}` };
     case 'g.infoReady': return { t, setupRevision: m.setupRevision ?? 0 };
     case 'g.rerollVote': return { t, voteId: m.setupVote?.id ?? 1 + rng.int(10), agree: rng() < 0.5 };
+    // 投票移出 (移植自用户分支, kickVote.js): the id shapes are valid whatever the vote state — the match's own
+    // checks (no live vote, not eligible, not connected) answer the rest, like every other random intent here
+    case 'g.kickVote': return { t, targetId: rng.pick(m?.players ? [...m.players.keys()] : ['p1']) };
+    case 'g.kickBallot': return { t, voteId: m.kickVote?.id ?? 1 + rng.int(10), agree: rng() < 0.5 };
+    // the shapeless intents and the rest of the draft / chat surface: valid shapes only — the match's own checks
+    // (phase, legality, the chat length/control rules) answer the rest, like every other random intent here
+    case 'g.bandSkip': case 'g.refresh': case 'g.freeze': case 'g.levelUp': return { t };
+    case 'g.bandFocus': return { t, bandId: rng() < 0.8 ? rng.pick(BANDS) : rng.pick([null, '__proto__', 'a'.repeat(64)]) };
+    case 'g.chat': return { t, text: rng.pick(['gg', '打得好', 'a'.repeat(30)]) };
+    case 'g.unitStats': return { t, seq: rng.int(100) };
     case 'g.band': return { t, bandId: rng() < 0.8 ? rng.pick(BANDS) : rng.pick(['constructor', '__proto__', 'band_x', 'a'.repeat(64)]) };
     case 'g.buy': return { t, slot: rng.int(16) };
     case 'g.sell': case 'g.destroy': return { t, uid: uid() };

@@ -100,7 +100,7 @@ describe('removing plugins in the studio', () => {
     fs.mkdirSync(path.join(plugins, '.hidden'));
     skin(path.join(plugins, 'Mixed-Case'));
     const target = skin(path.join(tmp, 'linked-target'));
-    fs.symlinkSync(target, path.join(plugins, 'linked-skin'));
+    fs.symlinkSync(target, path.join(plugins, 'linked-skin'), 'junction');
     srv.packs.rescan();
     const r = await remove(['Bad_ID', '../old-skin', 'nope-skin', 'mixed-case', '_keep', '.hidden', 'linked-skin', 'ok-skin']);
     assert.equal(r.status, 200);
@@ -177,7 +177,7 @@ describe('removing plugins in the studio', () => {
     const elsewhere = path.join(tmp, 'elsewhere');
     fs.mkdirSync(elsewhere);
     if (fs.existsSync(removed)) fs.renameSync(removed, kept);
-    fs.symlinkSync(elsewhere, removed);
+    fs.symlinkSync(elsewhere, removed, 'junction');
     try {
       const r = await remove(['stuck-skin']);
       assert.equal(r.status, 200);

@@ -237,11 +237,12 @@ test('official art only: every key the hub and 选择模拟协议 ask for is in 
   for (const d of ['funny', 'normal', 'hard', 'abyss']) assert.ok(ui[`modeChoice/${d}_rhodes_island`], d);
 });
 
-test('成就统计 card: the lobby’s only statistics entry (no top-bar 统计数据 chip); this browser’s records read without writing, the official trophy medals', () => {
+test('成就统计 card: the lobby’s statistics entry beside the top bar’s 本机账号 chip (合并自用户分支: the chip opens the account panel, whose 统计数据 opens the page); this browser’s records read without writing, the official trophy medals', () => {
   assert.match(lobbySrc, /<\$\{AchievementCard\} onOpen=\$\{\(\) => setAchOpen\(true\)\} \/>/);
   assert.match(lobbySrc, /achOpen \? html`<\$\{AchievementDialog\} onClose=/);
-  assert.doesNotMatch(lobbySrc, /openStats/, 'the 统计数据 page opens from the window’s 查看完整统计 only');
-  assert.doesNotMatch(lobbySrc, /stats-entry|me-chip/, 'the top-bar chip is gone');
+  // the top bar's account chip doubles as a 统计数据 entry (ui/accounts.js AccountMeChip, ported from the user's
+  // fork) — the 成就统计 card stays the lobby's own entry into the window
+  assert.match(lobbySrc, /<\$\{AccountMeChip\} onStats=\$\{openStats\} \/>/);
   // (the season of the version shown: DESIGN §35.23 — every record on a server without versions)
   assert.match(lobbySrc, /const records = recordsOfSeason\(peekStatsRecords\(\), season\);\s*return \{ prog: levelProgress\(records/);
   assert.match(lobbySrc, /trophies: aggregateStats\(records\)\.trophies/, 'the same trophy count as the window’s 获得奖杯');
@@ -285,10 +286,11 @@ test('选择同盟方式 creates the room itself: the lobby never stacks 选择�
   assert.match(lobbySrc, /<\$\{ProtocolSelect\} roomMode="solo"/, '选择模拟协议 stays before 独立模拟');
 });
 
-test('no server-only features: accounts, friends, federation, 无限火力, Android', () => {
+test('no server-only features: friends, federation, 无限火力, Android', () => {
   // (合并注: 0.3.3 的禁单里有 matchmaking / match.queue —— 匹配是用户分支的一等功能,已移植进大厅与房间,
-  // 所以从本守卫移除; accounts / friends / federation / Android shell 仍是 server-only。)
-  for (const re of [/accounts\.js/, /friends\.js/, /federation/, /randomMode/, /AndroidNative/, /__onRoomFound/, /room\.list/]) {
+  // 所以从本守卫移除; friends / federation / Android shell 仍是 server-only。accounts 也移出了禁单 ——
+  // ui/accounts.js 的本机账号(头像/#tag, 只存浏览器)随用户分支移植,它不依赖任何账号服务。)
+  for (const re of [/friends\.js/, /federation/, /randomMode/, /AndroidNative/, /__onRoomFound/, /room\.list/]) {
     assert.doesNotMatch(lobbySrc, re, String(re));
   }
 });

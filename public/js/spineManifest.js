@@ -54,6 +54,17 @@ export function spineEntry(m, id, opts) {
   }
   const tk = get(get(m, 'tokens'), s);
   if (tk) {
+    // 召唤物皮肤 (docs/SKINS.md, 0.3.4): `tokens[id].skins[<owner skin id>]`, the official tokenSkinMap, written by a
+    // cosmetic plugin — a summon wears the skin its owner wears. A skin the manifest does not hold (or none asked for)
+    // draws the token's own model (the same raw-id form the token's avatar lookup uses).
+    const wanted = opts && str(opts.skin) ? String(opts.skin) : null;
+    if (wanted) {
+      const skin = get(get(tk, 'skins'), wanted);
+      if (isObj(skin) && isObj(skin.spine)) {
+        const sp = (opts && opts.back && isObj(skin.spine.back)) ? skin.spine.back : skin.spine.front;
+        if (validSpine(sp)) return sp;
+      }
+    }
     const web = validSpine(tk.spine) ? tk.spine : null;
     return (opts && opts.local && localSpineEntry(tk.spineLocal, opts.local, web)) || web;
   }
@@ -105,13 +116,20 @@ export function localSpineEntry(sl, local, web) {
 /** Whether an operator/token/enemy has a Back model. `skinId` asks about an installed skin (custom_docs/SKINS.md). */
 export function hasBackSpine(m, id, skinId) {
   const ch = get(get(m, 'chars'), str(id) || '') || get(get(m, 'chars'), baseCharId(id) || '');
-  if (!ch) return false;
-  // 干员皮肤 (docs/SKINS.md): a skin may ship its own Front/Back pair, so both questions are asked of the skin (either id
-  // form; manifestSkinKey resolves it against the catalogue). B6(0.3.3): only a skin with its own Front replaces the
-  // body — a picture-only outfit's Back question is answered by the operator's default model.
-  const skinKey = manifestSkinKey(skinId) ?? (str(skinId) || null);
-  const skin = skinKey ? get(get(ch, 'skins'), skinKey) : null;
-  const src = skinHasModel(skin) ? skin.spine : ch.spine;
+  if (ch) {
+    // 干员皮肤 (docs/SKINS.md): a skin may ship its own Front/Back pair, so both questions are asked of the skin (either id
+    // form; manifestSkinKey resolves it against the catalogue). B6(0.3.3): only a skin with its own Front replaces the
+    // body — a picture-only outfit's Back question is answered by the operator's default model.
+    const skinKey = manifestSkinKey(skinId) ?? (str(skinId) || null);
+    const skin = skinKey ? get(get(ch, 'skins'), skinKey) : null;
+    const src = skinHasModel(skin) ? skin.spine : ch.spine;
+    return !!(isObj(src) && validSpine(src.back));
+  }
+  // 召唤物皮肤 (docs/SKINS.md, 0.3.4): a token's skin may ship its own Back; otherwise the token's own model decides
+  const tk = get(get(m, 'tokens'), str(id) || '');
+  if (!tk) return false;
+  const skin = str(skinId) ? get(get(tk, 'skins'), String(skinId)) : null;
+  const src = skin && isObj(skin.spine) ? skin.spine : tk.spine;
   return !!(isObj(src) && validSpine(src.back));
 }
 

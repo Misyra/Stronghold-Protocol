@@ -4,13 +4,16 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+// (esbuild 惰性导入: skip 判定在本体之前 —— 顶层 import 会让没装 esbuild 的机器在模块加载时炸掉整个文件,
+// 跳过守卫形同虚设。)
+
 
 const chrome = process.env.CHROME_PATH;
 test('a standalone resource worker caches verified art without fetching source modules', {
   skip: process.env.SP_E2E !== '1' || !chrome || !existsSync(chrome) ? 'needs browser-test-setup' : false,
   timeout: 30000,
 }, async () => {
+  const { build } = await import('esbuild');
   const result = await build({ entryPoints: [fileURLToPath(new URL('../../public/resource-sw.js', import.meta.url))],
     bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true, write: false, metafile: true });
   assert.deepEqual(Object.values(result.metafile.outputs)[0].imports, []);

@@ -90,12 +90,13 @@ const PLUGIN_TYPES = new Set(UI_PLUGIN_MESSAGES);
 const HOST_TYPES = new Set(UI_HOST_MESSAGES);
 
 /**
- * A client→server type (shared/protocol.js C2S): hello, ping, room.*, state.*, queue.*, g.*, b.*.
- * The unit test asserts every current C2S key matches. (匹配加入后 queue.* 也是意图类型, 移植自用户分支。)
+ * A client→server type (shared/protocol.js C2S): hello, ping, room.*, state.*, queue.*, g.*, b.*, p2p.*.
+ * The unit test asserts every current C2S key matches. (匹配加入后 queue.* 也是意图类型, 移植自用户分支;
+ * p2p.* 来自 0.3.4 的 WebRTC 公共状态转发——插件不得发送, 见 isMatchIntent。)
  * @param {unknown} s
  */
 export const isIntentType = (s) => typeof s === 'string'
-  && /^(?:hello|ping|(?:room|state|queue|g|b)\.[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)*)$/.test(s);
+  && /^(?:hello|ping|(?:room|state|queue|g|b|p2p)\.[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)*)$/.test(s);
 
 /**
  * Whether `value` is, or carries, a match intent. A plugin must not send one (no auto-play, no cheat).

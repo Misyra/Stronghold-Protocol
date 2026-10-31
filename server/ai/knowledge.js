@@ -119,6 +119,10 @@ export function knowledgePack(data, { language = 'zh-CN', modeId, rules = {}, of
     operators: rows('chess', (r, id) => ({ tier: r.tier, cost: gd.chessPrice(id), sellValue: gd.sellPrice(id), elite: !!r.isGolden,
       baseId: gd.baseIdOf(id), poolEligible: gd.visibleChess.includes(id),
       class: r.profession, branch: r.subProfessionId, bonds: r.bonds, mergeCopies: gd.mergeCount(id),
+      // §37.32 catalogue combat stats and the attack range: [dRow, dCol] tiles facing RIGHT (dCol forward, UP = +row; other
+      // facings rotate it). Layouts need them (agent test feedback); slimKnowledge leaves them out of LLM prompts.
+      stats: { hp: r.stats?.maxHp, atk: r.stats?.atk, def: r.stats?.def, res: r.stats?.res, block: r.stats?.blockCnt,
+        attackInterval: r.stats?.bat, aspd: r.stats?.aspd }, dmgType: r.dmgType, hitsAir: !!r.canHitFly, range: r.rangeGrid,
       skill: { name: r.skill?.name, effect: short(r.skill?.desc), spCost: r.skill?.spCost },
       skills: (r.skills || []).map(s => ({ index: s.index, name: s.name, effect: short(s.desc), isDefault: s.isDefault })),
       traits: (r.garrisonIds || []).map(id => short(localized.garrisons[id]?.desc)) })),

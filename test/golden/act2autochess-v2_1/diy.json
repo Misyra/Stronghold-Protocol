@@ -2362,7 +2362,7 @@
       "bossHpLeft": null,
       "rngDraws": 106,
       "errors": {"count":0,"kinds":[]},
-      "players": {"p1":{"killed":19,"total":105,"perfect":false,"leaks":86,"leaksUncounted":0,"coins":0,"dmg":558787,"bossDmg":0,"heal":0,"deaths":25,"layerGains":{}}},
+      "players": {"p1":{"killed":19,"total":105,"perfect":false,"leaks":86,"leaksUncounted":0,"coins":0,"dmg":560052,"bossDmg":0,"heal":0,"deaths":25,"layerGains":{}}},
       "units": [
         ["p1",1,"op","chess_char_6_diy1_b",0,"uniequip_002_lessng",0,0,102,0,24531,8325,0,17,3],
         ["p1",2,"op","chess_char_6_diy2_b",1,"uniequip_002_lessng",0,0,89,1,37171,8325,0,20,0],
@@ -2372,7 +2372,7 @@
         ["p1",6,"op","chess_char_6_diy2_b",2,"uniequip_003_lessng",1686.96,1,142,3,56410,17703,0,44,1],
         ["p1",7,"op","chess_char_5_diy1_a",0,null,0,0,129,0,25406,7102,0,39,7],
         ["p1",8,"op","chess_char_5_diy2_a",1,null,0,0,126,4,98768,4734,0,85,2],
-        ["p1",9,"op","chess_char_5_diy1_a",2,null,2367.2,1,145,2,60182,4734,0,58,2],
+        ["p1",9,"op","chess_char_5_diy1_a",2,null,2367.2,1,145,2,61447,4734,0,61,2],
         ["p1",10,"op","chess_char_5_diy2_b",0,"none",2712.6,1,133,1,31576,5425,0,36,6],
         ["p1",11,"op","chess_char_5_diy1_b",1,"none",2712.6,1,144,3,65890,5425,0,52,2],
         ["p1",12,"op","chess_char_5_diy2_b",2,"none",0,0,103,0,15914,5425,0,12,2],
@@ -2380,11 +2380,11 @@
         ["-","~2","device","trap_1105_accrate",null,null,100,1,2,0,0,0,0,0,null],
         ["-","~3","device","trap_1105_accrate",null,null,100,1,3,0,0,0,0,0,null]
       ],
-      "enemies": {"enemy_1229_darmy":[27,9,18,17732,135444],"enemy_1229_darmy_2":[57,9,48,35273,286647],"enemy_1275_dwlock_2":[21,1,20,47249,136696]},
-      "hooks": [1,145,6312,628,617,860,903,0,44,130,30,34,0,7903,0,41,105,86,1,55,0,13,39],
-      "events": {"atk":674,"cast":15,"deploy":37,"die":44,"dmg":903,"engage":12,"fx":96,"leak":86,"rate":18,"skill":60,"spawn":120,"status":105},
-      "fx": {"beam":27,"burst":13,"dodge":39,"explode":2,"revive":7,"teleport":4,"undying":4},
-      "snaps": "c9266eb0 ffed186d aa5c096e 9533e639 1b9ab04a 6027d7d3 ac0abee8 cd12b80a 9fb9a68e 49afd9d1 49196830 2c94e66f 8da111cb fe0669d3 cd8d80fb 9ba06a62 afdc9e26 a8421687 f954347d db8ca7ed 34c096ec"
+      "enemies": {"enemy_1229_darmy":[27,9,18,17732,135444],"enemy_1229_darmy_2":[57,9,48,35274,287912],"enemy_1275_dwlock_2":[21,1,20,47248,136696]},
+      "hooks": [1,145,6312,634,623,863,906,0,44,130,30,34,0,8084,0,41,105,86,1,55,0,12,39],
+      "events": {"atk":680,"cast":15,"deploy":37,"die":44,"dmg":906,"engage":12,"fx":95,"leak":86,"rate":18,"skill":60,"spawn":120,"status":103},
+      "fx": {"beam":27,"burst":12,"dodge":39,"explode":2,"revive":7,"teleport":4,"undying":4},
+      "snaps": "c9266eb0 ffed186d 1a8dd476 2d3202e4 60330d23 7812f2c6 8de5dafd 12c9ee9b 261a1337 6a764de8 5c5c0cb1 29665e0e 73d99af7 fffcbe6f 40dd316c c721db4a 7b6e93fc f83ffc05 4c31bb8b 72cdbb80 980e554a"
     },
     "diy-059": {
       "about": "5_diy1_b=demetr/S1/002_demetr 5_diy2_b=demetr/S2/002_demetr 5_diy1_b=demetr/S3/002_demetr 6_diy1_a=demetr/S1 6_diy2_a=demetr/S2 6_diy1_a=demetr/S3 6_diy2_b=demetr/S1 6_diy1_b=demetr/S2 6_diy2_b=demetr/S3 6_diy1_b=demetr/S1/002_demetr 6_diy2_b=demetr/S2/002_demetr 6_diy1_b=demetr/S3/002_demetr",
@@ -2427,7 +2427,7 @@
       "hooks": [1,142,6011,755,755,1329,1302,0,107,108,49,48,0,14312,0,68,96,0,1,107,0,0,46],
       "events": {"atk":874,"deploy":43,"die":108,"dmg":1302,"engage":11,"fx":90,"rate":71,"skill":97,"spawn":112,"status":56},
       "fx": {"beam":16,"dodge":46,"teleport":28},
-      "snaps": "cf8a9c6b 6764a20c 6780df80 8540e351 9be03dc2 834e36fd e1622fc7 01362bd8 277666c2 c828a1e0 26865230 56a0ce1b bbd79f2d 30342824 94da8e80 a093adbf 7fb8b0d4 acbdf733 fdabfada f160cb21"
+      "snaps": "cf8a9c6b 6764a20c 6780df80 8540e351 9be03dc2 834e36fd e1622fc7 01362bd8 ba0ea09e de1b6fa3 21855d0c a7166cc3 6ee76165 22baeeb2 e31b5096 2380034a 3cc1badd 1df8521c 8372cf06 d375aa5e"
     },
     "diy-060": {
       "about": "5_diy1_a=cqbw/S1 5_diy2_a=cqbw/S2 5_diy1_a=cqbw/S3 5_diy2_b=cqbw/S1 5_diy1_b=cqbw/S2 5_diy2_b=cqbw/S3 5_diy1_b=cqbw/S1/002_cqbw 5_diy2_b=cqbw/S2/002_cqbw 5_diy1_b=cqbw/S3/002_cqbw 5_diy2_b=cqbw/S1/003_cqbw 5_diy1_b=cqbw/S2/003_cqbw 5_diy2_b=cqbw/S3/003_cqbw",

@@ -1500,3 +1500,12 @@
 }
 .utility-modal__close .icon { width: 50%; height: 50%; }
 .utility-modal__close:hover { color: var(--mint-400); border-color: var(--mint-700); }
+
+/* #603: release notes keep the shared Modal's focus/scroll behaviour. */
+.release-notes-entry { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.release-notes-body { font-size: var(--fs-body); line-height: 1.7; overflow-wrap: anywhere; }
+.release-notes-body p, .release-notes-body ul { margin: .12rem 0; }
+.release-notes-body ul { padding-left: .24rem; }
+.release-notes-body h3, .release-notes-body h4 { margin: .18rem 0 .08rem; }
+.release-notes-body code { white-space: pre-wrap; }
+.release-notes-body a { color: var(--mint); text-decoration: underline; }

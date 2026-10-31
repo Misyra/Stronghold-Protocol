@@ -113,7 +113,8 @@ test('VersionTag: another version\'s name; nothing for 第二期下半 or an unk
 
 test('the room screen: the strip between the 观战席 and the footer, the version pill, the vote blocks 开始模拟, the banner, the invite', () => {
   const src = readFileSync(path.join(ROOT, 'public/js/screens/room.js'), 'utf8');
-  assert.match(src, /<\$\{SpectatorBar\}[^\n]*\/>\n\s*<\$\{VersionVote\} room=\$\{room\} \/>/);
+  // (合并注: 观战席条与版本条之间允许本仓的 BotBandPicker —— 房主为 AI 指定策略的弹层。)
+  assert.match(src, /<\$\{SpectatorBar\}[^\n]*\/>\n(?:[^\n]*\n)*?\s*<\$\{VersionVote\} room=\$\{room\} \/>/);
   assert.match(src, /data-testid="room-version"/);
   assert.match(src, /disabled=\$\{!facts\.canStart \|\| !online \|\| busy === 'start' \|\| !!vote\}/);
   assert.match(src, /t\('请先关闭改变玩法的插件'\)/);

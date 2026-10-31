@@ -331,11 +331,13 @@ test('notice catalogue hint reaches health and welcome, and is omitted when abse
   const cs = 'ab'.repeat(32);
   for (const present of [true, false]) {
     const plugins = { hasNotices: () => present, unofficial: () => 0 };
-    const lobby = { plugins, stats: () => ({}) };
+    const lobby = { plugins, stats: () => ({}), opts: { chatEnabled: false } };
     const health = healthReport({ startedAt: Date.now(), network: { connectionCount: 0 }, registry: { size: 0 }, lobby, content: { cs } });
-    const welcome = Lobby.prototype.welcomeInfo.call({ vanilla: { cs }, plugins });
+    const welcome = Lobby.prototype.welcomeInfo.call({ vanilla: { cs }, plugins, opts: { chatEnabled: false } });
     assert.deepEqual(health.content, { vanilla: cs, sets: 0, ...(present ? { notices: true } : {}) });
     assert.deepEqual(welcome.content, { vanilla: cs, ...(present ? { notices: true } : {}) });
+    // (合并注: 局内聊天开关挂在 welcome 顶层, 恒带出 —— bare fake 上是 false。)
+    assert.equal(welcome.chatEnabled, false);
   }
 });
 

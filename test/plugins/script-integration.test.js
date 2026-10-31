@@ -85,7 +85,8 @@ test('CLI test runs the template harness with composed data',t=>{
  fs.mkdirSync(path.join(dir,'test'));let source=fs.readFileSync('plugins/_template/script/test/guard.test.js','utf8');
  source=source.replace('../../../test/helpers/battleHarness.js',pathToFileURL(path.join(ROOT,'test/helpers/battleHarness.js')).href);
  fs.writeFileSync(path.join(dir,'test/guard.test.js'),source);
- fs.symlinkSync(path.join(ROOT,'data'),path.join(f.root,'data'));fs.symlinkSync(path.join(ROOT,'server'),path.join(f.root,'server'));fs.symlinkSync(path.join(ROOT,'shared'),path.join(f.root,'shared'));
+ // (win32: 目录链用 junction —— 免权限, 子进程的模块解析与 realpath 照样穿链; chat-log.test.js 同款。)
+ const LINK=process.platform==='win32'?'junction':'dir'; fs.symlinkSync(path.join(ROOT,'data'),path.join(f.root,'data'),LINK);fs.symlinkSync(path.join(ROOT,'server'),path.join(f.root,'server'),LINK);fs.symlinkSync(path.join(ROOT,'shared'),path.join(f.root,'shared'),LINK);
  // This explicit local command ignores both server mode and the pin (even after test files changed).
  fs.writeFileSync(path.join(f.pluginsDir,'config.json'),JSON.stringify({trusted:{'script-demo':'wrong-pin'}}));
  const env={...process.env,SP_PLUGIN_SCRIPTS:'sandbox'};delete env.NODE_TEST_CONTEXT;

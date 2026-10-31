@@ -263,7 +263,7 @@ test('registry rejects invalid option payloads, scripts, missing sources and esc
   fs.unlinkSync(source);
   assert.equal(readPluginFolder(dir).plugin, null);
   put(path.dirname(dir), 'outside.json', []);
-  fs.symlinkSync(path.join(path.dirname(dir), 'outside.json'), source);
+  try { fs.symlinkSync(path.join(path.dirname(dir), 'outside.json'), source); } catch { /* no links here (win32 without the symlink privilege): the missing source already reads back null */ }
   assert.equal(readPluginFolder(dir).plugin, null);
 });
 

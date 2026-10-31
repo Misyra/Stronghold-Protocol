@@ -161,7 +161,9 @@ test('arrangement frees cheap hand clutter before withdrawing a protected board 
 
 test('arrangement considers unprotected outgoing board pieces before destroying hand items', t => {
   const { m, ps, ids, plan } = setup(t);
-  const weak = give(m, ps, ROSE, 'board', [9, 0]); plan.sell = [ROSE];
+  // 跃跃: a plain tier-1 piece (刺玫 is a 维多利亚 layer engine, which §37.36 values beside a 维多利亚 elite)
+  const PLAIN = 'chess_char_1_09_a';
+  const weak = give(m, ps, PLAIN, 'board', [9, 0]); plan.sell = [PLAIN];
   for (const id of ids.filter(id => m.gd.tierOf(id) === 6).slice(0, 8)) give(m, ps, elite(id));
   fillItems(m, ps);
   const destroyed = [], original = ps.destroy.bind(ps);

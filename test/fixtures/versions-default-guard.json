@@ -12,6 +12,7 @@
     "mode": "coop",
     "difficulty": "NORMAL",
     "aiPicksLast": false,
+    "bandDupes": false,
     "consoleEnabled": false,
     "inMatch": false,
     "matchmaking": false,

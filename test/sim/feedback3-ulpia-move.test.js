@@ -89,6 +89,37 @@ test('乌尔比安 S3: the 【移动】 and the 【返回】 are free redeploys 
   clean(h);
 });
 
+// #903: a 【移动】 is a retreat and redeploy (PRTS 术语释义「移动」): like a real deployment it empties the element gauges, and
+// an element burst's lock goes with them — at the 【移动】 and again at the 【返回】; the other buffs stay (DESIGN §22.3)
+test('乌尔比安 S3: the 【移动】 and the 【返回】 clear his element injuries and an element burst\'s lock (#903)', REAL, () => {
+  const h = makeBattle({
+    defs: { enemies: { e_dummy: dummy } },
+    units: [{ chessId: ULP, row: 10, col: 3 }],
+    enemies: [{ key: 'e_dummy', pos: [10, 6] }], hooks: ['deploy', 'skillEnd'], autoFinish: false, timeLimit: 120,
+  });
+  const b = h.b, u = h.unit(ULP);
+  const injure = () => {
+    Object.assign(u.elem, { burn: 400, neural: 250, necrosis: 120, apoptosis: 333, erosion: 90 });
+    b.addBuff(u, { key: 'burnBurst', duration: 10, flags: { burstLock: true } });
+  };
+  const cleared = (when) => {
+    assert.deepEqual({ ...u.elem }, { ...u.elem, burn: 0, neural: 0, necrosis: 0, apoptosis: 0, erosion: 0 }, `${when}: gauges`);
+    assert.equal(u.buffs.some((x) => x.flags && x.flags.burstLock), false, `${when}: no burst lock`);
+  };
+  h.step();
+  h.run(2);
+  injure();
+  u.skill.gainSp(1000);
+  assert.ok(h.runUntil(() => u.skill.active, 2));
+  assert.deepEqual([u.tileR, u.tileC], [10, 6], 'moved onto the anchor tile');
+  cleared('the 【移动】');
+  injure();
+  assert.ok(h.runUntil(() => !u.skill.active, 40), 'the skill ends');
+  assert.deepEqual([u.tileR, u.tileC], [10, 3], 'back home');
+  cleared('the 【返回】');
+  clean(h);
+});
+
 test('乌尔比安 S3 with 不屈 at 100 %: the moves roll nothing (a 【移动】 is no exit); a knock-out still does', REAL, () => {
   const h = makeBattle({
     defs: { enemies: { e_dummy: dummy } },

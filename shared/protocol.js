@@ -598,6 +598,11 @@ export const C2S = {
   // match
   'g.infoReady': { setupRevision: (v) => isInt(v, 0, 2 ** 31), $optional: ['setupRevision'] },
   'g.rerollVote': { voteId: (v) => isInt(v, 1, 2 ** 31), agree: isBool },
+  // 投票移出(移植自用户分支, kickVote.js): a vote of the connected humans to remove a teammate whose seat the AI plays
+  // because it stayed offline (掉线由 AI 接管). g.kickVote { targetId } proposes, g.kickBallot { voteId, agree } answers;
+  // a strict majority of the other connected humans passes it and the seat leaves the match like a 中途退出.
+  'g.kickVote': { targetId: isId },
+  'g.kickBallot': { voteId: (v) => isInt(v, 1, 2 ** 31), agree: isBool },
   'g.band': { bandId: isId },
   'g.bandSkip': {},
   // the strategy highlighted in the draft screen (user playtest #4 item 4): a turn that runs out takes it while it is

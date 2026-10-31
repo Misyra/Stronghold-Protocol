@@ -91,6 +91,7 @@ import { TopBar, liveLp, ownLeaks, uniteRemaining, tempInfo, tempReadyReason } f
 import { AnnouncementButton } from '../ui/announcement.js';
 import { BondStrip, BondPopup } from '../ui/bondStrip.js';
 import { TeamPanel } from '../ui/teamPanel.js';
+import { KickBar, KickVoteNotice } from '../ui/kickVote.js';
 import { ShopBar } from '../ui/shopBar.js';
 import { selectedBondTimers } from '../ui/bondTimers.js';
 import { DetailPanel, resolveDetail } from '../ui/detailPanel.js';
@@ -1865,6 +1866,8 @@ function MatchScreen() {
         </div>
       </div>
 
+      <${KickBar} pub=${pub} myId=${myId} />
+      <${KickVoteNotice} pub=${pub} />
       <${TeamPanel} pub=${pub} myId=${myId} watching=${watchingNow} bubbles=${bubbles} onWatch=${watchPlayer} cap=${gd.config?.lpCapPerRound ?? 10} uniteLocal=${uniteLocal}
         spMarks=${sp ? spMarks(sp, { solo }) : null}
         self=${Number.isFinite(priv?.lp) ? { lp: priv.lp, pending: liveLpNow.pending, unite: liveLpNow.unite, left: liveLpNow.left } : null}

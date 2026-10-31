@@ -330,6 +330,12 @@ function wireNet() {
     const version = s.room ? roomVersion(s.room) : matchFrameVersion({ result: res, public: s.match.public });
     if (s.room?.test !== true && s.match.public?.test !== true) recordResult(res, { myId: s.me.playerId, roomMode: s.room?.mode ?? null, vs: s.room?.content?.vs ?? null, content: s.room?.content ?? null, version: isDefaultVersion(version) ? null : version, now: Date.now() });
   });
+  // 投票移出 / 挂机移出 (server/match/match/kickVote.js, 移植自用户分支): this seat left the match; the page returns to the lobby
+  net.on('m.removed', async (msg) => {
+    const rounds = Number.isInteger(msg.rounds) && msg.rounds > 0 ? msg.rounds : 2;
+    try { await net.request('room.leave', {}); } catch { /* already out of the room */ }
+    toast(msg.reason === 'kicked' ? t('你掉线期间被队友投票移出了对局') : t('连续 {n} 回合没有任何操作，你已被移出对局', { n: rounds }), 'warn', { ttl: 10000 });
+  });
   net.on('m.toast', (msg) => {
     const kind = ['info', 'success', 'warn', 'error'].includes(msg.kind) ? msg.kind : 'info';
     // msgid + params (server ≥ 0.2.0) or the text itself as a msgid, in the current language

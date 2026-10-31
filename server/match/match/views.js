@@ -80,6 +80,9 @@ export class MatchViews {
       modeId: this.modeId,
       difficulty: this.difficulty,
       stageId: this.stageId,
+      // 投票移出(移植自用户分支): an offline AI-托管 teammate (kickVote.js): null or { id, proposerId, targetId,
+      // voters, agreed, rejected, need, deadline }
+      kickVote: this.kickVoteView(),
       // a non-default official version's match (DESIGN §35.23): its registry id, so a page that never saw the room (a
       // reload after it closed: the lobby's result replay) reads the frames with that version's data; absent for the
       // default, whose frames stay byte-identical
@@ -128,6 +131,8 @@ export class MatchViews {
         fieldId: this.fieldOf(ps),
         status: this.statusOf(ps),
         autoplay: ps.autoplay,
+        // the AI plays the seat because it stayed offline (_checkOffline, 移植自用户分支): a 投票移出 target (kickVote.js)
+        ...(ps.offlineAutoplay && ps.autoplay && !ps.connected ? { offlineTakeover: true } : {}),
         // 干员皮肤 (docs/SKINS.md): PUBLIC on purpose — this is how a teammate sees your skin, and the reason the
         // renderer reads the skin off the unit rather than off the local player. Omitted when empty, which is the normal
         // case: the appearance comes from a cosmetic plugin each player switches on for themself, so most have none.

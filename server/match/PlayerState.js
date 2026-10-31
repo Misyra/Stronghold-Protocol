@@ -150,6 +150,10 @@ export class PlayerState {
     this.connected = this.isBot ? true : !!seat.connected;
     this.left = false;
     this.autoplay = false;
+    /** 掉线由 AI 接管(移植自用户分支): consecutive prep ends this seat spent offline (0 while connected). */
+    this.offlineRounds = 0;
+    /** true while the AI plays this seat because its player is offline (released by onReconnect, never by setAutoplay). */
+    this.offlineAutoplay = false;
     // 开发者控制台配额(移植自用户分支): each grant is one use, both per player (MatchIntents.consoleGrant)
     this.consoleRoundUses = 0;
     this.consoleTotalUses = 0;

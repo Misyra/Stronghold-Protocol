@@ -172,6 +172,11 @@ export class MatchPrep {
 
   endPrep() {
     if (this.phase !== PHASE.PREP) return;
+    // 掉线由 AI 接管(移植自用户分支): a seat offline for OFFLINE_TAKEOVER_ROUNDS prep ends is the AI's from the next
+    // phase on (MatchPlatform._checkOffline)
+    this._checkOffline();
+    // an open 投票移出 ends with the prep (kickVote.js)
+    this.cancelKickVote('prepEnd');
     // rehearsals still waiting for a host's answer die with the prep: their bots place the default layout, a late answer
     // is ignored (Match._takeOverRehearsal / MatchRehearsal) and nothing of them runs after the phase ended
     this._cancelRehearsal();

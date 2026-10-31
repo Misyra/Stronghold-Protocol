@@ -7,7 +7,7 @@
 import { C2S } from '../../../shared/protocol.js';
 import { PHASE, ERR } from '../../../shared/constants.js';
 import { syntheticResult } from '../fields.js';
-import { FLOW_TICKER_PRIORITY, OK, fail } from './common.js';
+import { FLOW_TICKER_PRIORITY, OFFLINE_TAKEOVER_ROUNDS, OK, fail } from './common.js';
 import { msg } from '../../../shared/i18n.js';
 import { ruleOption } from '../../../shared/plugins/rules.js';
 
@@ -141,6 +141,8 @@ export class MatchPlatform {
       ps.connected = false;
       // A disconnected human's silence is never consent to a new setup.
       this.cancelSetupVote();
+      // 投票移出(移植自用户分支): a voter goes, a target stays a target (kickVote.js)
+      this._kickVoteMemberGone(playerId);
       // a paused solo battle resumes (the server takes the field over; nobody is left to resume it)
       this._resume();
       if (this.clientCombat) this._authorityLost(ps, 'disconnect');
@@ -156,9 +158,56 @@ export class MatchPlatform {
     this.guard(() => {
       const was = ps.connected;
       ps.connected = true;
+      // 掉线由 AI 接管(移植自用户分支): back in the match, the player plays the seat again (an AI 托管 of its own
+      // choice stays on)
+      ps.offlineRounds = 0;
+      const released = ps.offlineAutoplay && ps.autoplay && !this.ended;
+      ps.offlineAutoplay = false;
+      // 投票移出: a vote against this seat ends with the takeover (kickVote.js)
+      this._kickVoteMemberGone(playerId, true);
+      if (released) {
+        this.setAutoplay(ps, false);
+        this.log.info?.(`[match ${this.roomCode}] seat ${ps.seat} back online: AI takeover released (R${this.round})`);
+        this.tickerText(msg('{name}博士已重新连接，收回了 AI 托管的席位', { name: ps.name }), FLOW_TICKER_PRIORITY);
+      }
       this._resync(ps);
+      if (released) this.toast(ps, 'info', msg('你已重新连接，AI 托管已解除'));
       if (!was) this.markPublic();
     });
+  }
+
+  /**
+   * 掉线由 AI 接管(移植自用户分支): a seat that spends OFFLINE_TAKEOVER_ROUNDS prep ends offline is the AI's from the
+   * next phase on (autoplay on, offlineAutoplay marking why). Called at every prep end; onReconnect takes the seat back
+   * and setAutoplay by the player himself never sets the mark (that 托管 is his own choice).
+   */
+  _checkOffline() {
+    if (this.soloUntimed) return;
+    for (const ps of this.order) {
+      if (ps.isBot || ps.left || !ps.alive) continue;
+      ps.offlineRounds = ps.connected ? 0 : ps.offlineRounds + 1;
+      if (ps.connected || ps.autoplay || ps.offlineRounds < OFFLINE_TAKEOVER_ROUNDS) continue;
+      ps.autoplay = true;
+      ps.offlineAutoplay = true;
+      this.log.info?.(`[match ${this.roomCode}] seat ${ps.seat} offline for ${ps.offlineRounds} rounds: AI takes over (R${this.round})`);
+      this.tickerText(msg('{name}博士掉线超过 {rounds} 回合，由 AI 托管其席位，重新连接后可收回', { name: ps.name, rounds: OFFLINE_TAKEOVER_ROUNDS }), FLOW_TICKER_PRIORITY);
+      this.markPublic();
+    }
+  }
+
+  /**
+   * Remove a human exactly like a g.leave — one voted out (reason 'kicked', kickVote.js, 移植自用户分支). The player is
+   * told first (m.removed: its client leaves the room), everyone else still in the match gets the outcome as an m.toast,
+   * then onLeave quits the seat here (中途退出 = elimination).
+   * @param {any} ps @param {string} reason @param {{ text: any } | null} [notice]
+   */
+  _removeIdle(ps, reason = 'afk', notice = null) {
+    const rounds = Math.min(100, Math.max(1, ps.offlineRounds | 0));
+    this.sendTo(ps.playerId, { t: 'm.removed', reason, rounds });
+    const text = notice?.text || msg('{name} 掉线期间被队友投票移出了对局', { name: ps.name });
+    for (const p of this.order) if (p !== ps && !p.isBot && !p.left) this.toast(p, 'info', text);
+    for (const id of this.spectators.keys()) this.toast({ playerId: id }, 'info', text);
+    this.onLeave(ps.playerId);
   }
 
   /**
@@ -192,6 +241,8 @@ export class MatchPlatform {
     this.guard(() => {
       ps.left = true;
       this.cancelSetupVote();
+      // 投票移出(移植自用户分支): a voter goes, a target's vote ends with its seat (kickVote.js)
+      this._kickVoteMemberGone(playerId);
       // A seat that is gone for good takes its reroll cooldown with it (it cannot ask again in this match anyway).
       this._rerollStartAt.delete(playerId);
       ps.connected = false;

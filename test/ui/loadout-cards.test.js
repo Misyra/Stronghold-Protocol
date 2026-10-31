@@ -43,15 +43,17 @@ const textOf = (v) => (v == null || typeof v === 'boolean' ? '' : typeof v !== '
 
 const card = (props) => DeckCard({ m: null, chess: get(INSIDE), golden: get(get(INSIDE).goldenId), entries: {}, ops: {}, onPick: () => {}, onChange: () => {}, onOps: () => {}, ...props });
 
-test('the view: the list unless this browser chose the cards', () => {
+test('the view: the cards unless this browser chose the list (合并用户分支后卡面是默认)', () => {
   mem.clear();
-  assert.equal(loadoutViewPref(), 'list', 'nothing stored: the list (0.3.x default)');
+  assert.equal(loadoutViewPref(), 'deck', 'nothing stored: the cards (the ported default)');
   localStorage.setItem('sp.pref.loadout.view', JSON.stringify('deck'));
   assert.equal(loadoutViewPref(), 'deck');
+  localStorage.setItem('sp.pref.loadout.view', JSON.stringify('list'));
+  assert.equal(loadoutViewPref(), 'list');
   localStorage.setItem('sp.pref.loadout.view', JSON.stringify('grid'));
-  assert.equal(loadoutViewPref(), 'list', 'an unknown value falls back to the list');
+  assert.equal(loadoutViewPref(), 'deck', 'an unknown value falls back to the cards');
   localStorage.setItem('sp.pref.loadout.view', '{oops');
-  assert.equal(loadoutViewPref(), 'list', 'unreadable JSON falls back to the list');
+  assert.equal(loadoutViewPref(), 'deck', 'unreadable JSON falls back to the cards');
   mem.clear();
 });
 
@@ -82,13 +84,18 @@ test('a card: tier, both levels, the equipped skill and module, 潜能 pips, nam
   assert.equal(find(kit, (v) => v.type?.name === 'ModuleGlyph')[0].props.id, 'uniequip_002_inside');
 });
 
-test('a card\'s picture is an OperatorImage portrait (the owner\'s picture-only outfit, B6), its avatar the fallback', () => {
-  const imgs = find(card(), (v) => v.type === OperatorImage);
-  assert.equal(imgs.length, 1);
-  assert.equal(imgs[0].props.chess.chessId, INSIDE);
-  assert.equal(imgs[0].props.portrait, true);
-  assert.equal(imgs[0].props.avatarFallback, true);
-  assert.equal(imgs[0].props.ownerId, undefined, 'the local picker: this browser\'s own outfit');
+test('a card\'s picture is the shop-art pick (合并用户分支): the tall 立绘 through shopPortraitUrl, a plain img', () => {
+  // (the old OperatorImage portrait became the 商店立绘: the browser's pick, else the operator's own portrait;
+  // the card stays hook-free — the pick arrives as the `portraits` map from the screen)
+  const portraitManifest = { chars: { [get(INSIDE).charId]: { portrait: '/p/inside_1.png', avatar: '/a/inside.png' } } };
+  const artOf = (props) => { const art = byClass(card({ m: portraitManifest, ...props }), 'lo-op__art')[0]; return find(art, (v) => v.type === Img)[0]; };
+  assert.equal(artOf({ portraits: {} }).props.src, '/p/inside_1.png', 'no pick: the operator\'s own portrait');
+  // 'e2' (PORTRAIT_E2) on a record without portraitE2 falls back to the own portrait (shopPortraitUrl)
+  assert.equal(artOf({ portraits: { [INSIDE]: 'e2' } }).props.src, '/p/inside_1.png');
+  // a skin this manifest does not install falls back to the own portrait too (never a blank card)
+  assert.equal(artOf({ portraits: { [INSIDE]: `${get(INSIDE).charId}@x#1` } }).props.src, '/p/inside_1.png');
+  const glyph = card({ m: null, portraits: {} });
+  assert.equal(find(byClass(glyph, 'lo-op__art')[0], (v) => v.type === Img && v.props.src).length, 0, 'no manifest: the glyph fallback draws, no URL is invented');
 });
 
 test('#811: every version, tier and normal / elite form uses its actual promotion phase and level', () => {
@@ -102,14 +109,11 @@ test('#811: every version, tier and normal / elite form uses its actual promotio
       assert.deepEqual([c.status.phase, c.status.level], (levels[c.tier] || [[2, 1], [2, 60]])[Number(c.isGolden)], `${version.id} ${c.chessId}`);
       if (c.isGolden) continue;
       const forms = [c, chess[c.goldenId]].filter(Boolean);
+      // (合并用户分支后) the card's rail rows show the levels beside a CSS chevron — the phase icon moved out of the card
       const rows = byClass(card({ m, chess: c, golden: forms[1] }), 'lo-op__lvrow');
       assert.equal(rows.length, forms.length);
       rows.forEach((row, i) => {
-        const icons = find(row, (v) => v.type === PromotionIcon);
-        assert.equal(icons.length, 1, `${version.id} ${forms[i].chessId}: a phase icon, never a fixed two-bar glyph`);
-        const icon = PromotionIcon(icons[0].props);
-        assert.equal(icon.props.src, m.ui[`elite/elite_${forms[i].status.phase}`]);
-        assert.equal(textOf(icon.props.fallback), `E${forms[i].status.phase}`);
+        assert.equal(find(row, (v) => v.type === PromotionIcon).length, 0, `${version.id} ${forms[i].chessId}: the rail row is level-only`);
         assert.equal(textOf(row), String(forms[i].status.level));
       });
     }

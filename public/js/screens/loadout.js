@@ -39,8 +39,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Icon, MicroLabel, Button, TierChip, TextField, Countdown, Spinner, confirmDialog, hasDeadline, Modal, Fragment } from '../ui/components.js';
-import { OperatorImage, Img, UnitThumb, PromotionIcon } from '../ui/gameComponents.js';
-import { profGlyphUrl, subProfIconUrl, bondIconUrl, uiUrl, shopPortraitUrl } from '../ui/assetUrls.js';
+import { OperatorImage, Img, UnitThumb, PromotionIcon, RichText } from '../ui/gameComponents.js';
+import { profGlyphUrl, subProfIconUrl, bondIconUrl, uiUrl, chessAvatarUrl, shopPortraitUrl, itemIconUrl } from '../ui/assetUrls.js';
 import { GarrisonBlock } from '../ui/detailPanel.js';
 import { data, useData, localAsset, DATA_FILES } from '../data.js';
 import { useStore, loadPref, savePref } from '../store.js';
@@ -318,8 +318,8 @@ function Filters({ m, filters, onFilters, bonds, onDeck = null }) {
 // tests draw them).
 
 const VIEW_PREF = 'loadout.view';
-/** The stored view: 'list' (the aligned rows, the default) or 'deck' (the cards). */
-export const loadoutViewPref = () => (loadPref(VIEW_PREF, 'list') === 'deck' ? 'deck' : 'list');
+/** The stored view: 'deck' (the cards by tier, the default — 移植自用户分支的物资调配处) or 'list' (the aligned rows). */
+export const loadoutViewPref = () => (loadPref(VIEW_PREF, 'deck') === 'list' ? 'list' : 'deck');
 const DECK_TIERS = [1, 2, 3, 4, 5, 6];
 
 /** 潜能 as six pips (the card's star row). */
@@ -328,12 +328,13 @@ function PotPips({ n }) {
 }
 
 /**
- * One operator card: tier, the normal / elite levels, the half-body portrait with its branch icon, the equipped skill and
- * module, 潜能 (when editable: cultivationView), name and bonds; a 替补 ribbon when marked not owned. `quick` ('skill' |
- * 'module' | 'cult') adds a column of quick choices beside the card — the same handlers as the list's RosterRow. The
- * portrait is an OperatorImage, so the owner's picture-only outfit shows here as everywhere else (docs/SKINS.md B6).
+ * One operator card: tier, the normal / elite levels, the 商店立绘 (移植自用户分支的卡面: the browser's shop-art pick,
+ * else the operator's own), the equipped skill and module, 潜能 (six pips), name and bonds; a 替补 ribbon when marked
+ * not owned. `quick` ('skill' | 'module' | 'cult') adds a column of quick choices beside the card — the same handlers as
+ * the list's RosterRow. Hook-free: `portraits` (the skins store's shop-art map) comes from the screen, so the tests can
+ * draw this card as a plain vnode tree.
  */
-export function DeckCard({ m, chess, golden, entries, ops = {}, selected = false, quick = null, onPick, onChange, onOps, notOwned = false }) {
+export function DeckCard({ m, chess, golden, entries, ops = {}, selected = false, quick = null, onPick, onChange, onOps, notOwned = false, portraits = null }) {
   const choice = effectiveChoice(entries, chess, golden);
   const opt = chessOptions(chess, golden);
   const cv = cultivationView(chess.charId, ops);
@@ -342,6 +343,7 @@ export function DeckCard({ m, chess, golden, entries, ops = {}, selected = false
   const skRec = sk ? (golden ? sk.elite || sk.normal : sk.normal || sk.elite) : null;
   const mod = golden ? opt.moduleOptions.find((x) => x.id === choice.module) || null : null;
   const modules = [...opt.moduleOptions].sort((a, b) => Number(b.id === MODULE_NONE) - Number(a.id === MODULE_NONE));
+  const portraitPick = portraits?.[chess.chessId] || '';
   const standInNote = notOwned ? t('未持有（干员持有）：由替补干员上场，替补干员没有潜能与练度') : null;
   return html`<div role="listitem" data-chess=${chess.chessId}
       class=${cx('lo-op', `lo-op--t${chess.tier}`, selected && 'is-sel', changed && 'is-changed', notOwned && 'is-standin', quick && 'is-quick')}>
@@ -349,14 +351,14 @@ export function DeckCard({ m, chess, golden, entries, ops = {}, selected = false
       <div class="lo-op__rail">
         <${TierChip} tier=${chess.tier} size="sm" class="lo-op__tier" />
         <span class="lo-op__lv" title=${t('普通 / 精锐等级')}>
-          <span class="lo-op__lvrow"><${PromotionIcon} m=${m} phase=${chess.status?.phase} class="lo-op__phase" /><b class="num">${chess.status?.level ?? '—'}</b></span>
-          ${golden ? html`<span class="lo-op__lvrow is-elite"><${PromotionIcon} m=${m} phase=${golden.status?.phase} class="lo-op__phase" /><b class="num">${golden.status?.level ?? '—'}</b></span>` : null}
+          <span class="lo-op__lvrow"><i class="lo-op__chev"></i><b class="num">${chess.status?.level ?? '—'}</b></span>
+          ${golden ? html`<span class="lo-op__lvrow is-elite"><i class="lo-op__chev"></i><b class="num">${golden.status?.level ?? '—'}</b></span>` : null}
         </span>
         ${changed ? html`<span class="lo-op__mark" title=${t('已调整')} aria-label=${t('已调整')}></span>` : null}
       </div>
       <button type="button" class="lo-op__pick" aria-pressed=${selected ? 'true' : 'false'} title=${chess.name} onClick=${() => onPick(chess.chessId)}>
         <span class="lo-op__art">
-          <${OperatorImage} m=${m} chess=${chess} portrait avatarFallback fallback=${html`<span class="lo-op__glyph">${[...(chess.name || '?')][0]}</span>`} />
+          <${Img} src=${shopPortraitUrl(m, chess, portraitPick) || chessAvatarUrl(m, chess)} fallback=${html`<span class="lo-op__glyph">${[...(chess.name || '?')][0]}</span>`} />
         </span>
         <${Img} src=${subProfIconUrl(m, chess)} class="lo-op__sub" />
         ${notOwned ? html`<span class="lo-op__ribbon" title=${t('未持有（干员持有）：由替补干员上场')}>${t('替补')}</span>` : null}
@@ -365,7 +367,7 @@ export function DeckCard({ m, chess, golden, entries, ops = {}, selected = false
           <span class="lo-op__slot">${golden ? html`<${ModuleGlyph} m=${m} rec=${mod?.rec} id=${choice.module} size="q" />` : null}</span>
         </span>
       </button>
-      <span class="lo-op__meta">${cv.potentialOn ? html`<${PotPips} n=${cv.potential} />` : null}<span class="lo-op__name">${chess.name}</span></span>
+      <span class="lo-op__meta"><${PotPips} n=${cv.potential} /><span class="lo-op__name">${chess.name}</span></span>
       <span class="lo-op__bonds">${(chess.bonds || []).map((b) => html`<span key=${b} class="lo-op__bond" title=${data.lookup('bonds', b)?.name || b}>
         <${Img} src=${bondIconUrl(m, b)} fallback=${html`<i class="lo-bond__dot"></i>`} /></span>`)}</span>
     </div>
@@ -452,7 +454,7 @@ function useDragScroll() {
  * tiers 5 / 6 (not while filtering). A vertical wheel scrolls it sideways; `onTier` reports the tier group at the left
  * edge (the bottom bar).
  */
-function DeckView({ m, list, getChess, st, selId, quick, onPick, onChange, onOps, onDiy, diySlots, diyPicks, deckRef, drawer, onTier, filtered }) {
+function DeckView({ m, list, getChess, st, selId, quick, onPick, onChange, onOps, onDiy, diySlots, diyPicks, deckRef, drawer, onTier, filtered, portraits = null }) {
   const groups = DECK_TIERS.map((tier) => ({ tier, items: list.filter((c) => c.tier === tier) }))
     .filter((g) => g.items.length || (!filtered && diySlots.some((s) => s.tier === g.tier)));
   const raf = useRef(0);
@@ -483,7 +485,7 @@ function DeckView({ m, list, getChess, st, selId, quick, onPick, onChange, onOps
       <div class="lo-tgrid">
         ${g.items.map((c) => html`<${DeckCard} key=${c.chessId} m=${m} chess=${c} golden=${c.goldenId ? getChess(c.goldenId) : null}
           entries=${st.entries} ops=${st.ops} selected=${c.chessId === selId} quick=${quick} onPick=${onPick} onChange=${onChange} onOps=${onOps}
-          notOwned=${(st.notOwned || []).includes(c.chessId)} />`)}
+          notOwned=${(st.notOwned || []).includes(c.chessId)} portraits=${portraits} />`)}
         ${!filtered ? html`<${DiyDeckCard} m=${m} tier=${g.tier} slots=${diySlots} picks=${diyPicks} onOpen=${onDiy} />` : null}
       </div>
     </section>`)}
@@ -491,12 +493,19 @@ function DeckView({ m, list, getChess, st, selId, quick, onPick, onChange, onOps
 }
 
 /**
- * The deck's bottom bar: jump to a tier (the open 自选 slots above 5 / 6), 确认配置 while 快速配置 is on, and — while this
- * match's loadout is locked (`locked`: the full notice, its title) — a 「本局已锁定 · 下一局生效」 chip: the bar is the one
- * strip every width and 快速配置 keep on screen (the top bar's note is cut short or hidden on narrow screens).
+ * The deck's bottom bar (移植自用户分支): 干员 / 道具 segments, jump to a tier (the open 自选 slots above 5 / 6),
+ * 确认配置 while 快速配置 is on, and — while this match's loadout is locked (`locked`: the full notice, its title) — a
+ * 「本局已锁定 · 下一局生效」 chip: the bar is the one strip every width and 快速配置 keep on screen (the top bar's note
+ * is cut short or hidden on narrow screens).
  */
-export function DeckBar({ counts, active, onJump, diyOpen, quick, onConfirm, locked = null }) {
-  return html`<nav class="lo-bbar" aria-label=${t('按阶级跳转')}>
+export function DeckBar({ deckTab = 'ops', onDeckTab = null, counts, active, onJump, diyOpen, quick, onConfirm, locked = null }) {
+  return html`<nav class="lo-bbar" aria-label=${t('物资调配')}>
+    ${onDeckTab ? html`<div class="lo-bbar__seg" role="tablist" aria-label=${t('物资调配处')}>
+      <button type="button" role="tab" aria-selected=${deckTab === 'ops' ? 'true' : 'false'} class=${cx(deckTab === 'ops' && 'is-on')} onClick=${() => onDeckTab('ops')}>
+        <${Icon} name="users" />${t('干员')}</button>
+      <button type="button" role="tab" aria-selected=${deckTab === 'items' ? 'true' : 'false'} class=${cx(deckTab === 'items' && 'is-on')} onClick=${() => onDeckTab('items')}>
+        <${Icon} name="box" />${t('道具')}</button>
+    </div>` : null}
     <div class="lo-bbar__tiers">
       ${DECK_TIERS.map((tier) => html`<button key=${tier} type="button" class=${cx('lo-bbar__tier', active === tier && 'is-on')} disabled=${!counts[tier]}
           data-tier=${tier} onClick=${() => onJump(tier)} title=${t('{tier}阶', { tier })}>
@@ -519,6 +528,89 @@ function DeckBarLive({ sink, ...props }) {
   sink.current = setActive;
   useEffect(() => () => { if (sink.current === setActive) sink.current = null; }, []);
   return html`<${DeckBar} ...${props} active=${active} />`;
+}
+
+// ---- 道具: the equipment codex (移植自用户分支, 2026-10-13) ------------------------------------------------------------
+//
+// 本游戏商店出售的全部装备 (data/items.json), base forms, by tier then shop order; a tile opens ItemDetail (基础 /
+// 进阶效果, flavour, price; ‹ / › browse). The deck's 道具 tab draws it with the same tier groups as the operators.
+
+/** The equipment of the codex: this game's shop items (data/items.json), base forms, by tier then shop order. */
+export function codexItems(items) {
+  return Object.values(items || {})
+    .filter((x) => x && !x.isGolden && x.itemType === 'EQUIP' && !x.hideInShop)
+    .sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0) || (a.shopSortId ?? 0) - (b.shopSortId ?? 0));
+}
+
+/** 道具: the equipment codex — a tile per item (icon, tier, name, base effect), grouped by tier; a tile opens ItemDetail. */
+function ItemCodex({ m, items, deckRef, onOpen, onTier }) {
+  const groups = DECK_TIERS.map((tier) => ({ tier, items: items.filter((x) => x.tier === tier) })).filter((g) => g.items.length);
+  const raf = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+  const dragScroll = useDragScroll();
+  const onScroll = (e) => {
+    const el = e.currentTarget;
+    cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => {
+      const left = el.getBoundingClientRect().left + 24;
+      let cur = groups[0]?.tier || 1;
+      for (const sec of el.querySelectorAll('.lo-tgroup')) if (sec.getBoundingClientRect().left <= left) cur = Number(sec.dataset.tier);
+      onTier(cur);
+    });
+  };
+  const onWheel = (e) => {
+    if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+    e.currentTarget.scrollLeft += e.deltaY;
+    e.preventDefault();
+  };
+  if (!items.length) return html`<div class="lo-deck lo-deck--empty" ref=${deckRef}><p class="lo-empty t-dim">${t('装备数据载入中…')}</p></div>`;
+  let n = -1;
+  return html`<div class="lo-deck lo-deck--items" ref=${deckRef} onScroll=${onScroll} onWheel=${onWheel} ...${dragScroll} role="list" aria-label=${t('装备一览')}>
+    ${groups.map((g) => html`<section key=${g.tier} class=${cx('lo-tgroup', `lo-tgroup--t${g.tier}`)} data-tier=${g.tier}>
+      <div class=${cx('lo-tmark', `tier--${g.tier}`)} aria-hidden="true">
+        <span class="lo-tmark__no">NO.</span><b class="lo-tmark__n">${ROMAN[g.tier]}</b><span class="lo-tmark__cnt num">${g.items.length}</span>
+      </div>
+      <div class="lo-igrid">${g.items.map((it) => { n += 1; const idx = n; return html`<button key=${it.id} type="button" role="listitem" class="lo-item" data-item=${it.id} onClick=${() => onOpen(idx)}>
+        <span class="lo-item__icon"><${Img} src=${itemIconUrl(m, it)} fallback=${html`<${Icon} name="box" />`} /></span>
+        <span class="lo-item__body">
+          <span class="lo-item__head"><${TierChip} tier=${it.tier} size="sm" /><b class="lo-item__name">${it.name}</b></span>
+          <${RichText} class="lo-item__desc" text=${it.descRaw || it.desc || ''} />
+        </span>
+        ${it.shopExcluded ? html`<span class="lo-item__tag">${t('特殊获取')}</span>` : null}
+        <span class="lo-item__zoom" aria-hidden="true"><${Icon} name="search" /></span>
+      </button>`; })}</div>
+    </section>`)}
+  </div>`;
+}
+
+/** One item, base and advanced (the merged golden form), its flavour text and price; ‹ / › browse the codex. */
+function ItemDetail({ m, items, index, all, onIndex, onClose }) {
+  const it = items[index];
+  if (!it) return null;
+  const adv = it.goldenId ? all?.[it.goldenId] : null;
+  const same = adv && (adv.descRaw || adv.desc) === (it.descRaw || it.desc);
+  const go = (d) => onIndex((index + d + items.length) % items.length);
+  return html`<div class="lo-idetail" role="dialog" aria-modal="true" aria-label=${it.name} onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <button type="button" class="lo-idetail__nav is-prev" onClick=${() => go(-1)} aria-label=${t('上一件')}><${Icon} name="chevronLeft" /></button>
+    <div class="lo-idetail__box">
+      <button type="button" class="lo-idetail__close" onClick=${onClose} aria-label=${t('关闭')}><${Icon} name="close" /></button>
+      <header class="lo-idetail__head"><${TierChip} tier=${it.tier} size="md" /><h3>${it.name}</h3>
+        <span class="lo-idetail__price">${t('售价')} <b class="num">${it.price ?? '—'}</b></span>
+        ${it.shopExcluded ? html`<span class="lo-item__tag">${t('特殊获取')}</span>` : null}</header>
+      <div class="lo-idetail__main">
+        <span class="lo-idetail__icon"><${Img} src=${itemIconUrl(m, it)} fallback=${html`<${Icon} name="box" />`} /></span>
+        <div class="lo-idetail__text">
+          <span class="lo-idetail__chip">${same ? t('基础 & 进阶效果') : t('基础效果')}</span>
+          <${RichText} as="p" class="lo-idetail__eff" text=${it.descRaw || it.desc || ''} />
+          ${adv && !same ? html`<span class="lo-idetail__chip is-adv">${t('进阶效果')}</span>
+            <${RichText} as="p" class="lo-idetail__eff" text=${adv.descRaw || adv.desc || ''} />` : null}
+          ${it.flavor ? html`<p class="lo-idetail__flavor">${it.flavor}</p>` : null}
+        </div>
+      </div>
+      <footer class="lo-idetail__foot num">${index + 1} / ${items.length}</footer>
+    </div>
+    <button type="button" class="lo-idetail__nav is-next" onClick=${() => go(1)} aria-label=${t('下一件')}><${Icon} name="chevronRight" /></button>
+  </div>`;
 }
 
 /**
@@ -603,7 +695,7 @@ export function DataMissing({ files }) {
 
 /** The overlay screen. */
 function LoadoutScreen({ st }) {
-  const ready = useData('chess', 'bonds', 'assets', 'local', 'backups', 'garrisons', 'effects');
+  const ready = useData('chess', 'bonds', 'assets', 'local', 'backups', 'garrisons', 'effects', 'items');
   const phase = useStore((s) => s.match?.public?.phase || null);
   const inMatch = useStore((s) => !!s.room?.inMatch);
   // co-op briefing (INFO_CHECK, 25 s): the overlay covers the briefing's own countdown, so it shows the time left — the
@@ -639,6 +731,14 @@ function LoadoutScreen({ st }) {
   const [drawer, setDrawer] = useState(false);
   const [menu, setMenu] = useState(null);                  // null | 'filter' | 'more'
   const setView = (v) => { setViewState(v); savePref(VIEW_PREF, v); setDrawer(false); setQuick(null); setMenu(null); };
+  // 道具 codex (移植自用户分支): the deck's second tab — this game's shop equipment, a tile opens its detail
+  const [deckTab, setDeckTab] = useState('ops');           // 'ops' | 'items'
+  const [itemIdx, setItemIdx] = useState(null);
+  const itemsReady = useData('items');
+  const codex = useMemo(() => codexItems(data.get('items')), [itemsReady, data.locale()]);
+  const switchDeckTab = (t) => { setDeckTab(t); setItemIdx(null); };
+  // the shop-art picks (skins store): DeckCard stays hook-free, so the screen reads the map once for every card
+  const portraits = useStore((v) => v.portraits || {}, Object.is, skinsStore);
   const [help, setHelp] = useState(false);
   const tierSink = useRef(null);                           // the bottom bar's tier (DeckBarLive), set without a redraw here
   const setActiveTier = (tier) => tierSink.current?.(tier);
@@ -827,6 +927,7 @@ function LoadoutScreen({ st }) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (document.querySelector('.modal')) return; // a confirm dialog handles its own keys
       if (e.key === 'Escape' && document.querySelector('.diy-pick')) return; // the 自选 picker's Esc closes only the picker (diy.js)
+      if (document.querySelector('.lo-idetail')) return; // the item detail's Esc / ←→ (道具 codex, 移植自用户分支)
       const typing = e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
       if (e.key === 'Escape') {
         e.preventDefault(); e.stopImmediatePropagation();
@@ -1025,14 +1126,17 @@ function LoadoutScreen({ st }) {
       : tab === 'ownership'
       ? html`<${OwnershipPanel} m=${m} roster=${ownRoster} notOwned=${st.notOwned} onToggle=${toggleOwned} />`
       : deck ? html`<main class="lo-deckwrap">
-        <${DeckView} m=${m} list=${list} getChess=${getChess} st=${st} selId=${selId} quick=${quick} onPick=${pick} onChange=${quickChange} onOps=${setOpsOf}
-          onDiy=${() => setTab('diy')} diySlots=${diySlots} diyPicks=${diyLegal} deckRef=${deckRef} drawer=${drawer && !!base} onTier=${setActiveTier} filtered=${nFilters > 0} />
-        ${drawer && base ? html`<div class="lo-drawer" data-testid="loadout-drawer">
-          <button type="button" class="lo-drawer__close" onClick=${() => setDrawer(false)} title=${t('收起 (Esc)')}><${Icon} name="chevronLeft" />${t('收起')}</button>
-          ${loadoutDetail}
-        </div>` : null}
+        ${deckTab === 'items'
+          ? html`<${ItemCodex} m=${m} items=${codex} deckRef=${deckRef} onOpen=${setItemIdx} onTier=${setActiveTier} />
+            ${itemIdx != null ? html`<${ItemDetail} m=${m} items=${codex} index=${itemIdx} all=${data.get('items')} onIndex=${setItemIdx} onClose=${() => setItemIdx(null)} />` : null}`
+          : html`<${DeckView} m=${m} list=${list} getChess=${getChess} st=${st} selId=${selId} quick=${quick} onPick=${pick} onChange=${quickChange} onOps=${setOpsOf}
+              onDiy=${() => setTab('diy')} diySlots=${diySlots} diyPicks=${diyLegal} deckRef=${deckRef} drawer=${drawer && !!base} onTier=${setActiveTier} filtered=${nFilters > 0} portraits=${portraits} />
+            ${drawer && base ? html`<div class="lo-drawer" data-testid="loadout-drawer">
+              <button type="button" class="lo-drawer__close" onClick=${() => setDrawer(false)} title=${t('收起 (Esc)')}><${Icon} name="chevronLeft" />${t('收起')}</button>
+              ${loadoutDetail}
+            </div>` : null}`}
       </main>
-      <${DeckBarLive} sink=${tierSink} counts=${tierCounts} onJump=${jumpTier} diyOpen=${diyOpen} quick=${quick} onConfirm=${() => setQuick(null)}
+      <${DeckBarLive} sink=${tierSink} deckTab=${deckTab} onDeckTab=${switchDeckTab} counts=${tierCounts} onJump=${jumpTier} diyOpen=${diyOpen} quick=${quick} onConfirm=${() => setQuick(null)}
         locked=${locked ? lockedText : null} />`
       : html`<main class=${cx('lo-body', narrowDetail && 'is-detail')}>
       <section class="lo-roster">

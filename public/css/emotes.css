@@ -47,12 +47,15 @@
 /* ---- panel: one page per theme ----------------------------------------------------------------------------- */
 /* emoji_bkg is 313×231 with a soft shadow margin; its opaque plate spans x 15–297, y 13–212. The cells, the pager
    and the CSS fallback plate all use that geometry. */
-.ewheel__panel {
+.ewheel__popup {
   position: absolute; left: -.15rem; bottom: calc(100% + .02rem); z-index: 5;
+  width: 3.13rem; transform-origin: .45rem 100%;
+  animation: emo-panel-in 160ms var(--ease-out);
+}
+.ewheel__panel {
+  position: relative; left: auto; bottom: auto; animation: none;
   width: 3.13rem; height: 2.31rem; padding: 0; box-sizing: border-box;
   background: none; border: 0; border-radius: 0; box-shadow: none;
-  transform-origin: .45rem 100%;
-  animation: emo-panel-in 160ms var(--ease-out);
   touch-action: pan-y; user-select: none; -webkit-user-select: none;
 }
 .ewheel__panel::before { /* CSS look-alike of the emoji_bkg plate */
@@ -100,10 +103,101 @@
   background: none; border: 0; color: rgba(255, 255, 255, .6); transition: color var(--t-fast), opacity var(--t-fast);
 }
 .ewheel__nav .icon { width: .18rem; height: .18rem; }
-.ewheel__nav.is-prev { left: .7rem; }
-.ewheel__nav.is-next { right: .7rem; }
+.ewheel__nav.is-prev { left: .4rem; }
+.ewheel__nav.is-next { right: .4rem; }
 .ewheel__nav:hover:not(:disabled) { color: #fff; }
 .ewheel__nav:disabled { opacity: .18; cursor: default; }
+
+/* Shared emote/history area and bottom composer, adapted from xinhai-ai's communication layout.
+   Size the chat variant directly (including touch targets), so devices.css's emote-only scale is unnecessary. */
+.ewheel__popup.has-chat {
+  --chat-cell-height: max(.64rem, 32px, calc(48px * var(--sp-ui, 1)));
+  display: grid; grid-template-columns: max(.52rem, 32px, calc(44px * var(--sp-ui, 1))) minmax(0, 1fr);
+  left: 0; width: max(3.65rem, 32px, calc(292px * var(--sp-ui, 1))); max-width: min(420px, calc(100vw - .4rem - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  max-height: calc(100vh - 1.4rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 1.4rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto; overscroll-behavior: contain; scale: 1; transform-origin: 0 100%;
+  background: #111916; border: 1px solid var(--line-2); border-radius: max(.08rem, calc(6px * var(--sp-ui, 1)));
+  box-shadow: 0 .08rem .3rem rgba(0, 0, 0, .48);
+}
+.ewheel__chat-toolbar {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; padding: 5px 8px 5px 12px;
+  border-bottom: 1px solid var(--line); color: var(--text-hi); font-size: max(calc(.15 * var(--t)), 12px);
+}
+.ewheel__chat-toolbar strong { flex: 1; min-width: 0; font-weight: 600; letter-spacing: .06em; }
+.ewheel__chat-help, .ewheel__chat-close {
+  flex: none; display: grid; place-items: center; width: max(.3rem, 28px); height: max(.3rem, 28px);
+  padding: 5px; border: 0; border-radius: 4px; background: transparent; color: var(--text-dim); cursor: pointer;
+}
+.ewheel__chat-toolbar .icon { width: 100%; height: 100%; }
+.ewheel__chat-help:hover, .ewheel__chat-help[aria-expanded="true"], .ewheel__chat-close:hover { background: var(--mint-a10); color: var(--mint-400); }
+.ewheel__chat-tabs { display: flex; flex-direction: column; gap: 6px; padding: 8px 4px; border-right: 1px solid var(--line); }
+.ewheel__chat-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  min-height: max(.58rem, 32px, calc(48px * var(--sp-ui, 1))); padding: 7px 2px; border: 1px solid transparent; border-radius: 4px;
+  background: transparent; color: var(--text-dim); font-size: max(calc(.12 * var(--t)), 11px); line-height: 1.3; cursor: pointer;
+}
+.ewheel__chat-tab .icon { width: max(.21rem, 18px); height: max(.21rem, 18px); }
+.ewheel__chat-tab:hover { background: rgba(255, 255, 255, .04); color: var(--text-hi); }
+.ewheel__chat-tab.is-on { border-color: var(--mint-700); background: var(--mint-a10); color: var(--mint-400); }
+.ewheel__chat-total { font-size: max(calc(.11 * var(--t)), 10px); opacity: .7; font-variant-numeric: tabular-nums; }
+.ewheel__content { min-width: 0; }
+.ewheel__popup.has-chat .ewheel__panel {
+  display: grid; grid-template-rows: auto max(.3rem, 28px); gap: 2px;
+  width: 100%; height: auto; padding: 10px 10px 2px; background: none;
+}
+.ewheel__popup.has-chat .ewheel__panel::before { content: none; }
+.ewheel__popup.has-chat .ewheel__viewport { position: relative; left: auto; top: auto; width: 100%; height: auto; }
+.ewheel__popup.has-chat .ewheel__page {
+  grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, var(--chat-cell-height));
+  grid-auto-rows: var(--chat-cell-height); gap: 6px; height: auto;
+}
+.ewheel__popup.has-chat .ewheel__item { min-width: 0; width: 100%; height: var(--chat-cell-height); padding: 6px; border-radius: 5px; }
+.ewheel__popup.has-chat .ewheel__item .eart { min-width: 0; min-height: 0; max-height: 100%; }
+.ewheel__popup.has-chat .ewheel__pager { display: flex; align-items: center; gap: 4px; }
+.ewheel__popup.has-chat .ewheel__dots { position: relative; flex: 1; left: auto; top: auto; width: auto; height: 100%; gap: max(.08rem, calc(7px * var(--sp-ui, 1))); }
+.ewheel__popup.has-chat .ewheel__dot { width: max(.07rem, 6px); height: max(.07rem, 6px); border-radius: 50%; }
+.ewheel__popup.has-chat .ewheel__dot.is-on { background: var(--mint-400); }
+.ewheel__popup.has-chat .ewheel__dot::before { inset: -8px -3px; width: auto; height: auto; transform: none; }
+.ewheel__popup.has-chat .ewheel__nav { position: relative; flex: none; top: auto; left: auto; right: auto; width: max(.3rem, 28px); height: max(.3rem, 28px); }
+.ewheel__popup.has-chat .ewheel__nav .icon { width: max(.18rem, 16px); height: max(.18rem, 16px); }
+.ewheel__popup.has-chat .ewheel__panel .ewheel__nav::before { inset: 0; width: auto; height: auto; transform: none; }
+.ewheel__chat {
+  position: relative; z-index: 1; grid-column: 1 / -1; margin: 0; padding: 10px;
+  background: rgba(0, 0, 0, .16); border-top: 1px solid var(--line);
+}
+.ewheel__chat-count { flex: none; font-size: max(calc(.11 * var(--t)), 10px); color: var(--text-dim); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.ewheel__chat-form { display: flex; align-items: center; gap: 8px; }
+.ewheel__chat-form .field__box { flex: 1; min-width: 0; height: max(.4rem, 32px, calc(36px * var(--sp-ui, 1))); padding: 0 8px; gap: 6px; border-radius: 4px; }
+.ewheel__chat-form .field__box::before, .ewheel__chat-form .field__box::after { content: none; }
+.ewheel__chat-form .field__input { font-size: max(calc(.15 * var(--t)), 16px); letter-spacing: 0; }
+.ewheel__chat-send {
+  flex: none; height: max(.4rem, 32px, calc(36px * var(--sp-ui, 1))); padding: 0 12px; border: 1px solid var(--mint-700); border-radius: 4px;
+  background: var(--mint-a10); color: var(--mint-400); font: inherit; font-size: max(calc(.14 * var(--t)), 12px); cursor: pointer;
+}
+.ewheel__chat-send:hover:not(:disabled) { background: rgba(78, 216, 175, .2); }
+.ewheel__chat-send:disabled { opacity: .4; cursor: not-allowed; }
+.ewheel__popup.has-chat button:focus-visible { outline: 2px solid var(--mint-500); outline-offset: -2px; }
+.ewheel__chat-rules {
+  position: absolute; z-index: 3; right: 10px; bottom: calc(100% + 8px); width: calc(100% - 20px);
+  margin: 0; padding: 12px; border: 1px solid var(--line-2); border-radius: 4px;
+  background: #1b2822; box-shadow: 0 4px 12px rgba(0, 0, 0, .4);
+  color: var(--text-hi); font-size: max(calc(.13 * var(--t)), 12px); line-height: 1.6; overflow-wrap: anywhere;
+}
+.ewheel__chat-note { margin: 8px 0 0; font-size: max(calc(.12 * var(--t)), 11px); line-height: 1.5; color: var(--text-dim); overflow-wrap: anywhere; }
+.ewheel__chat-history {
+  height: calc(var(--chat-cell-height) * 2 + max(.3rem, 28px) + 20px); min-height: 0; overflow-y: auto;
+  padding: 0 12px; overscroll-behavior: contain; touch-action: pan-y; user-select: text;
+  color: var(--text-hi); font-size: max(calc(.14 * var(--t)), 12px);
+}
+.ewheel__chat-entry { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.ewheel__chat-entry:last-child { border-bottom: 0; }
+.ewheel__chat-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: max(calc(.11 * var(--t)), 10px); color: var(--text-dim); }
+.ewheel__chat-meta strong { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.ewheel__chat-meta time { flex: none; font-variant-numeric: tabular-nums; }
+.ewheel__chat-entry.is-self strong { color: var(--mint-400); }
+.ewheel__chat-entry p { margin: 5px 0 0; line-height: 1.6; overflow-wrap: anywhere; }
+.ewheel__chat-empty { display: grid; place-items: center; height: 100%; margin: 0; color: var(--text-dim); }
 
 /* ---- bubble beside the sender's avatar (picture only) ------------------------------------------------------ */
 /* emoji_bubble_bkg is 108×97: plate x 22–97, y 8–85, tail tip at x 9, y ≈ 46 (pointing left, toward the avatar). */
@@ -133,6 +227,18 @@
 .ebubble__icon { position: absolute; left: .26rem; top: .12rem; width: .68rem; height: .70rem; display: grid; place-items: center; }
 .ebubble .eart { width: 100%; height: 100%; }
 
+/* Chat shares the emote's anchor, pop/fade and lifetime, with a flexible text plate. */
+.ebubble.ebubble--chat {
+  width: max-content; height: auto; min-height: .48rem; max-width: min(3.2rem, 50vw);
+  padding: .09rem .14rem .09rem .25rem; color: var(--text-hi); font-size: .16rem; line-height: 1.5;
+  font-weight: 500; white-space: normal;
+}
+.ebubble.ebubble--chat::before {
+  left: .18rem; top: 0; width: calc(100% - .18rem); height: 100%;
+}
+.ebubble.ebubble--chat::after { left: .05rem; top: calc(50% - .08rem); }
+.ebubble__message { position: relative; display: block; overflow-wrap: anywhere; }
+
 @keyframes emo-panel-in { from { opacity: 0; transform: translateY(.06rem) scale(.96); } }
 @keyframes emo-page-in { from { opacity: 0; } }
 @keyframes emo-page-from-right { from { opacity: .2; transform: translateX(45%); } }
@@ -145,6 +251,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ewheel__panel, .ewheel__page, .ewheel__page.is-from-right, .ewheel__page.is-from-left { animation: none; }
+  .ewheel__popup, .ewheel__panel, .ewheel__page, .ewheel__page.is-from-right, .ewheel__page.is-from-left { animation: none; }
   .ebubble { animation: emo-bubble-out 1ms linear calc(var(--ebubble-ttl) - 1ms - var(--ebubble-age)) forwards; }
 }

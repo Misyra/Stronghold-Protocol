@@ -181,7 +181,7 @@ function backToLobby() {
   clearTimeout(restoreTimer);
   const s = store.get();
   if (s.room || s.match.public) closeAllDialogs();
-  store.set({ room: null, match: emptyMatch(), ticker: [], emotes: [] });
+  store.set({ room: null, match: emptyMatch(), ticker: [], emotes: [], chat: { ...store.get().chat, messages: [] } });
   store.patch('ui', { restoring: false });
 }
 
@@ -245,7 +245,7 @@ function onRoomState(msg) {
   }
   const prevRoom = store.get().room;
   // A (new) match starts: forget the previous match's state so stale results never show.
-  if (room.inMatch && !(prevRoom && prevRoom.inMatch && prevRoom.code === room.code)) store.set({ match: emptyMatch() });
+  if (room.inMatch && !(prevRoom && prevRoom.inMatch && prevRoom.code === room.code)) store.set({ match: emptyMatch(), chat: { ...store.get().chat, messages: [] } });
   // The room switched its version (DESIGN §35.23): a result still on screen (a settlement, a spectator's view) names the old
   // version's chess ids, and the server dropped the room's replay — it closes, back to the room.
   else if (prevRoom && prevRoom.code === room.code && !room.inMatch && roomVersion(prevRoom) !== roomVersion(room) && store.get().match.public) store.set({ match: emptyMatch() });
@@ -348,6 +348,23 @@ function wireNet() {
   });
   net.on('m.emote', (msg) => {
     store.set((s) => ({ emotes: [...s.emotes.slice(-(EMOTE_KEEP - 1)), { seq: ++seq, playerId: msg.playerId, id: msg.id, at: Date.now() }] }));
+  });
+  // 局内聊天 (合并自用户分支): the panel keeps the full history; only a live broadcast pops an avatar bubble —
+  // resynced history (m.chatState.messages) must never bubble again.
+  net.on('m.chatState', (msg) => {
+    const remaining = Math.max(0, Number(msg.mutedUntil) - Number(msg.serverTime));
+    store.patch('chat', { enabled: msg.enabled === true, mutedUntil: Number(msg.mutedUntil) || 0,
+      deadline: performance.now() + (Number.isFinite(remaining) ? remaining : 0),
+      ...(Array.isArray(msg.messages) ? { messages: msg.messages.slice(-50) } : {}) });
+  });
+  net.on('m.chat', (msg) => {
+    if (typeof msg.text !== 'string' || typeof msg.name !== 'string') return;
+    store.set((s) => ({
+      chat: { ...s.chat, messages: [...s.chat.messages.filter(m => m.id !== msg.id).slice(-49), payload(msg)] },
+      ...(!s.chat.messages.some(m => m.id === msg.id) ? {
+        emotes: [...s.emotes.slice(-(EMOTE_KEEP - 1)), { seq: ++seq, playerId: msg.playerId, text: msg.text, at: Date.now() }],
+      } : {}),
+    }));
   });
 
   // Entering (title → lobby) while already online also needs the deep-link join.

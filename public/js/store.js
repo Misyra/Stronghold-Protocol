@@ -12,7 +12,7 @@
 //                 every local clock; `leaks`: { [fieldId]: counted leaks so far } of every normal field simulated
 //                 locally (the live LP of ui/hud.js liveLp, user playtest #3 item 2). Under client-side combat `field`
 //                 is published by the runner (the m.field shape of the battle on screen, `local: true`).
-//   ticker      – recent `m.ticker` lines, emotes – recent `m.emote` events
+//   ticker      – recent `m.ticker` lines, emotes – recent `m.emote` events and live `m.chat` lines (avatar bubbles)
 //   clock       – { offset, rtt } server clock correction: serverNow ≈ Date.now() + offset
 //   ui          – small bits of local UI state shared between screens
 //   versions    – welcome.versions (the official versions the server enables, versions.js sanitizeVersions) or null: the
@@ -96,6 +96,8 @@ export const initialState = Object.freeze({
   match: emptyMatch(),
   ticker: [],
   emotes: [],
+  // 局内聊天 (合并自用户分支): the panel is mounted by welcome.chatEnabled; deadline is performance.now()-based.
+  chat: { enabled: false, messages: [], mutedUntil: 0, deadline: 0 },
   clock: { offset: 0, rtt: null, synced: false },
   ui: { pendingJoin: null, restoring: false, buildStale: false },
   // official versions (DESIGN §35.23, versions.js): welcome.versions (null: the switch is off), this browser's lobby choice

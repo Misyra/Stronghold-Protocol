@@ -116,6 +116,14 @@ test('#4 audio classes (official ON_UNIT_DEAD/BORN defaults): only operators pla
   const hashed = { ...manifest, audio: { ...manifest.audio, sfx: { ...SFX, battle: { ...SFX.battle, charDie: SFX.battle.charDie.replace(/^\/assets\//, '/assets/~0123456789abcdef/') } } } };
   assert.equal(deathSfxUrl(hashed, op), hashed.audio.sfx.battle.charDie);
   assert.equal(deathSfxUrl(hashed, tok), TOKEN_DEAD, 'b_char_tokendead without charDie\'s hash');
+  // a release prefix (/_v/<tag>/) stays on the derived address too; charDie's own cache-busting never applies to it
+  const versioned = { ...manifest, audio: { ...manifest.audio, sfx: { ...SFX, battle: { ...SFX.battle, charDie: `/_v/0123456789abcdef${SFX.battle.charDie}` } } } };
+  assert.equal(deathSfxUrl(versioned, op), versioned.audio.sfx.battle.charDie, 'charDie itself is untouched');
+  assert.equal(deathSfxUrl(versioned, tok), `/_v/0123456789abcdef${TOKEN_DEAD}`, 'release prefix kept, name is the target\'s');
+  // a per-file `?v=<hash>` query names charDie's bytes, so it is dropped before the name is swapped
+  const served = { ...manifest, audio: { ...manifest.audio, sfx: { ...SFX, battle: { ...SFX.battle, charDie: `${SFX.battle.charDie}?v=0123456789abcdef` } } } };
+  assert.equal(deathSfxUrl(served, op), served.audio.sfx.battle.charDie);
+  assert.equal(deathSfxUrl(served, tok), TOKEN_DEAD, 'never charDie\'s ?v= hash');
   assert.equal(deathSfxUrl(manifest, enemy), SFX.battle.enemyDie);
   assert.equal(deathSfxUrl(manifest, boss), SFX.battle.enemyDieHeavy);
   assert.equal(deathSfxUrl(manifest, op, { reason: 'retreat' }), null, 'a retreat is no knock-down');

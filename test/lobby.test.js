@@ -142,10 +142,8 @@ describe('static http server', () => {
     srv = await startServer({
       port: 0, host: '127.0.0.1', quiet: true,
       publicDir: path.join(tmp, 'public'), dataDir: path.join(tmp, 'data'), sharedDir: path.join(tmp, 'shared'),
-      assetIndex: { delayMs: 0 },
     });
-    // the content hashes of public/assets + public/fonts (the ETags of those files): ready before the first request
-    await srv.assetIndex.whenReady();
+    // (移植自用户分支的静态层) assetIndex 不再构建: /_v/ 发布层 + 每文件指纹 + 分包预载取代了内容哈希索引
   });
 
   after(async () => {

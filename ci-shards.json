@@ -3,7 +3,6 @@
   "defaultMs": 800,
   "measured": {
     "plugins/_template/script/test/guard.test.js": 2,
-    "test/asset-index.test.js": 310,
     "test/asset-network.test.js": 1427,
     "test/asset-paths.test.js": 2,
     "test/assets-diy.test.js": 122,

@@ -21,6 +21,7 @@
 
 import { render } from '../../vendor/preact.module.js';
 import { html, TierChip } from './components.js';
+import { normalizeFrameRate } from '../frameRate.js';
 import { GEO } from '../../../shared/constants.js';
 import { chessAvatarUrl, itemIconUrl, tokenAvatarUrl, enemyIconUrl } from './assetUrls.js';
 import { tileKey, hasFlag, UF, penPlacement, PEN, fieldTile, ownStandIn, ownDiyRecord } from './gameLogic.js';
@@ -114,9 +115,17 @@ export function createFallbackView(host, opts = {}) {
   };
 
   let raf = 0;
+  // 帧率上限(移植自用户分支, frameRate.js): the DOM fallback board paces itself like the render engine's ticker
+  let lastPaint = -Infinity;
   const schedule = () => {
     if (raf || st.destroyed) return;
-    raf = requestAnimationFrame(() => { raf = 0; paint(); });
+    raf = requestAnimationFrame((now) => {
+      raf = 0;
+      const limit = normalizeFrameRate(st.settings.fpsLimit);
+      if (limit && now - lastPaint < 1000 / limit) { schedule(); return; }
+      lastPaint = now;
+      paint();
+    });
   };
 
   // ---- geometry ----------------------------------------------------------------------------------------

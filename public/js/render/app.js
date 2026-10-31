@@ -154,6 +154,7 @@ import { createDragController, pieceTile, dragStandTile } from './drag.js';
 import { backdropTextures, shadowTexture, refreshTierChips, refreshDownLabels, silhouetteTexture } from './textures.js';
 import { TILE_H, TIER_COLORS, COLORS } from './style.js';
 import { loadBoardArt } from './boardArt.js';
+import { applyFrameRate, renderFrameBudget } from '../frameRate.js';
 import { ImpostorAtlas } from './impostor.js';
 import { stepClipBounds } from './spine.js';
 import { loadThree, loadBoardPack, loadScenePack, webgl2Available, boardArtListed } from './board3d/load.js';
@@ -201,6 +202,8 @@ export async function createFieldView(host, options = {}) {
   const assets = resolveAssets(opts.assets);
   const data = makeData(opts.data);
   const settings = { damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, quality: 'high', officialFx: 'auto', ...(opts.settings || {}) };
+  // 帧率上限(移植自用户分支, frameRate.js FRAME_RATES): 不是官方设置项, 放在这一行之外, 免得撑开上面那个字面量
+  if (settings.fpsLimit == null) settings.fpsLimit = 0;
   // 设置「显示其他玩家的皮肤」 (docs/SKINS.md), on unless the caller said off: kept out of the literal above so the shape
   // the other settings the units read every frame are pinned by stays one line (test/ui/ammo-count.test.js)
   settings.otherSkins = settings.otherSkins !== false;
@@ -243,6 +246,7 @@ export async function createFieldView(host, options = {}) {
     width: s0.width, height: s0.height, antialias: opts.antialias ?? (settings.quality === 'high' && (globalThis.devicePixelRatio || 1) < 1.5), backgroundColor: 0x0a0e0d, backgroundAlpha: 0,
     resolution: dpr(), autoDensity: true, powerPreference: 'high-performance',
   });
+  settings.fpsLimit = applyFrameRate(app.ticker, settings.fpsLimit);
   const canvas = app.view;
   setupCleanup.push(() => {
     releaseGl(app.renderer);
@@ -2260,6 +2264,15 @@ export async function createFieldView(host, options = {}) {
         refreshSkins();
       }
       if (s.quality === 'high' || s.quality === 'medium' || s.quality === 'low') settings.quality = s.quality;
+      if ('fpsLimit' in s) {
+        const before = settings.fpsLimit;
+        settings.fpsLimit = applyFrameRate(app.ticker, s.fpsLimit);
+        if (before !== settings.fpsLimit) {
+          slowFor = fastFor = 0;
+          frameMs = renderFrameBudget(settings.fpsLimit);
+          lastNow = performance.now();
+        }
+      }
       if (typeof s.officialFx === 'string' && s.officialFx !== settings.officialFx) { settings.officialFx = s.officialFx; syncOfficialFx(); }
       if (q !== settings.quality) { board3d?.setQuality?.(settings.quality); resize(); }
     },

@@ -29,6 +29,7 @@ import { html, Modal, Button, Icon, MicroLabel, Tooltip, confirmDialog } from '.
 import { GIcon } from './gameComponents.js';
 import { useStore, savePref, store } from '../store.js';
 import { settingsStore } from './settingsStore.js';
+import { FRAME_RATES } from '../frameRate.js';
 export { settingsStore } from './settingsStore.js';
 import { sanitizeSettings, HOTKEY_ACTIONS, DEFAULT_HOTKEYS, hotkeyLabel, rebindHotkey, isDefaultHotkeys, captureHotkey, VOICE_LANGS, TEXT_SIZES } from './gameLogic.js';
 import { audio } from '../audio.js';
@@ -522,6 +523,14 @@ export function SettingsModal({ open, onClose }) {
         <div class="set-seg" role="radiogroup">
           ${QUALITY.map(([id, label]) => html`<button key=${id} type="button" role="radio" aria-checked=${s.quality === id ? 'true' : 'false'}
             class=${s.quality === id ? 'is-on' : ''} onClick=${() => updateSettings({ quality: id })}>${t(label)}</button>`)}
+        </div>
+      </div>
+      <div class="set-row" data-testid="fps-limit">
+        <span class="set-row__label">${t('帧率上限')}<${MicroLabel}>FRAME RATE<//></span>
+        <div class="set-seg" role="radiogroup" aria-label=${t('帧率上限')}>
+          ${FRAME_RATES.map((limit) => html`<button key=${limit} type="button" role="radio" aria-checked=${s.fpsLimit === limit ? 'true' : 'false'}
+            aria-label=${limit ? `${limit} FPS` : t('不限帧率')} class=${s.fpsLimit === limit ? 'is-on' : ''}
+            onClick=${() => updateSettings({ fpsLimit: limit })}>${limit || t('不限')}</button>`)}
         </div>
       </div>
       ${fxOk ? html`<div class="set-row" data-testid="official-fx">

@@ -740,7 +740,7 @@ describe('keyboard & settings', () => {
   test('sanitizeSettings', () => {
     assert.deepEqual(sanitizeSettings(null), { ...DEFAULT_SETTINGS });
     assert.deepEqual(sanitizeSettings({ bgm: 3, sfx: -1, voice: 2, muted: 'yes', damageNumbers: false, quality: 'ultra' }),
-      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceNative: false, voiceOverrides: {}, muted: false, damageNumbers: false, officialDamageNumbers: false, ammoEnergyCount: false, fullscreenWakeLock: false, bondTimers: false, combatMetrics: false, prepDeployFold: true, quality: 'high', officialFx: 'auto', otherSkins: true, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadVoiceLanguages: null, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: { ...DEFAULT_SETTINGS.keys } },
+      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceNative: false, voiceOverrides: {}, muted: false, damageNumbers: false, officialDamageNumbers: false, ammoEnergyCount: false, fullscreenWakeLock: false, bondTimers: false, combatMetrics: false, prepDeployFold: true, quality: 'high', fpsLimit: 0, officialFx: 'auto', otherSkins: true, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadVoiceLanguages: null, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: { ...DEFAULT_SETTINGS.keys } },
       'a saved profile without `keys` (before 0.2.0) gets the default key map (test/ui/feedback5-hotkeys.test.js)');
     // 资源预载八件套 (移植自用户分支): only the master starts off; 皮肤 / 特效 / 附加资源 default on, 语音 follows
     // the older optional-audio choice

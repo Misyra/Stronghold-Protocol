@@ -15,6 +15,8 @@
 //     key written back, no length cap before normalizeCode: a long pasted invite link must reach it whole).
 // The 成就统计 card is the lobby's statistics entry (the maintainer's decision of 2026-10-21: the top bar's 统计数据 chip
 // is gone): it opens the 成就统计 window (screens/stats.js AchievementDialog), whose 查看完整统计 opens 统计数据. The
+// top bar's right keeps the local account chip (ui/accounts.js AccountMeChip, ported from the user's fork: the avatar,
+// the name #tag, the account panel) — its panel doubles as a 统计数据 entry. The
 // 密钥加入 tile is a remake shortcut to 选择同盟方式 [ASSUMED: the event's hub has no such tile].
 // Both dialogs are the project's Modal (focus trap, Esc, focus restored) styled to fill the screen. The top bar shows
 // connection status + ping, and 大厅背景与音乐 (ui/lobbyMedia.js, PR #643 split 8): a lobby scene, the player's own
@@ -36,6 +38,7 @@
 
 import { TestMark } from '../ui/testConsole.js';
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
+import { AccountMeChip } from '../ui/accounts.js';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, MAX_SPECTATORS, modeIdFor, ERR } from '../../../shared/constants.js';
 import { html, confirmDialog, Button, Icon, MicroLabel, Modal, PingPill, Spinner, DifficultyIcon, TextField } from '../ui/components.js';
@@ -48,7 +51,7 @@ import { toast, toastError } from '../ui/toasts.js';
 import { GuideButton, openGuide } from '../ui/guide.js';
 import { RadarScene, CreateArt, JoinArt } from '../ui/allyArt.js';
 import { ProtocolScene } from '../ui/protocolScene.js';
-import { AchievementDialog, useStatsOpen } from './stats.js';
+import { AchievementDialog, openStats, useStatsOpen } from './stats.js';
 import { SweepReport } from './sweep.js';
 import { Emblem } from './title.js';
 import { SettingsButton } from '../ui/settings.js';
@@ -795,6 +798,7 @@ export function LobbyScreen() {
       <div class="topbar__right">
         <${VersionSwitch} />
         <${ResumeMatchButton} />
+        <${AccountMeChip} onStats=${openStats} />
       </div>
     </header>
 

@@ -57,7 +57,8 @@ export class RoomActionLimiter {
     if (allowed) this.counts[action + 'Allowed']++;
     return allowed;
   }
-  /** Count every refusal; sample logs per network/action so one sender cannot hide another. */
+  /** Count every refusal; sample logs (overflow entries share one global sampler — bounded memory) so one sender
+   *  cannot flood the log: within 10 s of a sampled refusal further ones only bump `suppressed`. */
   denied(key, action) {
     this.counts[action + 'Denied']++;
     const entry = this.buckets.get(key);

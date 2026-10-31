@@ -344,10 +344,13 @@ export function parseImport(input) {
   return { ok: true, entries, ...tail() };
 }
 
-/** Structural clean of an imported 皮肤 / 商店立绘 map (see ui/skins.js cleanSkinsMap — duplicated here to keep this module dependency-free). */
+/** Structural clean of an imported 皮肤 / 商店立绘 map (see ui/skins.js cleanSkinsMap — duplicated here to keep this
+ *  module dependency-free; the id shape matches diyModel's slot keys: bounded charset, never a prototype key). */
 function cleanSkinsRaw(raw) {
   const out = {};
-  for (const [id, v] of Object.entries(raw || {})) if (typeof id === 'string' && typeof v === 'string' && v) out[id] = v;
+  for (const [id, v] of Object.entries(raw || {})) {
+    if (typeof id === 'string' && !UNSAFE_IDS.has(id) && /^[A-Za-z0-9_\-.:]{1,64}$/.test(id) && typeof v === 'string' && v) out[id] = v;
+  }
   return out;
 }
 

@@ -885,19 +885,18 @@ function LoadoutScreen({ st }) {
       // a re-pick (or a dropped one) drops the slot's 皮肤 / 商店立绘 choice: it names a skin of the OLD operator
       syncDiySkins(oldPicks, loadoutStore.get().diy);
       // and the file's own choices apply to the slots whose pick survived — the file's state for those slots, other
-      // keys (the roster's, the other slots') untouched (合并自用户分支)
-      if (r.skins || r.portraits) {
-        const keepIds = new Set(Object.keys(loadoutStore.get().diy));
-        const replace = (map, next) => {
-          const merged = { ...map };
-          const inFile = {};
-          for (const [slotId, v] of Object.entries(next)) if (keepIds.has(slotId)) inFile[slotId] = v;
-          for (const slotId of keepIds) delete merged[slotId];
-          return { ...merged, ...inFile };
-        };
-        setSkins(replace(skinsStore.get().entries, cleanSkinsMap(r.skins)));
-        setPortraits(replace(skinsStore.get().portraits, cleanSkinsMap(r.portraits)));
-      }
+      // keys (the roster's, the other slots') untouched (合并自用户分支). A key the file omits carries no state at
+      // all (exportDiy always writes both, so present-but-empty means "clear these slots") and leaves its surface alone.
+      const keepIds = new Set(Object.keys(loadoutStore.get().diy));
+      const replace = (map, next) => {
+        const merged = { ...map };
+        const inFile = {};
+        for (const [slotId, v] of Object.entries(next)) if (keepIds.has(slotId)) inFile[slotId] = v;
+        for (const slotId of keepIds) delete merged[slotId];
+        return { ...merged, ...inFile };
+      };
+      if (r.skins) setSkins(replace(skinsStore.get().entries, cleanSkinsMap(r.skins)));
+      if (r.portraits) setPortraits(replace(skinsStore.get().portraits, cleanSkinsMap(r.portraits)));
       setIo(null);
       toast(applied ? t('已导入 {n} 个自选名额', { n: applied }) + (dropped ? t('（另有 {n} 项不可用，未导入）', { n: dropped }) : '') : t('已导入：全部名额为空'), dropped ? 'warn' : 'success');
       return;

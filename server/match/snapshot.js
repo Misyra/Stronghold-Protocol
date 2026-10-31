@@ -232,7 +232,7 @@ export const MATCH_FIELDS = Object.freeze([
   'roomCode', 'mode', 'difficulty', 'modeId', 'seed', 'isSolo', 'aiPicksLast', 'consoleEnabled', 'battlePrefix', 'timerScale', 'gameSpeed',
   'botRehearsal', 'clientCombat', 'verifyMode', 'headlessSliceMs', 'verifyStats', '_battleSeq', 'pausedMs',
   'stageId', 'factions', 'bossId', 'hiddenBossId', 'disabledBonds', 'staticInactiveBonds', 'bannedChess',
-  'round', 'uidSeq', 'loneHuman', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
+  'round', 'uidSeq', 'loneHuman', 'botBands', 'bandDupes', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
   'simErrorLog', 'draft', 'sp', 'wave', 'bossWaves', 'setupRevision', 'setupVote', '_setupVoteSeq', '_botEmotesSettledRound', '_botEmotesMerges',
 ]);
 
@@ -486,6 +486,8 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
   m.kickVote = null;
   m._kickFailed = new Map();
   m._kickVoteAt = new Map();
+  // the AI seats' designated strategies (room.setBotBand, 移植自用户分支) survive as a Map
+  if (!(m.botBands instanceof Map)) m.botBands = new Map();
   enterPhase(m, doc);
   return true;
 }

@@ -329,6 +329,8 @@ export class Match {
     this.isSolo = this.mode === 'solo' || this.gd.isSolo;
     /** 「AI 队友最后选择」 (opts.aiPicksLast, GitHub #338): humans draft before AI seats (MatchPhases.humansFirst) */
     this.aiPicksLast = !this.isSolo && opts.aiPicksLast === true;
+    /** 「允许重复策略」 (opts.bandDupes, 本仓新设): the strategy draft lets several doctors hold the same strategy */
+    this.bandDupes = !this.isSolo && opts.bandDupes === true;
     this.ownsScheduler = !opts.scheduler;
     this.sched = opts.scheduler || new RealScheduler({ now: opts.now || Date.now, onError: (e) => this.reportError('timer', e) });
     this.registry = opts.registry || getDefaultRegistry();
@@ -442,6 +444,17 @@ export class Match {
       this.players.set(s.playerId, new PlayerState(this, s));
     }
     if (!this.players.size) throw new TypeError('Match: seats required');
+    /**
+     * Strategies the room designated for AI seats (opts.seats[].band, room.setBotBand, 移植自用户分支): AI playerId →
+     * bandId, in seat order. The AI seat takes its strategy in the draft, held for it until then (phases.js bandTaken /
+     * reservedBands).
+     * @type {Map<string, string>}
+     */
+    this.botBands = new Map();
+    for (const s of opts.seats) {
+      const ps = s && typeof s.playerId === 'string' ? this.players.get(s.playerId) : null;
+      if (ps?.isBot && typeof s.band === 'string' && s.band) this.botBands.set(ps.playerId, s.band);
+    }
     this.order = [...this.players.values()].sort((a, b) => a.seat - b.seat);
     /**
      * Spectator seats (opts.spectators / addSpectator): playerId → a stand-in every watch path treats like an eliminated

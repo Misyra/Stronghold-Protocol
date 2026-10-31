@@ -35,6 +35,8 @@ export function seatEntries(room, checkpoint) {
       diy: p.isBot ? null : (p.diy || null),
       // 干员皮肤 (docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
       skins: p.isBot ? null : (p.skins || null),
+      // room.setBotBand: the AI seat's designated strategy, restored with its checkpoint
+      ...(p.isBot && p.band ? { band: p.band } : {}),
     }));
   }
   return room.seats.filter(Boolean).map((s) => ({
@@ -48,6 +50,8 @@ export function seatEntries(room, checkpoint) {
     diy: s.isBot ? null : s.diy || null,
     // 干员皮肤 (docs/SKINS.md): the seat's choice rides into the Match, where PlayerState publishes it to teammates
     skins: s.isBot ? null : s.skins || null,
+    // room.setBotBand (移植自用户分支): the AI seat's designated strategy (absent when it picks by itself)
+    ...(s.isBot && s.band ? { band: s.band } : {}),
   }));
 }
 
@@ -70,6 +74,7 @@ export function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() } = {})
     room.roomId = typeof d.roomId === 'string' && d.roomId ? d.roomId : randomUUID();
     if (Number.isSafeInteger(d.createdAt) && d.createdAt >= 0 && d.createdAt <= now) room.createdAt = d.createdAt;
     room.aiPicksLast = mode !== 'solo' && d.aiPicksLast === true;
+    room.bandDupes = mode !== 'solo' && d.bandDupes === true;
     // Developer console authorization survives a restart with the room (a running match keeps its own copy).
     room.consoleEnabled = d.consoleEnabled === true;
     // 「不限时」 (header): the room's own flag, restored with it
@@ -96,6 +101,8 @@ export function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() } = {})
         notOwned: isBot ? null : (session?.notOwned || s.notOwned || null),
         diy: isBot ? null : (session?.diy || s.diy || null),
         skins: isBot ? null : (session?.skins || s.skins || null),
+        // room.setBotBand (移植自用户分支): the designated strategy rides back onto the AI seat
+        ...(isBot ? { band: typeof s.band === 'string' && s.band ? s.band : null } : {}),
       };
       stats.seats++;
     }

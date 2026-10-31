@@ -54,6 +54,7 @@ import {
   TextField,
 } from '../ui/components.js';
 import { toast, toastError } from '../ui/toasts.js';
+import { useGameData, BandIcon } from '../ui/gameComponents.js';
 import { TestMark } from '../ui/testConsole.js';
 import { copyText } from '../ui/clipboard.js';
 import { GuideButton } from '../ui/guide.js';
@@ -151,6 +152,18 @@ export function roomFacts(room, myId) {
 export function aiLastOption(room, myId) {
   if (!room || room.mode === 'solo') return null;
   return { on: room.aiPicksLast === true, editable: room.hostId != null && room.hostId === myId };
+}
+
+/**
+ * 「允许重复策略」 (room.setBandDupes, 本仓新设): the co-op room option that lets several doctors hold the same strategy
+ * in the draft. null in a solo room; otherwise its state and whether this player may switch it (the host only).
+ * @param {any} room room.state payload
+ * @param {any} myId
+ * @returns {{ on: boolean, editable: boolean } | null}
+ */
+export function bandDupesOption(room, myId) {
+  if (!room || room.mode === 'solo') return null;
+  return { on: room.bandDupes === true, editable: room.hostId != null && room.hostId === myId };
 }
 
 /** Spectator handover is available only in original default-version co-op rooms, with a host opt-in. */
@@ -260,7 +273,55 @@ function CardPicker({ current, list, m, localSkins = {}, onPick, onClose }) {
  * host of a co-op room, 添加 AI 队友. `portrait` is the outfit's picture, `portraitDefault` the operator's default one
  * (given when an outfit is worn): a picture that fails to load gives way to the next, the last to the avatar frame.
  */
-function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot, onKick, onInvite, portrait = null, portraitDefault = null, operator = null, onPickCard = null, fresh = false }) {
+/** AI 指定策略 (room.setBotBand, 移植自用户分支): the strategy this AI seat takes in the strategy draft, or 自动选择. */
+function BotBandChip({ seat, bands, editable, busy, onOpen }) {
+  // 显示策略名（选择器里列的那个），不是 band_bldsk 这种 id：房间里看懂 id 的人不多
+  const bandId = typeof seat.band === 'string' ? seat.band : null;
+  const bandName = bandId ? (bands || []).find((b) => b.bandId === bandId)?.name || bandId : null;
+  const body = html`${bandId ? html`<${BandIcon} bandId=${bandId} size="xs" /><span class="rseat__bandname">${bandName}</span>`
+    : html`<${Icon} name="robot" /><span class="rseat__bandname">${t('自动选择')}</span>`}`;
+  if (!editable || !onOpen) {
+    return html`<span class=${`rseat__band${bandId ? ' is-set' : ''}`} title=${t('开局策略')}>${body}</span>`;
+  }
+  return html`<button type="button" class=${`rseat__band is-edit${bandId ? ' is-set' : ''}`} disabled=${!!busy}
+    onClick=${onOpen} title=${t('指定该 AI 队友在开局时选择的策略')} aria-label=${t('指定 AI 策略')}>
+    ${body}${busy ? html`<${Spinner} size="sm" />` : html`<${Icon} name="edit" />`}</button>`;
+}
+
+/**
+ * AI 指定策略 (room.setBotBand, 移植自用户分支): a grid of the strategies the room's draft offers — 自动选择 first, a
+ * strategy already designated to another AI seat greyed out (one AI seat per strategy). The host only.
+ */
+function BotBandPicker({ open, seat, seats, bands, busy, onClose, onPick }) {
+  if (!seat) return null;
+  const others = new Map();
+  for (const x of seats || []) if (x && x.isBot && x !== seat && typeof x.band === 'string') others.set(x.band, x.name);
+  const current = typeof seat.band === 'string' ? (bands || []).find((b) => b.bandId === seat.band) : null;
+  return html`<${Modal} open=${open} utility=${true} title=${t('指定 AI 策略')} micro="AI STRATEGY" width="min(760px, 94vw)" onClose=${onClose}
+    actions=${html`<${Button} variant="secondary" data-autofocus onClick=${onClose}>${t('关闭')}<//>`}>
+    <p class="botband__tip t-dim">${t('开局选择策略时，该 AI 队友会直接选择指定的策略，其他博士不能再选它。')}</p>
+    <div class="botband__grid" role="listbox" aria-label=${t('策略')}>
+      <button type="button" role="option" aria-selected=${seat.band == null ? 'true' : 'false'} disabled=${!!busy}
+        class=${`botband${seat.band == null ? ' is-sel' : ''}`} onClick=${() => onPick(null)}>
+        <span class="botband__auto"><${Icon} name="robot" /></span><span class="botband__name">${t('自动选择')}</span>
+      </button>
+      ${(bands || []).map((b) => {
+        const other = others.get(b.bandId) || null;
+        return html`<button key=${b.bandId} type="button" role="option" aria-selected=${seat.band === b.bandId ? 'true' : 'false'}
+          aria-disabled=${other ? 'true' : 'false'} disabled=${!!busy}
+          class=${`botband${seat.band === b.bandId ? ' is-sel' : ''}${other ? ' is-used' : ''}`}
+          title=${other ? t('已指定给 {name}', { name: other }) : (b.effectName || '')}
+          onClick=${() => { if (!other) onPick(b.bandId); }}>
+          <${BandIcon} bandId=${b.bandId} size="md" /><span class="botband__name">${b.name}</span>
+          ${other ? html`<span class="botband__used">${other}</span>` : b.effectName ? html`<span class="botband__eff">${b.effectName}</span>` : null}
+        </button>`;
+      })}
+    </div>
+    <p class="botband__now t-dim">${current ? t('当前指定：{name}', { name: current.name }) : t('当前：自动选择')}</p>
+  <//>`;
+}
+
+function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot, onKick, onInvite, portrait = null, portraitDefault = null, operator = null, onPickCard = null, fresh = false, bands = null, onBotBand = null }) {
   const [badArt, setBadArt] = useState([]);
   const coop = room.mode !== 'solo';
   // the 转场 flash: a seat that turns ready (or becomes the host's), and an AI teammate added while the room is open
@@ -327,6 +388,8 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
       title=${t('移除该 AI 队友')} aria-label=${t('移除 AI 队友')}><${Icon} name="robot" /><${Icon} name="close" /></button>` : null}
     ${!seat.isBot && !isMe && facts.isHost ? html`<button type="button" class="rseat__kick" disabled=${busy === `kick${index}`}
       onClick=${() => onKick(index, seat.name, seat.playerId)} title=${t('将该博士移出同盟')} aria-label=${t('移出该博士')}><${Icon} name="user" /><${Icon} name="close" /></button>` : null}
+    ${seat.isBot && room.mode !== 'solo' ? html`<${BotBandChip} seat=${seat} bands=${bands} editable=${!!facts.isHost} busy=${busy === `band${index}`}
+      onOpen=${onBotBand ? () => onBotBand(index) : null} />` : null}
     <div class="rseat__plate">
       ${isMe ? html`<span class="rseat__me" role="img" aria-label=${t('你')} title=${t('你')}><${Icon} name="info" /></span>` : null}
       <${AvatarFrame} size="sm" name=${seat.name} seat=${index} bot=${seat.isBot} self=${isMe} />
@@ -380,6 +443,21 @@ function AiLastToggle({ option, busy, onToggle }) {
   </div>`;
 }
 
+/** The 「允许重复策略」 switch (co-op, 本仓新设): the host toggles it, everybody else sees its state. */
+function BandDupesToggle({ option, busy, onToggle }) {
+  if (!option) return null;
+  return html`<div class="ailast">
+    <${Tooltip} text=${t('默认关闭。开启后，策略选人允许多名博士选择同一策略（含自动分配），不再标「队友已选」')}>
+      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-band-dupes"
+          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
+          onClick=${() => option.editable && onToggle(!option.on)}>
+        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('允许重复策略')}
+      </button>
+    <//>
+    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
+  </div>`;
+}
+
 function AiTakeoverToggle({ option, busy, onToggle }) {
   if (!option) return null;
   return html`<div class="ailast">
@@ -427,7 +505,7 @@ function ConsoleToggle({ option, busy, onToggle, matching }) {
  * ⚙ of the bottom pill (co-op): 同盟设置 — the 模拟难度 (opens 选择模拟协议: the host's 确认, the others' read-only view)
  * and the 「AI 队友最后选择」 switch. Closes on a click outside it or Esc.
  */
-function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, room, isHost, busy, onAiLast, onSoloUnlimited, onConsole, consoleOpt, onDifficulty, onClose, version = null }) {
+function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, room, isHost, busy, onAiLast, dupesOption = null, onBandDupes, onSoloUnlimited, onConsole, consoleOpt, onDifficulty, onClose, version = null }) {
   const info = difficultyInfo(room.mode, room.difficulty);
   const title = soloOption ? t('模拟设置') : t('同盟设置');
   useEffect(() => {
@@ -462,6 +540,7 @@ function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, 
     ${soloOption
       ? html`<${SoloUnlimitedToggle} option=${soloOption} busy=${busy} onToggle=${onSoloUnlimited} />`
       : html`<${AiLastToggle} option=${option} busy=${busy} onToggle=${onAiLast} />`}
+    <${BandDupesToggle} option=${dupesOption} busy=${busy} onToggle=${onBandDupes} />
     <${ConsoleToggle} option=${consoleOpt} busy=${busy} matching=${!!room.matchmaking} onToggle=${onConsole} />
   </div>`;
 }
@@ -517,6 +596,13 @@ export function RoomScreen() {
   const localSkins = useStore((s) => s[SKINS_KEY], Object.is, skinsStore);
   const otherSkins = useStore((s) => s.otherSkins !== false, Object.is, settingsStore);
   const [picking, setPicking] = useState(false);
+  // AI 指定策略 (room.setBotBand, 移植自用户分支): the strategies a room's draft may offer (MULTI, sortId order), and
+  // the AI seat whose strategy the host is picking
+  const gd = useGameData();
+  const bandList = useMemo(() => (gd.list('bands') || [])
+    .filter((b) => b && (!Array.isArray(b.modeTypeList) || b.modeTypeList.includes('MULTI')))
+    .sort((a, b) => (a.sortId ?? 99) - (b.sortId ?? 99) || (a.bandId < b.bandId ? -1 : 1)), [gd.ready]);
+  const [bandSeat, setBandSeat] = useState(null);
   // the room whose seats are on screen: a seat card that mounts after its first render is new (an AI teammate added)
   const shownRoom = useRef('');
   useEffect(() => { shownRoom.current = room?.code || ''; });
@@ -620,8 +706,12 @@ export function RoomScreen() {
     if (ok) run(`kick${seat}`, () => net.request('room.kick', { seat, playerId }));
   };
   const setDifficulty = (difficulty) => run('diff', () => net.request('room.setDifficulty', { difficulty }));
-  const setAiTakeover = (on) => run('aihandover', () => net.request('room.setAiTakeover', { on }));
-  const setAiLast = (on) => run('ailast', () => net.request('room.setAiPicksLast', { on }));
+const setAiTakeover = (on) => run('aihandover', () => net.request('room.setAiTakeover', { on }));
+const setAiLast = (on) => run('ailast', () => net.request('room.setAiPicksLast', { on }));
+// 「允许重复策略」 (本仓新设): the host toggles it, the draft's 队友已选 guard stands down
+const setBandDupes = (on) => run('dupes', () => net.request('room.setBandDupes', { on }));
+// AI 指定策略 (room.setBotBand, 移植自用户分支): the host names the strategy an AI seat takes in the draft (null = 自动选择)
+const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.request('room.setBotBand', { seat, bandId }); setBandSeat(null); });
   // 开发者控制台 (移植自用户分支): two messages, host-only on the server (a solo room's own seat may toggle it).
   // Turning it ON costs the room its place in the 同盟匹配 queue, and that is worth saying out loud for five
   // seconds: the switch itself sits in the ⚙ sheet, far from the 开始搜寻 button it disables.
@@ -718,6 +808,7 @@ export function RoomScreen() {
     ? t('确认后将退出插件模式「{name}」', { name: pluginMode })
     : facts.humans.length > 1 ? t('更改难度后，其他博士需要重新准备就绪') : '';
   const aiLast = aiLastOption(room, me.playerId);
+  const dupesOpt = bandDupesOption(room, me.playerId);
   const consoleOpt = consoleOption(room, me.playerId);
   const soloTimed = soloTimedOf(pageVersion() === roomVersion(room) ? getConfig() : null, roomVersion(room));
   const soloOpt = soloUnlimitedOption(room, me.playerId, soloTimed);
@@ -795,7 +886,7 @@ export function RoomScreen() {
           myId=${me.playerId} busy=${busy} onAddBot=${addBot} onRemoveBot=${removeBot} onKick=${kick} onInvite=${() => copy('code')}
           portrait=${op ? chessPortraitUrl(data.get('assets'), op.chess, { skin }) : null}
           portraitDefault=${op && skin ? chessPortraitUrl(data.get('assets'), op.chess) : null} operator=${op?.chess} onPickCard=${() => setPicking(true)}
-          fresh=${shownRoom.current === room.code} />`;
+          fresh=${shownRoom.current === room.code} bands=${bandList} onBotBand=${setBandSeat} />`;
       })}
       ${coop ? null : html`<aside class="solo-brief rs-brief brackets">
         <${MicroLabel} tone="mint">BRIEFING<//>
@@ -809,6 +900,10 @@ export function RoomScreen() {
       </aside>`}
     </main>
     <${SpectatorBar} facts=${facts} myId=${me.playerId} busy=${busy} onRemove=${removeSpectator} onSit=${sit} />
+
+    <${BotBandPicker} open=${bandSeat != null && !!facts.seats[bandSeat]?.isBot} seat=${bandSeat != null ? facts.seats[bandSeat] : null}
+      seats=${facts.seats} bands=${bandList} busy=${busy === `band${bandSeat}`} onClose=${() => setBandSeat(null)}
+      onPick=${(bandId) => setBotBand(bandSeat, bandId)} />
     <${VersionVote} room=${room} />
     ${bannerText ? html`<p class="rs-verbanner" data-testid="version-banner"><${Icon} name="info" />${bannerText}</p>` : null}
 
@@ -821,9 +916,10 @@ export function RoomScreen() {
             title=${facts.isHost ? t('更改模拟难度') : t('由创建者选择')}><${DifficultyIcon} difficulty=${room.difficulty} />${DIFFICULTY_NAMES[room.difficulty] ? t(DIFFICULTY_NAMES[room.difficulty]) : ''}<span class="num rs-pill__code">${info.code}</span></button>
           ${versionCtl ? html`<${Tooltip} text=${versionCtl.why} class="rs-pill__version"><button type="button" class=${`rs-pill__ver${versionCtl.editable ? '' : ' is-ro'}`} data-testid="room-version"
             disabled=${versionCtl.disabled} onClick=${versionCtl.onOpen} aria-label=${t('游戏版本：{name}', { name: versionLabel(curVersion) })}><${Icon} name="book" /><span class="rs-pill__vername">${versionLabel(curVersion)}</span></button><//>` : null}
-          ${opts ? html`<button type="button" class=${`rs-pill__gear${opts ? ' is-on' : ''}`} onClick=${() => setOpts((v) => !v)} title=${aiLast ? t('同盟设置') : t('模拟设置')} aria-label=${aiLast ? t('同盟设置') : t('模拟设置')}
-            aria-expanded=${opts ? 'true' : 'false'}><${GearGlyph} /></button>` : null}
+          <button type="button" class=${`rs-pill__gear${opts ? ' is-on' : ''}`} onClick=${() => setOpts((v) => !v)} title=${aiLast ? t('同盟设置') : t('模拟设置')} aria-label=${aiLast ? t('同盟设置') : t('模拟设置')}
+            aria-expanded=${opts ? 'true' : 'false'}><${GearGlyph} /></button>
           ${opts ? html`<${RoomOptions} takeoverOption=${aiTakeoverOption(room, me.playerId)} onAiTakeover=${setAiTakeover} option=${aiLast} soloOption=${soloOpt} room=${room} isHost=${facts.isHost} busy=${busy} onAiLast=${setAiLast}
+            dupesOption=${dupesOpt} onBandDupes=${setBandDupes}
             onConsole=${setConsole} consoleOpt=${consoleOpt} onSoloUnlimited=${setSoloUnlimited} onDifficulty=${openProto} onClose=${() => setOpts(false)} version=${versionCtl} />` : null}
         </div>
       </div>

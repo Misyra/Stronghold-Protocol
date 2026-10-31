@@ -61,8 +61,9 @@ describe('co-op room settings (real server)', { skip: !ENABLED && 'set SP_E2E=1 
         note: document.querySelector('.rs-opts .ailast')?.textContent.includes('由创建者设置'),
       }));
       assert.ok(v.diff.includes('标准模拟') && v.diff.includes('由创建者选择') && !v.diff.includes('更改'), v.diff);
-      // §35.100 adds the default-off spectator handover setting; both switches are read-only for the guest.
-      assert.deepEqual(v.sw, [['允许观战者接替 AI', true], ['AI 队友最后选择', true]]);
+      // §35.100 adds the default-off spectator handover setting; 「允许重复策略」 (本仓新设) and the developer console
+      // (移植自用户分支) ride along — all read-only for the guest.
+      assert.deepEqual(v.sw, [['允许观战者接替 AI', true], ['AI 队友最后选择', true], ['允许重复策略', true], ['开发者控制台', true]]);
       assert.equal(v.note, true);
       await guest.shot('guest-options');
       await guest.page.keyboard.press('Escape');

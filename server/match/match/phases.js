@@ -126,6 +126,9 @@ export class MatchPhases {
       if (this.phase !== PHASE.BAND_DRAFT || token !== this._turnToken) return;
       const ps = this.players.get(this.draftTurn());
       if (!ps || !ps.botControlled) return;
+      // an AI seat the room designated a strategy for (room.setBotBand, 移植自用户分支) takes it — held for it, so still free
+      const own = this.designatedBand(ps);
+      if (own) { this._applyBand(ps, own, { dedupe: true }); return; }
       const fallback = () => {
         // a strategy a teammate already took is not selectable (队友已选): the bot re-draws, else the first free one
         let id = this.bot.pickBand(this, ps);
@@ -144,11 +147,38 @@ export class MatchPhases {
    * Whether `bandId` was already picked by another player of this draft. Research 09 §5 / DESIGN §14 corrections:
    * the strategy draft marks a teammate's pick as 队友已选 and it cannot be chosen again (co-op). The automatic
    * assignments — a turn that runs out and a departing seat — obey the same rule: see timeoutBand / defaultBand.
+   * 「允许重复策略」 (bandDupes, 本仓新设) stands the guard down; a strategy the room designated for an AI seat
+   * (room.setBotBand, 移植自用户分支) counts as taken for everybody else until that seat picks it.
    */
   bandTaken(bandId, playerId) {
+    if (this.bandDupes) return false;
     const picks = this.draft?.picks || {};
     for (const [pid, id] of Object.entries(picks)) if (pid !== playerId && id === bandId) return true;
+    for (const [pid, id] of this.botBands || []) if (pid !== playerId && id === bandId && !picks[pid]) return true;
     return false;
+  }
+
+  /**
+   * The designated strategies still held (room.setBotBand, 移植自用户分支): bandId → the AI seat's playerId, for every AI
+   * seat that has not picked yet; {} when the room designated nothing. m.public draft.reserved.
+   * @returns {Record<string, string>}
+   */
+  reservedBands() {
+    const out = {};
+    const picks = this.draft?.picks || {};
+    for (const [pid, id] of this.botBands || []) if (!picks[pid]) out[id] = pid;
+    return out;
+  }
+
+  /**
+   * The strategy the room designated for this AI seat (room.setBotBand, 移植自用户分支) while it can take it — allowed by
+   * the mode and held by nobody else —, else null (the seat picks as without the option).
+   * @param {any} ps
+   * @returns {string | null}
+   */
+  designatedBand(ps) {
+    const id = ps && this.botBands?.get(ps.playerId);
+    return id && this.gd.bandAllowed(id) && !this.bandTaken(id, ps.playerId) ? id : null;
   }
 
   /**

@@ -1,7 +1,7 @@
-// Room votes in a real browser (needs Chrome, opt-in with SP_E2E=1): the setup reroll vote and the kick vote for a seat
-// the AI has taken over (server/match/match/kickVote.js, 移植自用户分支). Three players, driven through the client —
-// the unit tests pin the rules, this one pins that the panels exist and that their buttons reach the server.
-// (合并自用户分支: fork 原稿还有房内 AI 指定策略与首选保留两段, 那是 fork 的 room.setBotBand 特性, 本仓没有, 省去.)
+// Room votes in a real browser (needs Chrome, opt-in with SP_E2E=1): the AI strategy designation (room.setBotBand,
+// 移植自用户分支), the setup reroll vote and the kick vote for a seat the AI has taken over. Three players, driven
+// through the client — the unit tests pin the rules, this one pins that the panels exist and that their buttons reach
+// the server. (fork 原稿的「首选保留」一段依赖 fork 的 draft 预留细节, 本仓的指定策略由 room.setBotBand 段覆盖.)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -59,6 +59,18 @@ test('a room of three: the reroll vote and the kick vote', {
     await clickText(host, '创建同盟');
     await host.waitForSelector('.rseat', { timeout: 20000 });
     const code = await host.$eval('.rs-key__code', (e) => e.textContent.trim());
+    // AI 指定策略 (room.setBotBand, 移植自用户分支): the host adds an AI seat and names the strategy it takes in the draft
+    await host.$eval('.rseat__add', (b) => b.click());
+    await host.waitForSelector('.rseat__band.is-edit', { timeout: 20000 });
+    await host.$eval('.rseat__band.is-edit', (b) => b.click());
+    await host.waitForSelector('.botband__grid', { timeout: 15000 });
+    const bandName = await host.$eval('.botband__grid button:nth-child(2) .botband__name', (e) => e.textContent.trim());
+    await host.evaluate(() => document.querySelectorAll('.botband__grid button')[1].click());
+    await sleep(700);
+    const room0 = [...srv.lobby.rooms.values()][0];
+    const botSeat = room0.seats.find((s) => s && s.isBot);
+    assert.ok(botSeat && typeof botSeat.band === 'string', 'room.setBotBand reaches the seat');
+    assert.equal(await text(host, '.rseat__band.is-set'), bandName, 'the seat shows the strategy by name, not by id');
     const guest = await browser.newPage();
     await guest.setViewport({ width: 1280, height: 800 });
     guest.on('pageerror', (e) => errors.push('guest: ' + e.message));
@@ -93,6 +105,11 @@ test('a room of three: the reroll vote and the kick vote', {
     // the strategy draft: both humans pick, the AI seat takes its own strategy
     await host.waitForSelector('.screen.draft', { timeout: 30000 });
     await guest.waitForSelector('.screen.draft', { timeout: 30000 });
+    // AI 指定策略 (room.setBotBand): the designated strategy is held for the AI seat — marked, not selectable by a human
+    const held = await host.$$eval('.screen.draft .dband', (els) => els
+      .filter((e) => /AI 指定/.test(e.innerText || ''))
+      .map((e) => e.getAttribute('aria-disabled')));
+    assert.ok(held.length && held.every((v) => v === 'true'), `the designated strategy is reserved (${held.length} marked)`);
     const pick = async (page, name) => {
       for (let i = 0; i < 140; i++) {
         const done = await page.evaluate((n) => {

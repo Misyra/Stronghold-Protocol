@@ -158,6 +158,10 @@ export class MatchViews {
       v.draft = {
         order: d.order.slice(), turn: this.draftTurn(), picks: { ...d.picks }, skipsLeft: { ...d.skipsLeft }, turnDeadline: d.turnDeadline || 0,
         turnSeconds: d.untimed ? 0 : this.bandTurnMs() / 1000, untimed: !!d.untimed,
+        // 「允许重复策略」 (bandDupes, 本仓新设): the client stands its 队友已选 guard down
+        ...(this.bandDupes ? { dupes: true } : {}),
+        // room.setBotBand (移植自用户分支): the designated strategies still held for their AI seats (bandId → playerId)
+        ...(this.botBands?.size && !this.bandDupes ? { reserved: this.reservedBands() } : {}),
       };
     }
     if (this.phase === PHASE.SP_DRAFT && this.sp) {

@@ -405,6 +405,9 @@ export class Room {
      * put every human seat before every AI seat (Match opts.aiPicksLast). Kept across the room's matches.
      */
     this.aiPicksLast = false;
+    // 「允许重复策略」 (room.setBandDupes, co-op only, off by default): the strategy draft lets several doctors hold the
+    // same strategy (Match opts.bandDupes). Kept across the room's matches. 移植自用户分支的请求面, 本仓新设.
+    this.bandDupes = false;
     // [ASSUMED] Remake cooperation option, approved 2026-10-24; host opt-in before the match.
     this.aiTakeoverEnabled = false;
     /**
@@ -503,11 +506,14 @@ export class Room {
       mode: this.mode,
       difficulty: this.difficulty,
       aiPicksLast: this.aiPicksLast,
+      bandDupes: this.bandDupes === true,
       consoleEnabled: !!this.consoleEnabled,
       inMatch: !!this.match,
       matchmaking: !!this.matchmaking,
       seats: this.seats.map((s) => (s
         ? { seat: s.seat, playerId: s.playerId, name: s.name, isBot: s.isBot, ready: s.ready, connected: s.connected && !s.left,
+          // an AI seat's designated strategy (room.setBotBand, 移植自用户分支; null = it picks by itself)
+          ...(s.isBot ? { band: s.band ?? null } : {}),
           // a room with gameplay plugins (header "Gameplay plugins"): has this player's page loaded and checked its content?
           ...(this.needsContent && !s.isBot ? { content: s.content || 'loading' } : {}),
           // 名片干员 (room.card): only a human seat with a card carries the key
@@ -924,6 +930,8 @@ export class Lobby {
       case 'room.ready': return this.ready(session, msg);
       case 'room.setDifficulty': return this.setDifficulty(session, msg);
       case 'room.setAiPicksLast': return this.setAiPicksLast(session, msg);
+      case 'room.setBotBand': return this.setBotBand(session, msg);
+      case 'room.setBandDupes': return this.setBandDupes(session, msg);
       case 'room.setSoloUnlimited': return this.setSoloUnlimited(session, msg);
       case 'room.console.enable': return this.enableConsole(session);
       case 'room.console.disable': return this.disableConsole(session);
@@ -1271,6 +1279,69 @@ export class Lobby {
       this.leaveQueue(session, 'cancelled');
       room.difficulty = difficulty;
       if (room.content?.modeId) { const rest = { ...room.content }; delete rest.modeId; room.content = Object.freeze(rest); }
+      // an AI seat's designated strategy the new mode no longer offers goes back to automatic (setBotBand, 移植自用户分支)
+      this.dropUnofferedBotBands(room);
+      for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
+      this.broadcastState(room);
+    }
+    return OK;
+  }
+
+  /**
+   * room.setBotBand {seat, bandId} (移植自用户分支): host-only, before the match, co-op rooms only — the strategy the AI seat
+   * takes in the strategy draft, or null for its own pick. One AI seat per strategy. Like a difficulty change it
+   * un-readies the other humans.
+   */
+  setBotBand(session, { seat, bandId = null }) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    if (room.mode === 'solo') return fail(ERR.BAD_TARGET, 'solo rooms have no AI teammates');
+    const target = room.seats[seat];
+    if (!target || !target.isBot) return fail(ERR.BAD_TARGET, 'seat does not hold an AI');
+    if (bandId !== null) {
+      if (!this.bandOffered(room, bandId)) return fail(ERR.BAD_TARGET, 'strategy not offered in this mode');
+      if (room.seats.some((s) => s && s !== target && s.isBot && s.band === bandId)) return fail(ERR.BAD_TARGET, 'strategy designated to another AI');
+    }
+    this.dropReplay(room, session.playerId);
+    if ((target.band ?? null) !== bandId) {
+      target.band = bandId;
+      for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
+      this.broadcastState(room);
+    }
+    return OK;
+  }
+
+  /** A strategy the room's mode offers (server/match/gamedata.js bandAllowed, without building a match). */
+  bandOffered(room, bandId) {
+    const data = this.dataFor(room);
+    const b = data?.bands?.[bandId];
+    if (!b || typeof b !== 'object') return false;
+    const list = Array.isArray(b.modeTypeList) ? b.modeTypeList : null;
+    return !list || list.includes(room.mode === 'solo' ? 'SINGLE' : 'MULTI');
+  }
+
+  /** After a difficulty / mode change: an AI seat's strategy the new rules no longer offer goes back to automatic. */
+  dropUnofferedBotBands(room) {
+    if (!room.seats.some((s) => s && s.isBot && s.band != null)) return;
+    for (const s of room.seats) if (s && s.isBot && s.band != null && !this.bandOffered(room, s.band)) s.band = null;
+  }
+
+  /**
+   * room.setBandDupes {on} (「允许重复策略」, 本仓新设): host-only, before the match, co-op rooms only — the strategy draft
+   * lets several doctors hold the same strategy (the 队友已选 guard, the bot re-draw and the automatic default stand
+   * down). Like the other room options it un-readies the other humans.
+   */
+  setBandDupes(session, { on }) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    if (room.mode === 'solo') return fail(ERR.BAD_TARGET, 'solo rooms have no strategy draft to share');
+    this.dropReplay(room, session.playerId);
+    if (room.bandDupes !== on) {
+      room.bandDupes = on;
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
       this.broadcastState(room);
     }
@@ -1790,7 +1861,8 @@ export class Lobby {
     const name = BOT_NAMES.find((n) => !used.has(n)) || `AI·${idx + 1}`;
     let playerId;
     do playerId = 'ai_' + randomBytes(4).toString('hex'); while (room.seatOf(playerId));
-    room.seats[idx] = { seat: idx, playerId, name, isBot: true, ready: true, connected: true, left: false };
+    // band: the strategy the host designated for this AI seat in the strategy draft (room.setBotBand, 移植自用户分支)
+    room.seats[idx] = { seat: idx, playerId, name, isBot: true, ready: true, connected: true, left: false, band: null };
     this.broadcastState(room);
     return OK;
   }
@@ -2207,6 +2279,8 @@ export class Lobby {
         diy: own ? own.diy : null,
         // 干员皮肤 (docs/SKINS.md): the appearances the human wears, keyed by operator charId (bots always default)
         skins: own ? own.skins : null,
+        // room.setBotBand (移植自用户分支): the AI seat's designated strategy (absent when it picks by itself)
+        ...(s.isBot && s.band ? { band: s.band } : {}),
       };
     });
     // lastPublic / results: the latest m.public broadcast and the m.result frames (encoded), kept for the replay.
@@ -2232,6 +2306,8 @@ export class Lobby {
         modeId: room.content?.modeId || modeIdFor(room.mode, room.difficulty),
         // 「AI 队友最后选择」 (GitHub #338): fixed for the match
         aiPicksLast: room.mode !== 'solo' && room.aiPicksLast === true,
+        // 「允许重复策略」 (room.setBandDupes, 本仓新设): fixed for the match
+        bandDupes: room.mode !== 'solo' && room.bandDupes === true,
         seats,
         // the spectator seats (header): watched like eliminated players, never players
         spectators: room.spectators.map((s) => s.playerId),

@@ -279,7 +279,17 @@ export function BandDraftScreen({ held = null } = {}) {
   const skipsLeft = draft.skipsLeft.has(myId) ? draft.skipsLeft.get(myId) : (skipped ? 0 : 1);
   // the last doctor still to pick cannot skip (no one to pass the turn to)
   const canSkip = !solo && myTurn && skipsLeft > 0 && draft.order.filter((pid) => !draft.picks.has(pid)).length > 1;
-  const taken = solo ? new Map() : teammateBands(draft.picks, myId);
+  // 「允许重复策略」 (m.public draft.dupes, 本仓新设): the guard stands down — every strategy is pickable
+  const dupes = !solo && pub?.draft?.dupes === true;
+  const taken = solo || dupes ? new Map() : teammateBands(draft.picks, myId);
+  // AI 指定策略 (room.setBotBand, 移植自用户分支): a strategy held for an AI seat counts as taken for everybody else
+  // until that seat picks it (m.public draft.reserved, bandId → the AI seat's playerId)
+  const reserved = solo || dupes ? {} : (pub?.draft?.reserved || {});
+  for (const [bid, pid] of Object.entries(reserved)) {
+    if (pid === myId || taken.has(bid)) continue;
+    const p = players.find((x) => x.playerId === pid);
+    taken.set(bid, [p || { playerId: pid, name: 'AI' }]);
+  }
   const pickers = new Map(); // bandId → players
   for (const [pid, bid] of draft.picks) {
     const p = players.find((x) => x.playerId === pid);
@@ -456,7 +466,8 @@ export function BandDraftScreen({ held = null } = {}) {
               ${badged ? html`<span class="dband__badge" data-testid="band-badge" aria-hidden="true">
                 <${Sprite} k="statistics/strategyBadge" class="dband__badge-art" fallback=${html`<span class="dband__medal"><${Icon} name="rook" /></span>`} /></span>` : null}
               <${BandOffTag} names=${offNames} />
-              ${isTaken ? html`<span class="dband__taken">${t('已被选择')}</span>` : null}
+              ${reserved[b.bandId] && reserved[b.bandId] !== myId ? html`<span class="dband__taken is-ai">${t('AI 指定')}</span>`
+                : isTaken ? html`<span class="dband__taken">${t('已被选择')}</span>` : null}
               ${on ? html`<span class="dband__selmark" aria-hidden="true">SELECTED</span>` : null}
             </button>`;
           })}

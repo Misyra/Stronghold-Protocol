@@ -522,6 +522,15 @@ export const C2S = {
   // the co-op room option 「AI 队友最后选择」 (GitHub #338; host, before the match): the strategy and 机变 drafts order every
   // human seat before every AI seat (server/match/match/phases.js humansFirst); room.state.aiPicksLast
   'room.setAiPicksLast': { on: isBool },
+  // the strategy an AI seat takes in the strategy draft (host, co-op, before the match; server/lobby.js setBotBand,
+  // 移植自用户分支): `seat` holds an AI, `bandId` is one the mode offers (null / absent = the seat picks by itself),
+  // one AI seat per strategy. The AI takes it in the draft, held for it until then (draft.reserved), and nobody else
+  // can pick it.
+  'room.setBotBand': { seat: (v) => isInt(v, 0, MAX_SEATS - 1), bandId: nullable(isId), $optional: ['bandId'] },
+  // the co-op room option 「允许重复策略」 (host, before the match): the strategy draft lets several doctors hold the
+  // same strategy — the 队友已选 guard, the bot re-draw and the automatic default all stand down (bandTaken). Off by
+  // default; room.state.bandDupes.
+  'room.setBandDupes': { on: isBool },
   // 「不限时」 (DESIGN §35.23.10; host, before the match, a solo room of a version whose solo is timed): the match's
   // preparation and 机变 stay untimed (Match opts.soloUnlimited). Off by default; room.state omits the key unless it is on.
   'room.setSoloUnlimited': { on: isBool },

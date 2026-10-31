@@ -86,6 +86,8 @@ function seatDoc(seat) {
   return {
     seat: seat.seat, playerId: seat.playerId, name: seat.name, isBot: !!seat.isBot,
     ready: !!seat.ready, left: !!seat.left, connected: !!seat.connected && !seat.left,
+    // room.setBotBand (移植自用户分支): the AI seat's designated strategy
+    ...(seat.isBot && seat.band ? { band: seat.band } : {}),
     loadout: seat.loadout || null,
     ops: seat.ops || null,
     notOwned: seat.notOwned || null,
@@ -118,6 +120,7 @@ export function roomDoc(room) {
     // the official version the room plays (header "Official versions", 本仓补录: fork 无版本面)
     version: room.version,
     aiPicksLast: room.aiPicksLast === true,
+    bandDupes: room.bandDupes === true,
     consoleEnabled: room.consoleEnabled === true,
     soloUnlimited: room.soloUnlimited === true,
     hostId: room.hostId || null,

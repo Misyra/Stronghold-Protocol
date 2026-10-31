@@ -311,7 +311,15 @@ function tidyManifest(m) {
   if (m.skillsById) {
     for (const [sid, iconId] of Object.entries(m.skillsById)) if (!m.skills?.[iconId]) delete m.skillsById[sid];
   }
-  for (const c of Object.values(m.chars || {})) if (c.spine && !Object.keys(c.spine).length) delete c.spine;
+  for (const c of Object.values(m.chars || {})) {
+    if (c.spine && !Object.keys(c.spine).length) delete c.spine;
+    // 干员皮肤 (docs/SKINS.md): a skin whose Front model failed to download has no usable spine — drop it entirely,
+    // and drop the whole `skins` object when nothing is left (resolveTemplate already dropped its file leaves).
+    if (c.skins) {
+      for (const [skinId, s] of Object.entries(c.skins)) if (!s.spine) delete c.skins[skinId];
+      if (!Object.keys(c.skins).length) delete c.skins;
+    }
+  }
 }
 
 /**
@@ -410,12 +418,18 @@ async function main() {
   log(`[assets] root ${ROOT}`);
   if (!skelParserAvailable()) throw new Error('@pixi-spine/runtime-3.8 not found — run `npm install` first');
 
-  const [assets07, ops03, enemies05, maps05] = await Promise.all([
+  const [assets07, ops03, enemies05, maps05, skins08] = await Promise.all([
     readJson('docs/research/07-assets.json'),
     readJson('docs/research/03-operators.json'),
     readJson('docs/research/05-enemies.json'),
     readJson('docs/research/05-maps.json'),
+    // 干员皮肤 (docs/SKINS.md). Optional: without the file the manifest simply carries no skins.
+    readJson('docs/research/08-skins.json').catch(() => null),
   ]);
+  // Which of them to build. Empty by default (docs/SKINS.md): tools/install-skins.mjs adds ids here when a player
+  // installs one, so a normal `npm run assets` never pulls the whole ~190 MB set.
+  const installedSkins = await readJson('data/skins-installed.json').catch(() => null);
+  const skinsInstalled = new Set(Array.isArray(installedSkins?.installed) ? installedSkins.installed : []);
   const proxyPrefix = resolveProxyPrefix(opts.source, opts.offline);
   const verifier = opts.sourceSnapshot ? new SourceVerifier(JSON.parse(await readFile(opts.sourceSnapshot, 'utf8'))) : undefined;
   const source = await selectDownloadSource({ mode: opts.source, offline: opts.offline, proxyPrefix, log, verified: !!verifier });
@@ -463,12 +477,14 @@ async function main() {
     moduleTypes: all.moduleTypes,
     statsTemplate,
     charModes,
+    skins08, skinsInstalled,
   });
   const leaves = collectLeaves(plan.template);
+  const skinCount = Object.values(plan.template.chars).reduce((n, c) => n + Object.keys(c.skins || {}).length, 0);
   log(`[plan] ${leaves.length} files + ${plan.models.size} Spine models ` +
     `(${Object.keys(plan.template.chars).length} chars, ${Object.keys(plan.template.enemies).length} enemies, ` +
     `${Object.keys(plan.template.tokens).length} tokens, ${Object.keys(plan.template.ui).length} UI sprites, ` +
-    `${Object.keys(plan.template.audio.sfx.units).length} units with SFX, ` +
+    `${skinCount} skins, ${Object.keys(plan.template.audio.sfx.units).length} units with SFX, ` +
     `${Object.keys(plan.template.audio.voice).length} operators with ${opts.voiceLang.toUpperCase()} voice, ` +
     `${Object.keys(plan.template.audio.voiceJp || {}).length} with JP voice, ` +
     `${Object.keys(plan.template.audio.voiceEn || {}).length} with EN, ` +

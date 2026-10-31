@@ -37,6 +37,17 @@ __pycache__/
 # (the server answers /packs/index.json itself; tools/package.mjs writes this file into the release zips) -----------
 packs/index.json
 
+# --- generated preload artifacts (合并自用户分支): `npm run resources:packs` writes the per-machine ZIP packs and
+# their index, `node tools/install-skins.mjs` records this machine's installed skin set, and
+# `node tools/build-assets-manifest.mjs` writes the per-file art manifest for CDN deployments — all deployment
+# data, never committed
+/public/resource-packs/
+/data/resource-packs.json
+/.resource-packs-published.json
+/data/skins-installed.json
+/data/asset-hashes.json
+/.assets-manifest.json
+
 # --- plugins (docs/PLUGINS.md): a server's own plugins and its policy file live in plugins/ and are never committed;
 # only the folder's readme, its guide for AI agents (AGENTS.md) and the templates (plugins/_template/, from P1) are tracked — and
 # so ship (tools/package.mjs); plugins/_dist/ (packed zips) and plugins/_moved/ (files the studio moved out) stay ignored

@@ -283,7 +283,7 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
   font-weight: 700;
   letter-spacing: .02em;
 }
-/* the resource preload launcher (移植自用户分支): bottom-right, above the footer; the pill opens the resource manager.
+/* the resource preload launcher (移植自用户分支): bottom-right, above the footer; the pill opens the resource manager. */
 .title-preload { position: absolute; z-index: 3; right: .44rem; bottom: .86rem; }
 .res-pill { width: 2.7rem; padding: .1rem .12rem; background: rgba(10, 14, 12, .74); border: 1px solid var(--line-2); }
 .res-pill.is-on { border-color: var(--mint-800); background: rgba(13, 20, 17, .86); }
@@ -303,8 +303,6 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
 .res-pill__text.is-warn { color: var(--amber); }
 .res-pill__hint { margin: .06rem 0 0; font-size: calc(.13 * var(--utility-text, var(--t))); line-height: 1.6; color: var(--text-dim); }
 .res-pill:hover .res-pill__hint { color: var(--text-md); }
-
-/* the server's plugins (DESIGN §32 P1a): 「本服务器安装了 N 个插件」, a button listing them (ui/pluginPanel.js InstalledPlugins) */
 
 /* the server's plugins (DESIGN §32 P1a): 「本服务器安装了 N 个插件」, a button listing them (ui/pluginPanel.js InstalledPlugins) */
 .title-plugins {

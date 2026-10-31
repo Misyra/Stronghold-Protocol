@@ -52,7 +52,7 @@ export const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 const NET_OPTION_KEYS = ['reconnectWindowMs', 'heartbeatMs', 'helloTimeoutMs', 'ratePerSec', 'rateBurst', 'maxConnections', 'maxOnline', 'abuseDropsPerSec',
   'maxConnectionsPerAddr', 'heavyPerSec', 'heavyBurst', 'trustProxy'];
 const LOBBY_OPTION_KEYS = ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMatchesPerAddr', 'resyncMinGapMs', 'soloReconnectWindowMs', 'versionVoteMs', 'versionRetryMs',
-  'roomCreateBurst', 'roomCreateRefillMs', 'matchStartBurst', 'matchStartRefillMs'];
+  'roomCreateBurst', 'roomCreateRefillMs', 'matchStartBurst', 'matchStartRefillMs', 'chatEnabled'];
 
 /**
  * Bind address used when neither the `host` option nor `HOST` says otherwise: one dual-stack socket, so the server

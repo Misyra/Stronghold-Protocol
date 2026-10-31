@@ -116,6 +116,11 @@ export class Session {
     this.lastSeen = now;
     /** @type {number | null} ms epoch when the socket was lost (null while connected) */
     this.disconnectedAt = now;
+    // 局内聊天审核状态 (server/moderation/chat.js, 合并自用户分支): the ban ladder belongs to the reconnect identity.
+    this.chatLastSentAt = -Infinity;
+    this.chatLastHitAt = 0;
+    this.chatStrikes = 0;
+    this.chatMutedUntil = 0;
     /** @type {string | null} room code — owned and maintained by server/lobby.js */
     this.roomCode = null;
     /** @type {string | null} pending `room.closed` reason to deliver on the next resume (lobby-owned) */

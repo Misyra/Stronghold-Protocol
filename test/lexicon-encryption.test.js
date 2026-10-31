@@ -49,8 +49,9 @@ test('private key files and environment settings load without a built-in fallbac
     assert.throws(() => parseLexiconKey(value), error => !error.message.includes('short-secret') && /64/.test(error.message));
   assert.throws(() => readLexiconKey({ SP_MODERATION_KEY: '', SP_MODERATION_KEY_FILE: keyFile }), /64/);
 
-  // Real server startup must fail before it starts serving if moderation cannot be loaded.
-  const env = { ...process.env, SP_MODERATION_KEY_FILE: path.join(dir, 'missing'), SP_MODERATION_LEXICON_FILE: dictionary };
+  // Real server startup must fail before it starts serving when the chat is turned on and moderation cannot be
+  // loaded (合并仓语义: the engine initializes with SP_CHAT_ENABLED=1 — a deployment without chat needs no key).
+  const env = { ...process.env, SP_MODERATION_KEY_FILE: path.join(dir, 'missing'), SP_MODERATION_LEXICON_FILE: dictionary, SP_CHAT_ENABLED: '1' };
   delete env.SP_MODERATION_KEY;
   const child = spawnSync(process.execPath, ['server/index.js'], { env, encoding: 'utf8', timeout: 10000 });
   assert.notEqual(child.status, 0);

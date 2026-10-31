@@ -236,6 +236,7 @@ import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch } from './match/Match.js';
 import { Matchmaking } from './matchmaking.js';
 import { RoomActionLimiter } from './roomProtection.js';
+import { chatEnabled, moderateChat } from './moderation/chat.js';
 import { allocateMatchmakingGroup, queuePartyMatchmaking, cancelPartyMatchmaking, dropMatchmakingParty, matchmakingAvailable, matchmakingMembers, matchmakingSend } from './matchmakingRooms.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
 
@@ -251,6 +252,7 @@ export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 
 /** Tunables. */
 export const LOBBY_DEFAULTS = Object.freeze({
+  chatEnabled: false,     // 局内聊天 (SP_CHAT_ENABLED, 合并自用户分支): off unless the operator turns it on
   lobbyGraceMs: 60_000,   // disconnected humans keep their lobby seat this long
   maxRooms: 1000,
   maxRoomsPerAddr: 16,    // rooms created from one client network that may exist at once (0 = unlimited)
@@ -416,6 +418,10 @@ export class Room {
     this.consoleEnabled = false;
     /** 匹配 (server/matchmaking.js, 移植自用户分支): the room's host opted its whole alliance into the queue. */
     this.matchmaking = false;
+    /** 局内聊天 (合并自用户分支): the room's recent lines (≤50) and their broadcast sequence. Ephemeral. */
+    this.chatSeq = 0;
+    /** @type {{ t: 'm.chat', id: number, playerId: string, name: string, text: string, at: number }[]} */
+    this.chatMessages = [];
     /** @type {string | null} */
     this.hostId = null;
     /** @type {(Seat | null)[]} */
@@ -555,8 +561,8 @@ export class Lobby {
    *   offers (server/versions.js; none: 第二期下半 alone — header "Official versions"); versionHosts: the match hosts of
    *   the other versions (server/match/host/index.js, kind 'version')
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, content = null, plugins = null, hosts = null,
-    versions = null, versionHosts = null, simPool = null, options = {} }) {
+   constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, content = null, plugins = null, hosts = null,
+    versions = null, versionHosts = null, simPool = null, chatLog = null, options = {} }) {
     this.registry = registry;
     /** the vanilla content set every room plays (header "Content identity"), or null */
     this.vanilla = content && isContentHash(content.cs) ? Object.freeze({ cs: content.cs, vanilla: true, plugins: Object.freeze([]) }) : null;
@@ -585,6 +591,10 @@ export class Lobby {
       delete options.testHost;
     }
     this.opts = { ...LOBBY_DEFAULTS, ...options };
+    // 局内聊天 (合并自用户分支): the env words are parsed once here (bad values refuse to boot); the audit log rides
+    // with the lobby so a refused message and its ladder climb are recorded by the same handler.
+    this.opts.chatEnabled = chatEnabled(this.opts.chatEnabled);
+    this.chatLog = chatLog;
     // A fixed alliance key (--room-code / roomCode): every room this process creates uses it. server/index.js parses
     // the argument once at startup; a test passes it directly. Nothing is read from the environment or persisted.
     if (this.opts.roomCode) {
@@ -757,7 +767,8 @@ export class Lobby {
    * @param {import('./net.js').Session} session
    * @param {{ resumed: boolean, repeat: boolean }} info
    */
-  onHello(session, { resumed, repeat }) {
+   onHello(session, { resumed, repeat }) {
+    this.sendChatState(session, false);
     if ((resumed || repeat) && (this.matchmaking.has(session) || session.matchmakingCancelledOnDisconnect)) {
       this.matchmaking.sync(session);
       session.matchmakingCancelledOnDisconnect = false;
@@ -1165,7 +1176,7 @@ export class Lobby {
     session.notice = null;
     session.pendingResult = null;
     this.broadcastState(room);
-    if (room.match) this.callMatch(room, 'addSpectator', session.playerId);
+    if (room.match) { this.callMatch(room, 'addSpectator', session.playerId); this.sendChatState(session); }
     return OK;
   }
 
@@ -2103,6 +2114,8 @@ export class Lobby {
     if (versions) info.versions = versions;
     // Omitted when the switch is off, so a welcome from a normal server stays identical.
     if (this.testEnabled === true) info.testMode = true;
+    // 局内聊天 (合并自用户分支): always carried (false when off) — the client mounts the communication panel by it.
+    info.chatEnabled = this.opts.chatEnabled;
     return info;
   }
 
@@ -2328,6 +2341,7 @@ export class Lobby {
   /** @param {import('./net.js').Session} session */
   runResync(session) {
     if (!session.connected || this.registry.byId(session.playerId) !== session) return;
+    this.sendChatState(session);
     const room = this.roomOf(session);
     if (!room) return;
     // in order with the room's messages when its match runs in a match host (header "Gameplay plugins")
@@ -2378,6 +2392,15 @@ export class Lobby {
     return n;
   }
 
+  /** The sender's own moderation state (m.chatState, 合并自用户分支): with the room's recent lines on (re)entry,
+   *  bare after a refusal. No-op while chat is off. */
+  sendChatState(session, includeHistory = true) {
+    if (!this.opts.chatEnabled) return;
+    const room = this.roomOf(session);
+    sendSession(session, { t: 'm.chatState', enabled: this.opts.chatEnabled, mutedUntil: session.chatMutedUntil,
+      serverTime: this.now(), ...(includeHistory ? { messages: this.opts.chatEnabled ? room?.chatMessages || [] : [] } : {}) });
+  }
+
   /**
    * Route a 'g.*' intent or a 'b.*' report (server/net.js) to the running match — on the room's queue when its match runs
    * in a match host (header "Gameplay plugins").
@@ -2402,6 +2425,21 @@ export class Lobby {
     }
     // a spectator only watches (header): nothing else of it ever reaches the match
     if (msg.t !== 'g.watch' && !(room.test && msg.t === 'g.test') && room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
+    if (msg.t === 'g.chat') {
+      if (!this.opts.chatEnabled) return fail(ERR.CHAT_DISABLED);
+      // Flagged messages are refused outright (moderateChat returns the error); only clean ones broadcast.
+      const result = moderateChat(session, msg.text, this.now());
+      if (result.error) { this.sendChatState(session, false); return fail(result.error); }
+      const seat = room.seatOf(session.playerId);
+      const message = { t: 'm.chat', id: ++room.chatSeq, playerId: session.playerId, name: seat.name, text: result.text, at: this.now() };
+      this.chatLog?.record({ at: message.at, ip: session.addr, playerId: session.playerId,
+        name: seat.name, roomCode: room.code, text: msg.text });
+      room.chatMessages.push(message);
+      if (room.chatMessages.length > 50) room.chatMessages.shift();
+      this.broadcastRoom(room, message);
+      this.sendChatState(session, false);
+      return OK;
+    }
     let res;
     try {
       res = room.match.handle(session.playerId, msg);

@@ -67,11 +67,11 @@ function perNetwork(n) { return n > 0 ? n : 'unlimited'; }
  *   gameplay plugins plays in (DESIGN §32.6), the official versions and their match hosts (DESIGN §35.23)
  * @returns {{ registry: SessionRegistry, lobby: Lobby, network: Network }}
  */
-export function createSessionStack(opts, { data, log, content = null, plugins = null, hosts = null, versions = null, versionHosts = null, simPool = null }) {
+export function createSessionStack(opts, { data, log, content = null, plugins = null, hosts = null, versions = null, versionHosts = null, simPool = null, chatLog = null }) {
   const netOptions = netOptionsFrom(opts, log);
   const registry = new SessionRegistry({ reconnectWindowMs: netOptions.reconnectWindowMs ?? NET_DEFAULTS.reconnectWindowMs });
   const lobbyOptions = lobbyOptionsFrom(opts, log);
-  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, content, plugins, hosts, versions, versionHosts, simPool, options: lobbyOptions });
+  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, content, plugins, hosts, versions, versionHosts, simPool, chatLog, options: lobbyOptions });
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
   // The caps in effect, printed once when the stack is built, so the deploy log states the configuration the server is
   // actually running with. A global cap of 0 is printed as 0 (it rejects every room / socket); a per-network 0 is

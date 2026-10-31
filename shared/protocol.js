@@ -626,6 +626,9 @@ export const C2S = {
   'g.offerRefresh': { offerId: isId, pluginId: isId, seq: (v) => isInt(v, 0, 1000000), cardId: optional(isId), idx: (v) => isInt(v, 0, PLUGIN_OFFER_SLOTS - 1) },
   'g.ready': { ready: isBool },
   'g.emote': { id: (v) => EMOTES.includes(v) },
+  // 局内聊天 (合并自用户分支): one line, ≤30 visible characters, no control/invisible characters. The server's
+  // moderation (server/moderation/chat.js) refuses flagged text outright; only clean text is ever broadcast.
+  'g.chat': { text: (v) => typeof v === 'string' && v.trim().length > 0 && [...v].length <= 30 && !/[\p{Cc}\p{Cs}]/u.test(v) },
   // playerId: the player tapped in the team panel (a 联防 / boss pair field shows two) — what an eliminated viewer or a
   // spectator seat follows from then on (Match.watchPref; community report of 2026-10-06, item 56)
   'g.watch': { fieldId: (v) => isStr(v, 32), playerId: isId, $optional: ['playerId'] },
@@ -695,6 +698,10 @@ export const S2C = [
   // waitingCount?, reason? } — 一张票的完整快照,不含其他成员的身份
   'queue.state',
   'm.public', 'm.private', 'm.field', 'm.toast', 'm.ticker', 'm.emote', 'm.result',
+  // 局内聊天 (合并自用户分支): m.chat { id, playerId, name, text, at } — one room broadcast; m.chatState
+  // { enabled, mutedUntil, serverTime, messages? } — the sender's own moderation state after a refusal, and the
+  // recent history on (re)entry. Ephemeral: never replayed by the resync replay buffer.
+  'm.chat', 'm.chatState',
   // m.layer { playerId, bondId, add } — own live prep layer gain; ephemeral, never replayed on resync.
   'm.layer',
   // m.unitStats { seq, round, units: [unitStatsEntry] } — the answer to g.unitStats (the requester only)

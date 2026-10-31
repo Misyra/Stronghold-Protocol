@@ -66,6 +66,9 @@ import { createStudio } from './studio/index.js';
 import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
+import { ChatLog } from './chatLog.js';
+import { chatEnabled } from './moderation/chat.js';
+import { initializeModeration } from './moderation/nickname.js';
 import { createAnnouncementReader, createAnnouncementSignal } from './announcement.js';
 import { createTrafficCounter } from './http/traffic.js';
 import { createAssetIndex } from './http/assetIndex.js';
@@ -134,6 +137,17 @@ export async function startServer(opts = {}) {
   const { publicDir, dataDir, sharedDir, packsDir, pluginsDir } = serveDirs(opts);
   const simDir = path.join(ROOT, 'server', 'sim');
 
+  // 局内聊天 (合并自用户分支): SP_CHAT_ENABLED (server/moderation/chat.js chatEnabled, 默认关); 开着时先初始化
+  // 敏感词引擎——缺密钥/词表在启动期就拒绝(never silently off), 而不是第一条聊天消息才炸。审计日志按天落
+  // .state/chat-logs/(SP_CHAT_LOG_DIR), 压缩与保留窗 SP_CHAT_LOG_COMPRESS_AFTER_DAYS / SP_CHAT_LOG_RETENTION_DAYS。
+  // 构造在一切监听/线程之前: 目录布局非法(SP_CHAT_LOG_DIR 落在被服务的目录里)这里就抛, 没有任何资源要回收。
+  const chatEnabledOpt = opts.chatEnabled ?? chatEnabled();
+  if (chatEnabledOpt) initializeModeration();
+  const chatLog = new ChatLog({ dir: opts.chatLogDir ?? process.env.SP_CHAT_LOG_DIR,
+    compressAfterDays: opts.chatLogCompressAfterDays ?? process.env.SP_CHAT_LOG_COMPRESS_AFTER_DAYS,
+    retentionDays: opts.chatLogRetentionDays ?? process.env.SP_CHAT_LOG_RETENTION_DAYS,
+    publicDirs: [publicDir, dataDir, sharedDir, packsDir], log });
+
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
   // the vanilla content hash `cs` (DESIGN §32): the bytes of the served sim, shared code and game data, read once now —
@@ -171,7 +185,7 @@ export async function startServer(opts = {}) {
     : null;
   log.info(`[versions] enabled: ${versions.ids.map((id) => `${id} (${t(/** @type {any} */ (versionById(id)).label)}${id === versions.defaultId ? ', default' : ''})`).join(', ')}`);
   const simPool = createRoomWorkerPool({ data });
-  const { registry, lobby, network } = createSessionStack(opts, { data, log, content, plugins: roomSets, hosts, versions, versionHosts, simPool });
+  const { registry, lobby, network } = createSessionStack({ ...opts, chatEnabled: chatEnabledOpt }, { data, log, content, plugins: roomSets, hosts, versions, versionHosts, simPool, chatLog });
   // 运维公告（server/announcement.js，合并自用户分支; 单源）: 一份热加载的排程文件（http/config.js
   // announcementOptionsFrom，默认 config/announcements.json）。读函数同时服务 GET /api/announcement
   // 与 pong 里的 revision 提示（net.js）。
@@ -237,7 +251,7 @@ export async function startServer(opts = {}) {
   buildTag(ROOT, { servedVersionDirs: versions.servedDirs() });
 
   const traffic = createTrafficCounter();
-  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime,
+  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic, chatLog }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime,
     readAnnouncement, announcementSource: announcementOptions.source }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic });
@@ -291,10 +305,12 @@ export async function startServer(opts = {}) {
     eventLoop?.close();
     await simPool?.close();
     await trustedRuntime?.close();
+    try { await chatLog.close(); } catch { /* the boot already failed */ }
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
   assetIndex?.start();
+  chatLog.start();
   // started only once the server is listening: the first window then reports real counts, not a half-built hall
   eventLoop?.start();
 
@@ -316,6 +332,7 @@ export async function startServer(opts = {}) {
       assetIndex?.close();
       studio?.close();
       await trustedRuntime?.close();
+      try { await chatLog.close(); } catch (e) { log.error('[shutdown] chat log', e); }
       await new Promise((resolve) => {
         server.close(() => resolve());
         server.closeIdleConnections?.();
@@ -326,7 +343,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, versions, versionHosts, traffic, assetIndex, views, studio, eventLoop, simPool, close };
+  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, versions, versionHosts, traffic, assetIndex, views, studio, eventLoop, simPool, chatLog, close };
 }
 
 /**

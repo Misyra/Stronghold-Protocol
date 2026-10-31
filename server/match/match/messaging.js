@@ -51,15 +51,18 @@ export class MatchMessaging {
     this.broadcast({ t: 'm.ticker', ...w, text: w.text.slice(0, 200), id: null, type: 'CUSTOM', priority: Number(priority) || 0, playerId: null });
   }
 
-  markPublic() { this._pubDirty = true; }
+  markPublic() { this._pubDirty = true; this._persistRev = (this._persistRev | 0) + 1; }
   /**
    * A player's state changed: its m.private and (throttled, deduplicated) m.public (level, board, bonds…) — in a boss
    * round's prep also its pair partner's m.private, which shows this board on its other half (bossMate, item 51).
+   * `_persistRev` (移植自用户分支) rides along: every player-level mutation reports through here, so the match
+   * checkpoints' cheap dirty check (snapshot.js persistVersion) sees nested state move without a deep compare.
    */
   markPrivate(ps) {
     if (!ps) return;
     this._privDirty.add(ps);
     this._pubDirty = true;
+    this._persistRev = (this._persistRev | 0) + 1;
     const m = this._bossMateOf(ps);
     if (m) this._privDirty.add(m.mate);
   }

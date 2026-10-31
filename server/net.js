@@ -46,6 +46,7 @@ import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
 import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION, MATCHMAKING_VERSION } from '../shared/constants.js';
 import { PLAYER_CAPACITY_VERSION } from '../shared/playerCapacity.js';
+import { CHAT_MUTE_MAX_MS } from './moderation/chatState.js';
 
 /** Tunables (all overridable through the Network / SessionRegistry constructors). */
 export const NET_DEFAULTS = Object.freeze({
@@ -206,6 +207,50 @@ export class SessionRegistry {
 
   /** @param {string} playerId @returns {Session | null} */
   byId(playerId) { return this.byPlayerId.get(playerId) || null; }
+
+  /**
+   * Re-create a session from a persisted document (server/persist.js sessionDoc, 移植自用户分支): same playerId, same
+   * token, disconnected. Null when the shape is wrong or the id/token is already taken (the document is stale).
+   * @param {Record<string, any>} doc @returns {Session | null}
+   */
+  adopt(doc) {
+    if (!doc || typeof doc.playerId !== 'string' || typeof doc.token !== 'string') return null;
+    if (!doc.playerId || !doc.token) return null;
+    if (this.byPlayerId.has(doc.playerId) || this.byTokenMap.has(doc.token)) return null;
+    if (this.byPlayerId.size >= this.maxSessions) return null;
+    const now = this.now();
+    const s = new Session({ playerId: doc.playerId, token: doc.token, name: doc.name, now });
+    s.connected = false;
+    s.ws = null;
+    const since = Number(doc.disconnectedAt);
+    s.disconnectedAt = Number.isFinite(since) ? since : now;
+    s.resumeWindowMs = Number.isFinite(doc.resumeWindowMs) && doc.resumeWindowMs > 0 ? Number(doc.resumeWindowMs) : null;
+    s.roomCode = typeof doc.roomCode === 'string' && doc.roomCode ? doc.roomCode : null;
+    s.loadout = doc.loadout && typeof doc.loadout === 'object' ? doc.loadout : null;
+    s.ops = doc.ops && typeof doc.ops === 'object' ? doc.ops : null;
+    s.notOwned = Array.isArray(doc.notOwned) ? doc.notOwned : null;
+    s.diy = doc.diy && typeof doc.diy === 'object' ? doc.diy : null;
+    s.skins = doc.skins && typeof doc.skins === 'object' ? doc.skins : null;
+    // the ban ladder carries over (server/moderation/chatState.js), clamped to its own cap going forward
+    s.chatLastHitAt = Number.isFinite(doc.chatLastHitAt) && doc.chatLastHitAt > 0 ? doc.chatLastHitAt : 0;
+    s.chatStrikes = Number.isInteger(doc.chatStrikes) && doc.chatStrikes > 0 ? doc.chatStrikes : 0;
+    s.chatMutedUntil = Number.isFinite(doc.chatMutedUntil) ? Math.max(0, Math.min(doc.chatMutedUntil, now + CHAT_MUTE_MAX_MS)) : 0;
+    s.addr = typeof doc.addr === 'string' ? doc.addr : '?';
+    s.notice = typeof doc.notice === 'string' ? doc.notice : null;
+    s.pendingResult = Array.isArray(doc.pendingResult) ? doc.pendingResult.filter((f) => typeof f === 'string') : null;
+    this.byPlayerId.set(s.playerId, s);
+    this.byTokenMap.set(s.token, s);
+    return s;
+  }
+
+  /**
+   * The room-grace expiry of one seat's session (server/matchRestore.js): the reconnect window alone — a muted session
+   * (chatRetentionUntil) keeps its room recoverable, unlike the registry's own sweep (isExpired).
+   * @param {Session} s @param {number} now
+   */
+  roomExpired(s, now) {
+    return !s.connected && s.disconnectedAt != null && now - s.disconnectedAt > this.windowOf(s);
+  }
 
   /** @param {Session} s */
   remove(s) {

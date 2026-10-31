@@ -503,6 +503,8 @@ export class Match {
     this._kickVoteAt = new Map();
     this._turnTimer = null;
     this._pubDirty = false;
+    /** 持久化脏计数(移植自用户分支, snapshot.js persistVersion): markPublic/markPrivate 增量, 见 messaging.js */
+    this._persistRev = 0;
     this._pubTimer = null;
     this._lastPubAt = -Infinity;
     this._lastPubJson = '';

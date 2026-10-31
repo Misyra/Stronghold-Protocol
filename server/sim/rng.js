@@ -49,6 +49,11 @@ function rngFromState(s) {
   return rng;
 }
 
+/** A stream resumed at `state` (rng.state()); the restore half of the match checkpoints (移植自用户分支). */
+export function createRngFromState(state) {
+  return rngFromState((Number(state) >>> 0) || 0x9e3779b9);
+}
+
 /** Derive a child seed deterministically (e.g. per field). */
 export function deriveSeed(seed, salt) {
   let h = (Number(seed) >>> 0) ^ 0x85ebca6b;

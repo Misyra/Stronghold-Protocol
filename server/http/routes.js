@@ -52,7 +52,7 @@ function contentSets(lobby) {
  *   and their match hosts (DESIGN §35.23)
  * @param {boolean} [withTraffic]
  */
-export function healthReport({ startedAt, network, registry, lobby, content = null, traffic, assetIndex, views, trusted, versions = null, versionHosts = null, serveStatic = null }, withTraffic = false) {
+export function healthReport({ startedAt, network, registry, lobby, content = null, traffic, assetIndex, views, trusted, versions = null, versionHosts = null, serveStatic = null, persister = null, store = null }, withTraffic = false) {
   const report = {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the release the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
@@ -66,6 +66,20 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
     // the per-network action budgets (server/roomProtection.js, 合并自用户分支): allowed / denied counts per action
     roomProtection: lobby.roomActions?.stats() || null,
+    // 持久化 (server/persist.js, 移植自用户分支): write rounds / failures / held checkpoints and the checkpoint
+    // encode bookkeeping — `failures` growing means saving is broken (本仓无独立 /metrics 面, 计数进 /healthz)
+    persist: persister ? {
+      enabled: true, backend: store?.kind || 'custom', mode: store?.mode || null,
+      writes: persister.writes, skipped: persister.skipped, failures: persister.failures,
+      checkpoints: persister.matchDocs.size, lastSaveMs: persister.lastSaveMs ?? null,
+      checkpointsEncoded: persister.versionStats?.encodes ?? null,
+      checkpointsSkipped: persister.versionStats?.skipped ?? null,
+      versionChecks: persister.versionStats?.verified ?? null,
+      versionHoles: persister.versionStats?.holes ?? null,
+      deferredSkips: persister.deferredSkips ?? 0,
+      pendingLoad: persister.pendingLoad === true,
+      workerMemory: persister.encoder?.memory || null,
+    } : null,
   };
   if (trusted && Object.keys(trusted).length) report.plugins = trusted;
   // the official versions (DESIGN §35.23): only when another one than 第二期下半 is enabled

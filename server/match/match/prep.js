@@ -172,6 +172,10 @@ export class MatchPrep {
 
   endPrep() {
     if (this.phase !== PHASE.PREP) return;
+    // 持久化检查点(移植自用户分支): the phase boundary is where PREP's state is whole — capture it before onPrepEnd
+    // mutates the formation or builds any battle state
+    try { this.opts.onCheckpoint?.(this); }
+    catch (err) { this.log.warn?.('[persist] prep checkpoint failed', err.message); }
     // 掉线由 AI 接管(移植自用户分支): a seat offline for OFFLINE_TAKEOVER_ROUNDS prep ends is the AI's from the next
     // phase on (MatchPlatform._checkOffline)
     this._checkOffline();

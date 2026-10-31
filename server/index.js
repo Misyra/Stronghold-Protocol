@@ -69,6 +69,10 @@ import { createRequestHandler } from './http/routes.js';
 import { ChatLog } from './chatLog.js';
 import { chatEnabled } from './moderation/chat.js';
 import { initializeModeration } from './moderation/nickname.js';
+import { Persister, restoreServerForBoot } from './persist.js';
+import { FileStateStore } from './stateFile.js';
+import { createRedisStore } from './redisState.js';
+import { within } from './pathSafety.js';
 import { createAnnouncementReader, createAnnouncementSignal } from './announcement.js';
 import { createTrafficCounter } from './http/traffic.js';
 import { createAssetIndex } from './http/assetIndex.js';
@@ -101,6 +105,7 @@ export {
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
  *   versionVoteMs?: number, versionRetryMs?: number,
  *   roomCode?: string | null,
+ *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  *   assetIndex?: boolean | { cacheFile?: string | null, delayMs?: number }, studio?: boolean,
  *   matchHost?: object, versions?: { enabled?: 'all' | string[], default?: string, maxHosts?: number },
  * }} [opts]
@@ -112,6 +117,9 @@ export {
  *   versionVoteMs / versionRetryMs: the version vote's answer window and the guard after a declined or expired vote (tests;
  *   server/lobby.js header "Official versions")
  *   roomCode: a fixed alliance key for every new room (--room-code; four letters or digits — config.js parseRoomCode);
+ *   stateFile: the persistence path (a directory → the sharded layout, a .json path → the single file, 'off' → memory
+ *   only — persist, 移植自用户分支); store: an explicit state store (tests; null = memory only, takes precedence over
+ *   stateFile and SP_REDIS_URL); resume: false skips the startup restore (tests); saveMs: the save cadence;
  * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: import('ws').WebSocketServer,
  *                     lobby: import('./lobby.js').Lobby, network: import('./net.js').Network,
  *                     registry: import('./net.js').SessionRegistry, packs: ReturnType<typeof createPluginRegistry>,
@@ -186,6 +194,47 @@ export async function startServer(opts = {}) {
   log.info(`[versions] enabled: ${versions.ids.map((id) => `${id} (${t(/** @type {any} */ (versionById(id)).label)}${id === versions.defaultId ? ', default' : ''})`).join(', ')}`);
   const simPool = createRoomWorkerPool({ data });
   const { registry, lobby, network } = createSessionStack({ ...opts, chatEnabled: chatEnabledOpt }, { data, log, content, plugins: roomSets, hosts, versions, versionHosts, simPool, chatLog });
+
+  // 持久化 (server/persist.js + server/stateFile.js, 移植自用户分支): 会话/房间/运行中对局的检查点落盘, 重启恢复。
+  // SP_STATE_FILE(目录 → 分片布局, .json 路径 → 单文件, 'off' → 纯内存, 默认 .state/server-<PORT>); 配了
+  // SP_REDIS_URL / REDIS_URL 则改用 Redis 多键后端(server/redisState.js)且不再写文件。启动读失败先不写
+  // (Persister.deferLoad), 每轮写之前重读, 绝不覆盖没读回来的存档。
+  const stateFileRaw = opts.stateFile !== undefined ? opts.stateFile : process.env.SP_STATE_FILE;
+  const stateFile = typeof stateFileRaw === 'string' && stateFileRaw.trim() === ''
+    ? (() => { log.warn('[persist] SP_STATE_FILE 为空，改用默认路径 .state/server-<PORT>；要内存运行请显式写 off'); return path.join(ROOT, '.state', `server-${process.env.PORT || 3000}`); })()
+    : (typeof stateFileRaw === 'string' ? stateFileRaw.trim() : stateFileRaw);
+  if (stateFile && stateFile !== 'off') {
+    const absoluteState = path.resolve(stateFile);
+    for (const root of [publicDir, dataDir, sharedDir]) {
+      if (within(root, absoluteState)) throw new Error('SP_STATE_FILE 不能位于公开静态目录，建议使用 .state/ 或私有数据目录');
+    }
+  }
+  // Redis（SP_REDIS_URL / REDIS_URL）优先于文件：它是可选后端，连不上就退回内存运行。
+  const redisStore = opts.store === undefined ? createRedisStore({ env: opts.env ?? process.env, log }) : null;
+  const store = opts.store !== undefined ? opts.store : redisStore ?? (stateFile && stateFile !== 'off'
+    ? new FileStateStore({ file: stateFile, log }) : null);
+  if (redisStore) log.info(`[persist] Redis 存储 ${redisStore.label}（键 ${redisStore.prefix}index / runtime / cp:<房间码>）`);
+  else if (store) log.info(`[persist] 状态文件 ${store.label}`);
+  const persister = store ? new Persister({ store, registry, lobby, log, saveMs: opts.saveMs ?? process.env.SP_STATE_SAVE_MS }) : null;
+  if (store && opts.resume !== false) {
+    try {
+      const doc = await store.load();
+      // 启动读失败（存储没起来 / 内容不是状态文档）：先别写，否则会把没读回来的那份覆盖掉。
+      if (!doc && ['unavailable', 'invalid'].includes(store.loadState)) {
+        persister.deferLoad();
+        log.warn(`[persist] 存档未能读取（${store.loadState}）：在读到之前不会写回，避免覆盖`);
+      }
+      if (doc) {
+        const stats = await restoreServerForBoot({ doc, registry, lobby, log });
+        if (!stats.ok) throw new Error(`状态格式不兼容 (${stats.reason})，已保留状态文件，请恢复备份或显式选择新的 SP_STATE_FILE`);
+        log.info(`[persist] restored ${stats.sessions} sessions, ${stats.rooms} rooms, ${stats.matches} matches`);
+      }
+    } catch (err) {
+      await persister?.dispose().catch(() => {});
+      try { await store.close(); } catch { /* the boot already failed */ }
+      throw err;
+    }
+  }
   // 运维公告（server/announcement.js，合并自用户分支; 单源）: 一份热加载的排程文件（http/config.js
   // announcementOptionsFrom，默认 config/announcements.json）。读函数同时服务 GET /api/announcement
   // 与 pong 里的 revision 提示（net.js）。
@@ -251,7 +300,7 @@ export async function startServer(opts = {}) {
   buildTag(ROOT, { servedVersionDirs: versions.servedDirs() });
 
   const traffic = createTrafficCounter();
-  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic, chatLog }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime,
+  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic, chatLog, persister, store }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime,
     readAnnouncement, announcementSource: announcementOptions.source }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic });
@@ -305,12 +354,16 @@ export async function startServer(opts = {}) {
     eventLoop?.close();
     await simPool?.close();
     await trustedRuntime?.close();
+    await persister?.dispose().catch(() => {});
+    try { await store?.close(); } catch { /* the boot already failed */ }
     try { await chatLog.close(); } catch { /* the boot already failed */ }
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
   assetIndex?.start();
   chatLog.start();
+  // the save loop starts with the listener: its first round then holds the real, bound server
+  persister?.start();
   // started only once the server is listening: the first window then reports real counts, not a half-built hall
   eventLoop?.start();
 
@@ -322,6 +375,14 @@ export async function startServer(opts = {}) {
   async function close() {
     if (closing) return closing;
     closing = (async () => {
+      // the final state document is written BEFORE the lobby disposes its rooms (移植自用户分支的关停次序):
+      // a drain that fails on the way out is logged, and the shutdown still reaches the persister
+      if (persister) {
+        let saved = false;
+        try { saved = await persister.shutdown('shutdown'); }
+        catch (e) { log.error('[shutdown] persistence', e); }
+        if (!saved) log.error('[persist] final state was NOT saved; check the state directory permissions and disk space');
+      }
       try { lobby.shutdown('shutdown'); } catch (e) { log.error('[shutdown] lobby', e); }
       try { hosts.close(); } catch (e) { log.error('[shutdown] match hosts', e); }
       try { versionHosts?.close(); } catch (e) { log.error('[shutdown] version hosts', e); }
@@ -339,11 +400,12 @@ export async function startServer(opts = {}) {
         setTimeout(() => { server.closeAllConnections?.(); }, 500).unref();
       });
       try { wss.close(); } catch { /* ignore */ }
+      try { await store?.close(); } catch (e) { log.error('[shutdown] state store', e); }
     })();
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, versions, versionHosts, traffic, assetIndex, views, studio, eventLoop, simPool, chatLog, close };
+  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, versions, versionHosts, traffic, assetIndex, views, studio, eventLoop, simPool, chatLog, store, persister, close };
 }
 
 /**
@@ -372,4 +434,5 @@ export function roomCodeFromArgv(argv = process.argv.slice(2)) {
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).
-if (isProcessEntry(import.meta.url)) runMain(() => startServer({ roomCode: roomCodeFromArgv() }));
+// The state file defaults to .state/server-<PORT> (persist, 移植自用户分支); SP_STATE_FILE / SP_REDIS_URL override.
+if (isProcessEntry(import.meta.url)) runMain(() => startServer({ roomCode: roomCodeFromArgv(), stateFile: process.env.SP_STATE_FILE ?? path.join(ROOT, '.state', `server-${process.env.PORT || 3000}`) }));

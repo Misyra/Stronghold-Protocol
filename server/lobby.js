@@ -237,6 +237,7 @@ import { Match as DefaultMatch } from './match/Match.js';
 import { Matchmaking } from './matchmaking.js';
 import { RoomActionLimiter } from './roomProtection.js';
 import { RoomReclamation } from './roomReclamation.js';
+import { restoreLobbyRooms, restoreLobbyMatch, adoptRestoredMatch, seatEntries } from './matchRestore.js';
 import { chatEnabled, moderateChat } from './moderation/chat.js';
 import { allocateMatchmakingGroup, queuePartyMatchmaking, cancelPartyMatchmaking, dropMatchmakingParty, matchmakingAvailable, matchmakingMembers, matchmakingSend } from './matchmakingRooms.js';
 import { KITTED_CHARS } from './sim/content/kits/index.js';
@@ -635,6 +636,8 @@ export class Lobby {
       allocate: (sessions, difficulty) => this.allocateMatchmaking(sessions, difficulty), options: this.opts.matchmaking || {} });
     /** log lines said once (warnOnce) */
     this.told = new Set();
+    /** 持久化检查点订阅 (server/persist.js, 移植自用户分支) */
+    this.checkpointListeners = new Set();
     /** 房间回收 (server/roomReclamation.js, 移植自用户分支): 容量压力下回收全员离线的房间 */
     this.roomReclamation = new RoomReclamation(this);
     /** a held visual set whose plugins changed on disk: its rooms' hosts are told (header "The room's plugins") */
@@ -766,6 +769,32 @@ export class Lobby {
 
   /** Reclamation counters for /healthz (stats spreads this too). */
   get roomPressure() { return this.roomReclamation.state; }
+
+  // ---------------------------------------------------------------------------------------------------
+  // 持久化检查点与恢复 (server/persist.js + server/matchRestore.js, 移植自用户分支)
+  // ---------------------------------------------------------------------------------------------------
+
+  subscribeCheckpoint(listener) {
+    this.checkpointListeners.add(listener);
+    return () => this.checkpointListeners.delete(listener);
+  }
+
+  /** A match started / ended / restored (`match`), or its room is gone (`null`): the Persister refreshes or drops it. */
+  checkpoint(code, match) {
+    this.onCheckpoint?.(code, match);
+    for (const listener of this.checkpointListeners) listener(code, match);
+  }
+
+  /** Rebuild the lobby's rooms from a persisted document (server/matchRestore.js; `Room` is injected). */
+  restoreRooms(docs, options) { return restoreLobbyRooms(this, docs, { Room, ...options }); }
+
+  /**
+   * Rebuild a running match from a checkpoint (server/match/snapshot.js). Every seat of the checkpoint must still be in
+   * the room; otherwise nothing is restored and the room stays in the lobby (the players simply start a new match).
+   * @param {Room} room @param {object} checkpoint
+   * @returns {boolean} true when the match runs again
+   */
+  restoreMatch(room, checkpoint) { return restoreLobbyMatch(this, room, checkpoint); }
 
   // ---------------------------------------------------------------------------------------------------
   // net.js handler interface
@@ -2138,7 +2167,15 @@ export class Lobby {
   // ---------------------------------------------------------------------------------------------------
 
   /** @param {Room} room @param {string | null} [key] per-network limit key of the starter */
-  startMatch(room, key = null) {
+  startMatch(room, key = null) { return this.startMatchWith(room, key, null); }
+
+  /**
+   * Build (and start, or restore) the room's match. `checkpoint` (server/persist.js → matchRestore.js, 移植自用户分支)
+   * turns this into the restore half: the seats come from the checkpoint, the match number and seed continue the
+   * interrupted run, and adoptRestoredMatch applies the checkpoint instead of starting fresh.
+   * @param {Room} room @param {string | null} key the starter's per-network limit key @param {object | null} checkpoint
+   */
+  startMatchWith(room, key, checkpoint) {
     if (room.test && !this.testEnabled) return fail(ERR.TEST_DISABLED);
     // another official version's match runs in that version's match host — never here, where every module singleton
     // holds 第二期下半's data (header "Official versions"); a test that gave its own MatchClass runs it in place
@@ -2149,11 +2186,14 @@ export class Lobby {
     }
     // (room.start refuses during a vote; a start from elsewhere voids it)
     if (room.versionVote) this.voidVersionVote(room, 'members');
+    const starter = this.registry.byId(room.hostId);
     const host = room.seatOf(room.hostId);
-    if (host) host.ready = true;
+    if (host && !checkpoint) host.ready = true;
     // the room's data: its content set's in a room with gameplay plugins (header "Gameplay plugins")
     const data = this.dataFor(room);
-    const seats = room.seats.filter(Boolean).map((s) => {
+    // a restored checkpoint carries the seats as the match left them (skins included, docs/SKINS.md); a live room takes
+    // its own seats, a setting checked for another content filtered to this room's data (header "Gameplay plugins")
+    const seats = checkpoint ? seatEntries(room, checkpoint) : room.seats.filter(Boolean).map((s) => {
       // a setting checked for another content is filtered to this room's data (header "Gameplay plugins")
       const own = s.isBot ? null : this.seatSettings(room, s, data);
       return {
@@ -2171,9 +2211,18 @@ export class Lobby {
     });
     // lastPublic / results: the latest m.public broadcast and the m.result frames (encoded), kept for the replay.
     const ctx = { live: true, ended: false, disposed: false, match: null, lastPublic: null, sharedResult: null, results: new Map() };
+    // a restored match continues its number (matchCount already counted it when it first started)
+    const matchNo = checkpoint ? Math.max(1, room.matchCount) : room.matchCount + 1;
     let seed = 0;
     try { seed = this.seedFn() >>> 0; } catch { seed = randomInt(2 ** 32); }
+    if (checkpoint && Number.isInteger(checkpoint.seed)) seed = checkpoint.seed >>> 0;
     const modded = room.modded;
+    // 首版语义决策: 宿主子进程房(玩法插件 / 官方多版本)的运行中对局不恢复——检查点无法跨进程取回, 房间保留、
+    // 对局丢弃, 玩家重开一局 (eval-server-perf.md §A5; TODO 给 match/host 的 proxy+entry 加 capture 通道)
+    if (checkpoint && (modded || versioned)) {
+      this.log.info(`[lobby] ${room.code}: the hosted match's checkpoint is not restored — the room waits in the lobby`);
+      return fail(ERR.INTERNAL, 'hosted match checkpoint not supported');
+    }
     try {
       const opts = {
         roomCode: room.code,
@@ -2193,7 +2242,10 @@ export class Lobby {
         ...(room.test === true ? { test: true } : {}),
         seed,
         // the room's match number: with the seed it keeps battleIds unique across the room's matches (DESIGN §14)
-        matchNo: room.matchCount + 1,
+        matchNo,
+        // 持久化检查点(移植自用户分支): the match reports its phase boundaries (MatchPrep.endPrep), the Persister
+        // refreshes the room's checkpoint off the save cadence
+        onCheckpoint: (m) => this.checkpoint(room.code, m),
         // the room's content hash (header "Content identity"): copied into every BattleSpec; its visual set too (a
         // replay names the art), and with gameplay plugins a b.result must name the room's cs (header "Gameplay plugins")
         ...(room.content ? { cs: room.content.cs } : {}),
@@ -2225,6 +2277,7 @@ export class Lobby {
         : versioned && this.versionHosts ? this.versionHosts.create(room.content.cs, opts)
           : new this.MatchClass(opts);
       ctx.match = match;
+      if (checkpoint) return adoptRestoredMatch(this, room, { match, ctx, key, starter, checkpoint });
       room.match = match;
       room.matchCtx = ctx;
       room.matchKey = key;
@@ -2233,6 +2286,8 @@ export class Lobby {
       this.log.info(`[lobby] ${room.code} match #${room.matchCount} starting (${room.mode}/${room.difficulty}, ${seats.length} seats, seed ${seed}${room.test ? ', test' : ''}${modded ? `, content ${room.content.cs.slice(0, 8)}${match.hosted ? ' in its match host' : ''}` : ''}${versioned ? `, version ${room.version}${match.hosted ? ' in its match host' : ''}` : ''})`);
       this.broadcastState(room);
       match.start();
+      // its start is the first checkpoint (移植自用户分支): the periodic tick then keeps it fresh
+      this.checkpoint(room.code, match);
     } catch (e) {
       this.log.error(`[lobby] ${room.code} match failed to start`, e);
       if (room.matchCtx === ctx) {
@@ -2687,6 +2742,8 @@ export class Lobby {
     if (ctx) this.disposeMatchCtx(ctx);
     // the room's visual set and content set are no longer held by it (server/plugins/visualSet.js, contentSets.js)
     this.releaseContent(room.content);
+    // 持久化(移植自用户分支): the room is gone — its checkpoint is dropped from the next document
+    this.checkpoint(room.code, null);
     this.log.info(`[lobby] ${room.code} disposed (${reason})`);
   }
 

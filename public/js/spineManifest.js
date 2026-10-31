@@ -42,11 +42,11 @@ export function spineEntry(m, id, opts) {
     // 干员皮肤 (docs/SKINS.md): an installed skin replaces the operator's own model. `opts.skin` is a catalogued skin id
     // (or its official id, the form a preference written before the catalogue became a code module holds); when it is
     // absent — or names a skin this install does not have — the operator's default model is used, so a client meeting a
-    // manifest without that skin still works. 0.3.3 的回退(移植): a skin the catalogue does not know still resolves
-    // through the manifest's own skins map.
+    // manifest without that skin still works. 目录制(用户分支)解析 id 形式;0.3.3 的 B6 回退(§35.4 [ASSUMED]):
+    // 只有带可用 Front 的皮肤(或其 Back)才换模,纯图片皮肤/未完成的 spine 沿用完整默认身体。
     const skinKey = opts ? (manifestSkinKey(opts.skin) ?? (str(opts.skin) || null)) : null;
     const skin = skinKey ? get(get(ch, 'skins'), skinKey) : null;
-    const src = (skin && isObj(skin.spine)) ? skin.spine : ch.spine;
+    const src = skinHasModel(skin) ? skin.spine : ch.spine;
     if (isObj(src)) {
       const sp = (opts && opts.back && isObj(src.back)) ? src.back : src.front;
       return validSpine(sp) ? sp : null;
@@ -70,6 +70,11 @@ export function spineEntry(m, id, opts) {
   }
   return null;
 }
+
+/** A skin whose manifest record carries its own Front model (0.3.3: the B6 gate — a record with only a Back, or
+ *  pictures alone, does not replace the battle model). */
+const skinHasModel = (skin) => !!skin && isObj(skin.spine) && isObj(skin.spine.front)
+  && typeof skin.spine.front.skel === 'string';
 
 const localSpines = new WeakMap(); // spineLocal record → { local, web, entry } (one entry object per manifest pair)
 
@@ -102,10 +107,11 @@ export function hasBackSpine(m, id, skinId) {
   const ch = get(get(m, 'chars'), str(id) || '') || get(get(m, 'chars'), baseCharId(id) || '');
   if (!ch) return false;
   // 干员皮肤 (docs/SKINS.md): a skin may ship its own Front/Back pair, so both questions are asked of the skin (either id
-  // form; manifestSkinKey resolves it against the catalogue)
-  const skinKey = manifestSkinKey(skinId);
+  // form; manifestSkinKey resolves it against the catalogue). B6(0.3.3): only a skin with its own Front replaces the
+  // body — a picture-only outfit's Back question is answered by the operator's default model.
+  const skinKey = manifestSkinKey(skinId) ?? (str(skinId) || null);
   const skin = skinKey ? get(get(ch, 'skins'), skinKey) : null;
-  const src = (skin && isObj(skin.spine)) ? skin.spine : ch.spine;
+  const src = skinHasModel(skin) ? skin.spine : ch.spine;
   return !!(isObj(src) && validSpine(src.back));
 }
 

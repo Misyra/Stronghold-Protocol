@@ -47,7 +47,7 @@ import { ruleOption } from '../../../shared/plugins/rules.js';
 import { OWNERSHIP_PREF, parseStoredOwnership, parseStoredOwnershipChars, toStoredOwnership, toStoredOwnershipV1, cleanIds, sanitizeNotOwned,
   notOwnedView, rebaseChars } from './ownershipModel.js';
 import { parseStoredDiy, toStoredDiy, cleanPicks, sanitizeDiyPicks, diyPrefKey } from './diyModel.js';
-import { skinsStore, SKINS_KEY, SKINS_SYNC_KEY, parseStoredSkins } from './skins.js';
+import { skinsStore, SKINS_KEY, SKINS_SYNC_KEY, parseStoredSkins, setDiyPicksProvider } from './skins.js';
 import { cardStore, CARD_KEY, CARD_SYNC_KEY, cardOperators } from './seatArt.js';
 import { needsContent, serverDefaultVersion } from '../versions.js';
 import { DEFAULT_VERSION } from '../../../shared/versions.js';
@@ -94,6 +94,10 @@ export const loadoutStore = createStore({
   ownSync: 'idle',
   diySync: 'idle',
 });
+
+// 自选 picks the skins' charId projection resolves slot entries against (ui/skins.js skinChoicesOf) — set at module
+// load, before anything can pick a skin (移植自用户分支的 wire 归一, 适配本树的 loadoutStore).
+setDiyPicksProvider(() => loadoutStore.get().diy || {});
 
 // ---- by operator: views, migration (DESIGN §35.23) --------------------------------------------------------------------
 

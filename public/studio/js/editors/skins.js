@@ -2,7 +2,6 @@ import { useState } from '../../../vendor/hooks.module.js';
 import { html, Button, Modal } from '../../../js/ui/components.js';
 import { t } from '../../../../shared/i18n.js';
 import { availableSkins } from '../../../js/ui/skins.js';
-import { SkinPreview } from '../../../js/ui/skinPicker.js';
 import { presentationOptions, skinTarget } from '../presentation.js';
 import { PLUGIN_SUFFIX } from '../preview/layers.js';
 import { slotLabel } from '../labels.js';
@@ -16,6 +15,10 @@ export function SkinsEditor({ draft, onChange, onFiles, onClear, dirty, busy }) 
   const charId = skinTarget(draft.target);
   const [preview, setPreview] = useState(null);
   const rows = availableSkins(`${charId}${PLUGIN_SUFFIX}`);
+  // the enlarged art of one tile (the old ui/skinPicker.js SkinPreview, inlined: the picker no longer exports the
+  // modal — its preview is the live battle-model frame now)
+  const SkinPreview = ({ art, name }) => (!art ? null
+    : html`<div class="lo-skin-preview"><img crossorigin="anonymous" src=${art} alt=${name} /></div>`);
   const change = outfits => onChange({ ...draft, options: { ...o, outfits } });
   const edit = (i, patch) => change(o.outfits.map((outfit, j) => i === j ? { ...outfit, ...patch } : outfit));
   return html`<div class="st-form" data-testid="skins-editor">

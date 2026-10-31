@@ -40,7 +40,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Icon, MicroLabel, Button, TierChip, TextField, Countdown, Spinner, confirmDialog, hasDeadline, Modal, Fragment } from '../ui/components.js';
 import { OperatorImage, Img, UnitThumb, PromotionIcon } from '../ui/gameComponents.js';
-import { profGlyphUrl, subProfIconUrl, bondIconUrl, uiUrl } from '../ui/assetUrls.js';
+import { profGlyphUrl, subProfIconUrl, bondIconUrl, uiUrl, shopPortraitUrl } from '../ui/assetUrls.js';
 import { GarrisonBlock } from '../ui/detailPanel.js';
 import { data, useData, localAsset, DATA_FILES } from '../data.js';
 import { useStore, loadPref, savePref } from '../store.js';
@@ -54,8 +54,11 @@ import {
 import { loadoutStore, openLoadout, closeLoadout, setEntries, setOpsMap, applyLoadoutEntries, setNotOwned, applyOwnershipImport, setDiyPicks, applyDiyImport, importedEntries, importedNotOwned } from '../ui/loadoutSync.js';
 import { OperatorVoice } from '../ui/operatorVoice.js';
 // 皮肤 (docs/SKINS.md): a self-contained section — everything it does lives in ui/skinPicker.js, so this screen keeps
-// one import and one line in its detail body
+// one import and one line in its detail body. 皮肤配置的导入/导出与 商店立绘 (移植自用户分支): skinTransfer 是独立信封,
+// portraits 是本机的商店立绘选择 (skins.js), syncDiySkins 在自选 re-pick 时清掉过期的槽位选择。
 import { SkinSection } from '../ui/skinPicker.js';
+import { serializeSkinConfig, parseSkinConfig, SKIN_IMPORT_MAX_BYTES } from '../ui/skinTransfer.js';
+import { skinsStore, setSkins, setPortraits, syncDiySkins, cleanSkinsMap, usePortraitPick } from '../ui/skins.js';
 import { CultivationSelects, CultivationSection, cultivationView, potentialEditable } from './cultivation.js';
 import { cultivationCharIds } from '../../../shared/protocol.js';
 import { setOwned, notOwnedCount, serializeOwnership, parseOwnershipImport, OWNERSHIP_IMPORT_MAX_BYTES } from '../ui/ownershipModel.js';
@@ -226,6 +229,8 @@ function Detail({ m, chess, golden, entries, ops = {}, onChange, onOps, onReset,
   const setLevel = onLevel;
   const bodyRef = useRef(null);
   useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [chess?.chessId]);
+  // 商店立绘 (移植自用户分支): the detail card draws this browser's pick — same source as the picker beside it.
+  const portraitPick = usePortraitPick(chess?.chessId);
   if (!chess) return html`<aside class="lo-detail lo-detail--empty"><p class="t-dim">${t('没有符合条件的干员')}</p></aside>`;
   const opt = chessOptions(chess, golden);
   const choice = effectiveChoice(entries, chess, golden);
@@ -234,7 +239,8 @@ function Detail({ m, chess, golden, entries, ops = {}, onChange, onOps, onReset,
   return html`<aside class="lo-detail" aria-label=${t('{name} 调配', { name: chess.name })}>
     <div class="lo-dhead">
       <div class=${cx('lo-dhead__art', `lo-dhead__art--t${chess.tier}`)}>
-        <${OperatorImage} m=${m} chess=${golden || chess} portrait fallback=${html`<${UnitThumb} kind="chess" id=${chess.chessId} size="lg" />`} />
+        <${Img} src=${shopPortraitUrl(m, golden || chess, portraitPick)}
+          fallback=${html`<${OperatorImage} m=${m} chess=${golden || chess} portrait />`} />
       </div>
       <div class="lo-dhead__info">
         <div class="lo-dhead__chips"><${TierChip} tier=${chess.tier} size="md" />
@@ -259,7 +265,7 @@ function Detail({ m, chess, golden, entries, ops = {}, onChange, onOps, onReset,
            is a GLOBAL question — any operator of the manifest wearing something — so an install without a cosmetic
            layer keeps the panel's shape, while a loaded plugin gives every operator the section (one 默认 tile when
            it has no skin). */ null}
-      <${SkinSection} charId=${chess.charId} />
+      <${SkinSection} chess=${chess} />
       <${CultivationSection} charId=${chess.charId} ops=${ops} onSet=${onOps} standIn=${notOwned} />
       <${LoadoutGarrisons} chess=${level === 'elite' && golden ? golden : chess} m=${m} />
       <${SkillSection} m=${m} chess=${chess} golden=${golden} skillOptions=${opt.skillOptions} skill=${choice.skill} level=${level}
@@ -651,11 +657,19 @@ function LoadoutScreen({ st }) {
   // 自选编队 (0.2.0 DIY): the stored picks, those the server would keep (the kit list of the last welcome)
   const nDiy = diyCount(st.diy);
   const diyLegal = ready ? sanitizeDiyPicks(st.diy, diyData(), st.diyKitted || []) : {};
-  const setDiySlot = (slotId, pick) => setDiyPicks(setPick(loadoutStore.get().diy, slotId, pick));
+  // A re-pick to a different operator (or clearing the slot) drops that slot's 皮肤 / 商店立绘 choices: they name a
+  // skin of the operator that was picked, and a stale id would quietly fall back to the default model (移植自用户分支).
+  const setDiySlot = (slotId, pick) => {
+    const old = loadoutStore.get().diy;
+    const next = setPick(old, slotId, pick);
+    syncDiySkins(old, next);
+    setDiyPicks(next);
+  };
   const clearDiy = async () => {
     if (!nDiy) return;
     const ok = await confirmDialog({ title: t('全部清空'), text: t('清空全部 {n} 个自选名额？', { n: nDiy }), okText: t('全部清空') });
-    if (ok) setDiyPicks({});
+    // 清空即全部 re-pick: 槽位的 皮肤 / 商店立绘 选择一并清掉 (移植自用户分支 syncDiySkins)
+    if (ok) { syncDiySkins(loadoutStore.get().diy, {}); setDiyPicks({}); }
   };
   const setTab = (t) => loadoutStore.set({ tab: t });
   const toggleOwned = (id, owned) => setNotOwned(setOwned(st.notOwned, id, owned), { base: st.notOwned });
@@ -701,32 +715,62 @@ function LoadoutScreen({ st }) {
   };
 
   // 导出 / 导入 the loadout (or, on the 干员持有 tab, the not-owned list) as the versioned payload (a downloaded file,
-  // the clipboard, or the textarea); `io.kind` says which
+  // the clipboard, or the textarea); `io.kind` says which. 移植自用户分支: a 调配 file also carries the 皮肤 / 商店
+  // 立绘 half its screen owned at export time, the 自选 file the slots' choices — and the 皮肤 have a file of their
+  // own (ui/skinTransfer.js, io.kind === 'skins'), the one to carry to another server because it names nothing else.
+  // The two map splitters keep a file to the half its kind describes.
+  const diySlotIds = new Set(diySlotList(diyData()).map((s) => s.slotId));
+  const rosterSkinMap = (map) => Object.fromEntries(Object.entries(map || {}).filter(([id]) => !diySlotIds.has(id)));
+  const slotSkinMap = (map) => Object.fromEntries(Object.entries(map || {}).filter(([id]) => diySlotIds.has(id)));
   const ioText = io?.text ?? '';
   const ioOwn = io?.kind === 'ownership';
   const ioDiy = io?.kind === 'diy';
+  const ioSkins = io?.kind === 'skins';
+  // Subscribed, not read: the toolbar's 导出皮肤配置 has to light up the moment the first outfit is picked in the
+  // detail panel beside it. A primitive out of the selector, so the whole screen only redraws when the NUMBER moves.
+  const nSkinChoices = useStore(
+    (v) => new Set([...Object.keys(v.entries || {}), ...Object.keys(v.portraits || {})]).size,
+    Object.is,
+    skinsStore,
+  );
+  const openSkinExport = () => setIo({ mode: 'export', kind: 'skins', text: serializeSkinConfig({ skins: skinsStore.get().entries, portraits: skinsStore.get().portraits }) });
+  const openSkinImport = () => setIo({ mode: 'import', kind: 'skins', text: '' });
   const openExport = () => setIo(tab === 'ownership'
     // (by operator, every version's — DESIGN §35.23; a v1 store still migrating exports what it has)
     ? { mode: 'export', kind: 'ownership', text: serializeOwnership(loadoutStore.get().notOwnedChars || []) }
     : tab === 'diy' ? { mode: 'export', kind: 'diy', text: serializeDiy(loadoutStore.get().diy, { version: loadoutStore.get().diyVersion }) }
-      : { mode: 'export', kind: 'loadout', text: serializeExport(loadoutStore.get().byChar || {}, { ops: loadoutStore.get().ops }) });
+      : { mode: 'export', kind: 'loadout', text: serializeExport(loadoutStore.get().byChar || {}, { ops: loadoutStore.get().ops,
+          skins: rosterSkinMap(skinsStore.get().entries), portraits: rosterSkinMap(skinsStore.get().portraits) }) });
   const openImport = () => setIo({ mode: 'import', kind: tab, text: '' });
   const ioCopy = async () => {
     const ok = await copyText(ioText);
     toast(ok ? t('已复制到剪贴板') : t('复制失败，请在文本框中手动全选复制'), ok ? 'success' : 'warn');
   };
-  const ioDownload = () => downloadText(exportFilename(new Date(), ioOwn ? 'ownership' : ioDiy ? 'diy' : 'loadout'), ioText);
+  const ioDownload = () => downloadText(exportFilename(new Date(), ioSkins ? 'skins' : ioOwn ? 'ownership' : ioDiy ? 'diy' : 'loadout'), ioText);
   const ioPick = () => fileRef.current?.click();
   const ioFile = async (e) => {
     const f = e.currentTarget.files && e.currentTarget.files[0];
     e.currentTarget.value = ''; // picking the same file twice must fire again
     if (!f) return;
     // refuse a huge pick before reading it into memory (a real payload is a few KB)
+    if (ioSkins && f.size > SKIN_IMPORT_MAX_BYTES) { toast(t('文件过大，请选择「导出」下载的皮肤配置文件'), 'error'); return; }
     if (ioDiy && f.size > DIY_IMPORT_MAX_BYTES) { toast(t('文件过大，请选择「导出」下载的自选编队文件'), 'error'); return; }
-    if (f.size > (ioOwn ? OWNERSHIP_IMPORT_MAX_BYTES : LOADOUT_IMPORT_MAX_BYTES)) { toast(ioOwn ? t('文件过大，请选择「导出」下载的干员持有文件') : t('文件过大，请选择「导出」下载的调配文件'), 'error'); return; }
+    if (!ioSkins && f.size > (ioOwn ? OWNERSHIP_IMPORT_MAX_BYTES : LOADOUT_IMPORT_MAX_BYTES)) { toast(ioOwn ? t('文件过大，请选择「导出」下载的干员持有文件') : t('文件过大，请选择「导出」下载的调配文件'), 'error'); return; }
     try { setIo({ ...io, mode: 'import', text: await readFileText(f) }); } catch { toast(t('读取文件失败'), 'error'); }
   };
   const ioApply = () => {
+    // 皮肤配置 first, and without the readiness gate the other three need (移植自用户分支): those sanitise against
+    // chess.json, while a skin id is carried as-is (an operator this install lacks simply draws nothing), so the file
+    // imports while the data is still loading and on a server whose plugin set differs.
+    if (ioSkins) {
+      const r = parseSkinConfig(ioText);
+      if (!r.ok) { toast(t('导入失败：{error}', { error: t(r.error, r.params) }), 'error'); return; }
+      setSkins(r.skins);
+      setPortraits(r.portraits);
+      setIo(null);
+      toast(t('已导入 {n} 名干员的皮肤配置', { n: r.count }), 'success');
+      return;
+    }
     // an import before chess.json is loaded, or when it never arrived, would sanitise every entry away — refuse instead
     // of wiping the loadout
     const refused = importRefusal(io.kind, ready);
@@ -734,7 +778,10 @@ function LoadoutScreen({ st }) {
     if (ioDiy) {
       const r = parseDiyImport(ioText);
       if (!r.ok) { toast(t('导入失败：{error}', { error: t(r.error, r.params) }), 'error'); return; }
+      const oldPicks = loadoutStore.get().diy;
       const { applied, dropped } = applyDiyImport(r.picks, diyData(), loadoutStore.get().diyKitted || []);
+      // a re-pick (or a dropped one) drops the slot's 皮肤 / 商店立绘 choice: it names a skin of the OLD operator
+      syncDiySkins(oldPicks, loadoutStore.get().diy);
       setIo(null);
       toast(applied ? t('已导入 {n} 个自选名额', { n: applied }) + (dropped ? t('（另有 {n} 项不可用，未导入）', { n: dropped }) : '') : t('已导入：全部名额为空'), dropped ? 'warn' : 'success');
       return;
@@ -763,6 +810,12 @@ function LoadoutScreen({ st }) {
     // nothing survived sanitising (unknown chess, or every choice already the default): keep the current loadout
     if (!applied && !nOps) { toast(t('导入失败：这份数据在当前版本没有可用的调配，未做任何改动'), 'error'); return; }
     setIo(null);
+    // the file's 皮肤 / 商店立绘 for the ROSTER chess replace the current ones (absent = an older export, untouched);
+    // the 自选 slots' choices belong to the 自选编队 file, so they stay whatever this import says about operators
+    if (res.skins || res.portraits) {
+      setSkins({ ...rosterSkinMap(skinsStore.get().entries), ...cleanSkinsMap(res.skins) });
+      setPortraits({ ...rosterSkinMap(skinsStore.get().portraits), ...cleanSkinsMap(res.portraits) });
+    }
     toast(!applied ? t('已导入 {n} 名干员的潜能与练度', { n: nOps })
       : dropped ? t('已导入 {applied} 名干员（另有 {dropped} 项未导入）', { applied, dropped })
         : t('已导入 {applied} 名干员的调配', { applied }), dropped ? 'warn' : 'success');
@@ -933,6 +986,8 @@ function LoadoutScreen({ st }) {
               <button type="button" role="menuitem" data-testid="loadout-export" disabled=${!nChanged && !Object.keys(st.ops || {}).length}
                 onClick=${() => { setMenu(null); openExport(); }}><${Icon} name="copy" />${t('导出调配')}</button>
               <button type="button" role="menuitem" data-testid="loadout-import" disabled=${!ready} onClick=${() => { setMenu(null); openImport(); }}><${Icon} name="link" />${t('导入调配')}</button>
+              <button type="button" role="menuitem" data-testid="skin-export" disabled=${!nSkinChoices} onClick=${() => { setMenu(null); openSkinExport(); }}><${Icon} name="copy" />${t('导出皮肤配置')}</button>
+              <button type="button" role="menuitem" data-testid="skin-import" onClick=${() => { setMenu(null); openSkinImport(); }}><${Icon} name="link" />${t('导入皮肤配置')}</button>
               <button type="button" role="menuitem" class="is-danger" disabled=${!nChanged} onClick=${() => { setMenu(null); resetAll(); }}><${Icon} name="refresh" />${t('全部恢复默认')}</button>
             </div>` : null}
           </div>
@@ -953,6 +1008,8 @@ function LoadoutScreen({ st }) {
         <span class="lo-count">${t('已调整')} <b class="num">${nChanged}</b><span class="num t-dim">/${roster.length}</span></span>
         <${Button} variant="ghost" size="sm" data-testid="loadout-export" disabled=${!nChanged && !Object.keys(st.ops || {}).length} onClick=${openExport} title=${t('导出当前调配（可复制或下载）')}>${t('导出')}<//>
         <${Button} variant="ghost" size="sm" data-testid="loadout-import" disabled=${!ready} onClick=${openImport} title=${t('导入调配（粘贴或选择文件）')}>${t('导入')}<//>
+        <${Button} variant="ghost" size="sm" data-testid="skin-export" disabled=${!nSkinChoices} onClick=${openSkinExport} title=${t('导出皮肤配置（战斗模型与商店立绘，可跨服务器携带）')}>${t('导出皮肤')}<//>
+        <${Button} variant="ghost" size="sm" data-testid="skin-import" onClick=${openSkinImport} title=${t('导入皮肤配置（不影响调配）')}>${t('导入皮肤')}<//>
         <${Button} variant="secondary" size="sm" icon="refresh" disabled=${!nChanged} onClick=${resetAll}>${t('全部恢复默认')}<//>
       </div>`}
     </header>

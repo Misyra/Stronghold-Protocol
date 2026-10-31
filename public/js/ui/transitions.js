@@ -27,3 +27,49 @@ export function useRise(value, ms = 700, fresh = false) {
   }, [!!value]);
   return on;
 }
+
+// ---- 匹配流程的转场 (移植自用户分支, 2026-10-13: overlays leave the same way they enter) ----
+
+/** How long a full-screen overlay takes to leave (its content fades, then the black lifts off what is below). */
+export const LEAVE_MS = 300;
+
+/**
+ * [leaving, leave]: leave() marks the view as leaving (class is-leaving fades it out) and calls `done` once that has
+ * played; a second call while leaving is ignored.
+ * @param {() => void} done @param {number} [ms]
+ */
+export function useLeave(done, ms = LEAVE_MS) {
+  const [leaving, setLeaving] = useState(false);
+  const timer = useRef(null);
+  const doneRef = useRef(done);
+  doneRef.current = done;
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const leave = () => {
+    if (timer.current) return;
+    if (reducedMotion()) { doneRef.current(); return; }
+    setLeaving(true);
+    timer.current = setTimeout(() => doneRef.current(), ms);
+  };
+  return [leaving, leave];
+}
+
+/** Resolves once a leaving animation of `ms` has played (at once with reduced motion). @param {number} [ms] */
+export function afterLeave(ms = LEAVE_MS) {
+  return new Promise((resolve) => { setTimeout(resolve, reducedMotion() ? 0 : ms); });
+}
+
+/**
+ * Keeps a view mounted for `ms` after `show` turns false so its leaving animation can play: [mounted, leaving].
+ * @param {boolean} show @param {number} [ms]
+ */
+export function usePresence(show, ms = 220) {
+  const [kept, setKept] = useState(!!show);
+  useEffect(() => {
+    if (show) { setKept(true); return undefined; }
+    if (!kept) return undefined;
+    if (reducedMotion()) { setKept(false); return undefined; }
+    const id = setTimeout(() => setKept(false), ms);
+    return () => clearTimeout(id);
+  }, [!!show]);
+  return [!!show || kept, !show && kept];
+}

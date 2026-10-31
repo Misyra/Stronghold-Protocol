@@ -965,3 +965,87 @@
   .lo--deck .lo__bg, .lo--deck .lo-top, .lo--deck .lo-top__center, .lo--deck .lo-top__right, .lo--deck .lo-note, .lo--deck .lo-tgroup,
   .lo--deck .lo-bbar, .lo--deck .own, .lo--deck .diy { animation: none; }
 }
+
+/* ---- 皮肤选择器: 商店立绘/战斗模型两组瓦片 + 实时模型预览 (移植自用户分支) ---- */
+.lo-sec--fold { display: block; }
+.lo-sec--fold > summary { min-height: max(.44rem, 30px); list-style: none; cursor: pointer; }
+.lo-sec--fold > summary::-webkit-details-marker { display: none; }
+.lo-sec--fold > summary::after { content: '›'; flex: none; color: var(--mint-400); font-size: max(calc(.2 * var(--utility-text, var(--t))), 11px); line-height: 1; }
+.lo-sec--fold[open] > summary::after { transform: rotate(90deg); }
+.lo-sec--fold > summary:hover { color: var(--mint-400); }
+.lo-sec--fold > summary:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
+.lo-skins { display: flex; flex-wrap: wrap; gap: .08rem; }
+.lo-skin {
+  position: relative; flex: 1 1 1.9rem; min-width: 1.7rem; max-width: 3.2rem; display: flex; align-items: center; gap: .1rem; padding: .08rem .12rem .08rem .08rem;
+  font: inherit; color: var(--text-md); text-align: left; cursor: pointer;
+  background: rgba(255, 255, 255, .025); border: 1px solid var(--line);
+  transition: background var(--t-fast), border-color var(--t-fast); touch-action: manipulation;
+}
+.lo-skin:hover:not(:disabled) { border-color: var(--line-3); background: rgba(255, 255, 255, .05); }
+.lo-skin.is-on { color: var(--text-hi); background: linear-gradient(90deg, rgba(78, 216, 175, .14), rgba(78, 216, 175, .02) 75%); border-color: rgba(78, 216, 175, .7); }
+.lo-skin:disabled { cursor: default; opacity: .45; }
+.lo-skin--missing:not(:disabled) { opacity: .62; }
+.lo-skin--missing .lo-skin__group { color: var(--mint-300); }
+.lo-skin__art { flex: 0 0 auto; width: .46rem; height: .46rem; display: grid; place-items: center; overflow: hidden; background: rgba(0, 0, 0, .35); border: 1px solid var(--line); }
+.lo-skin__art img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.lo-skin__art--none { width: 100%; height: 100%; background: repeating-linear-gradient(45deg, rgba(255, 255, 255, .06) 0 3px, transparent 3px 7px); }
+.lo-skin__text { min-width: 0; display: flex; flex-direction: column; gap: .01rem; }
+.lo-skin__name { font-size: max(calc(.16 * var(--utility-text, var(--t))), 11px); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lo-skin__group { font-family: var(--font-num); font-size: max(calc(.12 * var(--utility-text, var(--t))), 9px); letter-spacing: .06em; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lo-skin__title { display: flex; align-items: baseline; gap: .06rem; margin: .06rem 0 .04rem; font-size: max(calc(.13 * var(--utility-text, var(--t))), 10px); font-weight: 700; color: var(--text-md); }
+.lo-skin__hint { margin: .04rem 0 0; font-size: max(calc(.12 * var(--utility-text, var(--t))), 9px); line-height: 1.7; color: var(--text-dim); }
+.lo-model-fold > summary .lo-skin__title { margin: 0; }
+.lo-model-fold > [data-skin-group] { margin-top: .08rem; }
+/* 战斗模型 tiles: text only (the model itself is judged in .lo-model below), so they shrink to chips instead of
+   holding a 40 px box that a 400 px character cannot be read in. */
+.lo-skins--text .lo-skin { flex: 0 1 auto; min-width: 0; padding-right: .16rem; }
+.lo-skins--text .lo-skin__name { white-space: nowrap; }
+.lo-model { display: flex; flex-direction: column; align-items: center; gap: .05rem; margin-top: .08rem; }
+.lo-model__box {
+  display: flex; align-items: center; justify-content: center; width: 2.6rem; max-width: 100%; height: 2.6rem; overflow: hidden;
+  background: rgba(0, 0, 0, .35); border: 1px solid var(--line);
+}
+.lo-model__box img { display: block; height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+.lo-model__cap { margin: 0; font-size: max(calc(.12 * var(--utility-text, var(--t))), 9px); color: var(--text-dim); }
+.lo-skins--tall .lo-skin__art--tall { width: .3rem; height: .6rem; }
+.lo-skins--tall .lo-skin__art--tall img {
+  object-position: center top;
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 88%);
+  mask-image: linear-gradient(180deg, #000 55%, transparent 88%);
+}
+.lo-skins--tall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(max(1rem, 32px, calc(56px * var(--sp-ui, 1))), 1fr));
+  gap: max(.08rem, calc(6px * var(--sp-ui, 1)));
+}
+.lo-skins--tall .lo-skin--tall {
+  width: auto; min-width: 0; max-width: none; flex-direction: column; align-items: stretch; gap: .05rem; padding: .06rem;
+}
+.lo-skins--tall .lo-skin--tall .lo-skin__art--tall { width: 100%; aspect-ratio: 1 / 2; height: auto; }
+.lo-skins--tall .lo-skin--tall .lo-skin__text { align-items: center; width: 100%; min-width: 0; }
+.lo-skins--tall .lo-skin--tall .lo-skin__name {
+  max-width: 100%; font-size: max(calc(.16 * var(--utility-text, var(--t))), 11px); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lo-skins--tall .lo-skin--tall .lo-skin__group { display: none; }
+.lo-skins--tall .lo-skin--tall.lo-skin--missing .lo-skin__group,
+.lo-skins--tall .lo-skin--tall.is-installing .lo-skin__group {
+  display: block; max-width: 100%; white-space: normal; line-height: 1.3; text-align: center;
+}
+.lo-model__box { position: relative; }
+.lo-model__box .lo-model__art { display: block; height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+.lo-model__box[data-live] .lo-model__art { display: none; }
+.lo-model__live { position: absolute; inset: 0; }
+.lo-model__box .lo-model__live canvas { display: block; width: 100%; height: 100%; }
+.lo-model__clips { display: flex; flex-wrap: wrap; gap: .04rem; justify-content: center; max-width: 3.4rem; }
+.lo-clipbtn {
+  flex: 0 0 auto; padding: .03rem .1rem; font: inherit; font-size: max(calc(.12 * var(--utility-text, var(--t))), 10px);
+  color: var(--text-md); text-align: center; cursor: pointer; background: rgba(255, 255, 255, .025); border: 1px solid var(--line);
+  transition: background var(--t-fast), border-color var(--t-fast); touch-action: manipulation;
+}
+.lo-clipbtn:hover { border-color: var(--line-3); }
+.lo-clipbtn.is-on {
+  color: var(--text-hi); background: linear-gradient(90deg, rgba(78, 216, 175, .14), rgba(78, 216, 175, .02) 75%);
+  border-color: rgba(78, 216, 175, .7);
+}
+.lo-clipbtn--more { color: var(--text-dim); border-style: dashed; }
+.lo-clipbtn--more .num { font-family: var(--font-num); }

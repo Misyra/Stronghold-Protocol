@@ -12,7 +12,9 @@
     "mode": "coop",
     "difficulty": "NORMAL",
     "aiPicksLast": false,
+    "consoleEnabled": false,
     "inMatch": false,
+    "matchmaking": false,
     "seats": [
       {
         "seat": 0,
@@ -31,8 +33,7 @@
       "cs": "<vanilla cs>",
       "vanilla": true,
       "plugins": []
-    },
-    "consoleEnabled": false
+    }
   },
   "welcomeVersions": [
     {

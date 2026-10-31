@@ -1,135 +1,321 @@
-// 皮肤选择器 (docs/SKINS.md) — the 皮肤 section of the 干员调配 screen's detail panel.
+// 干员皮肤 — ported from sganggs/Stronghold-Protocol PR #652 (https://github.com/sganggs/Stronghold-Protocol/pull/652, upstream 0.2.7-dev); this fork's adaptations are listed in custom_docs/SKINS.md.
+// 皮肤选择器 (custom_docs/SKINS.md) — the 皮肤 section of the 干员调配 screen's detail panel.
 //
-// Self-contained on purpose: screens/loadout.js and screens/diy.js only import this and drop
-// `<${SkinSection} charId=… />` into their detail body, so upstream rewriting one of those screens (they are the two
-// files most likely to change) costs one line rather than a merge conflict over a whole panel.
+// Self-contained on purpose: screens/loadout.js only imports this and drops `<${SkinSection} chess=… />` into its
+// detail body, so upstream rewriting that screen (it is one of the two files most likely to change) costs one
+// line here rather than a merge conflict over the whole panel.
 //
-// Where the rows come from: ui/skins.js availableSkins, i.e. the COMPOSED asset manifest (`chars[<charId>].skins`,
-// written by a cosmetic plugin's overlay — docs/PLUGINS.md §9). There is no catalogue file and no installer here: a
-// wearable skins have a model or pictures; picture-only outfits keep the default battle model (B6).
+// Two stored choices, in two radio groups, 商店立绘 first. Picking art also selects its matching battle model;
+// 原始立绘 / 精英二立绘 restore the default model. The preview may stay folded while the choice changes.
+//   * 商店立绘 — which 180×360 立绘 the shop card and the operator detail card draw. **Local to this browser** (the
+//     shop is private). The options are 原始立绘 / 精英二立绘 /
+//     each skin's 立绘, every one of them shown as its own art so the choice is a comparison, not a guess.
+//   * 战斗模型 — which model this operator fights with in battle. A plain `{ [chessId]: skinId }` map mirrored to
+//     the server through `room.skins` (PUBLIC: a teammate sees your model, ui/skins.js). Its tiles are TEXT ONLY —
+//     a 40 px thumbnail of a 400 px character says nothing — and the model itself is played LIVE in the frame below
+//     them (render/spinePreview.js): the same Spine + PIXI path the battlefield draws, with a button per animation
+//     the model actually ships (部署 / 待机 / 攻击 / 技能1… / 眩晕 / 移动 / 死亡 — from `clipsOf`, per skin).
 //
-// The section's display rule (docs/SKINS.md) is GLOBAL and comes from ui/skins.js `hasAnySkinChoices`:
-//   * no operator has a wear-able skin (no plugin, no skins records, or only metadata-only skins) —
-//     the section is left out, header included, so an installation without a cosmetic layer looks exactly as before;
-//   * at least one operator has one — EVERY operator shows the section. An operator without a skin of its own gets the
-//     默认 tile alone, with a real picture on it.
-// The rule used to be per operator (`hasSkinChoices`: 默认 plus a wear-able skin of THIS operator). It is deliberately
-// the other way round now, and must not be turned back: a section that appears only for the operators a plugin wrote a
-// skin for cannot be told apart from a plugin that failed to load. A lone 默认 tile is no choice, but it is the proof
-// that the plugin is on and this operator has no 时装 — which is worth more than the operator looking untouched.
-// A missing piece of art still falls back to the OPERATOR's own (its 立绘 / portrait / avatar), never to a slash or a
-// placeholder, so the 默认 tile of a picture-only plugin draws the picture that plugin wrote.
+// Two states per skin, because the catalogue and the installation are two different facts:
+//   * 已安装 → selectable, art from the asset manifest (chars[charId].skins[officialId])
+//   * 未安装 → listed but not selectable (nothing to draw), with a 未安装 note. Skins are installed on this server by its
+//     owner (tools/install-skins.mjs), not from the game: a room cannot make the server fetch files (docs/SKINS.md).
+//   * the group's own tiles (原始立绘 / 精英二立绘 / 默认) go back to the operator's own art / model
 
-import { useState } from '../../vendor/hooks.module.js';
-import { html, MicroLabel, Modal } from './components.js';
-import { useStore } from '../store.js';
-import { useData } from '../data.js';
-import { skinsStore, availableSkins, chosenSkin, hasAnySkinChoices, setSkin, clearSkin, SKINS_KEY } from './skins.js';
-import { t } from '../../../shared/i18n.js';
+import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
+import { html, MicroLabel } from './components.js';
+import { recoverImageError } from '../image.js';
+import { useStore, shallowEqual } from '../store.js';
+import { data } from '../data.js';
+import { t, N_ } from '../../../shared/i18n.js';
+import {
+  previewState, requestPreview, subscribePreviews, clearPreviews, clipsOf, mountPreview,
+} from '../render/spinePreview.js';
+import { chessOwnPortraitUrl, PORTRAIT_E2 } from './assetUrls.js';
+import {
+  skinsStore, availableSkins, loadSkinData, setSkin, clearSkin,
+  setPortrait, clearPortrait,
+} from './skins.js';
+import { manifestSkinKey } from '../../../shared/skins.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
 /**
- * One tile of the grid: the 默认 appearance of the operator (which has real art of its own) or one of its skins.
- *
- * The art is a FIXED 1:2 box (the shape of the client's 180×360 portrait, the "big icon" an appearance is chosen by),
- * and `availableSkins` has already resolved which URL fills it — the skin's own portrait, else the operator's. A tile
- * whose art is the operator's own is marked with `is-fallback`, purely for the style of a mixed row.
- *
- * The SAME appearance's 1:1 `avatar` rides along in the same box (`row.face`): CSS keeps it undrawn while the 1:2 box
- * fits and draws it instead on a panel too short for that box (a phone in landscape — css/screens/loadout.css). Both
- * images are in the DOM, so the choice costs no resize listener and no re-render. A row of a manifest that gives the
- * operator no avatar at all has no second image and keeps its portrait everywhere.
- * @param {{ row: any, chosen: boolean, onPick: () => void, onPreview: () => void }} props
+ * 1×1 transparent pixel for the frame's art layer while there is nothing to show. The layer is rendered
+ * UNCONDITIONALLY on purpose: the live canvas is appended into a sibling node by render/spinePreview.js, and a vdom
+ * child that appears/disappears (an img ↔ null flip) makes Preact re-diff the box's children, which wiped the
+ * canvas the moment `live` turned true. A constant shape — one art layer + one mount layer — keeps it safe.
  */
-function SkinTile({ row, chosen, onPick, onPreview }) {
-  const isDefault = row.own;
-  const title = isDefault ? t('干员本体，不使用时装') : chosen ? t('点击放大预览') : t('点击选择这套外观');
-  return html`<button type="button" role="radio" aria-checked=${chosen ? 'true' : 'false'} data-skin=${row.id}
-      class=${cx('lo-skin', isDefault && 'lo-skin--default', chosen && 'is-on', row.fallbackArt && 'lo-skin--fallback')}
-      title=${title} onClick=${() => (chosen && !isDefault ? onPreview() : onPick())}>
-    <span class=${cx('lo-skin__art', row.face && 'lo-skin__art--face')}>
-      ${row.art
-        ? html`<img class="lo-skin__art--big" src=${row.art} alt="" loading="lazy" />`
-        : null}
-      ${row.face
-        ? html`<img class="lo-skin__art--faceimg" src=${row.face} alt="" loading="lazy" />`
-        : null}
-      ${!row.art && !row.face
-        ? html`<span class="lo-skin__art--none"></span>`
-        : null}
-    </span>
-    <span class="lo-skin__text">
-      <b class="lo-skin__name">${isDefault ? t('默认') : row.name}</b>
-      <span class="lo-skin__group">${isDefault ? 'DEFAULT' : row.group || t('时装')}</span>
-      ${row.pictureOnly ? html`<span class="lo-skin__note">${t('仅更换头像与立绘')}</span>` : null}
-    </span>
-  </button>`;
+const TRANSPARENT_PX = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/**
+ * Animation button labels. `clipsOf()` reports a `kind` (it holds no Chinese itself — the i18n audit runs over
+ * public/js), and the UI names it here: `N_()` registers the msgid without translating, `t()` translates at the
+ * call site, which is what the audit wants. A `raw` entry is a clip no role points at (a stance, a variant): it has
+ * no translated name, so the button shows the clip's own name.
+ */
+const CLIP_LABEL = {
+  deploy: N_('部署'), idle: N_('待机'), attack: N_('攻击'), attackDown: N_('攻击·下'),
+  stun: N_('眩晕'), move: N_('移动'), die: N_('死亡'),
+};
+const clipLabel = (c) => (c.kind === 'raw' ? c.clipName
+  : c.kind === 'skill' ? t('技能{n}', { n: (c.skillIndex ?? 0) + 1 })
+    : t(CLIP_LABEL[c.kind] || c.kind));
+
+/** A manifest asset URL of one operator (`chars[charId].<field>`), or null. */
+function charAsset(charId, field) {
+  return data.get('assets')?.chars?.[charId]?.[field] || null;
 }
 
 /**
- * The enlarged preview of one appearance: its 立绘 (the whole picture, not the cropped tile) inside a modal.
- * A plain component taking a URL rather than reading the store, so its markup can be tested without a browser.
- * @param {{ art?: string|null, name?: string }} props
+ * The battle model's art: the static snapshot once it lands (render/spinePreview.js), the operator's 180×180 avatar
+ * until then — so the frame is never empty, and it keeps showing something if the live canvas cannot start.
+ *
+ * Keyed by OPERATOR id, not by chess id: data/assets.json groups everything under `chars[charId]`, and the skin
+ * catalogue does the same. A chess record carries both (`chess_char_1_01_a` → `charId: char_498_inside`), and
+ * getting the two the wrong way round makes the whole section silently empty.
  */
-export function SkinPreview({ art = null, name = '' }) {
-  if (!art) return null;
-  return html`<div class="lo-skin-preview"><img src=${art} alt=${name} /></div>`;
+function modelArt(charId, skinId) {
+  const ready = previewState(charId, skinId).url;
+  if (ready) return ready;
+  const key = manifestSkinKey(skinId);
+  return key ? (data.get('assets')?.chars?.[charId]?.skins?.[key]?.avatar || null) : charAsset(charId, 'avatar');
+}
+
+/** The 商店立绘 tile's art: the skin's 180×360 立绘, falling back to its square avatar. */
+function skinPortrait(charId, skinId) {
+  const key = manifestSkinKey(skinId);
+  const sk = key ? data.get('assets')?.chars?.[charId]?.skins?.[key] : null;
+  return sk?.portrait || sk?.avatar || null;
 }
 
 /**
- * 皮肤 section for one operator of the panel being shown (`screens/loadout.js` 干员调配 or `screens/diy.js` 自选编队).
- *
- * Whether it exists is decided GLOBALLY, not for the operator passed in: `hasAnySkinChoices()` (see the header and
- * docs/SKINS.md). Once it does exist this operator gets its 默认 tile and whatever wear-able skins the manifest has for
- * it — one tile for an operator without a skin, which is the intended reading, not a bug.
- *
- * Keyed by the OPERATOR id (`chess.charId`), not by a chess id: `chars[<charId>].skins` is the manifest's own grouping,
- * and one operator's normal, elite and 自选 pieces are the same operator, so one entry covers all three (the server's
- * `ps.skins[charId]` agrees — server/match/match/views.js `skinFor`). That is also why the panel needs nothing but the
- * charId: a 自选 slot passes the operator its pick fields.
- * @param {{ charId: string }} props
+ * One radio group of tiles: the group's own tiles first (原始立绘 / 精英二立绘 / 默认), then every skin of the
+ * operator. `onPick('')` always means "the operator's own".
+ * @param {{ name: string, ariaLabel: string, leading: any[], list: any[], chosenId: string|null,
+ *   art: (x: any) => string|null, onPick: (id: string) => void, thumbnails?: boolean, tall?: boolean }} p
+ *   `tall` = the 立绘 tiles, whose box is the shop card's own 1:2 portrait shape inside a narrow column (a square box
+ *   crops them)
  */
-export function SkinSection({ charId }) {
-  // the choice (this module's store) and the composed manifest (the catalogue): either can change while the panel is
-  // open — the player picks a skin, a plugin's document lands, a layer is switched off
-  const s = useStore((v) => v, Object.is, skinsStore);
-  const ready = useData('assets');
-  const [preview, setPreview] = useState(null);
+function SkinGroup(p) {
+  const { leading, list, chosenId, art, onPick, thumbnails = true, tall = false } = p;
+  // A tile whose art 404s (an uninstalled skin's file, a broken mirror) falls back to the hatched placeholder instead
+  // of showing a broken-image box — the repo-wide rule for DOM game images is crossorigin + recoverImageError
+  // (public/js/image.js, test/ui/image-policy.test.js: CORS must precede src or the WebGL path would poison the cache).
+  const [bad, setBad] = useState(() => new Set());
+  const dropArt = (url) => setBad((s) => (s.has(url) ? s : new Set(s).add(url)));
+  // `''` is the group's own tile and "nothing chosen" arrives as null/undefined — normalise both, or the tile that
+  // means "the operator's own" would never read as selected (the first version compared the raw values)
+  const chosen = chosenId || '';
+  const tile = (key, id, name, note, url, extra) => html`
+    <button key=${key} type="button" role="radio" aria-checked=${chosen === (id || '') ? 'true' : 'false'}
+      data-skin=${id} disabled=${!!extra.missing} title=${extra.title || name}
+      class=${cx('lo-skin', !thumbnails && 'lo-skin--text', tall && 'lo-skin--tall', chosen === (id || '') && 'is-on', extra.missing && 'lo-skin--missing')}
+      onClick=${extra.onClick}>
+      ${thumbnails
+        ? html`<span class=${cx('lo-skin__art', tall && 'lo-skin__art--tall')}>
+            ${url && !bad.has(url)
+              ? html`<img crossorigin="anonymous" src=${url} alt="" draggable=${false} loading="lazy"
+                  onError=${(event) => recoverImageError(event, () => dropArt(url))} />`
+              : html`<span class="lo-skin__art--none"></span>`}
+          </span>`
+        : null}
+      <span class="lo-skin__text">
+        <b class="lo-skin__name">${name}</b>
+        <span class="lo-skin__group">${note}</span>
+      </span>
+    </button>`;
+  return html`<div class=${cx('lo-skins', !thumbnails && 'lo-skins--text', tall && 'lo-skins--tall')} role="radiogroup"
+      aria-label=${p.ariaLabel} data-skin-group=${p.name}>
+    ${leading.map((x) => tile('own:' + x.id, x.id, x.name, x.sub, x.art, { onClick: () => onPick(x.id), title: x.sub }))}
+    ${list.map((x) => tile(x.id, x.id, x.name, x.installed ? x.group : t('未安装（服务器没装这套）'), x.installed ? art(x) : null,
+      { missing: !x.installed, onClick: () => onPick(x.id), title: x.name + (x.group ? ' · ' + x.group : '') }))}
+  </div>`;
+}
 
-  const id = typeof charId === 'string' && charId ? charId : null;
-  if (!id || !ready) return null;
-  // the GLOBAL gate (docs/SKINS.md): shown for every operator as soon as any operator of the manifest has a wear-able
-  // skin, and for none while none has. A per-operator gate lived here and was removed on purpose — see the header.
-  if (!hasAnySkinChoices()) return null;
-  const rows = availableSkins(id).filter((x) => x.own || x.playable);
-  // an operator the composed manifest does not hold at all has nothing to draw — not even a 默认 tile — so it gets no
-  // section rather than an empty grid: the global rule can only show what the manifest has
-  if (!rows.length) return null;
-  const chosen = chosenSkin(id, s[SKINS_KEY]);
-  // the tile art of a row is already resolved (its own portrait, else the operator's); `face` is the same appearance's
-  // 1:1 avatar, which CSS draws instead of the 1:2 art when the panel is too short for it. The enlarged preview prefers
-  // the 立绘 — a 1024 px+ picture — and is only offered for a skin (the 默认 tile's own portrait is not a poster)
-  const shown = rows.map((row) => ({ ...row, art: row.portrait || row.avatar || null, face: row.avatar || null }));
-  const previewRow = preview ? rows.find((x) => !x.own && x.id === preview) || null : null;
-  const previewArt = previewRow ? (previewRow.illust || previewRow.portrait || previewRow.avatar) : null;
+/**
+ * 皮肤 section for one operator.
+ * @param {{ chess: any, onChange?: (chessId: string) => void }} props
+ *   `chess` is the chess record of the detail panel; `onChange` fires after every pick, for a parent whose own art
+ *   follows the choice but which cannot subscribe itself (screens/diy.js — its views are drawn without a hook
+ *   dispatcher by the tests). The 皮肤配置 file is NOT exported from here: the screen that owns the transfer modal
+ *   keeps that pair in its own toolbar (screens/loadout.js), one place for every 导出 / 导入 in the app.
+ */
+export function SkinSection({ chess, onChange }) {
+  const s = useStore((v) => v, shallowEqual, skinsStore);
+  const m = data.get('assets');
+  const [, bump] = useState(0);
+  // The mount host as STATE, set by a callback ref: the frame's box appears only once the catalogue has loaded (the
+  // section renders nothing before that), and a `useRef` would leave the mount effect with a null ref — it runs once,
+  // finds nothing, and never re-runs because its other deps did not change. State makes the attach itself the trigger.
+  const [boxNode, setBoxNode] = useState(null);
+  const liveRef = useRef(null);
+  const [live, setLive] = useState(false);
+  const [clipId, setClipId] = useState('');
+  // Two ids, and they are not interchangeable: a CHOICE is stored per chess (like the loadout, and that is the key
+  // the server validates and the renderer reads), while the catalogue and the asset manifest are per operator.
+  const chessId = chess && chess.chessId;
+  const charId = chess && chess.charId;
+  // Each operator starts folded. Selecting another skin keeps an already opened preview visible.
+  const previewKey = `${chessId || ''}:${charId || ''}`;
+  const [openedModel, setOpenedModel] = useState(null);
+  const previewOpen = openedModel === previewKey;
+  const chosen = s.entries[chessId] || null;
+  const chosenPortrait = s.portraits[chessId] || '';
+  const previewSkin = chosen || '';
+  // The catalogue may still be loading on the first render, and until it is here the section returns null — so the
+  // frame's box does not exist yet. `renderable` is part of the mount effect's deps for exactly that reason: without
+  // it the effect would run once against a null ref and never again, and the live canvas would never mount.
+  // (0.3.3 合并注: availableSkins 的第一行是干员自己的默认像(own: true)——选择器的「原始立绘 / 默认」两块砖就是它,
+  // 所以从 list 里滤掉, 不作为一张皮肤瓦片出现。)
+  const list = charId ? availableSkins(charId).filter((x) => !x.own) : [];
+  // The section is NOT only about skins: the 商店立绘 switch (原始 / 精英二) and the model preview belong to any
+  // operator that has art or a model, and plenty of them ship no outfit at all (溯光星源 has none and wants both).
+  // So it renders when there is a catalogue, an operator record, or both — and hides only for a piece whose art is
+  // missing entirely, where every part of it would be empty.
+  const knownArt = !!(m?.chars?.[charId]);
+  const renderable = !!(chessId && charId && (list.length || knownArt));
+  // the animations this exact model ships (per operator AND skin — a skin can have fewer skills)
+  const { total: clipTotal, clips } = charId ? clipsOf(m, charId, previewSkin) : { total: 0, clips: [] };
+  // 部署 / 待机 / 攻击 and up to three skills stay out; 攻击·下 / 眩晕 / 移动 / 死亡 and any further skill fold away
+  const isPrimary = (c) => (c.kind === 'skill' ? c.skillIndex < 3 : (c.id === 'deploy' || c.id === 'idle' || c.id === 'attack'));
+  const primaryClips = clips.filter(isPrimary);
+  const extraClips = clips.filter((c) => !isPrimary(c));
+  // Folding pays off from three extras on: with one or two the row is shorter than the toggle would be, so they stay
+  // inline and no 更多动画 button appears at all.
+  const fold = extraClips.length >= 3;
+  const [extraOpen, setExtraOpen] = useState(false);
+  // the catalogue is the code module shared/skin-catalogue.js; what is INSTALLED is data/assets.json, which may still be
+  // loading (the section renders as soon as the operator is in the catalogue, and the tiles fill in when it lands)
+  useEffect(() => {
+    let dead = false;
+    let manifest = data.get('assets');
+    loadSkinData();
+    const off = data.subscribe?.(() => {
+      // a manifest that changed identity means somebody installed a skin on this server: URLs (and so the preview) differ
+      const now = data.get('assets');
+      if (now !== manifest) { manifest = now; clearPreviews(); }
+      if (!dead) bump((n) => n + 1);
+    });
+    const offPreview = subscribePreviews(() => { if (!dead) bump((n) => n + 1); });
+    const tick = setInterval(() => { if (!dead) bump((n) => n + 1); }, 500);
+    return () => { dead = true; clearInterval(tick); off?.(); offPreview(); };
+  }, [chessId]);
 
+  // the static snapshot for the frame (the instant paint, and the fallback if the live canvas cannot start)
+  useEffect(() => {
+    if (previewOpen && charId) requestPreview(charId, previewSkin);
+  }, [previewOpen, charId, previewSkin]);
+
+  // a new model starts on 待机 (its first animation when it has no idle)
+  useEffect(() => {
+    setClipId('');
+    setExtraOpen(false);
+    setLive(false);
+  }, [charId, previewSkin]);
+
+  // The frame's still image must keep ONE constant shape (see TRANSPARENT_PX above): a failed URL swaps its src for
+  // the transparent pixel instead of dropping the img, or Preact re-diffs the box's children and takes the live canvas
+  // with it. Reset per (operator, skin) — a different choice is a different file.
+  const [artBad, setArtBad] = useState(false);
+  useEffect(() => { setArtBad(false); }, [charId, previewSkin]);
+
+  // LIVE playback: mount the model in the frame and step it every frame, exactly like a battlefield view. Mounted
+  // once per (operator, skin); the clip buttons only re-play on the existing instance.
+  useEffect(() => {
+    if (!previewOpen || !boxNode || !renderable || !charId) return undefined;
+    let dead = false;
+    let handle = null;
+    (async () => {
+      try {
+        handle = await mountPreview(boxNode, { assetId: charId, skinId: previewSkin, isCancelled: () => dead });
+        if (dead) { handle.dispose(); return; }
+        liveRef.current = handle;
+        setLive(true);
+      } catch {
+        // no WebGL, or a model whose files are missing: the static frame (or the avatar) stays, nothing else breaks
+      }
+    })();
+    return () => {
+      dead = true;
+      liveRef.current = null;
+      handle?.dispose();
+      setLive(false);
+    };
+  }, [previewOpen, boxNode, charId, previewSkin, renderable]);
+
+  // play the chosen animation (and the default one as soon as the model is mounted)
+  useEffect(() => {
+    const h = liveRef.current;
+    if (!h) return;
+    const pick = clips.find((c) => c.id === (clipId || 'idle')) || clips[0];
+    if (pick) h.play(pick.steps);
+  }, [clipId, live, charId, previewSkin]);
+
+  if (!renderable) return null; // no slot, or a piece with neither a catalogue nor any art: nothing to show
+
+  const installedCount = list.filter((x) => x.installed).length;
+
+  // 商店立绘: the operator's own two 立绘 first. A 1★/2★ operator has no 精英二 art — its own portrait is the only
+  // option, and offering a second tile that would draw the same image is worse than offering one.
+  const ownPortrait = chessOwnPortraitUrl(m, chess, false);
+  const e2Portrait = chessOwnPortraitUrl(m, chess, true);
+  const leading = [
+    { id: '', name: t('原始立绘'), sub: 'ORIGINAL', art: ownPortrait },
+    ...(e2Portrait && e2Portrait !== ownPortrait ? [{ id: PORTRAIT_E2, name: t('精英二立绘'), sub: 'ELITE 2', art: e2Portrait }] : []),
+  ];
+  const shared = { list };
+  // A pick writes the store; `onChange` tells a parent whose art follows it (the 自选 card's 立绘) to redraw.
+  const pickPortrait = (id) => { if (id) setPortrait(chessId, id); else clearPortrait(chessId); onChange?.(chessId); };
+  const pickModel = (id) => { if (id) setSkin(chessId, id); else clearSkin(chessId); onChange?.(chessId); };
+  // the frame: the model of the CURRENT choice, with its name and the animation buttons under it
+  const previewStateNow = previewState(charId, previewSkin).status;
+  const previewUrl = modelArt(charId, previewSkin);
+  const previewName = chosen ? (list.find((x) => x.id === chosen)?.name || chosen) : t('默认');
+  const currentClip = clips.find((c) => c.id === (clipId || 'idle')) || clips[0] || null;
+  const note = previewStateNow === 'failed' ? ` · ${t('模型不可用')}` : '';
   return html`<section class="lo-sec lo-sec--skin" data-testid="skin-section">
     <header class="lo-sec__head">
       <h3>${t('皮肤')}<${MicroLabel}>SKIN<//></h3>
-      ${/* always the count, 0 included ("0 套外观"): with the global rule an operator that has no skin of its own gets
-            this section with the 默认 tile alone, and the count is what says the plugin is on and this operator simply
-            has no 时装 — omitting it would leave the header looking like an empty section. One branch fewer, too. */ null}
-      <span class="lo-sec__note">${t('{n} 套外观', { n: shown.length - 1 })}</span>
+      <span class="lo-sec__note">
+        ${list.length
+          ? t('{installed}/{total} 已安装', { installed: installedCount, total: list.length })
+          : t('该干员暂无皮肤')}
+      </span>
     </header>
-    <div class="lo-skins" role="radiogroup" aria-label=${t('选择皮肤')}>
-      ${shown.map((row) => html`<${SkinTile} key=${row.own ? 'default' : row.id} row=${row} chosen=${row.own ? !chosen : chosen === row.id}
-        onPick=${() => (row.own ? clearSkin(id) : setSkin(id, row.id))} onPreview=${() => setPreview(row.id)} />`)}
-    </div>
-    <${Modal} open=${!!previewRow} title=${previewRow ? previewRow.name : t('外观预览')} micro="SKIN PREVIEW"
-      onClose=${() => setPreview(null)} width="min(92vw, 900px)">
-      <${SkinPreview} art=${previewArt} name=${previewRow ? previewRow.name : ''} />
-    <//>
+    <h4 class="lo-skin__title">${t('商店立绘')}<${MicroLabel}>SHOP ART<//></h4>
+    <${SkinGroup} ...${shared} name="portrait" ariaLabel=${t('选择商店立绘')} tall=${true}
+      leading=${leading}
+      chosenId=${chosenPortrait} art=${(x) => skinPortrait(charId, x.id)}
+      onPick=${pickPortrait} />
+    <details key=${previewKey} class="lo-model-fold lo-sec--fold" data-testid="model-fold"
+      onToggle=${(event) => setOpenedModel(event.currentTarget.open ? previewKey : null)}>
+    <summary class="lo-sec__head">
+      <h4 class="lo-skin__title">${t('战斗模型')}<${MicroLabel}>BATTLE MODEL<//></h4>
+      <span class="lo-sec__note">${previewName}</span>
+    </summary>
+    <${SkinGroup} ...${shared} name="model" ariaLabel=${t('选择战斗模型')} thumbnails=${false}
+      leading=${[{ id: '', name: t('默认'), sub: 'DEFAULT' }]}
+      chosenId=${chosen} art=${() => null}
+      onPick=${pickModel} />
+    ${previewOpen ? html`<div class="lo-model" data-testid="model-preview">
+      <div class="lo-model__box" data-live=${live ? '1' : null}>
+        <img class="lo-model__art" crossorigin="anonymous" src=${artBad ? TRANSPARENT_PX : (previewUrl || TRANSPARENT_PX)} alt="" draggable=${false}
+          onError=${(event) => recoverImageError(event, () => setArtBad(true))} />
+        <div class="lo-model__live" ref=${setBoxNode}></div>
+      </div>
+      <p class="lo-model__cap">${t('当前战斗模型：{name}', { name: previewName })}${currentClip ? ` · ${clipLabel(currentClip)}` : ''}${clipTotal ? ` · ${t('共 {n} 段动画', { n: clipTotal })}` : ''}${note}</p>
+      <div class="lo-model__clips" role="group" aria-label=${t('预览动画')}>
+        ${[...primaryClips, ...(fold && !extraOpen ? [] : extraClips)].map((c) => html`<button key=${c.id} type="button" data-clip=${c.id} title=${c.names.join(' > ')}
+            aria-pressed=${(clipId || 'idle') === c.id ? 'true' : 'false'}
+            class=${cx('lo-clipbtn', (clipId || 'idle') === c.id && 'is-on')}
+            onClick=${() => setClipId(c.id)}>${clipLabel(c)}</button>`)}
+        ${fold ? html`<button key="more" type="button" data-clip-more="1" aria-expanded=${extraOpen ? 'true' : 'false'}
+            class=${cx('lo-clipbtn', 'lo-clipbtn--more', extraOpen && 'is-on')}
+            onClick=${() => setExtraOpen((v) => !v)}>${extraOpen ? t('收起') : t('更多动画')} <b class="num">${extraClips.length}</b></button>` : null}
+      </div>
+    </div>` : null}
+    </details>
+    <p class="lo-skin__hint">${t('选择立绘会切换至对应战斗模型（队友也看得见）；立绘样式只影响你自己看到的商店卡。')}</p>
   </section>`;
 }
-

@@ -498,9 +498,12 @@ export const C2S = {
   // `delta`: the client speaks the state-delta transport (shared/stateDelta.js) and wants m.public / m.private as
   // `m.state` frames. Omitted by every client that cannot decode them — those keep receiving the plain frames, and a
   // server that does not know the field ignores it (it is only read after a full validateC2S pass).
+  // matchmakingVersion / playerCapacityVersion: the capability contracts (shared/constants.js MATCHMAKING_VERSION,
+  // shared/playerCapacity.js PLAYER_CAPACITY_VERSION); a hello that names another one is refused (server/net.js)
   hello: { name: (v) => isStr(v, NAME_MAX_LEN) && v.trim().length > 0, token: (v) => v == null || isStr(v, 64), version: (v) => v == null || isInt(v, 0, 1e6),
     noReplace: isBool, claimAt: (v) => isNum(v, 0, Number.MAX_SAFE_INTEGER), delta: (v) => v == null || isInt(v, 0, 1e6),
-    $optional: ['token', 'version', 'noReplace', 'claimAt', 'delta'] },
+    matchmakingVersion: isId, playerCapacityVersion: isId,
+    $optional: ['token', 'version', 'noReplace', 'claimAt', 'delta', 'matchmakingVersion', 'playerCapacityVersion'] },
   ping: { c: (v) => typeof v === 'number' && Number.isFinite(v) },
   // test: only the literal true (DESIGN §34.8). Omit it for a normal room — `false` is a bad field, so a
   // string cannot sneak in as "not a test". The server still refuses it unless SP_TEST_MODE is on.
@@ -529,6 +532,13 @@ export const C2S = {
   // waiting on the matchmaking queue may not (the console grants what the official rules do not).
   'room.console.enable': {},
   'room.console.disable': {},
+  // 匹配队列 (server/matchmaking.js, 移植自用户分支): queue.join — difficulty 决定池子; party 请求整个同盟加入
+  // (仅房主; 票覆盖房内所有真人座位)。服务器以 queue.state 快照回答。
+  'queue.join': { difficulty: (v) => DIFFICULTIES.includes(v), party: isBool, $optional: ['party'] },
+  // queue.cancel: 票号可带 (重连后仍有效) 也可由会话解析。
+  'queue.cancel': { ticketId: isId, $optional: ['ticketId'] },
+  // queue.accept: 一间被报价房里的每个真人都必须接受同一 offerId 后房间才会开局。
+  'queue.accept': { ticketId: isId, offerId: isId, revivalVote: isBool, $optional: ['revivalVote'] },
   'room.aiVote': { voteId: (v) => typeof v === 'string' && v.length <= 16, approve: isBool },
   'room.addBot': {},
   'room.removeBot': { seat: (v) => isInt(v, 0, MAX_SEATS - 1) },
@@ -536,6 +546,9 @@ export const C2S = {
   // host confirmed — a seat that changed hands meanwhile is refused
   'room.kick': { seat: (v) => isInt(v, 0, MAX_SEATS - 1), playerId: isId },
   'room.start': {},
+  // room.matchmaking (无字段): 房主把整个就绪同盟加入四人匹配 (server/lobby.js queueParty)。与 queue.join 的
+  // 区别仅是语义快捷方式——同一引擎,同样的 queue.state 快照。
+  'room.matchmaking': {},
   'room.rerollSetup': { setupRevision: (v) => isInt(v, 0, 2 ** 31) },
   'room.cancelReroll': { voteId: (v) => isInt(v, 1, 2 ** 31) },
   // official versions (DESIGN §35.23, M1; before the match): the host proposes the room's version; the seated humans vote
@@ -676,6 +689,9 @@ export const C2S = {
 export const S2C = [
   'welcome', 'ok', 'error', 'pong',
   'room.state', 'room.closed',
+  // queue.state { state: 'idle' | 'queued' | 'offered' | 'matched', ticketId?, difficulty?, party?, offerId?, roomCode?,
+  // waitingCount?, reason? } — 一张票的完整快照,不含其他成员的身份
+  'queue.state',
   'm.public', 'm.private', 'm.field', 'm.toast', 'm.ticker', 'm.emote', 'm.result',
   // m.layer { playerId, bondId, add } — own live prep layer gain; ephemeral, never replayed on resync.
   'm.layer',

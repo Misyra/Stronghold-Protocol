@@ -382,11 +382,11 @@ export function DiyPickerView({ m, slot, picks, kitted, onDone, onClose, filter,
             <div class="diy-pick__detail">
               <${OperatorVoice} charId=${draft.charId} />
               ${/* 外观 (docs/SKINS.md, 0.3.1) sits directly under the operator's name and above 潜能与练度, the same place
-                   the 干员调配 detail puts it: the appearance belongs to the operator being picked, so the 0.3.1 row layout
-                   keeps it in this detail panel and not on the slot card. The key is draft.charId, which is what the
-                   manifest groups skins under and what the server stores (ps.skins[charId]), so a slot fielded as its
-                   golden form keeps the appearance. */ null}
-              <${SkinSection} charId=${draft.charId} />
+                   the 干员调配 detail puts it: the appearance belongs to the operator being picked. The picker (移植自用户
+                   分支) takes the chess record; a slot's choice is stored under the OPERATOR's charId (both id fields the
+                   same here — the slot wears the operator, and the server stores ps.skins[charId]), so a slot fielded as
+                   its golden form keeps the appearance. */ null}
+              <${SkinSection} chess=${draft.chessId ? draft : { ...draft, chessId: draft.charId }} />
               ${ch.proto
                 ? html`<p class="lo-locknote"><${Icon} name="info" />${t('原型干员没有潜能与练度')}</p>`
                 : onOps ? html`<${CultivationSection} charId=${draft.charId} ops=${ops} onSet=${onOps} />` : null}

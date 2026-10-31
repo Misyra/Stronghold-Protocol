@@ -89,6 +89,8 @@ export const initialState = Object.freeze({
   installedNotices: false,
   session: { entered: false },
   room: null,
+  // 匹配队列 (server/matchmaking.js, 移植自用户分支): 最近一张 queue.state 票据的投影,离线/空转时为 null
+  matchmaking: null,
   // welcome.testMode (DESIGN §34.8). The server omits the key when the switch is off; the client cannot set it.
   testMode: false,
   match: emptyMatch(),

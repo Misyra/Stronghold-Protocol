@@ -44,7 +44,8 @@ import { prepareStateFrame, negotiateStateDelta, resetStateDelta, setStateDeltaR
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
-import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION } from '../shared/constants.js';
+import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION, MATCHMAKING_VERSION } from '../shared/constants.js';
+import { PLAYER_CAPACITY_VERSION } from '../shared/playerCapacity.js';
 
 /** Tunables (all overridable through the Network / SessionRegistry constructors). */
 export const NET_DEFAULTS = Object.freeze({
@@ -141,6 +142,10 @@ export class Session {
     this.addr = '?';
     /** @type {string | null} per-network limit key of the latest connection (null = not limited), see clientAddress */
     this.limitKey = null;
+    /** @type {string | null} `matchmakingVersion` the client said it spoke (a mismatch keeps it out of the queue) */
+    this.matchmakingVersion = null;
+    /** @type {string | null} `playerCapacityVersion` the client said it spoke (shared/playerCapacity.js) */
+    this.playerCapacityVersion = null;
     /**
      * @type {number | null} lobby-owned extension of the reconnect window for this session (ms; null = the registry's
      * window). A solo run keeps its session resumable for the official `singleReconnectTime` (24 h) — see lobby.js.
@@ -707,6 +712,14 @@ export class Network {
       this.reply(conn, errorMsg(ERR.BAD_MSG, rid, `version mismatch: server ${PROTOCOL_VERSION}`));
       return;
     }
+    if (msg.matchmakingVersion != null && msg.matchmakingVersion !== MATCHMAKING_VERSION) {
+      this.reply(conn, errorMsg(ERR.BAD_MSG, rid, `matchmaking version mismatch: server ${MATCHMAKING_VERSION}`));
+      return;
+    }
+    if (msg.playerCapacityVersion != null && msg.playerCapacityVersion !== PLAYER_CAPACITY_VERSION) {
+      this.reply(conn, errorMsg(ERR.BAD_MSG, rid, 'player capacity version mismatch'));
+      return;
+    }
     const name = sanitizeName(msg.name);
     if (!name) { this.reply(conn, errorMsg(ERR.BAD_MSG, rid, 'bad field name')); return; }
 
@@ -748,6 +761,8 @@ export class Network {
     session.lastSeen = now;
     session.addr = conn.ip;
     session.limitKey = conn.key;
+    session.matchmakingVersion = msg.matchmakingVersion ?? null;
+    session.playerCapacityVersion = msg.playerCapacityVersion ?? null;
     // Opt-in state deltas (shared/stateDelta.js): a hello may name the version it decodes. A repeated hello keeps the
     // baseline it already has, a client that never names one (or names an unknown version) keeps getting plain frames.
     negotiateStateDelta(conn.ws, msg.delta);

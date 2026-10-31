@@ -45,6 +45,7 @@ import { html, UiHosts, Button, MicroLabel, closeAllDialogs } from './ui/compone
 import { ConnectionBanner } from './ui/connBanner.js';
 import { ToastHost, toast, toastError, describeError } from './ui/toasts.js';
 import { net, identity, NetError } from './net.js';
+import { MAX_SEATS } from '../../shared/constants.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating } from './store.js';
 import { data, getChess } from './data.js';
 import { GAME_FILES } from './ui/gameComponents.js';
@@ -258,10 +259,12 @@ const CLOSE_REASON = {
   // 'timeout' = this player was removed after staying disconnected past the lobby grace (server/lobby.js)
   host_left: N_('创建者已离开，同盟已解散'), timeout: N_('由于长时间断开连接，你已离开同盟'), empty: N_('同盟已解散'),
   kicked: N_('你已被移出同盟'), ended: N_('模拟已结束'), expired: N_('同盟已过期'), shutdown: N_('服务器维护中，同盟已关闭'),
+  matchmaking_failed: N_('匹配未能启动，已返回大厅'),
 };
 
 function wireNet() {
   net.on('status', (snap) => {
+    if (snap.status !== 'online') store.set({ matchmaking: null });
     const cur = store.get().connection;
     store.set({
       connection: {
@@ -279,6 +282,28 @@ function wireNet() {
   net.on('replaced', () => toast(t('该身份已在其他页面登录，本页已断开'), 'warn', { ttl: 6000 }));
   net.on('unhandledError', (err) => toastError(err));
   net.on('room.state', onRoomState);
+  // 匹配队列 (server/matchmaking.js, 移植自用户分支): `queue.state` 是一张票据的完整快照,从不是增量。
+  // Hub 屏读同一形状 — { status: 'searching', players, target, joinedAt } — 映射在这里: waitingCount 是票据
+  // 所在池子的等待人数(含本队),required 是该池子的容量。报价帧多带 { offerId, accepted }: 确认入场答 queue.accept。
+  net.on('queue.state', (msg) => {
+    const previous = store.get().matchmaking;
+    if (previous && msg.reason && (previous.offerId || previous.reason !== msg.reason)) {
+      const continuing = msg.state === 'queued';
+      if (msg.reason === 'confirmation_timeout' || msg.reason === 'unconfirmed') {
+        toast(continuing ? t('有队友未确认，已继续搜寻') : t('入场确认未完成，已退出搜寻，请重新发起匹配'), 'warn');
+      } else if (msg.reason === 'peer_cancelled' || msg.reason === 'peer_disconnected') {
+        toast(t('有队友离开，已继续搜寻'), 'warn');
+      } else if (msg.reason === 'allocation_failed' || msg.reason === 'allocation_timeout') {
+        toast(continuing ? t('对局准备失败，已继续搜寻') : t('匹配未能启动，已返回大厅'), 'warn');
+      }
+    }
+    // 出价时池里已经没有等待人数(waitingCount 只在 queued 帧上),用 required 报「一组已凑满」。
+    const queue = { ...payload(msg), status: 'searching',
+      players: msg.waitingCount ?? (msg.state === 'offered' ? msg.required : null) ?? msg.partySize ?? 1,
+      target: msg.required || MAX_SEATS };
+    if (msg.state === 'queued' || msg.state === 'offered') { store.set({ matchmaking: queue }); return; }
+    store.set({ matchmaking: null });
+  });
   net.on('room.closed', (msg) => {
     backToLobby();
     const known = Object.hasOwn(CLOSE_REASON, String(msg.reason)) ? CLOSE_REASON[msg.reason] : null;

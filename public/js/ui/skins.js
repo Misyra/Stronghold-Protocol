@@ -21,12 +21,15 @@
 // an operator's normal, elite and 自选 pieces are the same operator — one entry covers all three. The renderer agrees:
 // a unit's skin is looked up by `charId` (server/match/match/views.js `skinFor`).
 
-import { createStore, loadPref, savePref } from '../store.js';
+import { createStore, loadPref, savePref, useStore } from '../store.js';
 import { data } from '../data.js';
 import { SKIN_LIMITS } from '../../../shared/protocol.js';
+import { isCharId, manifestSkinKey, skinsFor } from '../../../shared/skins.js';
 
 /** The localStorage preference (`sp.pref.<key>`) of this browser's skin choices: `{ [charId]: skinId }`. */
 export const SKINS_PREF = 'skins';
+/** The localStorage preference of this browser's 商店立绘 choices (移植自用户分支, local only): `{ [chessId]: skinId | 'e2' }`. */
+export const PORTRAITS_PREF = 'skins.portraits';
 
 /** The store field the sync engine watches (ui/loadoutSync.js installPrefSync `key`) and its sync state field. */
 export const SKINS_KEY = 'skins';
@@ -93,8 +96,16 @@ export function parseStoredSkins(raw) {
  * This browser's choices and their sync state, kept apart from the app store for the same reason the loadout is
  * (ui/loadoutSync.js: it must survive a room / match reset). `ui/loadoutSync.js installSkinsSync` watches
  * `SKINS_KEY` and mirrors it to the server as `room.skins`.
+ *
+ * 移植自用户分支的双轨: `entries` / `portraits` 是选择器写读的原表(chess id / 自选槽 id 为键, 商店立绘是本机
+ * 的), `SKINS_KEY` 是同一选择的 charId 键归一像(skinChoicesOf), 既有同步引擎与渲染读取都不用改。
  */
-export const skinsStore = createStore({ [SKINS_KEY]: parseStoredSkins(loadPref(SKINS_PREF, null)), [SKINS_SYNC_KEY]: 'idle' });
+export const skinsStore = createStore({
+  [SKINS_KEY]: parseStoredSkins(loadPref(SKINS_PREF, null)),
+  [SKINS_SYNC_KEY]: 'idle',
+  entries: parseStoredSkins(loadPref(SKINS_PREF, null)),
+  portraits: parseStoredSkins(loadPref(PORTRAITS_PREF, null)),
+});
 
 /**
  * Replace the whole stored selection (persisted at once; the sync engine picks the change up). Out-of-match data, so
@@ -104,15 +115,17 @@ export const skinsStore = createStore({ [SKINS_KEY]: parseStoredSkins(loadPref(S
  */
 export function setSkins(entries) {
   const next = parseStoredSkins(entries);
-  try { savePref(SKINS_PREF, next); } catch { /* private mode: the session keeps it */ }
-  skinsStore.set({ [SKINS_KEY]: next });
+  const mirror = skinChoicesOf(next);
+  try { savePref(SKINS_PREF, mirror); } catch { /* private mode: the session keeps it */ }
+  skinsStore.set({ [SKINS_KEY]: mirror, entries: next });
 }
 
-/** Choose one operator's appearance. */
-export function setSkin(charId, skinId) {
-  const id = str(charId), skin = str(skinId);
+/** Choose one operator's appearance (移植自用户分支的一次选择语义: 战斗模型与商店立绘同时写). */
+export function setSkin(chessId, skinId) {
+  const id = str(chessId), skin = str(skinId);
   if (!id || !skin) return;
-  setSkins({ ...(skinsStore.get()[SKINS_KEY] || {}), [id]: skin });
+  setSkins({ ...(skinsStore.get().entries || {}), [id]: skin });
+  applyPortraits({ ...(skinsStore.get().portraits || {}), [id]: skin });
 }
 
 /** Drop one operator's choice (it goes back to its default model). */
@@ -125,26 +138,158 @@ export function clearSkin(charId) {
 }
 
 /**
- * 本浏览器当前装备的皮肤键(移植自用户分支的预载联动): the equipped skin ids of the stored choice map — the
- * resource preload follows them (main.js installResourcePreload), so picking one in 干员调配 starts its download.
- * A choice written against a chess id (干员调配 works per chess) resolves to the operator the manifest groups
- * skins under (data.lookup('chess', …)?.charId). @returns {string[]}
+ * 本浏览器当前装备的皮肤键 (移植自用户分支, the resource preload follows them): the equipped skin ids of the raw
+ * choice map and the 商店立绘 map, as the `<charId>/<official skin id>` keys the 资源预载 names (docs/SKINS.md;
+ * tools/assets/plan.mjs) — picking one in 干员调配 starts its download. A choice written against a chess id (干员调配
+ * works per chess) resolves to the operator the manifest groups skins under (data.lookup('chess', …)?.charId); a
+ * charId-keyed entry (the 0.3.3 form) passes through. The art-only values (`PORTRAIT_E2`, `''`) name no outfit.
+ * @returns {string[]} sorted, deduplicated
  */
 export function equippedSkinKeys() {
-  const skins = skinsStore.get()[SKINS_KEY];
-  if (!isObj(skins)) return [];
-  const keys = [];
-  for (const [chessId, skinId] of Object.entries(skins)) {
-    if (typeof skinId !== 'string' || !skinId) continue;
+  const keys = new Set();
+  const add = (chessId, skinId) => {
+    const key = typeof skinId === 'string' ? manifestSkinKey(skinId) : null;
+    if (!key) return;
+    if (isCharId(chessId)) { keys.add(`${chessId}/${key}`); return; }
     const charId = data.lookup('chess', chessId)?.charId;
-    keys.push(charId || chessId);
-  }
-  return keys;
+    if (charId) keys.add(`${charId}/${key}`);
+  };
+  for (const [chessId, skinId] of Object.entries(skinsStore.get().entries || {})) add(chessId, skinId);
+  for (const [chessId, skinId] of Object.entries(skinsStore.get().portraits || {})) add(chessId, skinId);
+  return [...keys].sort();
 }
 
 /** The equipped keys after the server sync has had a chance to land (the preload re-applies its scope with them). */
 export async function loadEquippedSkinKeys() {
   return equippedSkinKeys();
+}
+
+// ---- 商店立绘 (移植自用户分支, local only) -----------------------------------------------------------------------
+
+/** Replace the whole 商店立绘 selection (persisted at once; nothing is synced). */
+export function setPortraits(entries) { applyPortraits(entries); }
+
+/** Write the shop-art map (`portraits`) alone — the bulk shape, no cross-sync. */
+function applyPortraits(entries) {
+  const next = parseStoredSkins(entries);
+  try { savePref(PORTRAITS_PREF, next); } catch { /* private mode: the session keeps it */ }
+  skinsStore.set({ portraits: next });
+}
+
+/**
+ * Pick what an operator's shop card shows. A real outfit also becomes that operator's battle model — otherwise the same
+ * choice would have to be made again in the model group (custom_docs/SKINS.md). `PORTRAIT_E2` ('e2') and `''` (原始立绘)
+ * restore the default battle model; the battlefield still chooses its normal or elite form from the piece itself.
+ */
+export function setPortrait(chessId, skinId) {
+  const id = str(chessId);
+  if (!id) return;
+  const pick = str(skinId);
+  applyPortraits({ ...(skinsStore.get().portraits || {}), [id]: pick || '' });
+  if (pick && pick.startsWith('char_')) setSkins({ ...(skinsStore.get().entries || {}), [id]: pick });
+  else if (pick === 'e2' || !pick) clearSkin(id);
+}
+
+/** Return to the operator's original portrait and default battle model. */
+export function clearPortrait(chessId) { setPortrait(chessId, ''); }
+
+/** The skin whose 立绘 this browser shows for an operator's shop card, or null (its own portrait). */
+export const portraitFor = (chessId) => (str(chessId) ? (skinsStore.get().portraits || {})[chessId] || null : null);
+
+// ---- reading the choice in a component (移植自用户分支) -----------------------------------------------------------
+
+/**
+ * A chess's 商店立绘 pick as a HOOK: `''` when nothing is chosen, else `PORTRAIT_E2` or a skin id (assetUrls.js
+ * `shopPortraitUrl`). `chessId` may be nullish: the selector is a constant then. `Object.is` on the string means only
+ * THIS chess's change re-renders the caller.
+ * @param {string|null|undefined} chessId @returns {string} `''` | `'e2'` | skinId
+ */
+export function usePortraitPick(chessId) {
+  return useStore((s) => (chessId ? s.portraits?.[chessId] || '' : ''), Object.is, skinsStore);
+}
+
+/** A chess's 皮肤 / battle-model pick as a hook (`''` when nothing is chosen) — same contract as `usePortraitPick`. */
+export function useSkinPick(chessId) {
+  return useStore((s) => (chessId ? s.entries?.[chessId] || '' : ''), Object.is, skinsStore);
+}
+
+// ---- 自选编队 slots (移植自用户分支) -------------------------------------------------------------------------------
+
+/**
+ * A skin selection's structural clean (for imports / loadout envelopes): `{ [chessId]: skinId }` with string values,
+ * junk dropped. The lightness is deliberate — a value this build does not know resolves to nothing in spineEntry(), so
+ * the shape is all that is worth checking before the values reach the store.
+ * @param {any} raw
+ * @returns {Record<string, string>}
+ */
+export function cleanSkinsMap(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [chessId, skinId] of Object.entries(raw)) {
+    if (typeof chessId === 'string' && typeof skinId === 'string' && skinId) out[chessId] = skinId;
+  }
+  return out;
+}
+
+/**
+ * Keep the 皮肤 / 商店立绘 choices of the 自选 slots honest when the picks change: a slot's entry names a skin of the
+ * OPERATOR picked for it, so a re-pick to a different operator (or clearing the slot) must drop both choices — a
+ * stale id would silently fall back to the default model (spineEntry) and, worse, keep looking "chosen" in the UI.
+ * Same-operator re-picks keep theirs.
+ * @param {Record<string, any>} oldPicks @param {Record<string, any>} newPicks `{ [slotId]: { charId } }`
+ */
+export function syncDiySkins(oldPicks, newPicks) {
+  const oldEntries = skinsStore.get().entries || {};
+  const oldPortraits = skinsStore.get().portraits || {};
+  const slots = new Set([...Object.keys(oldPicks || {}), ...Object.keys(newPicks || {})]);
+  let nextSkins = null;
+  let nextPortraits = null;
+  for (const slotId of slots) {
+    const oldChar = oldPicks?.[slotId]?.charId ?? null;
+    const newChar = newPicks?.[slotId]?.charId ?? null;
+    if (oldChar === newChar) continue;
+    if (oldEntries[slotId]) {
+      nextSkins = nextSkins || { ...oldEntries };
+      delete nextSkins[slotId];
+    }
+    if (oldPortraits[slotId]) {
+      nextPortraits = nextPortraits || { ...oldPortraits };
+      delete nextPortraits[slotId];
+    }
+  }
+  if (nextSkins) setSkins(nextSkins);
+  if (nextPortraits) setPortraits(nextPortraits);
+}
+
+// ---- the wire's charId-keyed projection (既有同步引擎读它) --------------------------------------------------------
+
+/** The 自选 picks the sync resolves slot entries against (ui/loadoutSync.js sets this at module load). */
+let diyPicksProvider = () => ({});
+/** @param {() => Record<string, { charId?: string }>} fn */
+export function setDiyPicksProvider(fn) { diyPicksProvider = typeof fn === 'function' ? fn : () => ({}); }
+
+/**
+ * The `room.skins { choices }` payload of a local choice map: `{ [charId]: skinId }`, one entry per OPERATOR — the key
+ * the wire, the catalogue and the server's whitelist use (shared/skins.js isSkinChoices).
+ *
+ * A chess id reaches its operator through data/chess.json; a charId-keyed entry (the 0.3.3 form, and the 自选槽以
+ * 干员 charId 记的语义) passes through as-is; a 自选 slot id takes the operator PICKED for it from the stored roster.
+ * Two slots picking the same operator collapse to one entry, which is exactly the wire's model. Anything this browser
+ * cannot resolve to an operator is left out — the server would refuse the whole map otherwise.
+ * @param {Record<string, string>} entries @returns {Record<string, string>}
+ */
+export function skinChoicesOf(entries) {
+  const out = {};
+  for (const [id, skinId] of Object.entries(entries || {})) {
+    if (typeof skinId !== 'string' || !skinId) continue;
+    if (isCharId(id)) { out[id] = skinId; continue; }
+    const rec = data.lookup('chess', id);
+    const charId = typeof rec?.charId === 'string' ? rec.charId
+      : (diyPicksProvider()?.[id]?.charId ?? null);
+    if (!charId) continue;
+    out[charId] = skinId;
+  }
+  return out;
 }
 
 /** This browser's choice for one operator, or null. */
@@ -198,6 +343,21 @@ export function availableSkins(charId) {
       illust,
       fallbackArt: !ownArt && !str(skin.avatar) && !str(skin.avatarE2),
       own: false,
+      installed: true,
+    });
+  }
+  // 目录制 (移植自用户分支): the catalogue lists every official skin of the operator. The ones this server carries
+  // are already in the manifest loop above (the manifest is the installation's truth); the rest are listed 未安装
+  // and not selectable — the picker shows them so a player can tell "the server has no such skin" from "there is
+  // no such skin". Manifest keys are the official ids, so the two id forms are deduplicated through manifestSkinKey.
+  const seen = new Set(rows.map((r) => r.id));
+  for (const s of skinsFor(id)) {
+    const cid = s && str(s.id);
+    if (!cid || seen.has(cid) || seen.has(manifestSkinKey(cid))) continue;
+    seen.add(cid);
+    rows.push({
+      id: cid, name: str(s.name) || cid, group: str(s.brand) || '', playable: false, pictureOnly: false,
+      portrait: null, avatar: null, illust: null, fallbackArt: false, own: false, installed: false,
     });
   }
   // The operator's OWN appearance, always the first row — even for a record the plugins wrote no `skins` under, because
@@ -212,7 +372,7 @@ export function availableSkins(charId) {
   rows.unshift({
     id: '', name: '', group: '', playable: true,
     portrait: ownIllust || ownPortrait, avatar: ownAvatar,
-    illust: ownIllust || ownPortrait, fallbackArt: false, own: true,
+    illust: ownIllust || ownPortrait, fallbackArt: false, own: true, installed: true,
   });
   return rows;
 }

@@ -15,7 +15,6 @@ import assert from 'node:assert/strict';
 
 import { data } from '../../public/js/data.js';
 import { skinsStore, setSkin, clearSkin, setSkins, availableSkins, hasAnySkinChoices, hasSkinChoices, chosenSkin, parseStoredSkins } from '../../public/js/ui/skins.js';
-import { SkinPreview } from '../../public/js/ui/skinPicker.js';
 
 const OPERATOR = 'char_498_inside';
 const OTHER = 'char_003_kalts';
@@ -83,7 +82,8 @@ after(() => { data.setContent(null); setSkins({}); });
 describe('皮肤 picker: what one operator offers', () => {
   test('one row per skin of the composed manifest, plus the operator\'s own 默认 row first', () => {
     const rows = availableSkins(OPERATOR);
-    assert.deepEqual(rows.map((r) => r.id), ['', SKIN, SKIN2, ART_ONLY]);
+    // (移植用户选择器后) the catalogue's uninstalled skins are listed as well — the manifest rows are the installed ones
+    assert.deepEqual(rows.filter((r) => r.installed).map((r) => r.id), ['', SKIN, SKIN2, ART_ONLY]);
     assert.equal(rows[0].own, true);
     assert.equal(rows[0].portrait, '/i/inside.png', 'the 默认 tile draws the 立绘 the plugin gives the operator');
     assert.equal(rows[0].illust, '/i/inside.png');
@@ -92,7 +92,7 @@ describe('皮肤 picker: what one operator offers', () => {
 
   test('the 默认 row exists even for a record the plugins wrote no `skins` under (the global rule shows its section)', () => {
     const rows = availableSkins(OTHER);
-    assert.deepEqual(rows.map((r) => r.id), ['']);
+    assert.deepEqual(rows.filter((r) => r.installed).map((r) => r.id), ['']);
     assert.equal(rows[0].own, true);
     assert.equal(rows[0].portrait, '/p/kalts_1.png', 'no 立绘 of its own: the portrait is the tile art');
     assert.equal(rows[0].illust, '/p/kalts_1.png');
@@ -100,7 +100,7 @@ describe('皮肤 picker: what one operator offers', () => {
 
   test('a 立绘 with no skin at all is drawn (the 默认 tile falls back 立绘 → portrait → avatar, never to an empty box)', () => {
     const rows = availableSkins(ILLUSTR_ONLY);
-    assert.deepEqual(rows.map((r) => r.id), ['']);
+    assert.deepEqual(rows.filter((r) => r.installed).map((r) => r.id), ['']);
     assert.equal(rows[0].portrait, '/i/pepe.png', 'the picture the plugin wrote is the tile art');
     assert.equal(rows[0].avatar, null, 'nothing invented for a field the plugin did not write');
   });
@@ -126,7 +126,7 @@ describe('皮肤 picker: what one operator offers', () => {
     // nothing at all to draw: still no invented URL
     const bare = { chars: { [OPERATOR]: { skins: { 'x@y#1': { name: 'n', spine: { front: { skel: '/s/bare/front.skel', atlas: '/s/bare/front.atlas', anims: { idle: 'Idle' } } } } } } } };
     withManifest(bare, () => {
-      assert.deepEqual(availableSkins(OPERATOR).map((r) => r.portrait), [null, null]);
+      assert.deepEqual(availableSkins(OPERATOR).filter((r) => r.installed).map((r) => r.portrait), [null, null]);
     });
   });
 
@@ -152,12 +152,15 @@ describe('皮肤 picker: what one operator offers', () => {
     withManifest(artOnly, () => assert.equal(hasSkinChoices(OPERATOR), true, 'a picture-only outfit is offered'));
   });
 
-  test('the section is gated globally, not per operator (the picker must not go back to hasSkinChoices)', () => {
-    assert.match(PICKER_SRC, /if \(!hasAnySkinChoices\(\)\) return null;/, 'the gate is the global criterion');
+  test('the section is gated by what it can draw, not per operator (移植用户选择器后的门)', () => {
+    // (the 0.3.1 global gate lived in the old picker; the ported one renders whenever the operator has a catalogue,
+    // an operator record, or both — and hides only for a piece with neither, where every part would be empty)
+    assert.match(PICKER_SRC, /const renderable = !!\(chessId && charId && \(list\.length \|\| knownArt\)\)/);
     const skinsImport = PICKER_SRC.match(/import \{([^}]*)\} from '\.\/skins\.js'/) || [];
-    assert.ok(skinsImport[1] && !/\bhasSkinChoices\b/.test(skinsImport[1]), 'and the per-operator one is not even imported');
-    // the 默认 tile is kept for an operator without a skin: an empty grid is what the rule must not draw
-    assert.match(PICKER_SRC, /if \(!rows\.length\) return null;/);
+    assert.ok(skinsImport[1] && !/\bhasSkinChoices\b/.test(skinsImport[1]), 'the per-operator criterion is not even imported');
+    // the 默认 tiles stay: 原始立绘 leads the shop-art group, 默认 the model group
+    assert.match(PICKER_SRC, /原始立绘/);
+    assert.match(PICKER_SRC, /name: t\('默认'\)/);
   });
 });
 
@@ -192,17 +195,17 @@ describe('皮肤 picker: the choice', () => {
   });
 });
 
-describe('皮肤 picker: the enlarged preview', () => {
-  const ART = '/i/kitchen.png';
-  test('one illustration inside the modal', () => {
-    const v = SkinPreview({ art: ART, name: '厨房' });
-    assert.equal(v.props.class, 'lo-skin-preview');
-    const img = v.props.children;
-    assert.equal(img.type, 'img');
-    assert.equal(img.props.src, ART);
+describe('皮肤 picker: the live model frame (移植用户选择器后)', () => {
+  test('the preview mounts through render/spinePreview.js into a constant-shape box', () => {
+    // the enlarged illustration modal of 0.3.1 became the live battle-model frame: a static art layer that NEVER
+    // changes shape (a failed URL swaps its src, it is not dropped) + the node the live canvas mounts into
+    assert.match(PICKER_SRC, /import \{[^}]*mountPreview[^}]*\} from '\.\.\/render\/spinePreview\.js';/);
+    assert.match(PICKER_SRC, /class="lo-model__live" ref=\$\{setBoxNode\}/);
+    assert.match(PICKER_SRC, /const TRANSPARENT_PX = /, 'the art layer keeps one img whose src swaps for a transparent pixel');
   });
 
-  test('no art at all renders nothing (a skin with no illustration uses the tile art, so this is the empty case)', () => {
-    assert.equal(SkinPreview({ art: null }), null);
+  test('the 商店立绘 group is tall and drawn first; the model group is text-only', () => {
+    assert.match(PICKER_SRC, /name="portrait" ariaLabel=\$\{t\('选择商店立绘'\)\} tall=\$\{true\}/);
+    assert.match(PICKER_SRC, /name="model" ariaLabel=\$\{t\('选择战斗模型'\)\} thumbnails=\$\{false\}/);
   });
 });

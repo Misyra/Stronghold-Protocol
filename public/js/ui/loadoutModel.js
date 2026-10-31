@@ -261,15 +261,22 @@ export const LOADOUT_IMPORT_MAX_BYTES = 256 * 1024;
 
 /**
  * Portable payload of a loadout, as downloaded / copied by 导出 — v2 (DESIGN §35.23): the choices by operator
- * (`byChar`, every version's), with the per-operator 潜能 / 练度 (`ops`, 0.2.2).
+ * (`byChar`, every version's), with the per-operator 潜能 / 练度 (`ops`, 0.2.2). 移植自用户分支: the payload also
+ * carries the 皮肤 / 商店立绘 half its screen owned at export time (`skins` / `portraits`, string maps) when given —
+ * absent keys keep an older export's shape untouched.
  * @param {Record<string, any>} byChar the stored choices by charId
- * @param {{ now?: number, ops?: Record<string, any> }} [o]
+ * @param {{ now?: number, ops?: Record<string, any>, skins?: Record<string, string>, portraits?: Record<string, string> }} [o]
  */
-export function exportPayload(byChar, { now = Date.now(), ops = {} } = {}) {
+export function exportPayload(byChar, { now = Date.now(), ops = {}, skins = null, portraits = null } = {}) {
   const clean = {};
   for (const [id, e] of Object.entries(byChar || {})) if (isObj(e)) clean[id] = { ...e };
   const cleanOps = {};
   for (const [id, e] of Object.entries(ops || {})) if (isObj(e)) cleanOps[id] = { ...e };
+  const cleanMap = (m) => {
+    const out = {};
+    for (const [id, v] of Object.entries(m || {})) if (typeof v === 'string' && v) out[id] = v;
+    return out;
+  };
   return {
     kind: LOADOUT_EXPORT_KIND,
     v: LOADOUT_VERSION,
@@ -277,6 +284,8 @@ export function exportPayload(byChar, { now = Date.now(), ops = {} } = {}) {
     count: Object.keys(clean).length,
     byChar: clean,
     ops: cleanOps,
+    ...(skins ? { skins: cleanMap(skins) } : {}),
+    ...(portraits ? { portraits: cleanMap(portraits) } : {}),
   };
 }
 
@@ -312,14 +321,32 @@ export function parseImport(input) {
   const kind = typeof raw.kind === 'string' ? raw.kind : null;
   if (kind && kind !== LOADOUT_EXPORT_KIND) return { ok: false, error: t('这不是干员调配的数据') };
   const ops = isObj(raw.ops) ? parseStoredOps(raw) : null;
+  // 移植自用户分支: the 皮肤 / 商店立绘 halves of the payload (structural only — the values are carried as-is, an
+  // operator this install lacks simply draws nothing; the caller merges them into the local maps)
+  const skins = isObj(raw.skins) ? cleanSkinsRaw(raw.skins) : null;
+  const portraits = isObj(raw.portraits) ? cleanSkinsRaw(raw.portraits) : null;
+  const tail = () => {
+    const extra = {};
+    if (ops) extra.ops = ops;
+    if (skins) extra.skins = skins;
+    if (portraits) extra.portraits = portraits;
+    return extra;
+  };
   if (v === 2) {
     const byChar = parseStoredByChar(raw);
     if (!Object.keys(byChar).length && !(ops && Object.keys(ops).length)) return { ok: false, error: t('里面没有有效的调配条目') };
-    return ops ? { ok: true, byChar, ops } : { ok: true, byChar };
+    return { ok: true, byChar, ...tail() };
   }
   const entries = parseStored(raw);
   if (!Object.keys(entries).length && !(ops && Object.keys(ops).length)) return { ok: false, error: t('里面没有有效的调配条目') };
-  return ops ? { ok: true, entries, ops } : { ok: true, entries };
+  return { ok: true, entries, ...tail() };
+}
+
+/** Structural clean of an imported 皮肤 / 商店立绘 map (see ui/skins.js cleanSkinsMap — duplicated here to keep this module dependency-free). */
+function cleanSkinsRaw(raw) {
+  const out = {};
+  for (const [id, v] of Object.entries(raw || {})) if (typeof id === 'string' && typeof v === 'string' && v) out[id] = v;
+  return out;
 }
 
 // ---- options & choices ---------------------------------------------------------------------------------------------

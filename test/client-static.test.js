@@ -438,12 +438,17 @@ describe('net.js', () => {
     const hello = ws().last('hello');
     // hello names the state-delta version it understands; a server that does not know the field ignores it.
     const { STATE_DELTA_VERSION } = await import(pathToFileURL(path.join(ROOT, 'shared/stateDelta.js')).href);
+    // capability versions the queue compares (server/matchmaking.js; 移植自用户分支)
+    const { MATCHMAKING_VERSION } = await import(pathToFileURL(path.join(ROOT, 'shared/constants.js')).href);
+    const { PLAYER_CAPACITY_VERSION } = await import(pathToFileURL(path.join(ROOT, 'shared/playerCapacity.js')).href);
     assert.deepEqual({ ...hello, rid: 0 }, {
       t: 'hello',
       rid: 0,
       name: '凯尔希',
       version: PROTOCOL_VERSION,
       delta: STATE_DELTA_VERSION,
+      matchmakingVersion: MATCHMAKING_VERSION,
+      playerCapacityVersion: PLAYER_CAPACITY_VERSION,
       token: 'tok-1',
     });
     assert.equal(net.status, 'handshaking');

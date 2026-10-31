@@ -66,14 +66,17 @@ import { VersionPicker } from '../ui/versionPicker.js';
 import { DEFAULT_VERSION, lobbyVersion, needsContent, offeredDifficulties, roomVersion, serverDefaultVersion, soloTimedOf, soloTimeMsgid, versionLabel } from '../versions.js';
 import { hasScriptConsent, rememberScriptConsent, pageVersion } from '../content.js';
 import { net } from '../net.js';
-import { store, useStore, shallowEqual, emptyMatch, isSpectating, savePref } from '../store.js';
+import { store, useStore, shallowEqual, emptyMatch, isSpectating, serverNow, savePref } from '../store.js';
 import { data, useData, getConfig } from '../data.js';
 import { chessAvatarUrl, chessPortraitUrl } from '../ui/assetUrls.js';
 import { CARD_KEY, cardStore, setCard, cardOperators, cardContext, seatOperator, seatCardSkin, seatArtSrc } from '../ui/seatArt.js';
 import { skinsStore, SKINS_KEY, ownerSkin } from '../ui/skins.js';
 import { settingsStore } from '../ui/settingsStore.js';
 import { difficultyInfo, ProtocolSelect } from './lobby.js';
-import { useRise } from '../ui/transitions.js';
+import { useRise, usePresence } from '../ui/transitions.js';
+// 匹配流程的搜寻/集结面板 (移植自用户分支): SearchPanel — 搜寻中(像素侦察兵+轮换提示+停止搜寻), FoundPanel — 搜寻成功
+import { SearchPanel, FoundPanel } from '../ui/matchFlow.js';
+import { MatchmakingOffer, matchmakingTitle } from '../ui/matchmaking.js';
 import { t, tc } from '../../../shared/i18n.js';
 
 /**
@@ -117,7 +120,12 @@ export function roomFacts(room, myId) {
   return {
     seats, occupied, humans, mine, isHost, readyHumans, isReady,
     emptySeats: seats.filter((s) => !s).length,
-    canStart: isHost && othersReady && !!mine && contentReady && (!room?.content?.trusted || humans.every(s => room.content.trusted.consent[s.seat])),
+    // 同盟匹配 (移植自用户分支, server/matchmakingRooms.js): 搜寻中的房间冻结开始模拟与房间选项,只有房主且
+    // 全员就绪、无 AI、未满员、无对局在跑的同盟可以进队列。
+    searching: !!room?.matchmaking,
+    canStart: isHost && othersReady && !!mine && !room?.matchmaking && contentReady && (!room?.content?.trusted || humans.every(s => room.content.trusted.consent[s.seat])),
+    canMatch: isHost && othersReady && !!mine && mine.connected !== false && !room?.matchmaking && !room?.inMatch &&
+      room?.mode === 'coop' && occupied.length < MAX_SEATS && occupied.every((s) => !s.isBot),
     othersReady,
     modded,
     needsContent: loadsContent,
@@ -488,10 +496,15 @@ export function RoomScreen() {
   const room = useStore((s) => s.room);
   const me = useStore((s) => s.me, shallowEqual);
   const conn = useStore((s) => s.connection, shallowEqual);
+  // 匹配队列票据 (queue.state 的投影, main.js): queued/offered 帧给出 waitingCount/required/joinedAt/offerId
+  const mm = useStore((s) => s.matchmaking, shallowEqual);
   const [busy, setBusy] = useState(null);
   const alive = useRef(true);
   const inFlight = useRef(false); // synchronous guard against double clicks (state updates are async)
   useEffect(() => () => { alive.current = false; }, []);
+  // 搜寻成功 (移植自用户分支): 队列运行时最后一个座位补满 → 短暂展示后收起(服务器在同一拍停搜并补满)
+  const [found, setFound] = useState(false);
+  const prevEmpty = useRef(null);
   // 名片干员: the operators a seat card can show and the default pool (ui/seatArt.js), one's own pick (a pref the sync
   // engine sends: ui/loadoutSync.js installCardSync), and the outfits the cards wear — this browser's choices and the
   // 「显示其他玩家的皮肤」 switch (docs/SKINS.md)
@@ -542,12 +555,45 @@ export function RoomScreen() {
   // every pick, welcome and content change and retries a RATE / TIMEOUT / OFFLINE refusal (review of PR #813)
   const pickCard = (charId) => { setCard(charId); setPicking(false); };
 
+  // 同盟匹配的房间侧状态 (移植自用户分支): room.state.matchmaking 是真值(服务器给房间排队,补满或匹配成功时
+  // 自行撤单),面板与按钮读它而不是本地意愿;人数与时钟来自玩家侧的 queue.state。
+  const endedAt = useRef(0);
+  const prevMatching = useRef(false);
+  useEffect(() => {
+    if (!room) return;
+    if (prevMatching.current && !room.matchmaking) endedAt.current = Date.now();
+    prevMatching.current = !!room.matchmaking;
+  }, [room?.matchmaking]);
+  useEffect(() => {
+    if (!room) return;
+    const empty = roomFacts(room, me.playerId).emptySeats;
+    const wasSearching = !!room.matchmaking || Date.now() - endedAt.current < 2500;
+    if (prevEmpty.current != null && empty < prevEmpty.current && wasSearching && empty === 0) setFound(true);
+    prevEmpty.current = empty;
+  }, [room?.code, room?.seats?.filter(Boolean).length]);
+  useEffect(() => { if (!found) return undefined; const id = setTimeout(() => alive.current && setFound(false), 1900); return () => clearTimeout(id); }, [found]);
+
   if (!room) return null;
   const online = conn.status === 'online';
   const coop = room.mode !== 'solo';
   const facts = roomFacts(room, me.playerId);
   const myReady = !!facts.mine?.ready;
   const info = difficultyInfo(room.mode, room.difficulty);
+  // 开发者控制台与匹配互斥 (server/matchmakingRooms.js) —— 开着控制台的房间不进队列,所以「开始搜寻」留在原地并说明
+  // 原因,而不是点下去才被服务器拒。
+  const consoleOn = room?.consoleEnabled === true;
+  const searchable = coop && facts.canMatch;
+  const searching = coop && !!facts.searching;
+  // 队列自己的时钟: server/matchmaking.js 搜寻中报 { joinedAt, players, target, serverNow }
+  const mmView = mm && mm.status === 'searching' ? {
+    matched: mm.players, target: mm.target || MAX_SEATS,
+    elapsed: mm.joinedAt ? Math.max(0, (serverNow() - mm.joinedAt) / 1000) : 0,
+  } : null;
+  // overlay 淡出期间保持挂载
+  const [searchShown, searchLeaving] = usePresence(searching && !found, 220);
+  const offerShown = !!(searching && mm?.offerId);
+  const [foundShown, foundLeaving] = usePresence(found, 320);
+  const searchElapsed = mmView?.elapsed ?? 0;
 
   /** Runs one request at a time; resolves true once the server took it (false: not sent, or refused — toasted). */
   const run = async (kind, fn) => {
@@ -582,6 +628,12 @@ export function RoomScreen() {
     await net.request(on ? 'room.console.enable' : 'room.console.disable', {});
     if (on) toast(t('开发者控制台已开启：本房间不会进入匹配队列'), 'warn', { ttl: 5000 });
   });
+  // 开始搜寻 = 同盟匹配 (server/matchmakingRooms.js joinParty): 房间本身就是队列条目,无需重复排队 ——
+  // room.state.matchmaking 说明它是否在跑,匹配成功或补满时服务器自行收尾。
+  const queueMatch = () => run('match', () => net.request('room.matchmaking', {}));
+  const cancelMatch = () => run('cancel-match', () => net.request('queue.cancel', { ticketId: mm?.ticketId }));
+  // 确认入场: 报价需要组队里每个真人都确认后房间才会开局 (server/matchmaking.js)
+  const acceptMatch = () => run('accept-match', () => net.request('queue.accept', { ticketId: mm?.ticketId, offerId: mm?.offerId }));
   // the room is the authority; the lobby card reads the same pref the next time this browser creates a solo room
   const setSoloUnlimited = async (on) => {
     const sent = await run('solofree', () => net.request('room.setSoloUnlimited', { on }));
@@ -615,6 +667,8 @@ export function RoomScreen() {
     ? html`<span class="t-orange"><${Icon} name="wifiOff" />${t('连接中断，正在重连…')}</span>`
     : facts.spectating
       ? html`<span class="t-lo"><${Icon} name="eye" />${t('观战中 · 不占博士席位，模拟开始后可切换观看各位博士')}</span>`
+    : facts.searching
+      ? html`<span class="t-mint"><${Icon} name="hourglass" />${mm?.offerId ? matchmakingTitle(mm) : t('正在搜寻队友')} · ${mmView?.matched ?? 1}/${mmView?.target ?? MAX_SEATS} ${t('名博士')}</span>`
     : !coop
       ? html`<span class="t-mint">${t('*模拟协议已就绪，准许进入模拟')}</span>`
     : facts.versionRoom && !facts.contentReady
@@ -772,6 +826,10 @@ export function RoomScreen() {
         </div>
       </div>
       <div class="room-bar__right rs-foot__right">
+        ${facts.isHost && searchable && facts.emptySeats > 0 && !searching
+          ? html`<button type="button" class="rs-search" disabled=${!online || busy === 'match' || consoleOn} onClick=${queueMatch}
+              title=${consoleOn ? t('房间已开启开发者控制台，无法进入匹配队列') : undefined}>
+              <${Icon} name="search" />${t('开始搜寻')}${busy === 'match' ? html`<${Spinner} size="sm" />` : null}</button>` : null}
         ${facts.isHost
           ? html`<${Tooltip} text=${facts.canStart ? null : vote ? t('切换版本投票进行中，请等投票结束') : !facts.contentReady ? (facts.versionRoom ? t('仍有博士未载入「{version}」的数据', { version: versionLabel(curVersion) }) : t('仍有博士未载入房间的插件内容')) : t('仍有博士未准备就绪')}>
               <${GoButton} label=${t('开始模拟')} loading=${busy === 'start'} disabled=${!facts.canStart || !online || busy === 'start' || !!vote} onClick=${start} />
@@ -785,6 +843,18 @@ export function RoomScreen() {
       </div>
     </footer>
     ${picking ? html`<${CardPicker} current=${myCard} list=${cardList} m=${data.get('assets')} localSkins=${localSkins} onPick=${pickCard} onClose=${() => setPicking(false)} />` : null}
+    ${offerShown ? html`<div class="rs-offer brackets" role="status">
+      <div class="rs-offer__head"><${MicroLabel}>MATCH FOUND<//><h2>${t('队友已集结')}</h2></div>
+      <${MatchmakingOffer} mm=${mm} online=${online} busy=${busy === 'accept-match'} onAccept=${acceptMatch} />
+      ${facts.isHost ? html`<${Button} variant="ghost" disabled=${!!busy} onClick=${cancelMatch}>${t('停止搜寻')}<//>` : null}
+    </div>` : null}
+    ${searchShown && !offerShown ? html`<${SearchPanel} title=${matchmakingTitle(mm)} class=${`rs-searchpanel${searchLeaving ? ' is-leaving' : ''}`} elapsed=${searchElapsed}
+      onStop=${facts.isHost ? cancelMatch : null} stopping=${busy === 'cancel-match'}
+      note=${facts.isHost ? t('搜寻期间可随时停止搜寻') : t('创建者正在搜寻队友')}
+      room=${true} hint=${false} tags=${[{ key: 'mode', label: t('精确搜寻'), icon: html`<${Icon} name="search" />` },
+        { key: 'diff', label: t(DIFFICULTY_NAMES[room.difficulty]), color: DIFFICULTY_COLORS[room.difficulty], icon: html`<${DifficultyIcon} difficulty=${room.difficulty} />` }]}>
+    <//>` : null}
+    ${foundShown ? html`<${FoundPanel} class=${foundLeaving ? 'is-leaving' : ''} seats=${facts.seats.length} text=${t('同盟集结完毕')} />` : null}
     ${protoOpen ? facts.isHost
       ? html`<${ProtocolSelect} roomMode=${room.mode} difficulty=${protoPick || room.difficulty} onDifficulty=${setProtoPick} onClose=${closeProto}
           onCreate=${confirmDifficulty} busy=${busy === 'diff' ? 'create' : null} online=${online} action=${t('确认')} hint=${protoHint} difficulties=${protoDifficulties} />`

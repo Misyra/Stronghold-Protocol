@@ -3493,5 +3493,7 @@
   "校验后直接写入缓存，已有资源自动跳过。": "Written into the cache after verification; resources already cached are skipped.",
   "导出已缓存资源": "Export the cached resources",
   "点击「前往下载」查看资源包链接。lite 仅含基础画面资源，full 还包含已发布的语音、音效、音乐等；也可导出已缓存资源分享。": "Open \"Go to the downloads\" for the pack links. lite holds the base art only; full also carries the published voices, sounds and music. Cached resources can also be exported and shared.",
-  "推荐使用 Edge 或 Chrome 浏览器。": "Edge or Chrome is recommended."
+  "推荐使用 Edge 或 Chrome 浏览器。": "Edge or Chrome is recommended.",
+  "导出皮肤配置（战斗模型与商店立绘，可跨服务器携带）": "Export skin config (battle models & shop art; portable across servers)",
+  "导入皮肤配置（不影响调配）": "Import skin config (does not touch loadouts)"
 }

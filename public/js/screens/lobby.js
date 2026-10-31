@@ -55,7 +55,11 @@ import { SettingsButton } from '../ui/settings.js';
 import { PwaInstallButton, detectFeatures, useMediaQuery, SHORT_SCREEN_QUERY } from '../ui/device.js';
 import { LoadoutButton } from './loadout.js';
 import { net, identity } from '../net.js';
-import { store, useStore, shallowEqual, loadPref, savePref } from '../store.js';
+import { store, useStore, shallowEqual, serverNow, loadPref, savePref } from '../store.js';
+// 匹配流程 (移植自用户分支): SearchPanel — 搜寻中面板, MatchmakingOffer — 确认入场报价卡
+import { SearchPanel } from '../ui/matchFlow.js';
+import { MatchmakingOffer, matchmakingTitle } from '../ui/matchmaking.js';
+import { usePresence } from '../ui/transitions.js';
 import { data, getConfig, getMode, getStage, useData } from '../data.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { scriptOf } from '../../../shared/i18nPacks.js';
@@ -597,7 +601,7 @@ export function ProtocolSelect({ roomMode, difficulty, onDifficulty, onClose, on
  * `placeholderShort`, by the field's width: English and Japanese at 特大 on every desktop, the default Chinese at 特大
  * in a 1024 px window — it ended in an ellipsis there).
  */
-export function AllianceSelect({ onClose, onCreate, difficulty = 'FUNNY', code, onCode, codeOk, online, busy, onJoin, onSpectate, recent, marks, focusKey,
+export function AllianceSelect({ onClose, onCreate, onSearch, difficulty = 'FUNNY', code, onCode, codeOk, online, busy, onJoin, onSpectate, recent, marks, focusKey,
   testMode = false, asTest = false, onTest = () => {}, short = false }) {
   const diffName = DIFFICULTY_NAMES[difficulty] ? t(DIFFICULTY_NAMES[difficulty]) : '';
   return html`<${Modal} open=${true} onClose=${onClose} class="ally" veilClass="proto-veil">
@@ -627,6 +631,10 @@ export function AllianceSelect({ onClose, onCreate, difficulty = 'FUNNY', code, 
             <span>${t('测试房间')}</span>
             <em class="t-dim">${t('不计入战绩。房间会标明「测试」，只有房主能使用测试指令。')}</em>
           </label>` : null}
+          <button type="button" class="ally-search" data-testid="alliance-search" disabled=${!online || busy === 'search'} onClick=${() => onSearch()}
+            title=${t('精确搜寻：只与选择相同难度的博士组成同盟')}>
+            <${Icon} name="search" />${t('开始搜寻')}${busy === 'search' ? html`<${Spinner} size="sm" />` : null}
+          </button>
           <div class="ally-card ally-card--join ally-join join-row">
             <span class="ally-card__art"><${JoinArt} /></span>
             <div class="ally-key">
@@ -683,6 +691,19 @@ export function LobbyScreen() {
 
   const online = conn.status === 'online';
   const codeOk = CODE_RE.test(code);
+  // 同盟匹配 (移植自用户分支, server/matchmaking.js): 大厅的搜寻以本屏难度入队;票据的完整快照(queue.state)
+  // 投影在 store.matchmaking —— { status: 'searching', difficulty, joinedAt, players, target, offerId… }。
+  const mm = useStore((s) => s.matchmaking, shallowEqual);
+  const isSearching = mm?.status === 'searching';
+  const [, setMmTick] = useState(0);
+  useEffect(() => {
+    if (!isSearching) return undefined;
+    const timer = setInterval(() => setMmTick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [isSearching, mm?.joinedAt]);
+  const mmElapsed = isSearching && mm.joinedAt ? Math.max(0, Math.floor((serverNow() - mm.joinedAt) / 1000)) : 0;
+  // overlay 淡出期间保持挂载 (移植自用户分支)
+  const [searchShown, searchLeaving] = usePresence(isSearching, 220);
   // official versions (DESIGN §35.23): the lobby's version, the difficulties it offers and the one shown — the remembered
   // one, or the server's fallback when the version lacks it (the pref is only overwritten when the player picks)
   const versions = useStore((s) => s.versions);
@@ -718,6 +739,11 @@ export function LobbyScreen() {
     mode, difficulty: mode === 'solo' ? shownSolo : shownCoop, ...(testMode && asTest ? { test: true } : {}), ...(versions ? { version } : {}),
     ...(mode === 'solo' && soloFree && soloTimed === true ? { soloUnlimited: true } : {}),
   }));
+  // 大厅的搜寻/取消/确认 (移植自用户分支): queue.join 以本屏难度入队;确认入场需要报价里的每个真人;
+  // 创建或加入房间时服务器会自行撤票 (lobby.create/join 的 leaveQueue)。
+  const queueMatch = () => run('search', () => net.request('queue.join', { difficulty: shownCoop }));
+  const cancelMatch = () => run('cancel', () => net.request('queue.cancel', { ticketId: mm?.ticketId }));
+  const acceptMatch = () => run('accept', () => net.request('queue.accept', { ticketId: mm?.ticketId, offerId: mm?.offerId }));
   const join = (c = code) => {
     // `onClick=${join}` hands the click EVENT as the first argument, and a default parameter only applies to
     // `undefined` — codeArg keeps an event target out of the key and falls back to the input field
@@ -744,10 +770,10 @@ export function LobbyScreen() {
       throw err;
     }));
   };
-  const backToTitle = () => {
-    identity.setEntered(false);
-    store.set((s) => ({ session: { ...s.session, entered: false } }));
-  };
+  // leaving the hub while the queue runs cancels it first: a queue entry outlives this screen otherwise
+  const backToTitle = () => isSearching
+    ? run('cancel', async () => { await net.request('queue.cancel', { ticketId: mm?.ticketId }); identity.setEntered(false); store.set((s) => ({ session: { ...s.session, entered: false } })); })
+    : (identity.setEntered(false), store.set((s) => ({ session: { ...s.session, entered: false } })));
 
   return html`<div class="screen lobby-screen lobby-hub">
     <${HubBackdrop} />
@@ -793,6 +819,7 @@ export function LobbyScreen() {
     </main>
 
     ${allyOpen ? html`<${AllianceSelect} onClose=${() => setAllyOpen(false)} onCreate=${() => create('coop')} difficulty=${shownCoop}
+      onSearch=${() => { setAllyOpen(false); queueMatch(); }}
       code=${code} onCode=${(v) => setCode(normalizeCode(v))} codeOk=${codeOk} online=${online} busy=${busy}
       onJoin=${join} onSpectate=${spectate} recent=${recent} marks=${marks} focusKey=${!coarse}
       testMode=${testMode} asTest=${asTest} onTest=${setAsTest} short=${shortScreen} />` : null}
@@ -802,5 +829,16 @@ export function LobbyScreen() {
       soloTime=${soloTimed === true ? { on: soloFree, onToggle: setSoloFreePref } : null} />` : null}
     ${sweepOpen ? html`<${SweepReport} onClose=${() => setSweepOpen(false)} />` : null}
     ${achOpen ? html`<${AchievementDialog} onClose=${() => setAchOpen(false)} />` : null}
+    ${searchShown ? html`<aside class=${`lobby-search${searchLeaving ? ' is-leaving' : ''}`} role="status">
+      ${mm?.offerId ? html`<div class="rs-offer lobby-search__offer">
+        <div class="rs-offer__head"><${MicroLabel}>MATCH FOUND<//><h2>${matchmakingTitle(mm)}</h2></div>
+        <${MatchmakingOffer} mm=${mm} online=${online} busy=${busy === 'accept'} onAccept=${acceptMatch} />
+        <${Button} variant="ghost" disabled=${!!busy} onClick=${cancelMatch}>${t('停止搜寻')}<//>
+      </div>`
+        : html`<${SearchPanel} title=${matchmakingTitle(mm)} elapsed=${mmElapsed} onStop=${cancelMatch} stopping=${busy === 'cancel'}
+            note=${t('搜寻期间可随时停止搜寻')}
+            tags=${mm?.difficulty ? [{ key: 'diff', label: t(DIFFICULTY_NAMES[mm.difficulty] || mm.difficulty), color: DIFFICULTY_COLORS[mm.difficulty],
+              icon: html`<${DifficultyIcon} difficulty=${mm.difficulty} />` }] : []} />}`}
+    </aside>` : null}
   </div>`;
 }

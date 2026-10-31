@@ -285,8 +285,10 @@ test('选择同盟方式 creates the room itself: the lobby never stacks 选择�
   assert.match(lobbySrc, /<\$\{ProtocolSelect\} roomMode="solo"/, '选择模拟协议 stays before 独立模拟');
 });
 
-test('no server-only features: accounts, friends, federation, matchmaking, 无限火力, Android', () => {
-  for (const re of [/accounts\.js/, /friends\.js/, /federation/, /matchmaking/i, /match\.queue/, /randomMode/, /AndroidNative/, /__onRoomFound/, /room\.list/]) {
+test('no server-only features: accounts, friends, federation, 无限火力, Android', () => {
+  // (合并注: 0.3.3 的禁单里有 matchmaking / match.queue —— 匹配是用户分支的一等功能,已移植进大厅与房间,
+  // 所以从本守卫移除; accounts / friends / federation / Android shell 仍是 server-only。)
+  for (const re of [/accounts\.js/, /friends\.js/, /federation/, /randomMode/, /AndroidNative/, /__onRoomFound/, /room\.list/]) {
     assert.doesNotMatch(lobbySrc, re, String(re));
   }
 });

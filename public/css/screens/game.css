@@ -981,6 +981,25 @@
 /* 素材存储 (ui/settings.js StorageSection): laid out like 问题反馈 below it — a head with its button, a hint, the answer */
 .set-storage { display: flex; flex-direction: column; gap: .08rem; padding-top: .1rem; border-top: 1px solid var(--line); }
 .set-storage__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .08rem; }
+/* 统一配置导入导出 (ui/configTransfer.js ConfigTransferSection): one row per kind (label left, 导出 / 导入 right),
+   the inline import editor (paste or pick a file) styled like 干员调配's 导出 box (screens/loadout.css .lo-io__text) */
+.set-cfg { display: flex; flex-direction: column; gap: .08rem; padding-top: .1rem; border-top: 1px solid var(--line); }
+.set-cfg__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .06rem .12rem; min-height: .42rem; padding: .03rem; background: rgba(0, 0, 0, .18); border: 1px solid var(--line); }
+.set-cfg__label { min-width: 0; font-size: calc(.15 * var(--t)); color: var(--text-md); overflow-wrap: anywhere; }
+.set-cfg__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .08rem; }
+.set-cfg__io { display: flex; flex-direction: column; gap: .08rem; padding: .06rem; background: rgba(0, 0, 0, .18); border: 1px solid var(--line); }
+.set-cfg__text {
+  box-sizing: border-box; width: 100%; min-height: .9rem; resize: vertical; padding: .08rem .1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: max(.13rem, 11px); line-height: 1.5;
+  color: var(--text-hi); background: rgba(4, 10, 8, .55); border: 1px solid var(--line-2); border-radius: 2px; outline: none;
+  white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto;
+}
+.set-cfg__text:focus { border-color: var(--mint-700); }
+.set-cfg__text::placeholder { color: var(--text-lo); }
+/* touch: 16 px, below which iOS zooms into the focused box (as .set-diag__text above) */
+.sp-coarse .set-cfg__text { font-size: 16px; }
+.set-cfg__file { display: none; }
+.set-cfg__hint { margin-top: -.04rem; }
 /* 问题反馈 (ui/settings.js DiagSection): laid out like 快捷键 — a head with its button, a hint, the result line; the
    recorded-error count in the figure face of the slider values (amber once there is one); the report box only when the
    clipboard refused it, styled like 干员调配's 导出 box (screens/loadout.css .lo-io__text) */

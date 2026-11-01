@@ -47,7 +47,9 @@ import { ruleOption } from '../../../shared/plugins/rules.js';
 import { OWNERSHIP_PREF, parseStoredOwnership, parseStoredOwnershipChars, toStoredOwnership, toStoredOwnershipV1, cleanIds, sanitizeNotOwned,
   notOwnedView, rebaseChars } from './ownershipModel.js';
 import { parseStoredDiy, toStoredDiy, cleanPicks, sanitizeDiyPicks, diyPrefKey } from './diyModel.js';
-import { skinsStore, SKINS_KEY, SKINS_SYNC_KEY, parseStoredSkins, setDiyPicksProvider } from './skins.js';
+import { skinsStore, SKINS_KEY, SKINS_SYNC_KEY, parseStoredSkins, setSkins, setPortraits, syncDiySkins, setDiyPicksProvider } from './skins.js';
+import { prepareOperatorPreset } from './operatorPresetModel.js';
+import { diySlotIds } from '../../../shared/diy.js';
 import { cardStore, CARD_KEY, CARD_SYNC_KEY, cardOperators } from './seatArt.js';
 import { needsContent, serverDefaultVersion } from '../versions.js';
 import { DEFAULT_VERSION } from '../../../shared/versions.js';
@@ -384,6 +386,68 @@ export function applyDiyImport(picks, data, kitted) {
   setDiyPicks(clean);
   const applied = Object.keys(clean).length;
   return { applied, dropped: Math.max(0, asked - applied) };
+}
+
+/**
+ * Apply a parsed 干员预设 (ui/operatorPresetModel.js; 参考 Stardust fork 的同名接线, 适配本仓 v2 存储与皮肤双轨).
+ * prepareOperatorPreset validates every included section first — a section the current build cannot use aborts the
+ * whole import before any store changes — then each section goes through its own setter, so the existing ordered sync
+ * engines (room.loadout / room.ownership / room.diy / room.skins) keep their locks and persistence. A legacy
+ * single-section file (scope 'loadout' / 'notOwned' / 'diy' / 'skins') keeps its own section's semantics: a v1 payload
+ * becomes the view of the data on screen first (importedEntries / importedNotOwned), a 自选 file's slot 皮肤 ride along
+ * for the slots whose pick survived, a 皮肤 file replaces the whole selection.
+ * @param {{ ok: true, scope: string, patch: Record<string, any> } | { ok: false, error: string }} parsed
+ *   parseOperatorPreset's result
+ * @param {{ lookup?: (id: string) => any, data?: { chess: any, backups: any }, kitted?: Iterable<string>|null }} [deps]
+ *   as prepareOperatorPreset takes them; `lookup` is also the write-back lookup of an import (setEntries)
+ * @returns {{ ok: true, scope: string, patch: Record<string, any>, counts: Record<string, number>, dropped: number }
+ *   | { ok: false, error: string, params?: Record<string, any> }}
+ */
+export function applyOperatorPreset(parsed, deps = {}, { target = loadoutStore } = {}) {
+  let want = parsed;
+  // a legacy v1 file (第二期下半's chess ids) becomes the view of the data on screen first (DESIGN §35.23)
+  if (want?.ok && want.scope === 'loadout' && want.patch?.entries) {
+    want = { ...want, patch: { ...want.patch, entries: importedEntries(want.patch) } };
+  }
+  if (want?.ok && want.scope === 'notOwned' && Array.isArray(want.patch?.notOwned)) {
+    want = { ...want, patch: { ...want.patch, notOwned: importedNotOwned(want.patch) } };
+  }
+  const result = prepareOperatorPreset(want, { lookup: deps?.lookup, map: shownCharMap(), data: deps?.data, kitted: deps?.kitted });
+  if (!result.ok) return result;
+  const { patch } = result;
+  if (patch.ops) setOpsMap(patch.ops);
+  if (patch.entries) setEntries(patch.entries, { lookup: deps?.lookup });
+  if (patch.notOwned) setNotOwned(patch.notOwned, { lookup: deps?.lookup });
+  if (patch.diy) {
+    const oldPicks = target.get().diy;
+    setDiyPicks(patch.diy);
+    // a re-pick (or a dropped slot) must not keep that slot's stale 皮肤 / 商店立绘 choice (ui/skins.js syncDiySkins);
+    // a complete preset replaces the whole maps right after, so the pair stays the file's
+    syncDiySkins(oldPicks, target.get().diy);
+  }
+  const slots = (() => { try { return new Set(diySlotIds(deps?.data)); } catch { return new Set(); } })();
+  if (result.scope === 'all' || result.scope === 'skins') {
+    // a complete preset's display half, or a standalone 皮肤配置 file, replaces the whole selection
+    if (patch.skins) setSkins(patch.skins);
+    if (patch.portraits) setPortraits(patch.portraits);
+  } else if (result.scope === 'loadout') {
+    // a 调配 file carries the ROSTER half its screen owned at export time (the 自选 slots' belong to the diy file):
+    // merged over the roster keys like the 干员调配 dialog's own import
+    const roster = (m) => Object.fromEntries(Object.entries(m || {}).filter(([id]) => !slots.has(id)));
+    if (patch.skins) setSkins({ ...roster(skinsStore.get().entries), ...patch.skins });
+    if (patch.portraits) setPortraits({ ...roster(skinsStore.get().portraits), ...patch.portraits });
+  } else if (result.scope === 'diy' && (patch.skins || patch.portraits)) {
+    // a 自选 file's slot choices apply to the slots whose pick survived, the other keys untouched (screens/loadout.js)
+    const keep = new Set(Object.keys(target.get().diy || {}));
+    const replace = (cur, next) => {
+      const merged = { ...cur };
+      for (const id of keep) delete merged[id];
+      return { ...merged, ...Object.fromEntries(Object.entries(next || {}).filter(([id]) => keep.has(id))) };
+    };
+    if (patch.skins) setSkins(replace(skinsStore.get().entries, patch.skins));
+    if (patch.portraits) setPortraits(replace(skinsStore.get().portraits, patch.portraits));
+  }
+  return result;
 }
 
 /**

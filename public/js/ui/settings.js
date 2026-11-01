@@ -46,6 +46,9 @@ import { setUiPlugin, uiPluginEntries, uiPlugins } from './uiPlugins.js';
 import { UI_LIMITS } from '../../../shared/plugins/ui.js';
 import { toast, describeError } from './toasts.js';
 import { pluginMicro } from './pluginTag.js';
+// 统一配置导入导出 (参考 Stardust fork 的干员预设语义): 干员预设 / 干员调配 / 干员持有 / 自选编队 / 皮肤配置 / 统计数据
+// 收拢进设置弹窗的一个 section (ui/configTransfer.js), 各类旧的导入导出入口 (干员调配遮罩、统计页) 照常保留。
+import { ConfigTransferSection } from './configTransfer.js';
 // 皮肤 (docs/SKINS.md): the global display rule the 显示其他玩家的皮肤 switch follows. ui/skins.js costs nothing new here:
 // it is already on the boot path (main.js → screens/loadout.js / ui/loadoutSync.js) and imports only store.js and
 // data.js, both of which settings.js reaches through content.js — no cycle, no asset store (it must NOT load assets.js:
@@ -562,6 +565,7 @@ export function SettingsModal({ open, onClose }) {
       <${HotkeySection} keys=${s.keys} touchUi=${touchUi} />
       <${CosmeticSection} />
       <${UiPluginSection} />
+      <${ConfigTransferSection} />
       <${StorageSection} />
       <${DiagSection} />
       <p class="set-hint">${touchUi ? t('触屏操作：点击单位选中（撤退 / 出售）· 长按单位或卡牌查看详情 · 拖动部署后滑动选择朝向') : t('右键查看详情')}</p>

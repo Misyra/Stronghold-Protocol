@@ -14,6 +14,7 @@
 //     start, WebSocket wire and payload bytes) for a loopback or private-network client only — the maintainer's
 //     decision of 2026-10-12: the figures are the host's, so any other client, also one a tunnel or proxy on this
 //     machine forwards, gets the plain report (net.js clientAddress, honouring TRUST_PROXY like the WebSocket limits);
+//   * GET /api/online → `{ online: N }`, the title screen's 当前在线人数 (sessions bound to a socket, ~10 s cached);
 //   * everything else → the static files (static.js).
 // Every response's body bytes count in the traffic counters (traffic.js meter). A route that throws is logged and
 // answers 500.
@@ -24,6 +25,29 @@ import { setSecurityHeaders, sendError, sendJson, splitUrl } from './common.js';
 import { clientAddress, isLocalIp } from '../net.js';
 
 const MAX_URL_LENGTH = 4096;
+
+// GET /api/online (the title screen's 当前在线人数, 合并自用户分支): the sessions currently bound to a socket.
+// Cached for 10 s — the value changes on hello / disconnect only, and the page polls it every 10 s, so a per-request
+// walk of the session registry would be wasted work.
+const ONLINE_TTL_MS = 10_000;
+const onlineCache = { at: -Infinity, value: 0 };
+
+/**
+ * The cached online count for /api/online.
+ * @param {{ registry?: import('../net.js').SessionRegistry | null, network?: { connectionCount: number } | null }} health
+ * @returns {number}
+ */
+// [ASSUMED] 在线人数 = 当前连接中的会话数（不含断线后重连窗口内保留的会话）；没有专门的快速匹配/在线统计协议，这是最简单的口径
+function onlineCount({ registry, network }) {
+  const now = Date.now();
+  if (now - onlineCache.at >= ONLINE_TTL_MS) {
+    onlineCache.at = now;
+    onlineCache.value = registry
+      ? registry.connectedSize
+      : (network ? network.connectionCount : 0);
+  }
+  return onlineCache.value;
+}
 
 /** `{ plugins: n }` when the server has n > 0 unofficial plugins (the lobby's visual sets count them), else nothing. */
 function pluginCount(lobby) {
@@ -123,6 +147,11 @@ export function createRequestHandler({ serveStatic, health, log, trustProxy = 'a
     if (parts.rawPath === '/healthz') {
       const withTraffic = wantsTraffic(parts.query) && isLocalIp(clientAddress(req, trustProxy).ip);
       sendJson(req, res, 200, healthReport(health, withTraffic));
+      return;
+    }
+    // The title screen's 当前在线人数 (public/js/screens/title.js): { online: N }, never cached by the browser.
+    if (parts.rawPath === '/api/online') {
+      sendJson(req, res, 200, { online: onlineCount(health) });
       return;
     }
     // The hot-loaded maintenance notice (server/announcement.js, 合并自用户分支): every open page polls this, so

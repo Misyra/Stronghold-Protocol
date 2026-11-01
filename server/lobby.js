@@ -511,7 +511,6 @@ export class Room {
       difficulty: this.difficulty,
       aiPicksLast: this.aiPicksLast,
       bandDupes: this.bandDupes === true,
-      consoleEnabled: !!this.consoleEnabled,
       inMatch: !!this.match,
       matchmaking: !!this.matchmaking,
       seats: this.seats.map((s) => (s
@@ -539,7 +538,9 @@ export class Room {
       // 「不限时」 (header): omitted unless on, so a default room.state stays identical
       ...(this.soloUnlimited === true ? { soloUnlimited: true } : {}),
       // 开发者控制台 (room.console.enable, 移植自用户分支): always a boolean — the room screen's switch and the
-      // client's HUD console button read it
+      // client's HUD console button read it. d5164517 put the key here (end of the frame); the 7e5cfc92 merge added a
+      // second, equivalent `!!` copy near the top — dropped in favour of this one (the field is only ever true/false,
+      // so both spellings agree).
       consoleEnabled: this.consoleEnabled === true,
     };
   }
@@ -928,7 +929,6 @@ export class Lobby {
    */
   handleMessage(session, msg, ctx = null) {
     switch (msg.t) {
-      case 'state.resync': this.resync(session, true); return OK;
       case 'queue.join': return this.queueReply(this.queueJoin(session, msg));
       case 'queue.cancel': return this.queueReply(this.cancelMatchmaking(session, msg));
       case 'queue.accept': return this.queueReply(this.matchmaking.accept(session, msg));
@@ -970,6 +970,8 @@ export class Lobby {
       // A client that missed a state-delta frame asks for a full one (shared/stateDelta.js StateReceiver; server/net.js
       // throttles it like the other resend-heavy intents). This is the same heavy resync a repeated hello runs, so it
       // draws from the same per-session budget: the match resends its full state, or the lobby its room state.
+      // (The 7e5cfc92 merge added a duplicate of this case at the top of the switch — dropped; `resync` returns
+      // undefined, so `?? { ok: true }` here answers exactly what the copy's `return OK` did.)
       case 'state.resync': return this.resync(session, true) ?? { ok: true };
       case 'p2p.enable': {
         this.peerRelay.enable(session, msg.enabled);
@@ -1318,8 +1320,9 @@ export class Lobby {
 
   /**
    * room.setBotBand {seat, bandId} (移植自用户分支): host-only, before the match, co-op rooms only — the strategy the AI seat
-   * takes in the strategy draft, or null for its own pick. One AI seat per strategy. Like a difficulty change it
-   * un-readies the other humans.
+   * takes in the strategy draft, or null for its own pick. One AI seat per strategy — while 「允许重复策略」
+   * (room.setBandDupes) is on several seats may share one, like the draft's own guard stands down (phases.js bandTaken).
+   * Like a difficulty change it un-readies the other humans.
    */
   setBotBand(session, { seat, bandId = null }) {
     const room = this.roomOf(session);
@@ -1331,7 +1334,7 @@ export class Lobby {
     if (!target || !target.isBot) return fail(ERR.BAD_TARGET, 'seat does not hold an AI');
     if (bandId !== null) {
       if (!this.bandOffered(room, bandId)) return fail(ERR.BAD_TARGET, 'strategy not offered in this mode');
-      if (room.seats.some((s) => s && s !== target && s.isBot && s.band === bandId)) return fail(ERR.BAD_TARGET, 'strategy designated to another AI');
+      if (!room.bandDupes && room.seats.some((s) => s && s !== target && s.isBot && s.band === bandId)) return fail(ERR.BAD_TARGET, 'strategy designated to another AI');
     }
     this.dropReplay(room, session.playerId);
     if ((target.band ?? null) !== bandId) {

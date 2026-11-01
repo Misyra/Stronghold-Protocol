@@ -1294,6 +1294,21 @@ describe('websocket lobby', () => {
     assert.equal(h.versions.hosts.matches, 0);
     assert.equal(srv.versionHosts.stats().workers, 0);
   });
+
+  test('/api/online counts the sessions bound to a socket and answers from its ~10 s cache', async () => {
+    const c = await pool.player('OnlineCnt');
+    const first = await httpReq(srv.port, '/api/online');
+    assert.equal(first.status, 200);
+    assert.equal(first.headers['cache-control'], 'no-store');
+    const n = JSON.parse(first.body.toString()).online;
+    assert.ok(Number.isFinite(n) && n >= 1, `a connected player counts, got ${n}`);
+    // inside the cache window a second request answers the same figure — even after the session drops
+    const second = await httpReq(srv.port, '/api/online');
+    assert.equal(JSON.parse(second.body.toString()).online, n, 'two requests inside the cache window agree');
+    await c.close();
+    const third = JSON.parse((await httpReq(srv.port, '/api/online')).body.toString());
+    assert.equal(third.online, n, 'the cached value outlives a disconnect (the count refreshes at most every 10 s)');
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------

@@ -226,8 +226,10 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       sendError(req, res, 400, '请求地址无效 · Bad request');
       return;
     }
-    // 版本化地址（server/assetVersion.js）：/_v/<tag>/js/… 之类只认本次发布算出来的 tag，
-    // 旧页面的 URL 在发版后一律 404（宁可让页面重载，也不能把新字节挂在旧 URL 上被永久缓存）。
+    // 版本化地址（server/assetVersion.js）：/_v/<tag>/js/… 之类认本次发布算出来的 tag（immutable）。
+    // 旧 tag 的 URL 不再承诺 immutable：发版后旧入口模块会从浏览器缓存带出整条旧 tag 导入链，
+    // 一律 404 会把页面钉死在「脚本加载失败」——对本源的未知 tag 回退到**当前字节**并按 no-cache
+    // 重验（坏缓存条目被当前内容替换；本条发布照常 immutable）。
     let versioned = false;
     if (decoded.startsWith(VERSION_PREFIX)) {
       const match = /^\/_v\/([a-f0-9]{16})(\/.*)$/.exec(decoded);
@@ -239,7 +241,15 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       }
       const legacyCode = /^\/(?:js|vendor|shared|sim)\//.test(match[2]);
       if (match[1] !== release.expectedTag(match[2]) && !(legacyCode && match[1] === release.tag)) {
-        sendError(req, res, 404, '资源版本已更新 · Reload required');
+        // 旧 tag 的 URL 一律 404（新字节不挂旧 URL）。但发版后 immutable 缓存的旧入口模块不被普通刷新
+        // 击穿，会把整条旧 tag 导入链钉死在「脚本加载失败」——404 响应顺带让浏览器清掉本源的缓存
+        // （Clear-Site-Data: "cache"），下一次刷新就是干净的全新加载。
+        res.writeHead(404, {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Clear-Site-Data': '"cache"',
+        });
+        res.end('资源版本已更新 · Reload required');
         return;
       }
       decoded = match[2];

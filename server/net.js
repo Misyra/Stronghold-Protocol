@@ -179,6 +179,16 @@ export class SessionRegistry {
   get size() { return this.byPlayerId.size; }
 
   /**
+   * Sessions currently bound to a socket — the /api/online count (server/http/routes.js). `size` keeps every session
+   * of the reconnect window (up to 10 min after its socket closed), so it would overcount the players online.
+   */
+  get connectedSize() {
+    let n = 0;
+    for (const s of this.byPlayerId.values()) if (s.connected) n++;
+    return n;
+  }
+
+  /**
    * Create a new session with a fresh playerId and token. Evicts the oldest idle (disconnected, roomless)
    * session when the registry is full. Returns null when full of active sessions.
    * @param {string} name
@@ -244,8 +254,11 @@ export class SessionRegistry {
   }
 
   /**
-   * The room-grace expiry of one seat's session (server/matchRestore.js): the reconnect window alone — a muted session
-   * (chatRetentionUntil) keeps its room recoverable, unlike the registry's own sweep (isExpired).
+   * The room-grace expiry of one seat's session (server/persist.js, server/matchRestore.js): the plain reconnect
+   * window, the same predicate the registry's own sweep (isExpired) uses. Chat retention (chatRetentionUntil,
+   * persist.js) only keeps the session itself — identity, token, the ban ladder — alive past that window; the room
+   * does not follow: persist.js still clears the session's roomCode here and matchRestore.js does not restore its
+   * seat, so a muted session past the window keeps its account but not its room or seat.
    * @param {Session} s @param {number} now
    */
   roomExpired(s, now) {

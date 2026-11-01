@@ -33,7 +33,7 @@
 // Reconnect expiry includes downtime. Incompatible document/checkpoint schemas are refused before any state write.
 
 import { splitClocks, mergeClocks } from './stateClocks.js';
-import { captureMatch, canSnapshot, encodeMatchCapture, matchClocks, persistVersion, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
+import { captureMatch, canSnapshot, matchClocks, persistVersion, SNAPSHOT_VERSION, snapshotMatch } from './match/snapshot.js';
 import { PersistenceWorker } from './workers/persistenceClient.js';
 import { N_ } from '../shared/i18n.js';
 import { chatRetentionUntil } from './moderation/chatState.js';
@@ -228,6 +228,9 @@ function restoreServerCore({ doc, registry, lobby, now = Date.now(), log = noopL
       chatMutedUntil: s.chatMutedUntil,
     });
     if (session) {
+      // Chat retention (above) only keeps the session itself past its reconnect window; the room does not follow —
+      // roomExpired is the plain window, so a retained (muted) session still loses its roomCode / pending result and
+      // its seat is not restored (matchRestore.js). See SessionRegistry.roomExpired (server/net.js).
       if (registry.roomExpired(session, now)) { session.roomCode = null; session.notice = 'timeout'; session.pendingResult = null; }
       stats.sessions++;
     }

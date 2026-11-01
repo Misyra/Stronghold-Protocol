@@ -200,6 +200,9 @@
 .brief-go .btn__icon { width: .44rem; height: .44rem; }
 .brief-go.is-active, .brief-go:disabled { --btn-bg: #3f4344; --btn-fg: #f2f4f4; --btn-bd: #6b7071; box-shadow: 0 0 0 .03rem rgba(255, 255, 255, .55); opacity: 1; }
 .brief-go.is-loading { --btn-bg: var(--mint-700); }
+/* 预选盟约 (ui/bondPlan.js, fork e64a3260): the footer's picker entry, left of the ready block */
+.brief-plan { flex: none; max-width: 3.2rem; }
+.brief-plan .btn__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Full setup reroll: consent stays visible alongside the information being confirmed — above the absolute
    .brief__foot (its height kept free below), never over 准备就绪. */

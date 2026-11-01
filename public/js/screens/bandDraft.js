@@ -22,10 +22,11 @@
 // never touches the highlighted band or the buttons.
 // The event's layout and motion (PR #643, video 6:29–7:51): the step header says whose turn it is (👆 请选择策略 with
 // 跳过选择 / 无法跳过, X 正在选择策略…, 策略选择完成 · 正在进入模拟…) and carries 本局信息 beside the difficulty; the order rows
-// are name cards (the doctor's 名片干员 art — ui/seatArt.js, as on the room's seat cards — avatar, name, state) with the
-// strategy box beside them (⌛ 决策中, •••, or the picked strategy with 🔍 — it opens that strategy read-only) and ✓
-// outside; the grid is a 4-wide wall of portraits (已被选择 across a teammate's; the official orange corner badge,
-// statistics/strategyBadge, on a strategy that has earned it — the official bands victorCount, 3 for all 40, counted
+// are name cards (the doctor's 名片干员 art — ui/seatArt.js, as on the room's seat cards — avatar, name, state, 预选盟约
+// — ui/bondPlan.js, fork e64a3260) with the strategy box beside them (⌛ 决策中, •••, or the picked strategy with 🔍 — it
+// opens that strategy read-only) and ✓ outside; the grid is a 4-wide wall of portraits (已被选择 across a teammate's; the
+// official orange corner badge, statistics/strategyBadge, on a strategy that has earned it — the official bands
+// victorCount, 3 for all 40, counted
 // over this browser's records by ui/stats.js strategyBadgeIds, the stats page's own rule); the detail pane slides in
 // only once a portrait is tapped (the order list narrows) and says 已通过模拟 N 次 for a strategy won with here;
 // after the pick the wall gives way to 已选定策略, and a beam runs along a row when its pick lands. When the pick becomes
@@ -42,6 +43,7 @@ import { useGameData, BandIcon, RichText, PlayerAvatar, Sprite, Img } from '../u
 import { StepHeader, ExitModal } from '../ui/matchChrome.js';
 import { MatchInfoDialog, matchInfoModel } from '../ui/matchInfo.js';
 import { MatchEnemies } from '../ui/matchEnemies.js';
+import { BondPlanTag } from '../ui/bondPlan.js';
 import { StageMiniMap } from '../ui/stagePreview.js';
 import { actions, act } from '../ui/gameActions.js';
 import { normalizeDraft, sortedPlayers } from '../ui/gameLogic.js';
@@ -220,14 +222,14 @@ function BandText({ band, class: cls }) {
 }
 
 /**
- * One doctor of the draft order: the name card (the 名片干员 art, avatar, name, state), the strategy box (⌛ 决策中 / •••
+ * One doctor of the draft order: the name card (the 名片干员 art, avatar, name, state, 预选盟约), the strategy box (⌛ 决策中 / •••
  * / the pick with 🔍, which opens it) and ✓ outside it; a beam runs along the row when the pick lands (useRise).
  * `arts`: the 名片干员 pictures in order of preference (the outfit's, then the operator's default — an outfit file that fails
  * to load falls back to the default as on the seat cards, §35.51), null for none.
  * @param {{ p: any, i: number, picked: string|null, cur: boolean, self: boolean, arts: (string|null)[]|null, medal: string|null,
- *   gd: any, onPeek: (bandId: string) => void }} props
+ *   solo: boolean, gd: any, onPeek: (bandId: string) => void }} props
  */
-function OrderRow({ p, i, picked, cur, self, arts, medal, gd, onPeek }) {
+function OrderRow({ p, i, picked, cur, self, arts, medal, solo, gd, onPeek }) {
   const flash = useRise(!!picked, 1100);
   const [badArt, setBadArt] = useState([]);
   const art = seatArtSrc(arts, badArt);
@@ -241,6 +243,7 @@ function OrderRow({ p, i, picked, cur, self, arts, medal, gd, onPeek }) {
         <b class="dorder__name">${medal ? html`<${Img} src=${medal} class="dorder__medal" />` : null}<span>${p.name || t('博士')}</span>${p.isBot ? html`<span class="dorder__ai">AI</span>` : null}</b>
         <span class="dorder__state">${picked ? html`<span class="t-mint">${pband?.name || t('已选择')}</span>`
           : cur ? html`<span class="t-gold">${t('决策中')}</span>` : html`<span class="t-dim">${t('等待中')}</span>`}</span>
+        ${!solo && p.bondPlan ? html`<${BondPlanTag} bondId=${p.bondPlan} gd=${gd} class="dorder__plan" />` : null}
       </div>
     </div>
     ${picked ? html`<button type="button" class="dorder__box is-band" onClick=${() => onPeek(picked)} title=${t('查看「{name}」', { name: pband?.name || '' })}>
@@ -452,7 +455,7 @@ export function BandDraftScreen({ held = null } = {}) {
             const picked = draft.picks.get(p.playerId) || (p.playerId === myId ? myPick : p.bandId) || null;
             const cur = !picked && !allPicked && (solo || draft.turnPid === p.playerId);
             return html`<${OrderRow} key=${p.playerId} p=${p} i=${i} picked=${picked} cur=${cur} self=${p.playerId === myId}
-              arts=${artOf(p)} medal=${p.playerId === myId ? myMedal : null} gd=${gd} onPeek=${peekBand} />`;
+              arts=${artOf(p)} medal=${p.playerId === myId ? myMedal : null} solo=${solo} gd=${gd} onPeek=${peekBand} />`;
           })}
         </div>
         ${!solo ? html`<p class="draft-order__tip" data-testid="draft-tip">${draftTip({ timed, turnSeconds: turnLen, autoName: myPick ? null : autoName, selected: open && autoId === sel })}</p>` : null}

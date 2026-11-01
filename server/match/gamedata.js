@@ -562,6 +562,23 @@ export class GameData {
   }
 
   /**
+   * The bonds a player may announce as its plan (g.bondPlan, m.public players[].bondPlan — 预选盟约, 移植自用户分支,
+   * display only): every core faction bond (bonds.json `isCore`, bondType SEASON) in every mode — the ones a mode
+   * never activates (标准模拟's 拉特兰 阿戈尔 卡西米尔) and the match's drawn set included (the owner's decision).
+   * The trait bonds (精准, 迅捷 …) are not plannable. Data order (identifier), frozen.
+   * @returns {readonly string[]}
+   */
+  plannableBondIds() {
+    if (!this._plannableBonds) this._plannableBonds = Object.freeze(this.bondIds.filter((id) => this.bond(id)?.isCore === true));
+    return this._plannableBonds;
+  }
+
+  /** @param {unknown} bondId @returns {boolean} whether `bondId` is one of plannableBondIds() (g.bondPlan) */
+  bondPlannable(bondId) {
+    return typeof bondId === 'string' && this.plannableBondIds().includes(bondId);
+  }
+
+  /**
    * Placeable (hand) tokens a chess sends to the hand when placed on the board: [{ tokenId, count }] — its manually
    * deployable summons (tokens.json `placeable`: 医疗探机, 诅咒娃娃, 海嗣, 狼群, 流形, 爬行号·防护单元; user playtest #6)
    * that the chess makes under `loadout` ({ skillIndex } from shared/protocol.js resolveLoadout; absent ⇒ its default

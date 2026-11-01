@@ -964,7 +964,10 @@ The client's stored loadout and `m.private.loadout` / `ops` must agree after a s
 drawn set; `disabledBonds` = drawn ∪ the mode's static list), `hiddenBossId`, `bossRound`, `hiddenRound`, `spRound`,
 `combatMode` (`'client'` | `'server'`), `fields[].progress { killed, total, done }` (teammates' progress UI), `paused`
 (solo pause, §1.3a),
-`players[].autoplay`, `players[].uniteLeft` (UNITE, leakers only: their enemies still standing, uncapped — §4),
+`players[].autoplay`, `players[].bondPlan` (预选盟约, 移植自用户分支 — the core bond the player announced with `g.bondPlan`, a
+remake feature, display only: GameData.plannableBondIds = every `isCore` bond of bonds.json, the mode's switched-off ones
+included; changeable from INFO_CHECK until round 1's battle, kept the whole match; `null` when none),
+`players[].uniteLeft` (UNITE, leakers only: their enemies still standing, uncapped — §4),
 `players[].bonds` = `ps.alive ? bondList(gd, ps.bondsView(), { off: offBondCounts(gd, ps) }) : []` — every bond with members, layers or an active tier
 (and, last, every bond the mode never activates that the player has members of: `{ bondId, count, active: false, tier: 0, layers, off: true }`,
 the strip's grey 本局禁用 disc — bondsMeta.offBondCounts, never in the battle input), the same list

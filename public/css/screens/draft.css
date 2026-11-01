@@ -405,3 +405,6 @@
   .modal__box.minfo-dlg { width: min(max(12rem, 32px, calc(600px * var(--sp-ui, 1))), calc(100vw - .6rem - var(--sa-l, 0px) - var(--sa-r, 0px))); }
   .minfo-dlg__content.has-enemies { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* 预选盟约 on each order row (ui/bondPlan.js, fork e64a3260; the picker itself lives in the briefing) */
+.dorder__plan { align-self: flex-start; margin-top: .02rem; }

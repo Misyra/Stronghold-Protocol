@@ -807,3 +807,29 @@ button.bpop__harmony:hover { border-style: solid; color: #fff; }
 /* #746: optional selected-unit bond timers; labels wrap at narrow widths and large text sizes. */
 .dbond-times__row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .08rem .2rem; margin: .1rem 0; font-size: calc(.24 * var(--t)); }
 .dbond-times__row > span { min-width: 0; overflow-wrap: anywhere; }
+
+/* 预选盟约 (ui/bondPlan.js, fork e64a3260): a player's planned bond — the tag (draft order rows, team panel) and the
+   picker dialog (the briefing's 预选盟约 entry) */
+.bplan { display: inline-flex; align-items: center; gap: .04rem; max-width: 100%; padding: .01rem .06rem .01rem .02rem;
+  border: 1px solid rgba(78, 216, 175, .35); background: rgba(78, 216, 175, .08); color: var(--mint-400);
+  font-size: max(calc(.12 * var(--t)), calc(11px * var(--ui))); font-weight: 700; white-space: nowrap; }
+.bplan .bglyph { width: .2rem; height: .2rem; }
+.bplan__name { overflow: hidden; text-overflow: ellipsis; }
+.bplan--compact { padding: .01rem; }
+.bplan-dlg__tip { margin: 0 0 .12rem; font-size: max(calc(.13 * var(--t)), calc(12px * var(--ui))); }
+.bplan-dlg__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(1.3rem, 1fr)); gap: .08rem; }
+.bplan-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: .04rem; padding: .1rem .06rem;
+  background: rgba(12, 15, 14, .82); border: 1px solid var(--line); color: var(--text-md); cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast); }
+.bplan-card:hover { border-color: var(--line-3); }
+.bplan-card:disabled { cursor: default; }
+.bplan-card .bglyph { width: .5rem; height: .5rem; }
+.bplan-card__name { font-size: max(calc(.15 * var(--t)), calc(12px * var(--ui))); font-weight: 700; color: var(--text-hi); }
+.bplan-card__off { font-size: max(calc(.11 * var(--t)), calc(10px * var(--ui))); color: var(--gold, #f6a329); }
+.bplan-card__who { display: inline-flex; align-items: center; gap: .02rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: max(calc(.11 * var(--t)), calc(10px * var(--ui))); color: var(--ice); }
+.bplan-card__who .icon { width: .12rem; height: .12rem; flex: none; }
+.bplan-card__mine { position: absolute; right: .04rem; top: .04rem; color: var(--mint-400); }
+.bplan-card__mine .icon { width: .16rem; height: .16rem; }
+.bplan-card.is-sel { border-color: var(--mint-400); background: linear-gradient(180deg, rgba(78, 216, 175, .18), rgba(12, 15, 14, .85)); }
+.bplan-card.is-off .bglyph { opacity: .6; }

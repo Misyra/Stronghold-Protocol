@@ -30,6 +30,8 @@ export class MatchIntents {
       case 'g.bandSkip': return this.skipBand(ps);
       // the strategy highlighted in the draft screen (what a timed-out turn takes, timeoutBand)
       case 'g.bandFocus': return this.bandFocus(ps, msg.bandId ?? null);
+      // 预选盟约(移植自用户分支): the core bond the player means to build (display only; the opening phases)
+      case 'g.bondPlan': return this.planBond(ps, msg.bondId ?? null);
       case 'g.buy': return ps.buy(msg.slot);
       case 'g.refresh': return ps.refresh();
       case 'g.freeze': return ps.freeze();
@@ -87,6 +89,33 @@ export class MatchIntents {
     this.markPublic();
     if (on) this.kickBot(ps);
     return OK;
+  }
+
+  /**
+   * g.bondPlan { bondId? } (预选盟约, 移植自用户分支; a remake feature, display only): the core bond (盟约) the player
+   * announces it means to build — m.public players[].bondPlan, seen by every teammate and spectator for the rest of
+   * the match. Changeable from INFO_CHECK until round 1's battle starts (bondPlanOpen), else WRONG_PHASE; `bondId`
+   * one of GameData.plannableBondIds() (BAD_TARGET otherwise — the mode's switched-off bonds stay plannable), absent /
+   * null clears it; the same plan again changes nothing. No rule, bot, timer or idle check reads it. AI seats and
+   * spectator seats cannot send it (handle refuses them).
+   * @param {PlayerState} ps @param {string|null} bondId
+   */
+  planBond(ps, bondId) {
+    if (!this.bondPlanOpen()) return fail(ERR.WRONG_PHASE);
+    if (bondId !== null && !this.gd.bondPlannable(bondId)) return fail(ERR.BAD_TARGET);
+    if (ps.bondPlan === bondId) return OK;
+    ps.bondPlan = bondId;
+    this.markPublic();
+    return OK;
+  }
+
+  /** 预选盟约可变更的时间窗(移植自用户分支): the opening — INFO_CHECK, the strategy draft, BATTLE_CHECK — and round 1 up to its battle. */
+  bondPlanOpen() {
+    switch (this.phase) {
+      case PHASE.INFO_CHECK: case PHASE.BAND_DRAFT: case PHASE.BATTLE_CHECK: return true;
+      case PHASE.ROUND_START: case PHASE.SP_DRAFT: case PHASE.PREP: return this.round <= 1;
+      default: return false;
+    }
   }
 
   /** Let the bot act for a (newly) bot-controlled seat in the current phase. */

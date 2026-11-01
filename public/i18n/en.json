@@ -3516,5 +3516,9 @@
   "滑回按下的位置可取消": "Slide back to where you pressed to cancel",
   "部署时按格子吸附": "Snap to tile while deploying",
   "拖动干员时，干员站在目标格子上逐格移动，松手就落在这一格。关闭时干员跟随手指或鼠标自由移动。": "While dragging, the operator stands on the target tile and moves tile by tile; releasing drops it there. When off, the operator follows your finger or mouse freely.",
-  "{bond}：{names}": "{bond}: {names}"
+  "{bond}：{names}": "{bond}: {names}",
+  "预选盟约：{name}": "Bond plan: {name}",
+  "预选盟约": "Bond plan",
+  "不预选": "No plan",
+  "选择你打算发展的盟约，所有博士都能看到。只作沟通，不影响对局。": "Pick the bond you plan to build. Every Doctor can see it — it is only for coordination and does not affect the match."
 }

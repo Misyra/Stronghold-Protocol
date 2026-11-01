@@ -241,7 +241,7 @@ export const MATCH_FIELDS = Object.freeze([
 export const PLAYER_FIELDS = Object.freeze([
   'playerId', 'seat', 'name', 'isBot', 'connected', 'left', 'autoplay', 'offlineRounds', 'offlineAutoplay',
   'consoleRoundUses', 'consoleTotalUses', 'alive', 'lp', 'bandId', 'funds',
-  'pendingFunds', 'ready', 'infoReady', 'lastEmoteAt', 'loadout', 'ops', 'personalChoice', 'shop', 'offers', 'hand', 'temp', 'prepsEnded',
+  'pendingFunds', 'ready', 'infoReady', 'lastEmoteAt', 'bondPlan', 'loadout', 'ops', 'personalChoice', 'shop', 'offers', 'hand', 'temp', 'prepsEnded',
   '_tempDue', 'board', 'layers', 'pendingLayerGains', 'bondCountBonus', 'effects', 'bounties', 'counters', 'round',
   'deployCapBonus', 'deployCapMin', 'deviceOverrides', 'tileOverrides', 'stats', 'eliminatedRound', 'lpAtFinal',
   'lastResult', 'diy', 'diyStock', 'diyBanned',

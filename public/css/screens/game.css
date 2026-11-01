@@ -599,6 +599,9 @@
 .team__status.is-red, .team__status.is-offline { color: var(--red-premium); }
 .team__eye { color: var(--amber); display: grid; }
 .team__eye .icon { width: .2rem; height: .2rem; }
+/* 预选盟约 glyph on the row's status line (ui/bondPlan.js, fork e64a3260) */
+.team__plan { flex: none; border-color: rgba(78, 216, 175, .25); background: rgba(12, 15, 14, .6); }
+.team__plan .bglyph { width: .18rem; height: .18rem; }
 .team__row.is-self .pavatar { box-shadow: 0 0 0 2px var(--mint-500), 0 0 .18rem rgba(23, 249, 183, .35); }
 .team__row.is-watched .pavatar { box-shadow: 0 0 0 2px var(--amber), 0 0 .18rem rgba(246, 163, 41, .45); }
 .team__row.is-dead .team__name { color: var(--text-dim); text-decoration: line-through; }

@@ -164,6 +164,9 @@ export class PlayerState {
     this.pendingFunds = 0;
     this.ready = false;
     this.infoReady = this.isBot;
+    /** 预选盟约(移植自用户分支): the core bond the human announced it means to build (g.bondPlan, m.public
+     * players[].bondPlan; display only — no rule, bot or timer reads it; AI seats never announce one). */
+    this.bondPlan = null;
     this.lastEmoteAt = -Infinity;
     /** operator loadout (DESIGN §16): frozen { [baseChessId]: { skill, module } }, {} = every chess on its defaults */
     this.loadout = Object.freeze({});

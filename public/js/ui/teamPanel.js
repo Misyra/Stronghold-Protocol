@@ -1,7 +1,7 @@
 // Left team panel (research 06 §11.1, research 09 §3.1): one row per seat — avatar (band icon once picked), name, LP
 // tower, status glyph (… acting / ✓ ready / ⌛ deciding / ⚔ combat / door left / ✕ dead), AI badge, "you" marker, the
-// field being watched (eye badge), and emote bubbles. In a boss round the viewer's pair is framed in green from the
-// round's start (gameLogic teamFrameIds; community report of 2026-10-06, item 51).
+// field being watched (eye badge), the 预选盟约 glyph (ui/bondPlan.js, fork e64a3260) and emote bubbles. In a boss round
+// the viewer's pair is framed in green from the round's start (gameLogic teamFrameIds; community report of 2026-10-06, item 51).
 // Observing (client-side combat, `observe` prop — the official flow): tapping a teammate's avatar expands a mint
 // "前往查看" button under the row (when that teammate can be observed now; otherwise the reason is toasted through
 // onWatch); while observing, the own row shows a "返回战场" button. Without `observe` (server-run combat) a click
@@ -25,6 +25,7 @@ import { PlayerAvatar, LpTower, GIcon, LocalSprite } from './gameComponents.js';
 import { EmoteBubble } from './emotes.js';
 import { STATUS_META, sortedPlayers, teamFrameIds } from './gameLogic.js';
 import { MissTag, uniteRemaining } from './hud.js';
+import { BondPlanTag } from './bondPlan.js';
 import { localAsset } from '../data.js';
 import { t } from '../../../shared/i18n.js';
 
@@ -184,6 +185,7 @@ export function TeamPanel({ pub, myId, watching, bubbles, onWatch, compact = fal
             <${LpTower} value=${lp.lp} size="sm" tone=${Number.isFinite(lp.lp) && lp.lp - lp.pending <= 5 ? 'danger' : null} pending=${lp.pending}
               tip=${rowLpTip(lp, cap)} />
             ${lp.left != null ? html`<${MissTag} n=${lp.left} name=${self ? null : p.name || t('博士')} />` : null}
+            ${p.bondPlan ? html`<${BondPlanTag} bondId=${p.bondPlan} compact=${true} class="team__plan" />` : null}
             <${Tooltip} text=${offline ? t('连接已断开') : t(meta.text)} placement="right">
               <span class=${cx('team__status', `is-${meta.tone}`, offline && 'is-offline', (offline || STATUS_SPRITE[status]) && localAsset('ui/battle', offline ? 'icon_lost_connect' : STATUS_SPRITE[status]) && 'has-sprite')} aria-label=${t(meta.text)}>
                 ${offline ? html`<${LocalSprite} name="icon_lost_connect" fallback=${html`<${Icon} name="wifiOff" />`} />`

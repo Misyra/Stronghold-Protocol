@@ -127,6 +127,9 @@ export class MatchViews {
         alive: ps.alive,
         lp: Math.max(0, ps.lp),
         bandId: ps.bandId,
+        // 预选盟约(移植自用户分支): the core bond the player announced it means to build (g.bondPlan; display only,
+        // kept the whole match), else null
+        bondPlan: ps.bondPlan ?? null,
         shopLevel: ps.shop.level,
         boardCount: ps.deployCount,
         ready: this.phase === PHASE.INFO_CHECK ? ps.infoReady : ps.ready,

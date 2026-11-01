@@ -365,6 +365,13 @@ export function subsetPrivate(priv) {
     lp: num(priv.lp),
     funds: num(priv.funds),
     bandId: str(priv.bandId),
+    speedVoted: priv.speedVoted === true,
+    // 插件脚本的计数器（数字键 ≤ 64 个）——只读，给界面插件显示负债等自有状态
+    counters: isObj(priv.counters)
+      ? Object.fromEntries(Object.entries(priv.counters)
+        .filter(([k, v]) => typeof k === 'string' && k.length <= 64 && Number.isFinite(v))
+        .slice(0, 64).map(([k, v]) => [k, v]))
+      : {},
     ready: priv.ready === true,
     shop,
     hand: Array.isArray(priv.hand) ? priv.hand.slice(0, 16).map(cardOf) : [],

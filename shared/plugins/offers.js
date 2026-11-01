@@ -1,5 +1,6 @@
 // shared/plugins/offers.js — the declarative `offers` part of manifest 2 (PLUGIN API v2, docs/PLUGINS.md §10b):
-// an interaction window a plugin asks the host to open. Pure data: this module only reads and checks the files, it
+// an interaction window a plugin asks the host to open. A window may narrow who it opens for (`when.bands`) and a
+// card may carry a per-picker condition (`when`); both are declarative and evaluated per player at open time. Pure data: this module only reads and checks the files, it
 // never runs plugin code and never touches the match. A window's *lifecycle* (open → collect g.offer → deadline →
 // settle) is engine code, and a pick's effect is one of the closed effect primitives below.
 //
@@ -116,6 +117,22 @@ export function effectProblem(effect, at) {
   return bad;
 }
 
+/**
+ * Read a card's optional picker condition. `null` is "always"; `{ solo: true }` shows the card only when the picker
+ * is the room's last standing player; `{ seat: k }` only when another player occupies seat k (1-based, the same
+ * numbering the room UI uses). A closed vocabulary on purpose: no expressions, no code.
+ * @param {unknown} v
+ * @returns {{ solo: true } | { seat: number } | null}
+ */
+export function readCardWhen(v) {
+  if (v === undefined) return null;
+  if (!isObj(v)) return null;
+  const keys = Object.keys(v);
+  if (keys.length === 1 && v.solo === true) return { solo: true };
+  if (keys.length === 1 && int(v.seat, 1, 8)) return { seat: v.seat };
+  return null;
+}
+
 /** Read a JSON array (or {cards: [...]}); every rendered slot has a checked payload and effect. */
 export function readOfferCards(raw, offer) {
   const cards = Array.isArray(raw) ? raw : raw?.cards;
@@ -135,10 +152,12 @@ export function readOfferCards(raw, offer) {
       if (typeof c[key] !== 'string' || !c[key].trim() || c[key].length > max) bad(`${at}.${key}`, `nonempty text, at most ${max} characters`);
     }
     if (!OFFER_ICONS.includes(c.icon)) bad(`${at}.icon`, `one of ${OFFER_ICONS.join(', ')}`);
+    const when = readCardWhen(c.when);
+    if (c.when !== undefined && !when) bad(`${at}.when`, '"when" is { "solo": true } or { "seat": 1–8 } (a picker condition, see PLUGINS.md §10b)');
     const effect = c.apply ?? offer.apply;
     const err = effectProblem(effect, `${at}.apply`);
     if (err) bad(`${at}.apply`, err);
-    return { id: c.id, name: c.name, desc: c.desc, icon: c.icon, effect };
+    return { id: c.id, name: c.name, desc: c.desc, icon: c.icon, effect, when };
   });
   return { cards: problems.length ? [] : out, problems };
 }
@@ -162,10 +181,12 @@ export function readOfferFile(raw, { pluginId = '', rel = '' } = {}) {
   if (o.offer !== OFFER_FILE_VERSION) p('PLUGIN_OFFER_SHAPE', 'offer', `"offer": ${JSON.stringify(o.offer)} is not ${OFFER_FILE_VERSION}`);
   const fileId = typeof o.id === 'string' ? o.id.trim() : '';
   if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(fileId)) p('PLUGIN_OFFER_SHAPE', 'id', '"id" is 1–32 lower-case letters, digits and - (it names the window in messages and messages of the room)');
-  // `when`: the moment and the rounds. `at` picks an upstream moment; `rounds` is an expression over the round number.
+  // `when`: the moment and the rounds. `at` picks an upstream moment; `rounds` is an expression over the round number;
+  // `bands` (optional) narrows the participants to players of these bands — a window nobody may open creates nothing.
   let at0 = null;
   let rounds = null;
-  if (!isObj(o.when)) p('PLUGIN_OFFER_SHAPE', 'when', '"when" is { "at": ["battleCheck" | "prep", …], "rounds"?: … }');
+  let bands = null;
+  if (!isObj(o.when)) p('PLUGIN_OFFER_SHAPE', 'when', '"when" is { "at": ["battleCheck" | "prep", …], "rounds"?: …, "bands"?: [...] }');
   else {
     const list = Array.isArray(o.when.at) ? o.when.at : o.when.at === undefined ? [] : [o.when.at];
     const bad = list.filter((x) => !OFFER_WHEN.includes(x));
@@ -175,7 +196,13 @@ export function readOfferFile(raw, { pluginId = '', rel = '' } = {}) {
       rounds = readRounds(o.when.rounds);
       if (!rounds) p('PLUGIN_OFFER_ROUNDS', 'when.rounds', `"when.rounds" is a list of rounds 1–${OFFER_ROUND_MAX}, "any", { "every": N } or { "from": R, "to": R }`);
     } else rounds = { kind: 'list', rounds: [] };
-    for (const k of Object.keys(o.when)) if (!['at', 'rounds'].includes(k)) w('PLUGIN_OFFER_SHAPE', `when.${k}`, `"when.${k}" is not a field of "when" (ignored)`);
+    if (o.when.bands !== undefined) {
+      const list = Array.isArray(o.when.bands) ? o.when.bands : [o.when.bands];
+      const badBand = list.filter((x) => typeof x !== 'string' || !x.trim() || x.length > 64);
+      if (!list.length || list.length > 8 || badBand.length || new Set(list).size !== list.length) p('PLUGIN_OFFER_SHAPE', 'when.bands', '"when.bands" is 1–8 unique band ids (the window opens only for players of these bands)');
+      else bands = list;
+    }
+    for (const k of Object.keys(o.when)) if (!['at', 'rounds', 'bands'].includes(k)) w('PLUGIN_OFFER_SHAPE', `when.${k}`, `"when.${k}" is not a field of "when" (ignored)`);
   }
   const windowSec = o.windowSec === undefined ? 0 : o.windowSec;
   if (!int(windowSec, 0, PLUGIN_OFFERS_MAX_WINDOW_SEC)) p('PLUGIN_OFFER_SHAPE', 'windowSec', `"windowSec" is 0–${PLUGIN_OFFERS_MAX_WINDOW_SEC} whole seconds (0 opens no window and holds nothing back)`);
@@ -218,7 +245,7 @@ export function readOfferFile(raw, { pluginId = '', rel = '' } = {}) {
   if (problems.length) return { offer: null, problems, warnings };
   return {
     offer: {
-      id: fileId, rel, pluginId, when: { at: at0, rounds }, rounds, windowSec, quorum, onTimeout, defer, slots, refresh, shared, options,
+      id: fileId, rel, pluginId, when: { at: at0, rounds, bands }, rounds, windowSec, quorum, onTimeout, defer, slots, refresh, shared, options,
       ...(o.apply === undefined ? {} : { apply: o.apply }),
     },
     problems, warnings,

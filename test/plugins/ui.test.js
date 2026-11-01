@@ -213,6 +213,8 @@ describe('the postMessage contract', () => {
     const priv = subsetPrivate({
       playerId: 'p', seat: 0, alive: true, lp: 3, funds: 10, loadout: { secret: true }, ops: [1],
       token: 'no', diy: { a: 1 }, effects: ['x'], nextEnemies: [1], personalChoice: 'hidden',
+      speedVoted: true,
+      counters: { 'kurumi:debt': 15, 'kurumi:pos': -1, bad: 'string', [Symbol()]: 1 },
       hand: [{ uid: 1, kind: 'chess', id: 'a', secret: 'no' }],
       stats: { dmgDealt: 4, kills: 1, leaks: 0, gold: 2, refreshes: 9 },
     });
@@ -226,6 +228,10 @@ describe('the postMessage contract', () => {
     assert.equal(priv.hand[0].secret, undefined);
     assert.equal(priv.stats.refreshes, undefined);
     assert.equal(priv.stats.dmgDealt, 4);
+    assert.equal(priv.speedVoted, true);
+    assert.equal(priv.counters['kurumi:debt'], 15);
+    assert.equal(priv.counters['kurumi:pos'], -1);
+    assert.equal(priv.counters.bad, undefined, 'only finite numbers pass');
     const pub = subsetPublic({ phase: 'PREP', players: [{ playerId: 'p', name: '凯尔希', hand: [1] }], hiddenBossId: 'x' });
     assert.equal(pub.hiddenBossId, undefined);
     assert.equal(pub.players[0].hand, undefined);

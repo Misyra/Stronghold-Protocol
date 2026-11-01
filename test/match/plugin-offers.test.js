@@ -492,3 +492,73 @@ test('timeout, bots and majority skip unavailable slots in order, or close with 
     h.m.dispose();
   }
 });
+
+test('when.bands opens the window only for those players: others hold no seat, cannot pick, and bots never answer', () => {
+  const offer = window_({}, { at: 'prep', rounds: 'any' });
+  offer.when.bands = ['band_x_demo'];
+  const h = matchWith([offer], { fake: true, humans: 2, bots: 0 });
+  h.ps('p_0').bandId = 'band_x_demo';
+  assert.equal(h.m.openOfferWindow('prep', 1), 'open', 'the window opened for the band holder and waits on its quorum');
+  const w = h.m.offerWin[0];
+  assert.ok(w, 'the window opened for the band holder');
+  assert.ok(w.options.has('p_0') && !w.options.has('p_1'), 'only the band holder holds slots');
+  assert.deepEqual(h.m.offerViews()[0].seats.map(s => s.playerId), ['p_0'], 'the other player is not a participant');
+  assert.equal(h.m.requestOffer(h.ps('p_1'), 'early-pick', 0).error, 'ELIMINATED');
+  const before = h.ps('p_0').funds;
+  assert.deepEqual(h.m.handle('p_0', intent(w)), { ok: true });
+  assert.equal(h.ps('p_0').funds, before + 3);
+  h.m.dispose();
+
+  const bots = matchWith([offer], { fake: true, humans: 0, bots: 2 });
+  bots.m.order.forEach(p => { p.bandId = 'band_other'; });
+  assert.equal(bots.m.openOfferWindow('prep', 1), 'settled', 'no eligible participant: the window creates nothing');
+  assert.equal(bots.m.offerWin.length, 0);
+  assert.equal(bots.m.offerSeq, 0);
+  assert.equal(bots.m.errorCount, 0);
+  bots.m.dispose();
+
+  const ghost = matchWith([{ ...window_({ id: 'ghost' }, { at: 'prep', rounds: 'any' }), when: { at: ['prep'], rounds: 'any', bands: ['band_x_ghost'] } }], { fake: true });
+  assert.equal(ghost.m.openOfferWindow('prep', 1), 'settled');
+  assert.equal(ghost.m.offerWin.length, 0, 'a window whose band holds nobody is not built at all');
+  ghost.m.dispose();
+});
+
+test('a card when shows the seat card only while another player holds that seat, and solo only when alone', () => {
+  const offer = window_({ slots: 2 }, { at: 'prep', rounds: 'any' });
+  offer.cards = [
+    { id: 's2', name: 'Seat 2', desc: 'd', icon: 'funds', effect: { funds: 1 }, when: { seat: 2 } },
+    { id: 'solo', name: 'Solo', desc: 'd', icon: 'funds', effect: { funds: 2 }, when: { solo: true } },
+    { id: 'any', name: 'Any', desc: 'd', icon: 'funds', effect: { funds: 3 } },
+  ];
+  const team = matchWith([offer], { fake: true, humans: 2, bots: 0 });
+  team.ps('p_1').seat = 1; // 席位 2
+  team.m.openOfferWindow('prep', 1);
+  const w = team.m.offerWin[0];
+  assert.deepEqual(w.options.get('p_0').map(c => c.id).sort(), ['any', 's2'], 'seat 2 is occupied; solo is not');
+  assert.deepEqual(w.options.get('p_1').map(c => c.id).sort(), ['any'], 'the occupier itself sees no seat-2 card');
+  team.m.dispose();
+
+  const alone = matchWith([offer], { fake: true, humans: 1, bots: 0 });
+  alone.m.openOfferWindow('prep', 1);
+  assert.deepEqual(alone.m.offerWin[0].options.get('p_0').map(c => c.id).sort(), ['any', 'solo'], 'alone: the exchange card appears, the seat card does not');
+  alone.m.dispose();
+});
+
+test('a card condition that goes stale between open and pick is refused and marked unavailable', () => {
+  const offer = window_({ slots: 2 }, { at: 'prep', rounds: 'any' });
+  offer.cards = [
+    { id: 's2', name: 'Seat 2', desc: 'd', icon: 'funds', effect: { funds: 1 }, when: { seat: 2 } },
+    { id: 'any', name: 'Any', desc: 'd', icon: 'funds', effect: { funds: 3 } },
+  ];
+  const h = matchWith([offer], { fake: true, humans: 2, bots: 0 });
+  h.ps('p_1').seat = 1;
+  h.m.openOfferWindow('prep', 1);
+  const w = h.m.offerWin[0];
+  const idx = w.options.get('p_0').findIndex(c => c.id === 's2');
+  h.ps('p_1').alive = false; // the seat empties after the window opened
+  const view = h.m.offerViews()[0].seats.find(s => s.playerId === 'p_0').slots[idx];
+  assert.equal(view.available, false);
+  assert.equal(h.m.handle('p_0', intent(w, idx)).error, 'BAD_TARGET');
+  assert.equal(w.picks.has('p_0'), false, 'the refused pick consumed nothing');
+  h.m.dispose();
+});

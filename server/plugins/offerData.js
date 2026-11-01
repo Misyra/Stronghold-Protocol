@@ -2,7 +2,7 @@
 import { getData } from '../data.js';
 import { problem, recordId } from '../../shared/plugins/dataUtils.js';
 
-const refs = { item: ['items', 'item_x'], chess: ['chess', 'chess_x'], layers: ['bonds', 'bond_x'] };
+const refs = { item: ['items', 'item_x'], chess: ['chess', 'chess_x'], layers: ['bonds', 'bond_x'], bands: ['bands', 'band_x'] };
 
 export function offerReferenceProblems(offers, manifest, documents, official = getData(), composed = null) {
   const declared = new Map(Object.values(refs).map(([table]) => [table, new Set()]));
@@ -36,6 +36,14 @@ export function offerReferenceProblems(offers, manifest, documents, official = g
     const unresolved = kind === 'chess' && record?.isDiy && !record.diyFor;
     if (!allowed || unresolved || composed && !Object.hasOwn(composed[table] || {}, id)) {
       problems.push(problem('PLUGIN_OFFER_REFERENCE', `${o.rel}.apply`, `${table}.${id} must exist in official data or this plugin's own room records and cannot be an unresolved DIY slot`));
+    }
+  }
+  // `when.bands` names bands: official ones, or the plugin's own records (the usual case — its own strategy).
+  for (const o of offers) for (const band of o.when?.bands ?? []) {
+    const allowed = Object.hasOwn(official.bands || {}, band)
+      || recordId(band, manifest.id, 'band_x') && declared.get('bands').has(band) && manifest.permissions.includes('data.add');
+    if (!allowed || composed && !Object.hasOwn(composed.bands || {}, band)) {
+      problems.push(problem('PLUGIN_OFFER_REFERENCE', `${o.rel}.when.bands`, `bands.${band} must exist in official data or this plugin's own room records`));
     }
   }
   return problems;

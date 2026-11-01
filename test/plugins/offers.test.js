@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   OFFER_EFFECTS, OFFER_QUORUM, OFFER_TIMEOUT, OFFER_WHEN, OFFER_FILE_VERSION, OFFER_ROUND_MAX,
-  offerAt, offersAt, readOfferFile, readRounds, roundsMatch, roundsText,
+  offerAt, offersAt, readOfferCards, readOfferFile, readRounds, roundsMatch, roundsText,
 } from '../../shared/plugins/offers.js';
 import { PLUGIN_OFFERS_MAX_WINDOW_SEC, PLUGIN_OFFER_SLOTS } from '../../shared/plugins/limits.js';
 import { readPluginFolder } from '../../server/plugins/registry.js';
@@ -225,13 +225,13 @@ test('the schema names the part and the level, and the frozen API table carries 
   assert.match(doc, /^## 10b\. Offers/m);
 });
 
-function offerFolder(t, { apply = { funds: 3 }, cards, data } = {}) {
+function offerFolder(t, { apply = { funds: 3 }, cards, data, when } = {}) {
   const parent = tmpdir('checked'), dir = path.join(parent, 'demo');
   t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
   put(dir, 'plugin.json', { manifest: 2, id: 'demo', version: '1.0.0', api: 2, app: '*',
     class: 'content', scope: ['room'], permissions: ['offers', ...(data ? ['data.add'] : [])],
     offers: ['offers/early-pick.json'], ...(data ? { data: ['data.json'] } : {}) });
-  put(dir, 'offers/early-pick.json', window({ apply }));
+  put(dir, 'offers/early-pick.json', window(when ? { apply, when } : { apply }));
   put(dir, 'lib/cards.json', cards || ['a', 'b', 'c', 'd'].map(id => ({ id, name: id, desc: 'Grant', icon: 'funds' })));
   if (data) put(dir, 'data.json', data);
   return dir;
@@ -313,3 +313,35 @@ test('unresolved official DIY placeholders are not grantable offer references', 
     assert.ok(r.issues.some(i => i.code === 'PLUGIN_OFFER_REFERENCE'), chess);
   }
 });
+
+test('when.bands narrows a window to named bands; a card when reads the closed solo/seat vocabulary', () => {
+  const r = read(window({ when: { at: ['prep'], rounds: [3, 9], bands: ['band_amiya'] } }));
+  assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.offer.when.bands, ['band_amiya']);
+  for (const bands of [[], ['band_amiya', 'band_amiya'], ['first', 2], ['ok', '']]) {
+    const bad = read(window({ when: { at: ['prep'], rounds: [3, 9], bands } }));
+    assert.ok(bad.problems.some(p => p.path === 'when.bands'), JSON.stringify(bands));
+  }
+  const good = readOfferCards([
+    { id: 'solo', name: 'S', desc: 'd', icon: 'funds', when: { solo: true } },
+    { id: 'seat', name: 'S', desc: 'd', icon: 'funds', when: { seat: 4 } },
+    { id: 'plain', name: 'S', desc: 'd', icon: 'funds' },
+  ], { slots: 2, apply: { funds: 3 } });
+  assert.deepEqual(good.problems, []);
+  assert.deepEqual(good.cards.map(c => c.when), [{ solo: true }, { seat: 4 }, null]);
+  for (const when of [{ seat: 0 }, { seat: 9 }, { solo: false }, { solo: true, seat: 2 }, 'solo']) {
+    const bad = readOfferCards([{ id: 'x', name: 'S', desc: 'd', icon: 'funds', when }], { slots: 1, apply: { funds: 3 } });
+    assert.deepEqual(bad.problems.map(p => p.path), ['cards[0].when'], JSON.stringify(when));
+  }
+});
+
+test('when.bands references: official bands pass, own band records pass, foreign or unknown fail', t => {
+  const dir = offerFolder(t, { when: { at: ['prep'], rounds: [3, 9], bands: ['band_amiya'] } });
+  assert.deepEqual(readPluginFolder(dir).problems, []);
+  const own = { records: 1, entries: [{ file: 'bands', id: 'band_x_demo_t', base: 'band_amiya', set: {} }] };
+  const ownDir = offerFolder(t, { when: { at: ['prep'], rounds: [3, 9], bands: ['band_x_demo_t'] }, data: own });
+  assert.deepEqual(readPluginFolder(ownDir).problems, []);
+  const foreign = readPluginFolder(offerFolder(t, { when: { at: ['prep'], rounds: [3, 9], bands: ['band_x_other_room'] } }));
+  assert.ok(foreign.issues.some(i => i.code === 'PLUGIN_OFFER_REFERENCE'));
+});
+

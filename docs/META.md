@@ -1047,6 +1047,22 @@ round was over. The official 1 s `broadcastBeginDelay` is not modelled.
 
 Strategy effect entries may carry `progress: {current,total}` and `roundProgress: {current,total}`. Chiave derives these from existing refresh and lazy round counters; views never advance or reset them. `battleInput.bandProgress` captures the preparation values for a watched battlefield.
 
+---
+
+### Damage / healing board (fork feature)
+
+`Match.damageBoard` (server/match/damageBoard.js) is a match-lifetime ledger of damage AND healing, cumulative across
+every finished field: normal rounds (combat.js `_finishCombat`), the 联防 field (settle.js, the one place the Unite
+result exists in both combat modes) and the Final Assault / hidden-core fields (bossRounds.js `_finishFinal`). The
+numbers come from the field's own final result — server-run fields' `Battle._buildResult` or, with `clientCombat=true`
+(the default), the authority's `b.result` after `validateClientResult` (an implausible report is replaced by the
+server's simulation before it is recorded), so the board never carries a rejected or fabricated number. Rows key
+operators by uid across fields (`u:<uid>`), summons by defId (`d:<defId>`). The board is exposed as `m.public.damage`
+(views.js) once the first field result arrived — reconnect resyncs and spectator seats included — and the settlement
+screen renders it (public/js/screens/result.js). It is pure read-only metadata: nothing in the sim or the settlement
+reads it, so no golden result moves; it is not persisted in checkpoints (TRANSIENT_MATCH_FIELDS), a restored match
+rebuilds it empty.
+
 ## 6. Testing & tools
 
 `opts.botStrategy` / `SP_BOT_STRATEGY` select the registered AI per match, default `legacy`;

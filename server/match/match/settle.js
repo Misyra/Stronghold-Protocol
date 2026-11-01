@@ -34,6 +34,10 @@ export class MatchSettle {
       leakers: plan.leakers.map((p) => p.playerId),
       losses: {},
     } : null;
+    // 伤害/治疗结算板: the 联防 field's result is folded in here — settle() is the one place it exists in both modes
+    // (server-run: unitePhase.startUnite's runner onDone; client-run: _finishUniteClient). Normal fields were already
+    // recorded at their own completion (combat.js _finishCombat); boss fields in _finishFinal.
+    if (uniteRan) this.damageBoard.record(this.round, uniteResult);
     const alive = this.alivePlayers();
     for (const ps of alive) {
       const r = this.lastResults.get(ps.playerId) || { leaked: [], perfect: true, coins: 0, layerGains: {}, killed: 0, damageDealt: 0 };

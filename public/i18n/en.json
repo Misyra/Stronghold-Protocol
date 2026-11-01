@@ -3509,5 +3509,8 @@
   "浏览器不支持本地对局记录": "This browser does not support local match history.",
   "本地记录数据库被其他页面占用，请关闭旧页面后重试": "The local history database is in use by another page of this site; close it and try again.",
   "请升级客户端后迁移本地记录": "Update the client before migrating the local match history.",
-  "本地记录迁移失败，旧数据库已保留": "Failed to migrate the local match history; the old database is kept."
+  "本地记录迁移失败，旧数据库已保留": "Failed to migrate the local match history; the old database is kept.",
+  "全队作战统计": "Team combat board",
+  "招牌干员": "Top operator",
+  "服务器权威 · 全对局累计（含联防与最终攻势）；本地「作战统计」面板仅统计自己": "Server-authoritative · cumulative over the whole match (Unite and the Final Assault included); the local Combat statistics panel only counts your own units"
 }

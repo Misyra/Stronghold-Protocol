@@ -277,6 +277,13 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
   // and the boss-pairing round marker (derived from the round); seatBots (0.3.4 的按席位 bot 策略) 同理 ——
   // opts.botStrategySeats ?? SP_BOT_STRATEGY_SEATS 在恢复时的构造期重新求值
   'bot', 'externalAI', 'seatBots', 'offers', 'offerWin', '_offerTimers', '_offerResume', 'offerSeq', 'rehearsalPoolStats', '_rerollStartAt', 'bossPairsRound',
+  // 伤害/治疗结算板 (fork feature, server/match/damageBoard.js): presentational metadata only — a restored match
+  // rebuilds it empty (the constructor), so the settle screen of a recovered match shows the rounds fought since,
+  // not the earlier ones. Persisting it would need class-reviving glue for no gameplay value.
+  'damageBoard',
+  // the finished battle's game-time seconds per player (combat._finishCombat; the onBattleResult ev's `time`):
+  // phase-local round state, cleared with lastResults at the round start — not part of a checkpoint
+  'lastResultTimes',
   // the persistence version (persistVersion): a derived counter, never part of the document
   '_persistRev',
 ]);

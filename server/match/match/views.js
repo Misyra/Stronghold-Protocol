@@ -156,6 +156,10 @@ export class MatchViews {
         return v;
       }),
     };
+    // 伤害/治疗结算板 (fork feature, server/match/damageBoard.js): the match-cumulative authoritative board, every
+    // viewer alike (teammates, eliminated players, spectator seats; a reconnect resync sends publicView too).
+    // Omittted until the first field result arrived, so a match's earlier m.public frames stay byte-identical.
+    if (!this.damageBoard.empty) v.damage = this.damageBoard.view();
     if (this.offers.length) v.offers = this.offerViews();
     if (this.teamLp != null) v.teamLp = Math.max(0, Math.round(this.teamLp));
     // 最终攻势 / 隐秘核心: when the overtime drain starts (ms epoch; `deadline` is the level's 120 s countdown)

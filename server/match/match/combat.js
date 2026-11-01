@@ -150,6 +150,9 @@ export class MatchCombat {
     for (const f of this.fields) {
       const res = resultOf(f);
       this._collectSimErrors(f, res);
+      // 伤害/治疗结算板 (server/match/damageBoard.js): fold the field's final result in (both combat modes deliver the
+      // same perPlayer shape — a validated client b.result or the server battle's own result)
+      this.damageBoard.record(this.round, res);
       for (const pid of f.players) {
         const pp = res.perPlayer && res.perPlayer[pid];
         this.lastResults.set(pid, pp || { killed: 0, total: 0, leaked: [], perfect: true, layerGains: {}, coins: 0, damageDealt: 0, unitsEnd: [], unitStats: [] });

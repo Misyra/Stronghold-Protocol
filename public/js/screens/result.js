@@ -106,6 +106,40 @@ function PlayerCard({ p, myId, titles, best, solo = false, skinOwnerId = null })
 }
 
 /**
+ * The 伤害/治疗结算板 section (m.public.damage, server/match/damageBoard.js): the server's authoritative board — every
+ * finished field's result folded in, cumulative across the whole match (normal rounds, 联防, 最终攻势 / 隐秘核心),
+ * every viewer sees the same numbers (a reconnect resync carries it like any public view; a spectator seat too).
+ * NOT the local 作战统计 panel (ui/combatMetrics.js): that one reads this device's own battle runner only and counts
+ * only the own units — this table is the server's ledger, all seats, dead and departed players included. Absent for a
+ * stored-match re-view (no m.public) and before the first field result: the section just does not render.
+ */
+function DamageBoardView({ pub, players, myId }) {
+  const board = pub && pub.damage && Array.isArray(pub.damage.players) ? pub.damage : null;
+  if (!board || !board.players.length) return null;
+  const rows = [...board.players].sort((a, b) => b.damage - a.damage || b.healing - a.healing);
+  return html`<section class="rboard" data-testid="result-damage-board">
+    <h2 class="brief-h"><span>${t('全队作战统计')}</span><${MicroLabel}>DAMAGE & HEALING BOARD</${MicroLabel}></h2>
+    <div class="rboard__table" role="table" aria-label=${t('全队作战统计')}>
+      <div class="rboard__head" role="row" aria-hidden="true"><span></span><span>${t('博士')}</span><span>${t('伤害')}</span><span>${t('治疗')}</span></div>
+      ${rows.map((row, i) => {
+        const p = players.find((x) => x.playerId === row.playerId) || null;
+        const top = Array.isArray(row.operators) && row.operators[0] && row.operators[0].damage > 0 ? row.operators[0] : null;
+        return html`<div key=${row.playerId} class=${cx('rboard__row', p && p.playerId === myId && 'is-self')} role="row">
+          <span class="rboard__rank num" role="cell">${String(i + 1).padStart(2, '0')}</span>
+          <span class="rboard__who" role="cell">
+            <b>${p ? p.name : row.playerId}${p && p.isBot ? html`<span class="rcard__ai">AI</span>` : null}</b>
+            ${top ? html`<small title=${t('招牌干员')}>${top.name || top.defId}<b class="num"> ${fmtNum(top.damage)}</b></small>` : null}
+          </span>
+          <span class="rboard__num num" role="cell">${fmtNum(row.damage)}</span>
+          <span class="rboard__num num" role="cell">${fmtNum(row.healing)}</span>
+        </div>`;
+      })}
+    </div>
+    <p class="rboard__note">${t('服务器权威 · 全对局累计（含联防与最终攻势）；本地「作战统计」面板仅统计自己')}</p>
+  </section>`;
+}
+
+/**
  * The settlement view of one m.result payload — the live flow's 数据详情 (screens/settle.js), and the stats page's
  * re-view of a stored match (screens/stats.js, which hands it the payload recordToResult rebuilt; `quiet`: no settlement
  * jingle). `content`: the room's content (room.state.content, or a stats record's) — gameplay plugins mark the result
@@ -167,6 +201,7 @@ export function ResultView({ res, pub = null, myId = null, backLabel, onBack, qu
         ${r.players.length ? r.players.map((p) => html`<${PlayerCard} key=${p.playerId} p=${p} skinOwnerId=${pub ? p.playerId : null} myId=${myId} titles=${titles} best=${best} solo=${r.players.length < 2} />`)
           : html`<p class="t-dim">${t('暂无结算数据')}</p>`}
       </section>
+      <${DamageBoardView} pub=${pub} players=${r.players} myId=${myId} />
       ${slot ? html`<div class="ui-slot" data-ui-slot="result.tab" aria-label=${t('界面插件')} dangerouslySetInnerHTML=${{ __html: '' }}></div>` : null}
     </main>
   </div>`;

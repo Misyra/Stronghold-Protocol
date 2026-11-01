@@ -251,6 +251,7 @@ import { installTestTrace } from './testTrace.js';
 import { MatchTestCommands } from './match/testCommands.js';
 import { MatchOffers } from './match/offers.js';
 import { createExternalAI } from './llmGate.js';
+import { DamageBoard } from './damageBoard.js';
 
 export { FLOW_TICKER_PRIORITY, DELAYS, BAND_TURN_SECONDS } from './match/common.js';
 
@@ -566,6 +567,10 @@ export class Match {
     /** The finished battle's own game-time seconds per player (combat._finishCombat; the onBattleResult ev's `time`). */
     this.lastResultTimes = new Map();
     this.unitePlan = null;
+    /** 伤害/治疗结算板 (fork feature, server/match/damageBoard.js): every finished field's result folded in, cumulative
+     * across the match; read-only metadata, exposed as m.public.damage (views.js) — reconnects and spectator seats
+     * included. Nothing in the sim / settlement reads it, so no golden result moves. */
+    this.damageBoard = new DamageBoard();
     /** 联防 outcome for the SETTLE view: { through, helpers, leakers, losses } (settle()), null when no 联防 resolved */
     this.uniteResultView = null;
     /** server-run 联防: the leakers' counts last published (_uniteTick) */

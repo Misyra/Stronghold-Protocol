@@ -529,6 +529,8 @@ export class MatchBoss {
     for (const f of this.fields) {
       const res = resultOf(f);
       this._collectSimErrors(f, res);
+      // 伤害/治疗结算板 (server/match/damageBoard.js): the boss / hidden field's final result, both combat modes
+      this.damageBoard.record(this.round, res);
       f.live = false;
       for (const pid of f.players) {
         const pp = res.perPlayer && res.perPlayer[pid];

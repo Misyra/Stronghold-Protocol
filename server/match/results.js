@@ -137,6 +137,12 @@ export function buildResult(m, outcome) {
   });
   const out = {
     t: 'm.result',
+    // Stable across reconnect/resends; independent of simulation randomness and the client's wall clock. The room
+    // code + the battle prefix (seed [+ match no]) + the match's own start tick: two matches of the same room that
+    // replay the same seed still get different ids (the second match starts later on the match clock).
+    matchId: `${m.roomCode}-${m.battlePrefix}-${m.startedAt}`,
+    startedAt: m.startedAt,
+    finishedAt: m.sched.now(),
     victory,
     roundsPassed: teamRounds,
     hiddenReached,

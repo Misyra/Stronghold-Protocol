@@ -31,6 +31,7 @@ server/match/
   unite.js         联防 planning and LP attribution
   finalAssault.js  pairing, boss pool, hidden-core condition
   fields.js        FieldRunner: battle pacing (2×), snapshots, per-field error isolation
+  damageBoard.js   the match-cumulative 伤害/治疗结算板 (fork feature; §5 m.public.damage) — presentational metadata only
   results.js       m.result rows, titles, trophies, rewards
   bot.js           AI player (AI teammates, departed humans, "AI 托管")
   botStrategies.js registered trusted AI hooks (default legacy; opt-in external, ioleta, adaptive, ioleta-adaptive), see BOT_STRATEGIES.md
@@ -978,6 +979,18 @@ overtime drain starts; `deadline` = the level's 120 s countdown), `unite { helpe
 `players[].status`: INFO_CHECK ready/deciding · drafts ready (picked) / deciding (their turn) / acting (waiting) ·
 PREP ready/acting · COMBAT/boss combat/done · UNITE helping/done · others done · `left` / `dead` override.
 
+`damage` (fork feature, 伤害/治疗结算板): `{ round, players: [{ playerId, damage, healing, operators: [{ key, uid,
+defId, kind, name?, damage, healing }] }] }` — the server's authoritative match-cumulative board. Every finished
+field's result (both combat modes: the server battle's own result, or the authority's validated `b.result`) is folded
+in once at its completion — normal fields (`combat.js _finishCombat`), the 联防 result (`settle.js`), boss / hidden
+fields (`bossRounds.js _finishFinal`) — so the numbers are the same ones the settlement stats build on. A board
+operator accumulates across the match by its uid (redeploying keeps one row); a battle-created summon (no uid) by its
+`defId`. Present until the match ends, so a reconnect resync (`publicView`) and every spectator seat see it like
+anyone else; the client renders it on the settlement screen's 数据详情 (screens/result.js), NOT to be confused with
+the local 作战统计 panel (ui/combatMetrics.js — this device's own runner only). Absent from `m.public` until the first
+field result (earlier frames stay byte-identical) and not persisted in checkpoints (a restored match rebuilds it
+empty, snapshot.js TRANSIENT_MATCH_FIELDS). Pure metadata: nothing in the sim or the settlement reads it.
+
 `m.private` = DESIGN §8.3 exactly (sent per player whenever it changed). `nextEnemies` = the current round's wave
 (+ the player's bounty enemies, tag `bounty`; boss rounds: the player's boss field, tag `boss` — the leader's entry with its
 spawn tile `start`, where the boss-field prep shows it —, + its bounties).
@@ -997,7 +1010,9 @@ with `prep: true` and sends it again when the board changes (GitHub #87).
 is sent as **`gt`** (game seconds); `b.ev` carries the same `gt`. The client reads `gt` (`render/interp.js frameTime`,
 used by `normalizeSnapshot`). Legacy server-run mode only: client-side combat sends no `b.snap` / `b.ev`.
 
-`m.result` (unicast to every human, `playerId` = the recipient) = `{ victory, roundsPassed, hiddenReached,
+`m.result` (unicast to every human, `playerId` = the recipient) = `{ matchId ('<roomCode>-<battlePrefix>-<startedAt>':
+stable across reconnect / resends and free of simulation randomness — the client's 对局统计 dedupe key, server/match/results.js),
+startedAt, finishedAt (ms ticks of the match clock), victory, roundsPassed, hiddenReached,
 hiddenCleared, reason: 'victory'|'defeat'|'eliminated'|'abandoned'|'error', teamLp (merged Final Assault LP, null before
 it; players[].lp are the alive players' shares), modeId, difficulty, stageId, bossId,
 hiddenBossId, seed, durationMs, players:[{ playerId, seat, name, isBot, left, alive, victory (the team won AND this

@@ -178,16 +178,20 @@ function fnv1a(s) {
 }
 
 /**
- * The record's dedupe id, from match facts the server replays byte-identically on reconnect / reload
- * (server/lobby.js result replay): seed + duration + mode + rounds + outcome + who I was. Two distinct
- * matches colliding on all of these is not a real scenario; a replayed m.result hits the same id and is
- * dropped, which is the point (recording happens on every m.result arrival, replays included).
+ * The record's dedupe id. A server that stamps m.result with a `matchId` (room code + battle prefix + start tick,
+ * server/match/results.js) names the match itself: the same id on every resend, and two matches that replay the
+ * same seed / duration / mode never merge. A payload without one (an older server, a foreign snapshot) falls back
+ * to the content hash of the match facts the server replays byte-identically on reconnect / reload
+ * (server/lobby.js result replay): seed + duration + mode + rounds + outcome + who I was. Two distinct matches
+ * colliding on all of those is not a real scenario; a replayed m.result hits the same id and is dropped, which is
+ * the point (recording happens on every m.result arrival, replays included).
  * @param {any} res raw m.result payload
  * @param {string|null|undefined} myId the local player's id at that moment
  * @returns {string}
  */
 export function recordId(res, myId) {
   const r = isObj(res) ? res : {};
+  if (typeof r.matchId === 'string' && r.matchId) return `m1.${r.matchId}`;
   const parts = [r.seed ?? '-', r.durationMs ?? '-', r.modeId ?? '-', r.roundsPassed ?? '-', r.victory ? 1 : 0, myId ?? '-'];
   // A test result must not collide with a real match of the same seed. The suffix is absent otherwise, so a
   // normal id stays byte-identical.

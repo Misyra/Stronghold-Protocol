@@ -46,7 +46,41 @@ test('finalPlateRows / finalRowsY: the survivors and the LP they bring into the 
   assert.deepEqual(B.finalRowsY(4), [46, 150, 254, 358]);
   assert.deepEqual(B.finalRowsY(1), [202]);
   const ten = B.finalRowsY(10);
-  assert.ok(ten[0] >= 45 && ten[9] <= 360, 'a 10-seat room stays inside the plate');
+  assert.ok(ten[0] >= 30 && ten[9] <= 400, 'a 10-seat room stays inside the plate');
+});
+
+// The plate past five survivors (Stardust fork d8dfdf00, its finalLayout adapted to this 1360 × 430 box): one column
+// up to five, past that a grid of at most five rows filled column by column, each LP under its avatar, one line per
+// grid row into the merged LP — a single column of 20 rows left each avatar a few px and stacked the LP numbers.
+test('finalLayout: one column to five survivors; six to twenty a grid of at most five rows, inside the box', () => {
+  for (const n of [1, 2, 3, 4, 5]) {
+    const L = B.finalLayout(n);
+    assert.equal(L.grid, false, `${n}`);
+    assert.equal(L.cells.length, n);
+    assert.deepEqual(L.cells.map((c) => c.y), L.lines.map((l) => l.y), `${n}: a line per row`);
+    assert.ok(L.cells.every((c) => c.x === 132 && c.av === 90), `${n}: the single-column look`);
+  }
+  assert.deepEqual(B.finalLayout(0), { grid: false, cells: [], lines: [] });
+  for (let n = 6; n <= 20; n++) {
+    const L = B.finalLayout(n);
+    assert.equal(L.grid, true, `${n}`);
+    assert.equal(L.cells.length, n);
+    const ys = [...new Set(L.cells.map((c) => c.y))].sort((a, b) => a - b);
+    const xs = [...new Set(L.cells.map((c) => c.x))].sort((a, b) => a - b);
+    assert.ok(ys.length <= 5, `${n}: ${ys.length} rows`);
+    assert.deepEqual(L.lines.map((l) => l.y), ys, `${n}: a line per grid row`);
+    for (const c of L.cells) {
+      assert.ok(c.av >= 40, `${n}: avatar ${c.av}`);
+      // the chip: the avatar with its LP (20 px design) under it, centred on the cell
+      const h = c.av + 20;
+      assert.ok(c.y - h / 2 >= 0 && c.y + h / 2 <= 430, `${n}: inside the box vertically (${c.y})`);
+      assert.ok(c.x - c.av / 2 >= 0 && c.x + c.av / 2 <= 352, `${n}: left of the lines (${c.x})`);
+    }
+    for (let i = 1; i < ys.length; i++) assert.ok(ys[i] - ys[i - 1] >= L.cells[0].av + 20, `${n}: rows apart`);
+    for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= L.cells[0].av + 20, `${n}: columns apart`);
+    // column by column: the first column is full
+    assert.ok(L.cells.slice(0, ys.length).every((c) => c.x === xs[0]), `${n}: the first column first`);
+  }
 });
 
 test('the official sprites, all in the asset list; no drawn stand-ins; not ready without them', () => {

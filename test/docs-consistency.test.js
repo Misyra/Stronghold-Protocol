@@ -295,15 +295,17 @@ test('lost models, live LP, detail card order, static game data (user playtest #
 });
 
 test('user playtest #4 (DESIGN §18): picking by tile, timers, 机变 two taps, down / element state, content — code and every doc agree', () => {
-  // #1 the tile under the pointer; the dragged model held under the pointer (no touch lift, probe or body shapes) —
-  // standing on the pointer's tile while that is a legal target (§27.62, the official deploy drag)
+  // #1 the tile under the pointer; the dragged model held under the pointer (no touch lift, probe or body shapes),
+  // following it and never snapped to a tile (the free deploy drag of 2026-10-15, in place of §27.62)
   assert.equal(ENEMY_REACH, 0.6);
   const app = readFileSync(join(ROOT, 'public/js/render/app.js'), 'utf8');
   const tune = readFileSync(join(ROOT, 'public/js/render/app/tune.js'), 'utf8');
   assert.match(tune, /export const DRAG_HOLD_TILES = 0\.45;/);
-  assert.match(app, /dragStandTile\(p\)/);
-  assert.match(DESIGN, /`dragStandTile/);
-  assert.match(PLAYING, /干员模型直接站在这一格上/);
+  assert.match(tune, /export const DRAG_HOLD_MOUSE_TILES = 0\.12;/);
+  assert.match(app, /DRAG_SMOOTH_TAU = 1 \/ DRAG_FOLLOW_RATE;/);
+  assert.ok(!/dragStandTile/.test(app), 'no tile snapping');
+  assert.match(DESIGN, /never snapped to a tile \(the free deploy drag, 2026-10-15/);
+  assert.match(PLAYING, /干员模型平滑地跟着指针 \/ 手指走，不吸附到格子上/);
   assert.ok(!/TOUCH_LIFT_TILES|drawnAt|pickShape|pieceDragOver/.test(app), 'no touch lift, pixel probe or body shapes (user playtest #4 item 1)');
   assert.match(DESIGN, /`DRAG_HOLD_TILES` = 0\.45 tile/);
   assert.match(DESIGN, /`ENEMY_REACH` 0\.6 tile/);

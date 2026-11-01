@@ -56,10 +56,10 @@
 // clicks and hover (battleUnitAt), the pen (penUnitAt) — is render/pick.js over the tile under the pointer (groundTile:
 // raised tops first); battle enemies, which walk between tiles, by their ground position (flying ones by their drawn
 // body; a huge boss also anywhere on its hit area — data/enemies.json `hitArea`, user playtest #5). A dragged piece
-// drops on the tile under the pointer (render/drag.js). A dragged unit stands on that tile while it is a legal target
-// (a board tile or a bench slot: drag.js dragStandTile; the official deploy drag, the owner's recording of 2026-10-09,
-// PR #403's report) and is held under the pointer elsewhere — its drawn feet DRAG_HOLD_TILES below it, the pointer on
-// its body; an item plate stays centred on the pointer. An item dropped on a unit's tile equips that unit.
+// drops on the tile under the pointer (render/drag.js). A dragged unit follows the pointer smoothly, never snapped to a
+// tile (the free deploy drag, 2026-10-15; Stardust fork d8dfdf00) — its drawn feet DRAG_HOLD_TILES below a finger,
+// DRAG_HOLD_MOUSE_TILES below a mouse — and glides onto its tile when dropped; an item plate stays centred on the
+// pointer. An item dropped on a unit's tile equips that unit.
 //   Direction step (ui/facingWheel.js, research 09 §1.2):
 //   view.tileScreen(row, col) → { x, y, s, poly: [[x,y]×4] } (client px: tile-top centre, px per tile, corners) | null
 //   view.holdPiece(uid, {row,col} | null)       keep a dropped prep piece standing on a tile while its direction is
@@ -151,7 +151,7 @@ import { OfficialFx } from './vfx/system.js';
 import { FxWiring } from './vfx/wiring.js';
 import { PluginFxPlayer } from './vfx/pluginPlayer.js';
 import { resolveOfficialFx } from './vfx/tier.js';
-import { createDragController, pieceTile, dragStandTile } from './drag.js';
+import { createDragController, pieceTile, snapTile } from './drag.js';
 import { backdropTextures, shadowTexture, refreshTierChips, refreshDownLabels, silhouetteTexture } from './textures.js';
 import { TILE_H, TIER_COLORS, COLORS } from './style.js';
 import { loadBoardArt } from './boardArt.js';
@@ -168,7 +168,7 @@ import { ensurePixi } from './app/pixi.js';
 import { advanceEffectClock } from './app/playback.js';
 import { createWindUpLookahead } from './app/windup.js';
 import { pieceDirOf, pickUnitOf } from './app/pick.js';
-import { CAMERA_MS, BOARD3D_STABLE_MS, BOARD3D_RETRY_MS, PEN_CAMERA_MS, RANGE_GROUPS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, CHAIN_KINDS, DROP_PENDING_MS, DEPLOY_REPLAY_MS } from './app/tune.js';
+import { CAMERA_MS, BOARD3D_STABLE_MS, BOARD3D_RETRY_MS, PEN_CAMERA_MS, RANGE_GROUPS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, DRAG_HOLD_MOUSE_TILES, DRAG_FOLLOW_RATE, CHAIN_KINDS, DROP_PENDING_MS, DEPLOY_REPLAY_MS } from './app/tune.js';
 import { boardPreference, switchableBox, bandFor, fieldRows, boardArea, viewKind, restView, flightView } from './app/view.js';
 import { renderInfo, FORCED_EXIT, showsDeathFx } from './app/info.js';
 import { resolveAssets, makeData, withTimeout, QUALITY_RES, BOARD_RES, releaseGl } from './app/host.js';
@@ -178,7 +178,7 @@ export { ensurePixi } from './app/pixi.js';
 
 /** fx.damage / fx.heal option: the official effect drew the hit (no procedural spark, slash or glow; numbers stay). */
 const NO_SPARK = Object.freeze({ noSpark: true });
-export { PEN_CAMERA_MS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, DEPLOY_REPLAY_MS } from './app/tune.js';
+export { PEN_CAMERA_MS, LEADER_HIT_STYLE, DRAG_HOLD_TILES, DRAG_HOLD_MOUSE_TILES, DEPLOY_REPLAY_MS } from './app/tune.js';
 export { viewKind, boardArea, bandFor, fieldRows, penShown, showsPen, leaderShown, restView, flightView, boardPreference, switchableBox } from './app/view.js';
 export { FORCED_EXIT, showsDeathFx, renderInfo } from './app/info.js';
 export { releaseGl } from './app/host.js';
@@ -186,7 +186,7 @@ export { releaseGl } from './app/host.js';
 /**
  * Create the battlefield view inside `host` (an element sized by CSS; the canvas fills it).
  * @param {HTMLElement} host
- * @param {{ data?: any, assets?: any, audio?: any, settings?: { damageNumbers?: boolean, officialDamageNumbers?: boolean, ammoEnergyCount?: boolean, otherSkins?: boolean, quality?: string }, signal?: AbortSignal,
+ * @param {{ data?: any, assets?: any, audio?: any, settings?: { damageNumbers?: boolean, officialDamageNumbers?: boolean, ammoEnergyCount?: boolean, otherSkins?: boolean, deploySnap?: boolean, quality?: string }, signal?: AbortSignal,
  *           padding?: object|((kind:string, size:{width:number,height:number}) => object),
  *           hud?: {top:number,bottom:number}|((kind:'prep'|'bossPrep', size:{width:number,height:number}, o:{shop:boolean|'partial'}) => {top:number,bottom:number}|null) }} [opts]
  *   settings.otherSkins (docs/SKINS.md, default on): draw the appearance another player chose. The player the view
@@ -202,7 +202,7 @@ export async function createFieldView(host, options = {}) {
   signal?.throwIfAborted();
   const assets = resolveAssets(opts.assets);
   const data = makeData(opts.data);
-  const settings = { damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, quality: 'high', officialFx: 'auto', ...(opts.settings || {}) };
+  const settings = { damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, deploySnap: false, quality: 'high', officialFx: 'auto', ...(opts.settings || {}) };
   // 帧率上限(移植自用户分支, frameRate.js FRAME_RATES): 不是官方设置项, 放在这一行之外, 免得撑开上面那个字面量
   if (settings.fpsLimit == null) settings.fpsLimit = 0;
   // 设置「显示其他玩家的皮肤」 (docs/SKINS.md), on unless the caller said off: kept out of the literal above so the shape
@@ -1310,11 +1310,11 @@ export async function createFieldView(host, options = {}) {
     drawHighlight(legalTiles(p.piece), 'legal', 'legal');
   }
 
-  /** The carried unit glides to where the drag wants it (the stand tile under the pointer, or held under it) instead of
-   *  hard-switching tiles with each retarget: the official per-tile snap read as stiff (user report 2026-11-01). The drag
-   *  judgment is untouched — the drop is still the pointer's tile, resolved by render/drag.js — only the model's position
-   *  eases toward it, a frame-rate independent exponential ease (fast enough to stay under the pointer). */
-  const DRAG_SMOOTH_TAU = 0.04;
+  /** The carried unit glides toward where the drag wants it instead of hard-following the pointer: the free deploy drag
+   *  (2026-10-15, Stardust fork d8dfdf00) never snaps a unit to a tile and eases the gap shut at DRAG_FOLLOW_RATE (a
+   *  frame-rate independent exponential ease, the same feel at 60 and 120 Hz). The drag judgment is untouched — the drop
+   *  is still the pointer's tile, resolved by render/drag.js — only the model's position eases toward it. */
+  const DRAG_SMOOTH_TAU = 1 / DRAG_FOLLOW_RATE;
   function smoothDragVisual(dtRaw) {
     const s = dragState;
     if (!s || s.tx == null || s.view instanceof ItemView) return; // an item plate stays centred on the pointer, 1:1
@@ -1329,30 +1329,31 @@ export async function createFieldView(host, options = {}) {
     if (!dragState) return;
     const v = dragState.view;
     const item = v instanceof ItemView;
-    // a unit over a legal drop target — the tile under the pointer, on the board or the bench (render/drag.js
-    // dragStandTile) — stands on it, lifted, as in the official deploy drag (the owner's recording of 2026-10-09): the
-    // world point the drop tween goes to (boardWorld, the prep field transform applied) becomes the drag's smoothed
-    // target (smoothDragVisual), no tween, no hard jump
-    const stand = item ? null : dragStandTile(p);
-    if (stand) {
-      const w = boardWorld(stand.row, stand.col, stand.bench);
-      dragState.tx = w.x; dragState.ty = w.y; dragState.tz = w.z;
-    } else {
-      // otherwise held under the pointer (the player still sees what they carry): a unit with its drawn (lifted) feet
-      // DRAG_HOLD_TILES of its own px per tile below it (the scale at the pointer's ground, refined once at the feet), an
-      // item plate centred on it
-      const g = cam.unproject(p.x, p.y, 0);
-      const hold = item ? 0 : DRAG_HOLD_TILES;
-      const s0 = g ? cam.scaleAt(g.x, g.y, 0) : cam.scale;
-      const t = pickTile(cam, p.x, p.y + hold * s0, heightAt, tiles.levels);
-      const z = t ? heightAt(t.row, t.col) : 0;
-      const up = item ? z : z + (v.lift || 0) + (v.hover || 0);
-      let w = cam.unproject(p.x, p.y + hold * s0, up);
-      if (w && hold) w = cam.unproject(p.x, p.y + hold * cam.scaleAt(w.x, w.y, up), up) || w;
-      if (w) {
-        if (item) { v.x = Math.max(-1, Math.min(21, w.x)); v.y = Math.max(-1, Math.min(19, w.y)); v.z = z; }
-        else { dragState.tx = Math.max(-1, Math.min(21, w.x)); dragState.ty = Math.max(-1, Math.min(19, w.y)); dragState.tz = z; }
-      }
+    // held under the pointer, never snapped to a tile (the free deploy drag, 2026-10-15, Stardust fork d8dfdf00; the
+    // target below stays the pointer's tile): a unit with its drawn (lifted) feet DRAG_HOLD_TILES (a finger) /
+    // DRAG_HOLD_MOUSE_TILES (a mouse, a pen) of its own px per tile below it (the scale at the pointer's ground,
+    // refined once at the feet), an item plate centred on it. The point becomes the drag's smoothed target
+    // (smoothDragVisual) — the view eases toward it, never hard-jumping.
+    const g = cam.unproject(p.x, p.y, 0);
+    const hold = item ? 0 : p.pointerType === 'touch' ? DRAG_HOLD_TILES : DRAG_HOLD_MOUSE_TILES;
+    const s0 = g ? cam.scaleAt(g.x, g.y, 0) : cam.scale;
+    const t = pickTile(cam, p.x, p.y + hold * s0, heightAt, tiles.levels);
+    const z = t ? heightAt(t.row, t.col) : 0;
+    const up = item ? z : z + (v.lift || 0) + (v.hover || 0);
+    let w = cam.unproject(p.x, p.y + hold * s0, up);
+    if (w && hold) w = cam.unproject(p.x, p.y + hold * cam.scaleAt(w.x, w.y, up), up) || w;
+    if (w) {
+      const fx = Math.max(-1, Math.min(21, w.x)), fy = Math.max(-1, Math.min(19, w.y));
+      if (item) { v.x = fx; v.y = fy; v.z = z; }
+      else { dragState.tx = fx; dragState.ty = fy; dragState.tz = z; }
+    }
+    // 设置「部署时按格子吸附」 (Stardust fork e6bd4003, off by default): a unit stands on the target tile instead, gliding
+    // tile to tile; off the grid it still follows the pointer, so a drag to the shop bar reads the same. The drop rules
+    // don't change.
+    const snap = settings.deploySnap === true && !item ? snapTile(p.target) : null;
+    if (snap) {
+      const sb = boardWorld(snap.row, snap.col, snap.bench);
+      dragState.tx = sb.x; dragState.ty = sb.y; dragState.tz = sb.z;
     }
     // the drop target (p.target, highlighted) is the tile under the pointer
     if (p.target && p.target.area !== 'temp') {
@@ -2284,6 +2285,7 @@ export async function createFieldView(host, options = {}) {
       if (typeof s.damageNumbers === 'boolean') settings.damageNumbers = s.damageNumbers;
       if (typeof s.officialDamageNumbers === 'boolean') settings.officialDamageNumbers = s.officialDamageNumbers;
       if (typeof s.ammoEnergyCount === 'boolean') settings.ammoEnergyCount = s.ammoEnergyCount; // the units read it every frame (ctx.settings)
+      if (typeof s.deploySnap === 'boolean') settings.deploySnap = s.deploySnap; // read on each drag move (moveDragVisual)
       // 设置「显示其他玩家的皮肤」 (docs/SKINS.md): the views already up keep the appearance they were built on, so the
       // ones the new choice changes are dropped and rebuilt from their own info on the next frame
       if (typeof s.otherSkins === 'boolean' && s.otherSkins !== settings.otherSkins) {

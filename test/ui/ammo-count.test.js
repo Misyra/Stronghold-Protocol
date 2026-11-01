@@ -56,7 +56,7 @@ test('the settings dialog has one merged toggle and a hint with both example cou
 
 test('the field view and the unit bars read the merged setting, not the old keys', () => {
   const app = read('public/js/render/app.js');
-  assert.match(app, /const settings = \{ damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, quality: 'high', officialFx: 'auto', \.\.\.\(opts\.settings \|\| \{\}\) \};/);
+  assert.match(app, /const settings = \{ damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, deploySnap: false, quality: 'high', officialFx: 'auto', \.\.\.\(opts\.settings \|\| \{\}\) \};/);
   assert.match(app, /if \(typeof s\.ammoEnergyCount === 'boolean'\) settings\.ammoEnergyCount = s\.ammoEnergyCount;/);
   assert.equal(/ammoCount|mysticEnergy/.test(app), false);
   const units = read('public/js/render/units.js');

@@ -40,9 +40,12 @@
   filter: drop-shadow(0 0 6px rgba(39, 211, 173, .9)); animation: fa-comet 320ms calc(480ms + var(--i) * 30ms) ease-in both; }
 .fa__row { position: absolute; left: calc(132 * var(--px)); display: flex; align-items: center; gap: calc(14 * var(--px));
   animation: bpl-fade 200ms calc(280ms + var(--i) * 40ms) ease-out both; }
-.fa__ava { width: calc(90 * var(--px)); height: calc(90 * var(--px)); }
+.fa__ava { width: calc(var(--fa-av, 90) * var(--px)); height: calc(var(--fa-av, 90) * var(--px)); }
 .fa__ava .pavatar__img { width: 100%; height: 100%; }
 .fa__lp { color: var(--teal); font-size: calc(30 * var(--px)); font-weight: 700; animation: fa-lp-out 200ms 700ms ease-in forwards; }
+/* more than 5 survivors (bossPlates.js finalLayout): a grid, each LP under its avatar, the cell centred on its spot */
+.fa__row--grid { flex-direction: column; gap: calc(4 * var(--px)); transform: translate(-50%, -50%); }
+.fa__row--grid .fa__lp { font-size: calc(20 * var(--px)); line-height: 1; }
 .fa__node { position: absolute; left: calc(609 * var(--px)); top: calc(129 * var(--px)); width: calc(146 * var(--px)); height: calc(146 * var(--px)); }
 .fa__ring { position: absolute; border-radius: 50%; left: 50%; top: 50%; transform: translate(-50%, -50%); }
 .fa__ring--o { width: calc(426 * var(--px)); height: calc(426 * var(--px)); border: calc(3 * var(--px)) solid rgba(39, 211, 173, .3);

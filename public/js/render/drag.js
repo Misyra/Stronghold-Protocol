@@ -11,9 +11,10 @@
 // direction wheel to re-orient it in place (research 09 §1.2 — "drag the unit onto its own tile and swipe").
 // Everything is judged at the pointer (user playtest #4 item 1: the ground is drawn as tiles): a press / hover is on the
 // piece standing on the tile under it (`hitPiece`, render/pick.js), and while dragging the target, `tileHover` and the
-// legality are that tile — an item dropped on a unit's tile goes to that unit. app.js draws a dragged unit standing on
-// that tile while it is a legal target (`dragStandTile`, the official deploy drag) and held under the pointer
-// otherwise; an item plate stays on the pointer. A release over DOM UI covering the canvas (the shop bar) is 'outside'
+// legality are that tile — an item dropped on a unit's tile goes to that unit. app.js draws a dragged unit following
+// the pointer smoothly, never snapped to a tile (the free deploy drag, 2026-10-15; Stardust fork d8dfdf00), and an item
+// plate on the pointer. 设置「部署时按格子吸附」 (Stardust fork e6bd4003, off by default) stands a dragged unit on the
+// target tile instead (snapTile). A release over DOM UI covering the canvas (the shop bar) is 'outside'
 // (mouse and touch alike).
 //
 // Events emitted through `emit(name, payload)`:
@@ -22,7 +23,7 @@
 //   pieceClick     { uid, piece, button, detail, clientX, clientY }            (detail: right-click / long-press)
 //   pieceDetail    { uid, piece, clientX, clientY }                            (right-click / long-press)
 //   pieceDragStart { uid, piece, from }
-//   pieceDragMove  { uid, piece, x, y, clientX, clientY, target, legal }       (for the ghost; high frequency)
+//   pieceDragMove  { uid, piece, x, y, clientX, clientY, pointerType, target, legal } (for the ghost; high frequency)
 //   pieceDrop      { uid, piece, from, target }
 //   pieceDragEnd   { uid, piece, dropped, cancelled }
 
@@ -83,17 +84,14 @@ export function resolveDrop(p) {
 }
 
 /**
- * The tile a dragged UNIT is drawn standing on, from a `pieceDragMove` payload: the drop target under the pointer while
- * it is legal — a board tile, or a bench slot (row HAND_ROW) — as `{ row, col, bench }` in board space; null otherwise
- * (no target, an illegal tile, a temp slot, the pointer over DOM UI such as the shop bar): the unit is then held under
- * the pointer. As in the official deploy drag (the owner's recording of 2026-10-09) the model stands on the tile the
- * finger is on, and moving within that tile leaves it where it is. app.js never snaps an item plate.
+ * The tile a dragged unit stands on with 设置「部署时按格子吸附」 on (Stardust fork e6bd4003): the drop target when it is a
+ * board tile or a bench slot. Null (the unit keeps following the pointer) off the grid, over DOM UI and on a temp slot.
+ * @param {{area:string,row?:number,col?:number,idx?:number}|null|undefined} target pieceDragMove `target`
+ * @returns {{row:number,col:number,bench:boolean}|null}
  */
-export function dragStandTile(move, geo = GEO) {
-  const t = move && move.legal === true ? move.target : null;
-  if (!t) return null;
-  if (t.area === 'board' && Number.isInteger(t.row) && Number.isInteger(t.col)) return { row: t.row, col: t.col, bench: false };
-  if (t.area === 'hand' && Number.isInteger(t.idx)) return { row: geo.HAND_ROW, col: t.idx, bench: true };
+export function snapTile(target, geo = GEO) {
+  if (target?.area === 'board') return { row: target.row, col: target.col, bench: false };
+  if (target?.area === 'hand') return { row: geo.HAND_ROW, col: target.idx, bench: true };
   return null;
 }
 
@@ -168,7 +166,7 @@ export function createDragController(hooks) {
     const slot = over && tile ? tileSlot(tile) : null;
     const legal = !!slot && slot.area !== 'temp' && (slot.area === 'board' || !sameSlot(slot, st.from)) && isLegal(canPlace, st.piece, slot);
     setHoverTile(over ? tile : null);
-    emit('pieceDragMove', { uid: st.piece.uid, piece: st.piece, x: e.x, y: e.y, clientX: e.clientX, clientY: e.clientY, target: slot, legal });
+    emit('pieceDragMove', { uid: st.piece.uid, piece: st.piece, x: e.x, y: e.y, clientX: e.clientX, clientY: e.clientY, pointerType: st.pointerType, target: slot, legal });
   }
 
   function endDrag(e, cancelled) {

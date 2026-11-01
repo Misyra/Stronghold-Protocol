@@ -601,7 +601,7 @@ button.bpop__harmony:hover { border-style: solid; color: #fff; }
 }
 .spcard__icon img, .dhead__icon img, .scard__itemart img, .effect img { max-width: 100%; max-height: 100%; }
 
-/* ---- direction wheel (ui/facingWheel.js, research 09 §1.2): white diamond, 4 chevrons, "✕ 点击取消", orange range ---- */
+/* ---- direction wheel (ui/facingWheel.js, research 09 §1.2): round joystick, 4 sectors, "✕ 点击取消", orange range ---- */
 .fwheel { position: fixed; inset: 0; z-index: 6; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
 /* the wheel takes the keyboard focus when it opens (Enter confirms there, GitHub #394): no ring around the whole screen */
 .fwheel:focus-visible { outline: none; }
@@ -609,13 +609,18 @@ button.bpop__harmony:hover { border-style: solid; color: #fff; }
 .fwheel__dia { position: absolute; transform: translate(-50%, -50%); pointer-events: none; animation: fwheel-in 160ms var(--ease-out); }
 @keyframes fwheel-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.82); } }
 .fwheel__svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 .05rem rgba(0, 0, 0, .75)); }
-.fwheel__outer { fill: rgba(8, 12, 10, .1); stroke: #fff; stroke-width: 2.4px; vector-effect: non-scaling-stroke; }
-.fwheel__quad { fill: transparent; transition: fill var(--t-fast); }
-/* only the chevron lights (research 09 §1.2): a tinted quadrant would wash out the units standing under the diamond */
-.fwheel__quad.is-on { fill: transparent; }
-.fwheel__inner { fill: rgba(255, 255, 255, .06); stroke: rgba(255, 255, 255, .9); stroke-width: 1.6px; vector-effect: non-scaling-stroke; }
-.fwheel.is-pressed .fwheel__inner { fill: rgba(255, 255, 255, .1); }
-.fwheel__chev path { fill: rgba(255, 255, 255, .92); transform-box: fill-box; transform-origin: center; transition: transform var(--t-fast), fill var(--t-fast); }
+.fwheel__ring { fill: rgba(8, 14, 12, .34); stroke: rgba(255, 255, 255, .95); stroke-width: 2.4px; vector-effect: non-scaling-stroke; }
+.fwheel__sector { fill: rgba(255, 255, 255, .05); stroke: rgba(255, 255, 255, .3); stroke-width: 1px; vector-effect: non-scaling-stroke;
+  transition: fill 90ms, stroke 90ms; }
+.fwheel__sector.is-on { fill: rgba(255, 156, 51, .45); stroke: #ffae3d; }
+.fwheel__hub { fill: rgba(255, 255, 255, .06); stroke: rgba(255, 255, 255, .8); stroke-width: 1.4px; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.fwheel__stick { stroke: rgba(255, 174, 61, .9); stroke-width: 7px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+/* the knob glides back to the hub when released; while pressed it sits under the finger */
+.fwheel__knob { fill: rgba(255, 255, 255, .28); stroke: rgba(255, 255, 255, .7); stroke-width: 2px; vector-effect: non-scaling-stroke;
+  transition: cx 140ms ease-out, cy 140ms ease-out, fill 90ms; }
+.fwheel.is-pressed .fwheel__knob { fill: rgba(255, 255, 255, .92); stroke: rgba(0, 0, 0, .4); transition: fill 90ms; }
+.fwheel .fwheel__knob.is-on { fill: #ffae3d; }
+.fwheel__chev path { fill: rgba(255, 255, 255, .7); transform-box: fill-box; transform-origin: center; transition: transform var(--t-fast), fill var(--t-fast); }
 .fwheel__chev.is-on path { fill: #ffae3d; transform: scale(1.4); filter: drop-shadow(0 0 3px rgba(255, 156, 51, .9)); }
 .fwheel__cancel {
   position: absolute; left: 25%; top: 25%; transform: translate(-92%, -118%); pointer-events: auto;

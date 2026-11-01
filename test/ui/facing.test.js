@@ -99,6 +99,32 @@ describe('the wheel: swipe → direction with a ~0.5 tile dead-zone', () => {
   });
 });
 
+// The round joystick wheel (Stardust fork d8dfdf00, ui/facingWheel.js): a ring of four sectors with a dashed hub as
+// the dead-zone and a knob that follows the swipe; a press outside the wheel swipes from where it started (its
+// dead-zone 0.6 of the centre's) and releasing there cancels; the wheel re-reads its tile at ~30 Hz. The pointer
+// interaction itself is browser-tested (test/ui/facing.e2e.test.js); here the component's source and the geometry
+// constants it draws with.
+describe('the round joystick wheel (facingWheel.js source)', () => {
+  test('a ring of four sectors, a dashed hub dead-zone, a knob on a stick that follows the swipe', async () => {
+    const src = readFileSync(path.join(ROOT, 'public/js/ui/facingWheel.js'), 'utf8');
+    assert.match(src, /<circle class="fwheel__ring" r=\$\{JOY_RIM\} \/>/, 'the round rim replaces the diamond');
+    assert.match(src, /JOY_SECTOR = \{ UP: joySector\(-90\), RIGHT: joySector\(0\), DOWN: joySector\(90\), LEFT: joySector\(180\) \}/, 'four quarter sectors');
+    assert.match(src, /<circle class="fwheel__hub" r=\$\{JOY_HUB\} \/>/, 'the dashed hub is the dead-zone');
+    assert.match(src, /fwheel__stick/, 'the stick from the hub to the knob');
+    assert.match(src, /fwheel__knob/, 'the knob on the stick');
+    assert.ok(!/fwheel__outer|fwheel__quad|fwheel__inner/.test(src), 'the diamond is gone');
+    // a press outside the wheel is the swipe's origin instead of a cancel; back there and released, it cancels
+    assert.match(src, /originRef\.current = inside\(e\.clientX, e\.clientY\) \? null : \{ x: e\.clientX, y: e\.clientY \}/);
+    assert.match(src, /dirFromDelta\(dx, dy, o \? L\.dead \* 0\.6 : L\.dead\)/, 'the outside origin\'s dead-zone is 0.6 of the centre\'s');
+    assert.match(src, /t\('滑回按下的位置可取消'\)/, 'the outside origin\'s cancel hint');
+    assert.match(src, /if \(d\) onCommit\(boardDir\(d, live\.current\.mirror\)\); else onCancel\(\);/, 'released in the dead-zone: cancel');
+    // the wheel, the underframe and the stripes re-read their tile at ~30 Hz, not per frame
+    assert.match(src, /const FOLLOW_MS = 1000 \/ 30;/);
+    assert.equal((src.match(/setTimeout\(tick, FOLLOW_MS\)/g) || []).length, 4, 'the wheel, underframe and stripe loops run at ~30 Hz');
+    assert.equal((src.match(/requestAnimationFrame/g) || []).length, 2, 'rAF only left in the DOM fallback\'s pinLoop');
+  });
+});
+
 describe('which drops enter the direction step', () => {
   test('units on board tiles (move / swap / own tile) do; bench slots, equipment and single-tile Arts do not; 画卷 does', () => {
     const m = { ...piece(MELEE), row: 9, col: 3, dir: 'UP' };

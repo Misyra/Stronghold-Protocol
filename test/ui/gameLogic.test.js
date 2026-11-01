@@ -740,7 +740,7 @@ describe('keyboard & settings', () => {
   test('sanitizeSettings', () => {
     assert.deepEqual(sanitizeSettings(null), { ...DEFAULT_SETTINGS });
     assert.deepEqual(sanitizeSettings({ bgm: 3, sfx: -1, voice: 2, muted: 'yes', damageNumbers: false, quality: 'ultra' }),
-      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceNative: false, voiceOverrides: {}, muted: false, damageNumbers: false, officialDamageNumbers: false, ammoEnergyCount: false, fullscreenWakeLock: false, bondTimers: false, combatMetrics: false, prepDeployFold: true, quality: 'high', fpsLimit: 0, officialFx: 'auto', otherSkins: true, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadVoiceLanguages: null, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: { ...DEFAULT_SETTINGS.keys } },
+      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceNative: false, voiceOverrides: {}, muted: false, damageNumbers: false, officialDamageNumbers: false, ammoEnergyCount: false, deploySnap: false, fullscreenWakeLock: false, bondTimers: false, combatMetrics: false, prepDeployFold: true, quality: 'high', fpsLimit: 0, officialFx: 'auto', otherSkins: true, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadVoiceLanguages: null, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: { ...DEFAULT_SETTINGS.keys } },
       'a saved profile without `keys` (before 0.2.0) gets the default key map (test/ui/feedback5-hotkeys.test.js)');
     // 资源预载八件套 (移植自用户分支): only the master starts off; 皮肤 / 特效 / 附加资源 default on, 语音 follows
     // the older optional-audio choice
@@ -756,6 +756,14 @@ describe('keyboard & settings', () => {
     assert.equal(sanitizeSettings({ bgm: 0.5 }).otherSkins, true, 'a profile saved before the switch draws other players\' skins');
     assert.equal(sanitizeSettings({ otherSkins: false }).otherSkins, false);
     assert.equal(sanitizeSettings({ otherSkins: 'no' }).otherSkins, true, 'only `false` turns it off (the renderer reads it the same way)');
+    // 部署时按格子吸附 (Stardust fork e6bd4003): off by default — the dragged unit follows the pointer (the free
+    // deploy drag); on, it stands on the target tile (render/app.js moveDragVisual via render/drag.js snapTile)
+    assert.equal(DEFAULT_SETTINGS.deploySnap, false);
+    assert.equal(sanitizeSettings({ bgm: 0.5 }).deploySnap, false, 'a profile saved before the switch keeps the free drag');
+    assert.equal(sanitizeSettings({ deploySnap: true }).deploySnap, true);
+    const ui = readFileSync(path.join(ROOT, 'public/js/ui/settings.js'), 'utf8');
+    assert.match(ui, /部署时按格子吸附/, 'the settings dialog has the toggle');
+    assert.match(readFileSync(path.join(ROOT, 'public/js/render/app.js'), 'utf8'), /settings\.deploySnap === true && !item \? snapTile\(p\.target\) : null/, 'the renderer reads it on each drag move');
     assert.equal(sanitizeSettings({ bgm: 0.5 }).voice, DEFAULT_SETTINGS.voice, 'a saved profile without `voice` gets the default');
     // 语音语言: 中文 by default. en / kr are dubs (0.3.0); anything else, including the per-operator 'native', stays 中文.
     assert.equal(DEFAULT_SETTINGS.voiceLang, 'cn');

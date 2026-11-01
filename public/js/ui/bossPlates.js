@@ -7,7 +7,8 @@
 // extract) the crests are its full-size sprites instead — icon_boss_normal_white (tinted the crest's orange, as the
 // footage draws it flat) and boss_sp_icon, the hidden core's glitched crest (Crest).
 //   * FinalAssaultPlate — 最终攻势: each survivor's LP runs along a line into one node (the team's merged LP, m.public
-//     teamLp), then the leader's crest lights up beside it: 合力击败敌方领袖！
+//     teamLp), then the leader's crest lights up beside it: 合力击败敌方领袖！ Past five survivors the rows become a
+//     grid of at most five lines (finalLayout, Stardust fork d8dfdf00).
 //   * HiddenCorePlate — 隐秘核心已解锁 at the hidden round's start.
 //   * EndPlate — the run's end, in the 3 s the server already waits before RESULT (server/match/match/bossRounds.js
 //     DELAYS.SETTLE; settle.js afterSettle) — it never delays the settlement: 击败了全部领袖！ / 未能击破隐秘核心 when
@@ -119,13 +120,47 @@ export function finalPlateRows(pub) {
   return { rows, total: Number.isFinite(pub?.teamLp) ? Math.max(0, pub.teamLp) : sum };
 }
 
-/** The rows' heights in the plate (design px from its top), centred on the node; closer together past four. */
-export function finalRowsY(n) {
+/**
+ * The survivors and the lines of the 最终攻势 plate in its 1360 × 430 design box, the rows centred on the node's height.
+ * Up to FA_ROWS survivors: one column, an avatar beside its LP, one line per row from the LP to the node's left edge.
+ * More (an 8–20-seat room): a grid of at most FA_ROWS rows filled column by column, centred in the box, each LP under
+ * its avatar, one line per grid row from the grid's right edge — a single column of 20 rows left each avatar a few px
+ * and stacked the LP numbers over each other (Stardust fork d8dfdf00, its matchPlates.js finalLayout adapted to this
+ * plate's box).
+ * @param {number} n survivors
+ * @returns {{ grid: boolean, cells: { x: number, y: number, av: number }[], lines: { y: number, d: string }[] }}
+ */
+export function finalLayout(n) {
   const k = Math.max(0, Math.trunc(n) || 0);
-  const gap = k > 4 ? Math.floor(312 / (k - 1)) : 104;
-  return Array.from({ length: k }, (_, i) => Math.round(NODE_Y + (i - (k - 1) / 2) * gap));
+  const grid = k > FA_ROWS;
+  const cols = grid ? Math.ceil(k / FA_ROWS) : 1;
+  const rows = Math.ceil(k / cols);
+  const gap = rows < 2 ? 104 : grid ? Math.min(82, Math.floor(330 / (rows - 1))) : k > 4 ? Math.floor(312 / (rows - 1)) : 104;
+  const top = (grid ? 215 : NODE_Y) - ((rows - 1) * gap) / 2;
+  const pitch = Math.min(170, Math.floor(380 / cols));
+  const av = grid ? Math.min(66, gap - 24, pitch - 24) : 90;
+  const cells = Array.from({ length: k }, (_, i) => {
+    const c = grid ? Math.floor(i / rows) : 0;
+    const r = grid ? i % rows : i;
+    return { x: grid ? FA_GRID_RIGHT - (cols - 1 - c) * pitch : FA_ROW_X, y: Math.round(top + r * gap), av };
+  });
+  const lines = Array.from({ length: rows }, (_, i) => {
+    const y = Math.round(top + i * gap);
+    if (!grid) return { y, d: `M260 ${y} C440 ${y} 430 ${NODE_Y} 612 ${NODE_Y}` };
+    const ey = Math.round(NODE_Y + (i - (rows - 1) / 2) * Math.min(10, 40 / Math.max(1, rows - 1)));
+    return { y, d: `M352 ${y} C532 ${y} 522 ${ey} 612 ${ey}` };
+  });
+  return { grid, cells, lines };
 }
 const NODE_Y = 202;
+const FA_ROWS = 5;
+const FA_ROW_X = 132;      // a row's left edge (one column; .fa__row's CSS left)
+const FA_GRID_RIGHT = 316; // the grid's last column's centre (the lines start at 352)
+
+/** The survivors' row heights in the plate (design px from its top): finalLayout's cells, top to bottom. */
+export function finalRowsY(n) {
+  return finalLayout(n).cells.map((c) => c.y);
+}
 
 /** A leader's portrait (the enemy icon of bosses.json's enemyKey), or null. */
 export function bossIconOf(bossId) {
@@ -190,22 +225,23 @@ function Portrait({ src, done = false, core = false, class: cls }) {
 export function FinalAssaultPlate({ rows, total, bossId = null, myId = null, onDone }) {
   const leaving = useTimedLeave(FINAL_PLATE_MS, onDone);
   const shown = useCountUp(total, 700, 450);
-  const ys = finalRowsY(rows.length);
+  const layout = finalLayout(rows.length);
   return html`<div class=${cx('bpl', 'bpl--final', leaving && 'is-leaving')} role="status" aria-live="polite"
       aria-label=${`${t('最终攻势')}：${t('合力击败敌方领袖！')}`} data-testid="final-plate">
     <div class="bpl__panel">
       <${Art} k="settle/settlemen_personal_fail" class="bpl__map" />
       <div class="fa__group">
         <svg class="fa__lines" viewBox="0 0 1360 430" aria-hidden="true">
-          ${ys.map((y, i) => {
-            const d = `M260 ${y} C440 ${y} 430 ${NODE_Y} 612 ${NODE_Y}`;
-            return html`<g key=${i} style=${`--i:${i}`}><path class="fa__line" d=${d} pathLength="1" /><path class="fa__comet" d=${d} pathLength="1" /></g>`;
-          })}
+          ${layout.lines.map((l, i) => html`<g key=${i} style=${`--i:${i}`}><path class="fa__line" d=${l.d} pathLength="1" /><path class="fa__comet" d=${l.d} pathLength="1" /></g>`)}
         </svg>
-        ${rows.map((r, i) => html`<div key=${r.player?.playerId ?? i} class="fa__row" style=${`top:${px(ys[i] - 45)};--i:${i}`}>
-          <${PlayerAvatar} player=${r.player} self=${r.player?.playerId === myId} class="fa__ava" />
-          <span class="fa__lp num">${r.lp}</span>
-        </div>`)}
+        ${rows.map((r, i) => {
+          const c = layout.cells[i];
+          return html`<div key=${r.player?.playerId ?? i} class=${cx('fa__row', layout.grid && 'fa__row--grid')}
+              style=${`left:${px(c.x)};top:${px(layout.grid ? c.y : c.y - c.av / 2)};--i:${layout.grid ? (i * FA_ROWS / rows.length).toFixed(2) : i};--fa-av:${c.av}`}>
+            <${PlayerAvatar} player=${r.player} self=${r.player?.playerId === myId} class="fa__ava" />
+            <span class="fa__lp num">${r.lp}</span>
+          </div>`;
+        })}
         <div class="fa__node" aria-hidden="true">
           <i class="fa__ring fa__ring--o"></i><i class="fa__ring fa__ring--i"></i>
           <span class="fa__box"><${Art} k="hudPanel/icon_hp" class="fa__rook" /><b class="fa__total num">${shown}</b></span>

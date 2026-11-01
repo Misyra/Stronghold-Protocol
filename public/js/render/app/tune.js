@@ -34,11 +34,15 @@ const CHAIN_KINDS = new Set(['chain', 'chainHeal']);
 const DROP_PENDING_MS = 1300;
 
 /**
- * A dragged unit over no legal target is held with its drawn feet this many tiles below the pointer — the pointer on its
- * body, the model under the finger / mouse (user playtest #4 item 1: as in v2.1; mouse and touch alike); over a legal
- * target it stands on that tile (render/drag.js dragStandTile). An item plate is centred on the pointer.
+ * A dragged unit is held with its drawn feet this many tiles below a finger — the finger on its body, the model under
+ * it (user playtest #4 item 1: as in v2.1) — and DRAG_HOLD_MOUSE_TILES below a mouse or pen, which hides nothing. It is
+ * never snapped to a tile (the free deploy drag, Stardust fork d8dfdf00): it follows the pointer, closing the gap at
+ * DRAG_FOLLOW_RATE per second (1 − e^(−rate·dt) a frame, the same feel at 60 and 120 Hz). An item plate is centred on
+ * the pointer.
  */
 export const DRAG_HOLD_TILES = 0.45;
+export const DRAG_HOLD_MOUSE_TILES = 0.12;
+export const DRAG_FOLLOW_RATE = 22;
 
 /**
  * The round start's replay of the own board (view.replayDeploys, PR #416 by @Cromemadnd): ms between two pieces' Start

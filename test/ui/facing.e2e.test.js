@@ -2,7 +2,8 @@
 // PR #395 (the drag / Tab flow of this file is the PR's, by @Xinglan233). Enter follows the focus while the wheel is
 // open — the wheel takes the focus when it opens, so arrows + Enter confirm (also with a HUD button focused before the
 // drop); Tab reaches ✕ first and Enter on it cancels; Enter on any other button (准备, 设置 …) does nothing; Esc cancels.
-// Unit side: test/ui/feedback5-hotkeys.test.js (facingEnter).
+// Unit side: test/ui/feedback5-hotkeys.test.js (facingEnter). Also the round joystick's pointer (2026-10-15): the knob,
+// and a press outside the wheel as the swipe's origin.
 // SP_E2E=1 CHROME_PATH=/path/to/chrome node --test test/ui/facing.e2e.test.js
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -91,6 +92,54 @@ describe('facing wheel keyboard (mock match, headless Chrome)', { skip: !ENABLED
       const board = (await h.state()).board.filter((p) => p.uid === h.piece.uid);
       assert.deepEqual([board.length, board[0].row, board[0].col, board[0].dir], [1, ...h.tile, dir]);
     }
+    assert.deepEqual(h.errors, []);
+  });
+
+  test('the round joystick (2026-10-15): the knob follows a swipe; a press outside the wheel swipes from where it started, back there cancels', async (t) => {
+    const h = await setup(t);
+    const wheel = () => h.page.$eval('.fwheel__dia', (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, half: r.width / 2 }; });
+    const knob = () => h.page.$eval('.fwheel__knob', (el) => [Number(el.getAttribute('cx')), Number(el.getAttribute('cy'))]);
+    const tip = () => h.page.$eval('.fwheel__tip', (el) => el.textContent);
+    // from the centre: the knob and its stick go with the finger, the sector lights, release commits
+    await h.open();
+    let w = await wheel();
+    assert.deepEqual(await knob(), [0, 0], 'the knob rests in the hub');
+    assert.equal(await h.page.$$eval('.fwheel__sector', (els) => els.length), 4, 'four sectors');
+    await h.page.mouse.move(w.x, w.y); await h.page.mouse.down();
+    await h.page.mouse.move(w.x, w.y - w.half * 0.6, { steps: 4 });
+    await h.page.waitForSelector('.fwheel.is-up .fwheel__sector.is-on');
+    const [kx, ky] = await knob();
+    assert.ok(Math.abs(kx) < 1 && ky < -30, `the knob goes up with the swipe (${kx}, ${ky})`);
+    assert.ok(await h.page.$('.fwheel__stick'), 'the stick from the hub to the knob');
+    assert.equal(await tip(), '拖回中心区域取消');
+    await h.page.mouse.up();
+    await h.closed();
+    assert.equal((await h.moves()).at(-1)[1].dir, 'UP');
+    const n = (await h.moves()).length;
+    // a press outside the wheel no longer cancels: it is the joystick's origin; back there and released, it cancels
+    await h.open();
+    w = await wheel();
+    const o = { x: w.x + w.half * 1.6, y: w.y + w.half * 0.2 };
+    await h.page.mouse.move(o.x, o.y); await h.page.mouse.down();
+    await sleep(120);
+    assert.equal(await h.isOpen(), true, 'a press outside the wheel keeps it open');
+    await h.page.mouse.move(o.x + w.half * 0.5, o.y, { steps: 4 });
+    await h.page.waitForSelector('.fwheel.is-right');
+    assert.equal(await tip(), '滑回按下的位置可取消');
+    await h.page.mouse.move(o.x + 2, o.y + 1, { steps: 4 });
+    await h.page.mouse.up();
+    await h.closed();
+    assert.equal((await h.moves()).length, n, 'released where it started: cancelled, nothing sent');
+    // outside again, a swipe to the left from there commits LEFT
+    await h.open();
+    w = await wheel();
+    await h.page.mouse.move(w.x + w.half * 1.6, w.y); await h.page.mouse.down();
+    await h.page.mouse.move(w.x + w.half * 1.1, w.y, { steps: 4 });
+    await h.page.waitForSelector('.fwheel.is-left');
+    await h.page.mouse.up();
+    await h.closed();
+    assert.equal((await h.moves()).length, n + 1);
+    assert.equal((await h.moves()).at(-1)[1].dir, 'LEFT');
     assert.deepEqual(h.errors, []);
   });
 

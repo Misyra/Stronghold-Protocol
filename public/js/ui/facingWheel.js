@@ -2,19 +2,22 @@
 //
 // After a legal drop of an operator / summon on a board tile (also its own tile: re-orient in place) — or of a
 // directional Art (画卷) — the piece stays on the tile as a ghost and this overlay opens:
-//   * a white diamond centred on the tile, ~3 tiles across its diagonal, a smaller inner diamond (the centre
-//     dead-zone, ~0.5 tile) and 4 chevrons (UP / RIGHT / DOWN / LEFT);
-//   * a red "✕ 点击取消" tag on the diamond's upper-left edge;
-//   * press and drag from the centre: past the dead-zone that side's chevron lights and the unit's range grid, rotated
-//     to that direction (DESIGN §3), shows as orange striped tiles (view.highlightTiles group 'facing' under the units
-//     + a striped SVG layer — slotted between the 3D board canvas and the Pixi canvas when the 3D board is on, so the
-//     units stand on the stripes; an overlay otherwise); outside the centre the tooltip "拖回中心区域取消" shows;
+//   * a round joystick centred on the tile, ~3 tiles across: a ring of 4 sectors (UP / RIGHT / DOWN / LEFT) with their
+//     chevrons, a dashed hub (the centre dead-zone, ~0.5 tile) and a knob on a stick that follows the swipe (the
+//     joystick wheel of 2026-10-12, merged 2026-10-15);
+//   * a red "✕ 点击取消" tag on the ring's upper-left;
+//   * press and drag from the centre: past the dead-zone that side's sector and chevron light and the unit's range grid,
+//     rotated to that direction (DESIGN §3), shows as orange striped tiles (view.highlightTiles group 'facing' under
+//     the units + a striped SVG layer — slotted between the 3D board canvas and the Pixi canvas when the 3D board is
+//     on, so the units stand on the stripes; an overlay otherwise); outside the centre the tooltip "拖回中心区域取消"
+//     shows. A press outside the wheel is the joystick's origin instead: the swipe is measured from where it started
+//     (its dead-zone 0.6 of the centre's) and "滑回按下的位置可取消" shows;
 //   * on the mirrored right half of the Final Assault prep a screen direction maps to its board direction (RIGHT ↔
-//     LEFT, facing.js boardDir): the chevrons follow the finger, the range / model / intent use the board direction;
-//   * release outside the centre commits (g.move {uid, to, dir} / g.art {…, dir}); release inside the centre, a tap
-//     on ✕, a press outside the diamond or Esc cancels (the piece returns to where it came from). Arrow keys preview a
-//     direction and Enter commits it (keyboard alternative) — Enter on a focused ✕ cancels, on any other focused
-//     button does nothing while the wheel is open (GitHub #394). Mouse, pen and touch all use pointer events.
+//     LEFT, facing.js boardDir): the sectors follow the finger, the range / model / intent use the board direction;
+//   * release past the dead-zone commits (g.move {uid, to, dir} / g.art {…, dir}); release inside it, a tap on ✕, a
+//     right-click or Esc cancels (the piece returns to where it came from). Arrow keys preview a direction and Enter
+//     commits it (keyboard alternative) — Enter on a focused ✕ cancels, on any other focused button does nothing while
+//     the wheel is open (GitHub #394). Mouse, pen and touch all use pointer events.
 //
 // View bridge: the field view (render/app.js or the DOM fallback) may implement `tileScreen(row, col)`,
 // `holdPiece(uid, tile|null)` and `setPieceDir(uid, dir)` (render/app.js does, DESIGN §9); a view without them falls
@@ -35,6 +38,9 @@ const rawOf = (view) => (view && view.raw) || view || null;
 
 /** Range highlight of the wheel / a selected unit (orange, drawn under the units by the render engine). */
 export const FACING_STYLE = Object.freeze({ group: 'facing', color: 0xff9c33, fill: 0.36, line: 1 });
+
+/** How often the wheel, an underframe and the range stripes re-read their tile's screen position (~30 Hz). */
+const FOLLOW_MS = 1000 / 30;
 
 // ---- view bridge ---------------------------------------------------------------------------------------------------
 
@@ -153,23 +159,32 @@ export function useTileScreen(view, row, col) {
     let alive = true;
     // no tile (nothing selected): nothing to follow
     if (!view || !Number.isInteger(row) || !Number.isInteger(col)) { last.current = ''; setG(null); return undefined; }
+    // FOLLOW_MS is plenty for a follower of the camera's glide (CAMERA_MS): a per-frame getBoundingClientRect and
+    // re-projection costs real main-thread time on a high-refresh display, in the middle of a placement drag
     const tick = () => {
       if (!alive) return;
       const t = tileScreen(view, row, col);
       const key = t ? `${t.x.toFixed(1)},${t.y.toFixed(1)},${t.s.toFixed(2)}` : '';
       if (key !== last.current) { last.current = key; setG(t); }
-      raf = requestAnimationFrame(tick);
+      raf = setTimeout(tick, FOLLOW_MS);
     };
     tick();
-    return () => { alive = false; cancelAnimationFrame(raf); };
+    return () => { alive = false; clearTimeout(raf); };
   }, [view, row, col]);
   return g;
 }
 
 // ---- the wheel -------------------------------------------------------------------------------------------------------
 
-/** Chevron centre (viewBox units, diamond half-diagonal = 100) and rotation per direction. */
-const CHEV = { UP: [0, -64, -90], RIGHT: [64, 0, 0], DOWN: [0, 64, 90], LEFT: [-64, 0, 180] };
+/** Chevron centre (viewBox units: the wheel is 220 across, ~3 tiles) and rotation per direction. */
+const CHEV = { UP: [0, -66, -90], RIGHT: [66, 0, 0], DOWN: [0, 66, 90], LEFT: [-66, 0, 180] };
+// the ring's sectors (viewBox units: rim 96, hub 34 ≈ DEAD_ZONE_TILES), a quarter each, centred on their screen
+// direction; the knob travels at most JOY_KNOB_MAX from the centre
+const JOY_RIM = 96, JOY_HUB = 34, JOY_KNOB_MAX = 76;
+const joyPt = (r, deg) => `${(r * Math.cos(deg * Math.PI / 180)).toFixed(2)} ${(r * Math.sin(deg * Math.PI / 180)).toFixed(2)}`;
+const joySector = (c) => `M${joyPt(JOY_HUB, c - 45)} L${joyPt(JOY_RIM, c - 45)} A${JOY_RIM} ${JOY_RIM} 0 0 1 ${joyPt(JOY_RIM, c + 45)} `
+  + `L${joyPt(JOY_HUB, c + 45)} A${JOY_HUB} ${JOY_HUB} 0 0 0 ${joyPt(JOY_HUB, c - 45)} Z`;
+const JOY_SECTOR = { UP: joySector(-90), RIGHT: joySector(0), DOWN: joySector(90), LEFT: joySector(180) };
 
 function Chevron({ dir, on }) {
   const [x, y, rot] = CHEV[dir];
@@ -186,10 +201,12 @@ function Chevron({ dir, on }) {
 export function FacingWheel({ view, row, col, grid, name = '', onPreview, onCommit, onCancel }) {
   const g = useTileScreen(view, row, col);
   const [dir, setDir] = useState(null);
-  const [drag, setDrag] = useState(null); // { id } while a pointer is down
+  const [drag, setDrag] = useState(null); // { id, origin } while a pointer is down (origin: pressed outside the wheel)
+  const [knob, setKnob] = useState(null); // the knob's offset [x, y] (viewBox units) while pressed
+  const originRef = useRef(null);         // { x, y } client px of a press outside the wheel: the joystick's origin
   const live = useRef({});
   const s = g && g.s > 0 ? g.s : 64;
-  const half = s * 1.5;              // half-diagonal: ~3 tiles across
+  const half = s * 1.5;              // half the wheel: ~3 tiles across
   const dead = s * DEAD_ZONE_TILES;  // centre dead-zone radius
   // `dir` is the SCREEN direction (chevrons, swipe, arrow keys). On the mirrored right half of the Final Assault prep
   // (research 09 §1.2: col c → 20 − c, RIGHT ↔ LEFT) the board direction differs: the range, the model preview and
@@ -206,7 +223,12 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
   const choose = (clientX, clientY) => {
     const L = live.current;
     if (!L.g) return null;
-    const d = dirFromDelta(clientX - L.g.x, clientY - L.g.y, L.dead);
+    const o = originRef.current;
+    const dx = clientX - (o ? o.x : L.g.x), dy = clientY - (o ? o.y : L.g.y);
+    const d = dirFromDelta(dx, dy, o ? L.dead * 0.6 : L.dead);
+    // the knob shows the swipe on the wheel's scale, held inside the ring
+    const u = 110 / (L.half || 1), m = Math.hypot(dx * u, dy * u), k = m > JOY_KNOB_MAX ? JOY_KNOB_MAX / m : 1;
+    setKnob([dx * u * k, dy * u * k]);
     setDir(d);
     return d;
   };
@@ -220,9 +242,9 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
     if (e.button != null && e.button !== 0) { e.preventDefault(); return; }
     if (e.target && e.target.closest && e.target.closest('.fwheel__cancel')) return;
     e.preventDefault();
-    if (!inside(e.clientX, e.clientY)) { onCancel(); return; }
+    originRef.current = inside(e.clientX, e.clientY) ? null : { x: e.clientX, y: e.clientY };
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    setDrag({ id: e.pointerId });
+    setDrag({ id: e.pointerId, origin: !!originRef.current });
     choose(e.clientX, e.clientY);
   };
   const onMove = (e) => {
@@ -233,9 +255,10 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
     if (!drag || e.pointerId !== drag.id) return;
     setDrag(null);
     const d = choose(e.clientX, e.clientY);
+    originRef.current = null; setKnob(null);
     if (d) onCommit(boardDir(d, live.current.mirror)); else onCancel();
   };
-  const onPointerCancel = () => { setDrag(null); setDir(null); };
+  const onPointerCancel = () => { originRef.current = null; setKnob(null); setDrag(null); setDir(null); };
 
   // keyboard: arrows preview, Enter commits, Esc cancels (capture: the game's own shortcuts must not see them). Enter
   // follows the focus (gameLogic facingEnter, GitHub #394): on ✕ it cancels, on any other button (Tab reaches the HUD
@@ -272,20 +295,19 @@ export function FacingWheel({ view, row, col, grid, name = '', onPreview, onComm
     ${g ? html`<${Stripes} tiles=${tiles} view=${view} row=${row} col=${col} />` : null}
     ${g ? html`<div class="fwheel__dia" style=${`left:${g.x}px;top:${g.y}px;width:${box}px;height:${box}px`}>
       <svg class="fwheel__svg" viewBox="-110 -110 220 220" aria-hidden="true">
-        <path class="fwheel__outer" d="M0 -100 L100 0 L0 100 L-100 0 Z" />
-        <path class=${cx('fwheel__quad', dir === 'UP' && 'is-on')} d="M0 -100 L50 -50 L0 0 L-50 -50 Z" />
-        <path class=${cx('fwheel__quad', dir === 'RIGHT' && 'is-on')} d="M100 0 L50 50 L0 0 L50 -50 Z" />
-        <path class=${cx('fwheel__quad', dir === 'DOWN' && 'is-on')} d="M0 100 L-50 50 L0 0 L50 50 Z" />
-        <path class=${cx('fwheel__quad', dir === 'LEFT' && 'is-on')} d="M-100 0 L-50 -50 L0 0 L-50 50 Z" />
-        <path class="fwheel__inner" d=${`M0 ${-DEAD_ZONE_TILES / 1.5 * 100} L${DEAD_ZONE_TILES / 1.5 * 100} 0 L0 ${DEAD_ZONE_TILES / 1.5 * 100} L${-DEAD_ZONE_TILES / 1.5 * 100} 0 Z`} />
+        <circle class="fwheel__ring" r=${JOY_RIM} />
+        ${DIRS.map((d) => html`<path key=${'s' + d} class=${cx('fwheel__sector', dir === d && 'is-on')} d=${JOY_SECTOR[d]} />`)}
+        <circle class="fwheel__hub" r=${JOY_HUB} />
         ${DIRS.map((d) => html`<${Chevron} key=${d} dir=${d} on=${dir === d} />`)}
+        ${knob ? html`<line class="fwheel__stick" x1="0" y1="0" x2=${knob[0]} y2=${knob[1]} />` : null}
+        <circle class=${cx('fwheel__knob', dir && 'is-on')} cx=${knob ? knob[0] : 0} cy=${knob ? knob[1] : 0} r="17" />
       </svg>
       <button type="button" class="fwheel__cancel" onPointerDown=${(e) => e.stopPropagation()}
         onClick=${(e) => { e.stopPropagation(); onCancel(); }} aria-label=${t('点击取消')}>
         <${LocalSprite} name="cancel_icon" class="fwheel__x" fallback=${html`<span class="fwheel__x fwheel__x--txt">✕</span>`} />
         <span>${t('点击取消')}</span>
       </button>
-      ${outside ? html`<span class="fwheel__tip" role="status">${t('拖回中心区域取消')}</span>` : null}
+      ${outside ? html`<span class="fwheel__tip" role="status">${drag.origin ? t('滑回按下的位置可取消') : t('拖回中心区域取消')}</span>` : null}
       <span class="fwheel__sr" aria-live="polite">${dir ? t('朝向：{dir}', { dir: t(DIR_LABEL[dir]) }) : ''}</span>
     </div>` : null}
   </div>`;
@@ -366,10 +388,10 @@ function Stripes({ tiles, view, row, col }) {
           return el;
         }));
       }
-      raf = requestAnimationFrame(tick);
+      raf = setTimeout(tick, FOLLOW_MS);
     };
     tick();
-    return () => { cancelAnimationFrame(raf); svg.remove(); };
+    return () => { clearTimeout(raf); svg.remove(); };
   }, [key, view, !!mount]);
   // overlay (2D board / fallback): never over the piece's own tile, so the unit being placed stays visible
   const over = mount ? [] : tiles.filter(([r, c]) => r !== row || c !== col);
@@ -382,10 +404,10 @@ function Stripes({ tiles, view, row, col }) {
       const t = tileScreen(view, over[0][0], over[0][1]);
       const k = t ? `${t.x.toFixed(1)},${t.y.toFixed(1)}` : '';
       if (k !== last) { last = k; setN((n) => n + 1); }
-      raf = requestAnimationFrame(tick);
+      raf = setTimeout(tick, FOLLOW_MS);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    raf = setTimeout(tick, FOLLOW_MS);
+    return () => clearTimeout(raf);
   }, [overKey, view]);
   if (!over.length) return null;
   const polys = stripePolys(view, over);

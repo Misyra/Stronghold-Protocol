@@ -30,6 +30,10 @@
 .ally-recent:lang(ja) { word-break: auto-phrase; }
 /* the top bar's ping pill grows with its text at 大 / 特大, as in the room (§35.18 review: its fixed .32rem cut it) */
 .lobby-hub > .topbar .ping { height: auto; min-height: .32rem; padding-top: 1px; padding-bottom: 1px; }
+/* 当前在线人数 (GET /api/online, ui/onlineCount.js) beside the ping pill: the ping capsule's look (components.css .ping),
+   grown with its text by the rule above; hidden until the server answers. The title screen's old .title-online,
+   moved here with the pill (0.3.4 §37.62). */
+.topbar-online .status-dot { width: .08rem; height: .08rem; }
 .hub-bg {
   position: absolute;
   inset: 0;
@@ -56,6 +60,282 @@
   mask-image: radial-gradient(70% 70% at 50% 50%, #000 30%, transparent 85%);
 }
 .lobby-hub .topbar { background: linear-gradient(180deg, rgba(4, 8, 8, .85), transparent); border-bottom: 0; }
+
+
+/* ==========================================================================================
+   成就统计 (js/ui/achievements.js, 自 dev 线移植 2026-11-01): the hub's top-left entry card and the panel that
+   opens from it. Ported verbatim except the font sizes: this repo's scanner wants every size on the text scale,
+   so the panel's plain rem sizes ride var(--utility-text, var(--t)) the way the entry card's own rules already
+   do upstream (nothing sets --utility-text on the panel, so it resolves to --t). Sizes are 1920-wide px / 100.
+   ========================================================================================== */
+/* ==========================================================================================
+   成就统计 (js/ui/achievements.js; the event video 1:25–1:44): the hub's top-left entry card and the
+   卫戍协议：盟约 panel. Sizes are the video's 1920-wide pixels / 100.
+   ========================================================================================== */
+.hub-ach { position: relative; width: 100%; display: flex; flex-direction: column; margin-bottom: .1rem; padding: 0; cursor: pointer; text-align: left; color: #eef3f1;
+  background: #0c1110; border: 1px solid rgba(220, 230, 226, .16); box-shadow: 0 .04rem .16rem rgba(0, 0, 0, .45); transition: border-color var(--t-fast, 150ms), filter var(--t-fast, 150ms); }
+.hub-ach:hover, .hub-ach:focus-visible { border-color: var(--mint-a35, rgba(78, 216, 175, .35)); filter: brightness(1.08); outline: none; }
+.hub-ach:focus-visible { box-shadow: 0 0 0 2px var(--mint-400); }
+.hub-ach__scene { position: relative; height: .88rem; overflow: hidden; display: grid; place-items: center; }
+.hub-ach__land { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hub-ach__scene::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .18) 0 1px, transparent 1px 3px), linear-gradient(90deg, rgba(8, 10, 10, .55), transparent 40%); }
+.hub-ach .hub-ach__mark { position: relative; z-index: 1; display: grid; place-items: center; }
+.hub-ach .hub-ach__mark .emblem { margin: 0; gap: .06rem; animation: none; }
+.hub-ach .hub-ach__mark .emblem__svg { width: .52rem; height: .56rem; filter: drop-shadow(0 0 .04rem rgba(0, 0, 0, .6)); }
+.hub-ach .hub-ach__mark .emblem__svg circle { fill: #15110c; animation: none; }
+.hub-ach .hub-ach__mark .emblem__svg circle.is-accent { fill: #2cf0b8; }
+.hub-ach .hub-ach__mark .emblem__bracket { height: .66rem; width: .07rem; border-width: 1px; border-color: rgba(20, 16, 10, .55); }
+.hub-ach__rank { position: absolute; left: .1rem; top: .1rem; z-index: 1; width: .52rem; display: flex; flex-direction: column; align-items: center; gap: .01rem; padding: .04rem 0 .03rem;
+  background: rgba(14, 18, 17, .55); border: 1px solid rgba(240, 244, 243, .4); }
+.hub-ach__rank > .icon { width: .3rem; height: .3rem; color: #eef3f1; }
+.hub-ach__rank small { display: inline-flex; align-items: center; gap: .02rem; font-size: calc(.13 * var(--utility-text, var(--t))); color: #e6ebe9; }
+.hub-ach__rank small .icon { width: .12rem; height: .12rem; }
+.hub-ach__label { position: relative; display: flex; align-items: center; gap: .08rem; height: .42rem; padding: 0 .14rem; background: linear-gradient(90deg, rgba(20, 26, 25, .96), rgba(14, 18, 17, .96));
+  border-top: 1px solid rgba(220, 230, 226, .14); font-size: calc(.21 * var(--utility-text, var(--t))); font-weight: 700; white-space: nowrap; }
+.hub-ach__label::before, .hub-ach__label::after { content: ''; position: absolute; top: .06rem; bottom: .06rem; width: .06rem; border: 1px solid rgba(220, 230, 226, .3); }
+.hub-ach__label::before { left: .04rem; border-right: 0; }
+.hub-ach__label::after { right: .04rem; border-left: 0; }
+.hub-ach__badge { width: .24rem; height: .24rem; fill: #e8eeec; flex: none; }
+.hub-ach__lv { margin-left: auto; font-size: calc(.15 * var(--utility-text, var(--t))); color: var(--mint-400); font-weight: 600; }
+/* a guest: the achievements are the account's (2026-10-14) */
+.hub-ach__login { color: #b9c2bf; }
+.hub-ach.is-guest .hub-ach__scene { filter: saturate(.55) brightness(.8); }
+
+/* ---- the panel ---- */
+/* the reference clip's order: the lobby blurs at once, a diamond loader while the data comes, then the panel fades in */
+.ach { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center; background: rgba(2, 4, 4, .62); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: ach-fade 140ms both; }
+.ach.is-closing { animation: ach-fade 180ms reverse forwards; }
+@keyframes ach-fade { from { opacity: 0; } }
+.ach__loader { position: absolute; left: 50%; bottom: 9%; width: .9rem; height: .9rem; margin-left: -.45rem; display: grid; place-items: center; pointer-events: none; }
+.ach__loader i, .ach__loader b { grid-area: 1 / 1; transform: rotate(45deg); }
+.ach__loader i { width: .56rem; height: .56rem; border: 2px solid rgba(240, 244, 243, .9); animation: ach-dia 1.1s var(--ease-out) infinite; }
+.ach__loader i + i { animation-delay: .55s; }
+.ach__loader b { width: .24rem; height: .24rem; border: 2px solid #f4f7f6; animation: ach-dia-core 1.1s linear infinite; }
+@keyframes ach-dia { from { transform: rotate(45deg) scale(.55); opacity: 1; } to { transform: rotate(45deg) scale(1.4); opacity: 0; } }
+@keyframes ach-dia-core { to { transform: rotate(225deg); } }
+.ach__box { position: relative; width: min(17.4rem, calc(100vw - 1.1rem)); height: min(9.06rem, calc(100dvh - .9rem)); display: flex; flex-direction: column;
+  background: radial-gradient(60% 70% at 70% 60%, rgba(30, 70, 62, .3), transparent 70%), #0a0d0d; box-shadow: 0 0 0 1px rgba(220, 230, 226, .1), 0 .2rem .6rem rgba(0, 0, 0, .7);
+  animation: ach-in 240ms var(--ease-out) both;
+}
+@keyframes ach-in { from { opacity: 0; transform: scale(.985); } }
+.ach__box::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 4px); }
+.ach__head { position: relative; flex: none; height: 1.27rem; display: flex; align-items: stretch; overflow: hidden;
+  background: linear-gradient(180deg, #1b1f1e, #141716); border-bottom: 1px solid rgba(220, 230, 226, .08); }
+.ach__head::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4.6rem; opacity: .35; pointer-events: none;
+  background: linear-gradient(160deg, transparent 40%, rgba(150, 160, 158, .35) 41% 46%, transparent 47%), linear-gradient(200deg, transparent 50%, rgba(150, 160, 158, .3) 51% 55%, transparent 56%); }
+.ach__logo { position: relative; display: flex; align-items: center; gap: .1rem; padding-left: .45rem; color: #a7b0ad; }
+.ach__logo svg { width: .5rem; height: .38rem; }
+.ach__logo b { font-family: var(--font-display); font-size: calc(.17 * var(--utility-text, var(--t))); line-height: .95; font-weight: 600; }
+.ach__band { position: relative; margin-left: auto; width: 8.7rem; display: flex; align-items: center; gap: .3rem; padding-left: 2.2rem;
+  background: linear-gradient(90deg, transparent, rgba(220, 128, 36, .82) 24%, #f0a23a 60%, #f3b04a); }
+.ach__band::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(100deg, rgba(0, 0, 0, .08) 0 2px, transparent 2px 9px); }
+.ach__dunes { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ach__dunes path { fill: rgba(150, 64, 8, .3); }
+.ach__dunes path.is-far { fill: rgba(255, 220, 150, .2); }
+.ach__band .emblem { margin: 0; gap: .06rem; animation: none; }
+.ach__band .emblem__svg { width: .7rem; height: .76rem; }
+.ach__band .emblem__svg circle { fill: #15110c; animation: none; }
+.ach__band .emblem__svg circle.is-accent { fill: #15110c; filter: none; }
+.ach__band .emblem__bracket { height: .95rem; width: .1rem; border-width: 2px; border-color: rgba(20, 16, 10, .7); }
+.ach__titles { position: relative; display: flex; flex-direction: column; line-height: 1.05; }
+.ach__titles i { font-family: var(--font-display); font-style: normal; font-size: calc(.3 * var(--utility-text, var(--t))); letter-spacing: .06em; color: transparent; -webkit-text-stroke: 1px rgba(30, 22, 12, .6); }
+.ach__titles b { font-size: calc(.38 * var(--utility-text, var(--t))); font-weight: 900; color: #16110a; white-space: nowrap; }
+.ach__body { position: relative; z-index: 1; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: .1rem .7rem .5rem .66rem; scrollbar-width: thin; scrollbar-color: rgba(220, 230, 226, .45) transparent; }
+.ach__body::-webkit-scrollbar { width: .07rem; }
+.ach__body::-webkit-scrollbar-thumb { background: rgba(220, 230, 226, .45); border-radius: .04rem; }
+.ach__close { position: absolute; right: -.52rem; top: -.36rem; z-index: 2; width: .5rem; height: .5rem; display: grid; place-items: center; padding: 0; border: 0; background: none; color: #f4f7f6; cursor: pointer; }
+.ach__close .icon { width: .5rem; height: .5rem; filter: drop-shadow(0 0 .04rem #000); }
+.ach__close:hover, .ach__close:focus-visible { color: var(--mint-400); outline: none; }
+.ach__foot { position: absolute; right: -.06rem; bottom: -.16rem; z-index: 2; padding: .06rem .16rem; font-size: calc(.2 * var(--utility-text, var(--t))); color: #e2e8e6; background: rgba(16, 22, 21, .94);
+  box-shadow: inset 0 0 0 1px rgba(78, 216, 175, .35); }
+@media (max-width: 1100px) { .ach__close { right: .06rem; top: .06rem; } }
+
+/* the top area: plate + mode table | the 评语 hexagon */
+.ach-top-area { display: grid; grid-template-columns: minmax(0, 9.1rem) minmax(0, 1fr); gap: .3rem; padding-top: .3rem; }
+.ach-plate { display: flex; gap: .24rem; align-items: flex-start; }
+.ach-card { position: relative; width: 6.15rem; height: 1.92rem; flex: none; display: flex; align-items: center; gap: .18rem; padding: .16rem; overflow: hidden; border-radius: .06rem;
+  background: linear-gradient(118deg, #e23443 0 46%, #2b2e33 46% 50%, #f2f4f3 50% 56%, #2fb6c6 56%); }
+.ach-card::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0, 0, 0, .25), transparent 60%); pointer-events: none; }
+.ach-card__ava { position: relative; z-index: 1; width: 1.6rem; height: 1.6rem; flex: none; display: grid; place-items: center; background: #1d2423; border: 2px solid #f4f7f6; }
+.ach-card__ava img { width: 100%; height: 100%; object-fit: cover; }
+.ach-card__glyph { font-size: calc(.7 * var(--utility-text, var(--t))); font-weight: 900; color: #4af2c4; }
+.ach-card__lv { position: absolute; left: -.16rem; top: -.14rem; width: .5rem; height: .5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: .9;
+  border-radius: 50%; background: #111; border: 3px solid #ffd21e; color: #fff; }
+.ach-card__lv b { font-family: var(--font-display); font-size: calc(.2 * var(--utility-text, var(--t))); }
+.ach-card__lv small { font-size: calc(.09 * var(--utility-text, var(--t))); }
+.ach-card__who { position: relative; z-index: 1; min-width: 0; display: flex; flex-direction: column; gap: .08rem; align-self: flex-start; padding-top: .16rem; }
+.ach-card__name { font-size: calc(.3 * var(--utility-text, var(--t))); font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 .02rem .04rem rgba(0, 0, 0, .5); }
+.ach-card__tag { margin-left: .02rem; color: rgba(255, 255, 255, .8); font-weight: 400; }
+.ach-card__id { align-self: flex-start; padding: .02rem .1rem; font-size: calc(.19 * var(--utility-text, var(--t))); color: #f0d6d8; background: rgba(120, 10, 20, .55); border-radius: .03rem; white-space: nowrap; }
+.ach-card__brand { position: absolute; right: .16rem; bottom: .12rem; z-index: 1; font-family: var(--font-display); font-size: calc(.15 * var(--utility-text, var(--t))); line-height: .95; font-weight: 600; color: rgba(255, 255, 255, .85); text-align: right; }
+/* 已获奖杯 / 获赞数, each with its badge */
+.ach-counts { display: grid; grid-template-columns: auto auto; column-gap: .12rem; row-gap: .14rem; align-items: center; padding-top: .06rem; }
+.ach-counts__badge { width: .64rem; height: .64rem; display: grid; place-items: center; }
+.ach-counts__badge svg { width: 100%; height: 100%; }
+.ach-counts__badge.is-trophy .tbadge { width: 100%; height: 100%; }
+.ach-counts__badge.is-like rect { fill: #e8823a; stroke: #ffe2c6; stroke-width: 2; }
+.ach-counts__ink { fill: #2a1606; }
+.ach-counts__row { display: flex; flex-direction: column; line-height: 1.1; }
+.ach-counts__row small { display: inline-flex; align-items: center; gap: .04rem; font-size: calc(.22 * var(--utility-text, var(--t))); color: #b9c2bf; white-space: nowrap; }
+.ach-counts__row small .icon { width: .18rem; height: .18rem; }
+.ach-counts__row b { font-family: var(--font-display); font-size: calc(.3 * var(--utility-text, var(--t))); color: #f4f7f6; }
+.ach-modes { margin-top: .3rem; background: rgba(22, 32, 30, .55); }
+.ach-modes__row { display: grid; grid-template-columns: 1.75rem repeat(3, minmax(0, 1fr)); align-items: center; height: 1.8rem; }
+.ach-modes__row + .ach-modes__row .ach-modes__cell { border-top: 1px solid rgba(220, 230, 226, .1); }
+.ach-modes__mode { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .06rem; background: rgba(28, 92, 80, .42); color: #4af2c4; }
+.ach-modes__mode .icon { width: .24rem; height: .24rem; }
+.ach-modes__mode b { font-size: calc(.28 * var(--utility-text, var(--t))); white-space: nowrap; }
+.ach-modes__cell { height: 1.2rem; display: flex; flex-direction: column; justify-content: center; padding-left: .3rem; }
+.ach-modes__cell b { font-family: var(--font-display); font-size: calc(.42 * var(--utility-text, var(--t))); line-height: 1.05; color: #4af2c4; font-weight: 500; }
+.ach-modes__cell small { font-size: calc(.25 * var(--utility-text, var(--t))); color: #a9b3b0; white-space: nowrap; }
+.ach-hex { position: relative; min-height: 4.4rem; }
+/* the reference's hexagon: six solid mint triangles, dark gaps, a ruler inside each outer edge, a dark hub, a soft glow */
+.ach-hex__svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 .14rem rgba(74, 242, 196, .3)); }
+.ach-hex__seg polygon { fill: #5cd3b2; stroke: rgba(225, 255, 246, .32); stroke-width: 1.5; stroke-linejoin: round; }
+.ach-hex__ticks line { stroke: rgba(8, 48, 38, .34); stroke-width: 2; }
+.ach-hex__hub { fill: #0b100f; stroke: rgba(8, 48, 38, .7); stroke-width: 5; }
+.ach-hex__seg { animation: ach-seg 380ms var(--ease-out) calc(60ms + var(--i) * 50ms) both; transform-origin: 0 0; }
+@keyframes ach-seg { from { opacity: 0; transform: scale(.72); } }
+.ach-hex__cap { position: absolute; left: .1rem; top: 0; display: grid; grid-template-columns: auto auto; column-gap: .08rem; align-items: center; font-family: var(--font-display);
+  font-size: calc(.16 * var(--utility-text, var(--t))); letter-spacing: .04em; color: rgba(220, 230, 226, .3); white-space: nowrap; pointer-events: none; }
+.ach-hex__cap i { width: .06rem; height: .06rem; background: var(--mint-400); }
+.ach-hex__cap small { grid-column: 2; width: .5rem; height: .08rem; margin-top: .04rem; background: rgba(74, 242, 196, .4); }
+.ach-hex__label { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; line-height: 1.15; white-space: nowrap; isolation: isolate;
+  animation: ach-pop 320ms var(--ease-out) calc(180ms + var(--i) * 50ms) both; }
+.ach-hex__label b { position: relative; padding: 0 .1rem; font-family: var(--font-display); font-size: calc(.32 * var(--utility-text, var(--t))); color: #dafff4; font-weight: 600; text-shadow: 0 0 .08rem rgba(74, 242, 196, .9); }
+.ach-hex__label b::before { content: ''; position: absolute; z-index: -1; inset: 18% -4%; border-radius: .2rem; background: rgba(74, 242, 196, .26); filter: blur(.05rem); }
+.ach-hex__label span { font-size: calc(.25 * var(--utility-text, var(--t))); color: #dfe6e3; }
+
+/* section bars */
+.ach-bar { position: relative; display: flex; align-items: center; gap: .2rem; height: .66rem; margin: .5rem 0 .3rem; padding: 0 .3rem 0 1.38rem;
+  background: linear-gradient(90deg, rgba(150, 160, 158, .34), rgba(110, 120, 118, .2) 70%, rgba(110, 120, 118, .1)); }
+.ach-bar::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .4; background: repeating-linear-gradient(90deg, rgba(0, 0, 0, .25) 0 1px, transparent 1px 7px); }
+.ach-bar__icon { position: absolute; left: .3rem; top: -.2rem; width: .9rem; height: 1.04rem; display: grid; place-items: center; background: #2b302f; box-shadow: 0 0 0 2px rgba(200, 210, 206, .32); }
+.ach-bar__icon svg { width: .52rem; height: .52rem; fill: #eef3f1; }
+.ach-bar__title { position: relative; z-index: 1; font-size: calc(.34 * var(--utility-text, var(--t))); font-weight: 800; color: #f2f6f5; letter-spacing: .04em; }
+.ach-bar__marks { position: relative; z-index: 1; margin-left: auto; display: flex; align-items: center; gap: .06rem; color: rgba(220, 230, 226, .55); }
+.ach-bar__marks > i { width: .3rem; height: .3rem; display: grid; place-items: center; border: 1px solid rgba(220, 230, 226, .45); }
+.ach-bar__marks > i .icon, .ach-bar__marks > i svg { width: .2rem; height: .2rem; }
+.ach-bar__micro { margin-left: .04rem; line-height: 1.1; color: rgba(220, 230, 226, .5); }
+
+/* 卫戍成就 */
+.ach-best { display: grid; grid-template-columns: 3.2rem minmax(0, 1fr); gap: .5rem; align-items: center; }
+.ach-best__left { display: flex; flex-direction: column; align-items: center; gap: .12rem; }
+/* the emblem in its brackets, wired to the lineup's bracket (a dot, the wire, three ticks) */
+.ach-best__mount { position: relative; align-self: stretch; display: flex; flex-direction: column; align-items: center; gap: .12rem; padding: .06rem .3rem .1rem; }
+.ach-best__mount::before, .ach-best__mount::after { content: ''; position: absolute; top: 0; bottom: .1rem; width: .1rem; border: 2px solid rgba(200, 210, 206, .3); pointer-events: none; }
+.ach-best__mount::before { left: 0; border-right: 0; }
+.ach-best__mount::after { right: 0; border-left: 0; }
+.ach-best__wire { position: absolute; left: 100%; top: 1.21rem; width: .5rem; height: 2px; background: rgba(200, 210, 206, .4); }
+.ach-best__wire::before { content: ''; position: absolute; left: -.05rem; top: 50%; width: .1rem; height: .1rem; margin-top: -.05rem; border-radius: 50%; background: rgba(200, 210, 206, .6); }
+.ach-best__wire::after { content: ''; position: absolute; right: 0; top: -.14rem; width: .14rem; height: .3rem; background: repeating-linear-gradient(180deg, rgba(200, 210, 206, .45) 0 2px, transparent 2px .14rem); }
+.ach-pill { align-self: flex-start; display: inline-flex; align-items: center; gap: .06rem; padding: .04rem .16rem; border-radius: .24rem; background: rgba(220, 230, 226, .14); font-size: calc(.26 * var(--utility-text, var(--t))); font-weight: 600; }
+.ach-pill .icon { width: .2rem; height: .2rem; }
+.ach-best__glyph { width: 2.1rem; height: 2.1rem; display: grid; place-items: center; margin-top: .1rem; background: #121716;
+  box-shadow: 0 0 0 3px rgba(200, 210, 206, .32), 0 0 0 .1rem #0b0f0e, 0 0 0 calc(.1rem + 1px) rgba(200, 210, 206, .16); }
+.ach-best__glyph .bglyph, .ach-top__frame .bglyph { width: 1.3rem; height: 1.3rem; display: grid; place-items: center; }
+.ach-best__glyph .bglyph img, .ach-top__frame .bglyph img { width: 100%; height: 100%; object-fit: contain;
+  filter: brightness(0) invert(84%) sepia(52%) saturate(640%) hue-rotate(106deg) drop-shadow(0 0 .1rem rgba(74, 242, 196, .6)); }
+.ach-best__glyph .bglyph__txt, .ach-top__frame .bglyph__txt { font-size: calc(.8 * var(--utility-text, var(--t))); font-weight: 900; color: #4af2c4; }
+.ach-best__label { font-size: calc(.27 * var(--utility-text, var(--t))); color: #dfe6e3; }
+.ach-best__num { font-family: var(--font-display); font-size: calc(.66 * var(--utility-text, var(--t))); line-height: 1; color: #4af2c4; font-weight: 500; }
+.ach-best__lineup { position: relative; display: flex; gap: .4rem; padding: .3rem .4rem .3rem .5rem; }
+.ach-best__lineup::before, .ach-best__lineup::after { content: ''; position: absolute; top: 0; bottom: 0; width: .1rem; border: 2px solid rgba(200, 210, 206, .35); pointer-events: none; }
+.ach-best__lineup::before { left: 0; border-right: 0; }
+.ach-best__lineup::after { right: 0; border-left: 0; }
+.ach-best__rows { display: flex; flex-direction: column; gap: .26rem; }
+.ach-best__row { display: flex; gap: .38rem; }
+.ach-best__bonds { display: grid; grid-template-columns: repeat(2, auto); gap: .14rem .3rem; align-content: start; padding-left: .1rem; }
+.ach-maxima { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .3rem; margin-top: .4rem; }
+.ach-max { position: relative; height: 1.5rem; display: flex; flex-direction: column; justify-content: center; padding: 0 .3rem; overflow: hidden; }
+.ach-max::before, .ach-max::after { content: ''; position: absolute; top: 0; bottom: 0; width: .1rem; border: 2px solid rgba(200, 210, 206, .32); pointer-events: none; }
+.ach-max::before { left: 0; border-right: 0; }
+.ach-max::after { right: 0; border-left: 0; }
+.ach-max__label { position: relative; z-index: 1; font-size: calc(.25 * var(--utility-text, var(--t))); color: #d4dcd9; white-space: nowrap; }
+.ach-max__num { position: relative; z-index: 1; display: flex; align-items: baseline; gap: .02rem; line-height: 1.05; }
+.ach-max__num small { font-size: calc(.36 * var(--utility-text, var(--t))); color: #f4f7f6; }
+.ach-max__num .num { font-family: var(--font-display); font-size: calc(.54 * var(--utility-text, var(--t))); font-weight: 500; color: var(--mx, #4af2c4); }
+.ach-max__glyph { position: absolute; right: .36rem; top: 50%; width: 1.1rem; height: 1.1rem; margin-top: -.55rem; fill: var(--mx, #4af2c4); opacity: .45; }
+.ach-max.is-gold { --mx: #ffcf1f; } .ach-max.is-orange { --mx: #ff8a2a; } .ach-max.is-mint { --mx: #3fe3b2; }
+
+/* 盟约纪录 / 策略纪录 */
+.ach-list { padding-bottom: .1rem; }
+.ach-sub { margin: .26rem 0 .2rem .4rem; font-size: calc(.26 * var(--utility-text, var(--t))); color: #b9c2bf; }
+.ach-sub::before { content: '-'; margin-right: .22rem; }
+.ach-empty { margin: .1rem 0 .1rem .8rem; font-size: calc(.22 * var(--utility-text, var(--t))); color: #7d8784; }
+.ach-tops { display: flex; gap: 1.45rem; padding-left: 2.1rem; }
+.ach-top { display: flex; flex-direction: column; align-items: center; gap: .16rem; animation: ach-pop 380ms var(--ease-out) both; }
+@keyframes ach-pop { from { opacity: 0; transform: translateY(.12rem); } }
+.ach-top__frame { position: relative; width: 2.4rem; height: 2.4rem; display: grid; place-items: center; background: rgba(12, 18, 17, .7); box-shadow: inset 0 0 0 3px rgba(200, 210, 206, .3); }
+.ach-top__rank { position: absolute; left: .12rem; top: .08rem; font-family: var(--font-display); font-style: normal; font-size: calc(.22 * var(--utility-text, var(--t))); color: rgba(220, 230, 226, .5); }
+.ach-top__name { font-size: calc(.28 * var(--utility-text, var(--t))); font-weight: 700; color: #eef3f1; white-space: nowrap; }
+.ach-tops--band { gap: .9rem; padding-left: .9rem; }
+.ach-top--band { flex-direction: row; align-items: center; gap: .22rem; }
+.ach-top--band .ach-top__frame { width: 2.1rem; height: 2.1rem; }
+.ach-top--band .bandicon, .ach-mark__frame .bandicon { width: 1.6rem; height: 1.6rem; }
+.ach-top--band .bandicon img, .ach-mark__frame .bandicon img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0 .08rem rgba(74, 242, 196, .45)); }
+.ach-top__side { display: flex; flex-direction: column; gap: .06rem; }
+.ach-top__count { display: flex; align-items: baseline; gap: .02rem; }
+.ach-top__count small { font-size: calc(.28 * var(--utility-text, var(--t))); color: #eef3f1; }
+.ach-top__count b { font-family: var(--font-display); font-size: calc(.44 * var(--utility-text, var(--t))); line-height: 1; color: #4af2c4; font-weight: 500; }
+.ach-ops { display: flex; flex-wrap: wrap; gap: .26rem .5rem; padding-left: .95rem; }
+.ach-op { position: relative; width: 1.5rem; height: 1.5rem; display: grid; place-items: center; }
+.ach-op .uthumb { --ut: 1.36rem; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 2px rgba(20, 26, 25, .9), 0 0 .2rem rgba(74, 242, 196, .22); }
+.ach-op__tier { position: absolute; left: .02rem; bottom: -.02rem; min-width: .4rem; height: .36rem; padding: 0 .04rem; display: grid; place-items: center; font-family: var(--font-display); font-size: calc(.2 * var(--utility-text, var(--t)));
+  font-weight: 700; line-height: 1; color: var(--tc, #e6eae8); background: #151818; border: 2px solid var(--tc, #e6eae8); border-radius: .05rem; }
+.ach-op.sop--t5 .ach-op__tier { background: #151818; color: #ffc81e; border-color: #ffc81e; }
+.ach-op.sop--t6 .ach-op__tier { background: #151818; color: #ff8a1d; border-color: #ff8a1d; }
+.ach-marks { display: flex; flex-wrap: wrap; gap: .4rem; padding-left: 1.2rem; }
+.ach-mark { display: flex; flex-direction: column; align-items: center; gap: .12rem; }
+.ach-mark b { font-size: calc(.28 * var(--utility-text, var(--t))); font-weight: 700; }
+.ach-mark__frame { position: relative; width: 2rem; height: 2rem; display: grid; place-items: center;
+  background: repeating-linear-gradient(135deg, rgba(74, 242, 196, .08) 0 .04rem, transparent .04rem .12rem), rgba(18, 40, 36, .7); box-shadow: inset 0 0 0 1px rgba(74, 242, 196, .3); }
+.ach-mark__badge { position: absolute; right: .06rem; top: .06rem; width: .3rem; height: .3rem; display: grid; place-items: center; background: #1c1206; border: 2px solid #ff9a2a; color: #ffad3a; }
+.ach-mark__badge svg { width: .2rem; height: .2rem; }
+
+/* 成就 (js/ui/achievements.js, ACHIEVEMENT_GROUPS): rows in a grid — the group's glyph, the name and its condition,
+   then the progress bar (or 已达成) */
+.ach-marks--list { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: .16rem .3rem; padding-left: .8rem; }
+.ach-mark--row { flex-direction: row; align-items: center; gap: .2rem; }
+.ach-mark--row:not(.is-done) { opacity: .78; }
+.ach-mark--row .ach-mark__frame { width: 1rem; height: 1rem; flex: none; color: rgba(74, 242, 196, .5); }
+.ach-mark--row .ach-mark__frame > .icon { width: .5rem; height: .5rem; }
+.ach-mark--row.is-done .ach-mark__frame { color: #4af2c4; box-shadow: inset 0 0 0 2px rgba(74, 242, 196, .7), 0 0 .14rem rgba(74, 242, 196, .3); }
+.ach-mark--row .ach-mark__badge { width: .22rem; height: .22rem; border-width: 1px; }
+.ach-mark--row .ach-mark__badge svg { width: .15rem; height: .15rem; }
+.ach-mark__text { display: flex; flex-direction: column; gap: .04rem; min-width: 0; }
+.ach-mark__text b { font-size: calc(.26 * var(--utility-text, var(--t))); }
+.ach-mark__text small { font-size: calc(.2 * var(--utility-text, var(--t))); color: #a9b3b0; }
+.ach-mark__got { font-size: calc(.18 * var(--utility-text, var(--t))); color: #4af2c4; }
+.ach-mark__bar { position: relative; display: block; height: .26rem; background: rgba(220, 230, 226, .1); overflow: hidden; }
+.ach-mark__bar i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(74, 242, 196, .5); }
+.ach-mark__bar em { position: relative; padding-left: .08rem; font-style: normal; font-size: calc(.17 * var(--utility-text, var(--t))); line-height: .26rem; color: #e6ecea; }
+@media (prefers-reduced-motion: reduce) {
+  .ach, .ach__box, .ach-hex__seg, .ach-hex__label, .ach-top, .ach__loader i, .ach__loader b { animation: none; }
+}
+/* a guest's panel: the login block */
+.ach-gate { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .2rem; padding: .3rem 1rem; text-align: center; }
+.ach-gate__mark .emblem { margin: 0; animation: none; }
+.ach-gate__mark .emblem__svg { width: .9rem; height: .98rem; }
+.ach-gate__mark .emblem__svg circle { animation: none; }
+.ach-gate__title { font-size: calc(.42 * var(--utility-text, var(--t))); font-weight: 800; color: #f2f6f5; letter-spacing: .04em; }
+.ach-gate p { margin: 0; max-width: 10rem; font-size: calc(.26 * var(--utility-text, var(--t))); line-height: 1.5; color: #b9c2bf; }
+.ach-gate p.ach-gate__local { color: var(--mint-400); }
+
+
+/* 成就奖杯等级 (ui/trophies.js): the chess-piece badge of the cumulative trophies; the SVG rook while the pack is
+   missing, tinted per level. Ported with the entry card that shows it in its rank box. */
+/* 成就奖杯等级 (ui/trophies.js): the official chess-piece badge of the cumulative trophies; the SVG rook while the pack is
+   missing, tinted per level. Inline after a name in the room seats, the draft order and the settlement team cards. */
+.tbadge { display: inline-grid; place-items: center; flex: none; object-fit: contain; width: .3rem; height: .3rem; }
+.tbadge--svg .icon { width: 100%; height: 100%; }
+.tbadge--svg.tbadge--1 { color: #e8efec; }
+.tbadge--svg.tbadge--2 { color: #7fd6c4; }
+.tbadge--svg.tbadge--3 { color: #d9c08a; }
+.tbadge--svg.tbadge--4 { color: #f2c14e; }
+.tbadge--svg.tbadge--5 { color: #f08a3a; }
+.tbadge--inline { width: 1.35em; height: 1.35em; margin-right: .2em; vertical-align: middle; filter: drop-shadow(0 0 2px rgba(0, 0, 0, .6)); }
+.hub-ach__rank > .tbadge { width: .34rem; height: .34rem; }
 
 /* ---- 大厅背景与音乐 (PR #643 split 8, ui/lobbyMedia.js): the player's own picture / video over the official layers,
    darkened by its 暗度 (--own-dim) so the title and the entries stay readable; the dialog reuses the settings rows ---- */
@@ -195,7 +475,7 @@
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 4rem) minmax(0, 1fr) minmax(0, calc(var(--hub-entry-w) * 2 + var(--hub-gap)));
+  grid-template-columns: minmax(0, 4rem) minmax(0, 1fr) minmax(0, calc(var(--hub-entry-w) * 3 + var(--hub-gap) * 2));
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas: "side center right" "side entries entries";
   gap: .2rem .4rem;
@@ -261,76 +541,6 @@
 
 /* ---- left column: 成就统计, 密钥加入, 作战提示 ------------------------------------------------------------ */
 .hub-side { grid-area: side; position: relative; z-index: 1; display: flex; flex-direction: column; gap: .14rem; min-width: 0; padding-top: .3rem; }
-/* 成就统计 (#643's top-left card, from the event video): a dusk scene with the emblem and the trophy medal, the label strip
-   with the LV under it */
-.hub-ach {
-  position: relative;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  font: inherit;
-  text-align: left;
-  color: #eef3f1;
-  cursor: pointer;
-  background: #0c1110;
-  border: 1px solid rgba(220, 230, 226, .16);
-  box-shadow: 0 .04rem .16rem rgba(0, 0, 0, .45);
-  transition: border-color var(--t-fast), filter var(--t-fast);
-}
-.hub-ach:hover, .hub-ach:focus-visible { border-color: rgba(78, 216, 175, .35); filter: brightness(1.08); outline: none; }
-.hub-ach:focus-visible { box-shadow: 0 0 0 2px var(--mint-400); }
-.hub-ach__scene { position: relative; height: 1rem; overflow: hidden; display: grid; place-items: center; }
-.hub-ach__land { position: absolute; inset: 0; width: 100%; height: 100%; }
-.hub-ach__scene::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .18) 0 1px, transparent 1px 3px), linear-gradient(90deg, rgba(8, 10, 10, .55), transparent 40%);
-}
-.hub-ach__mark { position: relative; z-index: 1; display: grid; place-items: center; }
-.hub-ach__mark .emblem { margin: 0; gap: .06rem; animation: none; }
-.hub-ach__mark .emblem__svg { width: .52rem; height: .56rem; filter: drop-shadow(0 0 .04rem rgba(0, 0, 0, .6)); }
-.hub-ach__mark .emblem__svg circle { fill: #15110c; animation: none; }
-.hub-ach__mark .emblem__svg circle.is-accent { fill: #2cf0b8; }
-.hub-ach__mark .emblem__bracket { width: .07rem; height: .66rem; border-width: 1px; border-color: rgba(20, 16, 10, .55); }
-.hub-ach__rank {
-  position: absolute;
-  left: .1rem;
-  top: .1rem;
-  z-index: 2;
-  width: .6rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: .01rem;
-  padding: .04rem 0 .03rem;
-  background: rgba(14, 18, 17, .55);
-  border: 1px solid rgba(240, 244, 243, .4);
-}
-.hub-ach__medal { width: .44rem; height: .44rem; object-fit: contain; }
-.hub-ach__rank > .icon { width: .3rem; height: .3rem; color: #eef3f1; }
-.hub-ach__rank small { display: inline-flex; align-items: center; gap: .02rem; font-size: min(calc(.13 * var(--t)), .15rem); color: #e6ebe9; }
-.hub-ach__rank small .icon { width: .12rem; height: .12rem; }
-.hub-ach__label {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: .08rem;
-  flex-wrap: wrap;
-  min-height: .46rem;
-  padding: .02rem .16rem;
-  font-size: calc(.21 * var(--t));
-  font-weight: 700;
-  background: linear-gradient(90deg, rgba(20, 26, 25, .96), rgba(14, 18, 17, .96));
-  border-top: 1px solid rgba(220, 230, 226, .14);
-}
-.hub-ach__label::before, .hub-ach__label::after { content: ''; position: absolute; top: .06rem; bottom: .06rem; width: .06rem; border: 1px solid rgba(220, 230, 226, .3); }
-.hub-ach__label::before { left: .04rem; border-right: 0; }
-.hub-ach__label::after { right: .04rem; border-left: 0; }
-.hub-ach__badge { flex: none; width: .24rem; height: .24rem; fill: #e8eeec; }
-.hub-ach__lv { margin-left: auto; font-size: calc(.15 * var(--t)); font-weight: 600; color: var(--mint-400); }
 .hub-tile {
   display: flex;
   align-items: center;
@@ -353,28 +563,12 @@
 .hub-tile__en { font-family: ui-monospace, Consolas, monospace; font-size: calc(.1 * var(--t)); font-weight: 600; letter-spacing: .18em; color: var(--text-dim); }
 .hub-side .tips { margin-top: .04rem; background: rgba(8, 14, 13, .72); }
 
-/* ---- right column: light plates with bracket marks (S.W.E.E.P.报告, 干员调配 = loadout.js's LoadoutButton) --------- */
-.hub-right { grid-area: right; position: relative; z-index: 1; align-self: start; display: flex; flex-direction: column; gap: .12rem; min-width: 0; padding-top: .3rem; }
-.lobby-hub .hub-plate {
-  --pl-ink: #222b28;
-  --bk-c: var(--mint-400);
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: .14rem;
-  width: 100%;
-  height: auto;
-  min-height: .7rem;
-  min-width: 0;
-  padding: .04rem .22rem .04rem .2rem;
-  font: inherit;
-  font-size: calc(.2 * var(--t));
-  letter-spacing: .04em;
-  color: #111816;
-  text-align: left;
-  cursor: pointer;
+/* ---- right column: the announcement card over the S.W.E.E.P.报告 / 干员调配 plates. The plate block is ported from
+   the dev line's lobby (E:\website\Stronghold-Protocol, the user's reference): one slim bracket plate for both — the
+   .lobby-hub scope out-specifies the underlying btn--lg box (padding / height / centering) so LoadoutButton renders
+   the same plate as the raw S.W.E.E.P. button, without forcing; labels are single-line (the plates are fixed height) -- */
+.lobby-hub .hub-plate { --pl-ink: #222b28; position: relative; display: flex; align-items: center; justify-content: flex-start; gap: .14rem;
+  width: 100%; height: .7rem; min-width: 0; padding: 0 .22rem 0 .2rem; font: inherit; font-size: calc(.2 * var(--t)); letter-spacing: .04em; color: #111816; text-align: left; cursor: pointer;
   background:
     linear-gradient(var(--pl-ink), var(--pl-ink)) left .07rem center / 2px 54% no-repeat,
     linear-gradient(var(--pl-ink), var(--pl-ink)) left .07rem top 23% / .06rem 2px no-repeat,
@@ -383,41 +577,30 @@
     linear-gradient(var(--pl-ink), var(--pl-ink)) right .07rem top 23% / .06rem 2px no-repeat,
     linear-gradient(var(--pl-ink), var(--pl-ink)) right .07rem bottom 23% / .06rem 2px no-repeat,
     linear-gradient(180deg, #e8edea, #c6cfcb);
-  border: 1px solid rgba(255, 255, 255, .5);
-  box-shadow: 0 .05rem .18rem rgba(0, 0, 0, .5), inset 0 -2px 0 rgba(0, 0, 0, .14);
-}
-.lobby-hub .hub-plate:not(:disabled):hover { border-color: #fff; box-shadow: 0 .05rem .22rem rgba(0, 0, 0, .55), 0 0 .16rem rgba(78, 216, 175, .3); filter: brightness(1.05); }
-.lobby-hub .hub-plate:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
-.hub-plate__glyph, .lobby-hub .hub-plate .lo-entry__icon, .lobby-hub .hub-plate > .btn__icon {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: .46rem;
-  height: .46rem;
-  padding: .07rem;
-  box-sizing: border-box;
-  color: var(--mint-400);
-  background: #182120;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
-}
+  border: 1px solid rgba(255, 255, 255, .5); box-shadow: 0 .05rem .18rem rgba(0, 0, 0, .5), inset 0 -2px 0 rgba(0, 0, 0, .14); }
+.lobby-hub .hub-plate .lo-entry__icon, .lobby-hub .hub-plate > .btn__icon { width: .46rem; height: .46rem; flex: none; display: grid; place-items: center;
+  padding: .07rem; box-sizing: border-box; color: var(--mint-400); background: #182120; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+.hub-plate__glyph { width: .46rem; height: .46rem; flex: none; display: grid; place-items: center; padding: .07rem; box-sizing: border-box; }
 .hub-plate__glyph svg { width: 100%; height: 100%; }
-/* (a label too long for its plate wraps beside its glyph and the plate grows, rather than an ellipsis — §35.18 review:
-   Japanese S.W.E.E.P.レポート beside its tag at 特大 in 800–1280 px windows. It takes the row's free width, at least its
-   longest word, so only the tag drops under it when even that does not fit) */
-.hub-plate__label, .lobby-hub .hub-plate .btn__label { flex: 1 1 0; min-width: min-content; font-weight: 900; letter-spacing: .04em; line-height: 1.15; white-space: normal; color: #111816; }
-.hub-plate__tag { margin-left: auto; padding: .03rem .07rem; font-size: calc(.11 * var(--t)); font-weight: 700; letter-spacing: .12em; color: rgba(17, 24, 22, .6); border: 1px solid rgba(17, 24, 22, .28); white-space: nowrap; }
-.lobby-hub .hub-plate .lo-entry__n { margin-left: auto; }
+.lobby-hub .hub-plate .btn__label { font-size: calc(.2 * var(--t)); font-weight: 900; letter-spacing: .04em; color: #111816; white-space: nowrap; }
+.hub-plate__label { font-size: calc(.2 * var(--t)); font-weight: 900; letter-spacing: .04em; color: #111816; white-space: nowrap; }
+.hub-plate__tag { margin-left: auto; padding: .03rem .07rem; font-size: calc(.11 * var(--t)); font-weight: 700; letter-spacing: .12em; color: rgba(17, 24, 22, .6);
+  border: 1px solid rgba(17, 24, 22, .28); white-space: nowrap; }
+.hub-plate--sweep { font: inherit; cursor: pointer; }
+.hub-plate--sweep:hover, .lobby-hub .hub-plate--loadout:not(:disabled):hover { filter: brightness(1.05); }
+.hub-plate--sweep:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
 /* 成就统计 as a plate: only on short screens, where the left column with its card gives way (see the media block) */
 .lobby-hub .hub-plate--ach { display: none; }
 .hub-plate--ach .hub-plate__glyph svg { fill: currentColor; }
 
-/* ---- entries (独立模拟 / 同盟模拟), bottom right ----------------------------------------------------------- */
+/* ---- entries (独立模拟 / 同盟模拟 / 同盟匹配), bottom right ------------------------------------------------- */
 /* (the card, the line above it, the tips' head and the 成就统计 card's label grow or wrap rather than cut their text at
    大 / 特大 in a small window — §35.18 review; the trophy count under the medal stops at .15rem, 大's size [ASSUMED]) */
-/* (the two cards share a height: the taller one's, their text at the bottom) */
+/* (the cards share a height: the tallest one's, their text at the bottom) */
 .hub-entries { grid-area: entries; position: relative; z-index: 1; display: flex; align-items: stretch; justify-content: flex-end; gap: var(--hub-gap); min-width: 0; }
 .hub-entry-wrap { display: flex; flex-direction: column; gap: .05rem; min-width: 0; animation: card-in var(--t-slow) var(--ease-out) backwards; }
 .hub-entry-wrap:nth-child(2) { animation-delay: 60ms; }
+.hub-entry-wrap:nth-child(3) { animation-delay: 120ms; }
 .hub-entry__group { display: flex; align-items: center; gap: .06rem; min-height: .22rem; padding-left: .04rem; font-size: calc(.13 * var(--t)); color: rgba(223, 230, 226, .7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hub-entry__group .icon { flex: none; width: .16rem; height: .16rem; color: var(--mint-400); }
 .hub-entry__long { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -469,6 +652,15 @@
 .hub-entry--coop .hub-entry__en { color: rgba(4, 20, 15, .75); }
 .hub-entry--coop .hub-entry__icon { color: rgba(4, 20, 15, .25); }
 .hub-entry--coop .hub-entry__corner { background: linear-gradient(135deg, transparent 50%, #e8fff7 50%); }
+/* 同盟匹配, the quickest way in: the highlight colour, a mint glow over the co-op card's [ASSUMED: the look — the
+   official hub has no third entry] */
+.hub-entry--match { background: linear-gradient(160deg, var(--mint-400), var(--mint-600)); color: #04140f; border-color: var(--mint-glow);
+  box-shadow: 0 .06rem .24rem rgba(0, 0, 0, .5), 0 0 .22rem var(--mint-a35); }
+.hub-entry--match:hover, .hub-entry--match:focus-visible { border-color: var(--mint-glow);
+  box-shadow: 0 .08rem .3rem rgba(0, 0, 0, .55), 0 0 .3rem var(--mint-a35); }
+.hub-entry--match .hub-entry__en { color: rgba(4, 20, 15, .75); }
+.hub-entry--match .hub-entry__icon { color: rgba(4, 20, 15, .25); }
+.hub-entry--match .hub-entry__corner { background: linear-gradient(135deg, transparent 50%, #e8fff7 50%); }
 @keyframes card-in { from { opacity: 0; transform: translateY(.14rem); } }
 
 /* ---- tips -------------------------------------------------------------------------------------------- */
@@ -833,14 +1025,13 @@
 .ally-guide:hover, .ally-guide:focus-visible { filter: brightness(1.06); }
 .ally-guide__icon { display: grid; place-items: center; width: max(.46rem, 28px); height: max(.4rem, 24px); color: #e9edeb; background: #2a2f2d; }
 .ally-guide__icon .icon { width: 64%; height: 64%; }
-/* centred safely: the auto margins give way when the column is taller than its space (justify-content: center would
-   push it past both ends), so a short screen's scroll (below) starts at 创建同盟 */
+/* the two cards split the column evenly (2026-11-01: 创建同盟 and 加入同盟 the same height): each grows to half of it,
+   its art absorbing the slack (centered, the action bar pinned to the card's bottom edge); a card's content floors it
+   (flex min-height auto), so a short screen's scroll (below) starts at 创建同盟 instead of crushing anything */
 .ally-side { min-height: 0; display: flex; flex-direction: column; gap: .2rem; padding: .1rem 0 .1rem .3rem; }
-.ally-side > :first-child { margin-top: auto; }
-.ally-side > :last-child { margin-bottom: auto; }
+.ally-side .ally-card { flex: 1 1 0; }
 .ally-card {
   position: relative;
-  flex: none;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -855,7 +1046,7 @@
   box-shadow: 0 .06rem .2rem rgba(0, 0, 0, .5);
 }
 button.ally-card:hover, button.ally-card:focus-visible { border-color: rgba(93, 240, 198, .6); }
-.ally-card__art { display: block; padding: .1rem .2rem 0; }
+.ally-card__art { flex: 1 1 auto; display: grid; place-items: center; padding: .1rem .2rem 0; }
 .mf-art { display: block; width: 100%; height: auto; max-height: 1.3rem; }
 .mf-art text { font: 700 8px var(--font-display, monospace); letter-spacing: 2px; fill: currentColor; opacity: .7; }
 .mf-art--create { color: #5df0c6; }
@@ -905,7 +1096,7 @@ button.ally-card:hover, button.ally-card:focus-visible { border-color: rgba(93, 
 button.ally-card:disabled { cursor: default; }
 button.ally-card:disabled .ally-card__bar { filter: grayscale(.5) brightness(.8); }
 /* the test-room box under 创建同盟 (test mode only) */
-.ally-test { padding: 0 .2rem; }
+.ally-test { flex: none; padding: 0 .2rem; }
 .ally-card__bar--join { width: 100%; color: #2a1404; background: linear-gradient(180deg, #ffb24f, #f08a26); }
 .ally-card__bar--join:disabled { filter: grayscale(.6) brightness(.75); cursor: default; }
 .ally-card__bar--join:hover:not(:disabled), .ally-card__bar--join:focus-visible { filter: brightness(1.06); }
@@ -1037,7 +1228,13 @@ button.ally-card:disabled .ally-card__bar { filter: grayscale(.5) brightness(.8)
   .hub-center__mark .emblem__svg { width: .9rem; height: 1rem; }
   .hub-center__title { max-width: none; font-size: calc(.46 * var(--t)); }
   .hub-right { padding-top: .1rem; }
-  .lobby-hub .hub-plate { min-height: max(.7rem, 32px, calc(40px * var(--sp-ui, 1))); }
+  .hub-right__plates { gap: .08rem; }
+  /* phones in landscape: slimmer plates (ported with the block above) */
+  .lobby-hub .hub-plate { height: max(.5rem, 32px); gap: .1rem; }
+  .lobby-hub .hub-plate .lo-entry__icon, .lobby-hub .hub-plate > .btn__icon { width: max(.36rem, 22px); height: max(.36rem, 22px); padding: .04rem; }
+  .hub-plate__glyph { width: max(.36rem, 22px); height: max(.36rem, 22px); padding: .04rem; }
+  .lobby-hub .hub-plate .btn__label, .hub-plate__label { font-size: max(calc(.16 * var(--t)), 12px); }
+  .hub-plate__tag { font-size: max(calc(.1 * var(--t)), 9px); }
   .lobby-hub .hub-plate--ach { display: flex; }
   /* (here the hub's height is the limit: a top padding for the icon made the English and Korean cards so tall at 大 /
      特大 that the line above them ran into the title on a 640 / 740 px phone. The decorative line keeps clear of the icon
@@ -1095,6 +1292,8 @@ button.ally-card:disabled .ally-card__bar { filter: grayscale(.5) brightness(.8)
      two to four lines if it wrapped; the AI teammates are the room's to show) */
   .hub-entry__long { display: none; }
   .hub-entry__short { display: inline; }
+  /* three entries: a row that does not fit a narrow phone wraps, it never overlaps [ASSUMED] */
+  .hub-entries { flex-wrap: wrap; }
   .hub-entry { width: calc(var(--hub-entry-w) + 7 * max(0px, var(--t-step))); }
   .hub-entry__en { padding-right: .44rem; font-size: min(calc(.16 * var(--t)), calc(10px + var(--t-step))); letter-spacing: .12em; }
   .hub-entry__name { font-size: min(calc(.42 * var(--t)), calc(18px + var(--t-step))); }
@@ -1177,12 +1376,14 @@ button.ally-card:disabled .ally-card__bar { filter: grayscale(.5) brightness(.8)
 
 @media (prefers-reduced-motion: reduce) {
   .hub-bg__ship, .hub-center, .hub-entry-wrap, .hub-radar__sweep, .proto__pic, .modal__box.proto, .modal__box.ally, .pcard.is-on .pcard__stamp,
-  .mf-radar__sweep, .mf-radar__blip, .mf-blk.is-lit, .hub-bg__own, .lobby-hub .hub-bg, .lobby-hub > .topbar, .lobby-hub .hub-center, .lobby-hub .hub-side,
+  .mf-radar__sweep, .mf-radar__blip, .mf-blk.is-lit, .mf-scout *, .mf-scout__wave, .hub-bg__own, .lobby-hub .hub-bg, .lobby-hub > .topbar, .lobby-hub .hub-center, .lobby-hub .hub-side,
   .lobby-hub .hub-right, .hub-entries .hub-entry-wrap, .proto__bg, .proto-top, .proto-title, .proto-stage, .ally-stage, .proto-list .pcard, .proto-foot,
   .ally-card--create, .ally-card--join, .ally-guide, .pcard.is-on .pcard__ring path, .ps, .ps-fig, .ps-spike, .ps-call, .ps-beacon, .ps-scan { animation: none; }
   .ps-cable__pulse { display: none; }
-  .pcard.is-on .pcard__ring path { stroke-dashoffset: 0; }
-  .proto__body::after, .ally__body::after { display: none; }
+  .pcard.is-on .pcard__ring path, .mf-found__lines path { stroke-dashoffset: 0; }
+  .proto__body::after, .ally__body::after, .mf-found::before, .mf-found::after { display: none; }
+  /* the 搜寻/集结 panel's staggered entrances land at once, with the room's own rise (the ported panel's block, merged here) */
+  .lobby-hub *, .rs *, .rs__bg, .mf-found, .mf-found::before, .mf-found::after { animation-delay: 0ms; }
 }
 
 /* official versions (DESIGN §35.23): the version under the title, the cards' wait while a version's data loads */
@@ -1209,12 +1410,6 @@ button.ally-card:disabled .ally-card__bar { filter: grayscale(.5) brightness(.8)
   38% { opacity: .7; transform: translateX(-6%) scaleY(1.3); } 52% { opacity: .4; transform: none; } 64%, 100% { opacity: 0; transform: none; } }
 @keyframes tr-pop { from { opacity: 0; transform: scale(.4); } }
 
-.recruit-hint { margin: 0; font-size: max(calc(.15 * var(--utility-text, var(--t))), 11px); line-height: 1.5; color: var(--text-md); }
-.recruit-hint span { display: block; }
-.recruit-hint a { color: var(--mint-400); text-decoration: underline; text-underline-offset: .04rem; }
-.recruit-hint a:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
-.mf-search .recruit-hint { width: 100%; text-align: center; }
-.mf-search .room-portal-entry { padding: 0; }
 .matchmaking-count { display: inline-flex; gap: .035rem; color: var(--mint); font-size: max(calc(.12 * var(--utility-text, var(--t))), 11px); white-space: nowrap; align-items: baseline; }
 .mode-card .matchmaking-count { margin-top: .08rem; }
 .mf-brand { display: inline-flex; align-items: center; gap: .1rem; font-family: var(--font-display); font-size:max(calc(.2 * var(--t)), 12px); letter-spacing: .12em; color: #8d9391; }
@@ -1288,6 +1483,10 @@ button.ally-card:disabled .ally-card__bar { filter: grayscale(.5) brightness(.8)
 .rs-offer__head { display: flex; flex-direction: column; align-items: center; gap: .06rem; }
 .rs-offer h2 { font-size:max(calc(.42 * var(--t)), 20px); }
 .rs-offer p { max-width: 4.6rem; }
+/* (the @media block below was lost when the panel was ported: its rules sat at the top level, so the room's search /
+   found / offer docks were full-width at every size — covering the footer's pill and ⚙'s menu on desktops too — and
+   the hunt button kept its 40 px phone height. The block's reduced-motion rules went into the shared one above.) */
+@media (max-height: 520px) {
   .proto-side--search .mf-search { min-height: 0; }
   .proto-side--search .mf-stop { flex-shrink: 0; }
   .rs-search { height: 40px; }
@@ -1297,11 +1496,10 @@ button.ally-card:disabled .ally-card__bar { filter: grayscale(.5) brightness(.8)
   .mf-stop { margin-top: 4px; height: 32px; }
   .rs-searchpanel.mf-search { padding-top: 48px; }
   .mf-found__lines { max-height: 40%; }
-.mf-brand { white-space: nowrap; }
   .rs-searchpanel.mf-search, .rs > .mf-found { width: 100%; background: rgba(6, 7, 7, .94); }
   .rs-offer { width: 100%; background: rgba(6, 7, 7, .94); }
-  .mf-scout *, .mf-scout__wave, .mf-radar__sweep, .mf-radar__blip, .mf-blk.is-lit, .mf-found__lines path { animation: none; }
-  .mf-found__lines path { stroke-dashoffset: 0; }
+}
+.mf-brand { white-space: nowrap; }
 .rs-searchpanel.mf-search { animation: tr-fade 260ms ease-out backwards; }
 .mf-search > * { animation: tr-right 400ms var(--tr-ease) backwards; animation-delay: 60ms; }
 .mf-search > :nth-child(2) { animation-delay: 110ms; }
@@ -1324,17 +1522,10 @@ button.ally-card:disabled .ally-card__bar { filter: grayscale(.5) brightness(.8)
 .mf-found__title { animation: tr-rise 320ms var(--tr-ease) 520ms backwards; }
 .mf-found__sub { animation: tr-fade 300ms ease-out 620ms backwards; }
 .mf-found.is-leaving { animation: tr-out 320ms ease-in forwards; }
-  .lobby-hub *, .rs *, .rs__bg, .mf-found, .mf-found::before, .mf-found::after { animation-delay: 0ms; }
-  .mf-found::before, .mf-found::after { display: none; }
+/* (the ported panel's reduced-motion rules sit in the shared reduce-motion block above) */
 
 
-/* ---- 大厅的搜寻入口与搜寻面板 (移植自用户分支) ---- */
-.ally-search { display: inline-flex; align-items: center; justify-content: center; gap: .08rem; height: max(.6rem, 32px, calc(38px * var(--sp-ui, 1))); padding: 0 .26rem;
-  font: inherit; font-size: max(calc(.22 * var(--t)), 13px); font-weight: 800; letter-spacing: .06em; color: #5df0c6; cursor: pointer; white-space: nowrap;
-  background: rgba(10, 30, 25, .85); border: 2px solid rgba(79, 232, 192, .7); }
-.ally-search:hover:not(:disabled) { background: rgba(20, 60, 48, .9); }
-.ally-search:disabled { opacity: .5; cursor: default; }
-.ally-search .icon { width: 1.1em; height: 1.1em; }
+/* ---- 大厅的搜寻面板 (移植自用户分支; 入口是同盟匹配的选择模拟协议整屏, §37.66) ---- */
 .lobby-search { position: fixed; right: 0; top: 0; bottom: 0; z-index: 30; display: flex; flex-direction: column; width: min(6.2rem, 46vw); padding: .9rem .3rem .3rem;
   background: linear-gradient(90deg, transparent, rgba(6, 7, 7, .9) 18%, rgba(6, 7, 7, .96)); animation: mf-found-in 240ms var(--ease-out) backwards; }
 .lobby-search .mf-search { flex: 1 1 auto; min-height: 0; }
@@ -1347,21 +1538,26 @@ button.ally-card:disabled .ally-card__bar { filter: grayscale(.5) brightness(.8)
 
 /* right column: the S.W.E.E.P.报告 and 干员调配 plates, above the entries (the 缺人同盟 card was removed with the rest of
    the public room directory — see screens/lobby.js) */
-.hub-right { grid-column: 3; grid-row: 1; position: relative; z-index: 1; display: flex; flex-direction: column; gap: .16rem; min-width: 0; min-height: 0; padding-top: .06rem; }
+/* the track is sized for the three bottom entries; the notice and the plates only span two of them (the dev line's
+   column width), pinned to the track's right edge — at the full track width the pair looked oversized (2026-11-01) */
+.hub-right { grid-column: 3; grid-row: 1; position: relative; z-index: 1; display: flex; flex-direction: column; gap: .12rem;
+  width: calc(var(--hub-entry-w) * 2 + var(--hub-gap)); justify-self: end; min-width: 0; min-height: 0; padding-top: .06rem; }
+.hub-right__plates { display: flex; flex-direction: column; gap: .12rem; }
+/* while the queue runs the 搜寻中 dock owns the screen's right side: the column stands down */
+.lobby-hub--searching .hub-right { display: none; }
 
-.hub-notice { display: flex; flex-direction: column; gap: .08rem; width: 100%; min-width: 0; padding: .12rem .14rem;
+.hub-notice { display: flex; flex-direction: column; gap: .05rem; width: 100%; min-width: 0; padding: .07rem .12rem;
   border: 1px solid rgba(223, 230, 226, .16); border-top: 2px solid var(--mint-500);
   background: rgba(4, 10, 9, .88); color: var(--text-hi); text-align: left; cursor: pointer; }
 .hub-notice:hover { background: rgba(16, 28, 24, .94); border-color: var(--mint-a35); }
 .hub-notice__head { display: flex; align-items: center; justify-content: space-between; gap: .12rem;
-  padding-bottom: .08rem; border-bottom: 1px solid rgba(223, 230, 226, .1); }
+  padding-bottom: .04rem; border-bottom: 1px solid rgba(223, 230, 226, .1); }
 .hub-notice__label { display: flex; align-items: center; gap: .08rem; font-size: calc(.17 * var(--utility-text, var(--t))); font-weight: 800; }
 .hub-notice__label::before { content: ''; width: .06rem; height: .06rem; border-radius: 50%; background: var(--mint-400); }
 .hub-notice__label small { font-size: calc(.09 * var(--utility-text, var(--t))); letter-spacing: .18em; color: var(--mint-400); }
 .hub-notice__view { display: flex; align-items: center; gap: .03rem; color: var(--text-dim); font-size: calc(.12 * var(--utility-text, var(--t))); }
 .hub-notice__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
-  font-size: calc(.16 * var(--utility-text, var(--t))); line-height: 1.4; overflow-wrap: anywhere; }
+  font-size: calc(.16 * var(--utility-text, var(--t))); line-height: 1.4; overflow-wrap: anywhere; color: var(--gold); }
 .hub-notice__text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
   font-size: calc(.13 * var(--utility-text, var(--t))); line-height: 1.5; color: var(--text-dim); white-space: pre-line; overflow-wrap: anywhere; }
-.hub-notice__text--empty { padding: .06rem 0; }
-
+.hub-notice__text--empty { padding: .02rem 0; }

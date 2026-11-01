@@ -59,26 +59,11 @@ export function PixelScout({ happy = false }) {
 }
 
 /**
- * The external recruiting station is useful from the first second of a search.
- * Rooms can also publish through the server's existing portal registration action.
- */
-export function RecruitHint({ room = false }) {
-  return html`<p class="recruit-hint">
-    ${t('前往联机站招募队友：')} <a href="https://game.rainya.me/" target="_blank" rel="noopener noreferrer">game.rainya.me</a>
-    <span>${room ? t('发布当前同盟的房间号，来人更快。') : t('创建同盟并发布房间号，来人更快。')}</span>
-    <span>${t('同盟内可快捷分享到联机站。')}</span>
-  </p>`;
-}
-
-/**
  * 搜寻中 panel.
  * @param {{ elapsed: number, tags?: Array<{ key: string, label: string, color?: string, icon?: any }>, onStop?: (() => void)|null,
- *   stopping?: boolean, note?: string|null, title?: string|null, room?: boolean, hint?: boolean, children?: any, class?: string }} props
- *   `room` only picks the recruit line’s wording (a room posts its own key). `hint: false` drops that line: the
- *   alliance screen already says the same thing as its portal entry (screens/room.js — 复制邀请链接 / 前往联机站
- *   with the entry’s own status line), and the two together read as one sentence said twice (the owner, 2026-10-16).
+ *   stopping?: boolean, note?: string|null, title?: string|null, children?: any, class?: string }} props
  */
-export function SearchPanel({ elapsed = 0, tags = [], onStop = null, stopping = false, note = null, title = null, room = false, hint = true, children, class: cls = '' }) {
+export function SearchPanel({ elapsed = 0, tags = [], onStop = null, stopping = false, note = null, title = null, children, class: cls = '' }) {
   const [tips] = useState(tipList);
   const [i, setI] = useState(() => Math.floor(Math.random() * Math.max(1, tips.length)));
   useEffect(() => { const id = setInterval(() => setI((x) => x + 1), 5000); return () => clearInterval(id); }, []);
@@ -90,7 +75,6 @@ export function SearchPanel({ elapsed = 0, tags = [], onStop = null, stopping = 
     <div class="mf-search__scene"><i class="mf-cross mf-cross--tl"></i><i class="mf-cross mf-cross--tr"></i><${PixelScout} /><i class="mf-cross mf-cross--bl"></i><i class="mf-cross mf-cross--br"></i></div>
     <p key=${i} class="mf-search__tip">${tips.length ? tips[i % tips.length] : ''}</p>
     ${note ? html`<p class="mf-search__note">${note}</p>` : null}
-    ${hint ? html`<${RecruitHint} room=${room} />` : null}
     ${children}
     ${onStop ? html`<button type="button" class="mf-stop" onClick=${onStop} disabled=${stopping}><span class="mf-stop__x"><${Icon} name="close" /></span>${t('停止搜寻')}</button>` : null}
   </aside>`;

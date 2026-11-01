@@ -3,10 +3,14 @@
 // scene — its official picture on the drawn grid, ui/protocolScene.js — 开始独立模拟, the test-room box only in test mode;
 // the room's 确认 and read-only uses) and 选择同盟方式 (the project's Modal, full screen: 创建同盟 creating the room at once
 // at the remembered difficulty — the event's 联合模拟, the maintainer's decision of 2026-10-21 —, the key field (the
-// project's TextField) with 观战, 加入同盟, recent keys that only fill it); the 成就统计 card is the lobby's only statistics
-// entry; the official art keys the hub asks for exist in data/assets.json; the css follows 文字大小 without !important; no
-// account / matchmaking / federation code came along. Hook-free views drawn as vnode trees. (The browser side:
-// test/ui/lobby-hub.e2e.test.js, test/ui/room-settings.e2e.test.js.)
+// project's TextField) with 观战, 加入同盟, recent keys that only fill it); 同盟匹配 opens the same 选择模拟协议
+// full screen (0.3.4 §37.64: the 搜寻队友 FIND ALLIES subtitle, the room's difficulties as the same big cards with the
+// 已选定 stamp, the 精确搜寻 note as the hint — a pick only selects, the button 开始搜寻 / queued 停止搜寻 drives the
+// queue), then a pick remembers the difficulty; the left column's statistics entries are the dev line's
+// (AchievementEntry + the 统计数据 tile, ported 2026-11-01); the 成就统计 card is
+// the lobby's only statistics entry; the official art keys the hub asks for exist in data/assets.json; the css follows
+// 文字大小 without !important; no account / federation code came along. Hook-free views drawn as vnode trees. (The browser
+// side: test/ui/lobby-hub.e2e.test.js, test/ui/room-settings.e2e.test.js.)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -30,13 +34,17 @@ function* walk(v) {
   if (Array.isArray(v)) { for (const x of v) yield* walk(x); return; }
   if (!v || typeof v !== 'object') return;
   yield v;
-  if (typeof v.type === 'function' && ['DifficultyCard', 'BackPlate'].includes(v.type.name)) { yield* walk(v.type(v.props)); return; }
+  if (typeof v.type === 'function' && ['DifficultyCard', 'DifficultyRounds', 'BackPlate'].includes(v.type.name)) { yield* walk(v.type(v.props)); return; }
   yield* walk(v.props?.children);
 }
 const hasClass = (v, c) => typeof v?.props?.class === 'string' && v.props.class.split(/\s+/).includes(c);
 const find = (tree, pred) => [...walk(tree)].filter(pred);
 const byClass = (tree, c) => find(tree, (v) => hasClass(v, c));
-const textOf = (v) => (v == null || typeof v === 'boolean' ? '' : typeof v !== 'object' ? String(v) : Array.isArray(v) ? v.map(textOf).join('') : textOf(v.props?.children));
+// textOf sees what walk sees: the whitelisted pure components render in place (the panel's rounds line sits in DifficultyRounds)
+const textOf = (v) => (v == null || typeof v === 'boolean' ? '' : typeof v !== 'object' ? String(v)
+  : Array.isArray(v) ? v.map(textOf).join('')
+  : typeof v.type === 'function' && ['DifficultyCard', 'DifficultyRounds', 'BackPlate'].includes(v.type.name) ? textOf(v.type(v.props))
+  : textOf(v.props?.children));
 const buttons = (tree) => find(tree, (v) => v.type === 'button');
 const buttonText = (tree, text) => buttons(tree).find((b) => textOf(b).includes(text));
 const titleOf = (tree) => textOf(byClass(tree, 'modal__title')[0]);
@@ -44,6 +52,7 @@ const titleOf = (tree) => textOf(byClass(tree, 'modal__title')[0]);
 const MODES = {
   solo: { id: 'solo', name: '独立模拟', en: 'SOLO SIMULATION', icon: 'user', desc: '独自', points: ['1 名博士'] },
   coop: { id: 'coop', name: '同盟模拟', en: 'ALLIANCE SIMULATION', icon: 'users', desc: '同盟', points: ['联防'] },
+  match: { id: 'match', name: '同盟匹配', en: 'ALLIANCE MATCH', icon: 'search', desc: '匹配', points: ['与相同难度的博士快速组队'] },
 };
 
 
@@ -237,20 +246,14 @@ test('official art only: every key the hub and 选择模拟协议 ask for is in 
   for (const d of ['funny', 'normal', 'hard', 'abyss']) assert.ok(ui[`modeChoice/${d}_rhodes_island`], d);
 });
 
-test('成就统计 card: the lobby’s statistics entry beside the top bar’s 本机账号 chip (合并自用户分支: the chip opens the account panel, whose 统计数据 opens the page); this browser’s records read without writing, the official trophy medals', () => {
-  assert.match(lobbySrc, /<\$\{AchievementCard\} onOpen=\$\{\(\) => setAchOpen\(true\)\} \/>/);
-  assert.match(lobbySrc, /achOpen \? html`<\$\{AchievementDialog\} onClose=/);
-  // the top bar's account chip doubles as a 统计数据 entry (ui/accounts.js AccountMeChip, ported from the user's
-  // fork) — the 成就统计 card stays the lobby's own entry into the window
+test('成就统计 entry (the dev line’s, ported 2026-11-01): AchievementEntry + AchievementPanel + the 统计数据 tile; the account chip keeps its 统计数据 shortcut', () => {
+  assert.match(lobbySrc, /import \{ AchievementEntry, AchievementPanel \} from '\.\.\/ui\/achievements\.js';/);
+  assert.match(lobbySrc, /<\$\{AchievementEntry\} key=\$\{achOpen \? 'open' : 'shut'\} onOpen=\$\{\(\) => setAchOpen\(true\)\} \/>/);
+  assert.match(lobbySrc, /achOpen \? html`<\$\{AchievementPanel\} me=\$\{me\} onClose=/);
+  assert.match(lobbySrc, /<\$\{HubTile\} icon="chart" label=\$\{t\('统计数据'\)\} en="STATISTICS" onClick=\$\{\(\) => openStats\('overview'\)\} \/>/);
+  // the top bar's account chip doubles as a 统计数据 entry (ui/accounts.js AccountMeChip, ported from the user's fork)
   assert.match(lobbySrc, /<\$\{AccountMeChip\} onStats=\$\{openStats\} \/>/);
-  // (the season of the version shown: DESIGN §35.23 — every record on a server without versions)
-  assert.match(lobbySrc, /const records = recordsOfSeason\(peekStatsRecords\(\), season\);\s*return \{ prog: levelProgress\(records/);
-  assert.match(lobbySrc, /trophies: aggregateStats\(records\)\.trophies/, 'the same trophy count as the window’s 获得奖杯');
-  assert.match(lobbySrc, /\[cfg, statsOpen, season\]/, 'read again when 统计数据 closes (an import or 清空 there) or the version changes');
-  assert.doesNotMatch(lobbySrc, /loadStats\(/, 'loadStats moves a damaged value away: the 统计数据 page must still find it');
-  const ui = JSON.parse(readFileSync(path.join(ROOT, 'data/assets.json'), 'utf8')).ui;
-  const medals = JSON.parse(readFileSync(path.join(ROOT, 'data/config.json'), 'utf8')).trophies.medals;
-  for (const m of medals) assert.ok(ui[`medalIcon/${m.iconId}`], m.iconId);
+  assert.doesNotMatch(lobbySrc, /AchievementCard|AchievementDialog/, 'the old card and window are gone with their module surfaces');
 });
 
 test('选择模拟协议 scene: the official picture as an <image> of the drawn scene, the drawn hull when it fails to load', () => {
@@ -261,21 +264,19 @@ test('选择模拟协议 scene: the official picture as an <image> of the drawn 
   for (const k of ['funny', 'normal', 'hard', 'abyss']) assert.ok(ui[`modeChoice/${k}_rhodes_island`], k);
 });
 
-test('成就统计 window (screens/stats.js AchievementDialog): the project Modal, this browser’s records only, 查看完整统计 opens 统计数据', () => {
+test('统计数据 (the dev line’s screens/stats.js): the tabbed screen with the achievements panel wiring, and the multi-version replay guard kept', () => {
   const stats = readFileSync(path.join(ROOT, 'public/js/screens/stats.js'), 'utf8');
-  const dlg = stats.slice(stats.indexOf('export function AchievementDialog'));
-  assert.match(dlg, /<\$\{Modal\}/);
-  assert.match(dlg, /peekStatsRecords\(\)/);
-  assert.match(dlg, /openStats\(/);
-  assert.doesNotMatch(dlg, /loadStats\(/);
-  // the lineup's portraits, 自选 units and gear: nothing on the lobby path loads chess / items / backups
-  assert.match(dlg, /useData\('config', 'bands', 'bonds', 'assets', 'chess', 'items', 'backups'\)/);
-  // no gameplay-plugin match in the peak or the strategy marks (checklist §二.6), like the tallies (aggregateStats)
-  assert.match(dlg, /achievementRecords\(records\)/);
-  assert.match(dlg, /highestBondRecord\(official\)/);
-  assert.match(dlg, /<\$\{StrategyRecords\}[^>]*records=\$\{official\}/);
-  // an alphabetic title gets ': ', as on the hub and the title screen
-  assert.match(dlg, /scriptOf\(t\('卫戍协议'\)\) === 'alphabetic' \? ': ' : '：'/);
+  assert.match(stats, /export function openStats\(tab = 'overview'\)/);
+  assert.match(stats, /\['overview', 'bands', 'totals', 'history'\]/, 'the four tabs');
+  assert.match(stats, /useEffect\(\(\) => subscribeStats\(reload\), \[\]\);/, 'an open screen reloads when a match is recorded');
+  // the achievements panel rides on the same records (ui/achievements.js, ported with it); the overview keeps
+  // 卫戍成就 (the peak bond record, BondAchievement) like before
+  assert.match(stats, /function BondAchievement/);
+  assert.match(stats, /highestBondRecord\(records\)/);
+  // the multi-version replay guard (the user branch's): a record of another version waits for its data
+  assert.match(stats, /export function ReplayWait/);
+  assert.match(stats, /store\.set\(\{ replayVersion: version \}\)/, 'opening a replay announces its version (shownVersion)');
+  assert.match(stats, /function clearReplayVersion\(\)/, 'closing it gives the page its own version back');
 });
 
 test('选择同盟方式 creates the room itself: the lobby never stacks 选择模拟协议 for a 同盟', () => {
@@ -312,8 +313,9 @@ test('选择同盟方式 on a short screen (≤ 520 px tall): 创建同盟 keeps
   assert.deepEqual(kids.map((x) => x.props?.class ?? x.type), ['ally-card__icon', 'ally-card__name', 'small']);
   assert.equal(textOf(kids[1]), '创建同盟');
   const css = lobbyCss.replace(/\/\*[\s\S]*?\*\//g, '');
-  // the column centres with auto margins (they give way when it is too tall; justify-content: center spilled it past both ends)
-  assert.match(css, /\n\.ally-side \{(?![^}]*justify-content)[^}]*\}\n\.ally-side > :first-child \{ margin-top: auto; \}\n\.ally-side > :last-child \{ margin-bottom: auto; \}/);
+  // the two cards split the column evenly (equal heights; the art absorbs each card's slack) — the content floors keep
+  // the short screen's scroll usable
+  assert.match(css, /\n\.ally-side \{(?![^}]*justify-content)[^}]*\}\n\.ally-side \.ally-card \{ flex: 1 1 0; \}/);
   // the @media block, up to its own closing brace
   const at = css.indexOf('@media (max-height: 520px) {');
   let end = css.indexOf('{', at) + 1;
@@ -570,10 +572,12 @@ test('the hub keeps its text whole (§35.18 review: English 「Solo / Team Simul
   const comp = readFileSync(path.join(ROOT, 'public/css/components.css'), 'utf8');
   assert.doesNotMatch(comp, /\.modal__box \{ text-wrap/);
   assert.match(comp, /\.modal__box:lang\(ja\) \{ line-break: strict; \}/);
-  assert.match(rule('.lobby-hub .hub-plate'), /min-height: \.7rem;/, 'a plate grows for a second line');
-  const label = rule('.hub-plate__label, .lobby-hub .hub-plate .btn__label');
-  assert.doesNotMatch(label, /ellipsis|nowrap/);
-  assert.match(label, /flex: 1 1 0; min-width: min-content;/, 'the label wraps beside its glyph, only the tag drops');
+  // the plate block is ported from the dev line's lobby: one slim bracket plate for both, the .lobby-hub scope
+  // out-specifies the underlying btn--lg box (fixed height, single-line label)
+  assert.match(rule('.lobby-hub .hub-plate'), /height: \.7rem;/, 'both plates are the same fixed slim plate');
+  assert.match(rule('.lobby-hub .hub-plate .btn__label'), /white-space: nowrap;/, 'single-line labels (the plates are fixed height)');
+  assert.match(css, /\.hub-right__plates \{ display: flex; flex-direction: column; gap: \.12rem; \}/, 'the plates share a wrapper');
+  assert.match(css, /\.lobby-hub--searching \.hub-right \{ display: none; \}/, 'the column stands down while the queue runs');
   // the title: one line beside the side columns, following 文字大小 (review: pinned at 小's .56rem / .46rem)
   assert.match(css, /font-size: min\(calc\(\.56 \* var\(--t\)\), calc\(\(100vw - 9\.52rem\) \/ 8\.2\)\);/);
   assert.match(css, /\n\.hub-center__title--latin \{ font-size: min\(calc\(\.46 \* var\(--t\)\), calc\(\(100vw - 9\.52rem\) \/ 20\.2\)\); \}/);
@@ -588,6 +592,25 @@ test('the hub keeps its text whole (§35.18 review: English 「Solo / Team Simul
   assert.match(short, /\.hub-entry__en \{ padding-right: \.44rem; font-size: min\(calc\(\.16 \* var\(--t\)\), calc\(10px \+ var\(--t-step\)\)\);/);
   assert.match(short, /\.hub-entry__name \{ font-size: min\(calc\(\.42 \* var\(--t\)\), calc\(18px \+ var\(--t-step\)\)\); \}/);
   assert.match(readFileSync(path.join(ROOT, 'public/css/theme.css'), 'utf8'), /:root \{ --t-step: calc\(\(var\(--t\) - 64px\) \/ 12\); \}/);
+});
+
+test('the top bar carries the 当前在线人数 pill (moved off the title screen, 0.3.4 §37.62): the shared hook, the ping capsule look beside the ping, no title-left pill any more', () => {
+  // the lobby's left cluster: 返回 + ping + the online pill, hidden until the server answers (ui/onlineCount.js)
+  assert.match(lobbySrc, /import \{ useOnlineCount \} from '\.\.\/ui\/onlineCount\.js';/);
+  assert.match(lobbySrc, /const onlineCount = useOnlineCount\(\);/);
+  assert.match(lobbySrc, /<span class="ping ping--low topbar-online" title=\$\{t\('当前在线人数'\)\}>/);
+  assert.match(lobbySrc, /<span class="ping__value">\$\{onlineCount\}<\/span><span class="ping__unit">\$\{t\('人在线'\)\}<\/span>/);
+  // beside the ping capsule, before the separator: the top bar's left cluster order
+  const left = lobbySrc.match(/<div class="topbar__left">[\s\S]*?<\/div>/)[0];
+  assert.ok(left.indexOf('<${PingPill}') >= 0 && left.indexOf('topbar-online') > left.indexOf('<${PingPill}')
+    && left.indexOf('topbar-online') < left.indexOf('topbar__sep'), 'the pill sits between the ping capsule and the separator');
+  // the capsule's own rule (the ping look comes from components.css, its height from the topbar's .ping rule)
+  assert.match(lobbyCss, /\.topbar-online \.status-dot \{ width: \.08rem; height: \.08rem; \}/);
+  // the title screen neither shows nor polls the count any more
+  const titleSrc = readFileSync(path.join(ROOT, 'public/js/screens/title.js'), 'utf8');
+  assert.doesNotMatch(titleSrc, /useOnlineCount|title-online|api\/online/);
+  assert.doesNotMatch(lobbyCss, /^\.title-online/m, 'no title-left rule in the lobby sheet');
+  assert.doesNotMatch(readFileSync(path.join(ROOT, 'public/css/screens/title.css'), 'utf8'), /^\.title-online/m);
 });
 
 test('official versions (DESIGN §35.23): the cards of the version shown, the wait while it loads, room.create names the version', () => {
@@ -666,4 +689,75 @@ test('卫戍成就 (screens/stats.js BondAchievement): a peak of another version
   assert.equal(ops(trimmed).length, 0);
   assert.equal(find(trimmed, (x) => x.props?.['data-testid'] === 'achievement-other-version').length, 0, 'a trimmed same-version record needs no switch');
   assert.deepEqual(looked, [], 'drawn as vnodes only: nothing looked up here');
+});
+
+// ---- 同盟匹配 (0.3.4 §37.64): the third card opens the same 选择模拟协议 full screen (ProtocolSelect at roomMode
+// 'match') — the 搜寻队友 FIND ALLIES subtitle on the title, the version's offered difficulties as the same big cards
+// (the remembered one highlighted with the 已选定 stamp), the 精确搜寻 note as the hint; a pick only selects, the big
+// button — 开始搜寻, queued: 停止搜寻 — joins or cancels the queue.
+
+const matchSelect = (props) => ProtocolSelect({ roomMode: 'match', difficulty: 'FUNNY', difficulties: DIFFICULTIES,
+  onDifficulty: () => {}, onClose: () => {}, onCreate: () => {}, online: true, busyKey: 'search',
+  modeLabel: '搜寻队友', modeEn: 'FIND ALLIES', action: '开始搜寻',
+  hint: '精确搜寻：只与选择相同难度的博士组成同盟，凑齐后全员确认入场', ...props });
+
+test('同盟匹配: the card opens the same 选择模拟协议 full screen — the 搜寻队友 FIND ALLIES subtitle, the big difficulty cards, the remembered one highlighted', () => {
+  const box = matchSelect({ difficulty: 'NORMAL' });
+  assert.equal(byClass(box, 'proto__body')[0].props['data-mode'], 'match', 'the match variant of 选择模拟协议');
+  assert.equal(titleOf(box), '选择模拟协议', 'the official title');
+  const mode = textOf(byClass(box, 'proto-title__mode')[0]);
+  assert.ok(mode.includes('搜寻队友') && mode.includes('FIND ALLIES'), 'the official subtitle on the title');
+  const cards = byClass(box, 'diff-card');
+  assert.equal(cards.length, DIFFICULTIES.length, 'the version’s offered difficulties, in order');
+  assert.deepEqual(cards.map((c) => hasClass(c, 'is-selected')), DIFFICULTIES.map((d) => d === 'NORMAL'), 'the remembered difficulty highlighted');
+  assert.deepEqual(cards.map((c) => hasClass(c, 'is-on') && byClass(c, 'pcard__stamp').length === 1), DIFFICULTIES.map((d) => d === 'NORMAL'), 'the 已选定 stamp on the selection');
+  assert.ok(cards.every((c) => /--d-color:/.test(c.props.style)), 'each card in its difficulty’s colour');
+  const hard = textOf(cards[2]);
+  assert.ok(hard.includes('绝境模拟') && hard.includes('AC-3'), 'name + code like the room’s pill');
+  assert.ok(hard.includes('敌方攻击强度极高的模拟训练'), 'the description');
+  assert.ok(hard.includes('作战环境困难') && hard.includes('出现更加危险的敌人'), 'the two effects');
+  assert.ok(hard.includes('14') && hard.includes('回合') && hard.includes('+ 隐秘核心'), 'the rounds meta');
+  assert.ok(hard.includes('战场随机（共7张）'), 'the battlefields meta (config.json modes’ stages)');
+  assert.ok(textOf(box).includes('精确搜寻：只与选择相同难度的博士组成同盟，凑齐后全员确认入场'), 'the 精确搜寻 note as the hint');
+});
+
+test('同盟匹配: a pick only selects the difficulty (the button queues, no card does); the cards wait while the version’s data loads', () => {
+  const picked = [];
+  const cards = byClass(matchSelect({ onDifficulty: (d) => picked.push(d) }), 'diff-card');
+  assert.ok(cards.every((c) => !c.props.disabled));
+  cards[0].props.onClick();
+  cards[3].props.onClick();
+  assert.deepEqual(picked, ['FUNNY', 'ABYSS']);
+  const waiting = byClass(matchSelect({ onDifficulty: () => assert.fail('picked while the version loads'), loading: true }), 'diff-card');
+  assert.ok(waiting.every((r) => r.props.disabled === true), 'the cards wait while the version loads');
+});
+
+test('同盟匹配: the big button is 开始搜寻 (proto-start) and queues; while queued it is 停止搜寻', () => {
+  const calls = [];
+  const go = (props) => byClass(matchSelect({ onCreate: () => calls.push('go'), ...props }), 'proto-start')[0];
+  const start = go({});
+  assert.ok(textOf(start).includes('开始搜寻') && !start.props.disabled, 'idle: the big button joins the queue');
+  start.props.onClick();
+  assert.deepEqual(calls, ['go'], 'the button joins the queue (a pick does not)');
+  assert.ok(go({ online: false }).props.disabled, 'offline: no search');
+  assert.ok(go({ loading: true }).props.disabled, 'no search while the version’s data loads');
+  assert.equal(go({ busy: 'search' }).props['aria-busy'], 'true', 'the send shows on the button (busyKey=search)');
+  const stop = go({ action: '停止搜寻' });
+  assert.ok(textOf(stop).includes('停止搜寻'), 'the same button stops the queue');
+  stop.props.onClick();
+  assert.deepEqual(calls, ['go', 'go'], 'one handler serves both directions');
+});
+
+test('同盟匹配: the pick remembers the difficulty, 开始搜寻 closes the screen and sends queue.join (LobbyScreen wiring)', () => {
+  assert.match(lobbySrc, /const queueMatch = \(d\) => run\('search', \(\) => net\.request\('queue\.join', \{ difficulty: d \|\| shownCoop \}\)\);/);
+  assert.match(lobbySrc, /const startMatch = \(\) => \{ if \(isSearching\) cancelMatch\(\); else \{ setMatchOpen\(false\); queueMatch\(\); \} \};/,
+    '开始搜寻 closes the screen and joins the queue at the selection');
+  assert.match(lobbySrc, /else if \(m === 'match'\) setMatchOpen\(true\);/, 'the card opens the match 选择模拟协议');
+  assert.match(lobbySrc, /<\$\{ProtocolSelect\} roomMode="match" difficulty=\$\{shownCoop\} onDifficulty=\$\{pickDifficulty\}/,
+    'the same full screen, the remembered difficulty highlighted (pickDifficulty)');
+  assert.match(lobbySrc, /modeLabel=\$\{t\('搜寻队友'\)\} modeEn="FIND ALLIES"/, 'the official subtitle on the title');
+  assert.match(lobbySrc, /action=\$\{isSearching \? t\('停止搜寻'\) : t\('开始搜寻'\)\}/, 'the button is 停止搜寻 while queued');
+  assert.match(lobbySrc, /hint=\$\{t\('精确搜寻：只与选择相同难度的博士组成同盟，凑齐后全员确认入场'\)\}/, 'the 精确搜寻 note as the hint');
+  assert.match(lobbySrc, /if \(matchOpen && mm\?\.offerId\) setMatchOpen\(false\)/, 'a found offer hands over to the offer dock');
+  assert.doesNotMatch(lobbySrc, /MatchPanel|popDismiss|match-pop/, 'the popover and its dismiss are gone with it');
 });

@@ -12,6 +12,8 @@
     "strict": false,
     "skipLibCheck": true,
     "types": [],
+    // The shared slice intentionally loads no DOM/Node lib (see shared/plugins/scriptLoad.js). The isomorphic
+    // globals shared/ reads — URL, URLSearchParams, AbortSignal — come from types/shared-globals.d.ts instead.
     "lib": ["ES2022"],
     "maxNodeModuleJsDepth": 0
   },
@@ -21,7 +23,8 @@
     "server/sim/detmath.js",
     "server/sim/dir.js",
     "server/sim/constants.js",
-    "types/**/*.js"
+    "types/**/*.js",
+    "types/*.d.ts"
   ],
   "exclude": [
     "shared/protocol.js",

@@ -208,6 +208,17 @@ always. While paused (`m.public.paused`) the field clocks, the authority deadlin
 fields' `startAt` / `lastProgressAt` and the boss start by the paused time and re-arms the timers. A disconnect or
 `onLeave` resumes; the battle phase ending clears it (`pausedMs` totals the paused time).
 
+### 1.3b 战斗 2 倍速投票
+`g.speedVote { on }` (`Match.speedVote`, match/speedVote.js — the 2X button beside 准备就绪): every connected human
+seat (bot seats are never asked) holds at most one vote — a click sets it, clicking again retracts it. The vote asks
+for the opposite of the current speed (原速 → 2×, or 2× → 原速). When every voter agrees, the room hears the ticker;
+at the next `startRound` (`_applySpeedVote`) the unanimity is re-checked — a retraction before it cancels the change —
+and `Match.gameSpeed` flips between `GAME_SPEED` (2) and `SPEED_UP` (4), votes cleared. `gameSpeed` only rescales the
+streaming pace and the real-time length of every deadline (`deadline = now + limit / gameSpeed`); the battle
+simulation and its results stay deterministic, and the field push carries `speed` so each browser's local simulation
+follows (`setLocalFeed`). `m.public.speedVote` is `{ count, need, pending, on }` with `pending` computed live
+(a retraction hides it at once).
+
 ### 1.4 Watching fields
 Client-side combat (the default, DESIGN §14 Spectating; `Match._watchClient`): `g.watch` answers with the field's
 `b.start` (a display replica fast-forwarded to the field clock); an alive player may not watch another normal field

@@ -1302,12 +1302,27 @@ export async function createFieldView(host, options = {}) {
     const key = 'p:' + p.uid;
     const v = views.get(key);
     if (!v) return;
-    dragState = { uid: p.uid, key, view: v, from: p.from, home: v._home || { x: v.x, y: v.y, z: v.z } };
+    dragState = { uid: p.uid, key, view: v, from: p.from, home: v._home || { x: v.x, y: v.y, z: v.z }, tx: v.x, ty: v.y, tz: v.z };
     v.lift = 0.3;
     v._tween = null;
     const t = pieceTile(p.piece);
     if (t) drawHighlight([[t.row, t.col]], 'hover', 'dragFrom');
     drawHighlight(legalTiles(p.piece), 'legal', 'legal');
+  }
+
+  /** The carried unit glides to where the drag wants it (the stand tile under the pointer, or held under it) instead of
+   *  hard-switching tiles with each retarget: the official per-tile snap read as stiff (user report 2026-11-01). The drag
+   *  judgment is untouched — the drop is still the pointer's tile, resolved by render/drag.js — only the model's position
+   *  eases toward it, a frame-rate independent exponential ease (fast enough to stay under the pointer). */
+  const DRAG_SMOOTH_TAU = 0.04;
+  function smoothDragVisual(dtRaw) {
+    const s = dragState;
+    if (!s || s.tx == null || s.view instanceof ItemView) return; // an item plate stays centred on the pointer, 1:1
+    const k = 1 - Math.exp(-Math.max(0, dtRaw) / DRAG_SMOOTH_TAU);
+    const v = s.view;
+    v.x += (s.tx - v.x) * k;
+    v.y += (s.ty - v.y) * k;
+    v.z += (s.tz - v.z) * k;
   }
 
   function moveDragVisual(p) {
@@ -1316,11 +1331,12 @@ export async function createFieldView(host, options = {}) {
     const item = v instanceof ItemView;
     // a unit over a legal drop target — the tile under the pointer, on the board or the bench (render/drag.js
     // dragStandTile) — stands on it, lifted, as in the official deploy drag (the owner's recording of 2026-10-09): the
-    // world point the drop tween goes to (boardWorld, the prep field transform applied), set at once, no tween
+    // world point the drop tween goes to (boardWorld, the prep field transform applied) becomes the drag's smoothed
+    // target (smoothDragVisual), no tween, no hard jump
     const stand = item ? null : dragStandTile(p);
     if (stand) {
       const w = boardWorld(stand.row, stand.col, stand.bench);
-      v.x = w.x; v.y = w.y; v.z = w.z;
+      dragState.tx = w.x; dragState.ty = w.y; dragState.tz = w.z;
     } else {
       // otherwise held under the pointer (the player still sees what they carry): a unit with its drawn (lifted) feet
       // DRAG_HOLD_TILES of its own px per tile below it (the scale at the pointer's ground, refined once at the feet), an
@@ -1334,9 +1350,8 @@ export async function createFieldView(host, options = {}) {
       let w = cam.unproject(p.x, p.y + hold * s0, up);
       if (w && hold) w = cam.unproject(p.x, p.y + hold * cam.scaleAt(w.x, w.y, up), up) || w;
       if (w) {
-        v.x = Math.max(-1, Math.min(21, w.x));
-        v.y = Math.max(-1, Math.min(19, w.y));
-        v.z = z;
+        if (item) { v.x = Math.max(-1, Math.min(21, w.x)); v.y = Math.max(-1, Math.min(19, w.y)); v.z = z; }
+        else { dragState.tx = Math.max(-1, Math.min(21, w.x)); dragState.ty = Math.max(-1, Math.min(19, w.y)); dragState.tz = z; }
       }
     }
     // the drop target (p.target, highlighted) is the tile under the pointer
@@ -2021,6 +2036,7 @@ export async function createFieldView(host, options = {}) {
       // a drag under a still pointer follows a camera flight — the shop-collapsed zoom of a deploy (GitHub #602) starts
       // as the piece is picked up: the target tile and the dragged piece are judged again at the pointer
       if (flying && mode === 'prep' && drag.dragging) drag.refresh();
+      if (dragState && mode === 'prep') smoothDragVisual(dtRaw);
       if (board3d) {
         if (board3d.lost) onBoard3dLost();
         else board3d.render(cam, clock);

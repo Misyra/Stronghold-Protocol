@@ -11,6 +11,7 @@ const SUCCESS_SFX = {
   'g.buy': 'buy', 'g.sell': 'sell', 'g.refresh': 'refresh', 'g.freeze': 'freeze', 'g.levelUp': 'levelup',
   'g.move': 'drop', 'g.equip': 'equip', 'g.art': 'artPlace', 'g.reward': 'pick', 'g.choice': 'pick',
   'g.band': 'confirm', 'g.bandSkip': 'back', 'g.infoReady': 'ready', 'g.emote': 'emote', 'g.destroy': 'back', 'g.unequip': 'back',
+  'g.speedVote': 'confirm',
 };
 
 let inflight = 0;
@@ -92,6 +93,8 @@ export const actions = {
   reward: (idx) => act('g.reward', { idx }),
   offer: (offer, idx, refresh = false, cardId) => act(refresh ? 'g.offerRefresh' : 'g.offer', { offerId: offer.id, pluginId: offer.pluginId, seq: offer.seq, idx, cardId }),
   choice: (idx, choiceId) => act('g.choice', choiceId === undefined ? { idx } : { idx, choiceId }),
+  // 战斗 2 倍速投票（speedVote.js）：on = 是否赞成；全员赞成 → 下一回合生效
+  speedVote: (on) => act('g.speedVote', { on: !!on }, { sfx: 'confirm' }),
   ready: (ready) => act('g.ready', { ready }, { sfx: ready ? 'ready' : 'back' }),
   chat: (text) => act('g.chat', { text }),
   emote: (id) => act('g.emote', { id }, { quiet: true }),

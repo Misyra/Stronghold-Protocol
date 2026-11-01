@@ -1079,6 +1079,20 @@
 .me-chip__stats { flex: none; width: .2rem; height: .2rem; margin-left: .04rem; color: var(--mint-500); opacity: .7; }
 .me-chip--btn:hover .me-chip__stats { opacity: 1; }
 
+/* the local account (本机账号, ui/accounts.js): the #tag after a name (chips, seat plates, chat) and the account
+   panel's layout — moved here out of the <style> the module used to inject into <head> at runtime */
+.acct-tag { margin-left: .06em; font-size: .8em; font-weight: 600; opacity: .62; letter-spacing: .02em; }
+.lacct { display: flex; flex-direction: column; gap: .16rem; min-width: min(5.6rem, 86vw); }
+.lacct__who { display: flex; align-items: center; gap: .16rem; }
+.lacct__pic {
+  width: .9rem; height: .9rem; flex: none; display: grid; place-items: center; overflow: hidden;
+  border: 2px solid var(--mint-700, #2b7); background: #101614; font-size: calc(.4 * var(--t)); font-weight: 900;
+}
+.lacct__pic img { width: 100%; height: 100%; object-fit: cover; }
+.lacct__name { font-size: calc(.3 * var(--t)); font-weight: 900; }
+.lacct__note { margin: 0; font-size: calc(.17 * var(--t)); line-height: 1.5; opacity: .72; }
+.lacct__btns { display: flex; flex-wrap: wrap; gap: .1rem; }
+
 .crash { align-items: center; justify-content: center; }
 .crash__box {
   display: flex;

@@ -8,11 +8,13 @@ import { t } from '../../../shared/i18n.js';
 export const offerSeat = (offer, myId) => offer?.seats?.find(s => s.playerId === myId) || null;
 export const offerPickable = (offer, myId, readOnly, busy) => !readOnly && busy == null && offerSeat(offer, myId)?.picked === false;
 export const offerBlocksPrep = offers => !!offers?.some(o => o.quorum !== 'none');
-// [ASSUMED] Nonblocking picks auto-collapse; a deliberate reopen can inspect the completed seat.
+// [ASSUMED] Nonblocking picks auto-collapse; a deliberate reopen can inspect the completed seat. A window the local
+// player holds no seat in (spectators, or a plugin window narrowed away by `when.bands` / card conditions) never
+// auto-opens — the dock keeps an entry to inspect it.
 export function offerVisible(offers, myId, dismissed = [], selected = null) {
   return offers.find(o => o.seq === selected?.seq && offerSeat(o, myId)?.picked === selected.picked)
     || offers.find(o => o.quorum !== 'none')
-    || offers.find(o => !dismissed.includes(o.seq) && !offerSeat(o, myId)?.picked)
+    || offers.find(o => offerSeat(o, myId) && !dismissed.includes(o.seq) && !offerSeat(o, myId)?.picked)
     || null;
 }
 const ICONS = { funds: 'sell', layers: 'bolt', item: 'shield', chess: 'rook', refresh: 'refresh' };
@@ -78,7 +80,7 @@ export function OfferOverlay({ pub, myId, readOnly = false, onAction }) {
 export function OfferDock({ offers, myId, onOpen }) {
   return html`<nav class="offerov__dock" aria-label=${t('插件选择')}>
     ${offers.map(o => html`<${Button} key=${o.seq} size="sm" onClick=${() => onOpen(o)}>
-      ${t('插件选择')} · ${o.id} · ${offerSeat(o, myId)?.picked ? t('等待队友') : t('选择一项')}<//>`)}
+      ${t('插件选择')} · ${o.id} · ${!offerSeat(o, myId) ? t('观战中') : offerSeat(o, myId)?.picked ? t('等待队友') : t('选择一项')}<//>`)}
   </nav>`;
 }
 

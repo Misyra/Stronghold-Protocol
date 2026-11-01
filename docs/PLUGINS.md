@@ -1034,6 +1034,7 @@ Copy that directory to `plugins/offers-demo`, check it, then enable it in the ro
 | `offer`, `id` | Version `1`; unique local id, 1–32 lowercase letters/digits/hyphens |
 | `when.at` | `battleCheck`, `prep`, or an array containing both |
 | `when.rounds` | `[1,3,9]`, `"any"`, `{ "every": 2 }`, `{ "from": 3, "to": 9 }`; omitted means any; rounds 1–99, list at most 64, every 1–32 |
+| `when.bands` | Optional 1–8 unique band ids (`when.bands: ["band_x_demo_…"]`, or one id); the window opens only for players of these bands — everyone else holds no seat, cannot pick and is never shown it; a window no eligible player may open is not built at all |
 | `windowSec` | Integer 0–300, default 0. **Zero creates no window, sequence, timer or grant, and never blocks** |
 | `slots` | 1–6 per seat, default 1; at most 32 window files per plugin |
 | `refresh.perSlot` | 0–2 per seat **per slot**; default 0; no refresh after a pick |
@@ -1048,9 +1049,17 @@ remote URLs or scripts. It contains `slots`–128 cards. Each card has a unique 
 nonempty `name` (≤80 characters), `desc` (≤240), `icon` (`funds`, `layers`, `item`, `chess`, `refresh`), and one
 `apply` primitive (or inherits the window's). Icons are native symbols; text is rendered as text, never HTML.
 
+An optional card `when` carries a per-picker condition from a closed vocabulary: `{ "solo": true }` shows the card
+only while its picker is the room's last standing player, and `{ "seat": k }` (1–8) only while **another** player
+occupies seat k (the room UI's 1-based numbering). Ineligible cards never enter a seat's slots — a seat sees only
+its eligible cards — and the condition is checked again at every pick, so a room that changed between opening and
+picking refuses with `BAD_TARGET` without recording a pick.
+
 ```json
 [{ "id": "supplies", "name": "Supplies", "desc": "Gain 3 funds.",
-   "icon": "funds", "apply": { "funds": 3 } }]
+   "icon": "funds", "apply": { "funds": 3 } },
+  { "id": "solo-credit", "name": "House credit", "desc": "Borrow from the exchange.",
+   "icon": "funds", "when": { "solo": true }, "apply": { "funds": 3 } }]
 ```
 
 **Effects.** One key per primitive: `funds`/`pendingFunds` integer 0–1000; `freeRefresh` integer 1–6;
@@ -1063,6 +1072,8 @@ checked again at acquisition. A failed grant returns `BAD_TARGET` without record
 another card or refresh the unavailable slot. Invalid amounts/cards use `PLUGIN_OFFER_SHAPE`. Arbitrary persistent `effect`
 and `shared` enemy/player pools are refused: their runtime semantics are not supported. `options.tiers` remains
 an explicit ignored-field warning. There is no script callback or cross-plugin grant permission.
+`when.bands` ids are references too: each must exist in official data or this plugin's own declared band records
+(**`PLUGIN_OFFER_REFERENCE`** otherwise), so a typo cannot silently disable a window.
 
 **Timing and choices.** `battleCheck` runs after the initial official check before R1 and before the start of
 *every* later named round, including boss rounds. `prep` runs after round-start income/shop draw and the official
@@ -1070,7 +1081,8 @@ an explicit ignored-field warning. There is no script callback or cross-plugin g
 uniform, distinct initial slots with an independent seed derived from match seed, plugin/window, hook, round,
 window sequence and seat. A refresh adds slot and refresh count to that seed: it really replaces the card and
 leaves other seats untouched. It prefers unseen cards; if necessary it can duplicate another slot, but never the
-slot's current card. A one-card pool cannot refresh and consumes no allowance.
+slot's current card. A one-card pool cannot refresh and consumes no allowance. Bots answer only windows they
+participate in, and `when.bands`/card-`when` eligibility is evaluated per seat before any slot is drawn.
 
 Bots and autoplay seats resolve immediately with the timeout rule. A strict majority resolves unpicked seats with
 the same rule; departed/eliminated seats leave the quorum. **[ASSUMED]** Auto/bot fallback tries slots in order,
@@ -1089,7 +1101,9 @@ Tab stays in the visible popup; Escape clears selection, or collapses a nonblock
 automatically. They never lock prep editing, and collapsed windows do not capture match shortcuts. Blocking windows
 keep their phase gate. Unavailable cards are labelled and disabled for picking, while their remaining refreshes stay
 usable. Cards scroll at enlarged text sizes and on touch screens.
-Spectators see a read-only view (the first live seat's cards). Window tabs allow all concurrent windows to be answered.
+Spectators see a read-only view (the first live seat's cards); a player who holds no seat in a window — a
+spectator, or one excluded by `when.bands` or card conditions — is never auto-shown it, and the dock keeps a
+read-only entry instead. Window tabs allow all concurrent windows to be answered.
 The built-in interface strings use all five supported languages; plugin card text is literal author text.
 `m.public.offers` is a full snapshot, including every seat's cards, current slot availability, picked status and remaining refreshes;
 reconnect restores it. `g.offer` and `g.offerRefresh` send `{ offerId, pluginId, seq, idx, cardId? }` (the native UI sends cardId to reject a stale slot after refresh), rejecting stale
@@ -1375,7 +1389,9 @@ height stops under the ready button, so it does not cover the shop, the hand, th
 or 1920×1080. [ASSUMED] Both viewports are 19.2×10.8rem; the hand's top is the dock clearance 4.76rem; the slot's
 bottom is 4.88rem and its right inset is 0.92rem. Engine `dmg` / `heal` tuples expose the HP at `amount` (the unit id
 is `unitId`). The private subset drops loadout, ops, diy, effects, nextEnemies, personalChoice, rewardOffer and
-tokens. The exact allowlists are `subsetPublic` and `subsetPrivate`. Storing a snapshot does not trip
+tokens; the player's plugin counters (`meta` `setCounter`, ≤ 64 numeric keys) ride along as `private.counters`, so a
+UI plugin can display a script plugin's own state (a balance, a debt). The exact allowlists are `subsetPublic` and
+`subsetPrivate`. Storing a snapshot does not trip
 `PLUGIN_INTENT` just because the host had labelled it `b.snap`.
 
 **Switches.** 设置 → 「界面插件」 is `localStorage` (`sp.pref.ui-plugins`). It does not affect other players. The host

@@ -1850,6 +1850,9 @@ function MatchScreen() {
         readyBusy=${readyBusy} readyCount=${readyCount} playerCount=${solo ? 1 : aliveCount}
         pen=${pen} penAvail=${penAvail} onPen=${togglePen} config=${gd.config} frozenAt=${frozenAt}
         pause=${canPause || paused ? { show: canPause, paused, busy: pauseBusy, onToggle: () => togglePause(!paused) } : null}
+        speed=${spectator ? null : { show: true, voted: !!priv?.speedVoted,
+          count: pub?.speedVote?.count ?? 0, need: pub?.speedVote?.need ?? 0,
+          pending: !!pub?.speedVote?.pending, on: !!pub?.speedVote?.on, onToggle: (on) => actions.speedVote(on) }}
         live=${liveLpNow} spectator=${spectator}
         spectators=${specFacts.list} myId=${myId} isHost=${specFacts.isHost} onRemoveSpectator=${removeSpectator} room=${modRoom}
         held=${hudIn === 'wait'} />

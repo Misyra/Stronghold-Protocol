@@ -39,14 +39,17 @@
 .rs-top, .rs-seats, .rs .specbar, .rs-foot { position: relative; }
 
 /* ---- top bar ------------------------------------------------------------------------------------------- */
+/* (both clusters vertically centred like the shared `.topbar`: the right one pinned to the top with no bottom padding
+   put its button's edge on the bar's bottom line wherever the left clock block ran shorter — 大 / 特大 metrics, a
+   badge row, an older build — and the cluster hung out of the bar over the seat cards' P4 strip) */
 .rs .rs-top {
   flex: none;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: .2rem;
   height: auto;
-  padding: .16rem .3rem 0 .22rem;
+  padding: .16rem .3rem .05rem .22rem;
   background: none;
   border-bottom: 0;
   z-index: 3;
@@ -86,13 +89,18 @@
    grows with it (§35.18 review; older than the event UI). Scoped: title.css and the match's bars size their own pill */
 .rs-clock__ping .ping { height: auto; min-height: .32rem; padding-top: 1px; padding-bottom: 1px; }
 .rs-tools { display: flex; gap: .08rem; margin-left: .1rem; }
-.rs-top__right { display: flex; align-items: center; gap: .14rem; }
+/* (the two clusters' min-content together can outgrow a middle-width window at 中 / 大 or in English: the right one
+   wraps onto a second row, its children dropping their labels at ≤ 1100 px below, instead of running off the right
+   edge or squeezing the left cluster to nothing) */
+.rs-top__right { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .18rem; min-width: 0; }
 .rs .rs-loadout {
   --pl-ink: #222b28;
   display: flex;
   align-items: center;
   gap: .1rem;
-  height: max(.56rem, 32px, calc(34px * var(--sp-ui, 1)));
+  /* min-height, not height: a taller line (大 / 特大 metrics, a badge) grows the box — and the bar with it — instead of
+     drawing past the bar's bottom line (the key below grows the same way, so the pair stays one height) */
+  min-height: max(.56rem, 32px, calc(34px * var(--sp-ui, 1)));
   padding: 0 .2rem 0 .14rem;
   font-size: calc(.18 * var(--t));
   color: #111816;
@@ -113,17 +121,24 @@
   background: #182120;
 }
 .rs .rs-loadout .btn__label { font-weight: 900; color: #111816; }
+/* the mock's slim chips on the room's button too: count = mint, 自选 = mint outline, right after the label */
+.rs .rs-loadout .lo-entry__n, .rs .rs-loadout .lo-entry__own { height: 1.4em; font-size: calc(.13 * var(--t)); }
+.rs .rs-loadout .lo-entry__own { color: var(--mint-400); background: transparent; border: 1px solid var(--mint-a45); }
 .rs-key {
   display: flex;
   align-items: center;
   gap: .14rem;
-  height: max(.56rem, 32px, calc(34px * var(--sp-ui, 1)));
+  /* min-height like the loadout button beside it: the code's line grows the key (and the bar) at 大 / 特大 instead of
+     hanging out of its fixed box onto the seat cards below */
+  min-height: max(.56rem, 32px, calc(34px * var(--sp-ui, 1)));
   padding: 0 .06rem 0 .2rem;
   background: rgba(28, 30, 30, .9);
   border: 1px solid rgba(255, 255, 255, .1);
   border-radius: .06rem;
 }
-.rs-key__k { padding-right: .14rem; font-size: calc(.17 * var(--t)); color: #b7bdbb; border-right: 1px solid rgba(255, 255, 255, .25); white-space: nowrap; }
+/* the dev line's composition, restored (the icon-only slimming read as a broken pill): the 同盟密钥 word, the code, a
+   text 复制 button, then the link square */
+.rs-key__k { font-size: calc(.17 * var(--t)); color: #b7bdbb; padding-right: .14rem; border-right: 1px solid rgba(255, 255, 255, .25); }
 .rs-key__code { font-size: calc(.28 * var(--t)); letter-spacing: .06em; color: #f2f4f3; white-space: nowrap; }
 .rs-key__copy {
   height: 78%;
@@ -131,14 +146,12 @@
   font: inherit;
   font-size: calc(.2 * var(--t));
   font-weight: 800;
-  /* after `font` (which resets it): a 1.5 line taller than the 78% button set the label at its top and cut its lower half
-     at 大 / 特大 on a phone (§35.18 review) */
-  line-height: 1;
-  white-space: nowrap;
   color: #1b1e1d;
   background: linear-gradient(180deg, #e9edeb, #c3cac7);
   border: 0;
   border-radius: .05rem;
+  cursor: pointer;
+  white-space: nowrap;
 }
 .rs-key__copy:hover, .rs-key__copy:focus-visible { filter: brightness(1.06); }
 .rs-key__link {
@@ -151,6 +164,7 @@
   background: rgba(255, 255, 255, .06);
   border: 1px solid rgba(255, 255, 255, .15);
   border-radius: .05rem;
+  cursor: pointer;
 }
 .rs-key__link:hover, .rs-key__link:focus-visible { border-color: rgba(255, 255, 255, .4); }
 .rs-key__link .icon { width: 60%; height: 60%; }
@@ -578,26 +592,54 @@
 .rs-pill__gear.is-on, .rs-pill__gear:hover, .rs-pill__gear:focus-visible { background: #fff; }
 .rs-opts {
   position: absolute;
-  left: 50%;
+  right: 0;
   bottom: calc(100% + .14rem);
   z-index: 10;
   display: flex;
   flex-direction: column;
   gap: .12rem;
   width: max-content;
+  /* the solo menu's two short switches alone would make a skinny sliver: the co-op width, floored in px like the pill's */
+  min-width: max(2.4rem, 32px, calc(240px * var(--sp-ui, 1)));
   max-width: 92vw;
   padding: .16rem .2rem;
-  transform: translateX(-50%);
+  /* the menu unfolds upward from the ⚙ (its own corner; on a phone it grows rightward, the origin follows) */
+  transform-origin: 100% 100%;
+  animation: rs-opts-in 220ms cubic-bezier(.16, .84, .3, 1) backwards;
   background: linear-gradient(180deg, #202323, #141616);
   border: 1px solid rgba(255, 255, 255, .16);
   box-shadow: 0 .1rem .4rem rgba(0, 0, 0, .7);
+  /* the menu may take only what the screen holds over the pill's top (its bottom is .14rem above the pill, the pill
+     .68rem / 32px tall in a footer with .2rem / 8px of bottom padding): a 6-row menu at 大 / 特大 on a short window
+     scrolls inside instead of being cut by .screen's overflow */
+  max-height: calc(100vh - .14rem - max(.68rem, 32px, calc(40px * var(--sp-ui, 1))) - max(.2rem, calc(8px * var(--sp-ui, 1))));
+  max-height: calc(100svh - .14rem - max(.68rem, 32px, calc(40px * var(--sp-ui, 1))) - max(.2rem, calc(8px * var(--sp-ui, 1))));
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
+/* the footer's own stacking context (z 2) would keep the menu's z 10 under the top bar (z 3) and under the search /
+   found panels' docks (5 / 6) once one is up: with the menu open the footer climbs to the banner tier, under the
+   connection banner, modals and toasts */
+.rs-foot.is-opts { z-index: var(--z-banner); }
 .rs-opts h4 { margin: 0; font-size: calc(.2 * var(--t)); }
-/* 同盟设置's 模拟难度 row: the difficulty (the host's 更改 opens 选择模拟协议; the others read it) */
-.rs-opts__row { display: flex; align-items: center; gap: .12rem; font-size: calc(.14 * var(--t)); }
-.rs-opts__k { color: var(--text-lo); }
+/* the menu's rows cascade in behind the panel (the room entry's staged idiom, rseat's --i) */
+.rs-opts > * { animation: rs-opts-row 200ms cubic-bezier(.16, .84, .3, 1) backwards; }
+.rs-opts > :nth-child(2) { animation-delay: 40ms; }
+.rs-opts > :nth-child(3) { animation-delay: 80ms; }
+.rs-opts > :nth-child(4) { animation-delay: 120ms; }
+.rs-opts > :nth-child(5) { animation-delay: 160ms; }
+.rs-opts > :nth-child(6) { animation-delay: 200ms; }
+.rs-opts > :nth-child(7) { animation-delay: 240ms; }
+@keyframes rs-opts-in { from { opacity: 0; transform: translateY(.14rem) scale(.96); } }
+@keyframes rs-opts-row { from { opacity: 0; transform: translateY(.08rem); } }
+/* 同盟设置's 模拟难度 / 版本 rows: no leading label — each is one full-width bar like the switches below, its
+   selection centred (the host's 更改 / 切换 hint rides along; the others read the same bar disabled, the reason in
+   the tooltip) */
+.rs-opts__row { display: flex; align-items: stretch; font-size: calc(.14 * var(--t)); }
+.rs-opts__row > * { flex: 1 1 auto; min-width: 0; }
+.rs-opts__row .rs-opts__diff { width: 100%; }
 .rs-opts__diff {
-  display: inline-flex; align-items: center; gap: .06rem; min-height: .36rem; padding: .02rem .14rem;
+  display: inline-flex; align-items: center; justify-content: center; gap: .06rem; min-height: .36rem; padding: .02rem .14rem;
   font: inherit; font-size: calc(.15 * var(--t)); font-weight: 700; white-space: nowrap;
   color: var(--d-color); background: rgba(0, 0, 0, .3); border: 1px solid var(--line-2);
 }
@@ -655,14 +697,18 @@
 .dpick__opt.is-active .icon { opacity: 1; filter: drop-shadow(0 0 5px var(--d-color)); }
 .dpick--ro { border: 0; background: none; gap: .18rem; align-items: center; font-size: calc(.14 * var(--t)); }
 .ailast { display: flex; align-items: center; gap: .12rem; font-size: calc(.14 * var(--t)); }
-.ailast__opt { --d-color: var(--mint-400); height: auto; min-height: .36rem; padding: .02rem .14rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .3); font-size: calc(.15 * var(--t)); letter-spacing: .04em; }
+/* one full-width bar like the 模拟难度 / 版本 rows above: the switch stretches over the menu's width, its selection
+   centred (the 由创建者设置 note of somebody else's room rides at the end, narrowing the switch only there) */
+.ailast__opt { --d-color: var(--mint-400); flex: 1 1 auto; justify-content: center; min-width: 0; height: auto; min-height: .36rem; padding: .02rem .14rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .3); font-size: calc(.15 * var(--t)); letter-spacing: .04em; }
 .ailast__opt:last-child { border-right: 1px solid var(--line-2); }
 .ailast__opt .icon { opacity: .25; }
 .ailast__opt .icon.is-on { opacity: 1; }
 
 
 
-.trusted-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 90; padding: 5px 16px; background: #9b202b; color: #fff; display: flex; justify-content: space-between; gap: 12px; }
+/* under the connection banner (--z-conn) and the modals (a short window's red strip never covers a dialog's head),
+   over the page and the vote strips (56) */
+.trusted-banner { position: fixed; top: 0; left: 0; right: 0; z-index: calc(var(--z-conn) - 1); padding: 5px 16px; background: #9b202b; color: #fff; display: flex; justify-content: space-between; gap: 12px; }
 .trusted-banner button { color: inherit; text-decoration: underline; }
 .trusted-hash { overflow-wrap: anywhere; font-family: monospace; }
 
@@ -740,15 +786,9 @@
   .rs-brief h2 { font-size: min(calc(.32 * var(--t)), calc(20px + var(--t-step))); line-height: calc(1.5em - 3 * max(0px, var(--t-step))); }
   .rs-brief p { font-size: min(calc(.17 * var(--t)), calc(14px + var(--t-step))); }
   .rs-brief ul { font-size: min(calc(.16 * var(--t)), calc(13px + var(--t-step))); line-height: calc(1.35em - max(0px, var(--t-step))); }
-  /* the difficulty's name in its 40 px pill and the key's 复制 in its 26 px button: capped so the line stays inside (a
-     pixel more a step above 中). [ASSUMED] the caps */
+  /* the difficulty's name in its 40 px pill: capped so the line stays inside (a pixel more a step above 中). [ASSUMED] */
   .rs-pill__diff, .rs-pill__ver { font-size: min(calc(.28 * var(--t)), calc(20px + var(--t-step))); }
   .rs-key__code { font-size: calc(.36 * var(--t)); }
-  .rs-key__copy { font-size: min(calc(.26 * var(--t)), calc(18px + var(--t-step))); }
-  /* English 「Copy」's descenders came within 0.1 px of the button's bottom at 特大 (its cap top 7.4 px below the top): set
-     a pixel higher a step above 中, 2 px at 特大, so at 小 / 中, where it was centred, it stays put (review of 7aa59703:
-     a fixed 4 px set it 2 px high at 小). [ASSUMED] */
-  .rs-key__copy:lang(en) { padding-bottom: calc(2 * max(0px, var(--t-step))); }
   /* the button at least 46 px, taller for a second line; the label 18–20 px at 小 / 中, a pixel more a step above (as
      选择模拟协议's here: it was .46 × --t, 40 px at 特大, which cut 开始模拟 in English, Japanese and Korean, and at 特大 in
      Chinese once it wrapped). [ASSUMED] the cap */
@@ -759,7 +799,7 @@
   /* the tool buttons give way; a settings window already open stays: it is position: fixed but rendered inside this
      toolbar, so hiding the toolbar itself hid the window with it (a desktop shrunk to a phone's 390 px height, #888) */
   .rs-tools { margin-left: 0; }
-  .rs-tools > :not(.modal), .rs-key__k { display: none; }
+  .rs-tools > :not(.modal) { display: none; }
 }
 
 /* A long name takes a second line on the phones at least 370 px tall, then ends in an ellipsis (§35.51: one line kept 3–5
@@ -773,19 +813,27 @@
   .rseat__who { grid-row: 1 / 3; align-self: center; }
   .rseat__who .seat__name { white-space: normal; overflow-wrap: anywhere; line-height: 1.1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 }
+/* a middle-width window (950–1200 px): one step later than the phone's degradation, before the two clusters of the top
+   bar can meet in the middle at 中 / 大 or in a long language (干员调配's label gives way) */
+@media (max-width: 1100px) {
+  .rs .rs-loadout .btn__label { display: none; }
+}
 @media (max-width: 900px) {
   /* the centre column takes what the button leaves (it keeps its width); the status line and the pill sit at its start, as
      narrow as their text (left-aligned, as before the §35.18 review) */
   .rs-foot { grid-template-columns: minmax(0, 1fr) auto; }
   .rs-foot__left { display: none; }
   .rs-foot__center { justify-self: start; max-width: 100%; }
+  /* the pill sits at the footer's left here: ⚙'s menu grows rightward from its left edge instead of being centred, so it
+     cannot hang past the screen's left edge (the unfold's origin follows) */
+  .rs-opts { left: 0; right: auto; transform-origin: 0 100%; }
 }
 @media (max-aspect-ratio: 1/1) {
   .rs-seats { justify-content: flex-start; }
   .rseat { --w: max(1.8rem, 42vw); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rseat, .rs__bg, .rs-top, .rs-brief, .rs-foot { animation: none; }
+  .rseat, .rs__bg, .rs-top, .rs-brief, .rs-foot, .rs-opts, .rs-opts > * { animation: none; }
 }
 
 /* ---- official versions (DESIGN §35.23): the version pill beside the difficulty, ⚙'s 版本 row, the banner; the name ends
@@ -795,14 +843,17 @@
 .rs-pill__version { height: 100%; min-width: 0; align-items: center; }
 .rs-pill__ver {
   min-width: 0; max-width: 2.6rem;
-  color: #cfe9ff; background: rgba(120, 196, 255, .12);
+  /* the .vertag palette (components.css): one version-badge look on every screen; the pill's own height, padding and
+     font (the difficulty button's) stay, they are this container's layout */
+  color: #9fd3ff; background: rgba(120, 196, 255, .12);
+  border: 1px solid rgba(120, 196, 255, .65); letter-spacing: .04em;
 }
 .rs-pill__ver .icon { color: #9fd3ff; }
 .rs-pill__vername { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .rs-pill__ver:disabled { cursor: default; opacity: .7; }
 .rs-pill__ver.is-ro { cursor: help; }
 .rs-pill__ver:hover:not(:disabled), .rs-pill__ver:focus-visible { filter: brightness(1.2); }
-.rs-opts__ver { color: #cfe9ff; }
+.rs-opts__ver { color: #9fd3ff; }
 .rs-verbanner {
   position: relative; flex: none; display: flex; align-items: center; justify-content: center; gap: .08rem;
   margin: 0 .6rem .1rem; padding: .06rem .16rem; color: var(--text-md); font-size: calc(.14 * var(--t)); text-align: center; overflow-wrap: anywhere;
@@ -814,7 +865,8 @@
 @media (max-height: 520px) {
   .rs-verbanner { display: none; }
   .rs .vervote {
-    position: fixed; left: 50%; top: 50%; z-index: 30; width: min(calc(100vw - 24px), 9rem); max-height: 70svh; margin: 0; overflow-y: auto;
+    /* the banner tier (--z-banner), as .vervote--float's 40: over the page's HUD, under the connection banner and the modals */
+    position: fixed; left: 50%; top: 50%; z-index: var(--z-banner); width: min(calc(100vw - 24px), 9rem); max-height: 70svh; margin: 0; overflow-y: auto;
     transform: translate(-50%, -50%); box-shadow: 0 .1rem .5rem rgba(0, 0, 0, .8);
     /* too tall for the screen: the text scrolls, the buttons stay in view below it (like the floating strip's) */
     flex-direction: column; flex-wrap: nowrap; align-items: stretch;

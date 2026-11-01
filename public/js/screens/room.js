@@ -290,16 +290,18 @@ function BotBandChip({ seat, bands, editable, busy, onOpen }) {
 
 /**
  * AI 指定策略 (room.setBotBand, 移植自用户分支): a grid of the strategies the room's draft offers — 自动选择 first, a
- * strategy already designated to another AI seat greyed out (one AI seat per strategy). The host only.
+ * strategy already designated to another AI seat greyed out (one AI seat per strategy) — unless 「允许重复策略」
+ * (room.setBandDupes) is on: the guard stands down (phases.js bandTaken), every strategy stays pickable and several AI
+ * seats may share one. The host only.
  */
-function BotBandPicker({ open, seat, seats, bands, busy, onClose, onPick }) {
+function BotBandPicker({ open, seat, seats, bands, busy, dupes = false, onClose, onPick }) {
   if (!seat) return null;
   const others = new Map();
-  for (const x of seats || []) if (x && x.isBot && x !== seat && typeof x.band === 'string') others.set(x.band, x.name);
+  if (!dupes) for (const x of seats || []) if (x && x.isBot && x !== seat && typeof x.band === 'string') others.set(x.band, x.name);
   const current = typeof seat.band === 'string' ? (bands || []).find((b) => b.bandId === seat.band) : null;
   return html`<${Modal} open=${open} utility=${true} title=${t('指定 AI 策略')} micro="AI STRATEGY" width="min(760px, 94vw)" onClose=${onClose}
     actions=${html`<${Button} variant="secondary" data-autofocus onClick=${onClose}>${t('关闭')}<//>`}>
-    <p class="botband__tip t-dim">${t('开局选择策略时，该 AI 队友会直接选择指定的策略，其他博士不能再选它。')}</p>
+    <p class="botband__tip t-dim">${dupes ? t('开局选择策略时，该 AI 队友会直接选择指定的策略；已开启允许重复策略，多个 AI 队友可共用同一种策略。') : t('开局选择策略时，该 AI 队友会直接选择指定的策略，其他博士不能再选它。')}</p>
     <div class="botband__grid" role="listbox" aria-label=${t('策略')}>
       <button type="button" role="option" aria-selected=${seat.band == null ? 'true' : 'false'} disabled=${!!busy}
         class=${`botband${seat.band == null ? ' is-sel' : ''}`} onClick=${() => onPick(null)}>
@@ -518,23 +520,19 @@ function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, 
   return html`<div class="rs-opts" role="dialog" aria-label=${title}>
     <h4>${title}</h4>
     ${soloOption ? null : html`<div class="rs-opts__row" data-testid="room-opt-difficulty">
-      <span class="rs-opts__k">${t('模拟难度')}</span>
       <button type="button" class="rs-opts__diff" disabled=${isHost && !!busy} onClick=${onDifficulty}
           title=${isHost ? t('更改模拟难度') : t('由创建者选择')}>
         <${DifficultyIcon} difficulty=${room.difficulty} />${DIFFICULTY_NAMES[room.difficulty] ? t(DIFFICULTY_NAMES[room.difficulty]) : ''}<span class="num rs-pill__code">${info.code}</span>
         ${isHost ? html`<em>${t('更改')}</em>` : null}
       </button>
-      ${isHost ? null : html`<span class="t-dim">${t('由创建者选择')}</span>`}
     </div>`}
     ${!soloOption && version ? html`<div class="rs-opts__row" data-testid="room-opt-version">
-      <span class="rs-opts__k">${t('版本')}</span>
       <${Tooltip} text=${version.why}>
         <button type="button" class="rs-opts__diff rs-opts__ver" disabled=${version.disabled} onClick=${version.onOpen}
             title=${version.editable ? t('发起切换版本') : t('由创建者发起')}>
           <${Icon} name="book" />${versionLabel(version.id)}${version.editable ? html`<em>${t('切换')}</em>` : null}
         </button>
       <//>
-      ${version.editable ? null : html`<span class="t-dim">${t('由创建者发起')}</span>`}
     </div>` : null}
     <${AiTakeoverToggle} option=${takeoverOption} busy=${busy} onToggle=${onAiTakeover} />
     ${soloOption
@@ -873,8 +871,8 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
         ${coop ? html`<div class="rs-key">
           <span class="rs-key__k">${t('同盟密钥')}</span>
           <b class="rs-key__code num selectable" aria-label=${t('同盟密钥 {code}', { code: room.code })}>${room.code}</b>
-          <button type="button" class="rs-key__copy" onClick=${() => copy('code')} title=${t('复制密钥')}>${t('复制')}</button>
-          <button type="button" class="rs-key__link" onClick=${() => copy('link')} title=${t('复制链接')} aria-label=${t('复制链接')}><${Icon} name="link" /></button>
+          <button type="button" class="rs-key__copy" onClick=${() => copy('code')}>${t('复制')}</button>
+          <button type="button" class="rs-key__link" onClick=${() => copy('link')} title=${t('复制邀请链接')} aria-label=${t('复制邀请链接')}><${Icon} name="link" /></button>
         </div>` : html`<div class="rs-key rs-key--solo"><${MicroLabel}>SINGLE OPERATOR<//><span>${t('仅限 1 名博士')}</span></div>`}
       </div>
     </header>
@@ -904,12 +902,12 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
     <${SpectatorBar} facts=${facts} myId=${me.playerId} busy=${busy} onRemove=${removeSpectator} onSit=${sit} />
 
     <${BotBandPicker} open=${bandSeat != null && !!facts.seats[bandSeat]?.isBot} seat=${bandSeat != null ? facts.seats[bandSeat] : null}
-      seats=${facts.seats} bands=${bandList} busy=${busy === `band${bandSeat}`} onClose=${() => setBandSeat(null)}
+      seats=${facts.seats} bands=${bandList} busy=${busy === `band${bandSeat}`} dupes=${room.bandDupes === true} onClose=${() => setBandSeat(null)}
       onPick=${(bandId) => setBotBand(bandSeat, bandId)} />
     <${VersionVote} room=${room} />
     ${bannerText ? html`<p class="rs-verbanner" data-testid="version-banner"><${Icon} name="info" />${bannerText}</p>` : null}
 
-    <footer class="room-bar rs-foot">
+    <footer class=${`room-bar rs-foot${opts ? ' is-opts' : ''}`}>
       <div class="rs-foot__left" aria-hidden="true"></div>
       <div class="rs-foot__center">
         <p class="rs-hint">${coop ? html`<span class="rs-ready num" title=${t('已就绪')}>${facts.humans.map((s) => html`<${Icon} key=${s.playerId} name="user" class=${facts.isReady(s) ? 'is-on' : ''} />`)}<b>${facts.readyHumans}</b>/${facts.humans.length}</span>` : null}<span class="room-bar__status">${statusLine}</span></p>
@@ -951,7 +949,7 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
     ${searchShown && !offerShown ? html`<${SearchPanel} title=${matchmakingTitle(mm)} class=${`rs-searchpanel${searchLeaving ? ' is-leaving' : ''}`} elapsed=${searchElapsed}
       onStop=${facts.isHost ? cancelMatch : null} stopping=${busy === 'cancel-match'}
       note=${facts.isHost ? t('搜寻期间可随时停止搜寻') : t('创建者正在搜寻队友')}
-      room=${true} hint=${false} tags=${[{ key: 'mode', label: t('精确搜寻'), icon: html`<${Icon} name="search" />` },
+      tags=${[{ key: 'mode', label: t('精确搜寻'), icon: html`<${Icon} name="search" />` },
         { key: 'diff', label: t(DIFFICULTY_NAMES[room.difficulty]), color: DIFFICULTY_COLORS[room.difficulty], icon: html`<${DifficultyIcon} difficulty=${room.difficulty} />` }]}>
     <//>` : null}
     ${foundShown ? html`<${FoundPanel} class=${foundLeaving ? 'is-leaving' : ''} seats=${facts.seats.length} text=${t('同盟集结完毕')} />` : null}

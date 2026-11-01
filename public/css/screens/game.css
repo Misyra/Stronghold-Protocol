@@ -219,6 +219,41 @@
 .pausebtn.is-on { background: var(--mint-500); border-color: var(--mint-400); color: var(--text-on-mint); box-shadow: 0 0 .22rem rgba(23, 249, 183, .45); }
 .pausebtn.is-busy { opacity: .6; }
 
+/* 战斗 2 倍速投票（ui/hud.js SpeedButton，g.speedVote）：官方 2X 控件的样子——快进双箭头 + 斜体 2X。
+   与 准备就绪 同一行（gtop__readyrow）。未投灰；is-voted 已投薄荷高亮（可再点取消）；
+   is-nudge 其他人已投、你没投 → 慢呼吸提醒；is-pending 全员已赞成 → 快脉冲（下一回合换档）；
+   is-active 2 倍速进行中 → 薄荷实心。 */
+.gtop__readyrow { display: flex; align-items: flex-start; gap: .1rem; }
+.speedbtn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .03rem;
+  height: .56rem; min-width: .98rem; padding: 0 .12rem; flex: none; cursor: pointer;
+  background: rgba(10, 14, 12, .88); border: 2px solid rgba(242, 242, 242, .26); color: rgba(255, 255, 255, .58);
+  box-shadow: 0 .04rem .16rem rgba(0, 0, 0, .5);
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
+}
+.speedbtn__main { display: flex; align-items: center; gap: .07rem; }
+.speedbtn__ff { width: .19rem; height: .19rem; fill: currentColor; flex: none; }
+.speedbtn__x { font-size: .24rem; font-style: italic; font-weight: 800; letter-spacing: .04em; line-height: 1; }
+.speedbtn__n { font-family: var(--font-num); font-size: .11rem; line-height: 1; opacity: .72; letter-spacing: .05em; }
+.speedbtn:hover { color: #fff; border-color: rgba(255, 255, 255, .62); }
+.speedbtn.is-voted { border-color: var(--mint-400); color: var(--mint-400);
+  background: linear-gradient(165deg, rgba(23, 249, 183, .17), rgba(10, 14, 12, .92) 65%);
+  box-shadow: 0 0 .2rem rgba(23, 249, 183, .28); }
+.speedbtn.is-voted .speedbtn__n { opacity: .95; }
+.speedbtn.is-active { background: var(--mint-500); border-color: var(--mint-400); color: var(--text-on-mint);
+  box-shadow: 0 0 .26rem rgba(23, 249, 183, .45); }
+.speedbtn.is-active.is-voted { box-shadow: 0 0 .26rem rgba(255, 255, 255, .35); }
+.speedbtn.is-nudge { animation: speed-breath 2.4s ease-in-out infinite; }
+.speedbtn.is-pending { animation: speed-pend 1.1s ease-in-out infinite; }
+@keyframes speed-breath {
+  0%, 100% { box-shadow: 0 .04rem .16rem rgba(0, 0, 0, .5); border-color: rgba(242, 242, 242, .26); }
+  50% { box-shadow: 0 0 .3rem rgba(23, 249, 183, .5); border-color: rgba(89, 244, 202, .8); }
+}
+@keyframes speed-pend {
+  0%, 100% { box-shadow: 0 0 .18rem rgba(23, 249, 183, .4); }
+  50% { box-shadow: 0 0 .36rem rgba(23, 249, 183, .9); }
+}
+
 /* boss-round overtime warning (ui/hud.js OvertimeWarning; red DOT look: official icon_warn / blood_icon + bg_lose_hp) */
 .otwarn {
   position: relative; display: flex; align-items: center; gap: .08rem; height: .38rem; padding: 0 .14rem 0 .1rem;

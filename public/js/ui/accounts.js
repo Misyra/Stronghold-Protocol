@@ -90,20 +90,7 @@ async function squareAvatar(file) {
 }
 
 // ---- the panel (opened from the hub's top-right chip) -------------------------------------------------------------------
-function ensureStyle() {
-  if (document.getElementById('local-acct-style')) return;
-  const st = document.createElement('style');
-  st.id = 'local-acct-style';
-  st.textContent = `.acct-tag{margin-left:.06em;font-size:.8em;font-weight:600;opacity:.62;letter-spacing:.02em}
-.lacct{display:flex;flex-direction:column;gap:.16rem;min-width:min(5.6rem,86vw)}
-.lacct__who{display:flex;align-items:center;gap:.16rem}
-.lacct__pic{width:.9rem;height:.9rem;flex:none;display:grid;place-items:center;overflow:hidden;border:2px solid var(--mint-700,#2b7);background:#101614;font-size:.4rem;font-weight:900}
-.lacct__pic img{width:100%;height:100%;object-fit:cover}
-.lacct__name{font-size:.3rem;font-weight:900}
-.lacct__note{margin:0;font-size:.17rem;line-height:1.5;opacity:.72}
-.lacct__btns{display:flex;flex-wrap:wrap;gap:.1rem}`;
-  document.head.appendChild(st);
-}
+// (.acct-tag / .lacct live in css/components.css — this module injects no styles)
 let host = null;
 function AccountPanel({ onStats, onClose }) {
   const { me } = useCurrentAccount();
@@ -138,7 +125,6 @@ function AccountPanel({ onStats, onClose }) {
 }
 /** Open the account panel ({ onStats } adds the 统计数据 button). */
 export function openAccountPanel(opts = {}) {
-  ensureStyle();
   if (!host) { host = document.createElement('div'); host.className = 'local-acct-host'; document.body.appendChild(host); }
   const close = () => render(null, host);
   render(html`<${AccountPanel} onStats=${opts.onStats} onClose=${close} />`, host);
@@ -147,7 +133,6 @@ export function openAccountPanel(opts = {}) {
 /** The hub's top-right chip: avatar + name #tag; a click opens the account panel (with 统计数据). */
 export function AccountMeChip({ player, onStats }) {
   const { me } = useCurrentAccount();
-  useEffect(ensureStyle, []);
   const name = player?.name || me.name || t('博士');
   return html`<button type="button" class="me-chip me-chip--btn stats-entry" onClick=${() => openAccountPanel({ onStats })} title=${t('本机账号 · 统计数据')} aria-label=${t('本机账号')}>
     <${AvatarFrame} size="sm" name=${name} seat=${0} self=${true} src=${me.avatar || undefined} />

@@ -203,13 +203,13 @@ test('room.css: the seat cards and the picker follow 文字大小, no !important
   assert.match(block, /\.rseat__art img \{[^}]*object-fit: cover/);
   assert.match(block, /\.cardpick__grid[\s\S]*overflow-y: auto/);
   // the review of the text-fit fixes (§35.18): Korean breaks between words; the short screen's avatar frame 2rem at 小 and
-  // smaller only as the text grows (not 1rem at every size); 复制's line height after `font` (which resets it); the phone
-  // footer's status and pill at the start; 独立模拟's card 2.7 × --t (2.7rem at 小, as before)
+  // smaller only as the text grows (not 1rem at every size); 复制 inherits the key strip's font (the button is text
+  // again); the phone footer's status and pill at the start; 独立模拟's card 2.7 × --t (2.7rem at 小, as before)
   const plain = block.replace(/\/\*[\s\S]*?\*\//g, '');
   assert.match(plain, /\.rs:lang\(ko\) \{ word-break: keep-all; overflow-wrap: break-word; \}/);
   assert.match(plain, /\.seat__art\.rseat__art > \.avatar--xl \{ --av: clamp\(1rem, calc\(3rem - var\(--t\)\), 2rem\); \}/);
   assert.doesNotMatch(plain, /--av: 1rem/);
-  assert.match(plain, /\.rs-key__copy \{[^}]*font: inherit;[^}]*line-height: 1;/);
+  assert.match(plain, /\.rs-key__copy \{[^}]*font: inherit;[^}]*font-weight: 800;/);
   assert.match(plain, /@media \(max-width: 900px\) \{[^@]*\.rs-foot__center \{ justify-self: start;/);
   assert.match(plain, /\.rs--solo \.rseat \{ --w: min\(calc\(2\.7 \* var\(--t\)\), 34vw\); \}/);
   // the review of those fixes: Japanese never starts a line with a small kana or ー (「シミュレーシ|ョン開始」); on a short
@@ -255,8 +255,13 @@ test('room.css: the seat cards and the picker follow 文字大小, no !important
   assert.match(short, /\.seat__name-pre \{ display: none; \}/);
   assert.doesNotMatch(plain.slice(0, plain.indexOf('@media (max-height: 520px) {')), /\.seat__name-pre/);
   assert.match(roomJs, /<b class="seat__name">\$\{botPrefix \? html`<span class="seat__name-pre">\$\{botPrefix\[0\]\}<\/span>\$\{botPrefix\[1\]\}`/);
-  // review of 7aa59703: English 「Copy」 set higher a pixel a step above 中 only (a fixed 4 px put it 2 px high at 小)
-  assert.match(short, /\.rs-key__copy:lang\(en\) \{ padding-bottom: calc\(2 \* max\(0px, var\(--t-step\)\)\); \}/);
+  // review of 2026-11-01, second pass: the key strip back to the dev line's composition — the 同盟密钥 word with its
+  // divider, the code, a text 复制 button, then the link square (the icon-only slimming read as a broken pill);
+  // the old :lang(en) text cap stays gone
+  assert.match(plain, /\.rs-key__k \{[^}]*border-right: 1px solid/);
+  assert.match(plain, /\.rs-key__copy \{[^}]*padding: 0 \.26rem;[^}]*font: inherit;/);
+  assert.match(plain, /\.rs-key__link \{[^}]*place-items: center;/);
+  assert.doesNotMatch(plain, /\.rs-key__copy:lang\(en\)/);
   assert.match(readFileSync(path.join(ROOT, 'public/js/screens/room.js'), 'utf8'), /\} <span class="num t-dim">\$\{info\.code\}<\/span><\/h2>/,
     'the space before the code outside its nowrap span, so the title can still break there');
   // the ping pill grows in the room only (§35.18 review: a global min-height outgrew title.css's own height)

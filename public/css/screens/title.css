@@ -283,8 +283,10 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
   font-weight: 700;
   letter-spacing: .02em;
 }
-/* the resource preload launcher (移植自用户分支): bottom-right, above the footer; the pill opens the resource manager. */
-.title-preload { position: absolute; z-index: 3; right: .44rem; bottom: .86rem; }
+/* the resource preload launcher (移植自用户分支): bottom-right, above the footer; the pill opens the resource manager.
+   (1.6rem: the footer wraps to two–four lines on a narrow window or at 大 / 特大 — its top would reach a capsule one
+   line above it) */
+.title-preload { position: absolute; z-index: 3; right: .44rem; bottom: 1.6rem; }
 .res-pill { width: 2.7rem; padding: .1rem .12rem; background: rgba(10, 14, 12, .74); border: 1px solid var(--line-2); }
 .res-pill.is-on { border-color: var(--mint-800); background: rgba(13, 20, 17, .86); }
 .res-pill__head {

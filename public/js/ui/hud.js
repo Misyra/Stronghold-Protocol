@@ -457,6 +457,36 @@ export function PauseButton({ paused, busy = false, onToggle }) {
   <//>`;
 }
 
+/** Official-style fast-forward glyph (two right triangles) of the 2× speed control. */
+function SpeedGlyph() {
+  return html`<svg class="speedbtn__ff" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 11 12l-8 6.5zM12.5 5.5 20.5 12l-8 6.5z" /></svg>`;
+}
+
+/**
+ * 战斗 2 倍速投票（g.speedVote，准备就绪旁的 2X 控件）：官方战斗 2X 的样子——快进双箭头 + 斜体 2X。
+ * 点击投赞成、再点取消（2 倍速进行中则投「恢复原速」，同样可取消）。状态：
+ *   未投灰；is-voted 已投薄荷高亮；is-nudge 其他人已投、你没投 → 慢呼吸提醒；
+ *   is-pending 全员已赞成 → 快脉冲（下一回合换档，再点可撤）；is-active 2 倍速进行中 → 薄荷实心。
+ * 计数 n/need 在投票进行中显示（need 在线人类席位）。
+ * @param {{ voted?: boolean, count?: number, need?: number, pending?: boolean, on?: boolean, onToggle?: (on:boolean)=>void }} props
+ */
+export function SpeedButton({ voted = false, count = 0, need = 0, pending = false, on = false, onToggle }) {
+  const nudge = !voted && !pending && count > 0;
+  const tip = pending
+    ? t('全员同意，下一回合生效')
+    : on ? (voted ? t('已投恢复原速：点击取消（{count}/{need}）', { count, need })
+      : t('战斗 2 倍速进行中：全员赞成后下一回合恢复原速（{count}/{need}）', { count, need }))
+      : (voted ? t('已投赞成：点击取消（{count}/{need}）', { count, need })
+        : t('战斗 2 倍速：全员同意后，下一回合开始生效（{count}/{need}）', { count, need }));
+  return html`<${Tooltip} text=${tip} placement="bottom">
+    <button type="button" class=${cx('speedbtn', 'tapx', on && 'is-active', voted && 'is-voted', pending && 'is-pending', nudge && 'is-nudge')}
+      aria-pressed=${voted ? 'true' : 'false'} data-testid="speed-vote" onClick=${() => onToggle?.(!voted)}>
+      <span class="speedbtn__main"><${SpeedGlyph} /><b class="speedbtn__x num">2X</b></span>
+      ${need > 0 && (count > 0 || voted) ? html`<span class="speedbtn__n num">${count}/${need}</span>` : null}
+    </button>
+  <//>`;
+}
+
 /**
  * Top bar. Its centre (PR #643 / #827, the event's top bar, video 8:01): [🔍] in a bracket frame · + · a long thin band
  * with 回合 N on the left half and the LP tower on the right half, the phase capsule as a bevelled plate in the middle
@@ -470,6 +500,7 @@ export function PauseButton({ paused, busy = false, onToggle }) {
  *   onReady:(r:boolean)=>void, readyBusy?:boolean, readyCount?:number, playerCount?:number,
  *   pen?:boolean, penAvail?:boolean, onPen?:(on:boolean)=>void, config?: any, frozenAt?: number|null,
  *   pause?: { show: boolean, paused: boolean, busy?: boolean, onToggle: () => void } | null,
+ *   speed?: { show: boolean, voted?: boolean, count?: number, need?: number, pending?: boolean, on?: boolean, onToggle?: (on:boolean)=>void } | null,
  *   live?: { pending: number, unite: boolean, left?: number|null } | null,
  *   spectators?: any[]|null, myId?: any, isHost?: boolean, onRemoveSpectator?: ((playerId: any) => any)|null, held?: boolean }} props
  *   spectators: the room's spectator seats (room.state) — the 观战席 capsule beside the latency (SpectatorPill; the host removes)
@@ -480,7 +511,7 @@ export function PauseButton({ paused, busy = false, onToggle }) {
  *   held: the HUD waits hidden under 协议启动！ — a phase change's capsule scene waits for it (useCapsuleFx)
  */
 export function TopBar({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, onReady, readyBusy, readyCount, playerCount, pen = false, penAvail = false, onPen = () => {},
-  config = null, frozenAt = null, pause = null, live = null, spectator = false,
+  config = null, frozenAt = null, pause = null, speed = null, live = null, spectator = false,
   spectators = null, myId = null, isHost = false, onRemoveSpectator = null, room = null, held = false }) {
   const phase = pub?.phase;
   const boss = isBossPhase(phase);
@@ -564,7 +595,11 @@ export function TopBar({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, 
         ${pause && (pause.show || pause.paused) ? html`<${PauseButton} paused=${!!pause.paused} busy=${pause.busy} onToggle=${pause.onToggle} />` : null}
       </div>
       <${OvertimeWarning} ot=${ot} />
-      ${showReady ? html`<${ReadyToggle} priv=${priv} onToggle=${onReady} busy=${readyBusy} readyCount=${readyCount} total=${playerCount} />` : null}
+      ${showReady || (speed && speed.show) ? html`<div class="gtop__readyrow">
+        ${showReady ? html`<${ReadyToggle} priv=${priv} onToggle=${onReady} busy=${readyBusy} readyCount=${readyCount} total=${playerCount} />` : null}
+        ${speed && speed.show ? html`<${SpeedButton} voted=${!!speed.voted} count=${speed.count ?? 0} need=${speed.need ?? 0}
+          pending=${!!speed.pending} on=${!!speed.on} onToggle=${speed.onToggle} />` : null}
+      </div>` : null}
     </div>
   </header>`;
 }

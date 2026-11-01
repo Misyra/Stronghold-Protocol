@@ -7,6 +7,9 @@ The first slice is the closed set that already typechecks:
 - `shared/` except `shared/protocol.js` and `shared/bandBonds.js` (their JSDoc does not match the code yet; see below)
 - `server/sim/rng.js`, `server/sim/dir.js`, `server/sim/constants.js` (the last imports `GEO` from shared)
 - `types/` — JSDoc for `Unit`, `DamageInfo`, the snapshot tuples, and the protocol message envelope
+- `types/shared-globals.d.ts` — the isomorphic globals shared/ reads (`URL`, `URLSearchParams`,
+  `AbortSignal.timeout`); the slice loads no DOM/Node lib on purpose, so these are declared by hand
+  (see the file's header)
 
 `strict` is off. `tsc` does not read `jsconfig.json` on its own; the script passes `-p`.
 

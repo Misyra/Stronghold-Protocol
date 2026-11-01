@@ -1173,17 +1173,22 @@ function LoadoutScreen({ st }) {
   </div>
   ${help ? html`<${DeckHelp} onClose=${() => setHelp(false)} />` : null}
   ${io ? html`<${Modal} open=${true} onClose=${() => setIo(null)}
-      title=${ioDiy ? (io.mode === 'export' ? t('导出自选编队') : t('导入自选编队'))
+      title=${ioSkins ? (io.mode === 'export' ? t('导出皮肤配置') : t('导入皮肤配置'))
+        : ioDiy ? (io.mode === 'export' ? t('导出自选编队') : t('导入自选编队'))
         : io.mode === 'export' ? (ioOwn ? t('导出干员持有') : t('导出干员调配')) : (ioOwn ? t('导入干员持有') : t('导入干员调配'))}
-      micro=${ioOwn ? 'OPERATOR ROSTER' : ioDiy ? 'SELF-SELECT SQUAD' : 'OPERATOR LOADOUT'}
+      micro=${ioSkins ? 'SKIN CONFIG' : ioOwn ? 'OPERATOR ROSTER' : ioDiy ? 'SELF-SELECT SQUAD' : 'OPERATOR LOADOUT'}
       actions=${io.mode === 'export'
         ? html`<${Button} variant="ghost" onClick=${() => setIo(null)}>${t('关闭')}<//>
             <${Button} variant="secondary" icon="copy" data-testid="loadout-io-copy" onClick=${ioCopy}>${t('复制')}<//>
             <${Button} variant="primary" data-testid="loadout-io-download" onClick=${ioDownload}>${t('下载文件')}<//>`
         : html`<${Button} variant="ghost" onClick=${() => setIo(null)}>${t('取消')}<//>
             <${Button} variant="secondary" data-testid="loadout-io-pick" onClick=${ioPick}>${t('选择文件')}<//>
-            <${Button} variant="primary" icon="check" data-testid="loadout-io-apply" disabled=${!ioText.trim() || !ready} onClick=${ioApply}>${t('导入')}<//>`}>
-      <p class="lo-io__hint">${ioDiy
+            <${Button} variant="primary" icon="check" data-testid="loadout-io-apply" disabled=${!ioText.trim() || (!ioSkins && !ready)} onClick=${ioApply}>${t('导入')}<//>`}>
+      <p class="lo-io__hint">${ioSkins
+        ? (io.mode === 'export'
+          ? html`${tParts('共 {n} 名干员的皮肤已配置。复制或下载这份数据，即可在别的服务器或浏览器上导入。', { n: html`<b class="num">${nSkinChoices}</b>`, count: nSkinChoices })}`
+          : html`${tParts('把导出的皮肤配置粘贴到下方，或点「选择文件」。导入会{overwrite}当前的皮肤配置。', { overwrite: html`<strong>${t('覆盖')}</strong>` })}`)
+        : ioDiy
         ? (io.mode === 'export'
           ? t('共 {n} 个自选名额已选择。复制或下载这份数据，即可在别的设备或浏览器上导入。', { n: nDiy })
           : t('把导出的自选编队数据粘贴到下方，或点「选择文件」。导入会覆盖当前的自选编队。'))

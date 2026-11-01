@@ -465,6 +465,10 @@ export function highestBondRecord(records) {
  * @param {{ v: number, records: any[], newer?: boolean }} stats
  * @returns {boolean} whether a write stuck
  */
+const listeners = new Set();
+/** Stats changed on this browser (a saveStats stuck): the open 统计数据 reloads (screens/stats.js). */
+export function subscribeStats(listener) { listeners.add(listener); return () => listeners.delete(listener); }
+
 export function saveStats(stats) {
   if (stats.newer) return false;
   let recs = fitToBudget(stats.records.filter(r => r.test !== true));
@@ -473,6 +477,7 @@ export function saveStats(stats) {
       const ls = globalThis.localStorage;
       if (!ls) return false; // no storage at all (disabled by the browser)
       ls.setItem(FULL_KEY, JSON.stringify({ v: STATS_VERSION, records: recs }));
+      for (const l of listeners) { try { l(); } catch { /* a dead listener never blocks a save */ } }
       return true;
     } catch { /* quota or storage disabled — fall through to shrinking */ }
     if (recs.length <= 8) return false; // a small history that still does not fit is foreign quota pressure

@@ -2,9 +2,14 @@
 // `entry/entry_bkg_01` / `entry_bkg_02`, a plain dark field without the art pack; their position, size and opacity in
 // css/screens/lobby.css are eyeballed from the event video [ASSUMED]), the emblem in radar rings and the title in the
 // middle, the 成就统计 card, the 密钥加入 tile and 作战提示 at the left, the light S.W.E.E.P.报告 (screens/sweep.js: 盟约 /
-// 策略 / 敌方资料 and the enemy codex) and 干员调配 plates at the right, and the two entries at the bottom right:
+// 策略 / 敌方资料 and the enemy codex) and 干员调配 plates at the right, and the three entries at the bottom right:
 //   - 独立模拟 → 选择模拟协议 (ProtocolSelect): the difficulty (标准/险境/绝境/终极) cards beside its official picture
 //     (`modeChoice/*_rhodes_island`), then 开始独立模拟.
+//   - 同盟匹配 → the same 选择模拟协议 full screen (ProtocolSelect at roomMode 'match': the 搜寻队友 FIND ALLIES
+//     subtitle on the title, the version's offered difficulties as the big cards with the 已选定 stamp, the 精确搜寻
+//     note as the hint), whose button is 开始搜寻 — the matchmaking's `queue.join`, at the picked difficulty
+//     [ASSUMED: no dedicated quick-match protocol]; while the queue runs the button is 停止搜寻 and the 搜寻中 overlay
+//     (SearchPanel) shows the wait once the screen closed on a found offer.
 //   - 同盟模拟 (or 密钥加入) → 选择同盟方式 (AllianceSelect), as in the event's 联合模拟 (research 06 §3.2): 创建同盟 creates
 //     the room at once — at the remembered difficulty (`sp.pref.lobby.difficulty`, 标准 at first), which the host changes
 //     in the room (screens/room.js: the difficulty pill opens this module's ProtocolSelect with 确认; the maintainer's
@@ -13,14 +18,17 @@
 //     (加入同盟) or in one of its MAX_SPECTATORS spectator seats (观战: room.spectate, also while its match runs;
 //     community report #26, a remake feature — the official room has none). The key field is the project's TextField (IME-safe Enter, the normalised
 //     key written back, no length cap before normalizeCode: a long pasted invite link must reach it whole).
-// The 成就统计 card is the lobby's statistics entry (the maintainer's decision of 2026-10-21: the top bar's 统计数据 chip
-// is gone): it opens the 成就统计 window (screens/stats.js AchievementDialog), whose 查看完整统计 opens 统计数据. The
+// The left column's statistics entries are the dev line's (ported 2026-11-01, replacing the 成就统计 card and its
+// window): AchievementEntry (ui/achievements.js, the hex achievement marks) opens the 成就统计 panel, and the
+// 统计数据 tile opens the tabbed stats screen (screens/stats.js: 概览 / 盟约&策略 / 战斗统计 / 对局记录). The
 // top bar's right keeps the local account chip (ui/accounts.js AccountMeChip, ported from the user's fork: the avatar,
 // the name #tag, the account panel) — its panel doubles as a 统计数据 entry. The
 // 密钥加入 tile is a remake shortcut to 选择同盟方式 [ASSUMED: the event's hub has no such tile].
 // Both dialogs are the project's Modal (focus trap, Esc, focus restored) styled to fill the screen. The top bar shows
-// connection status + ping, and 大厅背景与音乐 (ui/lobbyMedia.js, PR #643 split 8): a lobby scene, the player's own
-// picture / video over the official backdrop and own lobby music, kept in this browser only.
+// connection status + ping, the 当前在线人数 pill (ui/onlineCount.js, GET /api/online — moved off the title screen's
+// top-left corner, where the user's reference shot has only 返回 + ping) and 大厅背景与音乐 (ui/lobbyMedia.js,
+// PR #643 split 8): a lobby scene, the player's own picture / video over the official backdrop and own lobby music,
+// kept in this browser only.
 //
 // Difficulty descriptions come from data/config.json `modes[modeId]` when present, else from the
 // official act2autochess `modeDataDict` texts embedded below (desc + effectDescList), so the
@@ -39,19 +47,18 @@
 import { TestMark } from '../ui/testConsole.js';
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
 import { AccountMeChip } from '../ui/accounts.js';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
+import { useEffect, useLayoutEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, MAX_SPECTATORS, modeIdFor, ERR } from '../../../shared/constants.js';
 import { html, confirmDialog, Button, Icon, MicroLabel, Modal, PingPill, Spinner, DifficultyIcon, TextField } from '../ui/components.js';
-import { Sprite, Img } from '../ui/gameComponents.js';
+import { Sprite } from '../ui/gameComponents.js';
 import { uiUrl } from '../ui/assetUrls.js';
-import { peekStatsRecords, trophyMedalOf, aggregateStats, recordsOfSeason } from '../ui/stats.js';
-import { levelProgress, levelOf } from './settle.js';
 import { OwnBackdrop, LobbyScene, LobbyMediaButton } from '../ui/lobbyMedia.js';
 import { toast, toastError } from '../ui/toasts.js';
 import { GuideButton, openGuide } from '../ui/guide.js';
 import { RadarScene, CreateArt, JoinArt } from '../ui/allyArt.js';
 import { ProtocolScene } from '../ui/protocolScene.js';
-import { AchievementDialog, openStats, useStatsOpen } from './stats.js';
+import { openStats } from './stats.js';
+import { AchievementEntry, AchievementPanel } from '../ui/achievements.js';
 import { SweepReport } from './sweep.js';
 import { Emblem } from './title.js';
 import { SettingsButton } from '../ui/settings.js';
@@ -68,9 +75,10 @@ import { data, getConfig, getMode, getStage, useData } from '../data.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { scriptOf } from '../../../shared/i18nPacks.js';
 import { NoticesButton } from '../ui/notices.js';
+import { useOnlineCount } from '../ui/onlineCount.js';
 import { VersionSwitch } from '../ui/versionPicker.js';
 import { contentSet, retryContentSet } from '../content.js';
-import { DEFAULT_VERSION, lobbyVersion, offeredDifficulties, fallbackDifficulty, seasonOf, soloTimedOf, soloTimeMsgid, versionLabel } from '../versions.js';
+import { DEFAULT_VERSION, lobbyVersion, offeredDifficulties, fallbackDifficulty, soloTimedOf, soloTimeMsgid, versionLabel } from '../versions.js';
 
 /** Official mode texts (activity_table act2autochess.modeDataDict), fallback when config.json is absent. */
 export const MODE_TEXT = {
@@ -133,6 +141,14 @@ const MODE_CARDS = [
     points: [N_('1–{n} 名博士 · 可由 AI 队友补位'), N_('联防阶段 · 最终攻势合并生命值')], pointParams: { n: MAX_SEATS },
     // the hub's line above the entry on a short screen, where the whole line is wider than the entry (§35.51)
     pointShort: N_('1–{n} 名博士'),
+  },
+  {
+    // 同盟匹配 (移植自用户分支的匹配流程): the third entry — the 选择模拟协议 full screen (ProtocolSelect at roomMode
+    // 'match'), whose 开始搜寻 sends the matchmaking's `queue.join` [ASSUMED: no dedicated quick-match protocol
+    // exists; the entry reuses that path and the SearchPanel overlay shows the wait].
+    id: 'match', name: N_('同盟匹配'), en: 'ALLIANCE MATCH', icon: 'search',
+    desc: N_('进入同盟匹配：与其他选择相同难度的博士快速组成同盟。'),
+    points: [N_('与相同难度的博士快速组队')],
   },
 ];
 
@@ -353,7 +369,8 @@ function ProtoFit() {
 }
 
 /**
- * One of the two entries at the bottom right of the hub (独立模拟 / 同盟模拟), with its line above it: opens its dialog.
+ * One of the entries at the bottom right of the hub (独立模拟 / 同盟模拟 / 同盟匹配), with its line above it:
+ * opens its dialog (ProtocolSelect / AllianceSelect / the match ProtocolSelect).
  * `timePoint` (the solo card only): the version's time rule after 「1 名博士」. Absent, the markup is today's — the
  * co-op card's long/short pair, or the solo card's single line. `timeShort` replaces the phone line; absent, the phone
  * keeps points[0] (「1 名博士」).
@@ -379,47 +396,10 @@ export function HubEntry({ card, onOpen, timePoint = null, timeShort = null }) {
 /**
  * The hub's top-left 成就统计 card (#643's, from the event video) — the lobby's statistics entry: a dusk scene with the
  * emblem, the trophy medal and count, and the label strip with the LV, all from this browser's records (ui/stats.js
- * peekStatsRecords, read only; no account). The LV is counted as the settlement counts it (screens/settle.js
- * levelProgress), the trophies as the window it opens counts them (ui/stats.js aggregateStats, the same number as its
- * 获得奖杯 and 统计数据's). Read again whenever 统计数据 closes (an import or 清空 there changes them). Opens the 成就统计
- * window (screens/stats.js AchievementDialog; its 查看完整统计 opens 统计数据).
+ * peekStatsRecords, read only; no account). Replaced on 2026-11-01 by the dev line's AchievementEntry +
+ * AchievementPanel (ui/achievements.js) and the 统计数据 tile (screens/stats.js, the tabbed screen).
  */
-function AchievementCard({ onOpen }) {
-  useData('config'); useData('assets');
-  const cfg = data.get('config');
-  const statsOpen = useStatsOpen();
-  // the LV of the season shown (DESIGN §35.23: 第一期's records count toward 第一期's levels)
-  const season = useStore((s) => seasonOf(lobbyVersion(s)));
-  const { prog, trophies } = useMemo(() => {
-    const records = recordsOfSeason(peekStatsRecords(), season);
-    return { prog: levelProgress(records, { counted: false, rewards: cfg?.rewards }), trophies: aggregateStats(records).trophies };
-  }, [cfg, statsOpen, season]);
-  const lv = levelOf(prog.before, cfg?.rewards?.milestones);
-  const medal = trophyMedalOf(trophies, cfg?.trophies?.medals);
-  return html`<button type="button" class="hub-ach" onClick=${onOpen} title=${t('成就统计（本机记录）')}>
-    <span class="hub-ach__scene" aria-hidden="true">
-      <svg class="hub-ach__land" viewBox="0 0 320 110" preserveAspectRatio="none">
-        <defs><linearGradient id="hubAchSky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#2a2114" /><stop offset=".5" stop-color="#b8741c" /><stop offset="1" stop-color="#f0a636" /></linearGradient></defs>
-        <rect width="320" height="110" fill="url(#hubAchSky)" />
-        <path d="M0 110V80l28-12 22 9 34-27 27 18 30-13 41 23 27-11 31 17 33-21 47 25V110z" fill="#3a2a16" />
-        <path d="M0 110V94l46-11 41 8 50-15 44 13 50-9 40 11 49-7V110z" fill="#18120b" />
-        <path d="M262 110V70M262 80l-9-8M262 76l8-7M262 86l10-6" stroke="#18120b" stroke-width="2.5" fill="none" />
-      </svg>
-      <span class="hub-ach__mark"><${Emblem} /></span>
-      <span class="hub-ach__rank">
-        <${Img} src=${medal ? uiUrl(data.get('assets'), `medalIcon/${medal.iconId}`) : null} class="hub-ach__medal" fallback=${html`<${Icon} name="rook" />`} />
-        <small><${Icon} name="crown" /><b class="num">${trophies}</b></small>
-      </span>
-    </span>
-    <span class="hub-ach__label">
-      <${AchBadge} class="hub-ach__badge" />
-      <span>${t('成就统计')}</span><b class="hub-ach__lv num">LV.${lv.lv}</b>
-    </span>
-  </button>`;
-}
 
-/** The 成就统计 label's badge (original drawing). */
 function AchBadge({ class: cls }) {
   return html`<svg class=${cls} viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 3h14v12l-7 6-7-6zm4 5v2h2V8zm4 0v2h2V8zm-4.5 4.2a4.5 4.5 0 0 0 7 0l-1.3-1a3 3 0 0 1-4.4 0z" fill-rule="evenodd" /></svg>`;
 }
@@ -520,14 +500,16 @@ function BackPlate({ onClick, class: cls = '' }) {
 /**
  * 选择模拟协议 (laid out after the event's second screen): full screen — the selected difficulty's official picture and
  * brief at the left, the four difficulty cards down the right (the chosen one slides out with the 已选定 stamp), the hint
- * and 开始独立模拟 below them (with the test-room box while the server runs in test mode). The project's Modal (focus
- * trap, Esc, focus restored) styled to fill the screen. The lobby opens it for 独立模拟 only (a co-op room is created
- * from 选择同盟方式 and its difficulty changed in the room); the room (screens/room.js) opens it with `action` / `hint`
- * replacing the button's label and the hint (the host's 确认), or `readOnly` — the cards shown, not chosen, and no
- * button (the other doctors: the host chooses).
+ * and the big button below them (with the test-room box while the server runs in test mode). The project's Modal (focus
+ * trap, Esc, focus restored) styled to fill the screen. The lobby opens it for 独立模拟 and for 同盟匹配 (the match one:
+ * `modeLabel`/`modeEn` put 搜寻队友 FIND ALLIES on the title, the hint is the 精确搜寻 line, the button is the caller's
+ * 开始搜寻 / 停止搜寻 through `action`, its send shows through `busyKey`); a co-op room is created from 选择同盟方式 and
+ * its difficulty changed in the room. The room (screens/room.js) opens it with `action` / `hint` replacing the button's
+ * label and the hint (the host's 确认), or `readOnly` — the cards shown, not chosen, and no button (the other doctors:
+ * the host chooses).
  */
 export function ProtocolSelect({ roomMode, difficulty, onDifficulty, onClose, onCreate, busy, online, testMode, asTest, onTest, action = null, hint = null, readOnly = false,
-  difficulties = DIFFICULTIES, loading = false, failed = false, soloTime = null }) {
+  difficulties = DIFFICULTIES, loading = false, failed = false, soloTime = null, modeLabel = null, modeEn = null, busyKey = 'create' }) {
   const card = MODE_CARDS.find((c) => c.id === roomMode) || MODE_CARDS[0];
   const info = difficultyInfo(roomMode, difficulty);
   const label = action || (roomMode === 'solo' ? t('开始独立模拟') : t('创建同盟'));
@@ -539,7 +521,7 @@ export function ProtocolSelect({ roomMode, difficulty, onDifficulty, onClose, on
         <${BackPlate} onClick=${onClose} class="proto__back" />
         <div class="proto-title">
           <h2 class="modal__title">${t('选择模拟协议')}</h2>
-          <span class="proto-title__mode"><${Icon} name=${card.icon} />${t(card.name)}<i>${card.en}</i></span>
+          <span class="proto-title__mode"><${Icon} name=${card.icon} />${modeLabel != null ? modeLabel : t(card.name)}<i>${modeEn || card.en}</i></span>
         </div>
       </header>
       <div class="proto-body">
@@ -580,9 +562,9 @@ export function ProtocolSelect({ roomMode, difficulty, onDifficulty, onClose, on
                 ? hint ?? (roomMode === 'solo' ? t('创建后即可开始模拟') : t('创建后可邀请好友或添加 AI 队友'))
                 : html`<${Spinner} size="sm" label="CONNECTING" /> ${t('正在连接服务器…')}`}
             </p>
-            <button type="button" class="proto-start" disabled=${!online || busy === 'create' || loading} aria-busy=${busy === 'create' ? 'true' : 'false'} onClick=${onCreate}>
+            <button type="button" class="proto-start" disabled=${!online || busy === busyKey || loading} aria-busy=${busy === busyKey ? 'true' : 'false'} onClick=${onCreate}>
               <span class="proto-start__mark" aria-hidden="true"><span class="proto-start__rook"><i>[</i><${Icon} name="rook" /><i>]</i></span><small>STRONGHOLD<br />PROTOCOL</small></span>
-              <span class="proto-start__label">${busy === 'create' ? html`<${Spinner} size="sm" />` : null}${label}</span>
+              <span class="proto-start__label">${busy === busyKey ? html`<${Spinner} size="sm" />` : null}${label}</span>
               <span class="proto-start__deco" aria-hidden="true"></span>
             </button>
           </div>`}
@@ -605,7 +587,7 @@ export function ProtocolSelect({ roomMode, difficulty, onDifficulty, onClose, on
  * `placeholderShort`, by the field's width: English and Japanese at 特大 on every desktop, the default Chinese at 特大
  * in a 1024 px window — it ended in an ellipsis there).
  */
-export function AllianceSelect({ onClose, onCreate, onSearch, difficulty = 'FUNNY', code, onCode, codeOk, online, busy, onJoin, onSpectate, recent, marks, focusKey,
+export function AllianceSelect({ onClose, onCreate, difficulty = 'FUNNY', code, onCode, codeOk, online, busy, onJoin, onSpectate, recent, marks, focusKey,
   testMode = false, asTest = false, onTest = () => {}, short = false }) {
   const diffName = DIFFICULTY_NAMES[difficulty] ? t(DIFFICULTY_NAMES[difficulty]) : '';
   return html`<${Modal} open=${true} onClose=${onClose} class="ally" veilClass="proto-veil">
@@ -635,10 +617,6 @@ export function AllianceSelect({ onClose, onCreate, onSearch, difficulty = 'FUNN
             <span>${t('测试房间')}</span>
             <em class="t-dim">${t('不计入战绩。房间会标明「测试」，只有房主能使用测试指令。')}</em>
           </label>` : null}
-          <button type="button" class="ally-search" data-testid="alliance-search" disabled=${!online || busy === 'search'} onClick=${() => onSearch()}
-            title=${t('精确搜寻：只与选择相同难度的博士组成同盟')}>
-            <${Icon} name="search" />${t('开始搜寻')}${busy === 'search' ? html`<${Spinner} size="sm" />` : null}
-          </button>
           <div class="ally-card ally-card--join ally-join join-row">
             <span class="ally-card__art"><${JoinArt} /></span>
             <div class="ally-key">
@@ -668,6 +646,7 @@ export function AllianceSelect({ onClose, onCreate, onSearch, difficulty = 'FUNN
 /** Lobby screen component. */
 export function LobbyScreen() {
   const conn = useStore((s) => s.connection, shallowEqual);
+  const me = useStore((s) => s.me, shallowEqual);
   useData('config', 'assets');
   const [difficulty, setDifficulty] = useState(() => {
     const d = loadPref('lobby.difficulty', 'FUNNY');
@@ -676,9 +655,10 @@ export function LobbyScreen() {
   // 「不限时」 for the next timed solo (DESIGN §35.23.10; default off). The room's 模拟设置 is the authority once the
   // room exists; this pref is what the lobby card and the create message say before that.
   const [soloFree, setSoloFree] = useState(() => loadPref('lobby.soloUnlimited', false) === true);
-  // the open dialogs: 选择同盟方式 (同盟模拟 / 密钥加入) and 选择模拟协议 (独立模拟)
+  // the open dialogs: 选择同盟方式 (同盟模拟 / 密钥加入) and 选择模拟协议 (独立模拟 / 同盟匹配)
   const [allyOpen, setAllyOpen] = useState(false);
   const [soloOpen, setSoloOpen] = useState(false);
+  const [matchOpen, setMatchOpen] = useState(false);
   const [code, setCode] = useState('');
   const [asTest, setAsTest] = useState(false);
   const testMode = useStore((s) => s.testMode === true);
@@ -695,8 +675,8 @@ export function LobbyScreen() {
 
   const online = conn.status === 'online';
   const codeOk = CODE_RE.test(code);
-  // 同盟匹配 (移植自用户分支, server/matchmaking.js): 大厅的搜寻以本屏难度入队;票据的完整快照(queue.state)
-  // 投影在 store.matchmaking —— { status: 'searching', difficulty, joinedAt, players, target, offerId… }。
+  // 同盟匹配 (移植自用户分支, server/matchmaking.js): 大厅的搜寻以所选难度入队 (同盟匹配's 选择模拟协议; 无参时本屏难度);
+  // 票据的完整快照(queue.state)投影在 store.matchmaking —— { status: 'searching', difficulty, joinedAt, players, target, offerId… }。
   const mm = useStore((s) => s.matchmaking, shallowEqual);
   const isSearching = mm?.status === 'searching';
   const [, setMmTick] = useState(0);
@@ -706,12 +686,16 @@ export function LobbyScreen() {
     return () => clearInterval(timer);
   }, [isSearching, mm?.joinedAt]);
   const mmElapsed = isSearching && mm.joinedAt ? Math.max(0, Math.floor((serverNow() - mm.joinedAt) / 1000)) : 0;
+  // a found offer hands over to the rs-offer dock: the match 选择模拟协议 closes so the offer card is on top
+  useEffect(() => { if (matchOpen && mm?.offerId) setMatchOpen(false); }, [matchOpen, mm?.offerId]);
   // overlay 淡出期间保持挂载 (移植自用户分支)
   const [searchShown, searchLeaving] = usePresence(isSearching, 220);
   // official versions (DESIGN §35.23): the lobby's version, the difficulties it offers and the one shown — the remembered
   // one, or the server's fallback when the version lacks it (the pref is only overwritten when the player picks)
   const versions = useStore((s) => s.versions);
   const version = useStore(lobbyVersion);
+  // 当前在线人数 (合并自用户分支): the top-left pill beside the ping capsule, hidden until the server answers
+  const onlineCount = useOnlineCount();
   const versionLoading = useStore((c) => version !== DEFAULT_VERSION && (c.kind !== 'version' || c.version !== version || c.status !== 'ready'), Object.is, contentSet);
   // its set failed to load or its check (the chip's 重试 sits under the modal): 选择模拟协议 says so and offers 重试 too
   const versionFailed = useStore((c) => version !== DEFAULT_VERSION && c.kind === 'version' && c.version === version && c.status === 'failed', Object.is, contentSet);
@@ -723,7 +707,8 @@ export function LobbyScreen() {
   const shownSolo = fallbackDifficulty(solo, difficulty);
   const shownCoop = fallbackDifficulty(coop, difficulty);
 
-  const openMode = (m) => { if (m === 'solo') setSoloOpen(true); else setAllyOpen(true); };
+  // 同盟匹配's card opens the match 选择模拟协议 (the solo screen's sibling)
+  const openMode = (m) => { if (m === 'solo') setSoloOpen(true); else if (m === 'match') setMatchOpen(true); else setAllyOpen(true); };
   const pickDifficulty = (d) => { setDifficulty(d); savePref('lobby.difficulty', d); };
   const setSoloFreePref = (on) => { const next = on === true; setSoloFree(next); savePref('lobby.soloUnlimited', next); };
 
@@ -743,9 +728,13 @@ export function LobbyScreen() {
     mode, difficulty: mode === 'solo' ? shownSolo : shownCoop, ...(testMode && asTest ? { test: true } : {}), ...(versions ? { version } : {}),
     ...(mode === 'solo' && soloFree && soloTimed === true ? { soloUnlimited: true } : {}),
   }));
-  // 大厅的搜寻/取消/确认 (移植自用户分支): queue.join 以本屏难度入队;确认入场需要报价里的每个真人;
-  // 创建或加入房间时服务器会自行撤票 (lobby.create/join 的 leaveQueue)。
-  const queueMatch = () => run('search', () => net.request('queue.join', { difficulty: shownCoop }));
+  // 大厅的搜寻/取消/确认 (移植自用户分支): queue.join 以所选难度入队 (同盟匹配's 选择模拟协议 pick; 无参时仍是本屏难度);
+  // 确认入场需要报价里的每个真人; 创建或加入房间时服务器会自行撤票 (lobby.create/join 的 leaveQueue)。
+  const queueMatch = (d) => run('search', () => net.request('queue.join', { difficulty: d || shownCoop }));
+  // a pick on the screen only selects (pickDifficulty, the remembered difficulty as solo's is); the screen's 开始搜寻
+  // closes it and joins the queue at the selection — the 搜寻中 overlay (SearchPanel) takes over; while the queue runs
+  // the screen's button is 停止搜寻 instead, and a found offer closes the screen for the offer dock (the effect above)
+  const startMatch = () => { if (isSearching) cancelMatch(); else { setMatchOpen(false); queueMatch(); } };
   const cancelMatch = () => run('cancel', () => net.request('queue.cancel', { ticketId: mm?.ticketId }));
   const acceptMatch = () => run('accept', () => net.request('queue.accept', { ticketId: mm?.ticketId, offerId: mm?.offerId }));
   const join = (c = code) => {
@@ -779,12 +768,16 @@ export function LobbyScreen() {
     ? run('cancel', async () => { await net.request('queue.cancel', { ticketId: mm?.ticketId }); identity.setEntered(false); store.set((s) => ({ session: { ...s.session, entered: false } })); })
     : (identity.setEntered(false), store.set((s) => ({ session: { ...s.session, entered: false } })));
 
-  return html`<div class="screen lobby-screen lobby-hub">
+  return html`<div class=${`screen lobby-screen lobby-hub${isSearching ? ' lobby-hub--searching' : ''}`}>
     <${HubBackdrop} />
     <header class="topbar">
       <div class="topbar__left">
         <${Button} variant="ghost" size="sm" icon="chevronLeft" onClick=${backToTitle} title=${t('返回标题')}>${t('返回')}<//>
         <${PingPill} ms=${conn.ping} online=${online} />
+        ${onlineCount == null ? null : html`<span class="ping ping--low topbar-online" title=${t('当前在线人数')}>
+          <span class="status-dot is-on"></span>
+          <span class="ping__value">${onlineCount}</span><span class="ping__unit">${t('人在线')}</span>
+        </span>`}
         <span class="topbar__sep" aria-hidden="true"></span>
         <div class="topbar__tools">
           <${NoticesButton} />
@@ -805,14 +798,17 @@ export function LobbyScreen() {
     <main class="hub-stage">
       <${HubTitle} />
       <aside class="hub-side">
-        <${AchievementCard} onOpen=${() => setAchOpen(true)} />
+        <${AchievementEntry} key=${achOpen ? 'open' : 'shut'} onOpen=${() => setAchOpen(true)} />
+        <${HubTile} icon="chart" label=${t('统计数据')} en="STATISTICS" onClick=${() => openStats('overview')} />
         <${HubTile} icon="key" label=${t('密钥加入')} en="JOIN WITH KEY" class="hub-tile--key" onClick=${() => setAllyOpen(true)} />
         <${TipsPanel} />
       </aside>
       <aside class="hub-right">
         <${AnnouncementCard} />
-        <${SweepPlate} onClick=${() => setSweepOpen(true)} />
-        <${LoadoutButton} from="lobby" size="lg" class="hub-plate hub-plate--loadout lobby-loadout" label=${t('干员调配')} />
+        <div class="hub-right__plates">
+          <${SweepPlate} onClick=${() => setSweepOpen(true)} />
+          <${LoadoutButton} from="lobby" size="lg" class="hub-plate hub-plate--loadout lobby-loadout" label=${t('干员调配')} />
+        </div>
         <${AchievementPlate} onOpen=${() => setAchOpen(true)} />
       </aside>
       <section class="hub-entries" aria-label=${t('模拟方式')}>
@@ -826,7 +822,6 @@ export function LobbyScreen() {
     </main>
 
     ${allyOpen ? html`<${AllianceSelect} onClose=${() => setAllyOpen(false)} onCreate=${() => create('coop')} difficulty=${shownCoop}
-      onSearch=${() => { setAllyOpen(false); queueMatch(); }}
       code=${code} onCode=${(v) => setCode(normalizeCode(v))} codeOk=${codeOk} online=${online} busy=${busy}
       onJoin=${join} onSpectate=${spectate} recent=${recent} marks=${marks} focusKey=${!coarse}
       testMode=${testMode} asTest=${asTest} onTest=${setAsTest} short=${shortScreen} />` : null}
@@ -834,8 +829,13 @@ export function LobbyScreen() {
       onClose=${() => setSoloOpen(false)} onCreate=${() => create('solo')} busy=${busy} online=${online}
       testMode=${testMode} asTest=${asTest} onTest=${setAsTest} difficulties=${solo} loading=${versionLoading} failed=${versionFailed}
       soloTime=${soloTimed === true ? { on: soloFree, onToggle: setSoloFreePref } : null} />` : null}
+    ${matchOpen ? html`<${ProtocolSelect} roomMode="match" difficulty=${shownCoop} onDifficulty=${pickDifficulty}
+      onClose=${() => setMatchOpen(false)} onCreate=${startMatch} busy=${busy} busyKey="search" online=${online}
+      difficulties=${coop} loading=${versionLoading} failed=${versionFailed}
+      modeLabel=${t('搜寻队友')} modeEn="FIND ALLIES" action=${isSearching ? t('停止搜寻') : t('开始搜寻')}
+      hint=${t('精确搜寻：只与选择相同难度的博士组成同盟，凑齐后全员确认入场')} />` : null}
     ${sweepOpen ? html`<${SweepReport} onClose=${() => setSweepOpen(false)} />` : null}
-    ${achOpen ? html`<${AchievementDialog} onClose=${() => setAchOpen(false)} />` : null}
+    ${achOpen ? html`<${AchievementPanel} me=${me} onClose=${() => setAchOpen(false)} />` : null}
     ${searchShown ? html`<aside class=${`lobby-search${searchLeaving ? ' is-leaving' : ''}`} role="status">
       ${mm?.offerId ? html`<div class="rs-offer lobby-search__offer">
         <div class="rs-offer__head"><${MicroLabel}>MATCH FOUND<//><h2>${matchmakingTitle(mm)}</h2></div>

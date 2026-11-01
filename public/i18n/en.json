@@ -3520,5 +3520,15 @@
   "预选盟约：{name}": "Bond plan: {name}",
   "预选盟约": "Bond plan",
   "不预选": "No plan",
-  "选择你打算发展的盟约，所有博士都能看到。只作沟通，不影响对局。": "Pick the bond you plan to build. Every Doctor can see it — it is only for coordination and does not affect the match."
+  "选择你打算发展的盟约，所有博士都能看到。只作沟通，不影响对局。": "Pick the bond you plan to build. Every Doctor can see it — it is only for coordination and does not affect the match.",
+  "精英二": "Elite 2",
+  "精英一": "Elite 1",
+  "官方头像": "Official avatars",
+  "上传图片": "Upload an image",
+  "不使用头像：显示名字首字": "No avatar: the first letter of the name is shown",
+  "头像保存在这台设备的浏览器里，不上传服务器；同盟里的博士看不到它。": "The avatar stays in this browser and is never uploaded; the other doctors cannot see it.",
+  "活动头像": "Event avatars",
+  "特殊头像": "Special avatars",
+  "基础头像": "Basic avatars",
+  "动态头像": "Dynamic avatars"
 }

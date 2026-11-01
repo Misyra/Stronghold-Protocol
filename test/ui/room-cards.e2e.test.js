@@ -154,6 +154,12 @@ describe('名片干员 seat cards (real server)', { skip: !ENABLED && 'set SP_E2
       await host.shot('picker');
       await host.page.$eval(`.cardpick__op[data-char="${PICK}"]`, (el) => el.scrollIntoView({ block: 'center' })); // the grid scrolls
       await host.click(`.cardpick__op[data-char="${PICK}"]`);
+      // 移植自用户分支 (feedback #9/#24): an operator with 外观 (精二 / 精一 / its skins) keeps the picker open for its
+      // look row; picking a look closes it — 默认 (the first option) keeps the card at its current behaviour
+      await host.page.waitForSelector('.cardpick__looks', { timeout: 5000 });
+      const looks = await host.page.$$eval('.cardpick__looks .cardpick__look', (els) => els.map((el) => el.title));
+      assert.ok(looks.length >= 2 && looks.includes('精英二') && looks.includes('精英一'), JSON.stringify(looks));
+      await host.click('.cardpick__looks .cardpick__look'); // 默认
       await host.page.waitForFunction(() => !document.querySelector('.modal__box.cardpick'));
 
       // the pick: at once on one's own card, then on the teammate's screen (room.card → seats[].card), and kept as a pref

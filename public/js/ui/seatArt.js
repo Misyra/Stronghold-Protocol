@@ -11,6 +11,8 @@
 
 import { createStore, loadPref, savePref } from '../store.js';
 import { ownerSkin } from './skins.js';
+import { manifestSkinKey } from '../../../shared/skins.js';
+import { N_ } from '../../../shared/i18n.js';
 
 /** 名片干员: the player's own pick (a localStorage pref, sent as room.card). */
 export const CARD_PREF = 'room.card';
@@ -24,8 +26,30 @@ export function parseStoredCard(v) {
   return typeof v === 'string' ? v : '';
 }
 
-/** This browser's pick and its sync state (survives room / match resets like ui/skins.js' store). */
-export const cardStore = createStore({ [CARD_KEY]: parseStoredCard(loadPref(CARD_PREF, '')), [CARD_SYNC_KEY]: 'idle' });
+// ---- 名片外观与头像 (移植自用户分支 ui/seatArt.js, feedback #9 / #24 / #100; B 适配) --------------------------
+// B 的 room.card 只携带 charId (shared/protocol.js 不含 look / avatar 字段, 线协议不动), 所以外观只在本地展示与
+// 存储: CARD_LOOK 留在 localStorage, 只换自己坐席卡的画; 官方玩家头像页在资产清单没有 playerAvatar 资源时优雅
+// 降级为不显示 (ui/opPicker.js)。
+/**
+ * 名片展示外观: the player's own look pick (a local pref; 同盟看不到它, [ASSUMED] B 的适配: fork 把 look 放进
+ * room.card, B 的线协议不含它).
+ */
+export const CARD_LOOK_PREF = 'room.card.look';
+
+/** The store field of the look pick (ui/opPicker.js 的外观行读写它). */
+export const CARD_LOOK_KEY = 'cardLook';
+
+/** A stored look as the store holds it: '' (默认) / 'e2' / 'e1' / a skin id of the picked operator. */
+export function parseStoredLook(v) {
+  return typeof v === 'string' ? v : '';
+}
+
+/** This browser's pick, its look and its sync state (survives room / match resets like ui/skins.js' store). */
+export const cardStore = createStore({
+  [CARD_KEY]: parseStoredCard(loadPref(CARD_PREF, '')),
+  [CARD_LOOK_KEY]: parseStoredLook(loadPref(CARD_LOOK_PREF, '')),
+  [CARD_SYNC_KEY]: 'idle',
+});
 
 /**
  * Pick the 名片干员 ('' = 默认): persisted at once, the sync engine sends it.
@@ -35,6 +59,16 @@ export function setCard(charId) {
   const next = parseStoredCard(charId);
   try { savePref(CARD_PREF, next); } catch { /* private mode: the session keeps it */ }
   cardStore.set({ [CARD_KEY]: next });
+}
+
+/**
+ * Pick the 名片展示外观 ('' = 默认): persisted at once, display only (B 的 room.card 不上报它).
+ * @param {string} look
+ */
+export function setCardLook(look) {
+  const next = parseStoredLook(look);
+  try { savePref(CARD_LOOK_PREF, next); } catch { /* private mode: the session keeps it */ }
+  cardStore.set({ [CARD_LOOK_KEY]: next });
 }
 
 /** FNV-1a of a string (the default portrait: the same operator for a player on every client). */
@@ -134,4 +168,82 @@ export function seatCardSkin(seat, charId, { myId = null, localSkins = {}, playe
 export function seatArtSrc(srcs, failed = []) {
   for (const src of Array.isArray(srcs) ? srcs : []) if (src && !failed.includes(src)) return src;
   return null;
+}
+
+// ---- 外观与头像的画 (移植自用户分支 ui/seatArt.js lookUrl / lookOptions / cardAvatarUrl / officialAvatars; B 适配:
+// B 的清单把皮肤放在 chars[charId].skins[manifestSkinKey(id)], 且坐席卡的默认画随 chess 记录 (非金卡用基础画),
+// 所以 look '' 在这里返回 null — 调用方交回它自己的默认画, B 的默认显示不变) ------------------------------------
+
+const str = (v) => (typeof v === 'string' && v ? v : null);
+const manifestChars = (m) => (m && typeof m.chars === 'object' ? m.chars : null);
+
+/**
+ * An operator's art of a card look from the art manifest alone: `kind` 'avatar' | 'portrait'; look '' = null (默认画是
+ * 调用方的), 'e2' = 精二 (没有精二画则基础画), 'e1' = 基础画, 一个皮肤 id = 该皮肤的画 (只在该干员名下,
+ * manifestSkinKey 归一 id); null when unknown.
+ * @param {any} m the art manifest @param {string} charId @param {string} [look] @param {'avatar'|'portrait'} [kind]
+ */
+export function lookUrl(m, charId, look = '', kind = 'avatar') {
+  if (typeof charId !== 'string' || !m || !look) return null;
+  const c = str(charId) && manifestChars(m)?.[charId];
+  if (!c) return null;
+  if (look === 'e2') return str(c[`${kind}E2`]) || str(c[kind]);
+  if (look === 'e1') return str(c[kind]);
+  const s = typeof c.skins === 'object' && c.skins ? c.skins[manifestSkinKey(look)] : null;
+  return str(s?.[kind]) || str(s?.[`${kind}E2`]);
+}
+
+/**
+ * The looks an operator offers on a card (ui/opPicker.js 的外观行, feedback #9 / #24): [{ id, name, src }] — 默认
+ * (B 的默认画: 有精二画时是精二, 否则基础画), 精二 ('e2', 有精二画时才有), 精一 ('e1', 精二与基础画都有时才有) 和
+ * 该干员清单里有 `kind` 画的每个皮肤; 一项 = 无可选 (外观行不显示).
+ * @param {any} m @param {string} charId @param {'avatar'|'portrait'} kind
+ */
+export function lookOptions(m, charId, kind) {
+  const c = (typeof charId === 'string' && manifestChars(m)?.[charId]) || null;
+  if (!c) return [];
+  const base = str(c[kind]);
+  const e2 = str(c[`${kind}E2`]);
+  const out = [{ id: '', name: N_('默认'), src: e2 || base }];
+  if (e2) out.push({ id: 'e2', name: N_('精英二'), src: e2 });
+  if (e2 && base) out.push({ id: 'e1', name: N_('精英一'), src: base });
+  const skins = c.skins && typeof c.skins === 'object' ? c.skins : {};
+  for (const [id, s] of Object.entries(skins)) {
+    const src = str(s?.[kind]) || str(s?.[`${kind}E2`]);
+    if (src) out.push({ id, name: str(s?.name) || id, src, skin: true });
+  }
+  return out;
+}
+
+/**
+ * 头像: the avatar of an operator (ui/opPicker.js 头像页的干员格子与默认画): its 精二 avatar when the entry has one,
+ * else the base one; `look` 同 lookUrl; null when unknown.
+ * @param {string} charId @param {any} [m] the art manifest @param {string} [look]
+ */
+export function cardAvatarUrl(charId, m = null, look = '') {
+  if (typeof charId !== 'string' || !charId) return null;
+  const c = manifestChars(m)?.[charId];
+  if (!c) return null;
+  if (look) return lookUrl(m, charId, look, 'avatar');
+  return str(c.avatarE2) || str(c.avatar);
+}
+
+/** The groups of the official player avatars (id prefixes), the 头像 picker's second page's order. */
+const OFFICIAL_AVATAR_GROUPS = Object.freeze([
+  { key: 'activity', title: N_('活动头像') }, { key: 'special', title: N_('特殊头像') },
+  { key: 'def', title: N_('基础头像') }, { key: 'dyn', title: N_('动态头像') },
+]);
+
+/**
+ * The official player avatars of the art manifest (feedback #100), by group: [{ key, title, items: [{ id, src }] }].
+ * B 的清单还没有 playerAvatar/* 条目 (本机 public/assets 也没有这些文件), 所以现在恒为 [] — 头像选择器的第二页
+ * 隐藏 (优雅降级); 资产管线将来产出这些资源时此页自动出现.
+ * @param {any} m the art manifest
+ */
+export function officialAvatars(m) {
+  const ui = m?.ui && typeof m.ui === 'object' ? m.ui : {};
+  const ids = Object.keys(ui).filter((k) => k.startsWith('playerAvatar/')).map((k) => k.slice('playerAvatar/'.length))
+    .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+  return OFFICIAL_AVATAR_GROUPS.map((g) => ({ ...g, items: ids.filter((id) => id.startsWith(`avatar_${g.key}_`)).map((id) => ({ id, src: ui[`playerAvatar/${id}`] })) }))
+    .filter((g) => g.items.length);
 }

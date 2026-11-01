@@ -3,13 +3,18 @@
 // (ui/stats.js). Nothing is sent to the server, and only the player on this browser has an account: teammates
 // show no #tag. The surfaces: the hub's top-right chip (screens/lobby.js AccountMeChip — avatar, name #tag, and
 // the 统计数据 entry), the #tag after one's own name on the seat cards / the result plate / chat (AccountTag,
-// decorateChatName), and the account panel (openAccountPanel: avatar pick, the note on what is kept where).
+// decorateChatName), and the account panel (openAccountPanel: the avatar pick — ui/opPicker.js AvatarPicker, the
+// operators' avatars plus the official player avatars when the art manifest has them — or an uploaded picture, and the
+// note on what is kept where).
 // To connect a real account service later, replace this file with one exporting the same names.
 import { html, AvatarFrame, MicroLabel, Icon, Modal, Button } from './components.js';
 import { useEffect, useState } from '../../vendor/hooks.module.js';
 import { render } from '../../vendor/preact.module.js';
 import { store } from '../store.js';
+import { data, useData } from '../data.js';
 import { loadImageElement, recoverImageError } from '../image.js';
+import { cardOperators } from './seatArt.js';
+import { AvatarPicker } from './opPicker.js';
 import { t } from '../../../shared/i18n.js';
 
 /** This module keeps the account in the browser (other modules may check it to word their notes). */
@@ -95,6 +100,12 @@ let host = null;
 function AccountPanel({ onStats, onClose }) {
   const { me } = useCurrentAccount();
   const [busy, setBusy] = useState(false);
+  // 头像选择器 (移植自用户分支 ui/opPicker.js AvatarPicker): the operators' avatars — and the official player avatars
+  // when the art manifest has them (feedback #100; B 的清单暂无, 该页隐藏). The pref's write stays here: a picture URL
+  // string (null = 默认, the name's first letter) in `sp.pref.localAccount`, like the uploaded file's data URL before.
+  useData('chess', 'assets');
+  const [picking, setPicking] = useState(false);
+  const cardList = cardOperators(data.list('chess'));
   const pick = () => {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = 'image/*';
@@ -107,6 +118,7 @@ function AccountPanel({ onStats, onClose }) {
     };
     input.click();
   };
+  const setAvatar = (url) => { profile = { ...load(), avatar: url || null }; write(profile); emit(); };
   const clear = () => { profile = { ...load(), avatar: null }; write(profile); emit(); };
   return html`<${Modal} open=${true} title=${t('本机账号')} micro="LOCAL ACCOUNT" onClose=${onClose}>
     <div class="lacct">
@@ -116,11 +128,14 @@ function AccountPanel({ onStats, onClose }) {
       </div>
       <p class="lacct__note">${t('头像、编号和战绩都保存在这台设备的浏览器里，不上传服务器；换设备或清除浏览器数据后不会保留。昵称跟随游戏里的名字。')}</p>
       <div class="lacct__btns">
-        <${Button} size="sm" variant="secondary" icon="edit" loading=${busy} onClick=${pick}>${t('更换头像')}<//>
+        <${Button} size="sm" variant="secondary" icon="user" onClick=${() => setPicking(true)}>${t('更换头像')}<//>
+        <${Button} size="sm" variant="ghost" icon="edit" loading=${busy} onClick=${pick}>${t('上传图片')}<//>
         ${me.avatar ? html`<${Button} size="sm" variant="ghost" onClick=${clear}>${t('移除头像')}<//>` : null}
         ${onStats ? html`<${Button} size="sm" variant="primary" icon="chart" onClick=${() => { onClose(); onStats(); }}>${t('统计数据')}<//>` : null}
       </div>
     </div>
+    ${picking ? html`<${AvatarPicker} current=${me.avatar} list=${cardList} m=${data.get('assets')}
+      onPick=${setAvatar} onClose=${() => setPicking(false)} />` : null}
   <//>`;
 }
 /** Open the account panel ({ onStats } adds the 统计数据 button). */

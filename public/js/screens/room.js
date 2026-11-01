@@ -51,7 +51,6 @@ import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.
 import { DIFFICULTY_NAMES, DIFFICULTY_COLORS, MAX_SEATS, MAX_SPECTATORS } from '../../../shared/constants.js';
 import {
   html, Button, Icon, MicroLabel, PingPill, AvatarFrame, DifficultyIcon, Tooltip, Spinner, confirmDialog, doctorNo, Modal,
-  TextField,
 } from '../ui/components.js';
 import { toast, toastError } from '../ui/toasts.js';
 import { useGameData, BandIcon } from '../ui/gameComponents.js';
@@ -71,7 +70,8 @@ import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating, serverNow, savePref } from '../store.js';
 import { data, useData, getConfig } from '../data.js';
 import { chessAvatarUrl, chessPortraitUrl } from '../ui/assetUrls.js';
-import { CARD_KEY, cardStore, setCard, cardOperators, cardContext, seatOperator, seatCardSkin, seatArtSrc } from '../ui/seatArt.js';
+import { CARD_KEY, CARD_LOOK_KEY, cardStore, setCard, setCardLook, cardOperators, cardContext, seatOperator, seatCardSkin, seatArtSrc, lookUrl, lookOptions } from '../ui/seatArt.js';
+import { OperatorPicker } from '../ui/opPicker.js';
 import { skinsStore, SKINS_KEY, ownerSkin } from '../ui/skins.js';
 import { settingsStore } from '../ui/settingsStore.js';
 import { difficultyInfo, ProtocolSelect } from './lobby.js';
@@ -212,57 +212,6 @@ export function inviteLink(code) {
  * @returns {Promise<boolean>}
  */
 export { copyText };
-
-/** A picker tile's avatar; the name's first character when the art pack has none or it fails to load. */
-function CardThumb({ src, name }) {
-  const [bad, setBad] = useState(false);
-  return html`<span class="cardpick__img">${src && !bad
-    ? html`<img src=${src} alt="" loading="lazy" draggable=${false} onError=${() => setBad(true)} />`
-    : html`<span class="cardpick__glyph">${[...(name || '?')][0]}</span>`}</span>`;
-}
-
-/**
- * 名片干员 picker (更换立绘 on one's own seat card): the operators a seat card can show (ui/seatArt.js cardOperators —
- * search by name, rarity tabs) and 默认, no pick: the card shows the operator chosen by the player id. Picking closes it;
- * the current choice takes the focus (no on-screen keyboard on a phone). A local picker: each tile wears this browser's
- * outfit for that operator (`localSkins`, docs/SKINS.md), as the card will.
- */
-function CardPicker({ current, list, m, localSkins = {}, onPick, onClose }) {
-  const [q, setQ] = useState('');
-  const [star, setStar] = useState(0);
-  const stars = useMemo(() => [...new Set(list.map((c) => c.rarity).filter((r) => r > 0))].sort((a, b) => b - a), [list]);
-  const known = !!current && list.some((c) => c.charId === current);
-  const needle = q.trim().toLowerCase();
-  const shown = list.filter((c) => (!star || c.rarity === star)
-    && (!needle || [c.name, c.appellation].some((v) => String(v || '').toLowerCase().includes(needle))));
-  return html`<${Modal} open=${true} class="cardpick" micro="SEAT CARD OPERATOR" title=${t('名片干员')} width="min(10.4rem, 96vw)"
-      onClose=${onClose} actions=${html`<${Button} variant="ghost" onClick=${onClose}>${t('关闭')}<//>`}>
-    <div class="cardpick__bar">
-      <${TextField} class="cardpick__search" size="sm" icon="search" value=${q} onInput=${setQ} placeholder=${t('搜索干员')} />
-      <div class="cardpick__stars" role="radiogroup" aria-label=${t('稀有度')}>
-        ${[0, ...stars].map((v) => html`<button key=${v} type="button" role="radio" aria-checked=${star === v ? 'true' : 'false'}
-          class=${star === v ? 'is-on' : ''} onClick=${() => setStar(v)}>${v ? html`<span class="num">${v}★</span>` : t('全部')}</button>`)}
-      </div>
-    </div>
-    <div class="cardpick__grid" data-testid="card-picker">
-      <button type="button" class=${`cardpick__op cardpick__op--auto${known ? '' : ' is-on'}`} aria-pressed=${known ? 'false' : 'true'}
-          data-char="" data-autofocus=${known ? undefined : ''} title=${t('按博士编号自动分配')} onClick=${() => onPick('')}>
-        <span class="cardpick__img"><${Icon} name="refresh" /></span><span class="cardpick__name">${t('默认')}</span>
-      </button>
-      ${shown.map((c) => {
-        const src = chessAvatarUrl(m, c, { skin: ownerSkin(c.charId, { localSkins }) });
-        const on = known && c.charId === current;
-        return html`<button key=${c.charId} type="button" class=${`cardpick__op r${c.rarity}${on ? ' is-on' : ''}`} aria-pressed=${on ? 'true' : 'false'}
-            data-char=${c.charId} data-autofocus=${on ? '' : undefined} title=${c.name} onClick=${() => onPick(c.charId)}>
-          <${CardThumb} src=${src} name=${c.name} />
-          <span class="cardpick__name">${c.name}</span>${c.rarity ? html`<span class="cardpick__star num">${c.rarity}★</span>` : null}
-        </button>`;
-      })}
-    </div>
-    ${shown.length ? null : html`<p class="cardpick__empty">${t('没有符合条件的干员')}</p>`}
-    <p class="cardpick__note"><${Icon} name="info" />${t('选择后，同盟里的博士都会看到这张立绘')}</p>
-  <//>`;
-}
 
 /**
  * One seat: a tall card — the top strip (P#), the 名片干员 portrait (or the avatar frame: a bot, no art pack), 创建者, the
@@ -593,6 +542,8 @@ export function RoomScreen() {
   const cardList = useMemo(() => cardOperators(data.list('chess'), backups), [chess, backups]);
   const cards = useMemo(() => cardContext(cardList, { pending: !backups }), [cardList, backups]);
   const myCard = useStore((s) => s[CARD_KEY], Object.is, cardStore);
+  // 名片展示外观 (移植自用户分支, feedback #9/#24; B 的 room.card 不含 look, 只换自己坐席卡的画): ui/seatArt.js
+  const myLook = useStore((s) => s[CARD_LOOK_KEY], Object.is, cardStore);
   const localSkins = useStore((s) => s[SKINS_KEY], Object.is, skinsStore);
   const otherSkins = useStore((s) => s.otherSkins !== false, Object.is, settingsStore);
   const [picking, setPicking] = useState(false);
@@ -639,8 +590,16 @@ export function RoomScreen() {
     toast(t('同盟已切换到「{version}」', { version: versionLabel(roomVersion(room)) }), 'success');
   }, [room?.code, room?.version]);
   // the room sees one's pick once the server has it (seats[].card): ui/loadoutSync.js installCardSync sends it after
-  // every pick, welcome and content change and retries a RATE / TIMEOUT / OFFLINE refusal (review of PR #813)
-  const pickCard = (charId) => { setCard(charId); setPicking(false); };
+  // every pick, welcome and content change and retries a RATE / TIMEOUT / OFFLINE refusal (review of PR #813).
+  // 名片干员选择器 (移植自用户分支 ui/opPicker.js): picking an operator that offers 外观 (精二 / 精一 / 皮肤) keeps the
+  // picker open for its look row; picking a look (a local pref, ui/seatArt.js setCardLook) closes it.
+  const pickCard = (charId) => {
+    setCard(charId);
+    // 换了干员就清掉上一个干员的外观 (皮肤 id 不属于新干员, 精二/精一也回到默认), 交给外观行重挑
+    if (charId && myLook && !lookUrl(data.get('assets'), charId, myLook, 'portrait')) setCardLook('');
+    if (!charId || lookOptions(data.get('assets'), charId, 'portrait').length < 2) setPicking(false);
+  };
+  const pickLook = (look) => { setCardLook(look); setPicking(false); };
 
   // 同盟匹配的房间侧状态 (移植自用户分支): room.state.matchmaking 是真值(服务器给房间排队,补满或匹配成功时
   // 自行撤单),面板与按钮读它而不是本地意愿;人数与时钟来自玩家侧的 queue.state。
@@ -880,11 +839,15 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
     <main class=${`seats rs-seats${coop ? '' : ' seats--solo'}`}>
       ${facts.seats.map((s, i) => {
         const op = seatOperator(s, cards, { myId: me.playerId, myCard });
-        // the player's outfit for that operator (header "Outfits"); null = the default art
+        // the player's outfit for that operator (header "Outfits"); null = the default art.
+        // 名片展示外观 (移植自用户分支): one's own card wears the locally picked look when it has one — 精二 / 精一 /
+        // that operator's skin (ui/seatArt.js lookUrl); a look leaves the outfit aside until 默认 clears it.
+        const look = s && s.playerId === me.playerId ? myLook : '';
+        const lookSrc = op && look ? lookUrl(data.get('assets'), op.chess.charId, look, 'portrait') : null;
         const skin = op ? seatCardSkin(s, op.chess.charId, { myId: me.playerId, localSkins, players: facts.occupied, otherSkins }) : null;
         return html`<${SeatCard} key=${s ? `p${s.playerId}` : `e${i}`} seat=${s} index=${i} room=${room} facts=${facts}
           myId=${me.playerId} busy=${busy} onAddBot=${addBot} onRemoveBot=${removeBot} onKick=${kick} onInvite=${() => copy('code')}
-          portrait=${op ? chessPortraitUrl(data.get('assets'), op.chess, { skin }) : null}
+          portrait=${op ? (lookSrc || chessPortraitUrl(data.get('assets'), op.chess, { skin })) : null}
           portraitDefault=${op && skin ? chessPortraitUrl(data.get('assets'), op.chess) : null} operator=${op?.chess} onPickCard=${() => setPicking(true)}
           fresh=${shownRoom.current === room.code} bands=${bandList} onBotBand=${setBandSeat} />`;
       })}
@@ -940,7 +903,12 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
             <//>`}
       </div>
     </footer>
-    ${picking ? html`<${CardPicker} current=${myCard} list=${cardList} m=${data.get('assets')} localSkins=${localSkins} onPick=${pickCard} onClose=${() => setPicking(false)} />` : null}
+    ${picking ? html`<${OperatorPicker} title=${t('名片干员')} micro="SEAT CARD OPERATOR" current=${myCard} list=${cardList}
+      m=${data.get('assets')} faceOf=${(c) => chessAvatarUrl(data.get('assets'), c, { skin: ownerSkin(c.charId, { localSkins }) })}
+      autoLabel=${t('默认')} autoTitle=${t('按博士编号自动分配')}
+      looks=${{ kind: 'portrait', current: myLook, onLook: pickLook }}
+      note=${t('选择后，同盟里的博士都会看到这张立绘')}
+      onPick=${pickCard} onClose=${() => setPicking(false)} />` : null}
     ${offerShown ? html`<div class="rs-offer brackets" role="status">
       <div class="rs-offer__head"><${MicroLabel}>MATCH FOUND<//><h2>${t('队友已集结')}</h2></div>
       <${MatchmakingOffer} mm=${mm} online=${online} busy=${busy === 'accept-match'} onAccept=${acceptMatch} />

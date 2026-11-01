@@ -62,8 +62,10 @@ test('the wall gates the badge on draftRecords().badges with the official sprite
 test('the order rows\' name cards wear the doctor\'s outfit (B6, docs/SKINS.md): the seat cards\' seatCardSkin, then chessPortraitUrl', () => {
   const src = read('public/js/screens/bandDraft.js');
   // the rule itself is unit-tested in seat-art.test.js (one's own choice at once, a teammate's public map, the switch)
-  // (§35.51: the outfit's picture, then the default one should the outfit's file fail to load, as on the seat cards)
-  assert.match(src, /const skin = op \? seatCardSkin\(p, op\.chess\.charId, \{ myId, localSkins, players, otherSkins \}\) : null;\n\s+return op \? \[chessPortraitUrl\(data\.get\('assets'\), op\.chess, \{ skin \}\), skin \? chessPortraitUrl\(data\.get\('assets'\), op\.chess\) : null\] : null;/);
+  // (§35.51: the outfit's picture, then the default one should the outfit's file fail to load, as on the seat cards;
+  // the 名片展示外观 look (opPicker port) wins over the outfit while one's own card has one — op-picker.test.js)
+  assert.match(src, /const lookSrc = op && look \? lookUrl\(data\.get\('assets'\), op\.chess\.charId, look, 'portrait'\) : null;/);
+  assert.match(src, /const skin = op \? seatCardSkin\(p, op\.chess\.charId, \{ myId, localSkins, players, otherSkins \}\) : null;\n\s+return op \? \[lookSrc \|\| chessPortraitUrl\(data\.get\('assets'\), op\.chess, \{ skin \}\), skin \? chessPortraitUrl\(data\.get\('assets'\), op\.chess\) : null\] : null;/);
   assert.match(src, /const art = seatArtSrc\(arts, badArt\);/);
   assert.match(src, /<img key=\$\{art\} class="dorder__art" src=\$\{art\}[^>]*onError=\$\{\(\) => setBadArt\(/);
   assert.match(read('docs/SKINS.md'), /strategy draft's name cards/);

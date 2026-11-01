@@ -519,6 +519,48 @@
 .cardpick__empty { flex: none; margin: 0; font-size: calc(.16 * var(--t)); color: var(--text-lo); }
 .cardpick__note { flex: none; display: flex; align-items: center; gap: .06rem; margin: 0; font-size: calc(.15 * var(--t)); color: var(--text-lo); }
 .cardpick__note .icon { flex: none; width: .18rem; height: .18rem; }
+/* the 头像 picker's second tab (官方玩家头像, feedback #100) and the picked operator's looks (名片展示外观, 精二 / 精一 /
+   皮肤, feedback #9 / #24) — 移植自用户分支 ui/opPicker.js, styles from its css */
+.cardpick__tabs { flex: none; display: flex; gap: .06rem; }
+.cardpick__tabs button {
+  min-height: .44rem;
+  padding: 0 .16rem;
+  border: 1px solid var(--line-2);
+  background: none;
+  color: var(--text-md);
+  font-size: calc(.15 * var(--t));
+  cursor: pointer;
+}
+.cardpick__tabs button.is-on { color: var(--text-hi); border-color: var(--mint-400); }
+.cardpick__group { grid-column: 1 / -1; margin: .06rem 0 0; font-size: calc(.15 * var(--t)); color: var(--text-md); }
+.cardpick__looks {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: .08rem;
+  padding: .06rem .08rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  background: rgba(0, 0, 0, .3);
+  border: 1px solid var(--line-2);
+}
+.cardpick__looks-label { flex: none; align-self: center; font-size: calc(.14 * var(--t)); color: var(--text-lo); }
+.cardpick__look {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .02rem;
+  width: max(.72rem, 52px);
+  padding: .03rem;
+  border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, .04);
+  color: var(--text-md);
+  cursor: pointer;
+}
+.cardpick__look.is-on { border-color: var(--mint-400); box-shadow: 0 0 0 1px var(--mint-400); color: var(--text-hi); }
+.cardpick__look.is-tall .cardpick__img { aspect-ratio: 3 / 4; }
+.cardpick__look.is-tall .cardpick__img img { object-position: 50% 8%; }
 
 /* ---- bottom: status, the difficulty pill with ⚙, the big button ------------------------------------------------ */
 .rs-foot {

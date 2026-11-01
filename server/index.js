@@ -72,6 +72,7 @@ import { initializeModeration } from './moderation/nickname.js';
 import { Persister, restoreServerForBoot } from './persist.js';
 import { FileStateStore } from './stateFile.js';
 import { createRedisStore } from './redisState.js';
+import { createValkeyStore, resolvePersistBackend } from './valkeyState.js';
 import { within } from './pathSafety.js';
 import { createAnnouncementReader, createAnnouncementSignal } from './announcement.js';
 import { createTrafficCounter } from './http/traffic.js';
@@ -208,7 +209,8 @@ export async function startServer(opts = {}) {
 
   // 持久化 (server/persist.js + server/stateFile.js, 移植自用户分支): 会话/房间/运行中对局的检查点落盘, 重启恢复。
   // SP_STATE_FILE(目录 → 分片布局, .json 路径 → 单文件, 'off' → 纯内存, 默认 .state/server-<PORT>); 配了
-  // SP_REDIS_URL / REDIS_URL 则改用 Redis 多键后端(server/redisState.js)且不再写文件。启动读失败先不写
+  // SP_REDIS_URL / REDIS_URL 则改用 Redis 多键后端(server/redisState.js)且不再写文件; 配了 SP_VALKEY_URL 则改用
+  // Valkey 后端(server/valkeyState.js, 零依赖 RESP 客户端, 合并自 Stardust fork)。启动读失败先不写
   // (Persister.deferLoad), 每轮写之前重读, 绝不覆盖没读回来的存档。
   const stateFileRaw = opts.stateFile !== undefined ? opts.stateFile : process.env.SP_STATE_FILE;
   const stateFile = typeof stateFileRaw === 'string' && stateFileRaw.trim() === ''
@@ -220,11 +222,18 @@ export async function startServer(opts = {}) {
       if (within(root, absoluteState)) throw new Error('SP_STATE_FILE 不能位于公开静态目录，建议使用 .state/ 或私有数据目录');
     }
   }
-  // Redis（SP_REDIS_URL / REDIS_URL）优先于文件：它是可选后端，连不上就退回内存运行。
-  const redisStore = opts.store === undefined ? createRedisStore({ env: opts.env ?? process.env, log }) : null;
-  const store = opts.store !== undefined ? opts.store : redisStore ?? (stateFile && stateFile !== 'off'
+  // 可选存储后端（server/valkeyState.js）：SP_PERSIST_BACKEND=valkey|redis|file 显式指定；缺省自动——
+  // SP_VALKEY_URL → Valkey（零依赖 RESP 客户端），SP_REDIS_URL / REDIS_URL → Redis，都没配 → 文件（默认，行为不变）。
+  // 可选后端连不上就退回内存运行，不自动回退文件（同一份状态悄悄写两处比停下来更糟）。
+  const backendEnv = opts.env ?? process.env;
+  const backend = opts.store === undefined ? resolvePersistBackend(backendEnv) : null;
+  const valkeyStore = backend === 'valkey' ? createValkeyStore({ env: backendEnv, log }) : null;
+  const redisStore = opts.store === undefined && backend === 'redis' ? createRedisStore({ env: backendEnv, log }) : null;
+  const store = opts.store !== undefined ? opts.store : valkeyStore ?? redisStore ?? (stateFile && stateFile !== 'off'
     ? new FileStateStore({ file: stateFile, log }) : null);
-  if (redisStore) log.info(`[persist] Redis 存储 ${redisStore.label}（键 ${redisStore.prefix}index / runtime / cp:<房间码>）`);
+  if (backend === 'valkey' && !valkeyStore) log.warn('[persist] SP_PERSIST_BACKEND=valkey 但 SP_VALKEY_URL 未配置，退回文件后端');
+  if (valkeyStore) log.info(`[persist] Valkey 存储 ${valkeyStore.label}（键 ${valkeyStore.prefix}index / runtime / cp:<房间码>）`);
+  else if (redisStore) log.info(`[persist] Redis 存储 ${redisStore.label}（键 ${redisStore.prefix}index / runtime / cp:<房间码>）`);
   else if (store) log.info(`[persist] 状态文件 ${store.label}`);
   const persister = store ? new Persister({ store, registry, lobby, log, saveMs: opts.saveMs ?? process.env.SP_STATE_SAVE_MS }) : null;
   if (store && opts.resume !== false) {

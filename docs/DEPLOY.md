@@ -672,11 +672,29 @@ npm start
 | `SP_REDIS_URL` / `REDIS_URL` | （空 = 用文件） | 改用 Redis 后端（`redis://` / `rediss://` / `unix:`），配了就不再写文件。**一个前缀只给一个游戏服**，两个进程同前缀会互相覆盖 |
 | `SP_REDIS_PREFIX` | `stronghold:` | Redis 键前缀（`<前缀>index` / `runtime` / `cp:<房间码>`，与文件分片一一对应） |
 | `SP_REDIS_TTL` | 90000 | 每次写刷新的键过期时间（秒，最小 60）；默认 25 小时 ≈ 最长重连窗口。**Redis 后端不配 AOF/RDB 时重启即丢**——推荐配置见 fork 的 deploy 文档；持久性弱于默认文件布局 |
+| `SP_VALKEY_URL` | （空 = 不启用） | 改用 **Valkey 后端**（`valkey://` / `valkeys://`(TLS) / `redis://` / `rediss://`，可带 `user:pass@` 与 `/库号`）。零 npm 依赖——RESP 协议客户端是本仓自带的（`server/valkeyClient.js`，合并自 Stardust fork）。键布局与 Redis 后端完全相同（`<前缀>index` / `runtime` / `cp:<房间码>` / 旧版 `<前缀>state` 迁移键），配了就不再写文件，优先于 `SP_REDIS_URL` |
+| `SP_VALKEY_PREFIX` | `stronghold:` | Valkey 键前缀；**一个前缀只给一个游戏服**，两个进程同前缀会互相覆盖（与文件后端的独占锁不同，这里靠约定，见下） |
+| `SP_VALKEY_TTL` | 90000 | 每次写刷新的键过期时间（秒，最小 60；默认 25 小时 ≈ 最长重连窗口）。**不配持久化（AOF/RDB）的 Valkey 重启即丢**，持久性弱于默认文件布局 |
+| `SP_VALKEY_PASSWORD_FILE` | （空） | 从文件读密码（去掉行尾换行）；URL 与文件里的密码都不会进日志。坏 URL / 读不到的密码文件会**拒绝启动**，不会悄悄退回文件后端 |
+| `SP_VALKEY_CONNECT_TIMEOUT` / `SP_VALKEY_COMMAND_TIMEOUT` | 3000 / 4000 | 连接 / 单条命令超时（ms）。命令超时按「流是否有进展」计：还在到达中的大回复（满员大厅的启动读）不算停滞 |
+| `SP_PERSIST_BACKEND` | （自动） | 显式指定后端：`valkey` / `redis` / `file`。缺省自动——`SP_VALKEY_URL` → Valkey，`SP_REDIS_URL` / `REDIS_URL` → Redis，都没配 → 文件 |
 
 锁与备份：状态目录带独占锁（另一个活着的游戏进程拿同一路径会拒绝启动；陈锁按 pid 探活自动回收）。升级流程：
 正常停服（关停时先写终档再关大厅）→ 备份状态目录 → 更新 → 启动。坏了的的单个分片只丢那个房间的对局，
 其余照常恢复。`GET /healthz` 的 `persist` 块（`writes` / `failures` / `checkpoints` / `pendingLoad`…）是它的体检面：
 `failures` 增长说明保存有问题，`pendingLoad: true` 说明启动读还没成功、在那之前不会写回以免覆盖存档。
+
+**Valkey 后端（可选，合并自 Stardust fork）**。`SP_VALKEY_URL` 指向一个 Valkey / Redis 兼容存储时的语义：
+
+- **原子性与写序**：一个房间一个检查点键（`<前缀>cp:<房间码>`，单键 SET 原子，没有半份可读）；每轮写按
+  「分片 → index → runtime → 删除不再被点名的分片」落地——索引永远晚于它点名的分片，崩在任何一步都不会
+  出现索引点名一个不存在的分片。与文件 / Redis 后端同一套键布局与读回形状，`restoreServer` 无需分支。
+- **写锁**：`[ASSUMED]` 不加跨进程锁（与 Redis 后端同口径）——单键写由存储串行化，写序保证崩溃一致性；
+  「一个前缀只给一个游戏服」是约定而不是强制，两个进程同前缀会互相覆盖。
+- **降级**：存储连不上或命令失败，命令立即失败（不排队）、本轮保存记入 `failures`、服务器照常内存运行，
+  之后每轮自动重试；**不会自动回退文件后端**（同一份状态悄悄写两处比显式改回 `SP_STATE_FILE` 更糟）。
+  启动读不成功时 `pendingLoad` 挡住所有写，绝不覆盖没读回来的存档；`-LOADING`（存储还在加载数据集）与
+  连接被拒 / 没回音一样按「暂时性失败」等它过去，拒密则立即定论。
 
 ## 13. 性能度量与监控面板（Prometheus / Grafana）
 

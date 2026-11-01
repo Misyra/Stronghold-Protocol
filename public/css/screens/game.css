@@ -233,8 +233,8 @@
 }
 .speedbtn__main { display: flex; align-items: center; gap: .07rem; }
 .speedbtn__ff { width: .19rem; height: .19rem; fill: currentColor; flex: none; }
-.speedbtn__x { font-size: .24rem; font-style: italic; font-weight: 800; letter-spacing: .04em; line-height: 1; }
-.speedbtn__n { font-family: var(--font-num); font-size: .11rem; line-height: 1; opacity: .72; letter-spacing: .05em; }
+.speedbtn__x { font-size: calc(.24 * var(--t)); font-style: italic; font-weight: 800; letter-spacing: .04em; line-height: 1; }
+.speedbtn__n { font-family: var(--font-num); font-size: calc(.11 * var(--t)); line-height: 1; opacity: .72; letter-spacing: .05em; }
 .speedbtn:hover { color: #fff; border-color: rgba(255, 255, 255, .62); }
 .speedbtn.is-voted { border-color: var(--mint-400); color: var(--mint-400);
   background: linear-gradient(165deg, rgba(23, 249, 183, .17), rgba(10, 14, 12, .92) 65%);

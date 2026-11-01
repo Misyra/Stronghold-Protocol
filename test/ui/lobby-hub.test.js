@@ -268,7 +268,7 @@ test('统计数据 (the dev line’s screens/stats.js): the tabbed screen with t
   const stats = readFileSync(path.join(ROOT, 'public/js/screens/stats.js'), 'utf8');
   assert.match(stats, /export function openStats\(tab = 'overview'\)/);
   assert.match(stats, /\['overview', 'bands', 'totals', 'history'\]/, 'the four tabs');
-  assert.match(stats, /useEffect\(\(\) => subscribeStats\(reload\), \[\]\);/, 'an open screen reloads when a match is recorded');
+  assert.match(stats, /const off = subscribeStats\(reload\);/, 'an open screen reloads when a match is recorded');
   // the achievements panel rides on the same records (ui/achievements.js, ported with it); the overview keeps
   // 卫戍成就 (the peak bond record, BondAchievement) like before
   assert.match(stats, /function BondAchievement/);

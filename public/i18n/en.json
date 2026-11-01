@@ -3515,5 +3515,6 @@
   "服务器权威 · 全对局累计（含联防与最终攻势）；本地「作战统计」面板仅统计自己": "Server-authoritative · cumulative over the whole match (Unite and the Final Assault included); the local Combat statistics panel only counts your own units",
   "滑回按下的位置可取消": "Slide back to where you pressed to cancel",
   "部署时按格子吸附": "Snap to tile while deploying",
-  "拖动干员时，干员站在目标格子上逐格移动，松手就落在这一格。关闭时干员跟随手指或鼠标自由移动。": "While dragging, the operator stands on the target tile and moves tile by tile; releasing drops it there. When off, the operator follows your finger or mouse freely."
+  "拖动干员时，干员站在目标格子上逐格移动，松手就落在这一格。关闭时干员跟随手指或鼠标自由移动。": "While dragging, the operator stands on the target tile and moves tile by tile; releasing drops it there. When off, the operator follows your finger or mouse freely.",
+  "{bond}：{names}": "{bond}: {names}"
 }

@@ -10,6 +10,8 @@
 // is reported (g.bandFocus) and the server assigns it while it is free, else 「华法琳」, else the first free strategy
 // (timeoutBand). It starts on that default, so the tip under the order list always names what a timeout gives.
 // Solo, and a co-op match with a single human (the server's soloUntimed: draft.untimed): no clock at all.
+// The left column heads with this match's battlefield (ui/stagePreview.js, fork 2254875e #65): the tile map drawn from
+// the stage's own data beside its name — which strategy suits a match depends on its lanes.
 // A strategy built around a bond the mode switches off (bands.json bondIds ∩ the mode's inactive bonds — 标准: 潘格尼尼
 // 拉特兰, 克莱门莎 阿戈尔, 玛恩纳 卡西米尔; the bot never picks one) reads 本局禁用 on its card and in the detail pane
 // (BandOffTag / BandOffNote, DESIGN §21.26, §21.7's look); it stays selectable — information only.
@@ -40,6 +42,7 @@ import { useGameData, BandIcon, RichText, PlayerAvatar, Sprite, Img } from '../u
 import { StepHeader, ExitModal } from '../ui/matchChrome.js';
 import { MatchInfoDialog, matchInfoModel } from '../ui/matchInfo.js';
 import { MatchEnemies } from '../ui/matchEnemies.js';
+import { StageMiniMap } from '../ui/stagePreview.js';
 import { actions, act } from '../ui/gameActions.js';
 import { normalizeDraft, sortedPlayers } from '../ui/gameLogic.js';
 import { useStore } from '../store.js';
@@ -405,6 +408,13 @@ export function BandDraftScreen({ held = null } = {}) {
   const shownBand = peek ? gd.band(peek) : band;
   const rows = solo ? players.filter((p) => p.playerId === myId) : draft.order.map((pid) => players.find((p) => p.playerId === pid)).filter(Boolean);
 
+  // this match's battlefield above the order rows (ui/stagePreview.js, fork 2254875e #65): which strategy suits a match
+  // depends on its lanes — the tile map is drawn from the stage's own data, so every battlefield of every version has one.
+  // The pool note is the briefing's (ui/matchEnemies.js): 标准 is always 战场#01, 险境+ draw one at random.
+  const stage = pub?.stageId ? gd.stage(pub.stageId) : null;
+  const stagePoolN = Array.isArray(mode?.stages) ? mode.stages.length : 0;
+  const stagePool = stagePoolN > 1 ? t('战场随机（共{poolN}张）', { poolN: stagePoolN }) : stagePoolN === 1 ? t('战场固定') : '';
+
   const head = allPicked ? html`<div class="dturn is-done"><span class="dturn__txt"><b>${t('策略选择完成')}</b><span>${t('正在进入模拟…')}</span></span><${Icon} name="hourglass" class="dturn__glass" /></div>`
     : myTurn ? html`<div class="dturn is-turn">
         <span class="dturn__go"><${Sprite} k="bandChoose/youturn_finger" class="dturn__finger" fallback=${html`<${Icon} name="chevronLeft" class="dturn__finger" />`} />
@@ -429,6 +439,14 @@ export function BandDraftScreen({ held = null } = {}) {
     <main class="draft__main">
       <aside class="draft-order">
         <div class="draft-order__deco" aria-hidden="true"><i></i><i></i><span>STRONGHOLD PROTOCOL<br />${solo ? 'SINGLE OPERATOR' : 'COLLABORATIVE SYSTEM'}</span></div>
+        ${stage ? html`<div class="draft-map" data-testid="draft-map" title=${stage.name}>
+          <${StageMiniMap} stage=${stage} />
+          <div class="draft-map__text">
+            <span class="draft-tag">BATTLEFIELD</span>
+            <b>${stage.name}</b>
+            ${stagePool ? html`<small>${stagePool}</small>` : null}
+          </div>
+        </div>` : null}
         <div class="draft-order__rows">
           ${rows.map((p, i) => {
             const picked = draft.picks.get(p.playerId) || (p.playerId === myId ? myPick : p.bandId) || null;

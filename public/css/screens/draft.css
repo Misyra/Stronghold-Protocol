@@ -37,6 +37,22 @@
 .draft-order__deco i + i { width: .18rem; }
 .draft-order__deco span { margin-left: .08rem; font-family: var(--font-num); font-size: calc(.1 * var(--t)); line-height: 1.15; letter-spacing: .08em; color: rgba(120, 240, 205, .55); white-space: nowrap; }
 .draft-order__rows { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: .24rem; overflow: auto; padding: .08rem .5rem .1rem .3rem; scrollbar-width: none; }
+/* this match's battlefield (Stardust fork 2254875e, #65): the tile map of ui/stagePreview.js and its name */
+.draft-map { flex: none; display: flex; align-items: center; gap: .16rem; min-width: 0; margin-right: .5rem; padding: .08rem .12rem; background: rgba(6, 12, 10, .55); box-shadow: inset 0 0 0 1px rgba(120, 240, 205, .16); }
+.draft--detail .draft-map { margin-right: .12rem; }
+.draft-map__text { display: flex; flex-direction: column; gap: .02rem; min-width: 0; }
+.draft-map__text b { font-size: calc(.18 * var(--t)); line-height: 1.25; color: var(--text-hi); overflow-wrap: anywhere; }
+.draft-map__text small { font-size: calc(.13 * var(--t)); color: var(--text-dim); }
+.stagemap { flex: none; display: block; width: 2.42rem; height: .88rem; }
+.stagemap__t { fill: #38423e; }
+.stagemap__t--road { fill: #8e9e98; }
+.stagemap__t--high { fill: #4fbf9f; }
+.stagemap__t--gate { fill: #ff4a2e; }
+.stagemap__t--goal { fill: #4ab0ff; }
+.stagemap__t--mire { fill: #8a7344; }
+.stagemap__t--smog { fill: #77778a; }
+.stagemap__t--deep { fill: #2f6a96; }
+.stagemap__t--infect { fill: #9a4a70; }
 .draft-order__tip { flex: none; margin: 0; padding-right: .5rem; font-size: calc(.14 * var(--t)); line-height: 1.55; color: var(--text-dim); }
 .draft--detail .draft-order__tip, .draft--detail .draft-order__deco span { display: none; }
 

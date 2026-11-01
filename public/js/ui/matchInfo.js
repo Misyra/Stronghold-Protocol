@@ -9,7 +9,8 @@
 // still activatable through other bonds' operators or items, and the mode's static inactive bonds "本局禁用", e.g.
 // 标准模拟's 10), every bond in the briefing order (bondOrder, then identifier) split into 核心 / 附加, the banned
 // operators (m.public bannedChess, known chess only) sorted by tier, the banned-member count per bond (gameLogic
-// bannedPerBond) and — from the viewer's own m.private — its slotted 自选 pieces left out of the shop because all their
+// bannedPerBond), who each bond lost (bannedByBond, fork 7d2351fd #68 — the names under 本局禁用干员) and — from the
+// viewer's own m.private — its slotted 自选 pieces left out of the shop because all their
 // bonds are off (gameLogic diyBannedPieces; 0.2.0). The blocks are hookless (unit-tested by calling them): the 核心盟约 /
 // 附加盟约 rows of bond discs —
 // greyed with the ✕, the red banned-member badge, the briefingBondTip tooltip — the legend and the 本局禁用干员 grid.
@@ -19,16 +20,17 @@
 
 import { html, Button, Icon, MicroLabel, BondDisc, Tooltip, Modal } from './components.js';
 import { UnitThumb } from './gameComponents.js';
-import { bannedPerBond, disabledBondSets, briefingBondTip, diyBannedPieces } from './gameLogic.js';
+import { bannedPerBond, bannedByBond, disabledBondSets, briefingBondTip, diyBannedPieces } from './gameLogic.js';
 import { bondIconUrl } from './assetUrls.js';
 import { data } from '../data.js';
-import { t, dn } from '../../../shared/i18n.js';
+import { t, tParts, dn } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
 /**
  * @typedef {{ sets: { drawn: Set<string>, off: Set<string> }, stateOf: (bondId: string) => 'off'|'drawn'|null,
  *   bonds: any[], core: any[], addon: any[], banned: string[], perBond: Map<string, number>,
+ *   byBond: Array<{ bondId: string, name: string, ids: string[] }>,
  *   diyBanned: Array<{ slotId: string, charId: string, name: string }> }} MatchInfoModel
  */
 
@@ -41,7 +43,8 @@ const cx = (...p) => p.flat().filter(Boolean).join(' ');
  *   data.get('backups')) to name them
  * @returns {MatchInfoModel}
  *   stateOf: 'off' = the mode never activates the bond (本局禁用), 'drawn' = in the drawn set D (阵容不完整), null = normal;
- *   banned: the banned chess ids the data knows, by tier (ties keep the server's order); perBond: bondId → banned members
+ *   banned: the banned chess ids the data knows, by tier (ties keep the server's order); perBond: bondId → banned members;
+ *   byBond: who each bond lost (bannedByBond), the bonds that lost anyone
  */
 export function matchInfoModel(pub, { bonds = [], chess = () => null, mode = null, priv = null, diyData = null } = {}) {
   const sets = disabledBondSets(pub, mode?.inactiveBondIds);
@@ -53,7 +56,7 @@ export function matchInfoModel(pub, { bonds = [], chess = () => null, mode = nul
     .sort((a, b) => tierOf(a) - tierOf(b));
   return {
     sets, stateOf, bonds: list, core: list.filter((b) => b.isCore), addon: list.filter((b) => !b.isCore),
-    banned, perBond: bannedPerBond(list, banned),
+    banned, perBond: bannedPerBond(list, banned), byBond: bannedByBond(list, banned),
     diyBanned: priv && diyData ? diyBannedPieces(priv, chess, diyData) : [],
   };
 }
@@ -130,7 +133,20 @@ export function MatchLegend({ model }) {
 }
 
 /**
- * 本局禁用干员: the count and the greyed avatars by tier.
+ * Who each bond lost, as text (Stardust fork 7d2351fd, #68): 「谢拉格：初雪、耶拉、银灰」. A member of two bonds is listed
+ * under both.
+ * @param {{ model: MatchInfoModel, class?: string }} props
+ */
+export function BannedByBond({ model, class: cls = 'brief-banlist' }) {
+  if (!model?.byBond?.length) return null;
+  return html`<ul class=${cls} data-testid="banned-by-bond">
+    ${model.byBond.map((b) => html`<li key=${b.bondId} data-bond=${b.bondId}>${tParts('{bond}：{names}', {
+      bond: html`<b>${b.name}</b>`, names: b.ids.map((id) => data.lookup('chess', id)?.name || id) })}</li>`)}
+  </ul>`;
+}
+
+/**
+ * 本局禁用干员: the count, the greyed avatars by tier and who each bond lost.
  * @param {{ model: MatchInfoModel }} props
  */
 export function BannedOperators({ model }) {
@@ -140,6 +156,7 @@ export function BannedOperators({ model }) {
     ${banned.length ? html`<div class="brief-banned__grid">
       ${banned.map((id) => html`<${UnitThumb} key=${id} kind="chess" ownerId=${null} id=${id} size="sm" dim=${true} />`)}
     </div>` : html`<p class="t-dim">${t('本局没有禁用干员')}</p>`}
+    <${BannedByBond} model=${model} />
     <${DiyBannedLine} model=${model} />
   </div>`;
 }

@@ -302,6 +302,24 @@ export function bannedPerBond(bonds, bannedChess) {
 }
 
 /**
+ * Each bond's banned members (Stardust fork 7d2351fd, #68, 「谢拉格：初雪、耶拉、银灰」): the bonds that lost any, in the
+ * given order, their members in the order of `bannedChess`. A member of two bonds is listed under both.
+ * @param {any[]} bonds bonds.json records @param {string[]} bannedChess
+ * @returns {Array<{ bondId: string, name: string, ids: string[] }>}
+ */
+export function bannedByBond(bonds, bannedChess) {
+  const banned = Array.isArray(bannedChess) ? bannedChess : [];
+  const out = [];
+  for (const b of Array.isArray(bonds) ? bonds : []) {
+    if (!isObj(b)) continue;
+    const members = new Set(Array.isArray(b.visibleMembers) ? b.visibleMembers : []);
+    const ids = banned.filter((id) => members.has(id));
+    if (ids.length) out.push({ bondId: b.bondId, name: b.name, ids });
+  }
+  return out;
+}
+
+/**
  * The two kinds of greyed bonds of a match (research 01 A2, 06 addendum D):
  *   drawn  — the per-match drawn set D (m.public drawnDisabledBonds): only operators whose EVERY bond is in D leave
  *            the pool, so these bonds stay activatable (multi-bond members, 变形同构体, 调和) — "部分盟约所含干员阵容不完整";

@@ -24,7 +24,7 @@ globalThis.fetch = async (url) => {
   }
 };
 
-const { matchInfoModel, MatchBondRow, MatchLegend, BannedOperators, MatchInfo, MatchInfoDialog } = await import('../../public/js/ui/matchInfo.js');
+const { matchInfoModel, MatchBondRow, MatchLegend, BannedOperators, BannedByBond, MatchInfo, MatchInfoDialog } = await import('../../public/js/ui/matchInfo.js');
 const { MatchEnemies, factionDescId, leaderBlockOf } = await import('../../public/js/ui/matchEnemies.js');
 const { briefingBondTip } = await import('../../public/js/ui/gameLogic.js');
 const { BondDisc, Tooltip, Modal, Button, placeTooltip } = await import('../../public/js/ui/components.js');
@@ -142,6 +142,24 @@ test('BannedOperators: the count and dimmed avatars in tier order; none ⇒ 本�
   const none = BannedOperators({ model: matchInfoModel({}, SRC('mode_single_normal')) });
   assert.match(textOf(none), /本局没有禁用干员/);
   assert.equal([...walk(none)].filter((v) => v.type === UnitThumb).length, 0);
+});
+
+test('#68 each bond names the operators it lost: every banned member under each of its bonds, in tier order', () => {
+  const m = model();
+  assert.ok(m.byBond.length > 0);
+  for (const row of m.byBond) {
+    const bond = data.list('bonds').find((b) => b.bondId === row.bondId);
+    assert.deepEqual(row.ids, m.banned.filter((id) => bond.visibleMembers.includes(id)));
+    assert.equal(row.ids.length, m.perBond.get(row.bondId));
+  }
+  const list = BannedByBond({ model: m });
+  const rows = [...walk(list)].filter((v) => v.type === 'li');
+  assert.equal(rows.length, m.byBond.length);
+  const first = m.byBond[0];
+  assert.equal(textOf(rows[0]), `${first.name}：${first.ids.map((id) => data.lookup('chess', id).name).join('、')}`);
+  assert.ok([...walk(BannedOperators({ model: m }))].some((v) => v.type === BannedByBond), 'the briefing and the dialog show it');
+  assert.equal(BannedByBond({ model: matchInfoModel({}, SRC('mode_single_normal')) }), null, 'nothing banned: no list');
+  assert.match(read('public/js/ui/enemyDrawer.js'), /<\$\{BannedByBond\} model=\$\{model\} class="ibanlist" \/>/, 'the in-game tab too');
 });
 
 test('MatchInfoDialog retains the briefing bonds, enemy information, 关闭 and the status line', () => {
@@ -376,7 +394,7 @@ test('the briefing, the strategy draft and the in-game 本局信息 tab all read
   // a turn change or my pick closes it; the draft's end unmounts the screen
   assert.match(draft, /const turnKey = `\$\{draft\.turnPid \|\| ''\}\|\$\{myPick \|\| ''\}`;\n\s*useEffect\(\(\) => \{ setInfoOpen\(false\); \}, \[turnKey\]\);/);
   const drawer = read('public/js/ui/enemyDrawer.js');
-  assert.match(drawer, /import \{ matchInfoModel, DiyBannedLine \} from '\.\/matchInfo\.js';/);
+  assert.match(drawer, /import \{ matchInfoModel, DiyBannedLine, BannedByBond \} from '\.\/matchInfo\.js';/);
   assert.match(drawer, /matchInfoModel\(pub, \{\s*bonds: data\.list\('bonds'\), chess: \(id\) => data\.lookup\('chess', id\), mode: data\.get\('config'\)\?\.modes\?\.\[pub\?\.modeId\],/);
   assert.doesNotMatch(drawer, /bannedPerBond|disabledBondSets/, 'the drawer derives nothing on its own');
 });

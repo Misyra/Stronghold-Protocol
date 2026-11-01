@@ -11,15 +11,19 @@
 //     sockets, sessions,
 //     rooms, matches; `versions: { enabled, default, hosts }` only when the server enables another official version than
 //     第二期下半 — DESIGN §35.23), never cached; `?traffic=1` adds the traffic counters (traffic.js: bytes by category since the
-//     start, WebSocket wire and payload bytes) for a loopback or private-network client only — the maintainer's
+//     start, WebSocket wire and payload bytes) and the cached `performance` sample (healthMetrics.js: the main thread's
+//     event-loop delay / ELU / memory / CPU over its 10 s window, `performance.phases` when a phase recorder is wired)
+//     for a loopback or private-network client only — the maintainer's
 //     decision of 2026-10-12: the figures are the host's, so any other client, also one a tunnel or proxy on this
 //     machine forwards, gets the plain report (net.js clientAddress, honouring TRUST_PROXY like the WebSocket limits);
+//     the performance sample follows the same gate (移植自 Stardust fork 的 healthMetrics,进程诊断细节不进公网 /healthz);
 //   * GET /api/online → `{ online: N }`, the title screen's 当前在线人数 (sessions bound to a socket, ~10 s cached);
 //   * everything else → the static files (static.js).
 // Every response's body bytes count in the traffic counters (traffic.js meter). A route that throws is logged and
 // answers 500.
 
 import { PROTOCOL_VERSION, APP_VERSION } from '../../shared/constants.js';
+import { PERFORMANCE_UNAVAILABLE } from '../healthMetrics.js';
 import { buildTag } from './buildTag.js';
 import { setSecurityHeaders, sendError, sendJson, splitUrl } from './common.js';
 import { clientAddress, isLocalIp } from '../net.js';
@@ -71,12 +75,13 @@ function contentSets(lobby) {
  *           assetIndex?: ReturnType<typeof import('./assetIndex.js').createAssetIndex> | null,
  *           views?: ReturnType<typeof import('./assetViews.js').createManifestViews> | null, trusted?: any,
  *           versions?: ReturnType<typeof import('../versions.js').createVersionSets> | null,
- *           versionHosts?: { stats: () => object } | null }} health
+ *           versionHosts?: { stats: () => object } | null,
+ *           getHealthMetrics?: () => ReturnType<typeof import('../healthMetrics.js').createHealthMetrics> | null }} health
  *   content: the server's vanilla content (server/plugins/identity.js); versions / versionHosts: the official versions
  *   and their match hosts (DESIGN §35.23)
  * @param {boolean} [withTraffic]
  */
-export function healthReport({ startedAt, network, registry, lobby, content = null, traffic, assetIndex, views, trusted, versions = null, versionHosts = null, serveStatic = null, persister = null, store = null }, withTraffic = false) {
+export function healthReport({ startedAt, network, registry, lobby, content = null, traffic, assetIndex, views, trusted, versions = null, versionHosts = null, serveStatic = null, persister = null, store = null, getHealthMetrics = null }, withTraffic = false) {
   const report = {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the release the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
@@ -114,6 +119,9 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
   if (withTraffic && traffic) report.traffic = traffic.snapshot();
   // content-hashed asset URLs (assetIndex.js / assetViews.js): off, building, or ready with how many files and URLs
   if (withTraffic) report.assetHashes = assetIndex ? { ...assetIndex.stats(), views: views ? views.stats() : null } : null;
+  // the cached performance summary (healthMetrics.js, 移植自 Stardust fork): same loopback / private gate as the
+  // traffic counters — process diagnostics do not go to the public /healthz
+  if (withTraffic) report.performance = getHealthMetrics?.()?.snapshot() ?? PERFORMANCE_UNAVAILABLE;
   return report;
 }
 

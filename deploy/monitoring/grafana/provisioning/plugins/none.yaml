@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# No app plugins are provisioned (the file only keeps Grafana from logging a missing provisioning folder).
+apiVersion: 1
+apps: []

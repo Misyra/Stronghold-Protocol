@@ -677,3 +677,29 @@ npm start
 正常停服（关停时先写终档再关大厅）→ 备份状态目录 → 更新 → 启动。坏了的的单个分片只丢那个房间的对局，
 其余照常恢复。`GET /healthz` 的 `persist` 块（`writes` / `failures` / `checkpoints` / `pendingLoad`…）是它的体检面：
 `failures` 增长说明保存有问题，`pendingLoad: true` 说明启动读还没成功、在那之前不会写回以免覆盖存档。
+
+## 13. 性能度量与监控面板（Prometheus / Grafana）
+
+两块独立的东西，都不改变游戏本身的任何行为：
+
+**性能度量（`/healthz` 的 `performance` 块）**。服务器进程自带一个只读采样器（`server/healthMetrics.js`，
+移植自 Stardust fork）：每 10 秒采一次主线程的事件循环延迟（20 ms 分辨率的 p50 / p95 / p99 / max）、事件循环
+利用率、CPU、内存，缓存在进程里，`/healthz` 读缓存而不是现算；采样器坏了只会降级成 `unavailable`，绝不会
+影响服务。这个块和 `traffic` 一样**只给回环 / 私网客户端**：浏览器打开 `http://localhost:3000/healthz?traffic=1`
+能看到，公网访问者拿到的是不含它的普通 `/healthz`。另有一个更细的本地日志采样器（`SP_LOOP_SAMPLE=1` 的
+`[loop]` 行，见 §5）与之互补：前者进面板，后者带房间 / 阶段计数落日志。
+
+**监控面板（`deploy/monitoring/`）**。Prometheus + Grafana 的 Docker Compose 部署资产，不进 npm scripts，
+起法：
+
+```sh
+cd deploy/monitoring
+cp monitoring.env.example monitoring.env   # 填 MONITOR_HEALTHZ_URL（默认本机 3000 端口）与 GRAFANA_ROOT_URL
+docker compose --env-file monitoring.env -f compose.monitoring.yaml up -d
+```
+
+里面有一个 collector（把 `/healthz?traffic=1` 转成 `sp_*` Prometheus 指标，只拉固定 URL、不当 SSRF 代理）、
+node-exporter（主机资源）、Prometheus（127.0.0.1:9090，保留 30 天 / 5 GB）和 Grafana（127.0.0.1:3160 的
+`/monitor/`，中文仪表盘「卫戍协议 · 服务器状态」）。有效指标：连接 / 会话 / 房间 / 对局 / 人数、`performance`
+窗口的延迟 / CPU / 内存、`persist` 存档计数、`traffic` 流量计数。完整起法、公开状态页、安全边界、
+`sp_*` 指标清单与「fork 集群专用、本仓拿不到的指标」见 `deploy/monitoring/README.md`。

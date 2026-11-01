@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Recording rules: what the dashboard (grafana/dashboards/stronghold-status.json) needs, precomputed so a
+# public visitor's query reads a few ready series instead of raw counters. No alerting rules: there is no Alertmanager.
+# Keep one `expr:` per line (test/config.test.mjs reads this file without a YAML library).
+# 移植自 Stardust fork 的同名文件:fork 集群专用的 hello / 存档仓库(sp:hello:rate2m、sp:store_writes:rate2m、
+# sp:checkpoint_failures:rate2m)换成 B 自己的 persist 面(sp:persist_writes:rate2m、sp:persist_failures:rate2m);
+# OpenResty 边缘请求规则(edge:requests*)没有对应组件,不保留。
+
+groups:
+  - name: sp_game
+    rules:
+      # 1 = the game server answered its last poll with ok: true; 0 = it did not, or the collector is down
+      - record: sp:server_up
+        expr: (min(sp_up{job="collector"}) * min(sp_ok{job="collector"})) or on() vector(0)
+      # state writes per second (server/persist.js)
+      - record: sp:persist_writes:rate2m
+        expr: sum(rate(sp_persist_writes_total{job="collector"}[2m]))
+      # failed state writes per second — growing means saving is broken
+      - record: sp:persist_failures:rate2m
+        expr: sum(rate(sp_persist_failures_total{job="collector"}[2m]))
+
+  - name: host
+    rules:
+      - record: host:cpu_usage:ratio
+        expr: 1 - avg(rate(node_cpu_seconds_total{job="node",mode="idle"}[2m]))
+      - record: host:memory_usage:ratio
+        expr: 1 - sum(node_memory_MemAvailable_bytes{job="node"}) / sum(node_memory_MemTotal_bytes{job="node"})
+      # bits per second by interface (rename the device to the host's public NIC / tunnel)
+      - record: host:network_transmit_bits:rate2m
+        expr: sum by (device) (rate(node_network_transmit_bytes_total{job="node"}[2m])) * 8
+      - record: host:network_receive_bits:rate2m
+        expr: sum by (device) (rate(node_network_receive_bytes_total{job="node"}[2m])) * 8

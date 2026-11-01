@@ -1,0 +1,118 @@
+{
+ "ok": true,
+ "version": 1,
+ "app": "0.3.3",
+ "uptimeSec": 41343,
+ "build": "0a1b2c3d4e5f",
+ "content": {
+  "vanilla": "0000000000000000000000000000000000000000000000000000000000000000",
+  "sets": 0
+ },
+ "sockets": 3346,
+ "sessions": 5383,
+ "rooms": 2249,
+ "matches": 2074,
+ "humans": 3879,
+ "bots": 548,
+ "spectators": 14,
+ "roomPressure": {
+  "reclaimed": 3,
+  "pressureSweeps": 7
+ },
+ "roomProtection": {
+  "allowed": 120431,
+  "denied": 17
+ },
+ "persist": {
+  "enabled": true,
+  "backend": "file",
+  "mode": "sharded",
+  "writes": 4134,
+  "skipped": 205,
+  "failures": 0,
+  "checkpoints": 1207,
+  "lastSaveMs": 18.625,
+  "checkpointsEncoded": 3920,
+  "checkpointsSkipped": 44,
+  "versionChecks": 0,
+  "versionHoles": 0,
+  "deferredSkips": 0,
+  "pendingLoad": false,
+  "workerMemory": 0
+ },
+ "performance": {
+  "status": "ready",
+  "sampledAt": 1792141846050,
+  "windowMs": 10000.077796004713,
+  "mainThread": {
+   "eventLoopDelayMs": {
+    "p50": 20.070399,
+    "p95": 20.807679,
+    "p99": 21.102591,
+    "max": 37.060607
+   },
+   "eventLoopUtilization": 0.07108139295749012,
+   "memory": {
+    "heapUsedBytes": 277065008,
+    "heapTotalBytes": 511012864,
+    "externalBytes": 7368528,
+    "arrayBuffersBytes": 3591336
+   }
+  },
+  "process": {
+   "cpu": {
+    "userMs": 583.339,
+    "systemMs": 191.024,
+    "totalMs": 774.363,
+    "percent": 7.74356975812106
+   },
+   "rssBytes": 624517120
+  }
+ },
+ "traffic": {
+  "since": "2026-10-15T21:41:45.074Z",
+  "seconds": 41343,
+  "http": {
+   "assets": {
+    "requests": 720528,
+    "bytes": 292788121,
+    "notModified": 0
+   },
+   "audio": {
+    "requests": 0,
+    "bytes": 0,
+    "notModified": 0
+   },
+   "code": {
+    "requests": 110843,
+    "bytes": 290080877,
+    "notModified": 2557
+   },
+   "data": {
+    "requests": 117325,
+    "bytes": 2480182841,
+    "notModified": 15011
+   },
+   "other": {
+    "requests": 1467230,
+    "bytes": 42221869,
+    "notModified": 0
+   },
+   "total": {
+    "requests": 2415926,
+    "bytes": 3105273708
+   }
+  },
+  "ws": {
+   "connections": 3346,
+   "wireOut": 18762156231,
+   "wireIn": 4024517709,
+   "payloadOut": 6254052077,
+   "payloadIn": 4024517709,
+   "messagesOut": 4134175,
+   "messagesIn": 4024517,
+   "open": 3346
+  }
+ },
+ "assetHashes": null
+}

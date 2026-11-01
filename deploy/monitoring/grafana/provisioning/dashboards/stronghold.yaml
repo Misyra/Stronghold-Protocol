@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The status dashboard (uid sp-status) from /etc/grafana/dashboards (read-only mount of ../../dashboards). UI edits are
+# not saved back; change the JSON file and restart or wait for the next scan.
+apiVersion: 1
+providers:
+  - name: stronghold
+    orgId: 1
+    folder: 卫戍协议
+    folderUid: sp-folder
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

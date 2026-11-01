@@ -1,0 +1,2 @@
+# The local settings of an actual deployment (they name the coordinator's tunnel address); copy from monitoring.env.example.
+monitoring.env

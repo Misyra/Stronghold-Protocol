@@ -84,6 +84,7 @@ import { DEFAULT_RESOURCE_PACK_ROUTES, parseResourcePackRoutes } from '../shared
 import { readAssetsCdnVersionFile, readAssetsManifestFile } from './assetVersion.js';
 import { answerClientError } from './http/common.js';
 import { createEventLoopMonitor } from './health/eventLoop.js';
+import { createHealthMetrics } from './healthMetrics.js';
 import { createRoomWorkerPool } from './workers/roomPool.js';
 import { lanUrls, displayHost, isProcessEntry, runMain } from './http/boot.js';
 
@@ -108,6 +109,7 @@ export {
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  *   assetIndex?: boolean | { cacheFile?: string | null, delayMs?: number }, studio?: boolean,
  *   matchHost?: object, versions?: { enabled?: 'all' | string[], default?: string, maxHosts?: number },
+ *   healthMetricsFactory?: typeof import('./healthMetrics.js').createHealthMetrics, phaseMetrics?: object,
  * }} [opts]
  *   assetIndex: the content-hash index (default on; false or SP_ASSET_INDEX=0: off — config.js assetIndexOptionsFrom);
  *   studio: the plugin studio at /studio/ (default on for this machine and the local network — SP_STUDIO=local|off;
@@ -117,6 +119,8 @@ export {
  *   versionVoteMs / versionRetryMs: the version vote's answer window and the guard after a declined or expired vote (tests;
  *   server/lobby.js header "Official versions")
  *   roomCode: a fixed alliance key for every new room (--room-code; four letters or digits — config.js parseRoomCode);
+ *   healthMetricsFactory: an injected sampler (tests); phaseMetrics: a phase recorder (server/phaseMetrics.js) whose
+ *   window the 10 s sample rotates into `performance.phases` (loopback /healthz only)
  *   stateFile: the persistence path (a directory → the sharded layout, a .json path → the single file, 'off' → memory
  *   only — persist, 移植自用户分支); store: an explicit state store (tests; null = memory only, takes precedence over
  *   stateFile and SP_REDIS_URL); resume: false skips the startup restore (tests); saveMs: the save cadence;
@@ -128,6 +132,7 @@ export {
  *                     versions: ReturnType<typeof createVersionSets>, versionHosts: ReturnType<typeof createMatchHosts> | null,
  *                     traffic: ReturnType<typeof createTrafficCounter>, assetIndex: ReturnType<typeof createAssetIndex> | null,
  *                     views: ReturnType<typeof createManifestViews> | null, studio: ReturnType<typeof createStudio> | null,
+ *                     healthMetrics: ReturnType<typeof createHealthMetrics> | null,
  *                     close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
@@ -306,7 +311,10 @@ export async function startServer(opts = {}) {
   buildTag(ROOT, { servedVersionDirs: versions.servedDirs() });
 
   const traffic = createTrafficCounter();
-  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic, chatLog, persister, store }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime,
+  // 只读性能采样器 (server/healthMetrics.js, 移植自 Stardust fork): 主线程 CPU/ELU/内存/事件循环延迟的 10 s 缓存,
+  // 只随 ?traffic=1 进 /healthz 的 `performance` 块 (routes.js 的回环/私网门控);不与 Worker/对局进程通信。
+  let healthMetrics = null;
+  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic, chatLog, persister, store, getHealthMetrics: () => healthMetrics }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime,
     readAnnouncement, announcementSource: announcementOptions.source }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic });
@@ -353,6 +361,7 @@ export async function startServer(opts = {}) {
     }
   } catch (e) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
+    try { healthMetrics?.dispose(); } catch { /* diagnostic only */ }
     hosts.close();
     versionHosts?.close();
     assetIndex?.close();
@@ -372,6 +381,16 @@ export async function startServer(opts = {}) {
   persister?.start();
   // started only once the server is listening: the first window then reports real counts, not a half-built hall
   eventLoop?.start();
+  // the performance sampler starts with the listener for the same reason (healthMetrics.js); a broken start never
+  // keeps the server from serving (the sampler degrades to `unavailable`)
+  try {
+    healthMetrics = (opts.healthMetricsFactory ?? createHealthMetrics)(opts.phaseMetrics ? { log, phases: opts.phaseMetrics } : { log });
+    healthMetrics.start();
+  } catch (e) {
+    try { healthMetrics?.dispose(); } catch { /* diagnostic only */ }
+    healthMetrics = null;
+    try { log.warn?.(`[health] performance metrics unavailable: ${e.message}`); } catch { /* diagnostic only */ }
+  }
 
   const addr = server.address();
   const actualPort = typeof addr === 'object' && addr ? addr.port : port;
@@ -381,6 +400,9 @@ export async function startServer(opts = {}) {
   async function close() {
     if (closing) return closing;
     closing = (async () => {
+      try { healthMetrics?.dispose(); } catch (e) {
+        try { log.warn?.('[health] performance disposal failed', e); } catch { /* diagnostic only */ }
+      }
       // the final state document is written BEFORE the lobby disposes its rooms (移植自用户分支的关停次序):
       // a drain that fails on the way out is logged, and the shutdown still reaches the persister
       if (persister) {
@@ -411,7 +433,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, versions, versionHosts, traffic, assetIndex, views, studio, eventLoop, simPool, chatLog, store, persister, close };
+  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, versions, versionHosts, traffic, assetIndex, views, studio, eventLoop, simPool, chatLog, store, persister, healthMetrics, close };
 }
 
 /**

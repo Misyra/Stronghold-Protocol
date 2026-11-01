@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Prometheus for the Stronghold-Protocol monitor (compose.monitoring.yaml). 移植自 Stardust fork
+# deploy/stardust/monitoring/prometheus/prometheus.yml(其改编自 xinhai-ai/Stronghold-Protocol
+# deploy/monitoring/prometheus/prometheus.yml)。
+#
+# Every target is a fixed loopback port of the host (all containers use host networking, each bound to
+# 127.0.0.1). `instance` is rewritten to a fixed name so no address appears in any label; node-exporter's host name
+# labels are dropped. Retention (30 d / 5 GB) is set on the command line.
+# fork 集群专用的 OpenResty 边缘指标 job(nginx / ark_edge_*)在本仓的部署里没有对应组件,不采集。
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules.yml
+
+scrape_configs:
+  # healthz → metrics collector (collector/index.mjs): the game server's figures, polled every 10 s
+  - job_name: collector
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    static_configs:
+      - targets: ["127.0.0.1:9108"]
+    relabel_configs:
+      - target_label: instance
+        replacement: gameserver
+
+  # the host itself (node-exporter, minimal collectors)
+  - job_name: node
+    static_configs:
+      - targets: ["127.0.0.1:9100"]
+    relabel_configs:
+      - target_label: instance
+        replacement: host
+    metric_relabel_configs:
+      - action: labeldrop
+        regex: nodename|domainname
+      # a network mount names its server in `device`: never keep such a series
+      - source_labels: [device]
+        regex: ".*[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+.*|.*:.*"
+        action: drop
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:9090"]
+    relabel_configs:
+      - target_label: instance
+        replacement: prometheus

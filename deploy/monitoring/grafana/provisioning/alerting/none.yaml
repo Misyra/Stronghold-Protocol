@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# No alerting resources (alerting is off in grafana.ini; the file only keeps Grafana from logging a missing folder).
+apiVersion: 1

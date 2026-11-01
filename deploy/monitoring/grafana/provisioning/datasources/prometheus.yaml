@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The only data source: the local Prometheus (127.0.0.1:9090, host networking). The dashboard refers to uid sp-prometheus.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: sp-prometheus
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: http://127.0.0.1:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+      queryTimeout: 20s
+      prometheusType: Prometheus

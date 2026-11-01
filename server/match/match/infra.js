@@ -8,11 +8,20 @@
 import { buildDeployMap } from '../board.js';
 
 export class MatchInfra {
-  /** Run a callback with error isolation, then flush the views. */
+  /**
+   * Run a callback with error isolation, then flush the views. The flush is structural-aware: a callback that
+   * changed the phase / round or ended the match flushes at once (the new phase's views are what the clients wait
+   * for — m.public keeps its own ≤ 10/s throttle), everything else coalesces (flushSoon, ≤ 50 ms) — bots and timers
+   * run through here many times a second and each one paying a privateView rebuild was the message path's hot spot.
+   */
   guard(fn) {
     if (this.disposed) return;
+    const phase = this.phase, round = this.round, ended = this.ended;
     try { fn(); } catch (e) { this.reportError('guard', e); }
-    try { this.flush(); } catch (e) { this.reportError('flush', e); }
+    try {
+      if (this.phase !== phase || this.round !== round || this.ended !== ended) this.flush();
+      else this.flushSoon();
+    } catch (e) { this.reportError('flush', e); }
   }
 
   reportError(label, e) {

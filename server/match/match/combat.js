@@ -82,6 +82,7 @@ export class MatchCombat {
     this.phase = PHASE.COMBAT;
     const alive = this.alivePlayers();
     this.lastResults = new Map();
+    this.lastResultTimes = new Map();
     this.fields = alive.map((ps) => ({ fieldId: `n:${ps.playerId}`, kind: 'normal', players: [ps.playerId], battle: this._normalBattle(ps), live: true }));
     const limit = this.wave ? this.wave.timeLimit : 60;
     this.deadline = this.sched.instant ? 0 : this.sched.now() + Math.round((limit / this.gameSpeed) * 1000);
@@ -95,6 +96,7 @@ export class MatchCombat {
     this.phase = PHASE.COMBAT;
     const alive = this.alivePlayers();
     this.lastResults = new Map();
+    this.lastResultTimes = new Map();
     this.watchers.clear();
     const fields = alive.map((ps) => this._ccField({ fieldId: `n:${ps.playerId}`, kind: 'normal', players: [ps.playerId], opts: this._normalOpts(ps) }));
     const limit = this.wave ? this.wave.timeLimit : 60;
@@ -151,6 +153,8 @@ export class MatchCombat {
       for (const pid of f.players) {
         const pp = res.perPlayer && res.perPlayer[pid];
         this.lastResults.set(pid, pp || { killed: 0, total: 0, leaked: [], perfect: true, layerGains: {}, coins: 0, damageDealt: 0, unitsEnd: [], unitStats: [] });
+        // the battle's own game-time seconds (the full result's top-level `time`) — the onBattleResult ev's `time`
+        this.lastResultTimes.set(pid, Number(res.time) || 0);
         // the views show the layers the battle reached until settle() makes them persistent (DESIGN §20.15)
         const ps = this.players.get(pid);
         const gains = pp && pp.layerGains && typeof pp.layerGains === 'object' ? pp.layerGains : null;

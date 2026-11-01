@@ -1,6 +1,8 @@
 // Declarative plugin windows, PLUGINS §10b. No plugin code, no shared RNG consumption.
 // [ASSUMED] Uniform draws per seat; bots/auto/bot take the first grantable slot, skip grants nothing.
 // Strict majority resolves the rest with that fallback. quorum:none never gates the phase.
+// `when.bands` narrows the participants to players of these bands; a card's `when` ({ solo: true } / { seat: k })
+// is a per-picker condition checked at open time and again at every pick — declarative data, never code.
 import { ERR } from '../../../shared/constants.js';
 import { offerAt, offersAt } from '../../../shared/plugins/offers.js';
 import { createRng, deriveSeed } from '../../sim/rng.js';
@@ -15,19 +17,24 @@ export class MatchOffers {
     const alive = this.alivePlayers().filter(p => !p.left);
     if (!list.length || !alive.length) return 'none';
     for (const { pluginId, offer } of list) {
+      const participants = alive.filter(ps => this._offerBandOk(ps, offer));
+      if (!participants.length) continue; // a window nobody may open creates nothing
       const w = {
         id: offer.id, pluginId, offer, at, round, seq: this.offerSeq++, slots: offer.slots,
         quorum: offer.quorum, onTimeout: offer.onTimeout, refresh: offer.refresh,
         deadline: this.sched.now() + this.scaled(offer.windowSec * 1000),
         options: new Map(), picks: new Map(), refreshUsed: new Map(), closed: false,
       };
-      for (const ps of alive) {
-        w.options.set(ps.playerId, this._offerOptions(w, ps));
+      for (const ps of participants) {
+        const options = this._offerOptions(w, ps);
+        if (!options.length) continue; // no card is eligible for this picker — the window does not open for them
+        w.options.set(ps.playerId, options);
         w.refreshUsed.set(ps.playerId, Array(w.slots).fill(0));
       }
+      if (!w.options.size) continue;
       this.offerWin.push(w);
       this._offerTimers.set(w, this.later(this.scaled(offer.windowSec * 1000), () => this._offerDeadline(w)));
-      for (const ps of alive) if (ps.botControlled) this._offerBot(ps, w);
+      for (const ps of this._offerParticipants(w)) if (ps.botControlled) this._offerBot(ps, w);
       this._offerSettleIfDone(w);
     }
     this._offerProgress();
@@ -39,8 +46,27 @@ export class MatchOffers {
     return createRng(deriveSeed(this.seed, `offer:${w.pluginId}:${w.id}:${w.at}:${w.round}:${w.seq}:${ps.seat}:${salt}`));
   }
 
+  /** `when.bands`: absent or empty opens for everyone; otherwise only players of these bands. */
+  _offerBandOk(ps, offer) {
+    const bands = offer.when?.bands;
+    return !bands?.length || bands.includes(ps.bandId);
+  }
+
+  /** A card's picker condition: solo = the picker is the room's last standing player; seat k = another player holds it. */
+  _offerCardOk(ps, card) {
+    const when = card.when;
+    if (!when) return true;
+    if (when.solo) {
+      const alive = this.alivePlayers().filter(p => !p.left);
+      return alive.length === 1 && alive[0] === ps;
+    }
+    if (when.seat !== undefined) return this.alivePlayers().some(p => p !== ps && !p.left && p.alive && p.seat === when.seat - 1);
+    return true;
+  }
+
   _offerOptions(w, ps) {
-    return this._offerRng(w, ps).shuffle(w.offer.cards.slice()).slice(0, w.slots);
+    const pool = w.offer.cards.filter(c => this._offerCardOk(ps, c));
+    return this._offerRng(w, ps).shuffle(pool).slice(0, w.slots);
   }
 
   _offerParticipants(w) {
@@ -100,8 +126,8 @@ export class MatchOffers {
     if (used[idx] >= (w.refresh?.perSlot || 0)) return fail(ERR.RATE);
     const options = w.options.get(ps.playerId);
     // [ASSUMED] Prefer unseen cards, else allow another slot's card; never charge for the same card.
-    let pool = w.offer.cards.filter(c => !options.some(o => o.id === c.id));
-    if (!pool.length) pool = w.offer.cards.filter(c => c.id !== options[idx].id);
+    let pool = w.offer.cards.filter(c => this._offerCardOk(ps, c) && !options.some(o => o.id === c.id));
+    if (!pool.length) pool = w.offer.cards.filter(c => this._offerCardOk(ps, c) && c.id !== options[idx].id);
     if (!pool.length) return fail(ERR.BAD_TARGET);
     used[idx]++;
     options[idx] = this._offerRng(w, ps, `refresh:${idx}:${used[idx]}`).pick(pool);
@@ -110,6 +136,7 @@ export class MatchOffers {
   }
 
   _offerAvailable(ps, card) {
+    if (card.when && !this._offerCardOk(ps, card)) return false; // the room changed since the window opened
     const effect = card.effect;
     if (effect.item) return !!ps.gd.item(effect.item) && this.itemPool.canGain(effect.item);
     if (effect.chess) {

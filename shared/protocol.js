@@ -618,6 +618,8 @@ export const C2S = {
   // a strict majority of the other connected humans passes it and the seat leaves the match like a 中途退出.
   'g.kickVote': { targetId: isId },
   'g.kickBallot': { voteId: (v) => isInt(v, 1, 2 ** 31), agree: isBool },
+  // 战斗 2 倍速投票（speedVote.js，右上角 ×2 按钮）：全员（在线人类席位）赞成 → 下一回合起战斗按 2 倍速推进
+  'g.speedVote': { on: isBool },
   'g.band': { bandId: isId },
   'g.bandSkip': {},
   // the strategy highlighted in the draft screen (user playtest #4 item 4): a turn that runs out takes it while it is

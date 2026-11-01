@@ -760,12 +760,15 @@ export function makeCtx(m, ps, source, hook, ev = null, preview = null) {
 
     // ---- team
     teammates: () => m.alivePlayers().filter((p) => p !== ps).map((p) => makeCtx(m, p, source, hook, null)),
+    /** Every alive player's ctx — the whole alliance (this game has no opposing players; plugins sample room-wide). */
+    alivePlayers: () => m.alivePlayers().map((p) => makeCtx(m, p, source, hook, null)),
     player: (playerId) => { const p = m.players.get(playerId); return p && p.alive ? makeCtx(m, p, source, hook, null) : null; },
   };
   if (!preview) return ctx;
   const forPlayer = (p) => makeCtx(m, preview.players.get(p.playerId) || p, source, hook, null, preview);
   return previewContext(ctx, preview, {
     teammates: () => m.alivePlayers().filter((p) => p.playerId !== ps.playerId).map(forPlayer),
+    alivePlayers: () => m.alivePlayers().map(forPlayer),
     player: (id) => { const p = m.players.get(id); return p?.alive ? forPlayer(p) : null; },
   });
 }

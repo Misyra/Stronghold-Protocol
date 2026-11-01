@@ -72,7 +72,8 @@ export class MatchSettle {
         this.dispatch(ps, 'onLayers', { bondId, from: before, to: ps.layers[bondId], reason: 'battle' });
       }
       this._charDamageTickers(ps, r);
-      this.dispatch(ps, 'onBattleResult', { result: r, lpLoss: loss, perfect: counted === 0 && r.perfect !== false, unite: uniteResult || null });
+      // `time` is the finished battle's own game-time seconds (combat._finishCombat) — meta handlers scale by it
+      this.dispatch(ps, 'onBattleResult', { result: r, lpLoss: loss, perfect: counted === 0 && r.perfect !== false, unite: uniteResult || null, time: Number(this.lastResultTimes.get(ps.playerId)) || 0 });
       ps.recompute();
     }
     this.eliminateBroken();

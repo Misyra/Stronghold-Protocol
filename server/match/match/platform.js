@@ -61,6 +61,7 @@ export class MatchPlatform {
       return this.clientCombat && msg && (msg.t === 'b.progress' || msg.t === 'b.result') ? OK : fail(ERR.WRONG_PHASE);
     }
     if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string' || !GAME_TYPES.has(msg.t)) return fail(ERR.BAD_MSG);
+    const phase = this.phase, round = this.round, ended = this.ended;
     let res;
     try {
       res = this._handle(ps, msg);
@@ -68,7 +69,17 @@ export class MatchPlatform {
       this.reportError(`handle ${msg.t}`, e);
       res = fail(ERR.INTERNAL);
     }
-    try { this.flush(); } catch (e) { this.reportError('flush', e); }
+    // A phase / round / ended change in the handler is a structural event: the new views go out now. b.result too
+    // (the force list: the field's final progress and, once the last field closes, the next phase's views). Every
+    // other intent — the g.* prep churn and b.progress — coalesces (flushSoon): under a 4-human prep each intent
+    // paid a privateView rebuild, and a boss fight's b.progress storm paid one per report; with the coalescing the
+    // views land within the 50 ms window (an isolated intent still sends at once — the window is only closed after
+    // a send). m.public keeps its own ≤ 10/s throttle and dedupe in every branch.
+    const structural = this.phase !== phase || this.round !== round || this.ended !== ended;
+    try {
+      if (structural || msg.t === 'b.result') this.flush();
+      else this.flushSoon();
+    } catch (e) { this.reportError('flush', e); }
     if (res && typeof res === 'object' && res.error) return res;
     return OK;
   }
@@ -150,6 +161,8 @@ export class MatchPlatform {
       this._rehearsalHostChanged();
       this.markPublic();
     });
+    // the disconnect is on the record at once (private views flush now; m.public keeps its ≤ 10/s throttle)
+    this.flush();
   }
 
   onReconnect(playerId) {
@@ -174,6 +187,7 @@ export class MatchPlatform {
       if (released) this.toast(ps, 'info', msg('你已重新连接，AI 托管已解除'));
       if (!was) this.markPublic();
     });
+    this.flush();
   }
 
   /**
@@ -260,6 +274,8 @@ export class MatchPlatform {
       }
       this._quit(ps);
     });
+    // the departure (status left, the eliminated seat's offers / pairing) is on the record at once
+    this.flush();
   }
 
   /**
@@ -317,7 +333,12 @@ export class MatchPlatform {
 
   dispose() {
     if (this.disposed) return;
+    // drain the coalesced views first (force flush): a room destroyed or a process exiting must not leave
+    // marked-but-unsent state behind. A finished match already flushed through finish() — a second forced public
+    // after m.result would only repeat the frame.
+    if (!this.ended) { try { this.flush(true); } catch { /* ignore */ } }
     this.disposed = true;
+    this._flushTimer = null;
     this.externalAI?.close();
     if (this.runner) { try { this.runner.stop(); } catch { /* ignore */ } }
     this._stopClientCombat();

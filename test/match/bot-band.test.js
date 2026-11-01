@@ -54,6 +54,33 @@ test('the seat band rides into botBands, is held for the AI seat and shows in th
   assert.deepEqual(m.publicView().draft?.reserved || {}, {}, 'nothing is held any more');
 });
 
+test('「允许重复策略」 on: two AI seats may be designated the same strategy and both take it', (t) => {
+  const h = makeMatch({
+    seats: [
+      { seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true },
+      { seat: 1, playerId: 'ai_0', name: 'AI0', isBot: true, connected: true, band: BAND },
+      { seat: 2, playerId: 'ai_1', name: 'AI1', isBot: true, connected: true, band: BAND },
+    ],
+    aiPicksLast: true, bandDupes: true,
+  }).start();
+  t.after(() => h.m.dispose());
+  const m = h.m;
+  assert.equal(m.bandDupes, true);
+  assert.equal(m.botBands.get('ai_0'), BAND);
+  assert.equal(m.botBands.get('ai_1'), BAND);
+  assert.equal(m.bandTaken(BAND, 'p_0'), false, 'the guard is down entirely');
+  assert.equal(m.designatedBand(m.players.get('ai_0')), BAND);
+  assert.equal(m.designatedBand(m.players.get('ai_1')), BAND);
+  m.enterBandDraft();
+  assert.equal(m.publicView().draft.dupes, true);
+  assert.equal(m.publicView().draft.reserved, undefined, 'nothing is held while duplicates are allowed');
+  runDraft(h);
+  assert.equal(m.draft.picks.ai_0, BAND, 'the first AI seat took the designated strategy');
+  assert.equal(m.draft.picks.ai_1, BAND, 'the second AI seat took it too');
+  assert.equal(m.players.get('ai_0').bandId, BAND);
+  assert.equal(m.players.get('ai_1').bandId, BAND);
+});
+
 test('a designated strategy the mode does not offer is ignored (the seat picks by itself)', (t) => {
   const h = makeMatch({ seats: seatsWith('band_does_not_exist') }).start();
   t.after(() => h.m.dispose());

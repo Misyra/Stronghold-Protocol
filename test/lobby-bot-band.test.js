@@ -96,6 +96,26 @@ describe('room.setBotBand (lobby)', () => {
     assert.equal(opts.seats.find((s) => s.playerId === second.playerId).band, undefined);
   });
 
+  test('「允许重复策略」 on: two AI seats may share a strategy and both ride into the match', async () => {
+    const host = await pool.player('HostTwo');
+    await ok(host, { t: 'room.create', mode: 'coop', difficulty: 'NORMAL' });
+    await host.waitFor('room.state', (s) => s.hostId === host.id);
+    await ok(host, { t: 'room.setBandDupes', on: true });
+    await host.waitFor('room.state', (s) => s.bandDupes === true);
+    await ok(host, { t: 'room.addBot' });
+    await ok(host, { t: 'room.addBot' });
+    const two = await host.waitFor('room.state', (s) => s.seats.filter((x) => x && x.isBot).length === 2);
+    const [first, second] = two.seats.filter((x) => x && x.isBot);
+    await ok(host, { t: 'room.setBotBand', seat: first.seat, bandId: 'band_bldsk' });
+    await ok(host, { t: 'room.setBotBand', seat: second.seat, bandId: 'band_bldsk' });
+    await host.waitFor('room.state', (s) => s.seats.filter((x) => x && x.isBot && x.band === 'band_bldsk').length === 2);
+    await ok(host, { t: 'room.start' });
+    const opts = started.at(-1);
+    assert.equal(opts.bandDupes, true, 'the option rides into the match');
+    assert.equal(opts.seats.find((s) => s.playerId === first.playerId).band, 'band_bldsk');
+    assert.equal(opts.seats.find((s) => s.playerId === second.playerId).band, 'band_bldsk');
+  });
+
   test('a solo room has no AI seat to designate a strategy for', async () => {
     const solo = await pool.player('Solo');
     await ok(solo, { t: 'room.create', mode: 'solo', difficulty: 'NORMAL' });

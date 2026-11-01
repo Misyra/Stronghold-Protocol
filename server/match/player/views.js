@@ -4,7 +4,7 @@
 // the player state).
 
 import { itemProgress } from '../itemProgress.js';
-import { PHASE } from '../../../shared/constants.js';
+import { PHASE, CONSOLE_ROUND_LIMIT, CONSOLE_TOTAL_LIMIT } from '../../../shared/constants.js';
 import { boardOrder, pieceDir } from '../board.js';
 import { bondList, offBondCounts } from '../bondsMeta.js';
 import { bountyText, bountyCard } from '../choices.js';
@@ -94,6 +94,19 @@ export class PlayerViews {
       lp: this.lp,
       funds: this.funds,
       bandId: this.bandId,
+      // 战斗 2 倍速投票（speedVote.js）：本席位是否已投赞成（右上角 ×2 按钮的点亮态）
+      speedVoted: this.m.speedVotes?.includes(this.playerId) === true,
+      // 插件脚本的计数器（meta ctx.setCounter）——界面插件的只读馈送（subsetPrivate）靠它显示负债等
+      counters: { ...this.counters },
+      // 开发者控制台 (room.console.enable) 的配额 (intents.js consoleGrant): the counters the client's console modal
+      // shows (本回合 X/Y · 全场 X/Y, ui/console.js); the limits ride along so the client need not assume them. Sent
+      // unconditionally — the modal itself only opens when the room enabled the console (m.room.consoleEnabled).
+      console: {
+        roundUses: this.consoleRoundUses,
+        totalUses: this.consoleTotalUses,
+        roundLimit: CONSOLE_ROUND_LIMIT,
+        totalLimit: CONSOLE_TOTAL_LIMIT,
+      },
       ready: this.ready,
       canReady: this.alive && this.tempEmpty && !this.personalChoice && this.m.phase === PHASE.PREP,
       personalChoice: this.personalChoice ? {

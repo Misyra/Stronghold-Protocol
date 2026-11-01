@@ -212,6 +212,10 @@ export class PlayerState {
     this.board = new Map();
     /** persistent bond layers */
     this.layers = {};
+    /** priceOf cache epoch (player/economy.js): bumped by markPrivate; counters ride a separate fingerprint. */
+    this._priceRev = 0;
+    /** priceOf memo under `_priceRev`: { rev, fp, map: 'round|kind|id|basePrice' → price } — never persisted. */
+    this._priceCache = null;
     /** computed bond states */
     this.bonds = {};
     /**
@@ -232,7 +236,8 @@ export class PlayerState {
      * @type {null | { id: string, round: number, sourceItemId: string, cards: any[] }}
      */
     this.personalChoice = null;
-    /** free-form match-long content counters (ctx.counter / setCounter), including band:cathy:cellTaken (#677) */
+    /** free-form match-long content counters (ctx.counter / setCounter), including band:cathy:cellTaken (#677).
+     * Plain on purpose (checkpoint captures structured-clone this object); the priceOf cache fingerprints it. */
     this.counters = {};
     /** per-round counters (reset at round start) */
     this.round = { refreshes: 0, buys: 0, sells: 0, spent: 0, gainedChess: 0, arts: 0 };

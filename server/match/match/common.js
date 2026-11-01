@@ -22,6 +22,8 @@ export const DELAYS = Object.freeze({
   BOT_ACTION: 900,
   BOT_STAGGER: 350,
   PUBLIC_THROTTLE: 100,
+  /** Coalescing window of Match.flushSoon (real ms, NOT scaled: view latency, not game time). */
+  PRIVATE_FLUSH: 50,
 });
 
 /**

@@ -57,13 +57,37 @@ export class PlayerEconomy {
     return add;
   }
 
-  /** Effective price of a shop slot after onPrice modifiers (never negative). */
+  /**
+   * Effective price of a shop slot after onPrice modifiers (never negative).
+   *
+   * Cached (perf, msg path): the onPrice dispatch walks every registered handler — the slot chess's own 特质 first,
+   * then globals, band, every bond, equipped items, persistent effects (effectsMeta.js dispatch) — and dominates the
+   * prep view's build cost (privateView prices every slot on every flush). The price depends only on
+   *   * the slot's identity — kind / id / basePrice (the priced chess's own 购买价格为N 特质 is static per id),
+   *   * the match round — the 策略 first-buy price change reads `ctx.round`,
+   *   * the player's meta state: an epoch `_priceRev` (bumped by markPrivate — every player-level mutator reports
+   *     through it: recompute, funds, shop rolls / level, effects, band) and an exact fingerprint of `counters`
+   *     (numbers only — ctx.setCounter guards it; the 远见 discount latch and the 策略 first-buy cap read counters,
+   *     also ones written without dirtying the player).
+   * Any mutation that can reach an onPrice handler therefore misses the cache; a hit replays a price whose inputs are
+   * provably unchanged. onPrice handlers are pricing hooks (ctx.setPrice / modifyPrice) — none mutate the slot or roll
+   * rng, so skipping a re-read of unchanged state cannot change a price.
+   */
   priceOf(slot) {
     if (!slot) return 0;
+    const rev = this._priceRev | 0;
+    const fp = JSON.stringify(this.counters);
+    let cache = this._priceCache;
+    if (!cache || cache.rev !== rev || cache.fp !== fp) cache = this._priceCache = { rev, fp, map: new Map() };
+    const key = `${this.m.round}|${slot.kind}|${slot.id}|${slot.basePrice}`;
+    const hit = cache.map.get(key);
+    if (hit !== undefined) return hit;
     const ev = { slot, kind: slot.kind, id: slot.id, price: slot.basePrice };
     this.m.dispatch(this, 'onPrice', ev, { quiet: true });
     const p = Number(ev.price);
-    return Number.isFinite(p) ? Math.max(0, Math.round(p)) : slot.basePrice;
+    const price = Number.isFinite(p) ? Math.max(0, Math.round(p)) : slot.basePrice;
+    cache.map.set(key, price);
+    return price;
   }
 
   _rollChessSlot() {

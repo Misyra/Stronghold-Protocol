@@ -236,6 +236,7 @@ import { MatchIntents } from './match/intents.js';
 import { MatchPause } from './match/pause.js';
 import { MatchPhases } from './match/phases.js';
 import { MatchSetupVote } from './match/setupVote.js';
+import { MatchSpeedVote } from './match/speedVote.js';
 import { MatchKickVote } from './match/kickVote.js';
 import { MatchSpDraft } from './match/spDraft.js';
 import { MatchPrep } from './match/prep.js';
@@ -347,6 +348,8 @@ export class Match {
     this.battleContent = opts.battleContent || 'full';
     this.timerScale = Number.isFinite(opts.timerScale) && opts.timerScale >= 0 ? opts.timerScale : 1;
     this.gameSpeed = Number.isFinite(opts.combatSpeed) && opts.combatSpeed > 0 ? Math.min(opts.combatSpeed, 200) : GAME_SPEED;
+    /** 战斗 2 倍速投票（g.speedVote，match/speedVote.js）：已投换档赞成的 playerId；全员赞成 → 下一回合换档 */
+    this.speedVotes = [];
     /** layouts a bot rehearses per prep with the real simulation (bot.js; 0 = heuristic placement only) */
     this.botRehearsal = Number.isInteger(opts.botRehearsal) && opts.botRehearsal >= 0 ? Math.min(opts.botRehearsal, 8) : BOT_REHEARSAL_DEFAULT;
     this.bot = getBotStrategy(opts.botStrategy ?? env('SP_BOT_STRATEGY'));
@@ -531,6 +534,9 @@ export class Match {
     this._pubTimer = null;
     this._lastPubAt = -Infinity;
     this._lastPubJson = '';
+    /** flushSoon 的合并 timer(messaging.js)与上次私有视图实发时刻(真实 ms) */
+    this._flushTimer = null;
+    this._lastPrivFlushAt = -Infinity;
     /** @type {Set<PlayerState>} */
     this._privDirty = new Set();
     this.errors = [];
@@ -557,6 +563,8 @@ export class Match {
      */
     this.watchPref = new Map();
     this.lastResults = new Map();
+    /** The finished battle's own game-time seconds per player (combat._finishCombat; the onBattleResult ev's `time`). */
+    this.lastResultTimes = new Map();
     this.unitePlan = null;
     /** 联防 outcome for the SETTLE view: { through, helpers, leakers, losses } (settle()), null when no 联防 resolved */
     this.uniteResultView = null;
@@ -579,7 +587,7 @@ export class Match {
 }
 
 // the method modules, in this order (a name defined twice is an error, never a silent override)
-for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchKickVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchRehearsal, MatchReports, MatchUnite, MatchBoss, MatchSettle, MatchTestCommands, MatchOffers]) {
+for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchKickVote, MatchSpeedVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchRehearsal, MatchReports, MatchUnite, MatchBoss, MatchSettle, MatchTestCommands, MatchOffers]) {
   for (const key of Reflect.ownKeys(part.prototype)) {
     if (key === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(Match.prototype, key)) throw new Error(`Match.${String(key)} is defined twice`);

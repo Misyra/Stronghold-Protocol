@@ -63,6 +63,9 @@ export class MatchMessaging {
     this._privDirty.add(ps);
     this._pubDirty = true;
     this._persistRev = (this._persistRev | 0) + 1;
+    // the priceOf cache epoch (player/economy.js): every player-level mutation reported through the standard
+    // path invalidates the memo — counters ride their own exact fingerprint inside priceOf
+    ps._priceRev = (ps._priceRev | 0) + 1;
     const m = this._bossMateOf(ps);
     if (m) this._privDirty.add(m.mate);
   }
@@ -77,8 +80,30 @@ export class MatchMessaging {
         if (!(ps.isBot || ps.left || !ps.connected)) this._sendPrivate(ps, false);
         this._notifyPrepScouts(ps);
       }
+      this._lastPrivFlushAt = this.sched.now();
     }
     if (this._pubDirty || forcePublic) this._maybeSendPublic(forcePublic);
+  }
+
+  /**
+   * A coalescing flush (perf, msg path): the pending views go out at once while the match has not flushed for
+   * DELAYS.PRIVATE_FLUSH (50 real ms — an isolated intent keeps its synchronous view), otherwise a single tracked
+   * timer sends them within the window. Callers are the paths whose per-call flush is pure repetition under load:
+   * every non-structural intent (platform._handleSeatIntent) and every bot / timer callback (infra.guard). The
+   * force events — phase / round / ended changes, b.result, disconnect / reconnect / leave, dispose — call
+   * flush() (or flush(true)) directly and never wait. On a virtual scheduler (tests) coalescing is bypassed: the
+   * suites keep the synchronous "view right after the intent" contract; the deferral itself is covered by
+   * test/match/flush-coalesce.test.js on a real scheduler.
+   */
+  flushSoon() {
+    if (this.disposed) return;
+    const now = this.sched.now();
+    if (this.sched.virtual || now - this._lastPrivFlushAt >= DELAYS.PRIVATE_FLUSH) { this.flush(); return; }
+    if (this._flushTimer) return;
+    this._flushTimer = this.later(DELAYS.PRIVATE_FLUSH - (now - this._lastPrivFlushAt), () => {
+      this._flushTimer = null;
+      try { this.flush(); } catch (e) { this.reportError('flush', e); }
+    });
   }
 
   _sendPrivate(ps, force) {

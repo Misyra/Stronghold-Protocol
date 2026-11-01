@@ -11,7 +11,7 @@ import { boardOrder, pieceDir } from '../board.js';
 import { bondList, offBondCounts } from '../bondsMeta.js';
 import { cardView } from '../choices.js';
 import { bountySpawns, previewOf } from '../waves.js';
-import { timelineAt } from '../fields.js';
+import { timelineAt, GAME_SPEED } from '../fields.js';
 import { bossFieldPlacement } from '../finalAssault.js';
 import { battleProgress } from '../../sim/spec.js';
 
@@ -84,6 +84,14 @@ export class MatchViews {
       // 投票移出(移植自用户分支): an offline AI-托管 teammate (kickVote.js): null or { id, proposerId, targetId,
       // voters, agreed, rejected, need, deadline }
       kickVote: this.kickVoteView(),
+      // 战斗 2 倍速投票（speedVote.js，右上角 2X 按钮）：count/need 已投/需投（在线人类席位），
+      // pending 全员已赞成（下一回合换档，实时计算——撤回立即消失），on 已在 2 倍速
+      speedVote: {
+        count: this.speedVotes.length,
+        need: this._speedVoters().length,
+        pending: this._unanimous(),
+        on: this.gameSpeed > GAME_SPEED,
+      },
       // a non-default official version's match (DESIGN §35.23): its registry id, so a page that never saw the room (a
       // reload after it closed: the lobby's result replay) reads the frames with that version's data; absent for the
       // default, whose frames stay byte-identical

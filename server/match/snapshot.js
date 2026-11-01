@@ -234,6 +234,7 @@ export const MATCH_FIELDS = Object.freeze([
   'stageId', 'factions', 'bossId', 'hiddenBossId', 'disabledBonds', 'staticInactiveBonds', 'bannedChess',
   'round', 'uidSeq', 'loneHuman', 'botBands', 'bandDupes', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
   'simErrorLog', 'draft', 'sp', 'wave', 'bossWaves', 'setupRevision', 'setupVote', '_setupVoteSeq', '_botEmotesSettledRound', '_botEmotesMerges',
+  'speedVotes', // 战斗 2 倍速投票（speedVote.js）：已投换档赞成的席位
 ]);
 
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */
@@ -261,6 +262,7 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
   '_lastPoolKey', 'kickVote', '_kickVoteSeq', '_kickFailed', '_kickVoteAt', 'pacer', 'rngSetup', 'rngShop', 'rngWaves', 'rngDraft', 'rngBots', 'rngMeta', 'players', 'order',
   'spectators', 'stage', 'pool', 'itemPool', 'phase', 'deadline', 'overtimeAt', 'ended', 'disposed', 'startedAt',
   '_timers', '_phaseTimer', '_infoAdvanceTimer', '_turnTimer', '_pubDirty', '_pubTimer', '_lastPubAt', '_lastPubJson',
+  '_flushTimer', '_lastPrivFlushAt',
   '_privDirty', '_prepEndQueued', 'bossPairs', 'fields', 'runner', 'watchers', 'watchPref', 'lastResults', 'unitePlan',
   'uniteResultView', '_uniteLeftKey', '_uniteBounds', 'teamLp', 'bossPool', 'outcome', '_turnToken', '_rehearsalHostChangedAt',
   // the plugin / content layer (cs, vs, requireCs) and its delegation target (hostId), plus the delegated bot
@@ -281,6 +283,8 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
 export const TRANSIENT_PLAYER_FIELDS = Object.freeze([
   'm', 'gd', 'standIns', '_standInSet', '_diyRecords', 'bonds', '_deployMap', '_deployField', '_legalityStale', '_botPrepToken',
   'loadoutCs',
+  // the priceOf memo (player/economy.js): a derived cache, rebuilt on demand
+  '_priceRev', '_priceCache',
 ]);
 
 /** The RNG streams the match owns (server/sim/rng.js createRng, state()/setState). */
@@ -435,6 +439,8 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
   m._persistRev = 0;
   m._lastPubAt = -Infinity;
   m._lastPubJson = '';
+  m._flushTimer = null;
+  m._lastPrivFlushAt = -Infinity;
   if (m._privDirty && typeof m._privDirty.clear === 'function') m._privDirty.clear();
   m._prepEndQueued = false;
   m._turnToken = 0;

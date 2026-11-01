@@ -35,6 +35,7 @@ import {
   recordToResult, recordVersion, MAX_RECORDS, FULL_KEEP, IMPORT_MAX_CHARS,
   trophyMedalOf, strategyBadgeIds, bondMemberChess, highestBondRecord,
 } from '../ui/stats.js';
+import { migrateHistory } from '../history/migration.js';
 import { contentSet, retryContentSet } from '../content.js';
 import { DEFAULT_VERSION, shownVersion, versionLabel, welcomeVersion } from '../versions.js';
 import { t, N_ } from '../../../shared/i18n.js';
@@ -567,7 +568,12 @@ function StatsScreen({ tab }) {
   const withModded = useStore((s) => s.withModded, Object.is, statsStore);
   const agg = useMemo(() => aggregateStats(stats.records, { modded: withModded }), [stats, withModded]);
   const reload = () => setStats(loadStats());
-  useEffect(() => subscribeStats(reload), []);
+  useEffect(() => {
+    const off = subscribeStats(reload);
+    // the retired site's IndexedDB match history migrates once (the `historyMigrated` mark); records merged in reload the page
+    void migrateHistory().then((added) => { if (added) reload(); }, toastError);
+    return off;
+  }, []);
 
   const doExport = () => {
     try {

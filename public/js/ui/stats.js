@@ -53,6 +53,7 @@
 // Pure logic, no Preact / DOM: Node-testable (test/ui/stats.test.js); localStorage is touched only by loadStats /
 // saveStats / their helpers.
 
+import { parseLegacyBackup } from '../history/legacyBackup.js';
 import { PHASE } from '../../../shared/constants.js';
 import { sanitizeName } from './playerName.js';
 import { DEFAULT_VERSION, versionById } from '../../../shared/versions.js';
@@ -760,6 +761,11 @@ export function mergeStats(a, b) {
  *   not be read; name = newest usable imported self nickname (the caller only adopts it when its current name is empty)
  */
 export function importStats(raw, current) {
+  // A retired site's `stronghold-match-history` JSON backup is rebuilt into match snapshots first, then takes the same
+  // path as the local records (dedupe by record id, MAX_RECORDS and the storage budget, below).
+  if (raw?.format === 'stronghold-match-history') {
+    raw = { v: STATS_VERSION, records: parseLegacyBackup(JSON.stringify(raw)).map((r) => buildRecord(r.result, { myId: r.playerId, now: r.endedAt })).filter(Boolean) };
+  }
   if (isObj(raw) && raw.kind != null && raw.kind !== 'local-stats') {
     const err = new Error('not a stats export'); // the page shows its own text
     err.code = 'stats-bad-file';

@@ -3505,5 +3505,9 @@
   "已投赞成：点击取消（{count}/{need}）": "Voted yes: click to withdraw ({count}/{need})",
   "已投恢复原速：点击取消（{count}/{need}）": "Voted to revert: click to withdraw ({count}/{need})",
   "战斗 2 倍速进行中：全员赞成后下一回合恢复原速（{count}/{need}）": "2× speed running: unanimous yes reverts next round ({count}/{need})",
-  "全员同意：下一回合起恢复原速": "Unanimous: battles revert to normal speed from the next round"
+  "全员同意：下一回合起恢复原速": "Unanimous: battles revert to normal speed from the next round",
+  "浏览器不支持本地对局记录": "This browser does not support local match history.",
+  "本地记录数据库被其他页面占用，请关闭旧页面后重试": "The local history database is in use by another page of this site; close it and try again.",
+  "请升级客户端后迁移本地记录": "Update the client before migrating the local match history.",
+  "本地记录迁移失败，旧数据库已保留": "Failed to migrate the local match history; the old database is kept."
 }

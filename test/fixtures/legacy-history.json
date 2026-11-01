@@ -1,0 +1,25 @@
+{
+  "format": "stronghold-match-history",
+  "schema": 1,
+  "records": [{
+    "schema": 1,
+    "id": "[\"https://old.example\",\"match-1\",\"p1\"]",
+    "playerId": "p1",
+    "recordedAt": 2000,
+    "endedAt": 1000,
+    "origin": "https://old.example",
+    "appVersion": "0.2.1",
+    "result": {
+      "matchId": "match-1", "finishedAt": 1000, "seed": 7, "victory": true,
+      "durationMs": 12345, "modeId": "mode_multi_hard", "difficulty": "HARD", "roundsPassed": 14,
+      "players": [
+        { "playerId": "p1", "name": "博士", "victory": true, "alive": true, "roundsPassed": 14,
+          "stats": { "dmgDealt": 321, "kills": 4 },
+          "lineup": [{ "id": "char_test", "golden": true, "row": 2, "col": 3, "items": ["item_test"] }],
+          "bonds": [{ "bondId": "bond_test", "active": true, "layers": 3 }],
+          "title": { "id": "comment_1", "name": "评语" } },
+        { "playerId": "ai_1", "name": "AI", "isBot": true, "stats": {}, "lineup": [], "bonds": [], "title": null }
+      ]
+    }
+  }]
+}

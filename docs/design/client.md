@@ -663,6 +663,16 @@ but discarded old bond data is not reconstructed. v3 (0.3.2, DESIGN §35.23) add
 "Official versions" below). Records whose room mode is unknown (`roomMode` null) count in the
 total but in neither mode row: a line under the rows gives their number (DESIGN §32.14.16).
 
+A browser that once played on the retired site keeps its matches in the IndexedDB database
+`stronghold-match-history`. The first open of 统计数据 migrates them once into `sp.pref.stats`
+(`public/js/history/migration.js`: a read-only `readLegacyHistory`, each row rebuilt by `buildRecord` under its own
+`playerId`, merged by record id so an already recorded settlement is skipped) and then writes the
+`sp.pref.historyMigrated` mark — only a successful write sets it, so a failure leaves the old database in place and
+the next open retries. The retired site's `stronghold-match-history` JSON backups import through 导入 as well
+(`parseLegacyBackup`, rebuilt by the same path). The migrated records are ordinary local records: the achievements
+(成就统计) derive from them like from any other match. Tests: `test/history/record.test.js`, `storage.test.js`,
+`migration.test.js`.
+
 Title-count display uses the following 20-award boundary, confirmed in the official statistics template:
 
 | Count | Display behavior |

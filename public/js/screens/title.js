@@ -271,8 +271,6 @@ export function TitleScreen() {
           <span>${STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status}</span>
           ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
           <${GuideButton} class="title-guide" label=${t('玩法说明')} />
-          <${AnnouncementButton} class="title-announce" />
-          <${Button} class="title-about" variant="ghost" size="sm" icon="info" onClick=${() => setAboutOpen(true)}>${t('关于')}<//>
           <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
             onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
           <${FullscreenButton} class="title-fs" />
@@ -286,11 +284,17 @@ export function TitleScreen() {
     ${Installed ? html`<${Installed} open=${true} onClose=${() => setInstalled(null)} />` : null}
 
     <footer class="title-foot">
-      <${ResumeMatchButton} />
-      <${PwaInstallButton} />
-      <${NoticesButton} />
-      ${installed ? html`<button type="button" class="title-plugins" data-testid="title-plugins" onClick=${openPlugins}>
-        <${Icon} name="info" />${t('本服务器安装了 {n} 个插件', { n: installed })}</button>` : null}
+      <div class="title-foot__start">
+        <${ResumeMatchButton} />
+        <${PwaInstallButton} />
+        <${NoticesButton} />
+        <div class="title-foot__links">
+          <${AnnouncementButton} class="title-announce" />
+          <${Button} class="title-about" variant="ghost" size="sm" icon="info" onClick=${() => setAboutOpen(true)}>${t('关于')}<//>
+        </div>
+        ${installed ? html`<button type="button" class="title-plugins" data-testid="title-plugins" onClick=${openPlugins}>
+          <${Icon} name="info" />${t('本服务器安装了 {n} 个插件', { n: installed })}</button>` : null}
+      </div>
       <span>${t('非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有')}</span>
       <span class="title-foot__meta">
         <${ReleaseNotesButton} />

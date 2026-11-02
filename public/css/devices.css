@@ -27,16 +27,16 @@
    and screens/title.css drops the emblem, the English lockup and the tagline so the console still clears the footer.
    Mouse-driven windows keep the design's own clamp (theme.css). */
 @media (max-height: 460px) and (pointer: coarse), (max-height: 460px) and (any-pointer: coarse) {
-  html { font-size: calc(clamp(52px, min(calc(100vw / 14), calc(100vh / 6.2)), 240px) * var(--sp-ui, 1)); }
+  html { font-size: calc(clamp(46px, min(calc(100vw / 14), calc(100vh / 7.2)), 240px) * var(--sp-ui, 1)); }
   html[data-fit] {
-    font-size: calc(clamp(52px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 14), calc((100vh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 6.2)), 240px) * var(--sp-ui, 1));
+    font-size: calc(clamp(46px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 14), calc((100vh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 7.2)), 240px) * var(--sp-ui, 1));
   }
 }
 @supports (height: 100svh) {
   @media (max-height: 460px) and (pointer: coarse), (max-height: 460px) and (any-pointer: coarse) {
-    html { font-size: calc(clamp(52px, min(calc(100vw / 14), calc(100svh / 6.2)), 240px) * var(--sp-ui, 1)); }
+    html { font-size: calc(clamp(46px, min(calc(100vw / 14), calc(100svh / 7.2)), 240px) * var(--sp-ui, 1)); }
     html[data-fit] {
-      font-size: calc(clamp(52px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 14), calc((100svh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 6.2)), 240px) * var(--sp-ui, 1));
+      font-size: calc(clamp(46px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 14), calc((100svh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 7.2)), 240px) * var(--sp-ui, 1));
     }
   }
 }

@@ -1061,8 +1061,8 @@ whole root fell back to 16 px — every screen a quarter of its size and every l
 Chrome 104, 2026-11-02). The guard is the fork's (Stardust-minus/Stronghold-Protocol theme.css).
 
 Short landscape phones (≤ 460 px tall, coarse pointer — a phone's browser bars leave ~310 px of height) floor the root at
-52 px instead of 40 (`css/devices.css` §0, `--sp-ui` and the `data-fit` box included, `svh` behind the same `@supports`):
-6 units of height and 16 of width, where 40 px left 7.8 units for a 10.8-unit composition. The title screen drops its
+46 px instead of 40 (`css/devices.css` §0, `--sp-ui` and the `data-fit` box included, `svh` behind the same `@supports`):
+7.2 units of height and 14 of width, where 40 px left 7.8 units for a 10.8-unit composition. The title screen drops its
 emblem, English lockup and tagline on those screens (`screens/title.css`) so the callsign console clears the footer, and
 the hub's right column (公告 and the three plates) is capped smaller: 26 px rows, 13 px labels. Its callsign card is
 sized from `em` as well as the root — `max(4.9rem, min(92vw, 22em))` — so a player who picks 文字大小 中 / 大 / 特大

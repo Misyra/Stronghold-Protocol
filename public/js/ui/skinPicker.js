@@ -75,17 +75,22 @@ function charAsset(charId, field) {
  * catalogue does the same. A chess record carries both (`chess_char_1_01_a` → `charId: char_498_inside`), and
  * getting the two the wrong way round makes the whole section silently empty.
  */
+function skinRecord(charId, skinId) {
+  // A catalogue id is turned into the manifest key; a skin installed ahead of a catalogue refresh has no catalogue entry
+  // and is ALREADY keyed by its official id — the manifest answers both id forms, so never give up on the raw id.
+  const key = manifestSkinKey(skinId) ?? (typeof skinId === 'string' && skinId ? skinId : null);
+  return key ? data.get('assets')?.chars?.[charId]?.skins?.[key] || null : null;
+}
+
 function modelArt(charId, skinId) {
   const ready = previewState(charId, skinId).url;
   if (ready) return ready;
-  const key = manifestSkinKey(skinId);
-  return key ? (data.get('assets')?.chars?.[charId]?.skins?.[key]?.avatar || null) : charAsset(charId, 'avatar');
+  return skinRecord(charId, skinId)?.avatar || charAsset(charId, 'avatar');
 }
 
 /** The 商店立绘 tile's art: the skin's 180×360 立绘, falling back to its square avatar. */
 function skinPortrait(charId, skinId) {
-  const key = manifestSkinKey(skinId);
-  const sk = key ? data.get('assets')?.chars?.[charId]?.skins?.[key] : null;
+  const sk = skinRecord(charId, skinId);
   return sk?.portrait || sk?.avatar || null;
 }
 

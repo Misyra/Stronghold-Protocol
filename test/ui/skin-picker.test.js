@@ -15,6 +15,9 @@ import assert from 'node:assert/strict';
 
 import { data } from '../../public/js/data.js';
 import { skinsStore, setSkin, clearSkin, setSkins, availableSkins, hasAnySkinChoices, hasSkinChoices, chosenSkin, parseStoredSkins } from '../../public/js/ui/skins.js';
+import { skinPortraitUrl } from '../../public/js/ui/assetUrls.js';
+import { lookUrl } from '../../public/js/ui/seatArt.js';
+import { manifestSkinKey } from '../../shared/skins.js';
 
 const OPERATOR = 'char_498_inside';
 const OTHER = 'char_003_kalts';
@@ -207,5 +210,37 @@ describe('皮肤 picker: the live model frame (移植用户选择器后)', () =>
   test('the 商店立绘 group is tall and drawn first; the model group is text-only', () => {
     assert.match(PICKER_SRC, /name="portrait" ariaLabel=\$\{t\('选择商店立绘'\)\} tall=\$\{true\}/);
     assert.match(PICKER_SRC, /name="model" ariaLabel=\$\{t\('选择战斗模型'\)\} thumbnails=\$\{false\}/);
+  });
+});
+
+describe('皮肤 installed ahead of a catalogue refresh (2026-11-02: 雪覆伦城 showed no art)', () => {
+  // A skin server-side install-skins.mjs adds to data/assets.json is keyed by its OFFICIAL id. Until
+  // shared/skin-catalogue.js catches up, manifestSkinKey() cannot name it — the lookups must then ask the manifest
+  // with the id they were given instead of returning nothing (the tile drew its hatched placeholder while the model
+  // was right there in the frame below it).
+  const NEW_SKIN = 'char_498_inside@zzz#9';
+  const m = {
+    chars: {
+      [OPERATOR]: {
+        avatar: '/a/inside.png', portrait: '/p/inside_1.png',
+        skins: { [NEW_SKIN]: { name: '新皮肤', avatar: '/a/zzz.png', portrait: '/p/zzz_1.png' } },
+      },
+    },
+  };
+
+  test('the catalogue really does not know it', () => {
+    assert.equal(manifestSkinKey(NEW_SKIN), null, 'the premise: no catalogue entry, so no mapping');
+  });
+
+  test('assetUrls.skinPortraitUrl finds its 立绘', () => {
+    assert.equal(skinPortraitUrl(m, { charId: OPERATOR }, NEW_SKIN), '/p/zzz_1.png');
+  });
+
+  test('seatArt.lookUrl finds its avatar (the name-card look picker hands out manifest keys)', () => {
+    assert.equal(lookUrl(m, OPERATOR, NEW_SKIN, 'avatar'), '/a/zzz.png');
+  });
+
+  test('the picker resolves the same way (its private helper is bound to the same rule)', () => {
+    assert.match(PICKER_SRC, /manifestSkinKey\(skinId\) \?\? \(typeof skinId === 'string' && skinId \? skinId : null\)/);
   });
 });

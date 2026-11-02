@@ -158,7 +158,10 @@ export function clearSkin(charId) {
 export function equippedSkinKeys() {
   const keys = new Set();
   const add = (chessId, skinId) => {
-    const key = typeof skinId === 'string' ? manifestSkinKey(skinId) : null;
+    // a catalogue id maps to the manifest key; a skin installed ahead of a catalogue refresh carries that key already
+    // (official ids start with `char_`, so `e2` — the 精英二立绘 pick — still names no outfit and is skipped)
+    const mapped = typeof skinId === 'string' ? manifestSkinKey(skinId) : null;
+    const key = mapped || (typeof skinId === 'string' && skinId.startsWith('char_') ? skinId : null);
     if (!key) return;
     if (isCharId(chessId)) { keys.add(`${chessId}/${key}`); return; }
     const charId = data.lookup('chess', chessId)?.charId;

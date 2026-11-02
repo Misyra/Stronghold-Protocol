@@ -189,7 +189,8 @@ export function lookUrl(m, charId, look = '', kind = 'avatar') {
   if (!c) return null;
   if (look === 'e2') return str(c[`${kind}E2`]) || str(c[kind]);
   if (look === 'e1') return str(c[kind]);
-  const s = typeof c.skins === 'object' && c.skins ? c.skins[manifestSkinKey(look)] : null;
+  // lookOptions hands out the manifest's own keys (official ids); a skin the catalogue does not list yet still resolves
+  const s = typeof c.skins === 'object' && c.skins ? c.skins[manifestSkinKey(look) ?? look] : null;
   return str(s?.[kind]) || str(s?.[`${kind}E2`]);
 }
 

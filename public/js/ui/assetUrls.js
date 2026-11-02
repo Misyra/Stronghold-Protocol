@@ -273,5 +273,7 @@ export function skinPortraitUrl(m, chess, skinId) {
   const charId = str(chess?.charId);
   if (!id || !charId) return null;
   const skins = obj(obj(m)?.chars?.[charId])?.skins;
-  return str(obj(skins?.[manifestSkinKey(id)])?.portrait);
+  // manifestSkinKey turns a catalogue id into the manifest key; a skin the catalogue does not list yet (installed ahead of
+  // a catalogue refresh) is ALREADY keyed by its official id — ask the manifest with that id instead of giving up.
+  return str(obj(skins?.[manifestSkinKey(id) ?? id])?.portrait);
 }

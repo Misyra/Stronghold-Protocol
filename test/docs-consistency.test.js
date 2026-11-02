@@ -897,7 +897,13 @@ test('干员战斗语音 (DESIGN §21.30): the manifest data, the official prior
     else if (x && typeof x === 'object') Object.values(x).forEach(walk);
   };
   for (const id of charIds) {
-    for (const s of slots) assert.ok(voice[id][s], `${id}.${s}`);
+    // An operator ships one line per skill it has: 锡兰 has three (cn_027 is skill3; cn_028 exists on no mirror), so
+    // skill4 is not required of every operator — the skill set must simply be CONTIGUOUS from skill1, never holed.
+    const skillSlots = slots.filter((s) => s.startsWith('skill'));
+    for (const s of slots) if (!s.startsWith('skill')) assert.ok(voice[id][s], `${id}.${s}`);
+    const have = skillSlots.filter((s) => voice[id][s]);
+    assert.ok(have.length >= 1, `${id} carries no skill line`);
+    assert.deepEqual(have, skillSlots.slice(0, have.length), `${id}: skill lines run from skill1 without a gap`);
     for (const s of prepOnly) assert.equal(voice[id][s], undefined, `${id}.${s} is not planned by default`);
     walk(voice[id]);
   }

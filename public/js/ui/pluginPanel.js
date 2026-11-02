@@ -240,6 +240,19 @@ export function PluginPanel({ open, room, myId, onClose }) {
 /** What a class is called in the list (msgids). */
 const CLASS_NAMES = { cosmetic: N_('外观'), content: N_('改变玩法'), script: N_('代码'), trusted: N_('代码'), ui: N_('界面'), lang: N_('语言') };
 
+/**
+ * What this server does with a plugin, in one sentence. A refused plugin carries WHY in `disabled.code`
+ * (shared/plugins/manifest.js PluginEntry; server/plugins/trusted.js applyTrust) — a script plugin on a server started
+ * without SP_PLUGIN_SCRIPTS is the common one. Calling that "本版本不支持" made a working plugin look broken, so the
+ * scripts gate gets its own line.
+ * @param {any} p catalogue entry
+ */
+const pluginStatusText = (p) => {
+  if (p.status === 'loaded') return t('可以使用');
+  if (p.disabled?.code === 'PLUGIN_SCRIPTS_DISABLED') return t('需要服务器开启脚本插件');
+  return t('本版本不支持');
+};
+
 /** The title screen's list of a server's unofficial plugins (see the header): the catalogue, fetched when it opens. */
 export function InstalledPlugins({ open, onClose }) {
   const cat = useStore((s) => s, Object.is, catalog);
@@ -257,7 +270,7 @@ export function InstalledPlugins({ open, onClose }) {
             <div class="plugrow__name"><b>${pluginName(p)}</b>${p.version ? html`<span class="num t-dim">v${p.version}</span>` : null}
               <span class="plugrow__badge">${p.execution === 'sandbox' ? t('脚本（沙箱）') : (CLASS_NAMES[p.class] ? t(CLASS_NAMES[p.class]) : t('插件'))}</span><span class="plugrow__badge is-unofficial">${t('非官方')}</span></div>
             <div class="plugrow__meta t-dim">
-              <span>${p.status === 'loaded' ? t('可以使用') : t('本版本不支持')}</span>
+              <span>${pluginStatusText(p)}</span>
               ${Array.isArray(p.authors) && p.authors.length ? html`<span>${t('作者 {names}', { names: p.authors.join(', ') })}</span>` : null}
             </div>
           </div>

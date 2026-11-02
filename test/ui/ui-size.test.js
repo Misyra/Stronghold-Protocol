@@ -86,15 +86,24 @@ describe('文字大小 中 and above turn the size off', () => {
 describe('the stylesheet side', () => {
   test('theme.css / devices.css: both layout roots multiply the design rule by --sp-ui (100vh and 100svh lines)', () => {
     const theme = css('public/css/theme.css');
-    const html = theme.slice(theme.indexOf('\nhtml {'), theme.indexOf('}', theme.indexOf('\nhtml {')));
-    const roots = html.match(/font-size:[^;]+;/g);
-    assert.equal(roots.length, 2);
-    for (const r of roots) assert.match(r, /^font-size: calc\(clamp\(40px, .*, 240px\) \* var\(--sp-ui, 1\)\);$/);
+    // the 100vh line in the block, the svh one behind @supports (a var()-carrying declaration outside it drops the root
+    // to 16 px on a browser without svh — see theme.css's note and test/ui/screen-fit.test.js)
+    const themeRoots = [...theme.matchAll(/font-size: (calc\(clamp\(40px, [^;]*?\) \* var\(--sp-ui, 1\)\));/g)].map((m) => m[1]);
+    assert.equal(themeRoots.length, 2);
+    assert.match(themeRoots[0], /100vh \/ 10\.8/);
+    assert.match(themeRoots[1], /100svh \/ 10\.8/);
+    const guard = theme.slice(theme.lastIndexOf('@supports (height: 100svh)'));
+    assert.ok(guard.indexOf(themeRoots[1]) > 0 && guard.indexOf(themeRoots[1]) < guard.indexOf('\n}'),
+      'the svh line must sit inside @supports (height: 100svh)');
+    for (const r of themeRoots) assert.match(r, /^calc\(clamp\(40px, .*, 240px\) \* var\(--sp-ui, 1\)\)$/);
+
     const dev = css('public/css/devices.css');
-    const fit = dev.slice(dev.indexOf('html[data-fit] {'), dev.indexOf('}', dev.indexOf('html[data-fit] {')));
+    const fit = dev.slice(dev.indexOf('\nhtml[data-fit] {'), dev.indexOf('}', dev.indexOf('\nhtml[data-fit] {')));
     const fitRoots = fit.match(/font-size:[^;]+;/g);
-    assert.equal(fitRoots.length, 2);
+    assert.equal(fitRoots.length, 1, 'the 100vh line of html[data-fit]');
     for (const r of fitRoots) assert.match(r, /\* var\(--sp-ui, 1\)\);$/);
+    const fitSvh = dev.slice(dev.lastIndexOf('@supports (height: 100svh)')).match(/font-size: (calc\(clamp\(40px, [^;]*100svh[^;]*\* var\(--sp-ui, 1\)\));/);
+    assert.ok(fitSvh, 'the svh line of html[data-fit] sits behind @supports too');
   });
   test('theme.css: the 文字大小 floors never shrink with the factor; 小 has none and follows the layout', () => {
     const theme = css('public/css/theme.css');

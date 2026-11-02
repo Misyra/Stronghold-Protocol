@@ -551,7 +551,7 @@
   flex-direction: column;
   align-items: center;
   gap: .02rem;
-  width: max(.72rem, 52px);
+  width: max(.72rem, 32px, calc(52px * var(--sp-ui, 1)));
   padding: .03rem;
   border: 1px solid var(--line-2);
   background: rgba(255, 255, 255, .04);

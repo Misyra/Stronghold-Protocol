@@ -22,6 +22,7 @@ import { UI_HOST_MESSAGES, UI_PLUGIN_MESSAGES } from '../../shared/plugins/ui.js
 import { PLUGIN_ERRORS } from '../../shared/plugins/errors.js';
 import { CATALOG_ENTRY_FIELDS, CATALOG_FIELDS } from '../../shared/plugins/catalog.js';
 import { SDK_ID, SDK_MEMBERS } from '../../shared/plugins/sdk.js';
+import { OFFER_UI_FIELDS } from '../../shared/plugins/offers.js';
 import * as sdk from '../../shared/plugins/sdk.js';
 import { SURFACE_MARKERS, SURFACE_SINCE, SURFACE_SINCE_NEXT, buildSurface, uncoveredSdkExports } from '../../shared/plugins/surface.js';
 import { STUDIO_ROUTES } from '../../server/studio/index.js';
@@ -66,6 +67,7 @@ const DSL_GROUPS = [
 function expectedNames() {
   const names = [];
   for (const field of MANIFEST_FIELDS) names.push(`manifest.field.${field}`);
+  for (const [scope, fields] of Object.entries(OFFER_UI_FIELDS)) for (const field of fields) names.push(`offer.${scope}.${field}`);
   for (const name of RULE_NAMES) names.push(`rule.${name}`);
   for (const name of Object.keys(PERMISSIONS)) names.push(`permission.${name}`);
   for (const name of Object.keys(PLUGIN_CLASSES)) names.push(`class.${name}`);
@@ -113,7 +115,7 @@ test('the document table and buildSurface are the same rows', () => {
   assert.ok(rows.length > 50, `${rows.length} rows`);
   assert.deepEqual(doc, rows.map(({ name, stability, since, anchor }) => ({ name, stability, since, anchor })));
   assert.equal(SURFACE_SINCE, '0.3.0');
-  assert.ok(rows.every((r) => ['0.3.0', '0.3.1'].includes(r.since)));
+  assert.ok(rows.every((r) => ['0.3.0', '0.3.1', '0.3.4'].includes(r.since)));
   assert.equal(rows.find(r => r.name === 'record.operator.origin').since, '0.3.1');
   for (const name of ['manifest.field.offers', 'permission.offers', 'error.PLUGIN_OFFER_SHAPE', 'error.PLUGIN_OFFER_ROUNDS', 'error.PLUGIN_OFFER_REFERENCE']) {
     assert.equal(rows.find(r => r.name === name).since, '0.3.1', name);

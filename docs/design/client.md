@@ -1183,3 +1183,12 @@ this browser (ui/lobbyMedia.js `matchMusic`, the lobby music's IndexedDB, slots 
 their own tracks. A pick this manifest lacks, 自选曲 without a file and a track that fails to load play the official one
 (a failed own file is remembered for the page and the settings say so). Ported from the Stardust fork's bgmChoice.js;
 its 上海Major track is not offered — no official file, and this manifest does not carry it.
+
+### Plugin offer selectors and local stake previews
+
+Native plugin windows may provide an optional title and up to two groups of 2–6 selector buttons. Changing either selection clears the armed
+card; the confirmed `g.offer.variantId` selects one declared variant, with server-side ID, grant and stock checks.
+Only the local player's private funds/counters calculate the optional stake and symmetric P/L preview. Spectators
+receive read-only controls without a private quote. Zero-principal cards are disabled; zero-refresh controls are
+omitted. Touch targets, keyboard focus, reconnect selection and all bundled language packs are supported.
+Reference: [PLUGINS.md](../PLUGINS.md#optional-native-selectors-and-stake-previews-034). [ASSUMED] Plugin UI convention.

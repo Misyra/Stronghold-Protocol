@@ -740,7 +740,7 @@ describe('keyboard & settings', () => {
   test('sanitizeSettings', () => {
     assert.deepEqual(sanitizeSettings(null), { ...DEFAULT_SETTINGS });
     assert.deepEqual(sanitizeSettings({ bgm: 3, sfx: -1, voice: 2, muted: 'yes', damageNumbers: false, quality: 'ultra' }),
-      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceNative: false, voiceOverrides: {}, bgmPrep: 'official', bgmCombat: 'official', muted: false, damageNumbers: false, officialDamageNumbers: false, ammoEnergyCount: false, deploySnap: false, fullscreenWakeLock: false, bondTimers: false, combatMetrics: false, prepDeployFold: true, quality: 'high', fpsLimit: 0, officialFx: 'auto', otherSkins: true, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadVoiceLanguages: null, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: { ...DEFAULT_SETTINGS.keys } },
+      { bgm: 1, sfx: 0, voice: 1, voiceLang: 'cn', voiceNative: false, voiceOverrides: {}, bgmPrep: 'official', bgmCombat: 'official', muted: false, damageNumbers: false, officialDamageNumbers: false, ammoEnergyCount: false, deploySnap: false, fullscreenWakeLock: false, bondTimers: false, combatMetrics: true, prepDeployFold: false, quality: 'high', fpsLimit: 0, officialFx: 'auto', otherSkins: true, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadVoiceLanguages: null, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: { ...DEFAULT_SETTINGS.keys } },
       'a saved profile without `keys` (before 0.2.0) gets the default key map (test/ui/feedback5-hotkeys.test.js)');
     // 资源预载八件套 (移植自用户分支): only the master starts off; 皮肤 / 特效 / 附加资源 default on, 语音 follows
     // the older optional-audio choice
@@ -770,15 +770,15 @@ describe('keyboard & settings', () => {
     assert.equal(DEFAULT_SETTINGS.voiceNative, false);
     assert.equal(sanitizeSettings({ bgm: 0.5 }).voiceLang, 'cn');
     assert.equal(sanitizeSettings({ bgm: 0.5 }).voiceNative, false, 'a profile saved before the switch stays off');
-    assert.equal(DEFAULT_SETTINGS.combatMetrics, false);
-    assert.equal(sanitizeSettings({ bgm: 0.5 }).combatMetrics, false, 'a profile saved before 作战统计 stays off');
+    assert.equal(DEFAULT_SETTINGS.combatMetrics, true);
+    assert.equal(sanitizeSettings({ bgm: 0.5 }).combatMetrics, true, 'a profile saved before 作战统计 gets the default');
     assert.equal(sanitizeSettings({ combatMetrics: true }).combatMetrics, true);
     // 官方特效 (0.3.0): 'auto' by default (完整 on a desktop, 精简 on a touch device); unknown values fall back to it
     assert.equal(DEFAULT_SETTINGS.officialFx, 'auto');
     assert.equal(sanitizeSettings({ bgm: 0.5 }).officialFx, 'auto', 'a profile saved before 官方特效 gets the default');
     for (const v of ['off', 'lite', 'full', 'auto']) assert.equal(sanitizeSettings({ officialFx: v }).officialFx, v);
     assert.equal(sanitizeSettings({ officialFx: 'ultra' }).officialFx, 'auto');
-    assert.equal(sanitizeSettings({ combatMetrics: 'yes' }).combatMetrics, false, 'a non-boolean stays off');
+    assert.equal(sanitizeSettings({ combatMetrics: 'yes' }).combatMetrics, true, 'a non-boolean gets the default');
     assert.equal(sanitizeSettings({ voiceLang: 'jp' }).voiceLang, 'jp');
     assert.equal(sanitizeSettings({ voiceLang: 'en' }).voiceLang, 'en');
     assert.equal(sanitizeSettings({ voiceLang: 'kr' }).voiceLang, 'kr');

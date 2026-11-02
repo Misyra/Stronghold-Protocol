@@ -27,6 +27,33 @@ const window_ = (extra = {}, when = { at: ['prep'], rounds: [3, 9] }) => {
   return { pluginId: 'demo', ...r.offer, cards: pool.cards };
 };
 
+test('selected variants are authoritative, reconnectable and cannot be forged or granted twice', () => {
+  const w = window_({ quorum: 'none' }, { at: ['prep'], rounds: [1] });
+  w.selector = { label: 'Amount', default: 'small', options: [{ id: 'small', name: 'Small' }, { id: 'large', name: 'Large' }] };
+  w.cards = w.cards.map(c => ({ ...c, variants: { small: { effect: { funds: 2 } }, large: { effect: { funds: 6 } } } }));
+  const h = makeMatch({ mode: 'coop', humans: 2, fake: true, offers: [w] }).start();
+  try {
+    h.toPrep(1);
+    const view = h.m.offerViews()[0], p = h.ps('p_0'), before = p.funds;
+    const message = { t: 'g.offer', offerId: view.id, pluginId: view.pluginId, seq: view.seq, idx: 0, variantId: 'forged' };
+    const active = h.m.offerWin[0];
+    active.options.set(p.playerId, active.options.get(p.playerId).slice(0, 1));
+    assert.ok(h.m.handle(p.playerId, { ...message, idx: 1, variantId: 'large' }).error, 'an absent conditional slot cannot be selected');
+    assert.ok(h.m.handle(p.playerId, message).error);
+    assert.equal(p.funds, before);
+    assert.deepEqual(h.m.handle(p.playerId, { ...message, variantId: 'large' }), { ok: true });
+    assert.equal(p.funds, before + 6);
+    assert.ok(h.m.handle(p.playerId, { ...message, variantId: 'small' }).error);
+    const restored = h.m.offerViews()[0];
+    assert.equal(restored.seats.find(s => s.playerId === p.playerId).variantId, 'large');
+    assert.equal('effect' in restored.seats[0].slots[0].variants.large, false);
+    const other = h.ps('p_1'), otherBefore = other.funds;
+    const legacy = { ...message }; delete legacy.variantId;
+    assert.deepEqual(h.m.handle(other.playerId, legacy), { ok: true });
+    assert.equal(other.funds, otherBefore + 2, 'older clients use the declared default');
+  } finally { h.m.dispose(); }
+});
+
 /** A co-op match with two humans and one AI seat, carrying the windows `offers`. */
 function matchWith(offers, extra = {}) {
   const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 2, bots: 1, seed: 7, ...extra });

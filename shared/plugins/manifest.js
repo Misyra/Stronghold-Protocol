@@ -197,7 +197,7 @@ const ENTRIES = Object.freeze({
 const SETTING_TYPES = ['boolean', 'integer', 'number', 'enum'];
 /** Top-level fields of manifest 2 (anything else is warned about and ignored). */
 const V2_FIELDS = new Set(['$schema', 'manifest', 'id', 'name', 'englishName', 'description', 'version', 'app', 'api', 'class', 'scope',
-  'authors', 'credits', 'license', 'homepage', 'sourceLang', 'requires', 'optional', 'conflicts', 'loadAfter', 'loadBefore', 'priority',
+  'authors', 'credits', 'license', 'homepage', 'sourceLang', 'requires', 'optional', 'conflicts', 'loadAfter', 'loadBefore', 'autoWith', 'priority',
   'settings', 'permissions', 'overrides', 'rules', 'entry', 'slots', 'notices', 'files', 'lang', 'base', 'fallback', 'complete', 'machineTranslated', 'numberUnits', ...Object.keys(PARTS)]);
 /** Those fields, sorted, for the frozen API table (docs/PLUGIN-API.md). */
 export const MANIFEST_FIELDS = Object.freeze([...V2_FIELDS].sort());
@@ -665,6 +665,9 @@ export function readPluginManifest(raw, ctx) {
   for (const dep of Object.keys(conflicts)) if (has(requires, dep)) list.problem('PLUGIN_DEPS', `"${dep}" is both required and a conflict`, { at: ['conflicts', dep] });
   const loadAfter = idList(m.loadAfter, 'loadAfter', id, list);
   const loadBefore = idList(m.loadBefore, 'loadBefore', id, list);
+  // A personal ui plugin may name room plugins it belongs to: a page mounts it automatically while the room's content
+  // set lists one of them (public/js/ui/pluginFrame.js), unless the player turned it off.
+  const autoWith = idList(m.autoWith, 'autoWith', id, list);
   for (const dep of loadAfter) if (loadBefore.includes(dep)) list.problem('PLUGIN_ORDER_HINTS', `"${dep}" is in loadAfter and in loadBefore`, { at: ['loadBefore'] });
   let priority = 0;
   if (m.priority !== undefined) {
@@ -772,7 +775,7 @@ export function readPluginManifest(raw, ctx) {
   const out = {
     manifest: 2, id, class: cls, type: kind.packType, name, englishName, names, description, version, app: range, compatible, api, scope,
     authors: authorsOf(m.authors), credits: str(m.credits, 500), license: str(m.license, 100), homepage, sourceLang: sourceLang || SOURCE_LANG,
-    requires, optional, conflicts, loadAfter, loadBefore, priority, settings, permissions, parts, entry, slots, files: {},
+    requires, optional, conflicts, loadAfter, loadBefore, autoWith, priority, settings, permissions, parts, entry, slots, files: {},
     ...(m.overrides !== undefined ? { overrides } : {}),
     ...(parts.theme?.themeVars ? { themeVars: parts.theme.themeVars } : {}),
     ...(notices ? { notices } : {}),
@@ -928,6 +931,8 @@ export function pluginIndexEntry(p) {
   // the load order's other inputs: a browser orders a player's personal plugins with the same function as a room's set
   // (shared/plugins/order.js — public/js/content.js)
   for (const k of ['loadAfter', 'loadBefore']) if (m[k].length) e[k] = [...m[k]];
+  // a personal ui plugin that belongs to a room plugin: the page mounts it while that plugin is in the room's set
+  if (Array.isArray(m.autoWith) && m.autoWith.length) e.autoWith = [...m.autoWith];
   if (m.priority) e.priority = m.priority;
   if (Object.keys(m.settings).length) e.settings = JSON.parse(JSON.stringify(m.settings));
   if (m.permissions.length) e.permissions = [...m.permissions];

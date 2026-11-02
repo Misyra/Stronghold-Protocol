@@ -514,3 +514,12 @@ Live display hosts opt into Battle `resourceNumbers`; optional `b.ev` tuples are
 `['resource', unitId, 'cost'|'sp', actualSignedDelta, reason]`. They carry post-settlement receipts, never mutable
 SP requests or bar differences sampled by the renderer. These cosmetic events may be dropped when stale; they
 change no gameplay state and are absent from headless/golden observation. See [§37.3](../history/0.3.4.md).
+
+### Plugin offer selector intent
+
+`g.offer` accepts optional `variantId` naming a declared selector option or ordered `:`-joined combination for two groups. The host refuses unknown IDs or IDs
+on selector-free windows before any grant; an omitted ID takes the declared default. `m.public.offers` may include
+`title`, `selector`/`selectors`, variant availability/display quotes and each picked seat's `variantId`, never grant effects.
+Quotes contain metadata/counter names, not another player's balances. All effects and variant references are checked
+at discovery/composition, then current stock is checked on pick. Existing selector-free intents/snapshots keep their
+shape. See [PLUGINS.md](../PLUGINS.md#optional-native-selectors-and-stake-previews-034).

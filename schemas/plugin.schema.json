@@ -207,6 +207,15 @@
         "pattern": "^[a-z0-9][a-z0-9-]{1,31}$"
       }
     },
+    "autoWith": {
+      "type": "array",
+      "description": "Interface plugins only: the room plugins whose presence mounts this page automatically.",
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{1,31}$"
+      }
+    },
     "priority": {
       "type": "integer",
       "minimum": -1000,

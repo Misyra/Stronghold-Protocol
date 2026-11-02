@@ -24,7 +24,7 @@ export function offerReferenceProblems(offers, manifest, documents, official = g
     }
   }
   const problems = [];
-  for (const o of offers) for (const effect of [o.apply, ...o.cards.map(c => c.effect)].filter(Boolean)) {
+  for (const o of offers) for (const effect of [o.apply, ...o.cards.flatMap(c => [c.effect, ...Object.values(c.variants || {}).map(v => v.effect)])].filter(Boolean)) {
     const [kind] = Object.keys(effect);
     if (!refs[kind]) continue;
     const [table, prefix] = refs[kind];

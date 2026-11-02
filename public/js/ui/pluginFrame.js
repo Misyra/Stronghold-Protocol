@@ -25,7 +25,7 @@ import { catalog, loadCatalog, installedCount, pluginName } from '../content.js'
 import { toast } from './toasts.js';
 import { getLang, t } from '../../../shared/i18n.js';
 import { PROTOCOL_VERSION } from '../../../shared/constants.js';
-import { uiPlugins, uiPluginEntries } from './uiPlugins.js';
+import { uiPlugins, uiPluginsOff, uiPluginEntries } from './uiPlugins.js';
 import {
   UI_ERRORS, UI_LIMITS, UI_SLOTS, battlePayload, checkStorageWrite, clampHeight, clampNotice, createNoticeLimiter,
   createRateLimiter, createSlotTable, frameLoadDecision, framePageUrl, hostLimit, hostNet, hostRejected, hostResult,
@@ -558,9 +558,20 @@ function onWindowMessage(ev) {
   }, 0);
 }
 
+/** The room plugins of the current room (`room.state.content.plugins`, each `{ id }`), as ids. */
+function roomPluginIds(state) {
+  const list = state?.room?.content?.plugins;
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const p of list) if (p && typeof p.id === 'string' && !out.includes(p.id)) out.push(p.id);
+  return out;
+}
+
 function sync() {
   const ids = uiPlugins.get().ids;
-  if (!ids.length) { destroyAll(); return; }
+  const off = uiPluginsOff.get().ids;
+  const roomIds = roomPluginIds(store.get());
+  if (!ids.length && !off.length && !roomIds.length) { destroyAll(); return; }
   if (!installedCount(store.get())) return;
   const cat = catalog.get();
   if (cat.status !== 'ready') {
@@ -569,10 +580,13 @@ function sync() {
   }
   const entries = uiPluginEntries(cat.plugins);
   const want = [];
-  for (const id of ids) {
+  for (const p of entries) {
     if (want.length >= UI_LIMITS.maxPlugins) break;
-    if (blocked.has(id)) continue;
-    if (entries.some((p) => p.id === id)) want.push(id);
+    if (blocked.has(p.id)) continue;
+    // `autoWith` (DESIGN §32.8): a panel that belongs to a room plugin mounts while the room runs that plugin — unless
+    // the player switched it off here (uiPluginsOff survives the automatic mount).
+    const auto = !off.includes(p.id) && Array.isArray(p.autoWith) && p.autoWith.some((id) => roomIds.includes(id));
+    if (ids.includes(p.id) || auto) want.push(p.id);
   }
   const keep = new Set(want);
   for (const id of [...frames.keys()]) if (!keep.has(id)) destroy(id);
@@ -608,9 +622,12 @@ function boot() {
   if (document.body) arm();
   else document.addEventListener('DOMContentLoaded', arm, { once: true });
   uiPlugins.subscribe(() => sync());
+  uiPluginsOff.subscribe(() => sync());
   catalog.subscribe(() => sync());
   store.subscribe((s, prev) => {
     if (!prev || s.installedPlugins !== prev.installedPlugins) sync();
+    // the room's plugin set decides whether an `autoWith` page mounts
+    else if (s.room !== prev.room) sync();
     if (!prev || s.match !== prev.match || s.room !== prev.room) scheduleState();
     if (!prev || s.connection !== prev.connection) scheduleNet();
     if (!prev || s.match !== prev.match || (s.match && prev.match && s.match.result !== prev.match.result)) scheduleResult();

@@ -407,6 +407,73 @@
       }
     },
     {
+      "id": 24,
+      "type": "stat",
+      "title": "排队中",
+      "description": "此刻在匹配队列里等待的玩家数（server/matchmaking.js）。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sp-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sp-prometheus"
+          },
+          "expr": "sp_queued{job=\"collector\"}",
+          "legendFormat": "排队中",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "—",
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      }
+    },
+    {
       "id": 9,
       "type": "timeseries",
       "title": "会话与连接",
@@ -1454,7 +1521,7 @@
             "type": "prometheus",
             "uid": "sp-prometheus"
           },
-          "expr": "host:network_transmit_bits:rate2m{device=\"ens3\"}",
+          "expr": "host:network_transmit_bits:rate2m{device=\"eth0\"}",
           "legendFormat": "出口",
           "range": true,
           "instant": false
@@ -1465,7 +1532,7 @@
             "type": "prometheus",
             "uid": "sp-prometheus"
           },
-          "expr": "host:network_receive_bits:rate2m{device=\"ens3\"}",
+          "expr": "host:network_receive_bits:rate2m{device=\"eth0\"}",
           "legendFormat": "入口",
           "range": true,
           "instant": false

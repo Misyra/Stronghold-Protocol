@@ -4,6 +4,7 @@ import { html, Icon, Countdown, Button } from './components.js';
 import { GIcon } from './gameComponents.js';
 import { spTap } from './choiceOverlay.js';
 import { t } from '../../../shared/i18n.js';
+import { offerSelectors, offerDefaultVariant } from '../../../shared/plugins/offers.js';
 
 export const offerSeat = (offer, myId) => offer?.seats?.find(s => s.playerId === myId) || null;
 export const offerPickable = (offer, myId, readOnly, busy) => !readOnly && busy == null && offerSeat(offer, myId)?.picked === false;
@@ -19,14 +20,29 @@ export function offerVisible(offers, myId, dismissed = [], selected = null) {
 }
 const ICONS = { funds: 'sell', layers: 'bolt', item: 'shield', chess: 'rook', refresh: 'refresh' };
 
-export function OfferOverlay({ pub, myId, readOnly = false, onAction }) {
+/** Quote only the local player's balance; no other seat's private counters are exposed in a window. */
+export function offerCard(card, variantId, priv) {
+  const resolved = { ...card, ...(card?.variants?.[variantId] || {}) };
+  const q = resolved.quote;
+  const funds = priv?.funds, debt = priv?.counters?.[q?.debtCounter], cap = priv?.counters?.[q?.creditLimitCounter];
+  if (!q || ![funds, debt ?? 0, cap].every(Number.isFinite)) return resolved;
+  const requested = Math.floor(Math.max(0, funds) * q.fraction);
+  const credit = Math.max(0, cap - (debt || 0));
+  const stake = q.multiplier > 1 ? Math.min(requested, Math.floor(credit / (q.multiplier - 1))) : requested;
+  return { ...resolved, available: resolved.available !== false && stake > 0,
+    estimate: { stake, requested, amount: Math.round(stake * q.multiplier) } };
+}
+
+export function OfferOverlay({ pub, priv, myId, readOnly = false, onAction }) {
   const [selected, setSelected] = useState(null);
   const [dismissed, setDismissed] = useState([]);
   const [armed, setArmed] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [variant, setVariant] = useState(null);
   const root = useRef(null);
   const offers = pub?.offers || [];
   const offer = offerVisible(offers, myId, dismissed, selected);
+  const variantId = offer && variant?.seq === offer.seq ? variant.id : offerSeat(offer, myId)?.variantId ?? offerDefaultVariant(offer);
   const open = o => { setSelected({ seq: o.seq, picked: offerSeat(o, myId)?.picked }); setArmed(null); };
   const dismissible = offer?.quorum === 'none';
   const dismiss = () => {
@@ -44,14 +60,14 @@ export function OfferOverlay({ pub, myId, readOnly = false, onAction }) {
   if (!offer) return html`<${OfferDock} offers=${offers} myId=${myId} onOpen=${open} />`;
   const can = offerPickable(offer, myId, readOnly, busy);
   const act = async (idx, refresh = false) => {
-    if (!can || !refresh && offerSeat(offer, myId)?.slots[idx]?.available === false) return;
+    if (!can || !refresh && offerCard(offerSeat(offer, myId)?.slots[idx], variantId, priv).available === false) return;
     const token = `${offer.seq}:${idx}`;
     setArmed(null); setBusy(token);
-    try { await onAction(offer, idx, refresh, offerSeat(offer, myId)?.slots[idx]?.id); }
+    try { await onAction(offer, idx, refresh, offerSeat(offer, myId)?.slots[idx]?.id, variantId); }
     finally { setBusy(b => b === token ? null : b); }
   };
   const tap = idx => {
-    if (offerSeat(offer, myId)?.slots[idx]?.available === false) return;
+    if (offerCard(offerSeat(offer, myId)?.slots[idx], variantId, priv).available === false) return;
     const next = spTap(armed, idx, can);
     setArmed(next.armed);
     if (next.pick != null) void act(next.pick);
@@ -69,10 +85,12 @@ export function OfferOverlay({ pub, myId, readOnly = false, onAction }) {
     <div class="spov__veil" aria-hidden="true"></div>
     <div class="spov__inner">
       <nav class="offerov__tabs" aria-label=${t('插件选择')}>
-        ${offers.map(o => html`<${Button} key=${o.seq} size="sm" onClick=${() => open(o)} aria-pressed=${o.seq === offer.seq}>${o.pluginId} / ${o.id}<//>`)}
+        ${offers.map(o => html`<${Button} key=${o.seq} size="sm" onClick=${() => open(o)} aria-pressed=${o.seq === offer.seq}>${o.title || `${o.pluginId} / ${o.id}`}<//>`)}
         ${dismissible ? html`<${Button} size="sm" onClick=${dismiss}>${t('收起')}<//>` : null}
       </nav>
-      <${OfferView} offer=${offer} myId=${myId} readOnly=${readOnly} busy=${busy} armed=${armed} onTap=${tap} onRefresh=${idx => act(idx, true)} />
+      <${OfferView} offer=${offer} priv=${priv} myId=${myId} readOnly=${readOnly} busy=${busy} armed=${armed}
+        variantId=${variantId} onVariant=${id => { setVariant({ seq: offer.seq, id }); setArmed(null); }}
+        onTap=${tap} onRefresh=${idx => act(idx, true)} />
     </div>
   </div>`;
 }
@@ -80,34 +98,48 @@ export function OfferOverlay({ pub, myId, readOnly = false, onAction }) {
 export function OfferDock({ offers, myId, onOpen }) {
   return html`<nav class="offerov__dock" aria-label=${t('插件选择')}>
     ${offers.map(o => html`<${Button} key=${o.seq} size="sm" onClick=${() => onOpen(o)}>
-      ${t('插件选择')} · ${o.id} · ${!offerSeat(o, myId) ? t('观战中') : offerSeat(o, myId)?.picked ? t('等待队友') : t('选择一项')}<//>`)}
+      ${o.title || `${t('插件选择')} · ${o.id}`} · ${!offerSeat(o, myId) ? t('观战中') : offerSeat(o, myId)?.picked ? t('等待队友') : t('选择一项')}<//>`)}
   </nav>`;
 }
 
 /** Pure view for the native match popup and node rendering tests; all plugin text stays text. */
-export function OfferView({ offer, myId, readOnly = false, busy = null, armed = null, onTap = () => {}, onRefresh = () => {} }) {
+export function OfferView({ offer, priv, myId, readOnly = false, busy = null, armed = null, variantId = offerDefaultVariant(offer),
+  onVariant = () => {}, onTap = () => {}, onRefresh = () => {} }) {
   const mine = offerSeat(offer, myId);
   const seat = mine || offer.seats[0];
   const can = offerPickable(offer, myId, readOnly, busy);
   return html`<header class="spov__head">
-    <div><h2>${t('插件选择')} · ${offer.id}</h2><p>${t('点击卡牌选中，再次点击确认')}</p>
+    <div><h2>${offer.title || `${t('插件选择')} · ${offer.id}`}</h2><p>${t('点击卡牌选中，再次点击确认')}</p>
       <p role="status">${readOnly || !mine ? t('观战中') : mine.picked ? t('等待队友') : t('选择一项')}
         · ${t('还有 {n} 人未选择', { n: offer.waiting })}</p></div>
     <${Countdown} deadline=${offer.deadline} total=${offer.windowSec} size="md" />
   </header>
+  ${offerSelectors(offer).map((selector, index) => html`<div class="offerov__selector" role="group" aria-label=${selector.label}>
+    <span>${selector.label}</span><div class="offerov__options">
+      ${selector.options.map(option => html`<button type="button" key=${option.id} disabled=${!can}
+        class=${variantId?.split(':')[index] === option.id ? 'is-selected' : ''} aria-pressed=${variantId?.split(':')[index] === option.id}
+        onClick=${() => { const ids = (variantId || offerDefaultVariant(offer)).split(':'); ids[index] = option.id; onVariant(ids.join(':')); }}>${option.name}</button>`)}
+    </div></div>`)}
   <div class="spov__grid spov__grid--3">
-    ${(seat?.slots || []).map(card => html`<div class="offerov__slot" key=${card.idx}>
+    ${(seat?.slots || []).map(source => { const card = offerCard(source, variantId, mine && !mine.picked && !readOnly ? priv : null); return html`<div class="offerov__slot" key=${card.idx}>
       <button type="button" class=${`spcard ${can && card.available !== false ? 'is-pickable' : ''} ${can && card.available !== false && armed === card.idx ? 'is-armed' : ''}`}
         disabled=${!can || card.available === false} aria-pressed=${can && card.available !== false && armed === card.idx} aria-busy=${busy != null} onClick=${() => onTap(card.idx)}
         aria-label=${card.available !== false && armed === card.idx ? t('{name}，已选中，再次点击确认', { name: card.name }) : card.name}>
         <span class="spcard__head"><span class="spcard__icon" aria-hidden="true"><${GIcon} name=${ICONS[card.icon]} /></span>
           <b class="spcard__name">${card.name}</b></span>
         <span class="spcard__desc">${card.desc}</span>
-        ${card.available === false ? html`<span class="spcard__unavailable">${t('暂不可用')}</span>` : null}
+        ${card.estimate ? html`<span class="offerov__quote">
+          <b>${t('实际本金 {n}', { n: card.estimate.stake })}</b>
+          <span class="offerov__profit">${t('押对净赚 +{n}', { n: card.estimate.amount })}</span>
+          <span class="offerov__loss">${t('押错净亏 −{n}', { n: card.estimate.amount })}</span>
+          ${card.estimate.stake < card.estimate.requested ? html`<small>${t('受信用额度限制')}</small>` : null}
+        </span>` : null}
+        ${card.available === false ? html`<span class="spcard__unavailable">${card.estimate?.stake === 0 ? t('资金或信用额度不足') : t('暂不可用')}</span>` : null}
         ${can && card.available !== false && armed === card.idx ? html`<span class="spcard__confirm"><${Icon} name="check" />${t('确认选择')}</span>` : null}
       </button>
-      <${Button} size="sm" icon="refresh" disabled=${!can || card.remaining <= 0} onClick=${() => onRefresh(card.idx)}>
+      ${card.remaining > 0 ? html`<${Button} size="sm" icon="refresh" disabled=${!can} onClick=${() => onRefresh(card.idx)}>
         ${t('刷新（剩余 {n} 次）', { n: card.remaining })}<//>
-    </div>`)}
+      ` : null}
+    </div>`; })}
   </div>`;
 }

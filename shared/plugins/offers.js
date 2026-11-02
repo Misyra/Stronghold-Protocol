@@ -38,6 +38,8 @@ export const OFFER_EFFECTS = Object.freeze(['funds', 'pendingFunds', 'freeRefres
 // [ASSUMED] Small, uniform JSON pools and symbolic icons; no scripts, URLs, weights or dynamic sources.
 export const OFFER_ICONS = Object.freeze(['funds', 'layers', 'item', 'chess', 'refresh']);
 export const OFFER_CARDS_MAX = 128;
+/** Optional author-facing UI fields, implemented by the API-2 host since 0.3.4. */
+export const OFFER_UI_FIELDS = Object.freeze({ window: Object.freeze(['title', 'selector', 'selectors']), card: Object.freeze(['variants', 'quote']) });
 /** Best-effort marker names inside a deferred batch, for messages: never a path and never code. */
 export const OFFER_NAMES = Object.freeze(['enemy', 'player']);
 
@@ -45,6 +47,37 @@ export const OFFER_NAMES = Object.freeze(['enemy', 'player']);
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const int = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
+
+const selectorId = v => typeof v === 'string' && /^[a-z0-9][a-z0-9-]{0,31}$/.test(v);
+export const offerSelectors = offer => offer?.selectors ?? (offer?.selector ? [offer.selector] : []);
+export const offerDefaultVariant = offer => offerSelectors(offer).length ? offerSelectors(offer).map(s => s.default).join(':') : undefined;
+export function offerVariantIds(offer) {
+  const selectors = offerSelectors(offer);
+  let ids = selectors.length ? [''] : [];
+  for (const selector of selectors) ids = ids.flatMap(id => selector.options.map(o => id ? id + ':' + o.id : o.id));
+  return ids;
+}
+function readSelector(value) {
+  if (!isObj(value) || typeof value.label !== 'string' || !value.label.trim() || value.label.length > 80
+    || !Array.isArray(value.options) || value.options.length < 2 || value.options.length > 6
+    || Object.keys(value).some(k => !['label', 'default', 'options'].includes(k))) return null;
+  const ids = new Set();
+  for (const option of value.options) {
+    if (!isObj(option) || !selectorId(option.id) || ids.has(option.id) || typeof option.name !== 'string'
+      || !option.name.trim() || option.name.length > 40 || Object.keys(option).some(k => !['id', 'name'].includes(k))) return null;
+    ids.add(option.id);
+  }
+  return ids.has(value.default) ? { label: value.label, default: value.default, options: value.options.map(o => ({ id: o.id, name: o.name })) } : null;
+}
+
+// A display-only quote. The grant is always a separately validated primitive, never computed from client amounts.
+function readQuote(value) {
+  if (!isObj(value) || !Number.isFinite(value.fraction) || value.fraction <= 0 || value.fraction > 1
+    || !Number.isFinite(value.multiplier) || value.multiplier < 1 || value.multiplier > 100
+    || !['debtCounter', 'creditLimitCounter'].every(k => typeof value[k] === 'string' && value[k].length > 0 && value[k].length <= 128)
+    || Object.keys(value).some(k => !['fraction', 'multiplier', 'debtCounter', 'creditLimitCounter'].includes(k))) return null;
+  return { fraction: value.fraction, multiplier: value.multiplier, debtCounter: value.debtCounter, creditLimitCounter: value.creditLimitCounter };
+}
 
 /**
  * Sanity ceiling for a round number in an expression. It is not a mode's last round (that is the mode's own data and
@@ -158,7 +191,27 @@ export function readOfferCards(raw, offer) {
     const effect = c.apply ?? offer.apply;
     const err = effectProblem(effect, `${at}.apply`);
     if (err) bad(`${at}.apply`, err);
-    return { id: c.id, name: c.name, desc: c.desc, icon: c.icon, effect, when };
+    const quote = c.quote === undefined ? null : readQuote(c.quote);
+    if (c.quote !== undefined && !quote) bad(`${at}.quote`, 'invalid margin quote');
+    let variants = null;
+    if (c.variants !== undefined) {
+      const ids = offerVariantIds(offer);
+      if (!ids.length || !isObj(c.variants) || Object.keys(c.variants).length !== ids.length
+        || Object.keys(c.variants).some(k => !ids.includes(k))) bad(`${at}.variants`, 'variants must match every selector combination');
+      else {
+        variants = {};
+        for (const [id, v] of Object.entries(c.variants)) {
+          if (!isObj(v) || Object.keys(v).some(k => !['apply', 'quote'].includes(k)) || effectProblem(v.apply, `${at}.variants.${id}`)) {
+            bad(`${at}.variants.${id}`, 'one validated grant primitive is required'); continue;
+          }
+          const q = v.quote === undefined ? quote : readQuote(v.quote);
+          if (v.quote !== undefined && !q) bad(`${at}.variants.${id}.quote`, 'invalid margin quote');
+          variants[id] = { effect: v.apply, ...(q ? { quote: q } : {}) };
+        }
+      }
+    }
+    return { id: c.id, name: c.name, desc: c.desc, icon: c.icon, effect, when,
+      ...(quote ? { quote } : {}), ...(variants ? { variants } : {}) };
   });
   return { cards: problems.length ? [] : out, problems };
 }
@@ -179,6 +232,18 @@ export function readOfferFile(raw, { pluginId = '', rel = '' } = {}) {
   const item = (code, message) => { p(code, where, message); return null; };
   if (!isObj(raw)) { item('PLUGIN_OFFER_SHAPE', `${where}: not a JSON object`); return { offer: null, problems, warnings }; }
   const o = /** @type {Record<string, any>} */ (raw);
+  const selector = o.selector === undefined ? null : readSelector(o.selector);
+  if (o.selector !== undefined && !selector) p('PLUGIN_OFFER_SHAPE', 'selector', 'selector requires 2–6 named options and a valid default');
+  let selectors = null;
+  if (o.selectors !== undefined) {
+    if (o.selector !== undefined || !Array.isArray(o.selectors) || o.selectors.length < 1 || o.selectors.length > 2
+      || o.selectors.some(s => !readSelector(s))) p('PLUGIN_OFFER_SHAPE', 'selectors', 'selectors is 1–2 valid selectors; do not also declare selector');
+    else {
+      selectors = o.selectors.map(readSelector);
+      if (offerVariantIds({ selectors }).some(id => id.length > 64)) p('PLUGIN_OFFER_SHAPE', 'selectors', 'combined variant IDs must fit 64 characters');
+    }
+  }
+  if (o.title !== undefined && (typeof o.title !== 'string' || !o.title.trim() || o.title.length > 80)) p('PLUGIN_OFFER_SHAPE', 'title', 'title is nonempty text up to 80 characters');
   if (o.offer !== OFFER_FILE_VERSION) p('PLUGIN_OFFER_SHAPE', 'offer', `"offer": ${JSON.stringify(o.offer)} is not ${OFFER_FILE_VERSION}`);
   const fileId = typeof o.id === 'string' ? o.id.trim() : '';
   if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(fileId)) p('PLUGIN_OFFER_SHAPE', 'id', '"id" is 1–32 lower-case letters, digits and - (it names the window in messages and messages of the room)');
@@ -242,12 +307,15 @@ export function readOfferFile(raw, { pluginId = '', rel = '' } = {}) {
     const message = effectProblem(o.apply, 'apply');
     if (message) p('PLUGIN_OFFER_SHAPE', 'apply', `"apply": ${message} (a pick applies one effect primitive, never code)`);
   }
-  for (const k of Object.keys(o)) if (!['offer', 'id', 'when', 'windowSec', 'quorum', 'onTimeout', 'defer', 'slots', 'refresh', 'shared', 'options', 'apply'].includes(k)) w('PLUGIN_OFFER_SHAPE', k, `"${k}" is not a field of an offer (ignored)`);
+  for (const k of Object.keys(o)) if (!['offer', 'id', 'when', 'windowSec', 'quorum', 'onTimeout', 'defer', 'slots', 'refresh', 'shared', 'options', 'apply', ...OFFER_UI_FIELDS.window].includes(k)) w('PLUGIN_OFFER_SHAPE', k, `"${k}" is not a field of an offer (ignored)`);
   if (problems.length) return { offer: null, problems, warnings };
   return {
     offer: {
       id: fileId, rel, pluginId, when: { at: at0, rounds, bands }, rounds, windowSec, quorum, onTimeout, defer, slots, refresh, shared, options,
       ...(o.apply === undefined ? {} : { apply: o.apply }),
+      ...(selector ? { selector } : {}),
+      ...(selectors ? { selectors } : {}),
+      ...(o.title === undefined ? {} : { title: o.title }),
     },
     problems, warnings,
   };

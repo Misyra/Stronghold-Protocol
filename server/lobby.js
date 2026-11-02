@@ -774,7 +774,9 @@ export class Lobby {
       for (const s of r.seats) if (s && !s.left) (s.isBot ? bots++ : humans++);
       spectators += r.spectators.length;
     }
-    return { rooms: this.rooms.size, matches, humans, bots, spectators, roomPressure: this.roomReclamation.stats() };
+    return { rooms: this.rooms.size, matches, humans, bots, spectators, roomPressure: this.roomReclamation.stats(),
+      // 匹配队列 (server/matchmaking.js): /healthz 的公开计数，监控面板的「排队中」用它
+      matchmaking: { queued: this.matchmaking.size, offers: this.matchmaking.offers.size } };
   }
 
   /** 房间回收(移植自用户分支): pressure overrides reconnect grace, but never removes a room with an online player or spectator. */

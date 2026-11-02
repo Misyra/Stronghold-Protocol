@@ -14,6 +14,8 @@ import { UI_ERRORS, UI_LIMITS } from '../../../shared/plugins/ui.js';
 export const UI_PREF = 'ui-plugins';
 /** localStorage preference of the ids this browser's host has marked 推荐. */
 export const UI_RECOMMEND_PREF = 'ui-recommend';
+/** localStorage preference of the ids this browser turned OFF explicitly (so `autoWith` cannot re-mount them). */
+export const UI_OFF_PREF = 'ui-plugins-off';
 
 const isIds = (v) => Array.isArray(v) && v.every((x) => isPluginId(x));
 
@@ -30,6 +32,10 @@ uiPlugins.subscribe((s) => savePref(UI_PREF, s.ids));
 /** The ids this browser recommends (the host's own mark): `{ ids }`. */
 export const uiRecommend = createStore({ ids: loadIds(UI_RECOMMEND_PREF) });
 uiRecommend.subscribe((s) => savePref(UI_RECOMMEND_PREF, s.ids));
+
+/** The ids this browser switched OFF against an automatic mount (manifest `autoWith`): `{ ids }`. */
+export const uiPluginsOff = createStore({ ids: loadIds(UI_OFF_PREF) });
+uiPluginsOff.subscribe((s) => savePref(UI_OFF_PREF, s.ids));
 
 /**
  * Loaded interface plugins of scope `personal` in a catalogue.
@@ -54,6 +60,10 @@ export function setUiPlugin(id, on) {
     cur.push(id);
   }
   uiPlugins.set({ ids: cur.sort() });
+  // An explicit OFF must survive the manifest's automatic mount (pluginFrame `autoWith`).
+  const off = uiPluginsOff.get().ids.filter((x) => x !== id);
+  if (!on) off.push(id);
+  uiPluginsOff.set({ ids: off.sort() });
   return { ok: true };
 }
 

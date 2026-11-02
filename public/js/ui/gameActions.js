@@ -91,7 +91,7 @@ export const actions = {
   destroy: (uid) => act('g.destroy', { uid }),
   unequip: (itemUid) => act('g.unequip', { itemUid }),
   reward: (idx) => act('g.reward', { idx }),
-  offer: (offer, idx, refresh = false, cardId) => act(refresh ? 'g.offerRefresh' : 'g.offer', { offerId: offer.id, pluginId: offer.pluginId, seq: offer.seq, idx, cardId }),
+  offer: (offer, idx, refresh = false, cardId, variantId) => act(refresh ? 'g.offerRefresh' : 'g.offer', { offerId: offer.id, pluginId: offer.pluginId, seq: offer.seq, idx, cardId, ...(!refresh && variantId !== undefined ? { variantId } : {}) }),
   choice: (idx, choiceId) => act('g.choice', choiceId === undefined ? { idx } : { idx, choiceId }),
   // 战斗 2 倍速投票（speedVote.js）：on = 是否赞成；全员赞成 → 下一回合生效
   speedVote: (on) => act('g.speedVote', { on: !!on }, { sfx: 'confirm' }),

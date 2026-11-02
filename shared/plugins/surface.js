@@ -25,6 +25,7 @@ import { UI_HOST_MESSAGES, UI_PLUGIN_MESSAGES } from './ui.js';
 import { PLUGIN_ERRORS } from './errors.js';
 import { CATALOG_ENTRY_FIELDS, CATALOG_FIELDS } from './catalog.js';
 import { SDK_ID, SDK_MEMBERS } from './sdk.js';
+import { OFFER_UI_FIELDS } from './offers.js';
 /** The exports of shared/plugins/sdk.js besides SDK_ID / SDK_MEMBERS (test/plugins/surface.test.js checks the real module has no other). */
 export const SDK_EXPORTS = Object.freeze(['constants', 'createSDK', 'dir', 'kit', 'math', 'targeting']);
 
@@ -121,6 +122,7 @@ export function buildSurface(extra = {}) {
     'manifest.field.rules', 'error.PLUGIN_RULE_CONFLICT', 'error.PLUGIN_RULES', ...RULE_NAMES.map((name) => `rule.${name}`)]);
   const add = (name, group, stability, anchor, since) => rows.push({ name, group, stability, since: since ?? (added031.has(name) ? '0.3.1' : SURFACE_SINCE), anchor });
   for (const field of MANIFEST_FIELDS) add(`manifest.field.${field}`, 'manifest', EXPERIMENTAL_FIELDS.has(field) ? 'experimental' : 'stable', 'shared/plugins/manifest.js#MANIFEST_FIELDS');
+  for (const [scope, fields] of Object.entries(OFFER_UI_FIELDS)) for (const field of fields) add(`offer.${scope}.${field}`, 'offer', 'experimental', 'shared/plugins/offers.js#OFFER_UI_FIELDS', '0.3.4');
   for (const name of RULE_NAMES) add(`rule.${name}`, 'rule', 'stable', 'shared/plugins/rules.js#RULE_SWITCHES');
   for (const name of Object.keys(PERMISSIONS)) add(`permission.${name}`, 'permission', EXPERIMENTAL_PERMISSIONS.has(name) ? 'experimental' : 'stable', 'shared/plugins/manifest.js#PERMISSIONS');
   for (const [name, cls] of Object.entries(PLUGIN_CLASSES)) add(`class.${name}`, 'class', cls.status === 'unsupported' || EXPERIMENTAL_CLASSES.has(name) ? 'experimental' : 'stable', 'shared/plugins/manifest.js#PLUGIN_CLASSES');

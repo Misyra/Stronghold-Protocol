@@ -20,6 +20,10 @@
     "anchor": "shared/plugins/manifest.js#MANIFEST_FIELDS"
   },
   {
+    "name": "manifest.field.autoWith",
+    "anchor": "shared/plugins/manifest.js#MANIFEST_FIELDS"
+  },
+  {
     "name": "manifest.field.base",
     "anchor": "shared/plugins/manifest.js#MANIFEST_FIELDS"
   },

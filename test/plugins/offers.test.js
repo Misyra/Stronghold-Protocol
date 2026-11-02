@@ -14,6 +14,7 @@ import {
   OFFER_EFFECTS, OFFER_QUORUM, OFFER_TIMEOUT, OFFER_WHEN, OFFER_FILE_VERSION, OFFER_ROUND_MAX,
   offerAt, offersAt, readOfferCards, readOfferFile, readRounds, roundsMatch, roundsText,
 } from '../../shared/plugins/offers.js';
+import { offerVariantIds, offerDefaultVariant } from '../../shared/plugins/offers.js';
 import { PLUGIN_OFFERS_MAX_WINDOW_SEC, PLUGIN_OFFER_SLOTS } from '../../shared/plugins/limits.js';
 import { readPluginFolder } from '../../server/plugins/registry.js';
 
@@ -34,6 +35,39 @@ const window = (extra = {}) => ({
 });
 const read = (raw, rel = 'offers/early-pick.json') => readOfferFile(raw, { pluginId: 'demo', rel, at: ['offers'] });
 const codes = (r) => r.problems.map((p) => p.code);
+
+test('selector variants validate closed choices, bounded quotes and one declarative grant per variant', () => {
+  const selector = { label: '倍率', default: 'x1', options: [{ id: 'x1', name: '1倍' }, { id: 'x3', name: '3倍' }] };
+  const w = read(window({ selector })).offer;
+  assert.ok(w.selector);
+  for (const bad of [{ ...selector, default: 'missing' }, { ...selector, options: [selector.options[0]] },
+    { ...selector, options: [selector.options[0], selector.options[0]] }]) assert.ok(read(window({ selector: bad })).problems.length);
+  const card = { id: 'trade', name: 'Trade', desc: 'Pick', icon: 'item', apply: { funds: 1 }, variants: {
+    x1: { apply: { funds: 2 } }, x3: { apply: { funds: 6 }, quote: { fraction: 0.5, multiplier: 3, debtCounter: 'd', creditLimitCounter: 'c' } },
+  } };
+  const pool = [card, { ...card, id: 'b' }, { ...card, id: 'c' }];
+  assert.deepEqual(readOfferCards(pool, w).problems, []);
+  for (const variants of [{ x1: card.variants.x1 }, { ...card.variants, extra: card.variants.x1 },
+    { ...card.variants, x3: { apply: { funds: -1 } } },
+    { ...card.variants, x3: { apply: { funds: 2 }, quote: { ...card.variants.x3.quote, multiplier: Infinity } } }]) {
+    assert.ok(readOfferCards([{ ...card, variants }, ...pool.slice(1)], w).problems.length);
+  }
+});
+
+test('two selectors require every validated Cartesian combination and one bounded composite identity', () => {
+  const a = { label: '倍率', default: 'x2', options: [{ id: 'x1', name: '1倍' }, { id: 'x2', name: '2倍' }] };
+  const b = { label: '仓位', default: 'half', options: [{ id: 'half', name: '1/2' }, { id: 'all', name: '全部' }] };
+  const parsed = read(window({ selectors: [a, b] }));
+  assert.deepEqual(parsed.problems, []);
+  assert.deepEqual(offerVariantIds(parsed.offer), ['x1:half', 'x1:all', 'x2:half', 'x2:all']);
+  assert.equal(offerDefaultVariant(parsed.offer), 'x2:half');
+  assert.ok(read(window({ selectors: [a, b, a] })).problems.length);
+  assert.ok(read(window({ selector: a, selectors: [b] })).problems.length);
+  const variants = Object.fromEntries(offerVariantIds(parsed.offer).map(id => [id, { apply: { funds: 1 } }]));
+  const cards = ['a', 'b', 'c'].map(id => ({ id, name: id, desc: id, icon: 'funds', apply: { funds: 0 }, variants }));
+  assert.deepEqual(readOfferCards(cards, parsed.offer).problems, []);
+  assert.ok(readOfferCards([{ ...cards[0], variants: { 'x1:half': variants['x1:half'] } }, ...cards.slice(1)], parsed.offer).problems.length);
+});
 
 test('a well-formed window is read: the moment, the rounds and every limit', () => {
   const r = read(window());

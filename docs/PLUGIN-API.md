@@ -69,6 +69,7 @@ replacement. No route or frozen plugin grammar member is added; the stable surfa
 | `manifest.field.app` | stable | 0.3.0 | `shared/plugins/manifest.js#MANIFEST_FIELDS` |
 | `manifest.field.assets` | stable | 0.3.0 | `shared/plugins/manifest.js#MANIFEST_FIELDS` |
 | `manifest.field.authors` | stable | 0.3.0 | `shared/plugins/manifest.js#MANIFEST_FIELDS` |
+| `manifest.field.autoWith` | stable | 0.3.0 | `shared/plugins/manifest.js#MANIFEST_FIELDS` |
 | `manifest.field.base` | stable | 0.3.0 | `shared/plugins/manifest.js#MANIFEST_FIELDS` |
 | `manifest.field.class` | stable | 0.3.0 | `shared/plugins/manifest.js#MANIFEST_FIELDS` |
 | `manifest.field.complete` | stable | 0.3.0 | `shared/plugins/manifest.js#MANIFEST_FIELDS` |
@@ -110,6 +111,11 @@ replacement. No route or frozen plugin grammar member is added; the stable surfa
 | `manifest.field.stages` | stable | 0.3.0 | `shared/plugins/manifest.js#MANIFEST_FIELDS` |
 | `manifest.field.theme` | stable | 0.3.0 | `shared/plugins/manifest.js#MANIFEST_FIELDS` |
 | `manifest.field.version` | stable | 0.3.0 | `shared/plugins/manifest.js#MANIFEST_FIELDS` |
+| `offer.window.title` | experimental | 0.3.4 | `shared/plugins/offers.js#OFFER_UI_FIELDS` |
+| `offer.window.selector` | experimental | 0.3.4 | `shared/plugins/offers.js#OFFER_UI_FIELDS` |
+| `offer.window.selectors` | experimental | 0.3.4 | `shared/plugins/offers.js#OFFER_UI_FIELDS` |
+| `offer.card.variants` | experimental | 0.3.4 | `shared/plugins/offers.js#OFFER_UI_FIELDS` |
+| `offer.card.quote` | experimental | 0.3.4 | `shared/plugins/offers.js#OFFER_UI_FIELDS` |
 | `rule.shopBias` | stable | 0.3.1 | `shared/plugins/rules.js#RULE_SWITCHES` |
 | `rule.prepLoadout` | stable | 0.3.1 | `shared/plugins/rules.js#RULE_SWITCHES` |
 | `rule.morphPairing` | stable | 0.3.1 | `shared/plugins/rules.js#RULE_SWITCHES` |

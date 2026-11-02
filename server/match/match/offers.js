@@ -4,7 +4,7 @@
 // `when.bands` narrows the participants to players of these bands; a card's `when` ({ solo: true } / { seat: k })
 // is a per-picker condition checked at open time and again at every pick — declarative data, never code.
 import { ERR } from '../../../shared/constants.js';
-import { offerAt, offersAt } from '../../../shared/plugins/offers.js';
+import { offerAt, offersAt, offerSelectors, offerVariantIds, offerDefaultVariant } from '../../../shared/plugins/offers.js';
 import { createRng, deriveSeed } from '../../sim/rng.js';
 import { OK, fail } from './common.js';
 
@@ -86,12 +86,20 @@ export class MatchOffers {
     return this.offerWin.filter(w => !w.closed).map(w => ({
       id: w.id, pluginId: w.pluginId, seq: w.seq, at: w.at, round: w.round,
       deadline: w.deadline, windowSec: w.offer.windowSec, quorum: w.quorum,
+      ...(w.offer.selector ? { selector: w.offer.selector } : {}),
+      ...(w.offer.selectors ? { selectors: w.offer.selectors } : {}),
+      ...(w.offer.title ? { title: w.offer.title } : {}),
       waiting: this._offerWaiting(w).length, players: this._offerParticipants(w).length,
       seats: this._offerParticipants(w).map(ps => ({
         playerId: ps.playerId, picked: w.picks.has(ps.playerId),
+        ...(offerSelectors(w.offer).length ? { variantId: w.picks.get(ps.playerId)?.variantId ?? offerDefaultVariant(w.offer) } : {}),
         slots: w.options.get(ps.playerId).map((c, idx) => ({
           idx, id: c.id, name: c.name, desc: c.desc, icon: c.icon,
           available: this._offerAvailable(ps, c),
+          ...(c.quote ? { quote: c.quote } : {}),
+          ...(c.variants ? { variants: Object.fromEntries(Object.entries(c.variants).map(([id, v]) => [id, {
+            available: this._offerAvailable(ps, { ...c, ...v }), ...(v.quote ? { quote: v.quote } : {}),
+          }])) } : {}),
           remaining: Math.max(0, (w.refresh?.perSlot || 0) - w.refreshUsed.get(ps.playerId)[idx]),
         })),
       })),
@@ -102,8 +110,10 @@ export class MatchOffers {
     const w = this._openOffer(offerId, identity);
     const refusal = this._offerCanPick(ps, w, idx, identity?.cardId);
     if (refusal) return refusal;
-    if (!this._offerApply(ps, w, idx)) return fail(ERR.BAD_TARGET);
-    w.picks.set(ps.playerId, { idx });
+    const variantId = identity?.variantId ?? offerDefaultVariant(w.offer);
+    if (variantId !== undefined && !offerVariantIds(w.offer).includes(variantId)) return fail(ERR.BAD_TARGET);
+    if (!this._offerApply(ps, w, idx, variantId)) return fail(ERR.BAD_TARGET);
+    w.picks.set(ps.playerId, { idx, ...(variantId === undefined ? {} : { variantId }) });
     this._offerSettleIfDone(w);
     this._offerProgress();
     return OK;
@@ -112,7 +122,7 @@ export class MatchOffers {
   _offerCanPick(ps, w, idx, cardId) {
     if (!w || this.disposed || this.ended || this.sched.now() >= w.deadline) return fail(ERR.WRONG_PHASE);
     if (!ps || !ps.alive || ps.left || !w.options.has(ps.playerId)) return fail(ERR.ELIMINATED);
-    if (!Number.isInteger(idx) || idx < 0 || idx >= w.slots) return fail(ERR.BAD_TARGET);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= w.slots || !w.options.get(ps.playerId)[idx]) return fail(ERR.BAD_TARGET);
     if (w.picks.has(ps.playerId)) return fail(ERR.ALREADY);
     if (cardId !== undefined && w.options.get(ps.playerId)[idx].id !== cardId) return fail(ERR.BAD_TARGET, 'slot changed');
     return null;
@@ -146,8 +156,9 @@ export class MatchOffers {
     return true;
   }
 
-  _offerApply(ps, w, idx) {
-    const card = w.options.get(ps.playerId)[idx];
+  _offerApply(ps, w, idx, variantId = offerDefaultVariant(w.offer)) {
+    const base = w.options.get(ps.playerId)[idx];
+    const card = { ...base, ...(base.variants?.[variantId] || {}) };
     if (!this._offerAvailable(ps, card)) return false;
     const effect = card.effect;
     const reason = `offer:${w.pluginId}:${w.id}`;

@@ -1114,6 +1114,40 @@ both declaration and source bytes are hashed. Plugins without offers gain no new
 offer plugin never changes the vanilla composition. Shared engine/protocol code edits still change the build-wide
 vanilla code identity, as required by §9's hash contract.
 
+### Optional native selectors and stake previews (0.3.4)
+
+API-2 windows may declare `title` (text up to 80 characters) and a `selector`:
+
+```json
+{"label":"Multiplier","default":"x20","options":[{"id":"x10","name":"1×"},{"id":"x20","name":"2×"}]}
+```
+
+Alternatively, `selectors` declares 1–2 such groups (mutually exclusive with `selector`), for example multiplier
+and stake fraction. Each combination is identified by the ordered option IDs joined with `:` (`x20:d2`); every
+combination must be declared in a card's variants, and the combined ID must fit 64 characters.
+A selector has 2–6 unique lower-case IDs (1–32 characters) and names (1–40 characters); its default must exist.
+Each card may supply `variants` keyed by every selector option or multi-group combination ID. A variant has exactly one `apply` primitive and an
+optional `quote`; it uses the same grant permissions, ownership and composition reference checks as the base card.
+Cards without variants keep their base effect, allowing a common Skip card. A native `g.offer` may send `variantId`;
+unknown IDs, IDs on selector-free windows, stale identity and repeated picks are refused. An omitted ID uses the
+declared default, including timeout/bot fallbacks. Reconnect views retain the picked variant but never expose effects.
+
+An optional card/variant `quote` is display-only:
+
+```json
+{"fraction":0.5,"multiplier":2,"debtCounter":"example:debt","creditLimitCounter":"example:credit"}
+```
+
+`fraction` is finite in (0,1], multiplier in [1,100], and counter names are nonempty text up to 128 characters.
+The preview uses ONLY the local private funds/counters: requested principal = floor(funds × fraction), available
+credit = max(0, limit − debt), actual principal = min(requested, floor(credit/(multiplier−1))) for multiplier>1;
+profit/loss = round(actual × multiplier). The actual gameplay handler remains authoritative; quote values never
+become client-submitted amounts. The native UI renders a bounded selector, live escrow/profit/loss, a credit-limit
+notice and disabled zero-principal cards. Changing either selector clears pending two-tap confirmation. Read-only
+spectators see neither another player's private quote nor active selector controls. Native controls support touch,
+keyboard focus and all bundled languages. [ASSUMED] These optional fields are experimental authoring UI conventions,
+not official game mechanics. Older hosts without this extension retain the base card behavior, without selectors.
+
 ## 12. DSL
 
 A plugin describes a skill, a talent or a small prep effect in JSON (P2). No plugin code runs. The vocabulary, the

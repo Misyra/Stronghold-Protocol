@@ -149,8 +149,8 @@ describe('room.js: 开发者控制台 in the client', () => {
     assert.match(src, /\$\{option\.on \? html`<span class="t-dim">\$\{t\('不能进入匹配队列'\)\}<\/span>` : null\}/);
   });
   test('开始搜寻 stays on screen, disabled, with the reason', () => {
-    assert.match(src, /disabled=\$\{!online \|\| busy === 'match' \|\| consoleOn\}/);
-    assert.match(src, /title=\$\{consoleOn \? t\('房间已开启开发者控制台，无法进入匹配队列'\) : undefined\}/);
+    assert.match(src, /disabled=\$\{!online \|\| busy === 'match' \|\| consoleOn \|\| modded\}/);
+    assert.match(src, /title=\$\{modded \? t\('房间启用了玩法插件，无法进入匹配队列'\) : consoleOn \? t\('房间已开启开发者控制台，无法进入匹配队列'\) : undefined\}/);
     assert.match(src, /const consoleOn = room\?\.consoleEnabled === true;/);
   });
 });

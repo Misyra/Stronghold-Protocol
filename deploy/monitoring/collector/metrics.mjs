@@ -34,6 +34,8 @@ const SCALARS = [
   ['sp_humans', G, 'Human seats in rooms (players who have not left), connected or not.', 'humans'],
   ['sp_bots', G, 'AI seats in rooms.', 'bots'],
   ['sp_spectators', G, 'Spectators in rooms.', 'spectators'],
+  ['sp_queued', G, 'Players waiting in the matchmaking queue (server/matchmaking.js).', 'matchmaking.queued'],
+  ['sp_matchmaking_offers', G, 'Matchmaking offers waiting for confirmations.', 'matchmaking.offers'],
   ['sp_content_sets', G, 'Content sets with gameplay plugins that rooms hold now.', 'content.sets'],
   ['sp_content_plugins', G, 'Unofficial plugins the server has (absent when none).', 'content.plugins'],
   ['sp_performance_window_seconds', G, 'Length of the cached performance window.', 'performance.windowMs', 1e-3],

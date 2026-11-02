@@ -628,6 +628,8 @@ export function RoomScreen() {
   // 开发者控制台与匹配互斥 (server/matchmakingRooms.js) —— 开着控制台的房间不进队列,所以「开始搜寻」留在原地并说明
   // 原因,而不是点下去才被服务器拒。
   const consoleOn = room?.consoleEnabled === true;
+  // 玩法插件房间与官方匹配互斥 (server/matchmakingRooms.js matchmakingMembers): 官方队列只收原生内容,和开发者控制台同一条规则。
+  const modded = isModdedRoom(room);
   const searchable = coop && facts.canMatch;
   const searching = coop && !!facts.searching;
   // 队列自己的时钟: server/matchmaking.js 搜寻中报 { joinedAt, players, target, serverNow }
@@ -888,8 +890,8 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
       </div>
       <div class="room-bar__right rs-foot__right">
         ${facts.isHost && searchable && facts.emptySeats > 0 && !searching
-          ? html`<button type="button" class="rs-search" disabled=${!online || busy === 'match' || consoleOn} onClick=${queueMatch}
-              title=${consoleOn ? t('房间已开启开发者控制台，无法进入匹配队列') : undefined}>
+          ? html`<button type="button" class="rs-search" disabled=${!online || busy === 'match' || consoleOn || modded} onClick=${queueMatch}
+              title=${modded ? t('房间启用了玩法插件，无法进入匹配队列') : consoleOn ? t('房间已开启开发者控制台，无法进入匹配队列') : undefined}>
               <${Icon} name="search" />${t('开始搜寻')}${busy === 'match' ? html`<${Spinner} size="sm" />` : null}</button>` : null}
         ${facts.isHost
           ? html`<${Tooltip} text=${facts.canStart ? null : vote ? t('切换版本投票进行中，请等投票结束') : !facts.contentReady ? (facts.versionRoom ? t('仍有博士未载入「{version}」的数据', { version: versionLabel(curVersion) }) : t('仍有博士未载入房间的插件内容')) : t('仍有博士未准备就绪')}>

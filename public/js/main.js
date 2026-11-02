@@ -57,7 +57,7 @@ import { RoomScreen, TrustedNotice } from './screens/room.js';
 import { GameScreen } from './screens/game.js';
 import { preloadBootArt } from './ui/protocolBoot.js';
 import { audio, installAudio } from './audio.js';
-import { installLobbyMedia } from './ui/lobbyMedia.js';
+import { installLobbyMedia, matchMusic } from './ui/lobbyMedia.js';
 import { settingsStore, updateSettings, useSettings } from './ui/settings.js';
 import { skinsStore } from './ui/skins.js';
 import { bindResourceCombat } from './resources/combat.js';
@@ -70,6 +70,7 @@ import { registerImportedAssetWorker } from './assetCache.js';
 import { LoadoutHost } from './screens/loadout.js';
 import { StatsHost, useStatsOpen } from './screens/stats.js';
 import { CoveredVersionVote } from './ui/versionVote.js';
+import { NameHost } from './ui/nickname.js';
 import { installRehearsal } from './battle/rehearsal.js';
 import { recordResult, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync, installSkinsSync, installCardSync, installSettingsViews, loadoutStore } from './ui/loadoutSync.js';
@@ -442,6 +443,7 @@ function App() {
     <${UiHosts} />
     <${GuideHost} />
     <${ReleaseNotesHost} />
+    <${NameHost} />
     <${LoadoutHost} />
     <${StatsHost} />
     <${ResourceManagerHost} />
@@ -602,6 +604,8 @@ async function boot() {
   cosmetics.subscribe(() => audio.refreshBgm());
   // 自定义大厅背景与音乐 (ui/lobbyMedia.js): the player's own files of this browser, the music from the title on
   installLobbyMedia();
+  // 对局自选曲 (js/bgmChoice.js): read at boot, so a page that resumes a match never waits for the settings modal
+  matchMusic.load();
   // 资源预载(移植自用户分支,public/js/resources/index.js):按设置的分包/语音/皮肤/特效范围
   // 下载并进 Cache Storage;战斗期自动暂停。从不阻塞进入或进行一场对局。
   installResourcePreload();

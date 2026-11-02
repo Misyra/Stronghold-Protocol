@@ -57,6 +57,9 @@ import { hasAnySkinChoices } from './skins.js';
 import { fxAvailable } from '../render/vfx/available.js';
 import { resolveOfficialFx } from '../render/vfx/tier.js';
 import { ScreenFitSection } from './screenFit.js';
+import { matchMusic } from './lobbyMedia.js';
+import { bgmOptions, BGM_TRACKS } from '../bgmChoice.js';
+import { data, useData } from '../data.js';
 import { askPersistStorage, importSupport, storagePersisted } from '../assetCache.js';
 import { assetImport, pruneImportedAssets } from '../assetPack.js';
 import { cosmetics } from '../cosmetics.js';
@@ -80,11 +83,13 @@ settingsStore.subscribe((s) => {
   audio.setVolumes(s);
   audio.setVoiceLang(s.voiceLang, s.voiceOverrides);
   audio.setVoiceNative(s.voiceNative);
+  audio.setBgmChoices(s);
   applyTextSize(s.textSize);
 });
 audio.setVolumes(settingsStore.get());
 audio.setVoiceLang(settingsStore.get().voiceLang, settingsStore.get().voiceOverrides);
 audio.setVoiceNative(settingsStore.get().voiceNative);
+audio.setBgmChoices(settingsStore.get());
 // before the first render (main.js boot renders after its imports ran): the stored step is on screen without a flash
 applyTextSize(settingsStore.get().textSize);
 
@@ -102,6 +107,67 @@ export const useSettings = () => useStore((s) => s, Object.is, settingsStore);
  * @param {'buy'|'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready'} action
  */
 export const hotkeyLabelOf = (action) => hotkeyLabel(settingsStore.get().keys?.[action]);
+
+/** 对局音乐 (js/bgmChoice.js): 休整期 / 作战 各自选官方、manifest 里的其它曲目，或本机文件（ui/lobbyMedia.js matchMusic）。 */
+const MATCH_BGM_ROWS = [['prep', N_('休整期音乐'), 'PREP BGM'], ['combat', N_('作战音乐'), 'COMBAT BGM']];
+
+/** A pick's label for the select: 官方 / 自选曲 / the track's own name. */
+function bgmLabel(id) {
+  if (id === 'official') return t('官方（默认）');
+  if (id === 'custom') return t('自选曲');
+  const track = BGM_TRACKS.find((x) => x.id === id);
+  return track ? t(track.name) : id;
+}
+
+function MatchMusicSection() {
+  const s = useSettings();
+  const [, setRev] = useState(0);
+  const [busy, setBusy] = useState('');
+  const inputRef = useRef(null);
+  const kindRef = useRef('prep');
+  useEffect(() => {
+    const off = matchMusic.subscribe(() => setRev((n) => n + 1));
+    matchMusic.load();
+    return off;
+  }, []);
+  useData('assets'); // the manifest's audio.bgm names the tracks the select offers
+  const manifest = data.get('assets');
+  const onFile = async (e) => {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = '';
+    if (!file) return;
+    const kind = kindRef.current;
+    setBusy(kind);
+    try { await matchMusic.upload(kind, file); } finally { setBusy(''); }
+  };
+  return html`<div class="set-bgm" data-testid="match-bgm">
+    <input ref=${inputRef} type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.aac,.flac,.webm" hidden onChange=${onFile} />
+    ${MATCH_BGM_ROWS.map(([kind, label, micro]) => {
+      const value = kind === 'prep' ? s.bgmPrep : s.bgmCombat;
+      const options = bgmOptions(kind, manifest);
+      const name = matchMusic.name(kind);
+      return html`<div key=${kind} class="set-row set-bgm__row">
+        <span class="set-row__label">${t(label)}<${MicroLabel}>${micro}<//></span>
+        <span class="set-bgm__pick">
+          <select data-testid=${`bgm-${kind}`} aria-label=${t(label)} value=${value}
+            onChange=${(e) => updateSettings(kind === 'prep' ? { bgmPrep: e.currentTarget.value } : { bgmCombat: e.currentTarget.value })}>
+            ${options.map((id) => html`<option key=${id} value=${id}>${bgmLabel(id)}</option>`)}
+          </select>
+          ${value === 'custom' ? html`<span class="set-bgm__file">
+            <span class=${cx('set-bgm__name', name && 'is-set')} data-testid=${`bgm-${kind}-file`}>${name || t('未选择文件')}</span>
+            <${Button} size="sm" variant="secondary" disabled=${busy === kind} onClick=${() => { kindRef.current = kind; inputRef.current?.click(); }}>${busy === kind ? t('正在导入…') : name ? t('更换') : t('选择文件')}<//>
+            ${name ? html`<${Button} size="sm" variant="ghost" onClick=${async () => {
+              await matchMusic.remove(kind);
+              // no file left, so the pick goes back to 官方 (the fork's 清除 does the same)
+              updateSettings(kind === 'prep' ? { bgmPrep: 'official' } : { bgmCombat: 'official' });
+            }}>${t('清除')}<//>` : null}
+          </span>` : null}
+        </span>
+      </div>`;
+    })}
+    <p class="set-hint">${t('休整期与作战可以各选一首，联防与最终攻势仍放各自的音乐；选「自选曲」后从本机选一个文件（只保存在这台设备，不会上传）。曲目缺失或无法播放时仍放官方音乐。')}</p>
+  </div>`;
+}
 
 function Slider({ label, micro, value, onInput, icon }) {
   const pct = Math.round(value * 100);
@@ -501,6 +567,7 @@ export function SettingsModal({ open, onClose }) {
       <${Slider} label=${t('音效')} micro="SFX" icon="signal" value=${s.sfx}
                  onInput=${(v) => { updateSettings({ sfx: v }); if (!tested) { setTested(true); setTimeout(() => setTested(false), 400); audio.sfx('click'); } }} />
       <${Toggle} label=${t('静音')} micro="MUTE" value=${s.muted} onChange=${(v) => updateSettings({ muted: v })} />
+      <${MatchMusicSection} />
       <${Toggle} label=${t('显示伤害数字')} micro="DAMAGE NUMBERS" value=${s.damageNumbers} onChange=${(v) => updateSettings({ damageNumbers: v })} />
       <${Toggle} label=${t('官方伤害数字')} micro="OFFICIAL NUMBERS" value=${s.officialDamageNumbers} onChange=${(v) => updateSettings({ officialDamageNumbers: v })} />
       <p class="set-hint">${t('只显示达到官方暴击条件的红色数字。关闭时仍显示每一次命中。')}</p>

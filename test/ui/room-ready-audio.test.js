@@ -55,14 +55,18 @@ test('rapid cancel/re-ready cycles have no time-based cooldown', () => {
   });
 });
 
-test('adding AI, joining ready seats and replacing a seat do not sound like a ready action', () => {
+test('adding AI stays silent; a human taking a seat sounds the join cue; connect flips do not', () => {
   listen(room([seat('host'), seat('guest')]), (s, calls) => {
     s.set({ room: room([seat('host'), seat('guest'), seat('ai', true, { isBot: true })]) });
+    assert.deepEqual(calls, [], 'a bot is no player joining');
     s.set({ room: room([seat('host'), seat('guest'), seat('new', true)]) });
     s.set({ room: room([seat('host'), seat('replacement', true), seat('new', true)]) });
+    assert.deepEqual(calls, ['joinRoom'], 'a doctor taking a seat (ui/roomCues.js) is heard — once a second at most');
     s.set({ room: room([seat('host'), seat('replacement', true, { connected: false }), seat('new', true)]) });
     s.set({ room: room([seat('host'), seat('replacement', true, { connected: true }), seat('new', true)]) });
-    assert.deepEqual(calls, []);
+    assert.deepEqual(calls, ['joinRoom'], 'a disconnect flip is not a seat leaving the room');
+    s.set({ room: room([seat('host'), seat('new', true)]) });
+    assert.deepEqual(calls, ['joinRoom', 'disconnect'], 'a doctor leaving is heard');
   });
 });
 

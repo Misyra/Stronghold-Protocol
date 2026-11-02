@@ -3,6 +3,7 @@
 import { VOICE_LANGS, sanitizeVoiceOverrides } from '../../voicePrefs.js';
 export { VOICE_LANGS } from '../../voicePrefs.js';
 import { normalizePreloadVoiceLanguages } from '../../resources/voices.js';
+import { sanitizeBgmChoice } from '../../bgmChoice.js';
 
 import { clamp, isObj } from './shared.js';
 import { DEFAULT_HOTKEYS, sanitizeHotkeys } from './shortcuts.js';
@@ -51,8 +52,9 @@ export const TEXT_SIZES = Object.freeze(['sm', 'md', 'lg', 'xl']);
  *  preloadSkinsAll / preloadFx (移植自用户分支): independent resource scopes of the asset preload
  *  (public/js/resources/index.js). The master stays off on first visit; voices migrate from the older
  *  optional-audio choice; `preloadVoiceLanguages` is a normalized subset of VOICE_LANGS + 'native' or null (all).
+ *  bgmPrep / bgmCombat: 对局音乐 (js/bgmChoice.js) — 'official' by default; a pure client preference.
  */
-export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', voiceNative: false, voiceOverrides: Object.freeze({}), muted: false, damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, deploySnap: false, fullscreenWakeLock: false, bondTimers: false, combatMetrics: false, prepDeployFold: true, quality: 'high', fpsLimit: 0, officialFx: 'auto', otherSkins: true, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadVoiceLanguages: null, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: DEFAULT_HOTKEYS });
+export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, voiceLang: 'cn', voiceNative: false, voiceOverrides: Object.freeze({}), bgmPrep: 'official', bgmCombat: 'official', muted: false, damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, deploySnap: false, fullscreenWakeLock: false, bondTimers: false, combatMetrics: false, prepDeployFold: true, quality: 'high', fpsLimit: 0, officialFx: 'auto', otherSkins: true, textSize: 'sm', preload: false, preloadOptional: true, preloadVoices: true, preloadAllVoices: false, preloadVoiceLanguages: null, preloadSkins: true, preloadSkinsAll: false, preloadFx: true, keys: DEFAULT_HOTKEYS });
 const QUALITIES = ['high', 'medium', 'low'];
 /** The values of 设置「官方特效」 (render/vfx/tier.js OFFICIAL_FX). Display order in the dialog is low / medium / high. */
 export const OFFICIAL_FX_MODES = Object.freeze(['auto', 'off', 'lite', 'full']);
@@ -84,6 +86,9 @@ export function sanitizeSettings(raw) {
     voiceLang: VOICE_LANGS.includes(r.voiceLang) ? r.voiceLang : DEFAULT_SETTINGS.voiceLang,
     voiceNative: r.voiceNative === true,
     voiceOverrides: sanitizeVoiceOverrides(r.voiceOverrides),
+    // 对局音乐 (js/bgmChoice.js): which track 休整期 / 作战 follow — 'official', a manifest track's id, or 'custom'
+    bgmPrep: sanitizeBgmChoice(r.bgmPrep),
+    bgmCombat: sanitizeBgmChoice(r.bgmCombat),
     muted: typeof r.muted === 'boolean' ? r.muted : DEFAULT_SETTINGS.muted,
     damageNumbers: typeof r.damageNumbers === 'boolean' ? r.damageNumbers : DEFAULT_SETTINGS.damageNumbers,
     officialDamageNumbers: typeof r.officialDamageNumbers === 'boolean' ? r.officialDamageNumbers : false,

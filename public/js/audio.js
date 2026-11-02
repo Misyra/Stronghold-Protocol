@@ -87,6 +87,8 @@ import { PHASE } from '../../shared/constants.js';
 import { mediaUrl } from './media.js';
 import { resourceUrl } from './resourceUrl.js';
 import { unhashedUrl } from '../../shared/assetPaths.js';
+import { roomCue, cueGate } from './ui/roomCues.js';
+import { pickedBgm, sanitizeBgmChoice } from './bgmChoice.js';
 
 const MAX_VOICES = 8;
 // [ASSUMED] Remake anti-spam intervals, retained at high game speeds; not official audio pool parameters (#680).
@@ -633,6 +635,11 @@ export class AudioManager {
     this.bgmStarting = null;  // { url, token } of the loop _startBgm is loading (kept by _trimBuffers while the token holds)
     this.lobbyTrack = null;   // 自定义大厅音乐: { id, read } of the player's own file (setLobbyTrack), else null
     this.onLobbyTrackFailed = null; // called when that file would not decode (the official track plays instead)
+    // 对局音乐 (js/bgmChoice.js, settings bgmPrep / bgmCombat): the player's picks and own files per kind
+    this.bgmChoices = { prep: 'official', combat: 'official' };
+    this.matchTracks = { prep: null, combat: null };
+    this.bgmChoiceFailed = new Set(); // a pick that would not load this page (its choice id, or LOCAL_BGM + its file id)
+    this.onMatchTrackFailed = null; // called with the kind whose own file would not decode
     this.units = new Map();   // battle unit id → defId
     this.pendingSkill = new Map(); // unit id → the 'skill' tuple that arrived before the unit was known (see _track)
     this.lastAttacker = new Map(); // target id → { def, at, skillIndex, skillActive } of the hostile attack aimed at it (its impact sound,
@@ -843,9 +850,10 @@ export class AudioManager {
       try {
         let ab;
         if (url.startsWith(LOCAL_BGM)) {
-          // 自定义大厅音乐: the bytes of the player's own file (setLobbyTrack), never a request
-          const own = this.lobbyTrack;
-          if (!own || url !== LOCAL_BGM + own.id) return null;
+          // 自定义大厅音乐 / 对局自选曲: the bytes of the player's own file (setLobbyTrack / setMatchTrack), never a request
+          const own = [this.lobbyTrack, this.matchTracks.prep, this.matchTracks.combat]
+            .find((track) => track && url === LOCAL_BGM + track.id);
+          if (!own) return null;
           ab = await own.read();
         } else {
           // Extension-less URL first so download managers leave the BGM alone; a host without /media/ still works.
@@ -1020,10 +1028,49 @@ export class AudioManager {
     this._trimBuffers();
   }
 
-  /** The track of a BGM key: the player's own lobby music (setLobbyTrack), else the manifest's (resolveBgm). */
+  /** The track of a BGM key: the player's own lobby music (setLobbyTrack), a 对局音乐 pick (setBgmChoices / setMatchTrack),
+   *  else the manifest's (resolveBgm). */
   _bgmTrack(key) {
     if (key === 'lobby' && this.lobbyTrack) return { intro: null, loop: LOCAL_BGM + this.lobbyTrack.id };
+    const picked = pickedBgm(this.getManifest(), key, this.bgmChoices,
+      { failed: this.bgmChoiceFailed, local: this.matchTracks, localPrefix: LOCAL_BGM });
+    if (picked) return { intro: picked.intro, loop: picked.loop };
     return resolveBgm(this.getManifest(), key);
+  }
+
+  /**
+   * 对局音乐 picks (js/bgmChoice.js, settings bgmPrep / bgmCombat): which track 休整期 / 作战 follow. The screen's track
+   * changes at once — playBgm keeps the same loop playing and starts another one.
+   * @param {{ prep?: string, combat?: string } | null} choices
+   */
+  setBgmChoices(choices) {
+    this.bgmChoices = { prep: sanitizeBgmChoice(choices?.prep), combat: sanitizeBgmChoice(choices?.combat) };
+    this.refreshBgm();
+  }
+
+  /**
+   * 自选曲 for 休整期 / 作战 (js/bgmChoice.js, stored by ui/lobbyMedia.js): `own` = { id, read } of the player's own file —
+   * decoded here from its bytes, never fetched — or null for none. A file that does not load is remembered and the
+   * official track plays (onMatchTrackFailed tells the settings).
+   * @param {'prep'|'combat'} kind @param {{ id: string, read: () => Promise<ArrayBuffer>, decoded?: AudioBuffer|null } | null} own
+   */
+  setMatchTrack(kind, own) {
+    if (kind !== 'prep' && kind !== 'combat') return;
+    const prev = this.matchTracks[kind];
+    this.matchTracks[kind] = own && typeof own.read === 'function' && own.id ? { id: String(own.id), read: own.read } : null;
+    if (prev && prev.id !== this.matchTracks[kind]?.id) {
+      this.buffers.delete(LOCAL_BGM + prev.id);
+      this.bufBytes.delete(LOCAL_BGM + prev.id);
+      this.bgmChoiceFailed.delete(LOCAL_BGM + prev.id);
+    }
+    // the file's check already decoded it in this context: cache that instead of a second decode
+    const url = this.matchTracks[kind] ? LOCAL_BGM + this.matchTracks[kind].id : null;
+    if (url && own.decoded && this.ctx && !this.buffers.has(url) && pcmBytes(own.decoded) > 0) {
+      this.buffers.set(url, Promise.resolve(own.decoded));
+      this.bufBytes.set(url, pcmBytes(own.decoded));
+    }
+    this.refreshBgm();
+    this._trimBuffers();
   }
 
   async _startBgm(key, track, token) {
@@ -1045,6 +1092,19 @@ export class AudioManager {
     if ((!loop && this.fellBack.has(track.loop)) || (track.intro && !intro && this.fellBack.has(track.intro))) {
       const again = this._bgmTrack(key);
       if (again && (again.loop !== track.loop || again.intro !== track.intro)) { this._startBgm(key, again, token); return; }
+    }
+    // 对局自选曲 that would not load: remembered as failed (the official track plays from now on) and ui/lobbyMedia.js
+    // hears about it, so the settings show the file as unusable instead of silently playing nothing
+    if (!loop && track.loop.startsWith(LOCAL_BGM)) {
+      const kind = ['prep', 'combat'].find((k) => this.matchTracks[k] && track.loop === LOCAL_BGM + this.matchTracks[k].id);
+      if (kind) {
+        this.buffers.delete(track.loop);
+        this.bgmChoiceFailed.add(track.loop);
+        try { this.onMatchTrackFailed?.(kind); } catch { /* ignore */ }
+        const official = this._bgmTrack(key);
+        if (official && official.loop !== track.loop) this._startBgm(key, official, token);
+        return;
+      }
     }
     if (!loop) return;
     try {
@@ -1803,15 +1863,22 @@ export function installAudio(deps) {
         } catch { /* ignore */ }
       };
       sync(deps.getState());
+      // Waiting-room cues (ui/roomCues.js, ported from the Stardust fork): 进房 / 有人入座 → joinRoom, 有人离开 → disconnect,
+      // 准备 → ready. Between two states of the same waiting room only — a match, a welcome's first state, a reconnect, a
+      // restored page, bots and my own seat stay silent — at most one cue of a kind a second.
+      const gate = cueGate(1000);
       return deps.subscribe((s, prev) => {
         const room = s.room, prevRoom = prev?.room;
+        const online = s.connection?.status === 'online' && prev?.connection?.status === 'online';
+        const quiet = !!s.ui?.restoring || !!prev?.ui?.restoring;
+        const cue = roomCue(prevRoom, room, s.me?.playerId ?? null, { quiet });
+        if (cue && online && gate(cue)) audio.sfx(cue);
         // Every room member, including the sender and spectators, hears the same cue as g.infoReady after an accepted
         // ready action. [ASSUMED] Shared waiting-room feedback follows the player's 2026-10-25 report; no official
         // multiplayer recording was checked. Each accepted edge sounds without a cooldown; initial/resumed snapshots,
         // cancellations and AI additions stay silent.
         if (room !== prevRoom && room?.mode === 'coop' && prevRoom?.mode === 'coop' && room.code === prevRoom.code
-          && !room.inMatch && !prevRoom.inMatch && s.connection?.status === 'online' && prev?.connection?.status === 'online'
-          && !s.ui?.restoring && !prev?.ui?.restoring) {
+          && !room.inMatch && !prevRoom.inMatch && online && !quiet) {
           const before = new Map((Array.isArray(prevRoom.seats) ? prevRoom.seats : [])
             .filter((p) => p && !p.isBot).map((p) => [p.playerId, !!p.ready]));
           if ((Array.isArray(room.seats) ? room.seats : []).some((p) => p && !p.isBot && p.ready

@@ -86,6 +86,7 @@ import { PHASE, GEO } from '../../../shared/constants.js';
 import { ruleOption } from '../../../shared/plugins/rules.js';
 import { html, Spinner, PhaseBanner, ResultDialog, Icon, Button, confirmDialog, closeAllDialogs, useTicker } from '../ui/components.js';
 import { useGameData, GIcon } from '../ui/gameComponents.js';
+import { GameLoading, missingCoreData } from '../ui/gameLoading.js';
 import { useFieldView } from '../ui/fieldHost.js';
 import { TopBar, liveLp, ownLeaks, uniteRemaining, tempInfo, tempReadyReason } from '../ui/hud.js';
 import { AnnouncementButton } from '../ui/announcement.js';
@@ -212,11 +213,10 @@ export function GameScreen() {
     const id = setTimeout(() => { hold.current = null; endHold((n) => n + 1); }, Math.max(0, hold.current.until - Date.now()));
     return () => clearTimeout(id);
   }, [held]);
-  if (!pub || !gd.ready || !versionReady) {
-    return html`<div class="screen gload">
-      <${Spinner} size="lg" label=${pub ? 'LOADING DATA' : 'ENTERING SIMULATION'} />
-      <p class="t-lo">${versionState === 'failed' && version ? t('版本数据未能通过校验，请刷新页面重试') : pub ? t('正在载入模拟数据…') : t('正在进入模拟…')}</p>
-    </div>`;
+  if (!pub || !gd.ready || !versionReady || missingCoreData()) {
+    // 逐文件载入状态与恢复（ui/gameLoading.js，移植自 Stardust fork）：缺哪个文件、重试未完成项、刷新页面
+    return html`<${GameLoading} hasPublic=${!!pub}
+      note=${versionState === 'failed' && version ? t('版本数据未能通过校验，请刷新页面重试') : null} />`;
   }
   const mode = phaseMode(pub.phase);
   let body;

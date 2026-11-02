@@ -15,6 +15,7 @@ import { data, useData } from '../data.js';
 import { loadImageElement, recoverImageError } from '../image.js';
 import { cardOperators } from './seatArt.js';
 import { AvatarPicker } from './opPicker.js';
+import { openNameDialog } from './nickname.js';
 import { t } from '../../../shared/i18n.js';
 
 /** This module keeps the account in the browser (other modules may check it to word their notes). */
@@ -129,6 +130,7 @@ function AccountPanel({ onStats, onClose }) {
       <p class="lacct__note">${t('头像、编号和战绩都保存在这台设备的浏览器里，不上传服务器；换设备或清除浏览器数据后不会保留。昵称跟随游戏里的名字。')}</p>
       <div class="lacct__btns">
         <${Button} size="sm" variant="secondary" icon="user" onClick=${() => { data.load('local'); setPicking(true); }}>${t('更换头像')}<//>
+        <${Button} size="sm" variant="secondary" icon="edit" onClick=${() => { onClose(); openNameDialog(); }}>${t('更改代号')}<//>
         <${Button} size="sm" variant="ghost" icon="edit" loading=${busy} onClick=${pick}>${t('上传图片')}<//>
         ${me.avatar ? html`<${Button} size="sm" variant="ghost" onClick=${clear}>${t('移除头像')}<//>` : null}
         ${onStats ? html`<${Button} size="sm" variant="primary" icon="chart" onClick=${() => { onClose(); onStats(); }}>${t('统计数据')}<//>` : null}

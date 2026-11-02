@@ -227,6 +227,10 @@ export function installLobbyMedia() {
     savePrefs({ music: false });
     toast(t('自定义大厅音乐无法播放，已换回默认音乐'), 'warn');
   };
+  // 对局自选曲 that no longer decodes (its file is gone): the official track plays and the settings say so
+  audio.onMatchTrackFailed = (kind) => {
+    if (matchRecords[kind]) toast(t('选定的对局音乐无法播放，已换回官方音乐'), 'warn');
+  };
   const { prefs } = mediaStore.get();
   return prefs.backdrop || prefs.music ? loadSavedMedia() : Promise.resolve();
 }
@@ -316,10 +320,10 @@ function musicLength(file) {
  * A check that takes too long and a file that does not decode are told apart.
  * @returns {Promise<AudioBuffer|null>} the decoded track when the audio manager's context decoded it
  */
-async function probeMusic(file) {
-  const tooLong = () => new Error(t('音乐不能超过 {n} 分钟', { n: MUSIC_MAX_S / 60 }));
+async function probeMusic(file, maxS = MUSIC_MAX_S) {
+  const tooLong = () => new Error(t('音乐不能超过 {n} 分钟', { n: Math.round(maxS / 60) }));
   const len = await musicLength(file);
-  if (len != null && len > MUSIC_MAX_S + 30) throw tooLong();
+  if (len != null && len > maxS + 30) throw tooLong();
   const live = audio.ctx;
   const Ctx = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
   if (!live && !Ctx) return null;
@@ -336,7 +340,7 @@ async function probeMusic(file) {
   };
   const buf = await withTimeout(decode(), TIMEOUTS.music, t('读取文件超时，请换一个文件'));
   if (!buf || !(buf.duration > 0)) throw new Error(t('这台浏览器无法播放这段音乐，请换成 MP3 或 M4A'));
-  if (buf.duration > MUSIC_MAX_S + 1) throw tooLong();
+  if (buf.duration > maxS + 1) throw tooLong();
   return live ? buf : null;
 }
 
@@ -395,6 +399,80 @@ export function setMediaOn(slot, on) {
 export const setBackdropDim = (dim) => savePrefs({ dim: loadMediaPrefs({ dim }).dim });
 /** The lobby's scene: 'official' (the event's backdrop) or a generated one. */
 export const setScene = (scene) => savePrefs({ scene: loadMediaPrefs({ scene }).scene });
+
+// ---- 对局音乐 (js/bgmChoice.js): 休整期 / 作战 的自选曲 ------------------------------------------------------------------
+// Stored in this browser like the lobby music (the same IndexedDB, slots 'prep' / 'combat'); nothing is uploaded, and
+// another player's match keeps their own music. It is decoded whole like the official tracks, so it may last
+// MATCH_MUSIC_MAX_S at most: 5 minutes are ~115 MB of PCM.
+
+/** The longest 自选曲 for a match (seconds). */
+export const MATCH_MUSIC_MAX_S = 300;
+const MATCH_KINDS = ['prep', 'combat'];
+const matchRecords = { prep: null, combat: null };
+const matchRevision = { prep: 0, combat: 0 };
+const matchListeners = new Set();
+let matchLoading = null;
+
+const emitMatch = () => { for (const fn of [...matchListeners]) { try { fn(); } catch { /* ignore */ } } };
+/** Hand a kind's file to the audio manager (or none) and tell the settings section. */
+function putMatchRecord(kind, rec, decoded = null) {
+  matchRecords[kind] = rec || null;
+  audio.setMatchTrack(kind, rec?.blob
+    ? { id: String(rec.savedAt), read: () => rec.blob.arrayBuffer(), decoded }
+    : null);
+  emitMatch();
+}
+
+/** 对局自选曲: read, choose and delete the player's own 休整期 / 作战 music. */
+export const matchMusic = {
+  /** Subscribe to a file chosen or removed; returns the unsubscribe. */
+  subscribe(fn) { matchListeners.add(fn); return () => matchListeners.delete(fn); },
+  /** The chosen file's name of a kind ('' when none). */
+  name: (kind) => matchRecords[kind]?.name || '',
+  /** Read both saved files once (main.js boot: a page that resumes a match never opens the settings). */
+  load() {
+    if (matchLoading) return matchLoading;
+    const rev = { ...matchRevision };
+    matchLoading = (async () => {
+      for (const kind of MATCH_KINDS) {
+        try {
+          const rec = await readRecord(kind);
+          if (rev[kind] !== matchRevision[kind] || !(rec?.blob instanceof Blob)) continue;
+          putMatchRecord(kind, rec);
+        } catch { /* no storage: the official track */ }
+      }
+    })();
+    return matchLoading;
+  },
+  /**
+   * Take the player's file for a kind: checked (decoded, at most MATCH_MUSIC_MAX_S), saved in this browser, played from
+   * now on.
+   * @param {'prep'|'combat'} kind @param {File} file @returns {Promise<boolean>}
+   */
+  async upload(kind, file) {
+    if (!MATCH_KINDS.includes(kind)) return false;
+    const c = classifyFile(file, 'music');
+    if (!c.ok) { toast(c.reason, 'warn'); return false; }
+    try {
+      const decoded = await probeMusic(file, MATCH_MUSIC_MAX_S);
+      const rec = { blob: file, name: String(file.name || '').slice(0, 120), kind: 'music', savedAt: Date.now() };
+      try { await writeRecord(kind, rec); } catch (err) { throw new Error(storageError(err), { cause: err }); }
+      matchRevision[kind]++;
+      putMatchRecord(kind, rec, decoded);
+      return true;
+    } catch (err) {
+      toast(err?.message || t('未能读取这个文件'), 'warn');
+      return false;
+    }
+  },
+  /** Delete the player's file of a kind (the official track plays again). */
+  async remove(kind) {
+    if (!MATCH_KINDS.includes(kind)) return;
+    try { await writeRecord(kind, null); } catch (err) { toast(storageError(err), 'warn'); return; }
+    matchRevision[kind]++;
+    putMatchRecord(kind, null);
+  },
+};
 
 // ---- views ------------------------------------------------------------------------------------------------------------
 

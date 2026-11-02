@@ -592,9 +592,15 @@ In a co-op waiting room, an accepted human false-to-true ready transition in `ro
 every connected room member's client, including the sender and spectators. It uses the same manifest key as
 `g.infoReady` in the briefing and respects each listener's mute/SFX volume and browser audio unlock. Cancelling and
 readying again plays it again with no time-based cooldown. Initial room snapshots, reconnect restoration,
-repeated states, cancellation, new seats/AI additions and match start/end do not
-replay it. No protocol or match-ready sound changes. [ASSUMED] This shared-room feedback policy follows the
-2026-10-25 player report; no official multiplayer recording was independently checked.
+repeated states and cancellation do not replay it; a match start/end has its own sounds.
+
+Entering and leaving the waiting room sound too (ui/roomCues.js, ported from the Stardust fork's feedback #10 / #14
+「进入房间音效」「玩家加入和退出的音效」): the manifest's `sfx.ui.joinRoom` when I am seated in a newly entered room or
+another doctor takes a seat, `sfx.ui.disconnect` when one leaves (the official mode has no own "left" sound). Both are
+silent in a match, for bots, for my own seat, for connected/ready flips, for the first state after a welcome (a
+reconnect or a restored page re-sends the room as it is) and for a return from a match; `cueGate` allows one cue of a
+kind a second, so two joins in the same turn sound once. No protocol or match-ready sound changes. [ASSUMED] These
+cues follow the player reports; no official multiplayer recording was independently checked.
 
 ### Skill-mode sound and delayed models (§28.17, §28.22)
 
@@ -1151,3 +1157,29 @@ manifest replacement. Downloads/catalogue entries use the 512 MB outer cap until
 ### Summon outfits (§37.18)
 
 召唤物时装沿用主人干员的公开选择，自选主人显式使用所选干员 `charId`；备战、手牌、临时整备、侦察与战斗一致，缺失资源回退默认模型。来源、显示层边界和插件格式见 [SKINS.md](../SKINS.md) 与 [0.3.4 §37.18](../history/0.3.4.md)。
+
+### In-match data loading and recovery (§37.75)
+
+The game route waits for `GAME_FILES` (ui/gameComponents.js). While any of them is not ready, ui/gameLoading.js shows
+the spinner plus, after 8 s or at once when a file failed, the files still pending by name (`DATA_FILES`, `missing`
+marked 载入失败), 重试未完成项 (only the pending ones: `data.load` for a never-started file, `data.invalidate` for the
+rest — the room is never left) and 刷新页面. A resumed session without a match yet says 正在恢复对局; art
+(`assets` / `local`) is optional and its failure is not a failure. The screen's version-check message replaces the
+status line. Ported from the Stardust fork's ui/gameLoading.js.
+
+### Doctor callsign rename (§37.75)
+
+The account panel's 更改代号 opens ui/nickname.js: the name is normalised by ui/playerName.js (the server's own rules),
+remembered with `identity.saveName` and sent with `net.setName` — a live socket renames the session (`hello`), and a
+waiting room broadcasts the new seat name; a match keeps the seats it started with. This server never refuses a
+sanitised name, so the fork's forced-rename path after a refused hello does not exist here.
+
+### Match music (§37.75)
+
+休整期 and 作战 each follow a personal pick (settings `bgmPrep` / `bgmCombat`, js/bgmChoice.js): 官方 (the mode's own
+track, the round table for 作战), one of the manifest's `audio.bgm` tracks, or 自选曲 — a file of the player's kept in
+this browser (ui/lobbyMedia.js `matchMusic`, the lobby music's IndexedDB, slots `prep` / `combat`, decoded whole, at most
+300 s) and buffered by audio.js like the lobby's own track (`LOCAL_BGM`). 联防, 最终攻势, 隐秘核心 and the lobby keep
+their own tracks. A pick this manifest lacks, 自选曲 without a file and a track that fails to load play the official one
+(a failed own file is remembered for the page and the settings say so). Ported from the Stardust fork's bgmChoice.js;
+its 上海Major track is not offered — no official file, and this manifest does not carry it.

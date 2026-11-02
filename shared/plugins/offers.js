@@ -41,6 +41,7 @@ export const OFFER_CARDS_MAX = 128;
 /** Best-effort marker names inside a deferred batch, for messages: never a path and never code. */
 export const OFFER_NAMES = Object.freeze(['enemy', 'player']);
 
+/** @type {(v: unknown) => v is Record<string, any>} */
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const int = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;

@@ -54,8 +54,9 @@ test('every generated attack/hit reference resolves to a valid pool and its sele
   }
   // 0.3.1 release fetch-assets: 952 (+ 琳琅诗怀雅 S3, 刻俄柏, 风丸 attacks and 松果's hit); 0.3.2 (#848, DESIGN §35.38): + the 26
   // plain mode-bank slots on 19 operators, and 弑君者 / 莱伊 / 望 / 灰毫's normal attack from their mode-0 banks
-  // The four-version art union adds nine references to installed sounds and 46 official pool records.
-  assert.equal(refs, 987);
+  // The four-version art union adds nine references to installed sounds and 46 official pool records; the 0.3.4 manifest's
+  // 战斗音效 cleanup (commit 2e962f23: +1279 paths, 33 of them battle sfx) adds 32 more references (pools unchanged).
+  assert.equal(refs, 1019);
   assert.equal(Object.keys(pools).length, 1013);
   const p = pools[units.char_4064_mlynar.attackPools[2]];
   assert.equal(p.sounds['player/p_imp/p_imp_loyalsword_h.mp3'].delay, 0.1);

@@ -20,6 +20,27 @@
   --tap-min: 44px;
 }
 
+/* ---- 0. short landscape phones -----------------------------------------------------------------------------------
+   A phone in landscape often reports only ~310 CSS px of height (its own browser bars take the rest): at the design's
+   40 px root that leaves 7.8 units for a 10.8-unit composition, so the title screen's console ran off the bottom on a
+   839 × 311 viewport. Short coarse-pointer screens therefore floor the root at 52 px — 6 units of height, 16 of width —
+   and screens/title.css drops the emblem, the English lockup and the tagline so the console still clears the footer.
+   Mouse-driven windows keep the design's own clamp (theme.css). */
+@media (max-height: 460px) and (pointer: coarse), (max-height: 460px) and (any-pointer: coarse) {
+  html { font-size: calc(clamp(52px, min(calc(100vw / 14), calc(100vh / 6.2)), 240px) * var(--sp-ui, 1)); }
+  html[data-fit] {
+    font-size: calc(clamp(52px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 14), calc((100vh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 6.2)), 240px) * var(--sp-ui, 1));
+  }
+}
+@supports (height: 100svh) {
+  @media (max-height: 460px) and (pointer: coarse), (max-height: 460px) and (any-pointer: coarse) {
+    html { font-size: calc(clamp(52px, min(calc(100vw / 14), calc(100svh / 6.2)), 240px) * var(--sp-ui, 1)); }
+    html[data-fit] {
+      font-size: calc(clamp(52px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 14), calc((100svh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 6.2)), 240px) * var(--sp-ui, 1));
+    }
+  }
+}
+
 /* ---- 1. gestures ------------------------------------------------------------------------------------------------- */
 html, body { overscroll-behavior: none; }
 /* pan only: no pinch-zoom / double-tap zoom anywhere (scrollable lists still scroll); the field canvas uses none */
@@ -168,7 +189,13 @@ html:not(.sp-in-match) .toast-host { margin-top: var(--sa-t); }
    background; fixed overlays (dialogs, toasts) still use the whole screen. */
 html[data-fit] {
   font-size: calc(clamp(40px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 19.2), calc((100vh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 10.8)), 240px) * var(--sp-ui, 1));
-  font-size: calc(clamp(40px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 19.2), calc((100svh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 10.8)), 240px) * var(--sp-ui, 1));
+}
+/* svh only behind @supports: the declaration holds var()s, so a browser without svh would keep it, fail at computed-value
+   time and drop the layout root to 16 px (theme.css has the long note; same bug on the fitted box). */
+@supports (height: 100svh) {
+  html[data-fit] {
+    font-size: calc(clamp(40px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 19.2), calc((100svh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 10.8)), 240px) * var(--sp-ui, 1));
+  }
 }
 /* the screens' own box (theme.css .app-root: fixed, inset 0) and the full-page panels fixed over the screens (统计数据,
    干员调配, 玩法说明) */

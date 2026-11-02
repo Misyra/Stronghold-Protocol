@@ -119,13 +119,19 @@
 /* ---- root scale ----------------------------------------------------------------------------- */
 html {
   font-size: calc(clamp(40px, min(calc(100vw / 19.2), calc(100vh / 10.8)), 240px) * var(--sp-ui, 1));
-  /* mobile browsers: 100vh is the height with the toolbars hidden — the small viewport (svh; Safari 15.4+, Chrome 108+,
-     Firefox 101+) is what is really visible while they show; older browsers keep the line above */
-  font-size: calc(clamp(40px, min(calc(100vw / 19.2), calc(100svh / 10.8)), 240px) * var(--sp-ui, 1));
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   height: 100%;
   background: var(--bg-0);
+}
+/* Mobile browsers: 100vh is the height with the toolbars hidden — the small viewport (svh; Safari 15.4+, Chrome 108+,
+   Firefox 101+) is what is really visible while they show. This MUST stay behind @supports: a declaration that holds a
+   var() is never dropped while parsing, so a browser without svh (Chrome < 108, older Android and in-app WebViews) kept
+   it over the line above, found it invalid at computed-value time, and the whole layout root fell back to 16 px —
+   every screen a quarter of its size and every label unreadable (maintainer's Android 13 / Chrome 104, 2026-11-02).
+   Ported from Stardust-minus/Stronghold-Protocol's theme.css, which carries the same guard. */
+@supports (height: 100svh) {
+  html { font-size: calc(clamp(40px, min(calc(100vw / 19.2), calc(100svh / 10.8)), 240px) * var(--sp-ui, 1)); }
 }
 
 /* ---- text root: 设置 →「文字大小」 ---------------------------------------------------------------

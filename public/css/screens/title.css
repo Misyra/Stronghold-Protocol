@@ -361,3 +361,14 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
 .about-panel .about-star:hover { border-color: var(--mint-400); background: var(--mint-a10); }
 .about-links dd .about-star { margin-left: .12rem; vertical-align: middle; }
 @media (max-width: 600px) { .about-links { grid-template-columns: 1fr; } }
+/* Short landscape phones (<= 460 CSS px tall — 52 px root from css/devices.css section 0): the emblem, the English
+   lockup and the tagline give their room to the callsign console, which is the only control a player must reach here,
+   so the card clears the footer instead of running under it (maintainer screenshot, 2026-11-02). */
+@media (max-height: 460px) and (pointer: coarse), (max-height: 460px) and (any-pointer: coarse) {
+  .emblem, .title-en, .title-tag { display: none; }
+  .title-cn { font-size: .8rem; margin-top: 0; }
+  .title-main { margin-top: 0; }
+  .title-login { margin-top: .16rem; }
+  .title-foot { bottom: .12rem; }
+  .title-preload { bottom: 1.15rem; }
+}

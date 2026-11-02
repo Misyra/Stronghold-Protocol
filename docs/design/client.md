@@ -1054,11 +1054,19 @@ pixels and took 40 % of an 844 × 390 screen at twice that text size (GitHub #81
 thumbs, 36 px touch rows, 300 px wide (`screens/game.css`); 设置 → 文字大小 still lifts every size through `--t`.
 Desktop, tablet and mouse-driven windows keep the original sizes.
 
-The layout root stays the design's (`theme.css`, floor 40 px) on every device. On a phone the title screen's callsign card
-is sized from `em` of its own font-size as well as the layout root — `max(4.9rem, min(92vw, 22em))` — so a player who
-picks 文字大小 中 / 大 / 特大 gets a wider console instead of a wrapped label and a clipped 开始 button; at 小 it is the
-4.9rem it always was. The hub's right column (公告 and the three plates) is capped smaller on short touch screens: 26 px
-rows, 13 px labels (History §37.73).
+The layout root's `svh` line sits behind `@supports (height: 100svh)` in `theme.css` (and in the `data-fit` rule of
+`css/devices.css`). A declaration that holds a `var()` is never dropped while parsing, so on a browser without `svh`
+(Chrome < 108, older Android and in-app WebViews) the second `font-size` was kept, failed at computed-value time and the
+whole root fell back to 16 px — every screen a quarter of its size and every label unreadable (maintainer's Android 13 /
+Chrome 104, 2026-11-02). The guard is the fork's (Stardust-minus/Stronghold-Protocol theme.css).
+
+Short landscape phones (≤ 460 px tall, coarse pointer — a phone's browser bars leave ~310 px of height) floor the root at
+52 px instead of 40 (`css/devices.css` §0, `--sp-ui` and the `data-fit` box included, `svh` behind the same `@supports`):
+6 units of height and 16 of width, where 40 px left 7.8 units for a 10.8-unit composition. The title screen drops its
+emblem, English lockup and tagline on those screens (`screens/title.css`) so the callsign console clears the footer, and
+the hub's right column (公告 and the three plates) is capped smaller: 26 px rows, 13 px labels. Its callsign card is
+sized from `em` as well as the root — `max(4.9rem, min(92vw, 22em))` — so a player who picks 文字大小 中 / 大 / 特大
+gets a wider console instead of a wrapped label and a clipped 开始 button. (History §37.73–74.)
 
 ### Forge compact metadata (0.3.1)
 

@@ -66,7 +66,10 @@ test('the stylesheet: the inset box and its layout root only under [data-fit]', 
   assert.ok(sec.length > 0 && sec.length < css.length);
   const root = sec.match(/html\[data-fit\] \{([^}]*)\}/)?.[1] || '';
   assert.match(root, /font-size: calc\(clamp\(40px, min\(calc\(\(100vw - var\(--fit-l, 0px\) - var\(--fit-r, 0px\)\) \/ 19\.2\), calc\(\(100vh - var\(--fit-t, 0px\) - var\(--fit-b, 0px\)\) \/ 10\.8\)\), 240px\) \* var\(--sp-ui, 1\)\);/);
-  assert.match(root, /font-size: calc\(clamp\(40px, min\(calc\(\(100vw - var\(--fit-l, 0px\) - var\(--fit-r, 0px\)\) \/ 19\.2\), calc\(\(100svh - var\(--fit-t, 0px\) - var\(--fit-b, 0px\)\) \/ 10\.8\)\), 240px\) \* var\(--sp-ui, 1\)\);/,
+  // the svh line sits behind @supports: it holds var()s, so a browser without svh would keep it, fail at computed-value
+  // time and drop the root to 16 px (theme.css carries the same guard for the plain root)
+  const svh = sec.match(/@supports \(height: 100svh\) \{\n {2}html\[data-fit\] \{([^}]*)\}/)?.[1] || '';
+  assert.match(svh, /font-size: calc\(clamp\(40px, min\(calc\(\(100vw - var\(--fit-l, 0px\) - var\(--fit-r, 0px\)\) \/ 19\.2\), calc\(\(100svh - var\(--fit-t, 0px\) - var\(--fit-b, 0px\)\) \/ 10\.8\)\), 240px\) \* var\(--sp-ui, 1\)\);/,
     'theme.css\'s layout root, with the insets taken off (svh after the vh fallback), times 界面大小');
   assert.match(sec, /html\[data-fit\] :is\(\.app-root, \.st, \.lo, \.guide\) \{\n {2}left: var\(--fit-l, 0px\); right: var\(--fit-r, 0px\); top: var\(--fit-t, 0px\); bottom: var\(--fit-b, 0px\);/);
   assert.doesNotMatch(sec, /!important/);

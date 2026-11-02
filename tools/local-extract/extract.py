@@ -263,6 +263,11 @@ JOBS = [
     ('battle/prefabs/[uc]projectiles.ab', 'projectiles', {'Sprite', 'Texture2D'}),
     # official module (uniequip) type icons, keyed by lower-case type name (e.g. 'mar-x')
     ('spritepack/ui_equip_type_hub_h2_0.ab', 'module', {'Sprite'}),
+    # the official player avatars (profile 头像, feedback #100) and organisation emblems (#89): the client's
+    # spritepack bundles, one sprite per entry; ui/opPicker.js's 官方头像 tab reads them (local first, then the
+    # mirror copy — data/local-assets.json group ui/playerAvatar)
+    ('spritepack/ui_player_avatar_list_h2_0.ab', 'ui/playerAvatar', {'Sprite'}),
+    ('spritepack/ui_camp_logo_0.ab', 'ui/campLogo', {'Sprite'}),
     *[(rel, f'mesh/{sub}', {'Mesh', 'GameObject', 'Material', 'Texture2D'}) for rel, sub in MESH_BUNDLES],
     # the official 射击台 model (GitHub round 40: 战场#03's raised tiles by the blue gate were our flat grey slab): the
     # bundle holds every 卫戍协议 device model; keep 射击台 and 阻隔工事 (trap_1105_accrate, #663)

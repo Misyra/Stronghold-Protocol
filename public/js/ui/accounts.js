@@ -128,14 +128,14 @@ function AccountPanel({ onStats, onClose }) {
       </div>
       <p class="lacct__note">${t('头像、编号和战绩都保存在这台设备的浏览器里，不上传服务器；换设备或清除浏览器数据后不会保留。昵称跟随游戏里的名字。')}</p>
       <div class="lacct__btns">
-        <${Button} size="sm" variant="secondary" icon="user" onClick=${() => setPicking(true)}>${t('更换头像')}<//>
+        <${Button} size="sm" variant="secondary" icon="user" onClick=${() => { data.load('local'); setPicking(true); }}>${t('更换头像')}<//>
         <${Button} size="sm" variant="ghost" icon="edit" loading=${busy} onClick=${pick}>${t('上传图片')}<//>
         ${me.avatar ? html`<${Button} size="sm" variant="ghost" onClick=${clear}>${t('移除头像')}<//>` : null}
         ${onStats ? html`<${Button} size="sm" variant="primary" icon="chart" onClick=${() => { onClose(); onStats(); }}>${t('统计数据')}<//>` : null}
       </div>
     </div>
     ${picking ? html`<${AvatarPicker} current=${me.avatar} list=${cardList} m=${data.get('assets')}
-      onPick=${setAvatar} onClose=${() => setPicking(false)} />` : null}
+      local=${data.get('local')?.groups} onPick=${setAvatar} onClose=${() => setPicking(false)} />` : null}
   <//>`;
 }
 /** Open the account panel ({ onStats } adds the 统计数据 button). */

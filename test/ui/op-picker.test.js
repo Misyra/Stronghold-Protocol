@@ -99,6 +99,24 @@ describe('官方玩家头像 (feedback #100) and its graceful degradation', () =
     assert.match(PICKER_SRC, /groups\.length \? html`<div class="cardpick__tabs"/, 'the tab row is guarded');
     assert.match(PICKER_SRC, /const body = official \? html`/, 'the official grid only renders on the tab');
   });
+
+  test('the client extraction joins the manifest entries (data/local-assets.json group ui/playerAvatar, local wins)', () => {
+    // tools/local-extract writes spritepack/ui_player_avatar_list_h2_0.ab into public/assets/local/ui/playerAvatar;
+    // callers pass data/local-assets.json `groups` (the map, as accounts.js does)
+    const local = { 'ui/playerAvatar': {
+      avatar_activity_AC: { path: '/assets/local/ui/playerAvatar/avatar_activity_AC.png' },
+      avatar_def_02: { path: '/assets/local/ui/playerAvatar/avatar_def_02.png' },
+    } };
+    const groups = officialAvatars({ ui: { 'playerAvatar/avatar_activity_AC': '/web/a.png' } }, local);
+    assert.deepEqual(groups.map((g) => g.key), ['activity', 'def'], 'both sources merge, local first');
+    assert.deepEqual(groups[0].items, [{
+      id: 'avatar_activity_AC', src: '/assets/local/ui/playerAvatar/avatar_activity_AC.png',
+    }], 'the local file replaced the mirror copy of the same avatar');
+    assert.deepEqual(groups[1].items.map((a) => a.id), ['avatar_def_02'], 'an avatar only the extraction has still shows');
+    // a group the extraction left out, a garbage entry: ignored, no throw
+    assert.deepEqual(officialAvatars(null, { 'ui/playerAvatar': { bogus: { path: 42 } } }), []);
+    assert.deepEqual(officialAvatars(null, undefined), []);
+  });
 });
 
 describe('the look pick\'s local store (cardStore cardLook)', () => {

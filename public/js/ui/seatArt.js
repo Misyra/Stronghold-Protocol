@@ -235,13 +235,26 @@ const OFFICIAL_AVATAR_GROUPS = Object.freeze([
 ]);
 
 /**
- * The official player avatars of the art manifest (feedback #100), by group: [{ key, title, items: [{ id, src }] }].
- * B 的清单还没有 playerAvatar/* 条目 (本机 public/assets 也没有这些文件), 所以现在恒为 [] — 头像选择器的第二页
- * 隐藏 (优雅降级); 资产管线将来产出这些资源时此页自动出现.
+ * The official player avatars (feedback #100), by group: [{ key, title, items: [{ id, src }] }]. Sources, local first
+ * (the same order as data.js artUrls): the client's spritepack/ui_player_avatar_list_h2_0.ab extracted by
+ * tools/local-extract into data/local-assets.json (group ui/playerAvatar), then the copy tools/fetch-assets.mjs
+ * downloads (data/assets.json lists it as playerAvatar/<id>). Both empty — no client extraction and no mirror — the
+ * 头像 picker's second page stays hidden (优雅降级); the page appears as soon as either source has the files.
  * @param {any} m the art manifest
+ * @param {{ [group: string]: { [name: string]: { path: string } } }} [localGroups] data/local-assets.json `groups`
  */
-export function officialAvatars(m) {
-  const ui = m?.ui && typeof m.ui === 'object' ? m.ui : {};
+export function officialAvatars(m, localGroups) {
+  const ui = m?.ui && typeof m.ui === 'object' ? { ...m.ui } : {};
+  if (localGroups && typeof localGroups === 'object') {
+    for (const [group, entries] of Object.entries(localGroups)) {
+      if (!entries || typeof entries !== 'object') continue;
+      const prefix = group.replace(/^ui\//, '');
+      for (const [name, e] of Object.entries(entries)) {
+        if (!e || typeof e.path !== 'string' || !e.path) continue;
+        ui[`${prefix}/${name}`] = e.path;
+      }
+    }
+  }
   const ids = Object.keys(ui).filter((k) => k.startsWith('playerAvatar/')).map((k) => k.slice('playerAvatar/'.length))
     .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
   return OFFICIAL_AVATAR_GROUPS.map((g) => ({ ...g, items: ids.filter((id) => id.startsWith(`avatar_${g.key}_`)).map((id) => ({ id, src: ui[`playerAvatar/${id}`] })) }))

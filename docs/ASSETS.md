@@ -259,7 +259,10 @@ plugin art. A direct `extract.py` full run excludes plugin art unless `--plugin-
 explicitly selects it. Setup adds `--plugin-art` only with the art authorization above.
 
 The local client's `spritepack/ui_char_avatar_*.ab` supplies base/`_2` avatars; `spritepack/char_portrait_*.ab`
-supplies `_1`/`_2` portraits. `chararts/<charId>.ab` supplies the `defaultskin.prefab` Front and Back renderers,
+supplies `_1`/`_2` portraits. `spritepack/ui_player_avatar_list_h2_0.ab` supplies the official player avatars (活动 /
+特殊 / 基础 / 动态, the 头像 picker's 官方头像 page) and `spritepack/ui_camp_logo_0.ab` the organisation emblems, into
+`ui/playerAvatar` and `ui/campLogo` of `data/local-assets.json`; the picker reads those groups first and falls back to
+the mirror copy in `data/assets.json` (`playerAvatar/<id>`, tools/assets/plan.mjs). `chararts/<charId>.ab` supplies the `defaultskin.prefab` Front and Back renderers,
 their skeletons, atlases and every page (the existing alpha merge and atlas normalization). The existing Spine
 parser supplies animation roles, durations, hits and bounds. No building models, alternate skins, illustrations,
 voices or gameplay records are extracted by this path.

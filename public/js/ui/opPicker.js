@@ -2,8 +2,9 @@
 // the room's 名片干员 pick (screens/room.js 更换立绘) and the local account's 头像 pick (ui/accounts.js) — search,
 // rarity, the operators' avatars; the first tile clears the pick (默认). The 外观行 (`looks`, feedback #9 / #24): the
 // picked operator's art to show — 默认 / 精二 / 精一 / its skins (ui/seatArt.js lookOptions) — in a row above the grid.
-// The 头像 picker has a second tab, the official player avatars (feedback #100, ui/seatArt.js officialAvatars); B 的
-// 资产清单还没有 playerAvatar 资源, 该页在分组为空时不显示 (优雅降级, 资源到位后自动出现).
+// The 头像 picker has a second tab, the official player avatars (feedback #100, ui/seatArt.js officialAvatars) —
+// the client's spritepack extraction first (data/local-assets.json 的 ui/playerAvatar 组), then the mirror copy in the
+// art manifest; 两处都没有时该页不显示 (优雅降级, 任一来源到位后自动出现).
 // B 适配 (与 fork 的差异): 记录名不经过 tName (B 的 chess 记录名即所用语言的名字), 稀有度档位从列表推导
 // (自选编队池的干员没有 6★), 头像页把选择解析成图片 URL 交给调用方 (B 的头像 pref 存的是 URL 字符串), 挑选一个
 // 有外观可选的干员后选择器保持打开以便选外观, 选了外观即关闭.
@@ -84,13 +85,14 @@ function LookBar({ m, charId, looks }) {
 
 /**
  * The 头像 picker: the operators' avatars (the local account's 头像, ui/accounts.js), with the official player avatars
- * as a second tab when the art manifest has them (feedback #100; B 的清单暂无, 页面隐藏). `current` is the stored
- * avatar value (a picture URL, or null for 默认): an operator's tile is on when its avatar is the stored one, a look
- * option when its art is; picking resolves to the picture URL handed to `onPick` (null = 默认).
- * @param {{ current: string | null, list: any[], m: any, onPick: (url: string | null) => void, onClose: Function }} props
+ * as a second tab when the art has them (feedback #100): the client's spritepack extraction (data/local-assets.json
+ * `local`, group ui/playerAvatar) first, then the mirror copy in the art manifest — neither present, the page hides.
+ * `current` is the stored avatar value (a picture URL, or null for 默认): an operator's tile is on when its avatar is
+ * the stored one, a look option when its art is; picking resolves to the picture URL handed to `onPick` (null = 默认).
+ * @param {{ current: string | null, list: any[], m: any, local?: any, onPick: (url: string | null) => void, onClose: Function }} props
  */
-export function AvatarPicker({ current, list, m, onPick, onClose }) {
-  const groups = officialAvatars(m);
+export function AvatarPicker({ current, list, m, local, onPick, onClose }) {
+  const groups = officialAvatars(m, local);
   const url = typeof current === 'string' && current ? current : null;
   // the operator the stored picture came from (its avatar, or one of its looks) — so the picker reopens highlighted
   const from = url ? list.find((c) => c.charId && (cardAvatarUrl(c.charId, m) === url

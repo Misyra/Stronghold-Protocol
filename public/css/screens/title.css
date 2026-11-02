@@ -207,7 +207,10 @@
 .title-login {
   --bk-c: var(--mint-500);
   position: relative;
-  width: 4.9rem;
+  /* the card follows its own font-size (em) as well as the layout root: a player who picks 文字大小 中 / 大 / 特大 gets
+     a wider console instead of a wrapped label and a clipped 开始 button — on a phone a fixed 4.9rem could not hold
+     “输入你的代号（最多 12 字）” at the larger steps (maintainer screenshot, 2026-11-02) */
+  width: max(4.9rem, min(92vw, 22em));
   margin-top: .42rem;
   display: flex;
   flex-direction: column;
@@ -242,7 +245,7 @@
 }
 .title-invite .icon { width: .2rem; height: .2rem; }
 .title-invite b { font-size: calc(.2 * var(--t)); letter-spacing: .2em; color: #ffd08a; }
-.title-conn { display: flex; align-items: center; justify-content: center; gap: .1rem; min-height: .32rem; font-size: calc(.14 * var(--t)); color: var(--text-lo); }
+.title-conn { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .04rem .1rem; min-height: .32rem; font-size: calc(.14 * var(--t)); color: var(--text-lo); }
 /* 统计 (the local stats page) beside the language menu in the top-right corner */
 .title-corner__tools { display: flex; align-items: center; justify-content: flex-end; gap: .1rem; margin-bottom: .1rem; }
 .title-corner__tools .title-lang { margin-bottom: 0; }
@@ -368,9 +371,6 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
   .title-cn { margin-top: .06rem; }
   .title-tag { margin-top: .06rem; }
   .title-main { margin-top: -.14rem; }
-  /* the callsign field keeps its whole placeholder at 中 (ui/gameLogic/settings.js defaultTextSize): 4.9rem at 46 px is
-     187 px of room inside the padding — enough for the label, not for “输入你的代号（最多 12 字）” at 11.5 px */
-  .title-login { width: min(5.6rem, 92vw); }
   .title-login input::placeholder { text-overflow: ellipsis; }
   /* the preload pill keeps 预载资源 / PRELOAD / its state on one line at 中 (2.7rem broke the label in two) */
   .res-pill { width: 3.5rem; }

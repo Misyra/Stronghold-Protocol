@@ -1054,13 +1054,15 @@ pixels and took 40 % of an 844 × 390 screen at twice that text size (GitHub #81
 thumbs, 36 px touch rows, 300 px wide (`screens/game.css`); 设置 → 文字大小 still lifts every size through `--t`.
 Desktop, tablet and mouse-driven windows keep the original sizes.
 
-A coarse pointer floors the layout root at 46 px instead of 40 (`css/devices.css` §0 — a phone's `min()` is 36–44 px
-there, so the floor is what applies; `--sp-ui` still multiplies it and the `html[data-fit]` rule carries the same floor).
-A profile that never chose one starts at 文字大小 中 (`defaultTextSize()`, `ui/gameLogic/settings.js`), which puts body
-text at 11.5 px instead of the 7.2 px the 40 px composition gave it; a stored step always wins. A ≤ 460 px-tall title
-screen drops its English lockup, shrinks the emblem and widens the callsign card to 5.6rem and the preload pill to
-3.5rem, so the console clears the footer. The hub's right column (公告 and the three plates) is capped smaller on the
-same screens: 26 px rows, 13 px labels. (History §37.73.)
+A phone floors the layout root at 46 px instead of 40 (`css/devices.css` §0 — a phone's `min()` is 36–44 px there, so
+the floor is what applies; `--sp-ui` still multiplies it and the `html[data-fit]` rule carries the same floor; the media
+is `(pointer: coarse), (max-height: 520px)`, because some phone browsers and in-app WebViews report `pointer: fine`).
+The 文字大小 default stays 小: forcing 中 would raise the text root without the layout, and the title screen's callsign
+card ran out of room on an 844×390 screen (maintainer screenshot, 2026-11-02). That card is now sized from `em` of its
+own font-size — `max(4.9rem, min(92vw, 22em))` — so a player who does pick 中 / 大 / 特大 gets a wider card instead of a
+squeezed label and a clipped 开始 button. A ≤ 460 px-tall title screen drops its English lockup, shrinks the emblem and
+widens the preload pill to 3.5rem, so the console clears the footer. The hub's right column (公告 and the three plates)
+is capped smaller on the same screens: 26 px rows, 13 px labels. (History §37.73.)
 
 ### Forge compact metadata (0.3.1)
 

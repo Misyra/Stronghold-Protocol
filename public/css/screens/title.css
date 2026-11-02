@@ -358,3 +358,21 @@ html[data-script="alphabetic"] .title-login .btn--xl { letter-spacing: .3em; }
 .about-panel .about-star:hover { border-color: var(--mint-400); background: var(--mint-a10); }
 .about-links dd .about-star { margin-left: .12rem; vertical-align: middle; }
 @media (max-width: 600px) { .about-links { grid-template-columns: 1fr; } }
+/* Short landscape phones (<= 460 CSS px tall, 1rem = 46 px with css/devices.css section 0): the emblem and the English
+   lockup give their room to the callsign console — the only control a player has to reach here — so the card clears the
+   footer instead of running under it (maintainer, 2026-11-02). */
+@media (max-height: 460px) {
+  .title-en { display: none; }
+  .emblem { margin-bottom: .12rem; }
+  .emblem__svg { width: 1rem; height: 1.08rem; }
+  .title-cn { margin-top: .06rem; }
+  .title-tag { margin-top: .06rem; }
+  .title-main { margin-top: -.14rem; }
+  /* the callsign field keeps its whole placeholder at 中 (ui/gameLogic/settings.js defaultTextSize): 4.9rem at 46 px is
+     187 px of room inside the padding — enough for the label, not for “输入你的代号（最多 12 字）” at 11.5 px */
+  .title-login { width: min(5.6rem, 92vw); }
+  .title-login input::placeholder { text-overflow: ellipsis; }
+  /* the preload pill keeps 预载资源 / PRELOAD / its state on one line at 中 (2.7rem broke the label in two) */
+  .res-pill { width: 3.5rem; }
+  .res-pill__label { white-space: nowrap; }
+}

@@ -1330,6 +1330,18 @@ button.ally-card:disabled .ally-card__bar { filter: grayscale(.5) brightness(.8)
   .ally-recent { font-size: min(calc(.24 * var(--t)), 14px); line-height: 1.35; } /* [ASSUMED] the cap, like the difficulty line's */
   .code-chip { font-size: calc(.28 * var(--t)); }
   .ally-guide { font-size: calc(.3 * var(--t)); }
+  /* 公告 + S.W.E.E.P. 报告 / 干员调配 / 成就统计: the biggest boxes on a phone and the loosest for what they hold, so the
+     right stack gets 15 % shorter rows, 12–13 px labels and tighter gaps (maintainer, 2026-11-02). The rows stay ≥ 26 px
+     tall — above the 24 px a thumb hits reliably — and the labels keep their 13 px ceiling at every 文字大小 step. */
+  .hub-right { gap: .08rem; }
+  .hub-right__plates { gap: .06rem; }
+  .lobby-hub .hub-plate { height: max(.42rem, 26px); font-size: min(calc(.24 * var(--t)), 13px); gap: .08rem; }
+  .lobby-hub .hub-plate .btn__label, .hub-plate__label { font-size: min(calc(.24 * var(--t)), 13px); }
+  .lobby-hub .hub-plate .lo-entry__icon, .lobby-hub .hub-plate > .btn__icon,
+  .hub-plate__glyph { width: max(.28rem, 18px); height: max(.28rem, 18px); padding: .03rem; }
+  .hub-notice { padding: .05rem .1rem; gap: .03rem; }
+  .hub-notice__label { font-size: min(calc(.2 * var(--t)), 12px); }
+  .hub-notice__view { font-size: min(calc(.18 * var(--t)), 11px); }
 }
 /* ---- 转场 (PR #643, the event's screen changes): a screen comes up from black, its panels slide in one after another ---- */
 .lobby-hub, .modal__box.proto, .modal__box.ally { --tr-ease: cubic-bezier(.16, .84, .3, 1); }

@@ -26,6 +26,22 @@ import { normalizeFrameRate } from '../../frameRate.js';
  */
 export const TEXT_SIZES = Object.freeze(['sm', 'md', 'lg', 'xl']);
 
+/**
+ * The 文字大小 a profile that never chose one starts on: 中 on a coarse pointer, 小 (the design's own sizes) otherwise.
+ * A phone's layout root is clamped at 46 px (css/devices.css §0), where 小 is 7.2–8.3 px body text; 中 keeps that
+ * layout and lifts every font-size to the 64 px floor (css/theme.css), which is the step the design itself added for
+ * phones (DESIGN §35.43). A stored choice always wins — this only fills an absent one. `matchMedia` is guarded: the
+ * module is also imported where there is no window (tests, tooling).
+ * @returns {'sm'|'md'}
+ */
+export function defaultTextSize() {
+  try {
+    return globalThis.matchMedia?.('(pointer: coarse)')?.matches ? 'md' : 'sm';
+  } catch {
+    return 'sm';
+  }
+}
+
 /** keys: the in-match shortcuts' key map (ui/gameLogic/shortcuts.js; settings → 快捷键). voiceLang: VOICE_LANGS.
  *  voiceNative: the 本土语言 switch (default off). textSize: TEXT_SIZES (css/theme.css `--t`, applied by ui/settings.js
  *  applyTextSize). ammoEnergyCount: 设置「显示弹药与能量数量」 — the rounds left / the magazine under an ammo skill's
@@ -97,7 +113,7 @@ export function sanitizeSettings(raw) {
     officialFx: OFFICIAL_FX_MODES.includes(r.officialFx) ? r.officialFx : DEFAULT_SETTINGS.officialFx,
     otherSkins: r.otherSkins !== false,
     deploySnap: r.deploySnap === true,
-    textSize: TEXT_SIZES.includes(r.textSize) ? r.textSize : DEFAULT_SETTINGS.textSize,
+    textSize: TEXT_SIZES.includes(r.textSize) ? r.textSize : defaultTextSize(),
     preload: r.preload === true,
     preloadOptional: typeof r.preloadOptional === 'boolean' ? r.preloadOptional : DEFAULT_SETTINGS.preloadOptional,
     preloadVoices: typeof r.preloadVoices === 'boolean' ? r.preloadVoices

@@ -20,6 +20,22 @@
   --tap-min: 44px;
 }
 
+/* ---- 0. phones: a bigger layout root -----------------------------------------------------------------------------
+   The design is 19.2 × 10.8 rem and theme.css clamps the layout root at 40 px so a phone fits it. On a 390 px-tall
+   phone that scale puts the .18rem body text at 7.2 CSS px: right on a monitor, unreadable in a hand. A coarse pointer
+   therefore floors at 46 px — the same composition, ~15 % larger everywhere — and the 文字大小 default on a touch
+   device is 中 (ui/gameLogic/settings.js defaultTextSize), which lifts the text on top of that without touching the
+   layout. The short-screen rules of each screen (screens/title.css and the others' own @media (max-height: 460px))
+   take the vertical room back. */
+@media (pointer: coarse) {
+  html { font-size: calc(clamp(46px, min(calc(100vw / 19.2), calc(100vh / 10.8)), 240px) * var(--sp-ui, 1)); }
+  html { font-size: calc(clamp(46px, min(calc(100vw / 19.2), calc(100svh / 10.8)), 240px) * var(--sp-ui, 1)); }
+  html[data-fit] {
+    font-size: calc(clamp(46px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 19.2), calc((100vh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 10.8)), 240px) * var(--sp-ui, 1));
+    font-size: calc(clamp(46px, min(calc((100vw - var(--fit-l, 0px) - var(--fit-r, 0px)) / 19.2), calc((100svh - var(--fit-t, 0px) - var(--fit-b, 0px)) / 10.8)), 240px) * var(--sp-ui, 1));
+  }
+}
+
 /* ---- 1. gestures ------------------------------------------------------------------------------------------------- */
 html, body { overscroll-behavior: none; }
 /* pan only: no pinch-zoom / double-tap zoom anywhere (scrollable lists still scroll); the field canvas uses none */

@@ -248,31 +248,31 @@
   :root[data-text="lg"] .stephead__guide .btn__label, :root[data-text="xl"] .stephead__guide .btn__label { display: none; }
 }
 
-/* 横向平板上确认本局信息装不进一屏（维护者 2026-11-02，1315×610 / 1397×685：四个区块要滚三屏，「完全看不全」）：
-   敌方立绘、盟约圆盘、禁用干员缩略图与各段留白一起收紧，四段在不滚动的一屏里排下；桌面 1080 高度不受影响。 */
-@media (max-height: 760px) {
-  .brief__main { gap: .1rem; padding: .04rem .3rem 1rem .34rem; }
-  .brief .brief-h { min-height: .54rem; padding: 0 .22rem 0 .16rem; font-size: calc(.26 * var(--t)); }
-  .brief .brief-h::before { width: .34rem; height: .34rem; }
-  .brief .brief-enemy { gap: .14rem .22rem; padding: .13rem .22rem .15rem .3rem; }
-  .brief .brief-boss__art { width: 1.35rem; height: 1.35rem; }
-  .brief .brief-boss__tag { width: 1.22rem; font-size: calc(.14 * var(--t)); }
-  .brief .brief-boss__name { font-size: calc(.26 * var(--t)); }
-  .brief .brief-boss__when { font-size: calc(.15 * var(--t)); }
-  .brief .brief-boss__abil { font-size: calc(.145 * var(--t)); line-height: 1.4; }
-  .brief .brief-stage { font-size: calc(.14 * var(--t)); }
-  .brief .brief-faction { width: 1.2rem; gap: .05rem; }
-  .brief .brief-faction__icon { width: .72rem; height: .72rem; }
-  .brief .brief-faction__text b { font-size: calc(.19 * var(--t)); }
-  .brief .brief-bonds__row { gap: .1rem .16rem; padding: .11rem .22rem .11rem .3rem; }
-  .brief .brief-bond { min-width: 1rem; }
-  .brief .brief-bond .bond { --disc: .68rem; }
-  .brief .brief-bond .bond__name { font-size: calc(.17 * var(--t)); }
-  .brief .brief-legend { margin: -.06rem .26rem .14rem .4rem; font-size: calc(.14 * var(--t)); }
-  .brief .brief-banned__grid { grid-template-columns: repeat(auto-fill, minmax(.62rem, 1fr)); gap: .05rem; padding: .11rem .22rem .11rem .3rem; }
-  .brief .brief-banned__grid .uthumb { --ut: .62rem; }
-  .brief .brief-banned > .t-dim, .brief .brief-banned__diy { margin: .12rem .26rem .16rem .4rem; }
-  .brief__foot { padding: .18rem .3rem .16rem; gap: .22rem; }
+/* 平板/矮屏上的确认本局信息小一档（维护者 2026-11-02：整页偏大，但「一点点就行」——只把立绘、盟约圆盘、禁用缩略图
+   和各段留白收一档，约小一成半，排版结构不变；再小就要滚动或改版式了。桌面 1080 高度不受影响。 */
+@media (max-height: 900px) {
+  .brief__main { gap: .16rem; padding: .05rem .42rem 1.25rem .48rem; }
+  .brief .brief-h { min-height: .6rem; padding: 0 .28rem 0 .2rem; font-size: calc(.29 * var(--t)); }
+  .brief .brief-h::before { width: .4rem; height: .4rem; }
+  .brief .brief-enemy { gap: .24rem .32rem; padding: .24rem .32rem .26rem .5rem; }
+  .brief .brief-boss__art { width: 2rem; height: 2rem; }
+  .brief .brief-boss__tag { width: 1.8rem; font-size: calc(.18 * var(--t)); }
+  .brief .brief-boss__name { font-size: calc(.33 * var(--t)); }
+  .brief .brief-boss__when { font-size: calc(.16 * var(--t)); }
+  .brief .brief-boss__abil { font-size: calc(.17 * var(--t)); line-height: 1.5; }
+  .brief .brief-stage { font-size: calc(.15 * var(--t)); }
+  .brief .brief-faction { width: 1.7rem; gap: .12rem; }
+  .brief .brief-faction__icon { width: 1rem; height: 1rem; }
+  .brief .brief-faction__text b { font-size: calc(.2 * var(--t)); }
+  .brief .brief-bonds__row { gap: .2rem .24rem; padding: .26rem .32rem .24rem .64rem; }
+  .brief .brief-bond { min-width: 1.15rem; }
+  .brief .brief-bond .bond { --disc: 1rem; }
+  .brief .brief-bond .bond__name { font-size: calc(.2 * var(--t)); }
+  .brief .brief-legend { margin: -.08rem .32rem .18rem .64rem; font-size: calc(.15 * var(--t)); }
+  .brief .brief-banned__grid { grid-template-columns: repeat(auto-fill, minmax(1.05rem, 1fr)); gap: .12rem; padding: .24rem .32rem .26rem .64rem; }
+  .brief .brief-banned__grid .uthumb { --ut: 1.05rem; }
+  .brief .brief-banned > .t-dim, .brief .brief-banned__diy { margin: .16rem .32rem .2rem .64rem; }
+  .brief__foot { padding: .24rem .32rem .2rem; gap: .3rem; }
 }
 
 /* the pre-game screens' motion (also css/screens/draft.css); none with reduced motion */

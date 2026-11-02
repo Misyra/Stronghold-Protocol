@@ -265,7 +265,8 @@ JOBS = [
     ('spritepack/ui_equip_type_hub_h2_0.ab', 'module', {'Sprite'}),
     # the official player avatars (profile 头像, feedback #100) and organisation emblems (#89): the client's
     # spritepack bundles, one sprite per entry; ui/opPicker.js's 官方头像 tab reads them (local first, then the
-    # mirror copy — data/local-assets.json group ui/playerAvatar)
+    # mirror copy — data/local-assets.json group ui/playerAvatar). Optional extras: NOT in expected.mjs's group set,
+    # so an install without them is not stale; they come with --only ui/playerAvatar (or a full run).
     ('spritepack/ui_player_avatar_list_h2_0.ab', 'ui/playerAvatar', {'Sprite'}),
     ('spritepack/ui_camp_logo_0.ab', 'ui/campLogo', {'Sprite'}),
     *[(rel, f'mesh/{sub}', {'Mesh', 'GameObject', 'Material', 'Texture2D'}) for rel, sub in MESH_BUNDLES],
@@ -277,6 +278,11 @@ JOBS = [
     ('arts/maps/common/res.ab', 'map/common', {'Material', 'Texture2D'}, r'^(TX|MT)_wind_device$'),
     ('arts/maps/effect.ab', 'map/water', {'Texture2D'}, r'water_normal|Caustics|WaterNoise|noise_clouds|Water_Foam|SmoothWaves'),
 ]
+
+# JOBS output groups that a full run writes but that setup does NOT expect (expected_local_groups excludes them):
+# the official player avatars and organisation emblems (ui/opPicker.js 官方头像 page). An install without them is
+# not stale; the page hides. They still come with a full run or `--only`.
+OPTIONAL_GROUPS = frozenset({'ui/playerAvatar', 'ui/campLogo'})
 
 # Local enemy battle Spine models: six earlier-season enemies, plus two no community dump carries
 # (isHarryh/Ark-Models lists them with an empty assetList, so
@@ -953,11 +959,14 @@ def expected_local_groups():
     """Group keys a full extract writes into data/local-assets.json (no --only; fx stays out — fx.py FX_GROUPS).
 
     One key per JOBS output subdir, plus spine/enemy/<id>, spine/token/<id>, scene/<stageId> and scene/tex.
+    Optional groups (OPTIONAL_GROUPS: the official player avatars and organisation emblems) are written by a
+    full run too, but are NOT expected: an install without them is not stale and setup never asks to re-extract
+    for them — the 头像 picker simply hides its official page (ui/opPicker.js).
     Derived maps and WebP copies are files inside those groups, not new keys. Sorted. setup's
     tools/local-extract/expected.mjs is this list; test/setup-local-freshness.test.js keeps the copy honest.
     `extract.py --print-jobs` prints it and needs no game client.
     """
-    keys = [job[1] for job in JOBS]
+    keys = [job[1] for job in JOBS if job[1] not in OPTIONAL_GROUPS]
     keys += [f'{ENEMY_SPINE_SUB}/{i}' for i in ENEMY_SPINES]
     keys += [f'{TOKEN_SPINE_SUB}/{i}' for i in TOKEN_SPINES]
     keys += [f'{scenes.SCENE_SUB}/{sid}' for sid, _deps in scenes.SCENES]

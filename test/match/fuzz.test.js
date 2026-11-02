@@ -58,6 +58,9 @@ function randomIntent(rng, m, ps) {
     case 'g.watch': return { t, fieldId: rng.pick(['n:p_0', 'n:p_1', 'n:ai_0', 'u', 'b1', 'b2', 'zz', '']) };
     case 'g.autoplay': return { t, on: rng() < 0.05 };
     case 'g.pause': return { t, on: rng() < 0.5 };
+    // 战斗 2 倍速投票 (server/match/match/speedVote.js): the schema wants a boolean; the match's own checks
+    // (phase, bots, left) answer the rest
+    case 'g.speedVote': return { t, on: rng() < 0.5 };
     // the plugin interaction windows (PLUGIN API v2, docs/PLUGINS.md §10b): random ids and slots — no window of a
     // vanilla match is ever open, so every one of them is a refusal, which is exactly what the fuzz run checks
     case 'g.offer': case 'g.offerRefresh': return { t, pluginId: 'demo', seq: rng.int(1000), offerId: rng.pick(['early-pick', 'x', 'a'.repeat(64)]), idx: rng.int(6) };

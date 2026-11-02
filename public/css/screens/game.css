@@ -990,7 +990,7 @@
 .set-cfg__io { display: flex; flex-direction: column; gap: .08rem; padding: .06rem; background: rgba(0, 0, 0, .18); border: 1px solid var(--line); }
 .set-cfg__text {
   box-sizing: border-box; width: 100%; min-height: .9rem; resize: vertical; padding: .08rem .1rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: max(.13rem, 11px); line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: calc(.13 * var(--t)); line-height: 1.5;
   color: var(--text-hi); background: rgba(4, 10, 8, .55); border: 1px solid var(--line-2); border-radius: 2px; outline: none;
   white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto;
 }

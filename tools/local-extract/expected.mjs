@@ -89,10 +89,8 @@ export const EXPECTED_LOCAL_GROUPS = Object.freeze([
   "spine/token/token_10069_mcnist_mcgraf",
   "spine/token/token_10070_aphris_pc",
   "ui/battle",
-  "ui/campLogo",
   "ui/common",
   "ui/outer",
-  "ui/playerAvatar",
 ]);
 
 // Manifest `scene` record version (kind Scene on each scene/<stageId> group). scene.json's mesh version stays 1.

@@ -19,6 +19,8 @@ data/local-assets.json
 data/local-fx.json
 # download caches, upstream tables, ledgers, reports, setup state
 .cache/
+# vite build output (vite.config.js, `npm run build`): generated on the deploying machine, never committed
+/public/build
 # a worktree that links these folders instead of holding them: git sees a symlink as a file, which the patterns
 # above (trailing slash: directories only) do not match
 /node_modules

@@ -83,7 +83,12 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
   } else if (loadedScripts) (await import(base+'content/extensions.js')).resetExtensions();
   if (Object.values(raw.garrisons ?? {}).some(g => g.operatorTrait) || loadedTraits) {
     if (/^file:/i.test(base)) {
-      const { installServerOperatorTraits } = await import(new URL('../../../server/plugins/operatorTraits.js', import.meta.url).href);
+      // only ever a file: URL (Node-side simulation, e.g. the content tooling): never bundled — the server module
+      // imports node:fs, which has no business in a browser chunk. The specifier stays opaque to the bundler (a
+      // split literal: rolldown resolves `new URL(<literal>, import.meta.url)` even through @vite-ignore; a runtime
+      // concatenation, as with the trait runtime's `?v=` above, it leaves alone).
+      const serverTraitsUrl = new URL('../../../server/' + 'plugins/operatorTraits.js', import.meta.url).href;
+      const { installServerOperatorTraits } = await import(/* @vite-ignore */ serverTraitsUrl);
       await installServerOperatorTraits(raw, base);
     } else {
       const expected = traitRuntimeHash(raw);

@@ -88,7 +88,7 @@ const SIM_PRIVATE = new Set(['nodedata.js']); // lower-case (compared case-insen
 
 /** Optional per-machine art manifests (tools/local-extract: the local art, the official effects' files — DESIGN §33)
  * and the empty stand-in served when one is absent. */
-const LOCAL_ART_MANIFESTS = new Set(['local-assets.json', 'local-fx.json']);
+const LOCAL_ART_MANIFESTS = new Set(['local-assets.json', 'local-fx.json', 'local-fx-collab.json']);
 const EMPTY_LOCAL_ART = Buffer.from(JSON.stringify({ version: 1, source: 'none', count: 0, groups: {} }));
 
 /** The content-set manifest's cache policy: its URL names its content (the `cs`), so it never changes. */
@@ -229,7 +229,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     // 版本化地址（server/assetVersion.js）：/_v/<tag>/js/… 之类认本次发布算出来的 tag（immutable）。
     // 旧 tag 的 URL 不再承诺 immutable：发版后旧入口模块会从浏览器缓存带出整条旧 tag 导入链，
     // 一律 404 会把页面钉死在「脚本加载失败」——对本源的未知 tag 回退到**当前字节**并按 no-cache
-    // 重验（坏缓存条目被当前内容替换；本条发布照常 immutable）。
+    // 重验（坏缓存条目被当前内容替换；本条发布照常 immutable）。素材同理：旧页面开着的几分钟里
+    // 旧 tag 的图片仍要能画出来（404 只会裂图），但同样按 no-cache 重验，不把新字节挂在旧 URL 上。
     let versioned = false;
     if (decoded.startsWith(VERSION_PREFIX)) {
       const match = /^\/_v\/([a-f0-9]{16})(\/.*)$/.exec(decoded);
@@ -240,8 +241,14 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         return;
       }
       const legacyCode = /^\/(?:js|vendor|shared|sim)\//.test(match[2]);
-      if (match[1] !== release.expectedTag(match[2]) && !(legacyCode && match[1] === release.tag)) {
-        // 旧 tag 的 URL 一律 404（新字节不挂旧 URL）。但发版后 immutable 缓存的旧入口模块不被普通刷新
+      // Art has no executable import chain to save, but an old page still has the old tag on screen for a couple of
+      // minutes after a deploy: answering 404 there means broken images until the page reloads. Serve the current
+      // bytes with no-cache instead (the code branch does the same for its unknowns), so the browser revalidates
+      // rather than pinning new bytes to an old immutable URL.
+      const legacyArt = /^\/(?:assets|fonts|media)\//.test(match[2]);
+      const current = match[1] === release.expectedTag(match[2]);
+      if (!current && !(legacyCode && match[1] === release.tag) && !legacyArt) {
+        // 其余（js/data/css 等）的旧 tag 一律 404（新字节不挂旧 URL）。但发版后 immutable 缓存的旧入口模块不被普通刷新
         // 击穿，会把整条旧 tag 导入链钉死在「脚本加载失败」——404 响应顺带让浏览器清掉本源的缓存
         // （Clear-Site-Data: "cache"），下一次刷新就是干净的全新加载。
         res.writeHead(404, {
@@ -253,7 +260,9 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         return;
       }
       decoded = match[2];
-      versioned = true;
+      // Only a tag that names these exact bytes may be cached as immutable; an art fallback carries the current
+      // bytes under an old URL, so it revalidates (no-cache) like the code fallback's old entry point.
+      versioned = current || (legacyCode && match[1] === release.tag);
     }
     // 客户端把发布 tag 挂在 `?v=` 上（public/js/resourceUrl.js:49-56）：/data/… 用 asset tag，
     // js/vendor/shared/sim 用 runtime tag，assets/fonts/media 用 art tag。这些 tag 是**内容摘要**
@@ -602,4 +611,4 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   return serveStatic;
 }
 
-const CDN_MANIFESTS = new Set(['assets.json', 'local-assets.json', 'local-fx.json']);
+const CDN_MANIFESTS = new Set(['assets.json', 'local-assets.json', 'local-fx.json', 'assets-collab.json', 'local-fx-collab.json']);

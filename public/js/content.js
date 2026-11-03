@@ -68,6 +68,7 @@ import { getLang, langChain, t, N_ } from '../../shared/i18n.js';
 import { DEV_BUILD } from '../../shared/constants.js';
 import { DEFAULT_VERSION, versionById, versionSlug } from '../../shared/versions.js';
 import { shownVersion, welcomeVersion } from './versions.js';
+import { COLLAB_MANIFEST_URL, collabManifestProblems } from '../../shared/collabAssets.js';
 
 /** The localStorage preference (`sp.pref.<key>`) of the personal cosmetic plugins: their ids. */
 export const PERSONAL_PREF = 'cosmetics';
@@ -78,6 +79,7 @@ export const VISUAL_TIMEOUT_MS = 30000;
 /** What the page says (once) when a set's document will not load, or when writes were left out / a file failed. */
 const NOT_LOADED = N_('外观插件没有载入，显示原版素材');
 const PARTLY = N_('部分外观插件素材无法使用，相应位置显示原版素材');
+const COLLAB_NOT_LOADED = N_('联动素材没有载入，联动干员显示占位图');
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const isIds = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string' && /^[a-z0-9][a-z0-9-]{1,31}$/.test(x));
@@ -276,6 +278,37 @@ export async function fetchVisualDoc(vs, { fetch: doFetch = defaultFetch, retryD
 }
 
 /**
+ * Fetch and check the collab pack's manifest (/data/assets-collab.json; shared/collabAssets.js): `{ doc }`, or `{ error }`
+ * when it will not download (retried like a visual set's document) or names a file outside the pack.
+ * @param {{ fetch?: typeof fetch, retryDelays?: readonly number[], wait?: (ms: number) => Promise<void>, timeoutMs?: number }} [opts]
+ * @returns {Promise<{ doc: any } | { error: string }>}
+ */
+export async function fetchCollabManifest({ fetch: doFetch = defaultFetch, retryDelays = VISUAL_RETRY_MS, wait = sleep, timeoutMs = VISUAL_TIMEOUT_MS } = {}) {
+  const url = COLLAB_MANIFEST_URL;
+  for (let attempt = 0; ; attempt++) {
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    let timer = null;
+    const timedOut = new Promise((resolve) => { timer = setTimeout(() => { ctrl?.abort(); resolve(null); }, timeoutMs); });
+    let res;
+    let text = null;
+    try {
+      res = await Promise.race([doFetch(url, { cache: 'no-cache', signal: ctrl?.signal }), timedOut]);
+      if (res && res.ok) text = await Promise.race([res.text(), timedOut]);
+    } catch { res = null; }
+    clearTimeout(timer);
+    const transient = !res || res.status >= 500 || res.status === 408 || res.status === 429 || (res.ok && text === null);
+    if (res && res.ok && text !== null) {
+      let doc;
+      try { doc = JSON.parse(text); } catch { return { error: `${url}: not JSON` }; }
+      const bad = collabManifestProblems(doc);
+      return bad.length ? { error: `${url}: ${bad.slice(0, 3).join('; ')}` } : { doc };
+    }
+    if (transient && attempt < retryDelays.length) { await wait(retryDelays[attempt]); continue; }
+    return { error: `${url}: ${res ? `HTTP ${res.status}` : 'unreachable'}` };
+  }
+}
+
+/**
  * Keep the page's cosmetic layers in step with the room and the personal plugins (see the header): data.js shows
  * `assets` through them from now on. Idempotent per store; returns the uninstall.
  * @param {{ store?: typeof appStore, data?: typeof dataStore, layers?: typeof cosmetics, fetch?: typeof fetch,
@@ -318,6 +351,39 @@ export function installContent({ store = appStore, data = dataStore, layers = co
       if (req !== roomReq) return; // another room (or none) meanwhile
       if ('error' in r) { layers.setRoom(null); tell(r.error); return; }
       layers.setRoom(r.doc);
+    });
+  };
+
+  // 联动干员 (2026-11-03): the collab 6★ are ordinary 自选 picks, so their art pack is loaded once per page like the
+  // rest of the manifest — no room and no switch involved. A failed fetch keeps the placeholders and warns once; it
+  // must not pin `collabWanted` to true for the rest of the page (a transient outage would then never retry), so a
+  // failure releases the flag and schedules another try with the same backoff list the fetch already uses.
+  let collabWanted = false;
+  let collabReq = 0;
+  let collabTold = false;
+  let collabRetry = 0;
+  let collabTimer = null;
+  const loadCollab = () => {
+    if (collabWanted) return;
+    collabWanted = true;
+    const req = ++collabReq;
+    fetchCollabManifest({ fetch: doFetch, retryDelays }).then((r) => {
+      if (req !== collabReq) return; // the installation was torn down meanwhile
+      if ('error' in r) {
+        collabWanted = false;
+        console.warn(`[content] ${r.error}`);
+        // Quiet: the collab pack is optional art. A stock deployment without it would otherwise toast on every page.
+        if (!collabTold) { collabTold = true; console.warn(`[content] ${t(COLLAB_NOT_LOADED)}`); }
+        // Bounded: each failed attempt already spent the fetch's own retries; a handful of later tries covers a
+        // reconnect without hammering a server that simply has no collab pack.
+        if (collabRetry < retryDelays.length) {
+          const delay = retryDelays[collabRetry++];
+          collabTimer = setTimeout(() => { collabTimer = null; loadCollab(); }, delay);
+        }
+        return;
+      }
+      collabRetry = 0;
+      layers.setCollab(r.doc);
     });
   };
 
@@ -369,16 +435,18 @@ export function installContent({ store = appStore, data = dataStore, layers = co
     if (n !== installed) { installed = n; if (personal.get().ids.length) syncPersonal(); }
   });
   syncRoom(store.get());
+  loadCollab();
   const offPersonal = personal.subscribe(() => { syncPersonal(); });
   // a catalogue fetched again may name a plugin's new `vs` (its files changed): the switched-on ones follow
   let catalogAt = catalog.get().at;
   const offCatalog = catalog.subscribe((c) => { if (c.at !== catalogAt) { catalogAt = c.at; if (personal.get().ids.length) syncPersonal(); } });
   if (personal.get().ids.length) syncPersonal();
   return () => {
-    ++personalReq; ++roomReq; // Drop in-flight answers before removing this install's properties and layers.
+    ++personalReq; ++roomReq; ++collabReq; // Drop in-flight answers before removing this install's properties and layers.
+    if (collabTimer != null) { clearTimeout(collabTimer); collabTimer = null; }
     offStore(); offPersonal(); offCatalog(); offLayers(); offFailed(); layers.onDrop(null);
     doc?.removeEventListener?.('error', onImgError, true);
-    data.setView('assets', null); layers.setRoom(null); layers.setPersonal([]);
+    data.setView('assets', null); layers.setRoom(null); layers.setPersonal([]); layers.setCollab?.(null);
     themeApplied = applyThemeProperties(globalThis.document?.documentElement, [], themeApplied);
   };
 }

@@ -26,6 +26,8 @@ import { kindOf } from './formats.mjs';
 import { pickUnitSfx, assignSkillModeSfx, UI_SFX, BATTLE_SFX, resolveSpec, indexVoice, nativeVoiceDirs, VOICE_DIRS, VOICE_CUSTOM_DIR, VOICE_BATTLE_SLOTS } from './audio.mjs';
 import { literal } from './manifest.mjs';
 import { EMOTE_CATALOG } from '../../shared/constants.js';
+import { illustrationFor } from '../../shared/skins.js';
+import { illustrationSources } from './illustrations.mjs';
 
 /**
  * The voice slots are read from the zh_CN charword table, whose voiceIds are always `CN_*`: the other dubs
@@ -72,6 +74,17 @@ export const ENEMY_SPINE_ALIAS = Object.freeze({
 
 /** Loading illustrations referenced by act2autochess modeDataDict (non-training). */
 const LOADING_USED = new Set(['loading_ac_core', 'loading_ac_prototype', 'loading_ac_hard', 'loading_ac_abyss']);
+
+/**
+ * The organisation emblems the 名片底图 offers (public/js/ui/namecards.js ORGS, Stardust feedback #89): a faction logo
+ * comes from the operators' nations, but an organisation is no operator's nation, so the `logos` set below would skip
+ * them. They are in the mirror's camp-logo group like the rest; the local client bundle (spritepack/ui_camp_logo_0,
+ * tools/local-extract → data/local-assets.json group ui/campLogo) carries them too, and the client reads that first.
+ */
+export const NAMECARD_ORG_LOGOS = Object.freeze([
+  'babel', 'rhine', 'penguin', 'blacksteel', 'karlan', 'glasgow', 'abyssal', 'siesta', 'dublinn', 'followers', 'lgd',
+  'pinus', 'chiave', 'lee', 'rainbow', 'student', 'sui', 'sweep', 'elite', 'action4', 'reserve1', 'reserve4', 'reserve6',
+]);
 
 const PROFESSIONS = ['caster', 'medic', 'pioneer', 'sniper', 'special', 'support', 'tank', 'warrior'];
 
@@ -520,6 +533,22 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
         // own portrait (assetUrls.js skinPortraitUrl).
         const purl = skinPortraitUrl(sk);
         if (purl) entry.portrait = leaf(alt(`char/portrait/skin/${sk.stem}.png`, purl));
+        // 动态立绘 (docs/OPERATOR-SKINS.md): the layered Spine illustration is a separate model under the same skin
+        // folder. The catalogue only marks a declaration verified when the public dump listed all three files; the
+        // plan still treats it as an optional leaf, so a missing download leaves the static illustration in place.
+        const ill = illustrationFor(sk.skinId);
+        if (ill?.verified) {
+          const src = illustrationSources(ill.id);
+          if (src) {
+            const dynDir = `${dir}dynamic/`;
+            const dynDef = fexliModelDef(`skin:${sk.stem}:dynamic`, 'op', dynDir, {
+              skel: { url: src.skel }, atlas: { url: src.atlas }, png: { url: src.page },
+            }, idx);
+            if (dynDef) entry.dynamic = addModel(dynDef.key, { ...dynDef, pma: true });
+            if (ill.background && src.background) entry.dynamicBackground = leaf(alt(`${dynDir}background.png`, src.background));
+            if (ill.foreground && src.foreground) entry.dynamicForeground = leaf(alt(`${dynDir}foreground.png`, src.foreground));
+          }
+        }
         entry.name = sk.name;
         entry.group = sk.group;
         skins[sk.skinId] = entry;
@@ -755,6 +784,7 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
   }
   const nations = new Set(Object.values(operators).map((o) => o.nationId).filter(Boolean));
   const logos = new Set(['logo_rhodes', ...[...nations].map((n) => `logo_${n}`)]);
+  for (const k of NAMECARD_ORG_LOGOS) logos.add(`logo_${k}`);
   for (const b of Object.values(assets07?.bonds || {})) if (b.fallbackCampLogo) logos.add(urlBase(b.fallbackCampLogo).replace(/\.png$/i, ''));
   for (const [src, group] of Object.entries(ARTS_GROUPS)) {
     for (const [key, url] of Object.entries(assets07?.arts?.[src] || {})) {

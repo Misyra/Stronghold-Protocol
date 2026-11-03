@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createResourceIndex } from '../server/resources.js';
 import { hashFile } from '../server/fileHash.js';
+import { resourcePackPath } from './resourcePackPath.mjs';
 
 const script = fileURLToPath(import.meta.url);
 const argv = process.argv.slice(2);
@@ -30,7 +31,9 @@ if (!files.length) throw new Error('No selected resources installed. Build packs
 // Package the bytes actually on disk. R2 publication will publish their matching
 // fingerprints; an old .assets-manifest.json must not authorize stale pack bytes.
 for (const file of files) {
-  const abs = path.join(publicDir, decodeURIComponent(file.url.slice(1)));
+  // The manifest URL is data: decode once, then prove the file really lives under `public/` (no `%2F`/`%5C`, no `..`).
+  const abs = resourcePackPath(publicDir, file.url);
+  if (!abs) throw new Error(`Unsafe resource path: ${file.url}. Refusing to build packs from outside ${publicDir}.`);
   try {
     const { hash, bytes } = await hashFile(abs);
     file.hash = hash;

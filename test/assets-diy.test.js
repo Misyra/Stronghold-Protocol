@@ -107,7 +107,12 @@ test('the committed data/assets.json lists every 自选 operator\'s avatar, port
     assert.deepEqual(Object.keys(c.spine.front.anims.skills || {}).sort(), ['0', '1', '2'], `${id}: a clip per skill index`);
     for (const s of BACKUPS.units[id].forms['2/1/4/0'].skills) assert.ok(m.skills[m.skillsById[s.skillId]] || m.skills[s.iconId], `${id}: skill icon ${s.skillId}`);
   }
-  for (const t of dataExtras(BACKUPS, CHESS).moduleTypes) assert.ok(m.modules[t] && onDisk(m.modules[t]), `module type icon ${t}`);
+  // 艾拉's TRP-Δ type icon ships with the collab pack's operator set; the normal manifest still names it for the
+  // module tiles, so a machine with public/assets must have the file too.
+  for (const t of dataExtras(BACKUPS, CHESS).moduleTypes) {
+    assert.ok(m.modules[t], `module type icon ${t}`);
+    assert.ok(onDisk(m.modules[t]), `module type icon ${t} on disk`);
+  }
   assert.equal(m.stats.modules, Object.keys(m.modules).length);
 });
 

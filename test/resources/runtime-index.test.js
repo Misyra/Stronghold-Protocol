@@ -1,125 +1,66 @@
+// The runtime-existence document is a leftover of older builds: the cache entry is the only record of what the page
+// holds. These tests pin down that `status()` reads the real cards and that a sweep deletes the document without ever
+// counting it as an asset (public/js/resources/store.js, runtimeIndex.js).
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRuntimeIndexBatcher, readRuntimeIndex, runtimeIndexUrl } from '../../public/js/resources/runtimeIndex.js';
+
+import { CACHE_NAME, indexUrl } from '../../public/js/resources/common.js';
+import { runtimeIndexUrl } from '../../public/js/resources/runtimeIndex.js';
+import { ResourceStore } from '../../public/js/resources/store.js';
 
 const ORIGIN = 'https://game.example';
-const key = (i) => `${ORIGIN}/assets/runtime/${i}.png`;
 
-class MetadataCache {
-  constructor() { this.entries = new Map(); this.reads = 0; this.writes = 0; }
-  async match(url) { this.reads++; return this.entries.get(url)?.clone(); }
-  async put(url, response) { this.writes++; this.entries.set(url, response.clone()); }
+class MemoryCache {
+  constructor() { this.entries = new Map(); }
+  async put(request, response) { this.entries.set(typeof request === 'string' ? request : request.url, response.clone()); }
+  async match(request) { const hit = this.entries.get(typeof request === 'string' ? request : request.url); return hit ? hit.clone() : undefined; }
+  async keys() { return [...this.entries.keys()].map((url) => new Request(url)); }
+  async delete(request) { return this.entries.delete(typeof request === 'string' ? request : request.url); }
+}
+class MemoryCaches {
+  constructor() { this.map = new Map(); }
+  async open(name) { if (!this.map.has(name)) this.map.set(name, new MemoryCache()); return this.map.get(name); }
+  async keys() { return [...this.map.keys()]; }
+  async delete(name) { return this.map.delete(name); }
 }
 
-function clock() {
-  let now = 0, id = 0;
-  const timers = new Map();
-  return {
-    setTimer: (fn, ms) => { const token = ++id; timers.set(token, { at: now + ms, fn }); return token; },
-    clearTimer: (token) => timers.delete(token),
-    advance: (ms) => {
-      now += ms;
-      for (const [token, timer] of [...timers]) if (timer.at <= now) {
-        timers.delete(token);
-        timer.fn();
-      }
-    },
-    get pending() { return timers.size; },
-  };
+function manifest(files) {
+  return { format: 1, version: 'v1', count: files.length, tier1: files.filter((f) => f.tier === 1).length, files };
 }
 
-test('130 successful resource registrations require only three index reads/writes', async () => {
-  const cache = new MetadataCache();
-  const timer = clock();
-  const enqueue = createRuntimeIndexBatcher(timer);
-  const jobs = Array.from({ length: 130 }, (_, i) => enqueue(cache, ORIGIN, key(i)));
-  assert.equal(timer.pending, 1, 'the last partial batch has a bounded deadline');
-  timer.advance(250);
-  await Promise.all(jobs);
-  assert.deepEqual([cache.reads, cache.writes, timer.pending], [3, 3, 0]);
-  assert.equal(Object.keys(await readRuntimeIndex(cache, ORIGIN)).length, 130);
+/** Put a body and its hash into the preload cache the way a finished run leaves it. */
+async function seed(caches, url, body, hash) {
+  const cache = await caches.open(CACHE_NAME);
+  await cache.put(url, new Response(body));
+  const res = await cache.match(indexUrl(ORIGIN));
+  const doc = res ? await res.json() : { version: 1, manifest: '', files: {} };
+  doc.files[url] = hash;
+  await cache.put(indexUrl(ORIGIN), new Response(JSON.stringify(doc)));
+  return cache;
+}
+
+test('status counts the entries a card really holds, not the leftover metadata document', async () => {
+  const caches = new MemoryCaches();
+  const cache = await seed(caches, `${ORIGIN}/assets/a.png`, 'aaaa', 'h0');
+  // A document written by an older build claims a file that was never stored (or already evicted).
+  await cache.put(runtimeIndexUrl(ORIGIN), new Response(JSON.stringify({
+    version: 1, files: { [`${ORIGIN}/assets/a.png`]: null, [`${ORIGIN}/assets/ghost.png`]: null },
+  })));
+  const s = new ResourceStore(manifest([{ url: '/assets/a.png', tier: 1, size: 4, hash: 'h0' }]), { caches, origin: ORIGIN });
+  const status = await s.status();
+  assert.deepEqual([status.count, status.complete, status.bytes, status.scan], [1, true, 4, 'keys']);
+  assert.equal(status.present.has(`${ORIGIN}/assets/ghost.png`), false);
 });
 
-test('duplicate URLs and different Cache wrappers coalesce; an already indexed URL does not rewrite', async () => {
-  const cache = new MetadataCache();
-  const timer = clock();
-  const enqueue = createRuntimeIndexBatcher(timer);
-  const wrapper = { match: cache.match.bind(cache), put: cache.put.bind(cache) };
-  const a = enqueue(cache, ORIGIN, key(1));
-  const b = enqueue(wrapper, ORIGIN, key(1));
-  assert.equal(a, b, 'wrapper identity does not split batches for the same index URL');
-  timer.advance(250);
-  await Promise.all([a, b]);
-  assert.deepEqual([cache.reads, cache.writes], [1, 1]);
-  const again = enqueue(wrapper, ORIGIN, key(1));
-  timer.advance(250);
-  await again;
-  assert.deepEqual([cache.reads, cache.writes], [2, 1]);
-});
-
-test('the first registration sets the flush deadline; continued arrivals do not debounce forever', async () => {
-  const cache = new MetadataCache();
-  const timer = clock();
-  const enqueue = createRuntimeIndexBatcher(timer);
-  const a = enqueue(cache, ORIGIN, key(1));
-  timer.advance(200);
-  const b = enqueue(cache, ORIGIN, key(2));
-  timer.advance(49);
-  assert.equal(cache.reads, 0);
-  timer.advance(1);
-  await Promise.all([a, b]);
-  assert.deepEqual([cache.reads, cache.writes], [1, 1]);
-});
-
-test('new arrivals during an index write are retained in the next serialized batch', async () => {
-  const cache = new MetadataCache();
-  const timer = clock();
-  const enqueue = createRuntimeIndexBatcher({ ...timer, maxEntries: 2 });
-  const entered = Promise.withResolvers(), release = Promise.withResolvers();
-  const put = cache.put.bind(cache);
-  let calls = 0;
-  cache.put = async (...args) => {
-    if (++calls === 1) { entered.resolve(); await release.promise; }
-    await put(...args);
-  };
-  const a = enqueue(cache, ORIGIN, key(1)), b = enqueue(cache, ORIGIN, key(2));
-  await entered.promise;
-  const c = enqueue(cache, ORIGIN, key(3));
-  timer.advance(250);
-  release.resolve();
-  await Promise.all([a, b, c]);
-  assert.equal(cache.writes, 2);
-  assert.deepEqual(Object.keys(await readRuntimeIndex(cache, ORIGIN)).sort(), [key(1), key(2), key(3)]);
-});
-
-test('failed batches reject every waiter and later registrations can retry without phantom metadata', async () => {
-  const cache = new MetadataCache();
-  const timer = clock();
-  const enqueue = createRuntimeIndexBatcher(timer);
-  const put = cache.put.bind(cache);
-  cache.put = async () => { throw new DOMException('', 'QuotaExceededError'); };
-  const a = enqueue(cache, ORIGIN, key(1)), b = enqueue(cache, ORIGIN, key(2));
-  const rejected = assert.rejects(a, { name: 'QuotaExceededError' });
-  assert.equal(a, b);
-  timer.advance(250);
-  await rejected;
-  assert.equal(cache.entries.has(runtimeIndexUrl(ORIGIN)), false);
-  cache.put = put;
-  const retry = enqueue(cache, ORIGIN, key(1));
-  timer.advance(250);
-  await retry;
-  assert.deepEqual(await readRuntimeIndex(cache, ORIGIN), { [key(1)]: null });
-});
-
-test('batches for different origins keep independent metadata and promises', async () => {
-  const cache = new MetadataCache();
-  const timer = clock();
-  const enqueue = createRuntimeIndexBatcher(timer);
-  const a = enqueue(cache, ORIGIN, key(1));
-  const b = enqueue(cache, 'https://other.example', key(2));
-  assert.notEqual(a, b);
-  timer.advance(250);
-  await Promise.all([a, b]);
-  assert.deepEqual(await readRuntimeIndex(cache, ORIGIN), { [key(1)]: null });
-  assert.deepEqual(await readRuntimeIndex(cache, 'https://other.example'), { [key(2)]: null });
+test('a sweep deletes the legacy runtime document without counting it as a cached asset', async () => {
+  const caches = new MemoryCaches();
+  const cache = await seed(caches, `${ORIGIN}/assets/a.png`, 'aaaa', 'h0');
+  await seed(caches, `${ORIGIN}/assets/gone.png`, 'zzzz', 'old');
+  await cache.put(runtimeIndexUrl(ORIGIN), new Response(JSON.stringify({ version: 1, files: {} })));
+  const s = new ResourceStore(manifest([{ url: '/assets/a.png', tier: 1, size: 4, hash: 'h0' }]), { caches, origin: ORIGIN });
+  assert.equal(await s.pruneStale(), 1, 'only the dropped asset counts as swept');
+  assert.equal(await cache.match(runtimeIndexUrl(ORIGIN)), undefined, 'the dead document is gone');
+  assert.ok(await cache.match(`${ORIGIN}/assets/a.png`), 'a manifest entry is never swept');
+  assert.equal((await s.status()).count, 1);
 });

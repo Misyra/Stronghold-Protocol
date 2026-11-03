@@ -4,15 +4,12 @@ import { resourceIdentity } from '../../../shared/resourcePaths.js';
 import { CACHE_PREFIX, CONTENT_HASH_RE, MAX_FILE_BYTES, absoluteUrl, cacheNameForFile, mediaCandidates, rangeResponse } from './common.js';
 import { resourceDigests } from './integrity.js';
 import { fetchResource } from './network.js';
-import { queueRuntimeIndexEntry } from './runtimeIndex.js';
 import { handleResourceRequest } from './service.js';
-import { createVersionedCacheReader } from './versionedCache.js';
 
 export function createResourceResponder({ caches = globalThis.caches, fetcher = globalThis.fetch?.bind(globalThis),
   getManifest, origin = globalThis.location?.origin || 'http://localhost', network = {} }) {
   const pending = new Map();
   const writes = new Set();
-  const readVersionedCache = createVersionedCacheReader(caches);
   let enabled = true;
   let epoch = 0;
   let indexedManifest;
@@ -55,12 +52,10 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     finally { writes.delete(write); }
   }
 
-  /** Store a verified body and record it as a runtime entry: the next status() then knows it exists without a body
-   *  read, and a sweep of the cache cannot mistake that record for a stale asset (resources/runtimeIndex.js). */
+  /** Store a verified body. The cache entry is the only record kept: `status()` enumerates the keys a card really
+   *  holds, so a separate metadata document could only drift from them (resources/store.js). */
   async function keep(cache, key, response, generation) {
-    const result = await persist(cache, key, response, generation);
-    if (result.stored) void queueRuntimeIndexEntry(cache, origin, key).catch(() => {});
-    return result;
+    return persist(cache, key, response, generation);
   }
 
   async function load(file, key, generation, allowOrigin = true) {
@@ -107,11 +102,15 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
   }
 
   function sharedLoad(file, key, allowOrigin = true) {
-    let job = pending.get(key);
+    // A preload handoff (`allowOrigin:false`, bulk work must never drain the game server) and an on-screen request for
+    // the same file are different jobs: sharing one promise would hand the page's origin-fallback policy to the preload
+    // (or the reverse). The cache key alone is therefore not enough to identify an in-flight request.
+    const jobKey = `${allowOrigin ? 'origin' : 'cache'}:${key}`;
+    let job = pending.get(jobKey);
     if (!job || job.generation !== epoch) {
       job = { generation: epoch };
-      job.promise = load(file, key, epoch, allowOrigin).finally(() => { if (pending.get(key) === job) pending.delete(key); });
-      pending.set(key, job);
+      job.promise = load(file, key, epoch, allowOrigin).finally(() => { if (pending.get(jobKey) === job) pending.delete(jobKey); });
+      pending.set(jobKey, job);
     }
     return job.promise;
   }
@@ -141,13 +140,10 @@ export function createResourceResponder({ caches = globalThis.caches, fetcher = 
     const url = new URL(request.url);
     // The store's integrity retry must reach the network even when a previous request is in flight.
     if (url.searchParams.has('sp')) return fetcher(request);
-    // Preload keys are canonical bare URLs, while renderers request ?v=<SHA-256>.
-    // Authenticate that exact revision locally, even during a cold worker start.
-    const local = await readVersionedCache(request).catch(() => null);
-    if (local) {
-      const range = request.headers.get('Range');
-      return range ? rangeResponse(local, range) : local;
-    }
+    // Preload keys are canonical bare URLs. Same-origin renderers name the release as a `/_v/<tag>/` path segment
+    // (public/js/resourceUrl.js `resourceUrl`), which `lookup` resolves through `resourceIdentity`; a `?v=<hash>` query
+    // is a CDN-only cache key and never names a cache entry of this origin. Anything not in the manifest is left to
+    // the ordinary cache handler and the network below.
     let file;
     try { file = await lookup(url); } catch { /* manifest unavailable: preserve normal game loading */ }
     if (!file || !enabled) return (await handleResourceRequest(request, { caches }).catch(() => null)) || fetcher(request);

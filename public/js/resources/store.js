@@ -20,7 +20,7 @@ import { selectedVoiceLanguages } from './voices.js';
 import { absoluteUrl, CACHE_NAME, CACHE_PREFIX, cacheKeysOverBudget, cacheNameForFile, checkAbort, CONTENT_HASH_RE, indexUrl, isCacheQueryLimit, isQuotaError, isSkinKey, LEGACY_FX_CACHE_NAME, MAX_FILE_BYTES, READABLE_CACHE_NAMES, RESOURCE_GROUPS, RESOURCE_SCOPES, resourceGroup, resourceScope, resourceType, TIER_ESSENTIAL, TIER_REST } from './common.js';
 import { resourceDigests, verifiedResourceBytes } from './integrity.js';
 import { fetchResource, isTransientResourceError } from './network.js';
-import { runtimeIndexUrl, updateRuntimeIndex } from './runtimeIndex.js';
+import { runtimeIndexUrl } from './runtimeIndex.js';
 
 /** Files above this are downloaded one at a time (a 20 MiB Spine texture should not race three others). */
 const BIG_FILE_BYTES = 4 << 20;
@@ -103,6 +103,9 @@ export class ResourceStore {
   #indexSnapshot = new Map();
   /** Stable URL parsing is shared by status, progress and cache writes for the lifetime of this manifest. */
   #absoluteUrls = new Map();
+  /** Keys whose file the origin answered 404/410 for: a dead link is settled for this run, so it cannot hold
+   *  `complete` (and therefore `prune`) back forever. A later successful fetch removes its key again. */
+  #permanentFailures = new Set();
 
   /**
    * @param {{ files: { url: string, tier: number, size?: number, hash?: string }[], version: string, totalBytes?: number|null }} manifest
@@ -421,17 +424,25 @@ export class ResourceStore {
   }
 
   /**
-   * The hashes of what this cache holds: `<absolute url>` → hash. A missing or unreadable index means "nothing is
-   * verified": existing bodies must be checked against their content hash before they can be reused.
+   * The hashes of what this cache holds: `<absolute url>` → hash. A missing index means "nothing is verified" quietly
+   * (a fresh cache); an index that is present but cannot be read or parsed is a corrupted document and says so once,
+   * then is treated as unindexed. Either way existing bodies are checked against their content hash before reuse.
    * @param {any} cache
    */
   async #readIndex(cache) {
-    let doc = null;
+    let res;
+    try { res = await cache.match(indexUrl(this.origin)); }
+    catch (err) {
+      console.warn('[resources] cache index unreadable — treating the cache as unindexed', err);
+      return readCacheIndex(null);
+    }
+    if (!res) return readCacheIndex(null);
     try {
-      const res = await cache.match(indexUrl(this.origin));
-      if (res) doc = await res.json();
-    } catch { doc = null; }
-    return readCacheIndex(doc);
+      return readCacheIndex(await res.json());
+    } catch (err) {
+      console.warn('[resources] cache index is not valid JSON — treating the cache as unindexed', err);
+      return readCacheIndex(null);
+    }
   }
 
   /** Write the index entry (the only synthetic entry of the cache; the worker never answers it: not /assets|/fonts). */
@@ -730,6 +741,8 @@ export class ResourceStore {
     let bytes = 0;
     let sized = 0;
     let skipped = 0;
+    /** Selected files this run found permanently gone (404/410): settled, so they are not part of `wanted`. */
+    let settled = 0;
     let tier1 = 0;
     let tier1Present = 0;
     let tier2 = 0;
@@ -747,6 +760,9 @@ export class ResourceStore {
       group.total++;
       if (f.tier === TIER_ESSENTIAL) tier1++; else tier2++;
       if (!this.eligible(f)) { skipped++; continue; }
+      // A dead link (the origin answered 404/410) is settled: it is neither present nor wanted, so one broken file
+      // cannot keep the whole selection incomplete — and `prune()` waiting for a complete run.
+      if (this.#permanentFailures.has(this.keyOf(f.url))) { settled++; continue; }
       if (hit) { if (f.tier === TIER_ESSENTIAL) tier1Present++; else tier2Present++; }
       group.wanted++;
       if (Number.isSafeInteger(f.size)) group.totalBytes += f.size;
@@ -827,7 +843,7 @@ export class ResourceStore {
     // on, so the panel needs one honest number for what the entire tree weighs (docs/ASSETS.md).
     let manifestBytes = 0;
     for (const f of this.files) if (Number.isSafeInteger(f.size)) manifestBytes += f.size;
-    const wanted = total - skipped;
+    const wanted = total - skipped - settled;
     return {
       version: this.manifest.version,
       cacheName: this.cacheName,
@@ -835,6 +851,7 @@ export class ResourceStore {
       total,
       wanted,
       skipped,
+      settled,
       bytes,
       totalBytes: scopedSizes ? (scopedSizes.length ? scopedSizes.reduce((n, f) => n + f.size, 0) : null)
         : Number.isSafeInteger(this.manifest.totalBytes) ? this.manifest.totalBytes : null,
@@ -857,7 +874,7 @@ export class ResourceStore {
       fxFiles,
       fxPresent,
       skinScope: this.skinScope(),
-      complete: wanted > 0 && count >= wanted,
+      complete: total - skipped > 0 && count >= wanted,
     };
   }
 
@@ -1093,6 +1110,9 @@ export class ResourceStore {
             state.dirty = true;
             if (++pendingFlush >= INDEX_FLUSH_EVERY) { pendingFlush = 0; await flushIndexes(); }
           }
+          // A dead link is settled for this run: `wanted` drops it, so the remaining files can still finish the run
+          // (and `prune()` can run). A later successful fetch puts the key back into circulation.
+          this.#permanentFailures.delete(key);
           done++;
           progressCounters.mark(key);
           start.present.add(key);
@@ -1102,6 +1122,9 @@ export class ResourceStore {
           checkAbort(signal); // an abort wins over a per-file error: the run is being stopped
           // A CDN that refuses this client is one reason, not 27 000 file failures: stop and let the panel say so.
           if (err?.fatal === true) throw err;
+          // 404/410: the file is gone at the source, not a temporary network/CDN problem. Settle it so `complete`
+          // (and the `prune()` that waits for it) is reachable; a later run retries it and clears it on success.
+          if (err?.status === 404 || err?.status === 410) this.#permanentFailures.add(key);
           if (isQuotaError(err)) {
             const quota = new Error('quota exceeded');
             quota.name = 'QuotaExceededError';
@@ -1234,21 +1257,18 @@ export class ResourceStore {
   async pruneStale() {
     const wanted = new Set(this.files.map((f) => this.keyOf(f.url)));
     const indexKey = indexUrl(this.origin);
+    const runtimeKey = runtimeIndexUrl(this.origin);
     let removed = 0;
     for (const { name, cache } of await this.#shards()) {
+      // Older builds kept a runtime-existence document here. Nothing reads it (status enumerates the real keys), so it
+      // is dead bytes; deleting it is not sweeping an asset and must not add to the count.
+      await cache.delete(runtimeKey).catch(() => {});
       const index = await this.#readIndex(cache);
-      const runtimeKey = runtimeIndexUrl(this.origin);
       const doomed = [...await this.#keyUrls(cache, name)].filter((url) => url !== indexKey && url !== runtimeKey && !wanted.has(url));
       if (!doomed.length) continue;
       await Promise.all(doomed.map((url) => cache.delete(url)));
       for (const url of doomed) delete index.files[url];
       await this.#writeIndex(cache, index.files, this.manifest.version);
-      // Records of the entries just swept must not outlive them (resources/runtimeIndex.js).
-      const present = new Set([...await this.#keyUrls(cache, name)].filter((url) => url !== indexKey && url !== runtimeKey));
-      // Only a document that already exists is rewritten: a browser that never let the worker store runtime art pays nothing.
-      if (await cache.match(runtimeKey).catch(() => null)) {
-        void updateRuntimeIndex(cache, this.origin, { present }).catch(() => {});
-      }
       removed += doomed.length;
     }
     return removed;

@@ -262,7 +262,9 @@ The local client's `spritepack/ui_char_avatar_*.ab` supplies base/`_2` avatars; 
 supplies `_1`/`_2` portraits. `spritepack/ui_player_avatar_list_h2_0.ab` supplies the official player avatars (活动 /
 特殊 / 基础 / 动态, the 头像 picker's 官方头像 page) and `spritepack/ui_camp_logo_0.ab` the organisation emblems, into
 `ui/playerAvatar` and `ui/campLogo` of `data/local-assets.json`; the picker reads those groups first and falls back to
-the mirror copy in `data/assets.json` (`playerAvatar/<id>`, tools/assets/plan.mjs). `chararts/<charId>.ab` supplies the `defaultskin.prefab` Front and Back renderers,
+the mirror copy in `data/assets.json` (`playerAvatar/<id>`, tools/assets/plan.mjs). The 名片底图 (ui/namecards.js) reads
+the same `ui/campLogo` group for its 组织徽记, and `NAMECARD_ORG_LOGOS` in tools/assets/plan.mjs adds those keys to the
+generated `ui['campLogo/logo_*']` set so a server without the client extraction gets them from the mirror too. `chararts/<charId>.ab` supplies the `defaultskin.prefab` Front and Back renderers,
 their skeletons, atlases and every page (the existing alpha merge and atlas normalization). The existing Spine
 parser supplies animation roles, durations, hits and bounds. No building models, alternate skins, illustrations,
 voices or gameplay records are extracted by this path.
@@ -905,3 +907,10 @@ each selected bank separately; `attacks`/`hits` and `attackMix`/`hitMix` use mat
 manifest instead of importing an older PR's full JSON, preserving JP voices and current operators. See DESIGN §34.3.
 
 The 40th local token model is the original champagne bomb (`token_10031_swire2_gdtrap`, §29.5), extracted from the official `btl_pfb_tokens_0.ab` through `TOKEN_SPINES`. Its web fallback is retained. Failed board-pack/image requests can retry after connectivity/visibility recovers; a failed three.js module gets at most two fresh-URL retries per page because browser module failures are cached. Successful resources remain cached.
+
+
+## The collab pack (联动干员, 2026-11-02; ordinary picks since 2026-11-03)
+
+The art, voices, models and official effects of the seven collab 6★ (data/backups.json diy.excluded) never ship in the normal pack. They live under public/assets/collab/ and their entries in data/assets-collab.json (the schema of data/assets.json, collab operators and their summons only); shared/collabAssets.js validates the manifest (every URL under /assets/collab/), lays it over the page manifest add-only (mergeCollabManifest), and the page fetches /data/assets-collab.json once when it installs its content (public/js/content.js — since 2026-11-03 the collab 6★ are ordinary 自选 picks, so no room switch gates it). tools/collab-assets.mjs --body <entries.json> builds the manifest and moves the files, --fx <dir> builds data/local-fx-collab.json from an effects extraction, and --check verifies the pack against data/assets.json / data/backups.json. The three formal 自选 operators of 2026-11-01 (塔露拉, 冻河, 国度) stay in the normal manifest.
+
+This fork's pack was filled from a local client and the public dumps (2026-11-03): avatars, portraits, Front/Back models, the 21 skill icons and 艾拉's 雷鸣地雷 model come from `tools/local-extract` (operators.export / export_token_spines / the skill-icon sprite bundles); voice and SFX come from the ArknightsAssets2 `voice` dump, the token avatar from the yuanyan avatar dump. `node tools/collab-assets.mjs --check` reports the pack ok.

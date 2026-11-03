@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { createResourceResponder } from '../../public/js/resources/readThrough.js';
 import { createWorkerCache } from '../../public/js/resources/workerCache.js';
 import { ResourceStore } from '../../public/js/resources/store.js';
-import { CACHE_NAME } from '../../public/js/resources/common.js';
+import { CACHE_NAME, indexUrl } from '../../public/js/resources/common.js';
 
 const origin = 'https://game.example';
 const file = { url: '/assets/e2e/a.png', tier: 1, size: 5, hash: createHash('sha1').update('valid').digest('hex').slice(0, 12) };
@@ -62,7 +62,7 @@ test('worker handoff halves resource SHA-1 checks and cache writes; missing inde
   } finally { crypto.subtle.digest = original; }
 });
 
-test('handoff shares in-flight game requests and leaves audio ranges playable after preload is aborted', async () => {
+test('handoff keeps its origin policy out of an in-flight game request and leaves audio ranges playable after preload is aborted', async () => {
   const f = fixture(); f.hold();
   const game = f.responder.respond(new Request(origin + file.url, { headers: { Range: 'bytes=1-3' } }));
   const controller = new AbortController();
@@ -72,7 +72,9 @@ test('handoff shares in-flight game requests and leaves audio ranges playable af
   controller.abort(); await rejected; f.release();
   const response = await game;
   assert.equal(response.status, 206); assert.equal(await response.text(), 'ali');
-  assert.equal(f.counts.fetch, 1);
+  // The preload asks for allowOrigin:false; the game request on screen may fall back to the host. They must not share
+  // one in-flight promise, or the preload's policy (and its abort) would decide the picture on screen.
+  assert.equal(f.counts.fetch, 2);
   assert.equal((await f.store().download()).complete, true);
 });
 
@@ -158,6 +160,15 @@ test('an old worker still uses the independently verified page path, including i
   } });
   assert.equal((await store.download()).complete, true);
   assert.equal(fetches, 2); assert.equal(f.counts.put, 1);
+});
+
+test('a verified runtime write stores the body and no second metadata document', async () => {
+  const f = fixture();
+  assert.equal((await f.store().download()).complete, true);
+  // The retired runtime index was flushed 250 ms after the first registration: wait past that deadline and then check
+  // that the cache holds exactly the verified body plus the page-owned index, with no per-write rewrite behind it.
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.deepEqual([...f.entries.keys()].filter((key) => !key.includes('/assets/')), [indexUrl(origin)]);
 });
 
 test('handoffs use canonical escaped CDN URLs and bind per-file query versions', async () => {

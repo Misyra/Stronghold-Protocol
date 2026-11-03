@@ -677,11 +677,7 @@ describe('offline resources in headless Chrome', { skip }, () => {
         await cache.put(url, store.storable(new Response(body, { headers: { 'Content-Length': String(body.byteLength) } }), file.hash));
         if (!indexes.has(name)) indexes.set(name, {});
         indexes.get(name)[url] = file.hash;
-        if (file.fx) {
-          const sha = await crypto.subtle.digest('SHA-256', body);
-          const version = [...new Uint8Array(sha)].slice(0, 8).map((n) => n.toString(16).padStart(2, '0')).join('');
-          samples.push({ url: url + '?v=' + version, body: new TextDecoder().decode(body) });
-        }
+        if (file.fx) samples.push({ url, body: new TextDecoder().decode(body) });
       }
       for (const [name, files] of indexes) {
         if (lostIndex && name === LEGACY_FX_CACHE_NAME) continue;

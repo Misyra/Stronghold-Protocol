@@ -451,7 +451,9 @@ async function main() {
   // The game data built by tools/build-data.mjs (when present) may reference more
   // spawnable enemies/tokens than research lists (e.g. 机变 enemy swaps): cover them too.
   const versionSets = versionAssetData(ROOT);
-  const all = presentationUnion(versionSets);
+  // the collab 6★ (diy.excluded) and their summons are the collab pack's (data/assets-collab.json, tools/collab-assets.mjs),
+  // never the normal pack's: left out of this plan
+  const all = presentationUnion(versionSets, { collab: false });
   log(`[versions] planning presentation for ${versionSets.length} official versions`);
   const extraHandbook = {};
   for (const d of versionSets) for (const b of Object.values(d.bosses || {})) {

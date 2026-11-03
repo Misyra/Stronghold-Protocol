@@ -1,9 +1,11 @@
 // tools/versions/profiles.mjs — load the build profile of an official version (shared/versions.js; docs/DATA.md "Official
 // versions (M0)"). A profile is tools/versions/<slug>.mjs:
-//   { id, season, pins, adapters, research, tables, pools?, config: { hiddenCore: { single, multi }, rules? },
+//   { id, season, pins, lateOperators?, adapters, research, tables, pools?, config: { hiddenCore: { single, multi }, rules? },
 //     expect: { bonds, bands, visibleNonDiy, triggerDeviations } }
 //   pins      null (master, .cache/gamedata/) or { default: <sha>, <group>: <sha> … } — the commit of each file group
 //             (pinGroupOf), cached in .cache/gamedata@<sha>/
+//   lateOperators  { sha, charIds } or omitted — operators newer than the pinned tables: their character, skill and
+//             range records (nothing else) are read from `sha`, cached in .cache/gamedata@<sha>/
 //   adapters  names in tools/versions/adapters.mjs, applied in this order to the loaded activity_table
 //   research  the version's research directory (falls back to docs/research/, with a warning) or null = docs/research/
 //   tables    'default' (the 下半-measured tables of tools/build-data.mjs) or { stock, shopDraft, tacticDraft,

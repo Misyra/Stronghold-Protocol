@@ -181,4 +181,22 @@ describe('资源分包生成器 → 客户端读取', { skip }, () => {
       assert.equal(fs.existsSync(inst.index), false, 'no index was written');
     } finally { inst.cleanup(); }
   });
+
+  test('越界的清单 URL 被拒绝，assets 目录之外的文件一个字节也不读', () => {
+    const inst = install();
+    try {
+      // The URL would decode to assets/../../secret.png — outside --assets-root.
+      fs.writeFileSync(path.join(inst.dir, 'secret.png'), Buffer.from('secret'));
+      const doc = JSON.parse(fs.readFileSync(inst.manifestPath, 'utf8'));
+      for (const url of ['/assets/..%2F..%2Fsecret.png', '/assets/%2e%2e/%2e%2e/secret.png', '/assets/..%5C..%5Csecret.png']) {
+        fs.writeFileSync(inst.manifestPath, JSON.stringify({ ...doc, count: 1, files: [{
+          url, tier: 2, size: 6, hash: sha1(Buffer.from('secret')).slice(0, 12),
+        }] }));
+        assert.throws(() => build(inst),
+          (error) => /unsafe resource URL/.test(String(error.stderr || error.message)), url);
+        assert.equal(fs.existsSync(inst.index), false, 'no index was written');
+        assert.equal(fs.existsSync(inst.output), false, 'no pack was written');
+      }
+    } finally { inst.cleanup(); }
+  });
 });

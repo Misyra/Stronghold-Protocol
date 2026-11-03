@@ -753,6 +753,39 @@ test('a CDN hash mismatch after retry never counts as current', async () => {
   assert.equal(calls.length, 2);
 });
 
+test('a 404 file is settled for the run: the rest finish, the preload reports complete and prune runs', async () => {
+  const files = [
+    { url: '/assets/dead/a.png', tier: 1, size: 1, hash: await digest('a') },
+    { url: '/assets/live/b.png', tier: 1, size: 1, hash: await digest('b') },
+  ];
+  const caches = new MemoryCaches();
+  const fetcher = async (url) => (url.includes('/dead/') ? new Response('gone', { status: 404 })
+    : new Response('b', { status: 200, headers: { 'Content-Type': 'image/png', 'Content-Length': '1' } }));
+  const s = new ResourceStore(manifest(files), { caches, fetcher, origin: ORIGIN });
+  let pruned = 0;
+  const prune = s.prune.bind(s);
+  s.prune = async (...args) => { pruned++; return prune(...args); };
+  const result = await s.download();
+  assert.deepEqual([result.failed, result.settled, result.wanted, result.complete], [1, 1, 1, true]);
+  assert.equal(pruned, 1, 'a dead link must not starve the housekeeping that waits for a complete run');
+  const after = await s.status();
+  assert.deepEqual([after.settled, after.wanted, after.complete], [1, 1, true]);
+});
+
+test('a corrupt cache index warns and is treated as unindexed instead of an empty cache', async (t) => {
+  const files = [{ url: '/assets/a.png', tier: 1, size: 1, hash: 'h0' }];
+  const caches = new MemoryCaches();
+  const cache = await caches.open(CACHE_NAME);
+  await cache.put(ORIGIN + '/assets/a.png', new Response('x'));
+  await cache.put(indexUrl(ORIGIN), new Response('{ not json'));
+  const warn = t.mock.method(console, 'warn', () => {});
+  const s = new ResourceStore(manifest(files), { caches, origin: ORIGIN, fetcher: async () => { throw new Error('no network'); } });
+  const status = await s.status();
+  assert.equal(status.count, 0, 'an unreadable record verifies nothing');
+  assert.ok(warn.mock.calls.some((call) => String(call.arguments?.[0]).includes('not valid JSON')),
+    'the corruption is reported rather than silently looking like an empty cache');
+});
+
 test('versioned media routes resolve cached audio and preserve range responses', async () => {
   const caches = new MemoryCaches();
   const root = '/_v/1234567890abcdef';

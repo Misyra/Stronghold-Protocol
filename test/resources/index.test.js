@@ -123,7 +123,7 @@ test('disconnect during download aborts the lanes, waits offline and resumes mis
   await mod.syncResources(false);
 });
 
-test('transient run failures retry twice with backoff, permanent failures retain manual retry', async (t) => {
+test('transient run failures retry twice with backoff; a 404 is settled by one explicit run', async (t) => {
   const env = stubEnv();
   t.after(env.restore);
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
@@ -146,10 +146,13 @@ test('transient run failures retry twice with backoff, permanent failures retain
   assert.equal(requests, 6, 'automatic retries are bounded');
   status = 404;
   await mod.startResources();
-  assert.equal(mod.resourceState().phase, 'partial');
+  // A dead link cannot keep the run 'partial' forever (`wanted` drops permanently failed keys): the rest is cached,
+  // so this run is ready and `prune()` is reachable. The 404 itself is retried on the next explicit run.
+  assert.equal(mod.resourceState().phase, 'ready');
+  assert.equal(mod.resourceState().selectionComplete, true);
   t.mock.timers.tick(60000);
   await new Promise(setImmediate);
-  assert.equal(requests, 8, '404 requires an explicit retry');
+  assert.equal(requests, 8, '404 never schedules an automatic retry');
   await mod.syncResources(false);
 });
 

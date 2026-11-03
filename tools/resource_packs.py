@@ -48,6 +48,13 @@ def write_stored(archive, name, data):
 def canonical(url):
     if not isinstance(url, str) or not re.match(r"^/((assets|fonts)/)", url):
         raise ValueError(f"invalid resource URL: {url}")
+    # The URL is data. Decode it, then refuse anything that could leave the assets root: an encoded separator or a
+    # decoded `.`/`..` segment. Everything below works on the encoded form; the reader at main() proves containment too.
+    if re.search(r"%2f|%5c", url, re.IGNORECASE):
+        raise ValueError(f"unsafe resource URL: {url}")
+    decoded = unquote(url)
+    if "\\" in decoded or any(ord(ch) < 0x20 for ch in decoded) or any(part in (".", "..") for part in decoded.split("/")):
+        raise ValueError(f"unsafe resource URL: {url}")
     if any(part in (".", "..", "") for part in url.split("/")[1:-1]):
         raise ValueError(f"unsafe resource URL: {url}")
     suffix = url.rsplit(".", 1)[-1].lower()
@@ -115,12 +122,17 @@ def main():
     if args.max_bytes != MAX_PACK_BYTES or args.max_bytes <= 0:
         raise SystemExit(f"max-bytes must remain {MAX_PACK_BYTES}")
     source = json.loads(args.manifest.read_text("utf-8"))
+    root = args.assets_root.resolve()
     files = []
     for row in source.get("files", []):
         url = canonical(row["url"])
         # Manifest URLs use canonical %5B/%5D encoding, while the extracted
         # filesystem keeps literal brackets.
-        path = args.assets_root / unquote(url.lstrip("/"))
+        path = (root / unquote(url.lstrip("/"))).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError:
+            raise SystemExit(f"unsafe resource path: {url}")
         data = path.read_bytes()
         full = digest(data)
         if full[:12] != row.get("hash") or (row.get("size") is not None and row["size"] != len(data)):

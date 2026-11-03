@@ -27,7 +27,12 @@ const PUBLIC = path.join(ROOT, 'public');
 const PUBLISHED_DIRS = ['assets', 'fonts', 'media'];
 
 const args = process.argv.slice(2);
-const outFile = args.includes('--out') ? path.resolve(args[args.indexOf('--out') + 1]) : path.join(ROOT, '.assets-manifest.json');
+const outFlag = args.indexOf('--out');
+if (outFlag >= 0 && !args[outFlag + 1]) {
+  console.error('[manifest] --out 需要一个文件路径\n用法：node tools/build-assets-manifest.mjs [--out <file>] [--quiet]');
+  process.exit(1);
+}
+const outFile = outFlag >= 0 ? path.resolve(args[outFlag + 1]) : path.join(ROOT, '.assets-manifest.json');
 const quiet = args.includes('--quiet');
 const say = (...a) => { if (!quiet) console.log(...a); };
 

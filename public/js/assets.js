@@ -1030,3 +1030,15 @@ export function createAssets(options) {
 
 /** Browser singleton (with the page's cosmetic layers). */
 export const assets = createAssets({ cosmetics });
+
+/**
+ * Adopt the page's already-loaded copy of `/data/assets.json` (data.js `data.get('assets')`) for the browser singleton,
+ * so the 2.6 MiB manifest is downloaded and parsed once per page instead of a second time on the first battle. Call it
+ * once, after `data.load('assets')` resolves and before the first screen reads art; returns whether it was adopted
+ * (false when the store had already fetched its own copy — later than the call, that is harmless but redundant).
+ * @param {object|null|undefined} manifest
+ * @returns {boolean}
+ */
+export function seedAssets(manifest) {
+  return assets.seed(manifest);
+}

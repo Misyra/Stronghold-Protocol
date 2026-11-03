@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { versionAssetData, presentationUnion } from './versions.mjs';
+import { COLLAB_MANIFEST_FILE, mergeCollabManifest } from '../../shared/collabAssets.js';
 import { EXPECTED_LOCAL_GROUPS } from '../local-extract/expected.mjs';
 import { avatarUrl, portraitUrl, spineEntry, unitPictureUrl } from '../../public/js/assets.js';
 
@@ -12,9 +13,13 @@ const EFFECT_TOKENS = new Set(['token_10039_ulpia_block', 'token_10058_sbell2_ic
   'token_10055_phatm2_mndclv', 'token_10065_demetr_dmtpos', 'token_10071_aglna2_agairp']);
 const read = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const optionalLocal = (root) => existsSync(join(root, 'data/local-assets.json')) ? read(join(root, 'data/local-assets.json')) : { groups: {} };
+/** The collab pack's manifest of `root` (data/assets-collab.json), or null: the collab 6★'s art (shared/collabAssets.js). */
+const optionalCollab = (root) => existsSync(join(root, 'data', COLLAB_MANIFEST_FILE)) ? read(join(root, 'data', COLLAB_MANIFEST_FILE)) : null;
 
-export function assetCoverage({ root, sets = versionAssetData(root), assets = read(join(root, 'data/assets.json')),
-  local = optionalLocal(root), fx = null, files = false }) {
+export function assetCoverage({ root, sets = versionAssetData(root), assets: normalAssets = read(join(root, 'data/assets.json')),
+  local = optionalLocal(root), collab = optionalCollab(root), fx = null, files = false }) {
+  // the collab 6★ (diy.excluded) draw from the collab pack, laid over the normal manifest as a page in such a room does
+  const assets = mergeCollabManifest(normalAssets, collab);
   const rows = [];
   const fileErrors = [];
   const present = (url) => typeof url === 'string' && !!url && (!files || existsSync(join(root, 'public', url)));

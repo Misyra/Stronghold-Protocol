@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VERSIONS } from '../../shared/versions.js';
+import { COLLAB_MANIFEST_FILE, mergeCollabManifest } from '../../shared/collabAssets.js';
 
 export const PRESENTATION_TABLES = ['chess', 'backups', 'tokens', 'enemies', 'items', 'bands', 'bonds', 'bosses', 'stages'];
 
@@ -15,17 +16,49 @@ export function versionAssetData(root) {
   }));
 }
 
-export function presentationUnion(sets) {
+/**
+ * The collab 6★ of the sets (data/backups.json `diy.excluded`, 联动干员) and the summons only they field: their art is the
+ * collab pack's (data/assets-collab.json, shared/collabAssets.js), never the normal pack's.
+ * @param {any[]} sets versionAssetData
+ * @returns {{ operators: Set<string>, tokens: Set<string> }}
+ */
+export function collabIdsOf(sets) {
+  const operators = new Set(), tokens = new Set(), elsewhere = new Set();
+  const tokenIds = (list) => (Array.isArray(list) ? list.map((t) => (typeof t === 'string' ? t : t?.tokenId)).filter(Boolean) : []);
+  for (const d of sets) for (const id of d.backups?.diy?.excluded || []) operators.add(id);
+  for (const d of sets) {
+    for (const [id, u] of Object.entries(d.backups?.units || {})) {
+      for (const f of Object.values(u.forms || {})) for (const t of tokenIds(f.tokens)) (operators.has(id) ? tokens : elsewhere).add(t);
+    }
+    for (const c of Object.values(d.chess || {})) for (const t of tokenIds(c.tokens)) elsewhere.add(t);
+  }
+  for (const t of elsewhere) tokens.delete(t);
+  return { operators, tokens };
+}
+
+/** data/assets.json of `root` with the collab pack laid over it (when data/assets-collab.json is there). */
+export function manifestWithCollab(root, assets = JSON.parse(readFileSync(join(root, 'data/assets.json'), 'utf8'))) {
+  const file = join(root, 'data', COLLAB_MANIFEST_FILE);
+  return existsSync(file) ? mergeCollabManifest(assets, JSON.parse(readFileSync(file, 'utf8'))) : assets;
+}
+
+/**
+ * Every operator, summon, enemy, band, item, bond and module type the sets present. `collab: false` leaves out the
+ * collab 6★ and their own summons (collabIdsOf): what the normal pack must carry (tools/fetch-assets.mjs).
+ * @param {any[]} sets @param {{ collab?: boolean }} [opts]
+ */
+export function presentationUnion(sets, { collab = true } = {}) {
   const operators = {}, enemies = {}, tokens = {}, bands = {}, items = {}, bonds = {};
   const modules = new Set();
+  const skip = collab ? { operators: new Set(), tokens: new Set() } : collabIdsOf(sets);
   for (const d of sets) {
     for (const [id, rec] of Object.entries(d.enemies || {})) enemies[id] ??= rec;
-    for (const [id, rec] of Object.entries({ ...d.backups?.tokens, ...d.tokens })) tokens[id] ??= rec;
+    for (const [id, rec] of Object.entries({ ...d.backups?.tokens, ...d.tokens })) if (!skip.tokens.has(id)) tokens[id] ??= rec;
     for (const [id, rec] of Object.entries(d.bands || {})) bands[id] ??= rec;
     for (const [id, rec] of Object.entries(d.bonds || {})) bonds[id] ??= rec;
     for (const rec of Object.values(d.items || {})) if (rec.iconId) items[rec.iconId] ??= rec;
     const add = (id, rec, forms) => {
-      if (!id) return;
+      if (!id || skip.operators.has(id)) return;
       const o = operators[id] ??= { name: rec.name, subProfessionId: rec.subProfessionId, nationId: rec.nationId, skills: [] };
       for (const form of forms) {
         for (const sk of [...(form.skills || []), ...(form.skill ? [form.skill] : [])]) {
@@ -57,7 +90,8 @@ export function addManifestEntries(previous, next) {
 /** Exact sprite names and destinations; the local extractor never guesses or substitutes art identities. */
 export function versionAssetJobs(root) {
   const all = presentationUnion(versionAssetData(root));
-  const assets = JSON.parse(readFileSync(join(root, 'data/assets.json'), 'utf8'));
+  // a collab operator's art is the collab pack's: on disk under its own paths (shared/collabAssets.js)
+  const assets = manifestWithCollab(root);
   const missing = (url) => !url || !existsSync(join(root, 'public', url));
   const operators = Object.keys(all.operators).filter((id) => {
     const c = assets.chars[id];

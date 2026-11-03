@@ -223,7 +223,7 @@ test('a newer destination copy wins over an older legacy duplicate in status and
   assert.equal((await store.status()).count, 1);
 });
 
-test('versioned cold-worker and unversioned runtime reads go straight to the right effect shard offline', async () => {
+test('cold-worker runtime reads go straight to the right effect shard offline', async () => {
   const f = fixture();
   await f.store.importFiles(f.files, { read: (file) => new TextEncoder().encode(file.body) });
   const responder = createResourceResponder({ origin, caches: f.caches,
@@ -239,8 +239,7 @@ test('versioned cold-worker and unversioned runtime reads go straight to the rig
     };
   }
   for (const file of f.files.slice(0, 8)) {
-    const response = await responder.respond(new Request(file.url + '?v=' + digest(file.body, 'sha256').slice(0, 16),
-      { headers: { Range: 'bytes=0-2' } }));
+    const response = await responder.respond(new Request(file.url, { headers: { Range: 'bytes=0-2' } }));
     assert.equal(response.status, 206);
     assert.equal(await response.text(), file.body.slice(0, 3));
     assert.equal(await (await handleResourceRequest(new Request(file.url), { caches: f.caches })).text(), file.body);

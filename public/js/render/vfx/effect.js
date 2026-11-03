@@ -917,6 +917,11 @@ export function recycleEntries(list) {
   list.length = 0;
 }
 
+/** Return one draw entry the build dropped (nothing drawn, or merged into its neighbour) to the free list. */
+export function recycleEntry(e) {
+  ENTRY_POOL.push(e);
+}
+
 /**
  * Whether a renderer sorts before the units (drawn in the ground pass, under them): the units' Spine renderers sit on the
  * client's Default sorting layer (value 0) at order 0 — 野鬃's charpack / chararts, read 2026-10-15 — and Unity draws

@@ -20,7 +20,7 @@
 
 import { FxLibrary } from './library.js';
 import { FxGL } from './gl.js';
-import { Effect, recycleEntries } from './effect.js';
+import { Effect, recycleEntries, recycleEntry } from './effect.js';
 import { FrameData, cameraBasis } from './geom.js';
 import { mat4, mat4Mul } from './math.js';
 
@@ -361,10 +361,10 @@ export class OfficialFx {
       let w = 0, prev = null;
       for (const e of list) {
         const r = e.effect.build(e, basis, fd, frameNo);
-        if (!r || !r.count) continue;
+        if (!r || !r.count) { recycleEntry(e); continue; }
         e.kind = r.kind; e.first = r.first; e.count = r.count;
         if (prev && prev.mat === e.mat && prev.kind === e.kind && !prev.ov && !e.ov && prev.meshKey === e.meshKey && prev.submesh === e.submesh
-          && prev.first + prev.count === e.first) { prev.count += e.count; continue; }
+          && prev.first + prev.count === e.first) { prev.count += e.count; recycleEntry(e); continue; }
         list[w++] = e;
         prev = e;
       }

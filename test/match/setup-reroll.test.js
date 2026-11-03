@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeMatch } from './harness.js';
 import { ERR, PHASE } from '../../shared/constants.js';
+import { SETUP_VOTE_MS } from '../../server/match/match/setupVote.js';
 import { validateC2S } from '../../shared/protocol.js';
 import { createRng, deriveSeed } from '../../server/sim/rng.js';
 import { setupMatchWaves } from '../../server/match/waves.js';
@@ -10,6 +11,42 @@ import { drawDisabledBonds } from '../../server/match/pool.js';
 const snapshot = (m) => ({ stageId: m.stageId, bossId: m.bossId, hiddenBossId: m.hiddenBossId,
   factions: [...m.factions], schedule: m.factions.schedule, bans: [...m.bannedChess], drawn: [...m.disabledBonds] });
 const approve = (m, id, voteId = m.setupVote.id) => m.handle(id, { t: 'g.rerollVote', voteId, agree: true });
+
+test('an unanswered reroll vote times out like a decline: the briefing resumes with its remaining time, unchanged', (t) => {
+  const h = makeMatch({ humans: 3 }).start();
+  t.after(() => h.m.dispose());
+  const m = h.m;
+  const fullMs = m.scaled(m.gd.timer('infoCheck') * 1000);
+  h.sched.advance(fullMs - 20000); // 20 s of the briefing left when the vote opens
+  assert.deepEqual(m.requestSetupReroll('p_0', 0), { ok: true });
+  assert.ok(m.setupVote, 'the vote is open');
+  assert.equal(m.deadline, 0, 'the phase countdown is paused while the vote runs');
+  const before = snapshot(m);
+  const remaining = m.setupVote.remainingMs;
+  // p_1 / p_2 simply never answer: the vote itself expires, the opening is NOT held hostage
+  h.sched.advance(SETUP_VOTE_MS + 1);
+  assert.equal(m.setupVote, null, 'the vote timed out');
+  assert.equal(m.phase, PHASE.INFO_CHECK);
+  assert.deepEqual(snapshot(m), before, 'nothing rerolled');
+  // the 1 ms the advance ran past the timeout callback: the rest of the countdown is intact
+  assert.ok(m.deadline - h.sched.now() <= remaining && m.deadline - h.sched.now() >= remaining - 1, 'the remaining countdown is re-armed');
+  h.sched.advance(m.deadline - h.sched.now());
+  assert.equal(m.phase, PHASE.BAND_DRAFT, 'the stall resolved');
+});
+
+test('a reroll vote settled before its timeout does not fire the timeout; the completed reroll is unaffected', (t) => {
+  const h = makeMatch({ humans: 2 }).start();
+  t.after(() => h.m.dispose());
+  const m = h.m;
+  assert.deepEqual(m.requestSetupReroll('p_0', 0), { ok: true });
+  assert.deepEqual(approve(m, 'p_1'), { ok: true });
+  assert.equal(m.setupVote, null, 'completed at once');
+  const rerolled = snapshot(m);
+  h.sched.advance(SETUP_VOTE_MS + m.scaled(m.gd.timer('infoCheck') * 1000) + 1); // past the stale callback AND the fresh opening
+  assert.equal(m.setupVote, null, 'no second vote');
+  assert.deepEqual(snapshot(m), rerolled, 'the late timeout never rerolled again');
+  assert.equal(m.phase, PHASE.BAND_DRAFT, 'the fresh opening ran out on its own');
+});
 
 test('reroll with one second left gives everyone a fresh full countdown; old timeout cannot advance it', (t) => {
   const h = makeMatch({ humans: 2 }).start();
@@ -64,7 +101,7 @@ test('four humans must agree; rerolls the entire official setup and stock, prese
   assert.equal(m.deadline, 0);
   assert.deepEqual(approve(m, 'p_1'), { ok: true });
   assert.deepEqual(approve(m, 'p_2'), { ok: true });
-  h.sched.advance(30000);
+  h.sched.advance(20000); // inside the vote's own window: still open, nothing rerolled
   assert.equal(m.phase, PHASE.INFO_CHECK);
   assert.deepEqual(snapshot(m), before, 'nothing rerolled until everyone agrees');
   assert.equal(m.handle('viewer', { t: 'g.rerollVote', voteId: m.setupVote.id, agree: true }).error, ERR.SPECTATOR);

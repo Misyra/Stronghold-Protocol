@@ -16,6 +16,9 @@ import { OK, fail } from './common.js';
 // once and clears the seat cooldown, so the throttle there is the connection's heavy bucket: room.rerollSetup is in
 // server/net.js HEAVY_TYPES (2 per second, burst 6), as each reroll rebuilds the opening and resends m.public (DESIGN §35.47).
 
+/** An open vote nobody settles times out like a decline (a kick vote's window): the briefing can never stall forever. */
+export const SETUP_VOTE_MS = 30_000;
+
 export class MatchSetupVote {
   requestSetupReroll(playerId, revision) {
     if (this.disposed || this.ended || this.phase !== PHASE.INFO_CHECK) return fail(ERR.WRONG_PHASE);
@@ -29,17 +32,23 @@ export class MatchSetupVote {
     const last = this._rerollStartAt.get(playerId);
     if (last !== undefined && now - last < REROLL_COOLDOWN_MS) return fail(ERR.RATE, 'setup reroll cooldown');
     this._rerollStartAt.set(playerId, now);
-    this.setupVote = {
+    const vote = this.setupVote = {
       id: ++this._setupVoteSeq,
       proposerId: playerId,
       voters: humans.map((p) => p.playerId),
       agreed: new Set([playerId]),
       remainingMs: this.deadline > 0 ? Math.max(1, this.deadline - now) : 0,
+      timer: null,
     };
     this.cancel(this._infoAdvanceTimer);
     this._infoAdvanceTimer = null;
     this.setDeadline(0);
     if (humans.length === 1) return this.completeSetupReroll();
+    vote.timer = this.later(this.scaled(SETUP_VOTE_MS), () => {
+      if (this.setupVote !== vote) return;
+      vote.timer = null;
+      this.cancelSetupVote(); // a vote nobody settled: the opening resumes with its remaining time, unchanged
+    });
     this.markPublic();
     this.flush(true);
     return OK;
@@ -71,6 +80,8 @@ export class MatchSetupVote {
     const vote = this.setupVote;
     if (!vote) return;
     this.setupVote = null;
+    this.cancel(vote.timer); // a settle of any kind (agree-all, a decline, the proposer, a timeout) stops the countdown
+    vote.timer = null;
     if (this.phase === PHASE.INFO_CHECK && !this.disposed && !this.ended) {
       if (vote.remainingMs > 0) {
         this.deadline = this.sched.now() + vote.remainingMs;
@@ -121,6 +132,7 @@ export class MatchSetupVote {
       ps.infoReady = ps.botControlled;
     }
     this.setupRevision++;
+    this.cancel(this.setupVote?.timer); // the completed vote's own countdown (a stale callback would no-op, but the tracked timer should not linger)
     this.setupVote = null;
     // A completed reroll is a new opening, so every seat gets a fresh chance to ask for another one.
     this._rerollStartAt.clear();

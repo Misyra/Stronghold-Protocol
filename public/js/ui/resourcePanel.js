@@ -132,6 +132,29 @@ function ResourceChoice({ id, on, disabled, onChange, children }) {
       onChange=${(e) => onChange?.(e.currentTarget.checked)} />${children}</label>`;
 }
 
+/** A pack run, pack by pack: the bar refills for every pack on the wire, and the pack being unpacked follows it. */
+function TransportBars({ transport }) {
+  const pct = (done, total) => (total > 0 ? Math.max(0, Math.min(100, Math.floor(done / total * 100))) : 0);
+  const download = pct(transport.downloadLoaded, transport.downloadTotal);
+  const unpack = pct(transport.importDone, transport.importTotal);
+  return html`<div class="resource-transport" role="group" aria-label=${t('资源包进度')}>
+    <div class="resource-transport__item">
+      <div class="resource-transport__head">
+        <span class="resource-transport__name">${t('下载资源包')}</span>
+        <span class="num resource-transport__count">${transport.downloadNumber}/${transport.packs} · ${formatBytes(transport.downloadLoaded)} / ${formatBytes(transport.downloadTotal)} · ${download}%</span>
+      </div>
+      <${ProgressBar} value=${download} max=${100} size="sm" tone="mint" />
+    </div>
+    <div class="resource-transport__item">
+      <div class="resource-transport__head">
+        <span class="resource-transport__name">${t('解压导入')}</span>
+        <span class="num resource-transport__count">${transport.importNumber}/${transport.packs} · ${transport.importDone}/${transport.importTotal} · ${unpack}%</span>
+      </div>
+      <${ProgressBar} value=${unpack} max=${100} size="sm" tone="amber" />
+    </div>
+  </div>`;
+}
+
 function ResourceScope({ st, enabled, disabled, preferences, onPreset, onChange }) {
   const plan = resourcePlan(st);
   return html`<section class="resource-scope" aria-label=${t('预载范围')}>
@@ -149,6 +172,7 @@ function ResourceScope({ st, enabled, disabled, preferences, onPreset, onChange 
     </div>
     <div class="resource-overview__state"><span>${stateText(st, enabled)}</span><span class="num">${plan.progress}% · ${t('{done} / {total} 个文件', { done: st.done, total: st.wanted })}</span></div>
     <${ProgressBar} value=${plan.progress} max=${100} size="sm" tone="mint" />
+    ${st.transport ? html`<${TransportBars} transport=${st.transport} />` : null}
     ${plan.unknown ? html`<p class="set-hint">${t('{n} 个文件大小未知', { n: plan.unknown })}</p>` : null}
   </section>`;
 }

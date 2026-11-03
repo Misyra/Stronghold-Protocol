@@ -802,6 +802,14 @@ skins' models and portraits, or all installed ones) and 额外特效 (battle VFX
 Storage shard caches named `stronghold-resources-v1-*` (`public/js/resources/common.js CACHE_PREFIX`); progress,
 failures and resume live in `public/js/resources/index.js` and `store.js`, and the cleanup card's 清理可选资源 /
 清理全部资源 delete by scope (`resources/storage.js` surfaces `navigator.storage.estimate()` and the persist answer).
+When the manifest carries deployment packs the stage runs before the per-file pass (`preloadTransportPacks`), and the
+manager reports it as two bars of its own, pack by pack: 下载资源包 follows the pack on the wire — its bar refills for
+every pack while N/M counts through the plan — and 解压导入 follows the pack currently unpacked into Cache Storage.
+Two lanes download at once and keep pulling ahead of the importer within a queued-byte budget (`packQueue.js`), so a
+slow cache write never idles the network; each row names the earliest pack in its stage, and a stage that has run dry
+reads 100 % on its last pack instead of freezing mid-scale. The `transport` field of the published state stays for the
+rest of the run — the per-file pass keeps the finished stage on screen — and clears when the run ends (pause, error,
+completion).
 
 Serving is an opt-in module service worker: `public/resource-sw.js` — registered with `type: 'module'` by
 `public/js/resources/index.js` when the preload turns on and unregistered when its retained caches are cleared —
@@ -825,6 +833,8 @@ ZIP card works with them three ways:
   voices/audio included; a server with `public/resource-packs/` in place also serves its own packs at
   `/resource-packs/<pack>.zip`).
 - **导出已缓存资源** — `archive.js exportResourceZip` writes one scope's cached files back into a zip for sharing.
+
+A manual import of a published pack reports on the card's single bar (正在导入资源包：N %); it needs no per-pack split.
 
 ## Legacy imported-asset cache (compatibility)
 

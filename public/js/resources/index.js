@@ -77,6 +77,8 @@ const stateStore = createResourceState({
   requiredComplete: false,
   clearing: false,
   combat: false,
+  /** The pack stage's two per-pack bars: the pack on the wire and the pack being unpacked (`preloadTransportPacks`). */
+  transport: null,
 });
 const state = stateStore.state;
 const set = stateStore.set;
@@ -447,7 +449,7 @@ function scheduleBackgroundCheck(store) {
 function watchOtherTab(store, task) {
   return store.status().then((st) => {
     if (!task.signal.aborted) task.publish(set)({
-      ...counters(st), phase: st.complete ? 'ready' : 'foreign', error: false,
+      ...counters(st), phase: st.complete ? 'ready' : 'foreign', error: false, transport: null,
       message: st.complete ? t('资源已全部预载完成。') : t('另一个标签页正在预载⋯回到这个标签页时会自动继续。'),
     });
     if (!st.complete) recoverDownload(task, { foreign: true });
@@ -465,7 +467,7 @@ function start() {
     globalThis.window?.addEventListener('offline', offline);
     try { await startDownload(task); }
     catch (err) {
-      if (!task.signal.aborted) task.publish(set)({ phase: 'error', error: true, message: t('无法访问资源缓存：{0}', { 0: err?.message || err }) });
+      if (!task.signal.aborted) task.publish(set)({ phase: 'error', error: true, transport: null, message: t('无法访问资源缓存：{0}', { 0: err?.message || err }) });
     }
     finally { globalThis.window?.removeEventListener('offline', offline); }
   }, ({ signal }) => {
@@ -519,6 +521,23 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal,
   }
   if (!plans.length) return { imported: 0 };
   plans.sort((a, b) => a.pack.tier - b.pack.tier);
+  // The panel's two bars (public/js/ui/resourcePanel.js) follow single packs, not the run: the pack on the wire —
+  // its bar refills for every pack, N/M counts through the plan — and the pack currently unpacked into the cache.
+  // Two lanes download at once, so each row names the earliest pack in its stage; a finished stage reads 100 % at
+  // the last pack instead of freezing mid-scale while the other lane waits for the importer.
+  const lanes = plans.map(() => ({ status: 'pending', loaded: 0, imported: 0 }));
+  const transport = () => {
+    const downloading = lanes.findIndex((lane) => lane.status === 'downloading');
+    const waiting = lanes.findIndex((lane) => lane.status === 'queued' || lane.status === 'importing');
+    const d = downloading >= 0 ? downloading : waiting >= 0 ? waiting : lanes.length - 1;
+    const importing = lanes.findIndex((lane) => lane.status === 'importing');
+    const i = importing >= 0 ? importing : waiting >= 0 ? waiting : lanes.length - 1;
+    return {
+      packs: plans.length,
+      downloadNumber: d + 1, downloadLoaded: lanes[d].loaded, downloadTotal: plans[d].pack.size,
+      importNumber: i + 1, importDone: lanes[i].imported, importTotal: plans[i].candidates.length,
+    };
+  };
   const { downloadTransportPack } = await import('./transport.js');
   const { resourcePath, readTransportPack } = await import('./archive.js');
   const { downloadedPacks } = await import('./packQueue.js');
@@ -529,17 +548,25 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal,
   const planNumbers = new Map(plans.map((plan, index) => [plan, index + 1]));
   const fetchPlan = async (plan, index, signal) => {
     const { pack } = plan;
+    const lane = lanes[planNumbers.get(plan) - 1];
     checkAbort(controller.signal);
-    const progress = (extra) => onProgress?.({ phase: 'transport', pack: pack.id, packNumber: planNumbers.get(plan) || index + 1,
-      packTotal: plans.length, total: pack.size, ...extra });
+    lane.status = 'downloading';
+    const progress = (extra) => {
+      if (Number.isFinite(extra.loaded)) lane.loaded = Math.min(pack.size, extra.loaded);
+      onProgress?.({ phase: 'transport', pack: pack.id, packNumber: planNumbers.get(plan) || index + 1,
+        packTotal: plans.length, total: pack.size, report: transport(), ...extra });
+    };
     const bytes = await downloadTransportPack(pack, { signal,
       onRoute: (route) => progress({ loaded: 0, ...route }),
       onProgress: (loaded) => progress({ loaded }) });
-    progress({ loaded: bytes.byteLength, queued: true });
+    lane.status = 'queued';
+    lane.loaded = pack.size;
+    progress({ loaded: pack.size, queued: true });
     return bytes;
   };
-  // Two independent download lanes feed one validator/importer. Two queued ZIPs
-  // plus the lanes' in-flight payloads bound memory while the importer is slow.
+  // Two independent download lanes feed one validator/importer. The lanes keep pulling while the importer chews
+  // through a pack: downloadedPacks only parks a finished ZIP once its queued-byte budget is full (packQueue.js),
+  // which bounds memory without idling the network whenever cache writes fall behind.
   let yielded = 0;
   const entries = async function* () {
     let roundPlans = plans;
@@ -548,19 +575,22 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal,
       for await (const result of downloadedPacks(roundPlans, fetchPlan, controller.signal)) {
         checkAbort(controller.signal);
         const { pack, candidates } = result.plan;
+        const lane = lanes[planNumbers.get(result.plan) - 1];
         let rows;
         try {
           if (result.error) throw result.error;
-          onProgress?.({ phase: 'transport', processing: true, pack: pack.id, packNumber: planNumbers.get(result.plan), packTotal: plans.length });
+          lane.status = 'importing';
+          onProgress?.({ phase: 'transport', processing: true, pack: pack.id, packNumber: planNumbers.get(result.plan), packTotal: plans.length, report: transport() });
           // The stream shares the queued buffer instead of copying another ZIP.
           const response = new Response(new ReadableStream({ start(stream) { stream.enqueue(result.value); stream.close(); } }));
           rows = await readTransportPack(response, pack, { signal: controller.signal,
             selectedPaths: new Set(candidates.map((file) => resourcePath(file.url))) });
         } catch (error) {
           checkAbort(controller.signal);
+          lane.status = round === 0 && result.error?.retryable ? 'deferred' : 'failed';
           if (round === 0 && result.error?.retryable) {
             deferred.push(result.plan);
-            onProgress?.({ phase: 'transport', deferred: true, pack: pack.id, packNumber: planNumbers.get(result.plan), packTotal: plans.length });
+            onProgress?.({ phase: 'transport', deferred: true, pack: pack.id, packNumber: planNumbers.get(result.plan), packTotal: plans.length, report: transport() });
             console.warn(`[resources] 分包 ${pack.id} 线路暂不可用，将在其他分包后重试`, error);
             continue;
           }
@@ -573,15 +603,17 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal,
           const file = byUrl.get(row.url);
           if (!file) continue;
           yielded++;
+          lane.imported++;
           yield { files: [file], size: bytes.byteLength, read: () => bytes };
         }
+        lane.status = 'done';
       }
       roundPlans = deferred;
     }
   };
   try {
     const result = await store.importEntries(entries(), { signal: controller.signal, concurrency: 1,
-      onProgress: (progress) => onProgress?.({ phase: 'transport', status: progress.getStatus() }) });
+      onProgress: (progress) => onProgress?.({ phase: 'transport', status: progress.getStatus(), report: transport() }) });
     return { imported: result?.imported ?? yielded };
   } finally {
     signal?.removeEventListener('abort', abort);
@@ -592,7 +624,7 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal,
 async function startDownload(task) {
   const { signal } = task;
   const set = task.publish(stateStore.set);
-  set({ phase: 'checking', message: t('正在检查已保存的资源…'), error: false });
+  set({ phase: 'checking', message: t('正在检查已保存的资源…'), error: false, transport: null });
   if (globalThis.navigator?.onLine === false) { recoverDownload(task); return; }
   const checkStart = performance.now();
   const ctx = await resourceContext();
@@ -658,7 +690,7 @@ async function startDownload(task) {
           loaded: formatBytes(p.loaded || 0), size: formatBytes(p.total), percent: Math.min(100, Math.floor((p.loaded || 0) / p.total * 100)) })
         : t('正在校验并保存资源包…');
       set({ ...(p.status ? counters(p.status) : {}), phase: 'download', error: false,
-        message });
+        transport: p.report ?? state.transport, message });
       return;
     }
     // "整理" instead of "下载" when the files came out of an older cache: nothing is being fetched (store.js 的迁移).
@@ -692,6 +724,7 @@ async function startDownload(task) {
       failed: outcome.failed,
       failures: outcome.failures,
       error: outcome.failed > 0,
+      transport: null,
       message: after.complete ? restWanted
         ? t('资源已全部预载完成（{0}）。', { 0: formatBytes(after.bytes) })
         : t('必备资源已预载完成；可选资源按需加载。')
@@ -704,14 +737,14 @@ async function startDownload(task) {
     // is not ours) are failures and must not read as "the player pressed pause".
     if (signal.aborted) {
       const now = await store.status().catch(() => null);
-      set({ ...(now ? counters(now) : {}), phase: 'paused', message: current ? t('已暂停，可继续下载或清理缓存。') : t('已停止预载。') });
+      set({ ...(now ? counters(now) : {}), phase: 'paused', transport: null, message: current ? t('已暂停，可继续下载或清理缓存。') : t('已停止预载。') });
       return;
     }
     const message = err?.name === 'QuotaExceededError' || /quota|空间不足/i.test(String(err?.message || ''))
       ? t('浏览器存储空间不足：已保存的文件保留，可清理缓存后重试。')
       : t('预载失败：{0}', { 0: err?.message || err });
     const now = await store.status().catch(() => null);
-    set({ ...(now ? counters(now) : {}), phase: 'error', message, error: true });
+    set({ ...(now ? counters(now) : {}), phase: 'error', message, error: true, transport: null });
   }
 }
 
@@ -724,9 +757,9 @@ export function pauseResources() {
   tasks.archive.controller?.abort();
   if (tasks.download.controller) {
     tasks.download.controller.abort();
-    set({ phase: 'paused', message: t('已暂停，可继续下载或清理缓存。') });
+    set({ phase: 'paused', transport: null, message: t('已暂停，可继续下载或清理缓存。') });
   }
-  else if (current) set({ phase: 'paused', message: t('已暂停，可继续下载或清理缓存。') });
+  else if (current) set({ phase: 'paused', transport: null, message: t('已暂停，可继续下载或清理缓存。') });
 }
 
 /** ZIP support stays out of the initial module graph. An import can be started before enabling network preloading. */
@@ -762,7 +795,7 @@ function transferArchive(kind, file, scope) {
   if (tasks.archive.promise || tasks.clear) return Promise.reject(new Error('资源包正在处理中'));
   recovery.cancel();
   wantRun = false;
-  set({ archive: kind, archiveResult: null, archivePhase: '', archivePercent: 0, archiveGroup: '',
+  set({ archive: kind, archiveResult: null, archivePhase: '', archivePercent: 0, archiveGroup: '', transport: null,
     message: kind === 'import' ? t('正在准备导入资源包…') : t('正在准备导出资源包…'), error: false });
   return tasks.run('archive', async (task) => {
     const { signal } = task;
@@ -863,7 +896,7 @@ export function clearResources({ optionalOnly = false } = {}) {
       }
       const status = outcome.status;
       if (status) { set(counters(status)); await updateStorage(ctx.store, status, undefined, set); }
-      set({ failed: 0, failures: [], error: false, archiveResult: null,
+      set({ failed: 0, failures: [], error: false, archiveResult: null, transport: null,
         phase: current ? 'paused' : 'off',
         message: optionalOnly ? t('已清理可选资源缓存，必备资源和个人设置保留。') : t('已清理预载资源缓存。'),
       });

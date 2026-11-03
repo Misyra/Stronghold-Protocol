@@ -248,6 +248,37 @@ test('必备慢包不阻止后续可选包，且必备包优先占用下载通�
   assert.equal((await pending).imported, 3);
 });
 
+test('downloads run ahead of a slow importer instead of parking once the queue fills', async (t) => {
+  const fixtures = await Promise.all([0, 1, 2, 3, 4].map((i) => makePack([{ url: `/assets/p${i}.png` }])));
+  fixtures.forEach(({ pack }, i) => { pack.id = `q${i}`; pack.url = `https://cdn.test/resource-packs/q${i}.zip`; });
+  const store = stubStore(fixtures.flatMap(({ pack }) => pack.files.map((f) => ({ ...f, tier: 1 }))));
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  t.after(() => release());
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    calls.push(url);
+    return new Response(fixtures.find(({ pack }) => pack.url === url).zip);
+  });
+  store.importEntries = async (entries) => {
+    let imported = 0;
+    for await (const entry of entries) {
+      if (imported === 0) await gate; // the first cache write blocks; downloads must not care
+      store.got.push(entry.files[0].url); imported++;
+    }
+    return { imported };
+  };
+  const pending = preloadTransportPacks(store, fixtures.map(({ pack }) => pack), [1], null, new AbortController().signal);
+  t.after(() => pending);
+  const all = Promise.all(fixtures.map(({ pack }) => new Promise((resolve, reject) => {
+    const timer = setInterval(() => { if (calls.includes(pack.url)) { clearInterval(timer); resolve(); } }, 5);
+    setTimeout(() => { clearInterval(timer); reject(new Error(`pack ${pack.id} waited for the importer`)); }, 2000);
+  })));
+  await all;
+  release();
+  assert.equal((await pending).imported, 5);
+});
+
 test('线路响应超时先重试同一压缩包，成功后不回退逐文件或备用线路', async () => {
   const { pack, zip } = await makePack([{ url: '/assets/a.png' }]);
   const primary = 'https://modelscope.cn/datasets/Misyra/Arknight_Assets/resolve/master/a.zip';
@@ -327,4 +358,39 @@ test('transiently failed packs retry after healthy packs, without downloading he
   assert.equal(result.imported, 2); assert.equal(slow, 3); assert.equal(healthy, 1);
   assert.deepEqual(store.got.map((entry) => entry.file.url), ['/assets/healthy.png', '/assets/slow.png']);
   assert.ok(progress.some((p) => p.deferred && p.packNumber === 1));
+});
+
+test('the two bars follow single packs: the wire bar refills per pack, the importer names its own pack', async () => {
+  const a = await makePack([{ url: '/assets/a1.png' }, { url: '/assets/a2.png' }]);
+  const b = await makePack([{ url: '/assets/b1.png' }]);
+  a.pack.id = 'pa'; b.pack.id = 'pb';
+  a.pack.url = 'https://cdn.test/resource-packs/pa.zip'; b.pack.url = 'https://cdn.test/resource-packs/pb.zip';
+  const base = stubStore([...a.pack.files, ...b.pack.files].map((file) => ({ ...file, tier: 1 })));
+  const store = { ...base, importEntries: async (entries, { onProgress } = {}) => {
+    let imported = 0;
+    for await (const _ of entries) {
+      imported++;
+      onProgress?.({ imported, processed: imported, getStatus: () => ({ count: imported, total: 3 }) });
+    }
+    return { imported };
+  } };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => new Response(url === a.pack.url ? a.zip : b.zip);
+  const reports = [];
+  try {
+    await preloadTransportPacks(store, [a.pack, b.pack], [1], null, new AbortController().signal,
+      (p) => { if (p.report) reports.push(p.report); });
+  } finally { globalThis.fetch = realFetch; }
+  assert.ok(reports.length >= 4);
+  assert.equal(reports[0].packs, 2, 'the plan total is known before the first byte');
+  assert.equal(reports[0].downloadNumber, 1, 'the wire row names the earliest downloading pack');
+  assert.equal(reports[0].downloadTotal, a.pack.size);
+  assert.ok(reports.some((r) => r.downloadNumber === 2), 'the counter moves on when the pack lands');
+  assert.ok(reports.some((r) => r.importNumber === 1 && r.importTotal === 2 && r.importDone === 2));
+  const last = reports.at(-1);
+  assert.equal(last.downloadNumber, 2);
+  assert.equal(last.downloadLoaded, b.pack.size, 'the finished stage reads 100 % on the last pack');
+  assert.equal(last.importNumber, 2);
+  assert.equal(last.importDone, 1);
+  assert.equal(last.importTotal, 1);
 });

@@ -108,9 +108,24 @@ describe('where the preload is reachable', () => {
     assert.match(panel, /导出 ZIP/);
     assert.match(panel, /importResources\(file, \{ onImported: \(\) => onChange\(true\) \}\)/,
       'successful imports persist the preload switch through the application settings callback');
-    assert.match(panel, /st\.worker/);
+    assert.match(panel, /t\.worker/);
     assert.match(panel, /onChange\(false\)/);
     assert.equal(/可离线进入对局|断网[^。]*可用/.test(panel), false);
+  });
+
+  test('the pack stage draws two bars that follow single packs: the wire bar refills, N/M counts the plan', () => {
+    const panel = read('public/js/ui/resourcePanel.js');
+    assert.match(panel, /st\.transport \? html`<\$\{TransportBars\} transport=\$\{st\.transport\} \/>` : null/);
+    assert.ok(panel.includes("t('下载资源包')"));
+    assert.ok(panel.includes("t('解压导入')"));
+    assert.match(panel, /transport\.downloadNumber/);
+    assert.match(panel, /transport\.downloadLoaded/);
+    assert.match(panel, /transport\.importDone/);
+    assert.match(read('public/css/components.css'), /\.resource-transport__item \{/);
+    // The finished stage stays visible for the rest of the run (the per-file pass keeps it), and the run's end clears it.
+    const src = read('public/js/resources/index.js');
+    assert.ok(src.includes('transport: null'));
+    assert.equal(/finally \{ set\(\{ transport: null \}\); \}/.test(src), false, 'the pack bars must not vanish while the per-file pass continues');
   });
 });
 

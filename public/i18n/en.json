@@ -3681,5 +3681,8 @@
   "显示": "Display",
   "操作": "Controls",
   "数据": "Data",
-  "战斗模拟未能载入": "The battle simulation could not be loaded"
+  "战斗模拟未能载入": "The battle simulation could not be loaded",
+  "下载资源包": "Pack download",
+  "解压导入": "Unpacking",
+  "资源包进度": "Resource pack progress"
 }

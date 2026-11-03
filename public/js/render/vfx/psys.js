@@ -294,7 +294,8 @@ export class PSys {
     // them: sizeScale); a world-space system's (and Shape mode's) are as born
     this.liveScale = def.space !== 1 && def.scalingMode !== 2;
     this.pos = [0, 0, 0];   // world position (emitter)
-    this.prevPos = null;
+    this.prevPos = [0, 0, 0]; // where the last update ended — one reused buffer, refilled in place (see update)
+    this.hasPrev = false;   // prevPos holds a real previous position (false until the first update / after a reset)
     this.vel = [0, 0, 0];   // emitter velocity (world, per s)
     this.time0 = 0;         // battle time at play (custom data / noise scroll)
     this.started = false;
@@ -365,13 +366,13 @@ export class PSys {
     this.burstNext.fill(0);
     this.started = false;
     if (frame) this.setFrame(frame);
-    this.prevPos = null;
+    this.hasPrev = false;
     if (this.def.prewarm && this.emitting) {
       // as if one full loop had already run (Unity: the start delay does not apply with prewarm)
       const d = this.def.duration;
       let t = 0;
       while (t < d - 1e-6) { const s = Math.min(MAX_STEP, d - t); this._step(s, true); t += s; }
-      this.prevPos = null;
+      this.hasPrev = false;
     }
   }
 
@@ -414,21 +415,26 @@ export class PSys {
   /** Advance by dt battle seconds (frame: this frame's render matrix, see setFrame). */
   update(dt, frame) {
     if (!this.playing) return;
-    const prev = this.prevPos ? [this.prevPos[0], this.prevPos[1], this.prevPos[2]] : null;
+    // prevPos, one reused buffer: at the start it holds where the last update ended — the velocity's "previous", and,
+    // through the steps, the frame-start position the births interpolate along (the old `_from`); refilled in place
+    // with the current position at the end, so a steady frame allocates nothing (it is only read before `setFrame`
+    // overwrites `pos`, and nothing between updates reads it again)
+    const prev = this.hasPrev ? this.prevPos : null;
     if (frame) this.setFrame(frame);
     const sdt = dt * this.def.simSpeed;
     // emitter velocity (world units per battle s) for inherit velocity and rate over distance
     if (prev && dt > 0) {
       this.vel[0] = (this.pos[0] - prev[0]) / dt; this.vel[1] = (this.pos[1] - prev[1]) / dt; this.vel[2] = (this.pos[2] - prev[2]) / dt;
     } else { this.vel[0] = this.vel[1] = this.vel[2] = 0; }
-    this._from = prev || [this.pos[0], this.pos[1], this.pos[2]];
+    if (!prev) { this.prevPos[0] = this.pos[0]; this.prevPos[1] = this.pos[1]; this.prevPos[2] = this.pos[2]; }
     const steps = Math.max(1, Math.ceil(sdt / MAX_STEP - 1e-6));
     const h = sdt / steps;
     for (let i = 0; i < steps; i++) {
       this._stepFrac0 = i / steps; this._stepFrac1 = (i + 1) / steps;
       this._step(h, false);
     }
-    this.prevPos = [this.pos[0], this.pos[1], this.pos[2]];
+    this.prevPos[0] = this.pos[0]; this.prevPos[1] = this.pos[1]; this.prevPos[2] = this.pos[2];
+    this.hasPrev = true;
   }
 
   /** One simulation step of h system seconds. */
@@ -493,8 +499,8 @@ export class PSys {
     // rate over distance (emitter motion in world units)
     let nd = 0;
     const rd = E.rateDist.peak > 0 ? E.rateDist.at(tau, this.rng.next()) * this.emissionScale : 0;
-    if (rd > 0 && !prewarm && this.prevPos !== null) {
-      const f0 = this._stepFrac0 ?? 0, f1 = this._stepFrac1 ?? 1, fr = this._from;
+    if (rd > 0 && !prewarm && this.hasPrev) {
+      const f0 = this._stepFrac0 ?? 0, f1 = this._stepFrac1 ?? 1, fr = this.prevPos;
       const dx = (this.pos[0] - fr[0]) * (f1 - f0), dy = (this.pos[1] - fr[1]) * (f1 - f0), dz = (this.pos[2] - fr[2]) * (f1 - f0);
       this.accDist += rd * Math.sqrt(dx * dx + dy * dy + dz * dz);
       nd = Math.floor(this.accDist);
@@ -610,7 +616,7 @@ export class PSys {
     } else if (def.space === 1) {
       // world space: through the render matrix now; along this step's emitter motion
       mat4Point(m, px, py, pz, _v3);
-      const fr = this._from;
+      const fr = this.hasPrev ? this.prevPos : null;
       if (fr && f < 1) {
         const k = 1 - ((this._stepFrac0 ?? 0) + ((this._stepFrac1 ?? 1) - (this._stepFrac0 ?? 0)) * f);
         _v3[0] -= (this.pos[0] - fr[0]) * k; _v3[1] -= (this.pos[1] - fr[1]) * k; _v3[2] -= (this.pos[2] - fr[2]) * k;

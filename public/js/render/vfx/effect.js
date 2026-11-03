@@ -333,7 +333,7 @@ export class Effect {
     for (let i = 0; i < n; i++) {
       const s = this.sys[i];
       if (!s) continue;
-      s.clear(); s.playing = false; s.emitting = false; s.deaths = 0; s.prevPos = null; s.started = false;
+      s.clear(); s.playing = false; s.emitting = false; s.deaths = 0; s.hasPrev = false; s.started = false;
       s.rate = def.ps[i].emission ? def.ps[i].emission.rate : null; s.sizeX = def.ps[i].size ? def.ps[i].size.x : null; s.startColor = def.ps[i].startColor;
       s.rng.s = ((seed0 + i * 7919) >>> 0) || 0x9e3779b9;
     }

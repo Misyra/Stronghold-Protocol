@@ -113,6 +113,20 @@ describe('room.diy (lobby, stub match)', () => {
     assert.deepEqual(cap.errors, []);
   });
 
+  test('the ok reply carries the kept picks (a page that sent a dropped pick corrects its surface)', async () => {
+    const host = await pool.player('Payload');
+    // outside a room: the illegal pick (`nope`) is dropped, the reply answers the kept roster
+    const r = await ok(host, { t: 'room.diy', picks: { [T5A]: SIEGE, nope: SHARP } });
+    assert.deepEqual(r.picks, { [T5A]: SIEGE });
+    // in a room: the seat's kept roster travels back the same way
+    await createRoom(host);
+    const inRoom = await ok(host, { t: 'room.diy', picks: { [T6A]: SHARP_FULL } });
+    assert.deepEqual(inRoom.picks, { [T6A]: SHARP_FULL });
+    // nothing else leaks: a bare ok of another handler carries no extras
+    const bare = await ok(host, { t: 'room.ready', ready: true });
+    assert.deepEqual(Object.keys(bare).sort(), ['rid', 't']);
+  });
+
   test('a spectator\'s picks stay on its session (never on a seat, never handed to the match)', async () => {
     const host = await pool.player('Host2');
     const st = await createRoom(host);

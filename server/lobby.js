@@ -933,7 +933,8 @@ export class Lobby {
    * replies when it settles).
    * @param {import('./net.js').Session} session
    * @param {any} msg
-   * @returns {{ ok: true } | { error: string, detail?: string } | Promise<{ ok: true } | { error: string, detail?: string }>}
+   * @returns {{ ok: true, ...payload?: object } | { error: string, detail?: string } | Promise<{ ok: true, ...payload?: object } | { error: string, detail?: string }>}
+   *   an ok may carry JSON-safe payload fields the page reads back (room.diy's kept picks — server/net.js answer());
    */
   onMessage(session, msg) {
     // Transport handshakes/leases belong to the live socket, independently of a plugin match's IPC queue.

@@ -32,9 +32,11 @@
 //   welcomeInfo() → object (optional)      extra fields of every `welcome` (never one of its own keys): the lobby's
 //                                          `diyKitted` (0.2.0 自选编队 — which operators a DIY slot may field) and
 //                                          `content` ({ vanilla: <cs> }, the server's content hash — DESIGN §32)
-//   onMessage(session, msg) → { ok: true } | { error: ERR code, detail?: string } | undefined — or a Promise of one
-//                                          (a room whose match runs in a match host worker, DESIGN §32.6: the reply
-//                                          goes out when it settles; a rejection is INTERNAL)
+//   onMessage(session, msg) → { ok: true, ...payload? } | { error: ERR code, detail?: string } | undefined — or a
+//                                          Promise of one (a room whose match runs in a match host worker,
+//                                          DESIGN §32.6: the reply goes out when it settles; a rejection is INTERNAL).
+//                                          JSON-safe ok-payload fields (room.diy's kept picks) reach the client;
+//                                          everything else answers a bare ok.
 //   routeGame(session, msg) → same (optional): client-side combat reports `b.progress` / `b.result` (DESIGN §14) go
 //                                          straight to the running match through it; without it they reach onMessage
 //   onDisconnect(session)                  the session's socket closed (session kept for the reconnect window)
@@ -415,6 +417,22 @@ export function sendSession(session, msg, encoded = null) {
 const validRid = (rid) => Number.isInteger(rid) && rid >= 0 && rid <= MAX_RID;
 
 /**
+ * Whether a handler's ok-payload value may travel the wire as-is (an `ok` frame field, answer()): JSON-safe
+ * primitives and (shallow) plain containers. Anything else — a function, a session-backed object, a Map — stays off
+ * the frame.
+ * @param {unknown} v
+ */
+const wireSafe = (v) => {
+  if (v === null) return true;
+  const t = typeof v;
+  if (t === 'string' || t === 'boolean') return true;
+  if (t === 'number') return Number.isFinite(v);
+  if (t !== 'object') return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === Array.prototype;
+};
+
+/**
  * True for a real ERR code (own property; rejects inherited names like "constructor").
  * @param {unknown} code
  * @returns {boolean}
@@ -758,8 +776,11 @@ export class Network {
   }
 
   /**
-   * The direct reply to a handled message: `error` (with the ERR code) or `ok` when the request carried a rid. Never
-   * throws (a socket closed meanwhile simply gets nothing).
+   * The direct reply to a handled message: `error` (with the ERR code) or `ok` when the request carried a rid. A
+   * handler may decorate its ok with fields the page reads back (room.diy answers the kept picks so a page that sent
+   * a pick the server dropped can correct its surface — server/lobby.js diy): those JSON-safe own fields are copied
+   * onto the ok frame, never the frame's own keys or the error shape's. Most handlers answer bare OK, so this stays
+   * a no-op for them. Never throws (a socket closed meanwhile simply gets nothing).
    * @param {Connection} conn @param {any} msg @param {unknown} rid @param {any} res the handler's result
    */
   answer(conn, msg, rid, res) {
@@ -769,7 +790,17 @@ export class Network {
       // surface as an error toast in the browser)
       if (msg.t === 'b.progress' && !validRid(rid)) return;
       this.reply(conn, errorMsg(isErrCode(res.error) ? res.error : ERR.INTERNAL, rid, res.detail));
-    } else if (validRid(rid)) this.reply(conn, { t: 'ok', rid });
+    } else if (validRid(rid)) {
+      const reply = { t: 'ok', rid };
+      if (res && typeof res === 'object' && !Array.isArray(res)) {
+        for (const [k, v] of Object.entries(res)) {
+          if (k === 't' || k === 'rid' || k === 'ok' || k === 'error' || k === 'detail' || k === '__proto__') continue;
+          if (!wireSafe(v)) continue;
+          reply[k] = v;
+        }
+      }
+      this.reply(conn, reply);
+    }
   }
 
   /** @param {Connection} conn @param {any} msg @param {number} now */

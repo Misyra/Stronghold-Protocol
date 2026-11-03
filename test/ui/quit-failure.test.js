@@ -1,9 +1,14 @@
 // Real quitMatch/store; only request replies are adapted. No browser or natural outage claim.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { quitMatch } from '../../public/js/ui/matchChrome.js';
 import { net } from '../../public/js/net.js';
 import { store, initialState, emptyMatch } from '../../public/js/store.js';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 function setup(t, reply) {
   const previous = store.get();
@@ -75,4 +80,12 @@ test('an acknowledged departure is conclusive even when a redundant request woul
   assert.equal(store.get().room, null);
   assert.equal(store.get().match.public, null);
   assert.deepEqual(s.sent, ['g.leave']);
+});
+
+test('a refused 暂离 keeps the exit dialog open (like 返回模拟 keeps the away overlay)', () => {
+  const src = readFileSync(path.join(ROOT, 'public/js/ui/matchChrome.js'), 'utf8');
+  const away = src.slice(src.indexOf('const away = async () => {'), src.indexOf('return html`<${Modal} open=${open} onClose=${onClose} tone="red" title=${t(\'离开模拟\')'));
+  assert.match(away, /if \(ok\) \{ awayStore\.set\(\{ away: true \}\); onAway\?\.\(\); onClose\(\); \}/,
+    'onClose only on an accepted autoplay: the dialog stays for a retry');
+  assert.match(away, /const ok = await actions\.autoplay\(true\);/);
 });

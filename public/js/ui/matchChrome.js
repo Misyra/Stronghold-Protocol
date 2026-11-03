@@ -96,8 +96,8 @@ export function ExitModal({ open, onClose, solo, onAway }) {
     setBusy('away');
     const ok = await actions.autoplay(true);
     setBusy(null);
-    onClose();
-    if (ok) { awayStore.set({ away: true }); onAway?.(); }
+    // a refused 暂离 (offline, phase changed) has toasted its own error: the dialog stays open for a retry
+    if (ok) { awayStore.set({ away: true }); onAway?.(); onClose(); }
   };
   return html`<${Modal} open=${open} onClose=${onClose} tone="red" title=${t('离开模拟')} micro="LEAVE SIMULATION" width="6.8rem"
     actions=${html`

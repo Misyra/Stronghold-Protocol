@@ -307,7 +307,7 @@ export function appVersionMatches(range, version = APP_VERSION) {
  *   names: Record<string, string>, description: Record<string, string>, version: string, app: string,
  *   compatible: boolean, api: number | null, scope: string[], authors: string[], credits: string, license: string,
  *   homepage: string, sourceLang: string, requires: Record<string, string>, optional: Record<string, string>,
- *   conflicts: Record<string, string>, loadAfter: string[], loadBefore: string[], priority: number,
+ *   conflicts: Record<string, string>, loadAfter: string[], loadBefore: string[], autoWith?: string[], priority: number,
  *   settings: Record<string, PluginSetting>, permissions: string[], parts: Record<string, PluginPart>,
  *   entry: Record<string, string>, slots: string[], files: Record<string, string>, overrides?: string[],
  *   themeVars?: Record<string, string>, notices?: PluginNotice[],

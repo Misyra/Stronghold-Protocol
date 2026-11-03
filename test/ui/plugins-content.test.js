@@ -24,7 +24,7 @@ import { createDataStore } from '../../public/js/data.js';
 import { createStore, initialState } from '../../public/js/store.js';
 import { createBattleRunner } from '../../public/js/battle/runner.js';
 import { buildRecord, aggregateStats, migrateStats, STATS_VERSION, contentOf, isModdedRecord } from '../../public/js/ui/stats.js';
-import { roomFacts } from '../../public/js/screens/room.js';
+import { roomFacts, consentMissing } from '../../public/js/screens/room.js';
 import { roomPluginFacts, isModdedRoom } from '../../public/js/ui/pluginTag.js';
 import { installDiySync } from '../../public/js/ui/loadoutSync.js';
 import { createPluginRegistry } from '../../server/plugins/registry.js';
@@ -440,5 +440,19 @@ describe('statistics and the room\'s facts with gameplay plugins', () => {
     // the original game: no wait
     const vanilla = { ...room, seats: room.seats.map((s) => ({ ...s, content: undefined })), content: { cs: 'ab'.repeat(32), vanilla: true, plugins: [] } };
     assert.deepEqual([roomFacts(vanilla, 'h').contentReady, roomFacts(vanilla, 'h').canStart, roomFacts(vanilla, 'g').myContent], [true, true, 'ready']);
+  });
+
+  test('the start blocker is the trusted consent, not a not-ready seat, when every ready toggle is on', () => {
+    const seats = [
+      { seat: 0, playerId: 'h', name: 'H', isBot: false, ready: true, connected: true, content: 'ready' },
+      { seat: 1, playerId: 'g', name: 'G', isBot: false, ready: true, connected: true, content: 'ready' },
+    ];
+    const trusted = (consent) => ({ cs: 'cd'.repeat(32), vanilla: false, plugins: [], trusted: { consent } });
+    const waiting = { code: 'ABCD', mode: 'coop', hostId: 'h', seats, content: trusted({ 0: true }) };
+    const facts = roomFacts(waiting, 'h');
+    assert.deepEqual([facts.canStart, consentMissing(waiting, facts)], [false, true], 'the real blocker: seat 1\'s consent');
+    const all = { ...waiting, content: trusted({ 0: true, 1: true }) };
+    assert.deepEqual([roomFacts(all, 'h').canStart, consentMissing(all, roomFacts(all, 'h'))], [true, false]);
+    assert.equal(consentMissing({ ...waiting, content: {} }, roomFacts(waiting, 'h')), false, 'no trusted plugins: never the blocker');
   });
 });

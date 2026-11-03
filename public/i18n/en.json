@@ -1402,6 +1402,8 @@
   "插件内容载入中": "Loading plugin content",
   "等待所有博士载入房间的插件内容": "Waiting for every Doctor to load the room's plugin content",
   "仍有博士未载入房间的插件内容": "Some Doctors have not loaded the room's plugin content yet",
+  "等待所有博士同意受信任插件": "Waiting for every Doctor to consent to the trusted plugins",
+  "仍有博士未同意受信任插件": "Some Doctors have not consented to the trusted plugins yet",
   "本服务器没有启用该版本": "This server does not offer that version",
   "该版本不能用于当前房间（例如房间开着改变玩法的插件）": "That version cannot be used in this room (for example, while gameplay plugins are on)",
   "切换版本投票进行中，请等投票结束": "A version vote is in progress; wait for it to end",

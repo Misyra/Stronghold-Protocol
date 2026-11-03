@@ -143,6 +143,16 @@ export function roomFacts(room, myId) {
 }
 
 /**
+ * A seat still owes its trusted-script consent (roomFacts.canStart's consent clause): with every ready toggle on
+ * and the content loaded, this — not a not-ready seat — is what keeps 开始模拟 disabled.
+ * @param {any} room @param {ReturnType<typeof roomFacts>} facts
+ */
+export function consentMissing(room, facts) {
+  const trusted = room?.content?.trusted;
+  return !!trusted && facts.humans.some((s) => !trusted.consent?.[s.seat]);
+}
+
+/**
  * Search progress shown by the room screen. The queue reports `players` (waiting humans in the ticket's
  * pool) and `target` (the seats a match needs); clamping keeps an over-full pool from reading 5/4 or 6/4.
  * Without a search frame — the store's `matchmaking` is null — the room's occupied seats stand in.
@@ -766,7 +776,7 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
     : facts.isHost
       ? facts.canStart
         ? html`<span class="t-mint">${t('*同盟人数达标，准许进入模拟')}</span>`
-        : html`<span class="t-lo">${t('等待所有博士准备就绪')}</span>`
+        : html`<span class="t-lo">${consentMissing(room, facts) ? t('等待所有博士同意受信任插件') : t('等待所有博士准备就绪')}</span>`
       : myReady
         ? html`<span class="t-mint">${t('已就绪 · 等待创建者开始模拟')}</span>`
         : html`<span class="t-lo">${t('准备就绪后，创建者即可开始模拟')}</span>`;
@@ -937,7 +947,7 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
               title=${modded ? t('房间启用了玩法插件，无法进入匹配队列') : consoleOn ? t('房间已开启开发者控制台，无法进入匹配队列') : undefined}>
               <${Icon} name="search" />${t('开始搜寻')}${busy === 'match' ? html`<${Spinner} size="sm" />` : null}</button>` : null}
         ${facts.isHost
-          ? html`<${Tooltip} text=${facts.canStart ? null : vote ? t('切换版本投票进行中，请等投票结束') : !facts.contentReady ? (facts.versionRoom ? t('仍有博士未载入「{version}」的数据', { version: versionLabel(curVersion) }) : t('仍有博士未载入房间的插件内容')) : t('仍有博士未准备就绪')}>
+          ? html`<${Tooltip} text=${facts.canStart ? null : vote ? t('切换版本投票进行中，请等投票结束') : !facts.contentReady ? (facts.versionRoom ? t('仍有博士未载入「{version}」的数据', { version: versionLabel(curVersion) }) : t('仍有博士未载入房间的插件内容')) : consentMissing(room, facts) ? t('仍有博士未同意受信任插件') : t('仍有博士未准备就绪')}>
               <${GoButton} label=${t('开始模拟')} loading=${busy === 'start'} disabled=${!facts.canStart || !online || busy === 'start' || !!vote} onClick=${start} />
             <//>`
           : facts.spectating

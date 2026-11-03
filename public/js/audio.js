@@ -111,6 +111,8 @@ const LEAK_SFX_GAP_MS = 1500;
 const BUFFER_CACHE = 180;
 /** Retry transient network failures on a later use, never on every repeated sound event. */
 const BUFFER_RETRY_MS = 5000;
+/** How long one audio download (headers and body) may take before it counts as a transient failure [ASSUMED]. */
+const BUFFER_FETCH_TIMEOUT_MS = 30000;
 /** Decoded-PCM budget of the buffer cache beside its entry count: a voice line decodes to 0.4–1.3 MB (see _buffer). */
 const BUFFER_BYTES = 64 * 1024 * 1024;
 /**
@@ -585,7 +587,8 @@ function isAudioResponse(res) {
 }
 export class AudioManager {
   /**
-   * @param {{ getManifest?: () => any, win?: any, now?: () => number, onFailed?: (url: string) => boolean }} [opts]
+   * @param {{ getManifest?: () => any, win?: any, now?: () => number, onFailed?: (url: string) => boolean,
+   *   bufferFetchTimeoutMs?: number }} [opts]
    *   onFailed: a sound did not load — whether that made the manifest fall back (a cosmetic plugin's file: see the header)
    */
   constructor(opts = {}) {
@@ -605,6 +608,7 @@ export class AudioManager {
     this.bufBytes = new Map(); // url → decoded PCM bytes (the byte budget of the LRU, see _buffer)
     this.bufRetryAfter = new Map(); // failed URL → next allowed retry (Infinity for definite missing/bad audio)
     this.now = typeof opts.now === 'function' ? opts.now : () => Date.now(); // the retry clock of bufRetryAfter
+    this.bufferFetchTimeoutMs = Number.isFinite(opts.bufferFetchTimeoutMs) ? opts.bufferFetchTimeoutMs : BUFFER_FETCH_TIMEOUT_MS; // tests
     this.warned = new Set();
     this.limiter = new SfxLimiter();
     this.poolVoices = new Map(); // official bank id → playing instances in start order
@@ -857,15 +861,36 @@ export class AudioManager {
           ab = await own.read();
         } else {
           // Extension-less URL first so download managers leave the BGM alone; a host without /media/ still works.
+          // One deadline for headers and body (like fetchChecked): a stalled connection must not hold the track
+          // switch — and the pending promise every later use joins — forever; the timeout is a transient failure
+          // (BUFFER_RETRY_MS: a later use tries again).
           const media = mediaUrl(url);
-          let res = await fetch(media);
-          if (media !== url && !isAudioResponse(res)) {
+          const attempt = async (u) => {
+            const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+            let timer = null;
+            const timedOut = new Promise((resolve) => { timer = setTimeout(() => { ctrl?.abort(); resolve(null); }, this.bufferFetchTimeoutMs); });
+            let res = null;
+            let ab = null;
+            try {
+              res = await Promise.race([fetch(u, { signal: ctrl?.signal }), timedOut]);
+              if (res && res.ok) ab = await Promise.race([res.arrayBuffer(), timedOut]);
+            } finally {
+              clearTimeout(timer);
+            }
+            return { res, ab };
+          };
+          let got = await attempt(media);
+          if (media !== url && !(got.res && isAudioResponse(got.res))) {
             // Drop the unusable response (404, or a 200 that is really index.html) before trying the original URL.
-            try { await res.body?.cancel?.(); } catch { /* the fallback request matters more than draining this one */ }
-            res = await fetch(url);
+            try { await got.res?.body?.cancel?.(); } catch { /* the fallback request matters more than draining this one */ }
+            got = await attempt(url);
           }
-          if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
-          ab = await res.arrayBuffer();
+          if (!got.res || !got.res.ok || !got.ab) {
+            throw (got.res && got.res.ok
+              ? new Error('音频下载超时')
+              : Object.assign(new Error(`HTTP ${got.res ? got.res.status : '???'}`), { status: got.res?.status }));
+          }
+          ab = got.ab;
         }
         const buf = await this.decodeBytes(ab);
         if (!buf && !url.startsWith(LOCAL_BGM)) this._failed(url);
@@ -895,7 +920,11 @@ export class AudioManager {
         this.bufBytes.set(url, pcmBytes(buf));
         this._trimBuffers();
       } catch { /* ignore */ }
-    }, () => {});
+    }, () => {
+      // a load that rejected past its own guards must not be handed back forever: drop the entry so a later
+      // use fetches again (a settled failure is kept for BUFFER_RETRY_MS instead, see above)
+      if (this.buffers.get(url) === p) { this.buffers.delete(url); this.bufBytes.delete(url); }
+    });
     this._trimBuffers();
     return p;
   }

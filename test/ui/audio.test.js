@@ -545,6 +545,42 @@ describe('operator battle voice', () => {
       globalThis.fetch = origFetch;
     }
   });
+
+  test('buffer: a stalled download times out as a transient failure, and a later use retries', async () => {
+    const fw = fakeWindow();
+    const origFetch = globalThis.fetch;
+    // a connection that never answers (and only rejects when the manager's deadline aborts it)
+    let stall = true;
+    let attempts = 0;
+    globalThis.fetch = (u, init) => new Promise((resolve, reject) => {
+      attempts++;
+      if (!stall) resolve({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+      else init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+    });
+    const tick = () => new Promise((r) => setTimeout(r, 10));
+    try {
+      let clock = 1000;
+      const a = new AudioManager({ win: fw.win, getManifest: () => manifest, now: () => clock, bufferFetchTimeoutMs: 10 });
+      a.install();
+      fw.fire('pointerdown');
+      await tick();
+      const url = '/assets/audio/bgm/slow.mp3';
+      assert.equal(await a._buffer(url), null, 'the deadline settles the load instead of hanging forever');
+      assert.equal(attempts, 1);
+      assert.ok(a.now() < a.bufRetryAfter.get(url), 'the timeout counts as a transient failure');
+      assert.equal(a._buffer(url), a.buffers.get(url), 'inside the retry window the failed entry is still handed back');
+      clock += 5001;                       // past BUFFER_RETRY_MS
+      assert.equal(await a._buffer(url), null, 'a later use fetches again (and stalls again)');
+      assert.equal(attempts, 2);
+      stall = false;
+      clock += 5001;
+      const buf = await a._buffer(url);
+      assert.ok(buf && buf.duration === 1.5, 'a connection that answers within the deadline plays');
+      assert.ok(!a.bufRetryAfter.has(url));
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
 });
 
 // ---- fake Web Audio -------------------------------------------------------------------------------------

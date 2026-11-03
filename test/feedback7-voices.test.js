@@ -206,7 +206,10 @@ test('选中干员 on every card tap (review of fb7-voices): two shop / reward c
     // the panel keys its 选中 effect on it, and the game screen numbers every operator card it opens
     assert.match(fs.readFileSync(path.join(ROOT, 'public/js/ui/detailPanel.js'), 'utf8'), /const selectKey = voice && detail\?\.type === 'chess' \? selectVoiceKey\(detail\) : null;/);
     const game = fs.readFileSync(path.join(ROOT, 'public/js/screens/game.js'), 'utf8');
-    assert.match(game, /onDetail=\$\{\(id, kind, hint\) => setDetail\(\{ kind: kind === 'item' \? 'item' : 'chess', id, hint: hint \|\| null, tap: \+\+cardTap\.current \}\)\}/);
+    // same intent as before the memo refactor: the numbering lives in openCardDetail (a useCallback now)
+    // and every card target actually goes through it
+    assert.match(game, /const openCardDetail = useCallback\(\(id, kind, hint\) => setDetail\(\{ kind: kind === 'item' \? 'item' : 'chess', id, hint: hint \|\| null, tap: \+\+cardTap\.current \}\), \[\]\);/);
+    assert.match(game, /onDetail=\$\{openCardDetail\}/);
   } finally {
     globalThis.fetch = origFetch;
   }

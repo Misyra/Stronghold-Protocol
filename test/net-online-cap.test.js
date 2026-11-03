@@ -47,6 +47,10 @@ test('a full server refuses the next new player with SERVER_FULL, and leaves the
         assert.doesNotMatch(e.message, /INTERNAL/);
         return true;
       });
+      // the refusal goes through the server-initiated close path (conn.closing): a frame of the refused socket that
+      // arrives after the reply is ignored, never answered
+      bob.send({ t: 'ping', c: 1 });
+      await bob.expectNone('pong', () => true, 300);
       await bob.close();
 
       // the player already inside keeps playing: a repeat hello on that socket is still answered

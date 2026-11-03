@@ -845,7 +845,8 @@ export class Network {
         // what the player sees as 服务器已满 (ERR.SERVER_FULL).
         if (this.opts.maxOnline > 0 && this.onlineCount >= this.opts.maxOnline) {
           this.reply(conn, errorMsg(ERR.SERVER_FULL, rid, 'server full (online cap)'));
-          try { conn.ws.close(CLOSE.POLICY, 'server full'); } catch { /* ignore */ }
+          // the same close path every server-initiated close takes: in-flight frames of the refused socket are ignored
+          conn.close(CLOSE.POLICY, 'server full');
           return;
         }
         session = this.registry.create(name);

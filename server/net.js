@@ -243,6 +243,8 @@ export class SessionRegistry {
     s.notOwned = Array.isArray(doc.notOwned) ? doc.notOwned : null;
     s.diy = doc.diy && typeof doc.diy === 'object' ? doc.diy : null;
     s.skins = doc.skins && typeof doc.skins === 'object' ? doc.skins : null;
+    // 名片干员 (room.card): the seat-card operator survives a restart with the session
+    s.card = doc.card && typeof doc.card === 'object' && !Array.isArray(doc.card) ? doc.card : null;
     // the ban ladder carries over (server/moderation/chatState.js), clamped to its own cap going forward
     s.chatLastHitAt = Number.isFinite(doc.chatLastHitAt) && doc.chatLastHitAt > 0 ? doc.chatLastHitAt : 0;
     s.chatStrikes = Number.isInteger(doc.chatStrikes) && doc.chatStrikes > 0 ? doc.chatStrikes : 0;

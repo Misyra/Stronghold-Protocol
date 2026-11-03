@@ -108,6 +108,41 @@ test('a room and its sessions survive a document round trip', () => {
   assert.equal(lobby2.graceTimers.size, 2);
 });
 
+test('the seat card (名片干员) survives a document round trip, on the session and the seat', () => {
+  const data = { chess: { x: { charId: 'char_498_inside', visible: true } } };
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => data });
+  const a = registry.create('Alice');
+  const b = registry.create('Bob');
+  assert.deepEqual(lobby.create(a, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
+  const code = a.roomCode;
+  assert.deepEqual(lobby.join(b, { code }), { ok: true });
+  const cardA = { charId: 'char_498_inside', avatar: 'char_498_inside', art: 'e2', bg: 'nc_1', bgY: 7 };
+  const cardB = { charId: 'char_498_inside', face: 'e1' };
+  assert.deepEqual(lobby.card(a, { charId: cardA.charId, avatar: cardA.avatar, art: cardA.art, bg: cardA.bg, bgY: cardA.bgY }), { ok: true });
+  assert.deepEqual(lobby.card(b, { charId: cardB.charId, face: cardB.face }), { ok: true });
+  assert.deepEqual(a.card, cardA);
+  assert.deepEqual(b.card, cardB);
+
+  const now = Date.now();
+  const doc = snapshotServer({ registry, lobby, now });
+  assert.deepEqual(doc.sessions.find((s) => s.playerId === a.playerId).card, cardA, 'sessionDoc carries the card');
+  assert.deepEqual(doc.rooms[0].seats.find((s) => s.playerId === b.playerId).card, cardB, 'seatDoc carries the card');
+
+  // a second (restarted) server reads it back
+  const registry2 = new SessionRegistry();
+  const lobby2 = new Lobby({ registry: registry2, log: quietLog, MatchClass: StubMatch, getData: () => data });
+  assert.equal(restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog }).ok, true);
+  const resumedA = registry2.byToken(a.token);
+  const resumedB = registry2.byToken(b.token);
+  assert.ok(resumedA && resumedB);
+  assert.deepEqual(resumedA.card, cardA, 'adopt restores the session card');
+  assert.deepEqual(resumedB.card, cardB);
+  const room2 = lobby2.getRoom(code);
+  assert.deepEqual(room2.seatOf(a.playerId).card, cardA, 'the restored seat keeps the card');
+  assert.deepEqual(room2.seatOf(b.playerId).card, cardB);
+});
+
 test('sessions older than their reconnect window are dropped, with their seats', () => {
   const now = Date.now();
   const registry = new SessionRegistry();

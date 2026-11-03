@@ -148,6 +148,9 @@ export function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() } = {})
         notOwned: isBot ? null : (session?.notOwned || s.notOwned || null),
         diy: isBot ? null : (session?.diy || s.diy || null),
         skins: isBot ? null : (session?.skins || s.skins || null),
+        // 名片干员 (room.card): the seat-card operator rides back with the seat (re-checked against the room's
+        // operators on the next humanSeat / version switch, like the session's own copy)
+        card: isBot ? null : (session?.card || (s.card && typeof s.card === 'object' && !Array.isArray(s.card) ? s.card : null)),
         // room.setBotBand (移植自用户分支): the designated strategy rides back onto the AI seat
         ...(isBot ? { band: typeof s.band === 'string' && s.band ? s.band : null } : {}),
       };

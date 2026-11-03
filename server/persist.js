@@ -68,6 +68,8 @@ export function sessionDoc(s, now) {
     diy: s.diy || null,
     // 干员皮肤 (docs/SKINS.md, 本仓补录: fork 原稿的 sessionDoc 漏了它) — a restored session keeps its appearance choice
     skins: s.skins || null,
+    // 名片干员 (room.card, fork 原稿同样漏了它) — a restored session keeps its seat-card operator
+    card: s.card || null,
     notice: s.notice || null,
     pendingResult: s.pendingResult || null,
     chatStrikes: Number.isInteger(s.chatStrikes) && s.chatStrikes > 0 ? s.chatStrikes : 0,
@@ -93,6 +95,8 @@ function seatDoc(seat) {
     notOwned: seat.notOwned || null,
     diy: seat.diy || null,
     skins: seat.skins || null,
+    // 名片干员 (room.card): the operator on this seat's card, restored with the room
+    card: seat.card || null,
   };
 }
 
@@ -238,6 +242,7 @@ function restoreServerCore({ doc, registry, lobby, now = Date.now(), log = noopL
       notOwned: s.notOwned,
       diy: s.diy,
       skins: s.skins,
+      card: s.card,
       addr: s.addr,
       notice: s.notice,
       pendingResult: s.pendingResult,

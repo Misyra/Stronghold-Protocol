@@ -63,8 +63,11 @@ const OFFER_SIZE = 3;
 /** cards.bounty entries matching `test` whose enemy can appear in this mode. */
 function bountyCards(ctx, test) {
   const all = ctx.data && ctx.data.choices && ctx.data.choices.cards && Array.isArray(ctx.data.choices.cards.bounty) ? ctx.data.choices.cards.bounty : [];
-  const inactive = ctx.gd.inactiveEnemies instanceof Set ? ctx.gd.inactiveEnemies : new Set();
-  return all.filter((c) => c && test(c) && ctx.gd.enemy(c.enemyKey) && !inactive.has(c.enemyKey));
+  // ctx.gd is the sandbox facade (server/match/effectsMeta.js gdFacade): its Sets arrive as a read-only wrapper that is
+  // NOT `instanceof Set`, so ask for `has` instead of the class — an `instanceof` test silently disabled this filter.
+  const inactive = ctx.gd && ctx.gd.inactiveEnemies;
+  const isInactive = (key) => !!(inactive && typeof inactive.has === 'function' && inactive.has(key));
+  return all.filter((c) => c && test(c) && ctx.gd.enemy(c.enemyKey) && !isInactive(c.enemyKey));
 }
 /** The 战术特训 cards (perfect payout: the chooser's own phase perfect) — what 教鞭 offers. */
 const isTraining = (c) => c.payout === 'perfect';

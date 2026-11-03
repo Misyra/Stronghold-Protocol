@@ -115,6 +115,7 @@ test('#811: every version, tier and normal / elite form uses its actual promotio
       rows.forEach((row, i) => {
         assert.equal(find(row, (v) => v.type === PromotionIcon).length, 0, `${version.id} ${forms[i].chessId}: the rail row is level-only`);
         assert.equal(textOf(row), String(forms[i].status.level));
+        assert.equal(row.props['data-phase'], forms[i].status.phase, `${version.id} ${forms[i].chessId}: the chevron count follows the phase`);
       });
     }
     // Backups supply the actual forms for both stand-ins and DIY operators; their phase is not their rarity.

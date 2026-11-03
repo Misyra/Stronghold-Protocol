@@ -146,12 +146,14 @@ describe('文字大小: the setting', () => {
     }
   });
 
-  test('the settings modal offers the four steps (data-testid text-size), below 画面质量', () => {
+  test('the settings modal offers the four steps (data-testid text-size) in the 显示 tab', () => {
     const src = read('public/js/ui/settings.js');
     assert.match(src, /data-testid="text-size"/);
     assert.match(src, /const TEXT_SCALES = \[\[?.*'sm'.*'md'.*'lg'.*'xl'/s, 'the steps with their labels');
     assert.match(src, /applyTextSize\(settingsStore\.get\(\)\.textSize\)/, 'applied at module load (before main.js renders)');
-    assert.ok(src.indexOf("t('文字大小')") > src.indexOf("t('画面质量')"), 'the row is below the quality row');
+    const display = src.slice(src.indexOf('data-tab-panel="display"'), src.indexOf('data-tab-panel="controls"'));
+    assert.ok(display.includes("t('文字大小')"), 'the row lives in the 显示 tab');
+    assert.ok(src.indexOf("t('画面质量')") > src.indexOf('data-tab-panel="visual"'), '画面质量 lives in the 画面 tab');
     assert.match(read('public/css/screens/game.css'), /\.set-seg\.set-textsize button \{ min-width: \.62rem; \}/,
       'four steps fit the row on a phone (1rem = 40 px)');
   });

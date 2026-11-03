@@ -196,6 +196,11 @@ describe('2. boss-round countdown and the overtime (DOT) warning', () => {
     assert.equal(phaseTotalSeconds({ ...fa, phase: PHASE.HIDDEN_CORE, round: 15 }, DATA.config), 120);
     assert.equal(phaseTotalSeconds({ ...fa, modeId: 'mode_single_funny', round: 9 }, DATA.config), 120);
     assert.equal(phaseTotalSeconds(fa, null), 120, 'config not loaded yet: the official 120 s');
+    // 战斗 2 倍速: the level's countdown is half the real seconds at 4 game s per real s
+    const sped = { ...fa, speedVote: { on: true, speed: 4 } };
+    assert.equal(phaseTotalSeconds(sped, DATA.config), 60);
+    assert.equal(phaseTotalSeconds({ ...sped, phase: PHASE.HIDDEN_CORE }, DATA.config), 60);
+    assert.equal(phaseTotalSeconds({ ...sped, phase: PHASE.PREP }, DATA.config), DATA.config.modes.mode_multi_hard.rounds['14'].prepTime, 'prep never scales');
     assert.equal(bossLevelSeconds({ ...fa, phase: PHASE.COMBAT }, DATA.config), null);
     // the gauge: full at the start, 3/5 at 70 s left, empty at 0
     assert.equal(countdownState(fa.deadline, T0, 120).bars, 5);
@@ -213,6 +218,12 @@ describe('2. boss-round countdown and the overtime (DOT) warning', () => {
     assert.deepEqual(overtimeState(fa, T0 + 157_400), { state: 'drain', secs: 7, lost: 7, perSec: 1 });
     assert.deepEqual(overtimeState(fa, T0 + 157_400, { perSec: 2 }), { state: 'drain', secs: 7, lost: 14, perSec: 2 });
     assert.equal(overtimeDrainPerSec(DATA.config), DATA.config.bossOvertimeDrainPerSec ?? 1);
+    // 战斗 2 倍速: the server drains per real second at the clock's speed (4 game s per real s → 2 LP/s), and the HUD
+    // projects the same rate
+    assert.equal(overtimeDrainPerSec(DATA.config, { ...fa, speedVote: { on: true, speed: 4 } }), 2 * (DATA.config.bossOvertimeDrainPerSec ?? 1));
+    assert.deepEqual(overtimeState(fa, T0 + 157_400, { perSec: overtimeDrainPerSec(DATA.config, { ...fa, speedVote: { on: true, speed: 4 } }) }),
+      { state: 'drain', secs: 7, lost: 14, perSec: 2 });
+    assert.equal(overtimeDrainPerSec(DATA.config, { ...fa, phase: PHASE.PREP, speedVote: { on: true, speed: 4 } }), DATA.config.bossOvertimeDrainPerSec ?? 1, 'prep never scales');
   });
 
   test('only boss rounds with an overtimeAt show it', () => {

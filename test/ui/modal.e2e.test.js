@@ -161,6 +161,9 @@ describe('Modal keyboard focus', { skip: !ENABLED && 'set SP_E2E=1 and have Chro
       await page.waitForSelector('.title-settings');
       await page.click('.title-settings');
       await page.waitForFunction(() => document.querySelector('.modal__box')?.contains(document.activeElement));
+      // 2026-11-03: 快捷键 lives in the 操作 tab of the tabbed settings modal
+      await page.waitForSelector('[data-tab="controls"]');
+      await page.click('[data-tab="controls"]');
       const assertInside = async () => assert.equal(await page.evaluate(() => document.querySelector('.modal__box').contains(document.activeElement)), true);
       for (const reverse of [false, true]) for (let i = 0; i < 25; i++) { await tab(page, reverse); await assertInside(); }
       await page.focus('.set-key[data-action="retreat"]');

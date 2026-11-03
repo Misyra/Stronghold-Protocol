@@ -10,12 +10,13 @@ import { fileURLToPath } from 'node:url';
 import {
   phaseMode, phaseBanner, isCombatPhase, isBossPhase, countdownState, phaseTotalSeconds, sortBonds, bondTier, nextThreshold,
   battleOverSfx, ownRoundLoss, uniteResultBox, battleResultBox, roundResultBox, RESULT_BOX_MS,
-  bondMembers, memberHeadCount, bannedPerBond, priceTone, mergeProgress, shopBlockReason, deploySets, indexPieces, placementContext, canPlace,
+  bondMembers, memberHeadCount, bannedPerBond, bannedMembersByBond, bannedByBond, priceTone, mergeProgress, shopBlockReason, deploySets, indexPieces, placementContext, canPlace,
   boardTargets, dropIntent, normalizeDraft, heldDraftPub, normalizeSp, normalizePersonalChoice, groupEnemies, factionTypes, snapHud, bossFrac, attackInterval, fmtNum,
   rangeGridBox, shortcutFor, sanitizeSettings, DEFAULT_SETTINGS, normalizeResult, cycleField, fieldLabel, homeFieldId,
   activeBubbles, sortedPlayers, tileKey, prepCapsuleLabel, prepCamera, dropFailureReason, terrainInfo,
 } from '../../public/js/ui/gameLogic.js';
 import { PHASE, GEO } from '../../shared/constants.js';
+import { battleSpeedScale } from '../../public/js/ui/matchStatus.js';
 import { setLang, setMessages } from '../../shared/i18n.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -228,6 +229,19 @@ describe('countdown', () => {
     assert.equal(phaseTotalSeconds({ phase: PHASE.BAND_DRAFT, draft: { turnSeconds: 30 } }, config), 30);
     assert.equal(phaseTotalSeconds({ phase: PHASE.BAND_DRAFT }, config), config.timers.bandTurn);
   });
+  test('phase totals follow the 2× battle speed (the deadline is the sped clock)', () => {
+    const real = config.modes.mode_multi_hard.rounds['4'].combatTimeLimit;
+    const pub = (phase, on) => ({ phase, modeId: 'mode_multi_hard', round: 4, speedVote: on ? { on: true, speed: 4 } : { on: false, speed: 2 } });
+    assert.equal(phaseTotalSeconds(pub(PHASE.COMBAT, false), config), real);
+    assert.equal(phaseTotalSeconds(pub(PHASE.COMBAT, true), config), real / 2, 'deadline = real / 2 at 4 game s per real s');
+    assert.equal(phaseTotalSeconds(pub(PHASE.UNITE, true), config), real / 2);
+    assert.equal(phaseTotalSeconds(pub(PHASE.PREP, true), config), config.modes.mode_multi_hard.rounds['4'].prepTime, 'prep never scales');
+    assert.equal(battleSpeedScale(pub(PHASE.COMBAT, true)), 2);
+    assert.equal(battleSpeedScale(pub(PHASE.PREP, true)), 1, 'outside a battle phase');
+    assert.equal(battleSpeedScale(pub(PHASE.COMBAT, false)), 1);
+    assert.equal(battleSpeedScale({ phase: PHASE.COMBAT, speedVote: { on: true } }), 2, 'a view without speed: the vote multiplier');
+    assert.equal(battleSpeedScale(null), 1);
+  });
 });
 
 describe('bonds', () => {
@@ -302,11 +316,17 @@ describe('bonds', () => {
     ], (id) => bonds[id]).map((b) => b.bondId);
     assert.deepEqual(sorted, ['yanShip', 'investShip', 'raidShip']);
   });
-  test('bannedPerBond counts banned visible members', () => {
+  test('bannedPerBond / bannedMembersByBond: the count is the list\'s length; bannedByBond names the same members', () => {
     const b = bonds.deputShip;
-    const per = bannedPerBond(Object.values(bonds), [b.visibleMembers[0], b.visibleMembers[1], 'nope']);
+    const banned = [b.visibleMembers[0], b.visibleMembers[1], 'nope'];
+    const per = bannedPerBond(Object.values(bonds), banned);
     assert.equal(per.get('deputShip'), 2);
     assert.equal(per.get('yanShip') >= 0, true);
+    const members = bannedMembersByBond(Object.values(bonds), banned);
+    assert.deepEqual(members.get('deputShip'), [b.visibleMembers[0], b.visibleMembers[1]], 'the bond\'s own member order');
+    assert.equal(per.get('deputShip'), members.get('deputShip').length, 'count === list');
+    const byBond = bannedByBond(Object.values(bonds), banned);
+    assert.deepEqual(byBond.find((r) => r.bondId === 'deputShip').ids, [b.visibleMembers[0], b.visibleMembers[1]]);
   });
 });
 

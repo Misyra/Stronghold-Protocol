@@ -98,6 +98,9 @@ describe('App screen wake lock', { skip: !ENABLED && 'set SP_E2E=1 (and have Chr
   async function settings(page) {
     await page.click('.title-settings, .gm__gear');
     await page.waitForSelector('.modal');
+    // 2026-11-03: the settings modal splits into tabs; 全屏时保持屏幕常亮 lives in 画面
+    await page.waitForSelector('[data-tab="visual"]');
+    await page.click('[data-tab="visual"]');
   }
   async function toggle(page, on) {
     const handle = await page.evaluateHandle((sel) => [...document.querySelectorAll(sel)]

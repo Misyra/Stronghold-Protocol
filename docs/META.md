@@ -213,12 +213,18 @@ fields' `startAt` / `lastProgressAt` and the boss start by the paused time and r
 `g.speedVote { on }` (`Match.speedVote`, match/speedVote.js — the 2X button beside 准备就绪): every connected human
 seat (bot seats are never asked) holds at most one vote — a click sets it, clicking again retracts it. The vote asks
 for the opposite of the current speed (原速 → 2×, or 2× → 原速). When every voter agrees, the room hears the ticker;
-at the next `startRound` (`_applySpeedVote`) the unanimity is re-checked — a retraction before it cancels the change —
-and `Match.gameSpeed` flips between `GAME_SPEED` (2) and `SPEED_UP` (4), votes cleared. `gameSpeed` only rescales the
-streaming pace and the real-time length of every deadline (`deadline = now + limit / gameSpeed`); the battle
-simulation and its results stay deterministic, and the field push carries `speed` so each browser's local simulation
-follows (`setLocalFeed`). `m.public.speedVote` is `{ count, need, pending, on }` with `pending` computed live
-(a retraction hides it at once).
+the change is applied when the next battle is built — `startCombat`, `startUnite` and `startFinalAssault` each call
+`_applySpeedVote`, which re-checks the unanimity (a retraction before it cancels the change) and flips
+`Match.gameSpeed` between `GAME_SPEED` (2) and `SPEED_UP` (4), votes cleared. A running battle never changes speed. A
+vote cast in 休整期 therefore speeds up the battle that follows, and one cast in the last battle's prep still counts —
+it is not postponed to a round start that never comes. `gameSpeed` only rescales the streaming pace and the real-time
+length of every battle deadline (`deadline = now + limit / gameSpeed`); the battle simulation and its results stay
+deterministic, and the field push carries `speed` so each browser's local simulation follows (`setLocalFeed`).
+`m.public.speedVote` is `{ count, need, pending, on, speed }` with `count`/`need` over the connected human seats (an
+offline seat's old vote neither shows nor blocks), `pending` computed live (a retraction hides it at once) and `speed`
+the current `gameSpeed`; the client divides the battle countdown / boss level gauge by `speed / 2` and scales the
+overtime LP projection by the same factor (ui/matchStatus.js `battleSpeedScale`), and a streamed field's interpolation
+clock starts at it (`setStreamSpeed`).
 
 ### 1.4 Watching fields
 Client-side combat (the default, DESIGN §14 Spectating; `Match._watchClient`): `g.watch` answers with the field's

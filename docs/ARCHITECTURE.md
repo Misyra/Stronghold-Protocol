@@ -114,7 +114,9 @@ the watchdog window.
 - Peer delivery coexists with the negotiated state-delta transport (`server/stateTransport.js`,
   `shared/stateDelta.js`): a member the peer route does not serve keeps getting `m.state` frames over its own
   WebSocket, and its per-connection baseline is never advanced by traffic it did not receive, so the two
-  transports share one delivery order instead of two.
+  transports share one delivery order instead of two. A snapshot's sequence is process-wide (one number per
+  broadcast, not one per recipient); its parse is memoized once for the whole process and its transitions are
+  shared by every socket holding that baseline. `/healthz` reports the `stateDelta` counters.
 - Frames of 60 KiB or more keep the original WebSocket path. Channel buffers, verification queues, SDP and ICE
   candidates are bounded. Trusted WebSocket snapshots bypass the peer verification queue. The lobby still returns
   the original encoded broadcast for match replay bookkeeping.
@@ -308,9 +310,14 @@ Without either hook it fetches normally; plugin and historical-version data keep
 `server/workers/pool.js` is where CPU-heavy work can leave the main thread. One pool owns a bounded set of worker
 threads; work is submitted as a task (a function name plus its arguments) and comes back as a promise.
 
-- **Opt-in, and off by default.** `SP_WORKERS` names the thread count (`1`–`32`); unset, `0` or an unusable value
-  starts no pool at all, so the code paths below simply keep running on the main thread. Nothing in this section
-  changes a server that does not set it.
+- **On by default, four threads.** `SP_WORKERS` names the thread count: unset, empty or an unusable value means the
+  default `4`, `0` switches the pool off (the code paths below then keep running on the main thread), and `1`–`32`
+  picks that many threads. The default is a deliberate number, not a CPU-derived guess, and the operator tunes it to
+  the server. Cost, measured on the maintainer's machine: each thread structured-clones the game data when it spawns
+  and holds roughly 150–200 MB RSS while it lives; threads start lazily on the first rehearsal task, so an idle server
+  spawns none. On a small box set `SP_WORKERS=0`; on a larger one raise it. Measure with
+  `node tools/workerbench.mjs --workers 4 --battles 8` (throughput and main-thread timer delay) and
+  `node --expose-gc tools/memorybench.mjs` (RSS per thread). The startup log prints the pool size, or that it is off.
 - **Bounded, not elastic.** The thread count never exceeds the configured maximum, so an overloaded server does not turn
   into a thread storm: work that does not fit the queue is refused (`POOL_FULL`). The queue is bounded too and has a
   priority, so a low-priority task cannot starve a player-visible one.

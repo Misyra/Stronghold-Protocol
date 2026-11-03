@@ -145,3 +145,32 @@ test('server-run combat (SP_COMBAT=server): a spectator is streamed the first fi
   assert.equal(h.allTo(S, 'm.private').length, 0);
   m.dispose();
 });
+
+test('b.start hides every OTHER player\'s funds: an eliminated human watches stripped, a player\'s own spec keeps theirs', () => {
+  const h = makeMatch({
+    mode: 'coop', difficulty: 'FUNNY', humans: 3, seed: 9301, fake: true, clientCombat: true,
+    // round 1: p_0 leaks → p_1 / p_2 (perfect) hold a 联防; the Final Assault falls fast
+    script: (b) => (b.kind === 'boss' ? { bossDps: 20000 } : b.kind === 'normal' && b.round === 1 ? { duration: 1, leaks: { p_0: 4 } } : { duration: 1 }),
+  }).start();
+  const m = h.m;
+  h.autoHumans();
+  h.toPrep(1);
+  h.ps('p_0').eliminate(1); // from here it watches on like an eliminated player — boss fields included
+  const end = h.runToEnd();
+  assert.equal(end.victory, true);
+  assert.ok(!h.ps('p_0').alive, 'p_0 was eliminated');
+  for (const pid of ['p_0', 'p_1', 'p_2']) {
+    for (const st of h.allTo(pid, 'b.start')) {
+      for (const p of st.spec.players) {
+        if (!p.contentInfo || !Object.hasOwn(p.contentInfo, 'funds')) continue;
+        assert.equal(p.playerId, pid, `${st.kind} ${st.fieldId} → ${pid}: only their own funds ride the wire`);
+      }
+    }
+  }
+  // a fighting player's own field spec keeps its funds (the wire hides only other players')
+  const own = h.allTo('p_1', 'b.start').find((st) => st.fieldId === 'n:p_1' && !st.watch);
+  assert.ok(own, 'p_1 was shown its own field');
+  const ownEntry = own.spec.players.find((p) => p.playerId === 'p_1');
+  assert.ok(ownEntry && Number.isFinite(ownEntry.contentInfo.funds), 'the own entry keeps funds');
+  m.dispose();
+});

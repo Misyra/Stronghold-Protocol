@@ -241,7 +241,12 @@ test('observing: no watching while the own battle runs; after it ends a teammate
   assert.equal(st.watch, true);
   assert.equal(st.authoritative, false);
   assert.ok(st.elapsed > 0, 'the replica fast-forwards to the field clock');
-  assert.deepEqual(st.spec, target.spec);
+  // a teammate's spec minus p_2's funds (a private number no battle effect reads; the replica plays the same battle)
+  assert.deepEqual(st.spec, { ...target.spec, players: target.spec.players.map((p) => {
+    const { funds, ...contentInfo } = p.contentInfo;
+    void funds;
+    return { ...p, contentInfo };
+  }) });
   assert.equal(m.watchers.get('p_0'), 'n:p_2');
   // back to the own (finished) field
   assert.deepEqual(m.handle('p_0', { t: 'g.watch', fieldId: 'n:p_0' }), { ok: true });

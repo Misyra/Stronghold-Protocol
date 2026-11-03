@@ -1,8 +1,8 @@
 // server/match/match/watch.js — Match methods: watching (research 09 §3.1 / §6.3) — spectator seats (community report
 // #26: stand-ins shown fields like an eliminated player), g.watch in both combat modes (the boss-group rule, prep
 // scouting of a teammate's board), who is shown which field (the default watch, the boss fields, the resend on a
-// reconnect, the spectator's spec without the funds), a field's m.field + b.snap (server-run mode) and the prep-scout
-// pushes (GitHub #87). Eliminated humans and spectator seats follow a player through every phase reset (community
+// reconnect, the per-recipient spec without another player's funds), a field's m.field + b.snap (server-run mode) and
+// the prep-scout pushes (GitHub #87). Eliminated humans and spectator seats follow a player through every phase reset (community
 // report of 2026-10-06, item 56; the official DeadAutoObDn { obIndex, state, preparation }, research 09 §3.1; the idea
 // of PR #189): the player they last watched with a manual g.watch (`watchPref`), else the first player still in.
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
@@ -190,22 +190,25 @@ export class MatchWatch {
   }
 
   /**
-   * The spec a spectator seat is shown: the field's own, minus the players' `contentInfo.funds` — a private number (the
-   * player's funds at the battle start) that no battle effect reads, so the replica still plays the same battle. The
-   * other contentInfo counters stay: battle effects read them (sim/content: handUnits, roundStats.gainedChess).
+   * The spec a recipient is shown: every player's `contentInfo.funds` is stripped except the recipient's own — a
+   * private number (the player's funds at the battle start) that no battle effect reads, so any replica still plays
+   * the same battle, while nobody reads another player's: a boss pair's partner, a teammate's field under g.watch, an
+   * eliminated human, a spectator seat. The other contentInfo counters stay: battle effects read them (sim/content:
+   * handUnits, roundStats.gainedChess). A spec with nothing to strip (every funds on the wire is the recipient's own)
+   * comes back as the field's own object.
    */
-  _spectatorSpec(f) {
-    if (!f.spectatorSpec) {
-      const s = f.spec;
-      const strip = (p) => {
-        if (!p || !p.contentInfo || !Object.hasOwn(p.contentInfo, 'funds')) return p;
-        const { funds, ...contentInfo } = p.contentInfo;
-        void funds;
-        return { ...p, contentInfo };
-      };
-      f.spectatorSpec = s && Array.isArray(s.players) ? { ...s, players: s.players.map(strip) } : s;
-    }
-    return f.spectatorSpec;
+  _viewSpec(f, pid) {
+    const s = f.spec;
+    if (!s || !Array.isArray(s.players)) return s;
+    if (!s.players.some((p) => p && p.contentInfo && Object.hasOwn(p.contentInfo, 'funds') && p.playerId !== pid)) return s;
+    const strip = (p) => {
+      if (!p || !p.contentInfo || !Object.hasOwn(p.contentInfo, 'funds')) return p;
+      if (pid != null && p.playerId === pid) return p;
+      const { funds, ...contentInfo } = p.contentInfo;
+      void funds;
+      return { ...p, contentInfo };
+    };
+    return { ...s, players: s.players.map(strip) };
   }
 
   /** Humans currently shown a field (its players and its watchers, spectator seats included). */

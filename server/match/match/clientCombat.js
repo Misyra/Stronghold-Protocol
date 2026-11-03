@@ -95,11 +95,11 @@ export class MatchClientCombat {
     return best ? best.playerId : null;
   }
 
-  /** b.start of a field for one recipient (`watch`: not a player of the field). */
+  /** b.start of a field for one recipient (`watch`: not a player of the field); the spec hides every other player's funds. */
   _startMsg(f, pid, { watch = false } = {}) {
     return {
       t: 'b.start', battleId: f.battleId, fieldId: f.fieldId, kind: f.kind,
-      spec: this.spectators.has(pid) ? this._spectatorSpec(f) : f.spec,
+      spec: this._viewSpec(f, pid),
       authoritative: !!(!f.done && !f.verifyJob && f.mode === 'client' && f.authority === pid && !watch),
       startAt: f.startAt, serverNow: this.sched.now(), elapsed: Math.round(this._fieldElapsed(f) * 1000) / 1000,
       speed: this.gameSpeed, watch: !!watch, done: !!f.done,

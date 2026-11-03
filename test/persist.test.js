@@ -176,6 +176,36 @@ test('sessions older than their reconnect window are dropped, with their seats',
   assert.ok(lobby.getRoom('BBBB'), 'the solo room survives its longer window');
 });
 
+test('a tampered room code (wrong charset) is dropped, never restored as a room', () => {
+  const now = Date.now();
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
+  // '../a' has ROOM_CODE_LEN characters: without the live-alphabet check it would restore a joinable room whose
+  // match shards write `path.join(matchesDir, code + SHARD_SUFFIX)` — one directory up (server/stateFile.js).
+  const doc = {
+    v: PERSIST_VERSION,
+    savedAt: now,
+    sessions: [
+      { playerId: 'p_live', token: 'aa', name: 'Live', connected: true, disconnectedAt: now - 60_000, roomCode: '../a', resumeWindowMs: null },
+    ],
+    rooms: [
+      { code: '../a', mode: 'coop', difficulty: 'NORMAL', hostId: 'p_live', matchCount: 0,
+        seats: [{ seat: 0, playerId: 'p_live', name: 'Live', isBot: false, ready: false, left: false, connected: true }] },
+      { code: 'ab-c', mode: 'coop', difficulty: 'NORMAL', hostId: 'p_live', matchCount: 0,
+        seats: [{ seat: 0, playerId: 'p_live', name: 'Live', isBot: false, ready: false, left: false, connected: true }] },
+      { code: 'ABCD', mode: 'coop', difficulty: 'NORMAL', hostId: 'p_live', matchCount: 0,
+        seats: [{ seat: 0, playerId: 'p_live', name: 'Live', isBot: false, ready: false, left: false, connected: true }] },
+    ],
+    matches: {},
+  };
+  const stats = restoreServer({ doc, registry, lobby, now, log: quietLog });
+  assert.ok(!lobby.getRoom('../a'), 'the traversal code never becomes a room');
+  assert.ok(!lobby.getRoom('ab-c'), 'the hyphenated code never becomes a room');
+  assert.ok(lobby.getRoom('ABCD'), 'a plain [A-Z0-9] code still restores');
+  assert.equal(stats.rooms, 1);
+  assert.equal(stats.droppedSeats >= 2, true, 'the tampered rooms count as dropped seats');
+});
+
 test('a document from another version is refused', () => {
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });

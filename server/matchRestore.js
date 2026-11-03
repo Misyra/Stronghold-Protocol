@@ -113,7 +113,10 @@ export function seatEntries(room, checkpoint) {
 export function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() } = {}) {
   const stats = { rooms: 0, seats: 0, droppedSeats: 0 };
   for (const d of Array.isArray(docs) ? docs : []) {
-    if (!d || typeof d.code !== 'string' || d.code.length !== ROOM_CODE_LEN || lobby.rooms.has(d.code)) { stats.droppedSeats++; continue; }
+    // The live alphabet (lobby.js CODE_ALPHABET, config.js parseRoomCode): the persistence shard of a running match is
+    // `path.join(matchesDir, code + SHARD_SUFFIX)` (server/stateFile.js), so a tampered '../a' in the state document
+    // must never become a room — length alone would let it write one directory up.
+    if (!d || typeof d.code !== 'string' || d.code.length !== ROOM_CODE_LEN || !/^[A-Z0-9]+$/.test(d.code) || lobby.rooms.has(d.code)) { stats.droppedSeats++; continue; }
     const mode = d.mode === 'solo' ? 'solo' : 'coop';
     const difficulty = typeof d.difficulty === 'string' && d.difficulty ? d.difficulty : 'NORMAL';
     const room = new Room(d.code, mode, difficulty, now, typeof d.version === 'string' && d.version ? d.version : undefined);

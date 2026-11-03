@@ -690,7 +690,10 @@ export function createBattleRunner(deps) {
     const step = stepEntry(e, n, catchingUp || !render);
     if (e.host.remote) {
       e.stepping = true;
-      step.then(finishStep, err => failWorker(e, err)).finally(() => { e.stepping = false; schedule(); });
+      // a synchronous throw in finishStep must not become an unhandled rejection: it takes the fail path too
+      // (failWorker is idempotent) and .finally still resets stepping / schedules the next frame
+      step.then(finishStep, err => failWorker(e, err)).catch(err => failWorker(e, err))
+        .finally(() => { e.stepping = false; schedule(); });
     } else finishStep(step);
   }
 

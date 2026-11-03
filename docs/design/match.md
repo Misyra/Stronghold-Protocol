@@ -329,6 +329,15 @@ singleton (the kits, builtinMeta, the meta registry, the official-bounds cache) 
   replayed result with it), the external AI's `context.gameVersion` and the knowledge pack's `gameVersion` carry it (all
   non-default only). Both kinds: heartbeat watchdog 10 s, idle stop after 10 minutes, `diag()` (tests) reports `version` too.
 
+The lobby⇄host IPC (`server/match/host/ipc.js` `validHostMessage`) is the parent's line of defence: every child message is
+shape-checked and capped (16 MB a message) before the lobby sees any of it. Match frames ride in one of two shapes: the view
+object (toasts, results, battle events, …, traversed by `boundedJson` like any child object), or — the two state lanes
+`m.public` / `m.private`, whose bytes MatchMessaging stringifies once for dedup + wire — the pre-encoded string alone
+(`encoded`, no `msg` beside it): the child never clones the view over the IPC, the parent's gate checks the string at the
+same strength (frame-type set, both length caps, nothing mixed in), and `proxy.js` parses the capped string exactly once —
+the object for the lobby's branch, the bytes to the wire untouched (a `JSON.parse` of a capped string is as bounded as the
+object path's traversal: no cycles, no accessors, finite numbers). The wire bytes are the same the in-process path produces.
+
 ---
 
 ## 16. Operator loadout: skill & module selection (v2.1, user playtest #1)

@@ -22,10 +22,12 @@
 // Messages (from index.js / proxy.js; queued until booted, then handled in order):
 //   { type: 'create', matchId, opts }       new Match({ ...options.matchOptions, ...opts, data, log, now, send, broadcast,
 //                                           onEnd, onRemove }) and start() — send / broadcast / onRemove / onEnd post
-//                                           'send' / 'broadcast' / 'remove' / 'end' back; a match that cannot be created
-//                                           posts 'failed', and so does one whose opts.version (absent: act2autochess) is
-//                                           not the installed data's version (shared/versions.js versionOfData;
-//                                           DESIGN §35.23 — an official version's host)
+//                                           'send' / 'broadcast' / 'remove' / 'end' back; m.public / m.private carry
+//                                           their pre-encoded bytes alone (`encoded`, no `msg` object — ipc.js
+//                                           isEncodedFrame), every other frame the object as before; a match that
+//                                           cannot be created posts 'failed', and so does one whose opts.version
+//                                           (absent: act2autochess) is not the installed data's version
+//                                           (shared/versions.js versionOfData; DESIGN §35.23 — an official version's host)
 //   { type: 'call', matchId, method, args, id? }   one MATCH INTERFACE call; with `id` its answer is posted as 'reply'
 //   { type: 'dispose', matchId }            the match is disposed and forgotten
 // Logs go to the main process ('log': its logger prefixes them with the set's `[cs:<8 hex>]`).
@@ -232,8 +234,18 @@ function create(matchId, opts) {
       // the match names itself in its lines ([match <code>] …), as in the server process (the host adds [cs:<8 hex>])
       log,
       now: Date.now,
-      send: (playerId, msg) => { post({ type: 'send', matchId, playerId, msg }); return true; },
-      broadcast: (msg) => post({ type: 'broadcast', matchId, msg }),
+      // MatchMessaging's m.public / m.private ride as their pre-encoded bytes alone (one stringify in the match for
+      // dedup + wire): the view object is not cloned over the IPC and the parent never stringifies the frame again
+      // (ipc.js validates the string, proxy.js parses it once for the lobby). Every other frame is the object.
+      send: (playerId, msg, encoded) => {
+        if (typeof encoded === 'string') { post({ type: 'send', matchId, playerId, encoded }); return true; }
+        post({ type: 'send', matchId, playerId, msg });
+        return true;
+      },
+      broadcast: (msg, encoded) => {
+        if (typeof encoded === 'string') { post({ type: 'broadcast', matchId, encoded }); return; }
+        post({ type: 'broadcast', matchId, msg });
+      },
       onEnd: (summary) => post({ type: 'end', matchId, summary: plain(summary) }),
       // 挂机移出 (移植自用户分支): the AFK rule removed a human — the lobby detaches the seat (proxy onRemove)
       onRemove: (playerId, removal) => post({ type: 'remove', matchId, playerId, removal: plain(removal) }),

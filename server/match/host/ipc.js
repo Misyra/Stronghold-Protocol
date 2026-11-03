@@ -1,4 +1,11 @@
 // Parent-side validation, independent of the child API. [ASSUMED] Limits allow full battle event batches.
+// A match payload crosses the IPC in one of two shapes: the view object (every frame but the two state lanes) or —
+// for m.public / m.private, whose one-stringify-two-uses bytes MatchMessaging already produced
+// (server/match/match/messaging.js) — the pre-encoded string alone (entry.js posts `encoded` and drops the view
+// object, so the child never clones it and the parent never stringifies it again). The string is checked at the
+// same strength as the object: type, both length caps, no view mixed in; and at the consumer (proxy.js) it is
+// parsed once — a JSON.parse of a capped string is exactly as bounded as the object path's traversal (no cycles,
+// no accessors, finite numbers), so the parsed frame carries nothing the object path could not.
 import { S2C } from '../../../shared/protocol.js';
 
 export const HOST_IPC_LIMITS = Object.freeze({ message: 16 * 1024 * 1024, reply: 1024 * 1024, log: 4000, error: 300, depth: 64, nodes: 500000 });
@@ -31,6 +38,27 @@ export function boundedJson(value, limit) {
   try { return visit(value, 0) && Buffer.byteLength(JSON.stringify(value) ?? '') <= limit; } catch { return false; }
 }
 
+/**
+ * A pre-encoded match payload: the string alone, no view object beside it, within the message caps. A non-string
+ * `encoded` fails closed (the message is malformed, the object branch is refused too).
+ * @param {object} m @returns {boolean}
+ */
+export function isEncodedFrame(m) {
+  return typeof m.encoded === 'string' && !('msg' in m)
+    && m.encoded.length <= HOST_IPC_LIMITS.message && Buffer.byteLength(m.encoded) <= HOST_IPC_LIMITS.message;
+}
+
+/**
+ * The message of a pre-encoded frame, parsed and checked at its one consumer (proxy.js deliver). Anything but a
+ * plain object carrying a match frame type is null — the same test the object path puts `m.msg` through.
+ * @param {string} encoded @returns {object | null}
+ */
+export function encodedFrameMessage(encoded) {
+  let msg;
+  try { msg = JSON.parse(encoded); } catch { return null; }
+  return msg != null && typeof msg === 'object' && !Array.isArray(msg) && matchFrames.has(msg.t) ? msg : null;
+}
+
 export function validHostMessage(m) {
   if (!object(m)) return false;
   if (m.type === 'hb' || m.type === 'ready') return Object.keys(m).length === 1;
@@ -38,12 +66,15 @@ export function validHostMessage(m) {
     && boundedJson(m, HOST_IPC_LIMITS.log + 128);
   if (m.type === 'boot-error') return str(m.error, HOST_IPC_LIMITS.error) && boundedJson(m, HOST_IPC_LIMITS.error + 128);
   if (!str(m.matchId, 160) || !m.matchId) return false;
+  // a match payload rides as the view object (checked like any child object) or as the pre-encoded string alone
+  const payload = isEncodedFrame(m)
+    || (m.encoded === undefined && object(m.msg) && matchFrames.has(m.msg.t) && boundedJson(m, HOST_IPC_LIMITS.message));
   switch (m.type) {
     case 'send':
       if (!str(m.playerId, 128) || !m.playerId) return false;
       // falls through to the shared match-frame validation below
-      return object(m.msg) && matchFrames.has(m.msg.t) && boundedJson(m, HOST_IPC_LIMITS.message);
-    case 'broadcast': return object(m.msg) && matchFrames.has(m.msg.t) && boundedJson(m, HOST_IPC_LIMITS.message);
+      return payload;
+    case 'broadcast': return payload;
     case 'reply': return Number.isSafeInteger(m.id) && m.id > 0 && object(m.result)
       && (m.result.error === undefined || str(m.result.error, 80))
       && (m.result.ok === undefined || typeof m.result.ok === 'boolean') && boundedJson(m, HOST_IPC_LIMITS.reply);

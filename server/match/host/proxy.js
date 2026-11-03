@@ -12,8 +12,10 @@
 //   diag()                                   → Promise of the match's diagnostics (verifyStats, errors, fields — tests,
 //                                            /healthz never)
 // The worker's messages drive the lobby's callbacks in the order they arrive: `send` (opts.send), `broadcast`
-// (opts.broadcast), `remove` (opts.onRemove, the AFK rule), `end` (opts.onEnd, once), `reply` (a pending request). One message queue per match: the worker
-// handles them in the order they were posted (a MessagePort keeps the order), so a player's g.buy is always handled
+// (opts.broadcast), `remove` (opts.onRemove, the AFK rule), `end` (opts.onEnd, once), `reply` (a pending request). The state lanes
+// (m.public / m.private) arrive as their pre-encoded bytes alone (entry.js; one stringify in the match, none in the
+// parent) and are parsed here — the object feeds the lobby's branch, the bytes go to the wire untouched. One message
+// queue per match: the worker handles them in the order they were posted (a MessagePort keeps the order), so a player's g.buy is always handled
 // before the g.sell that follows it.
 // When the worker stops — it crashed, ran out of memory, or the watchdog terminated it after its heartbeats stopped
 // (server/match/host/index.js) — or the match could not be created there, every pending request is answered INTERNAL,
@@ -24,7 +26,7 @@
 
 import { ERR } from '../../../shared/constants.js';
 import { msg, wireMessage } from '../../../shared/i18n.js';
-import { validHostMessage } from './ipc.js';
+import { validHostMessage, isEncodedFrame, encodedFrameMessage } from './ipc.js';
 
 /** A request the worker has not answered after this long is answered INTERNAL. [ASSUMED] */
 export const REQUEST_TIMEOUT_MS = 15_000;
@@ -183,8 +185,21 @@ export class MatchProxy {
       return;
     }
     if (this.disposed) return;
-    if (m.type === 'send') { try { this.opts.send(m.playerId, m.msg); } catch (e) { this.log.error?.(`[match ${this.roomCode}] send failed`, e); } return; }
-    if (m.type === 'broadcast') { try { this.opts.broadcast(m.msg); } catch (e) { this.log.error?.(`[match ${this.roomCode}] broadcast failed`, e); } return; }
+    if (m.type === 'send' || m.type === 'broadcast') {
+      // A pre-encoded frame (MatchMessaging's one-stringify-two-uses, ipc.js isEncodedFrame): the parent parses it
+      // once HERE — the object the lobby's send/broadcast path needs (its `t` branches, the state transport's
+      // baseline) — and hands the validated bytes on untouched; nothing stringifies the frame again. Any other
+      // frame keeps its view object from the IPC. A string that parses to no match frame is dropped (it passed the
+      // caps, the parse is its last check).
+      const msg = isEncodedFrame(m) ? encodedFrameMessage(m.encoded) : m.msg;
+      if (msg == null) return;
+      if (m.type === 'send') {
+        try { this.opts.send(m.playerId, msg, m.encoded ?? null); } catch (e) { this.log.error?.(`[match ${this.roomCode}] send failed`, e); }
+        return;
+      }
+      try { this.opts.broadcast(msg, m.encoded ?? null); } catch (e) { this.log.error?.(`[match ${this.roomCode}] broadcast failed`, e); }
+      return;
+    }
     // 挂机移出 (移植自用户分支): the match removed a human — the lobby detaches the seat (opts.onRemove)
     if (m.type === 'remove') { try { this.opts.onRemove?.(m.playerId, m.removal); } catch (e) { this.log.error?.(`[match ${this.roomCode}] onRemove failed`, e); } return; }
     if (m.type === 'end') { this._end(m.summary ?? null); return; }

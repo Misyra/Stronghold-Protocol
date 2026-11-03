@@ -93,6 +93,15 @@ const EMPTY_LOCAL_ART = Buffer.from(JSON.stringify({ version: 1, source: 'none',
 
 /** The content-set manifest's cache policy: its URL names its content (the `cs`), so it never changes. */
 const IMMUTABLE_JSON = 'public, max-age=31536000, immutable';
+/**
+ * SP_CLIENT: 'source' keeps serving the unbundled page even when a bundle is on disk (the ops kill switch); anything
+ * else keeps this fork's default — serve the bundle when public/build/index.html exists (vite.config.js, docs/DEPLOY.md §4).
+ * A build chunk's cache policy comes from files.js cacheControlFor: its hashed name pins the bytes — and the CSS
+ * bundle too, because every url() it carries is a data: URI (the release url() rewrite is the identity on it).
+ */
+export function clientModeFromEnv(env = process.env) {
+  return String(env.SP_CLIENT ?? '').trim().toLowerCase() !== 'source';
+}
 /** /vs/<vs16>/overlay.json */
 const VISUAL_DOC = new RegExp(`^${VISUAL_SETS_URL}([0-9a-f]{${VS_URL_DIGITS}})/${VISUAL_DOC_FILE.replace('.', '\\.')}$`);
 /** A plugin file URL's hash segment. */
@@ -124,7 +133,7 @@ async function settledIndex(registry, body) {
  *   packs: the server pack registry; runtime CDN and Vite behavior remain branch-owned.
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, rawPath: string, query: string) => Promise<void>}
  */
-export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'), pluginsDir = path.join(path.dirname(path.resolve(packsDir)), 'plugins'), packs = null, content = null, visual = null, contents = null, log = noopLog, cdnBase = '', dataCdnBase = '', resourcePackRoutes = [], assetsManifest = null, clientBuild = true, versions = null }) {
+export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'), pluginsDir = path.join(path.dirname(path.resolve(packsDir)), 'plugins'), packs = null, content = null, visual = null, contents = null, log = noopLog, cdnBase = '', dataCdnBase = '', resourcePackRoutes = [], assetsManifest = null, clientBuild = clientModeFromEnv(), versions = null }) {
   const registry = packs || createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log: /** @type {any} */ (log) });
   const cdn = typeof cdnBase === 'string' ? cdnBase : '';
   const builtIndex = path.join(publicDir, 'build', 'index.html');

@@ -46,6 +46,42 @@ describe('normalizeSnapshot', () => {
     const due = b.takeEvents(0.55);
     assert.equal(due.length, 6, 'events stamped 0.0 … 0.5 are due at 0.55');
   });
+
+  test('trusted (the local feed): the sim tuples are indexed as they are, samples match the guarded copy', () => {
+    const tuple = U(1, 2, 3);
+    const s = normalizeSnapshot({ t: 'b.snap', gt: 1, units: [tuple] }, true);
+    assert.equal(s.units.get(1), tuple, 'no re-wrap: the buffer indexes the frame own tuple');
+    assert.deepEqual([...s.units.get(1)], [1, 2, 3, 100, 100, 5, 10, 0, 0]);
+    // junk inside a trusted frame still takes the guarded copy (or is dropped), like any wire frame
+    const mixed = normalizeSnapshot({ t: 'b.snap', gt: 1, units: [U(2, 4, 5), [3, NaN, 1], 'x'] }, true);
+    assert.equal(mixed.units.get(2).length, 9);
+    assert.equal(mixed.units.has(3), false);
+    assert.equal(mixed.units.has('x'), false);
+    // and a buffer fed trusted frames samples exactly like one fed the same frames untrusted
+    const frames = [];
+    for (let i = 0; i <= 10; i++) frames.push([U(1, i * 0.1, 10)]);
+    const a = new SnapshotBuffer({ delay: 0.1, rate: 2 });
+    const b = new SnapshotBuffer({ delay: 0.1, rate: 2 });
+    frames.forEach((units, i) => {
+      // two separate frame objects: the trusted buffer may keep (and elem-extend) the tuples it is given
+      a.push({ t: 'b.snap', gt: i * 0.1, units: units.map((u) => [...u]) }, i * 0.05);
+      b.push({ t: 'b.snap', gt: i * 0.1, units: units.map((u) => [...u]) }, i * 0.05, true);
+    });
+    assert.deepEqual([...b.sample(0.55)], [...a.sample(0.55)]);
+  });
+
+  test('trusted: the elem view appends onto the reused tuple; a re-pushed frame with elem keeps its samples', () => {
+    const tuple = U(1, 2, 3);
+    const frame = { t: 'b.snap', gt: 1, units: [tuple], elem: [[1, 'burn', 0.5, 9, 4]] };
+    const s = normalizeSnapshot(frame, true);
+    assert.equal(s.units.get(1), tuple);
+    assert.equal(tuple.length, 13, 'the elem entry rode onto the frame own tuple');
+    assert.deepEqual([...tuple.slice(9)], ['burn', 0.5, 9, 4]);
+    // the same frame normalized again (a stale re-push): the guarded copy rebuilds the tuple from its 9 fields
+    const again = normalizeSnapshot(frame, true);
+    assert.notEqual(again.units.get(1), tuple);
+    assert.deepEqual([...again.units.get(1).slice(9)], ['burn', 0.5, 9, 4], 'elem is re-read from the frame list');
+  });
 });
 
 test('face keeps ±1 for listed units and sample uses the older snapshot', () => {

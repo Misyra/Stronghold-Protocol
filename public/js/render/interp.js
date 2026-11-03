@@ -129,14 +129,23 @@ export function frameTime(msg) {
  * default to 0; a unit's `elem` entry (see header) is appended to its tuple; malformed `elem` / `down` / `ammo` / `wolves` /
  * `neg` entries are dropped. `stand` keeps finite end times after `t` of units in the snapshot; `standCut` keeps finite
  * times in [0, t] of units in it.
+ *
+ * `trusted` (the local feed: the frame is this page's own sim's output, battle/runner.js frameOf) indexes the sim's
+ * well-formed 9-field tuples as they are instead of re-wrapping every unit's tuple a second time per rendered frame;
+ * the `elem` view below still appends onto the tuple (the buffer keeps the frame's own arrays — nobody else reads them).
+ * A tuple that does not look like the sim's (or already carries `elem` from an earlier push) takes the guarded copy.
  */
-export function normalizeSnapshot(snap) {
+export function normalizeSnapshot(snap, trusted = false) {
   if (!snap || typeof snap !== 'object') return null;
   const t = frameTime(snap);
   if (!Number.isFinite(t)) return null;
   const units = new Map();
   const list = Array.isArray(snap.units) ? snap.units : [];
   for (const u of list) {
+    if (trusted && Array.isArray(u) && u.length === 9 && typeof u[0] === 'number' && Number.isFinite(u[1]) && Number.isFinite(u[2])) {
+      units.set(u[0], u);
+      continue;
+    }
     if (!Array.isArray(u) || u.length < 3) continue;
     const id = u[0];
     if (!(typeof id === 'number' || typeof id === 'string')) continue;
@@ -291,10 +300,13 @@ export class SnapshotBuffer {
   /**
    * Add a snapshot received at real time `now` (seconds). Out-of-order / duplicate snapshots are dropped;
    * a snapshot far older than the newest (a server-side reset, e.g. a new battle) resets the buffer.
+   * `trusted` marks a frame of the local feed (this page's own sim's output, battle/runner.js frameOf): its unit
+   * tuples are already the sim's well-formed 9-field numbers and are indexed as they are, not re-wrapped per frame
+   * (normalizeSnapshot).
    * @returns {boolean} accepted
    */
-  push(snap, now) {
-    const s = normalizeSnapshot(snap);
+  push(snap, now, trusted = false) {
+    const s = normalizeSnapshot(snap, trusted === true);
     if (!s) return false;
     now = finite(now, this.lastNow || 0);
     const newest = this.newestT;

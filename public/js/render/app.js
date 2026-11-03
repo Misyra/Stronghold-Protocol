@@ -1680,10 +1680,10 @@ export async function createFieldView(host, options = {}) {
     return v;
   }
 
-  function pushSnapshot(snap) {
+  function pushSnapshot(snap, trusted = false) {
     if (destroyed || mode !== 'battle') return false;
     if (battleMeta?.fieldId && snap && snap.fieldId && snap.fieldId !== battleMeta.fieldId) return false;
-    return interp.push(snap, performance.now() / 1000);
+    return interp.push(snap, performance.now() / 1000, trusted === true);
   }
 
   function pushEvents(ev) {

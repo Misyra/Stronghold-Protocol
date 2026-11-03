@@ -726,7 +726,9 @@ function MatchScreen() {
     };
     // the field the view shows now (null while a re-entry of it is pending: its frames are buffered)
     const shownId = () => (reentryRef.current && reentryRef.current === lastFieldRef.current ? null : lastFieldRef.current);
-    const onSnap = (snap) => {
+    // `local` marks frames of the client-side simulation (battleRunner): the view may index their tuples as the sim
+    // produced them (render/interp.js normalizeSnapshot trusted path) instead of re-wrapping each one per frame
+    const onSnap = (snap, local) => {
       const cur = shownId();
       if (!snap || typeof snap !== 'object') return;
       if (!cur || (snap.fieldId && snap.fieldId !== cur)) {
@@ -734,11 +736,12 @@ function MatchScreen() {
         return;
       }
       bondTimerSnapRef.current = snap;
-      view?.pushSnapshot(snap);
+      view?.pushSnapshot(snap, local);
       if (Array.isArray(snap.units)) {
-        const mp = new Map();
+        // one map refilled per frame — the readers (detail card, device tip) dereference it at use time
+        const mp = snapUnitsRef.current;
+        mp.clear();
         for (const t of snap.units) if (Array.isArray(t)) mp.set(t[0], t);
-        snapUnitsRef.current = mp;
       }
       hudRef.current = snapHud(snap);
       const dt = performance.now() - last;
@@ -787,7 +790,7 @@ function MatchScreen() {
       } catch { /* ignore */ }
     };
     const offs = [net.on('m.field', onFieldMeta), net.on('b.snap', onSnap), net.on('b.ev', onEv)];
-    if (battleRunner) offs.push(battleRunner.on('field', onFieldMeta), battleRunner.on('snap', onSnap), battleRunner.on('ev', onEv), battleRunner.on('result', onResult));
+    if (battleRunner) offs.push(battleRunner.on('field', onFieldMeta), battleRunner.on('snap', (s) => onSnap(s, true)), battleRunner.on('ev', onEv), battleRunner.on('result', onResult));
     // Metadata must include enemies/tokens spawned before this renderer existed, not only events buffered during
     // loading. Subscribe first so the reshow's metadata and snapshot take the ordinary buffered re-entry path.
     if (view && !showPrep && field?.fieldId) {

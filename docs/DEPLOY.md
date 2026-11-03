@@ -275,6 +275,18 @@ https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://�
 - **回退空窗约 2.5 秒**：中继通道仍显示连接、却不再转发状态（或转发的快照丢失、无法通过签名校验）时，服务器的看门狗会在约 2.5 秒（`P2P_ACK_MS`）后，把最新那条已签名快照从自己的 WebSocket 补发给该成员；只有计时期间确认序号完全没有前进才停用这条通道。也就是说这条路径上单次故障的恢复时间上界约为 2.5 秒，期间该成员看到的是上一帧状态；客户端自报的序号不会被当作"已应用"的证据，因此即便收到错误确认也会补发。
 - 开关：全服默认关闭，显式 `SP_P2P=1` 开启；单个浏览器在网址后加 `?p2p=off`（已有参数时用 `&p2p=off`）关闭。ICE JSON 配置错误会关闭 P2P 并给出日志提示，游戏继续走 WebSocket。
 
+### 2.7 访问口令门禁（0.3.4 起）
+
+`SP_GATE_PASSWORD` 设置一个访问口令后，公网来的访客先看到 `/entry?next=/` 的终端登录页，输入口令才进入；本机与局域网地址默认不受影响（`SP_GATE_LOCAL=0` 让它们也走门禁）。直接暴露公网 IP 或经 FRP 端口转发时，这一层是「谁能进来」的唯一控制，建议开启。
+
+- **挡什么**：页面、`/data/*.json`、`/shared/`、`/sim/`、素材与插件文件全部需要授权 cookie；没有的话 HTML 导航（`Accept: text/html`）302 到 `/entry`，其余请求（素材、数据、API）401。**WebSocket `/ws` 的 upgrade 也要验同一枚 cookie**，只挡 HTTP 的话脚本可以绕过页面直接连进来。
+- **放行**：`/entry`、`/_gate/login`、`/_gate/logout`，以及公开只读接口 `/healthz`（隧道 / 探活）、`/api/online`（当前在线人数）、`/api/announcement`（维护公告）——它们不含任何玩家状态。其余一律在门禁后面。
+- **cookie**：`sp_gate=<过期毫秒>.<HMAC-SHA256>`，HttpOnly、SameSite=Lax，默认 7 天（`SP_GATE_TTL_DAYS`）；HTTPS 请求自动加 `Secure`。签名输入里带口令摘要，**改口令会让所有旧 cookie 立即失效**。签名密钥取 `SP_GATE_SECRET`，没有就生成 `.cache/gate-secret`（0600），删掉它等于让所有人重新登录；没有可写目录时退化为进程内随机值（重启即全员重登）。
+- **本机免门禁只认真实对端**：`SP_GATE_LOCAL` 的旁路只看 TCP 连接的对端地址（`req.socket.remoteAddress`），**不看** `CF-Connecting-IP` / `X-Real-IP` / `X-Forwarded-For`。放在 FRP / 反代后面时这些头永远换不来旁路；确实要从公网进来就保持门禁开着，或按 `TRUST_PROXY` 的语义另行配置。
+- **口令的编码**：Windows 的 cmd 里 `set SP_GATE_PASSWORD=阿米娅不是驴` 会被代码页弄成乱码。中文（或任何非 ASCII）口令请用 PowerShell 设置 `$env:SP_GATE_PASSWORD = '…'`，或者写成 UTF-8 文件并设 `SP_GATE_PASSWORD_FILE=gate-password.txt`。口令文件读首行、上限 1 KB、不做 trim（口令首尾的空格会被保留）；环境变量仍优先于文件；**文件不可读时服务直接启动失败**，不会静默敞开。
+- **登录页**：单文件 HTML、内联样式、没有脚本（站点 CSP 不允许内联脚本），中文 + English；令牌用双提交 cookie 校验，口令按 SHA-256 定长比较；同一 IP（IPv6 按 /64 归一）10 分钟内 5 次失败后 429（`Retry-After`），成功即清零；失败页会重新签发 CSRF，输错一次可以直接重试。
+- **部署提示**：门禁只保护本服务。`X-Forwarded-Proto: https` 只有在 `TRUST_PROXY` 信任对端时才会让 `Secure` 生效；限速与统计用同一套客户端地址解析（`clientAddress().key`）。
+
 ## 3. Docker
 
 ```bash
@@ -608,6 +620,29 @@ Node 22 的 `--permission` **不限制网络**（TCP/UDP/DNS/监听均可能可�
   前者管理未开局房间中的断线成员，后者管理对局重连；不能用其中一个期限推断另一个期限或整个房间的销毁时间。
   排查「明明没人了还开不出房」时，先看房间是否仍存在、是否正在等待断线成员。
 
+### 模拟线程池（`SP_WORKERS`）
+
+服务器用一个进程内的工作线程池跑 AI 布阵试算。`SP_WORKERS` 默认 **4**：`1`–`32` 取指定线程数，`0` 关闭线程池（试算回到主线程，和没有线程池时一样），留空、写错或超出范围也按 4。每个线程在第一次试算任务到来时才启动（空闲不占线程），启动时结构化克隆一份游戏数据，开发机实测常驻内存约 **150–200 MB/线程**。按机器调整：内存紧张的小主机设 `SP_WORKERS=0`，内存宽裕的机器可以调大。改完重启服务器后实测：
+
+```bash
+node tools/workerbench.mjs --workers 4 --battles 8
+node --expose-gc tools/memorybench.mjs
+```
+
+第一条比较主线程与线程池的耗时、吞吐和主线程定时器延迟，第二条打印主进程与每个线程的常驻内存。启动日志里的 `[workers] simulation pool: …` 一行会写明实际生效的线程数或 `off`。
+
+### 结果校验（`SP_VERIFY`）
+
+战斗在各玩家浏览器里模拟，服务器默认只按 spec 检查结果的形状和边界（`fields.js validateClientResult`），不重算。三档：
+
+| 值 | 行为 |
+| --- | --- |
+| `off`（默认） | 只做边界校验：人数、击杀/漏怪上限、层数收益上限、金币上限、`perfect` 与漏怪自洽。结构上说得通就接受，零额外 CPU |
+| `sample` | **诊断用，不是防线**。约 1/8 的战场在结果**已被接受之后**由服务器重算一次，不一致只写一条 warn 日志，不替换结果。用途是发现「同一份 spec 在两边跑出了不同结果」：数据版本没同步、插件内容漂移、页面没更新。抽样按 `battleId` 哈希，客户端可以自己算出来，所以别把它当防作弊 |
+| `all` | 收到结果后先重算再接受，不一致就用服务器的结果。每场多一次完整战斗（实测正常场约 0.2 s、联防约 0.8 s CPU，8 ms 切片），四人房每轮约多 1–3 s |
+
+一般服务器保持 `off`。怀疑客户端不同步时临时开 `sample` 看日志；只有「对局结果必须严格」的场合才用 `all`。
+
 ### 预载 / 公告相关变量（合并自用户分支）
 
 | 变量 | 默认 | 含义 |
@@ -678,6 +713,11 @@ npm start
 | `SP_VALKEY_PASSWORD_FILE` | （空） | 从文件读密码（去掉行尾换行）；URL 与文件里的密码都不会进日志。坏 URL / 读不到的密码文件会**拒绝启动**，不会悄悄退回文件后端 |
 | `SP_VALKEY_CONNECT_TIMEOUT` / `SP_VALKEY_COMMAND_TIMEOUT` | 3000 / 4000 | 连接 / 单条命令超时（ms）。命令超时按「流是否有进展」计：还在到达中的大回复（满员大厅的启动读）不算停滞 |
 | `SP_PERSIST_BACKEND` | （自动） | 显式指定后端：`valkey` / `redis` / `file`。缺省自动——`SP_VALKEY_URL` → Valkey，`SP_REDIS_URL` / `REDIS_URL` → Redis，都没配 → 文件 |
+| `SP_GATE_PASSWORD` | （空 = 不启用） | 访问口令（门禁，见 2.7）。非空即启用：公网访客要先在 `/entry` 输入口令；本机 / 局域网默认免。中文口令请用 PowerShell 设置，cmd 的代码页会弄乱 |
+| `SP_GATE_PASSWORD_FILE` | （空） | 从 UTF-8 文件读口令：首行、上限 1 KB、不 trim；文件不可读时**启动失败**（不静默开门）。`SP_GATE_PASSWORD` 优先。非 ASCII 口令推荐用它 |
+| `SP_GATE_SECRET` | `.cache/gate-secret` | 门禁 cookie 的 HMAC 密钥；缺省自动生成 0600 文件，删掉等于让所有人重新登录 |
+| `SP_GATE_TTL_DAYS` | 7 | 授权 cookie 有效期（天，1–365） |
+| `SP_GATE_LOCAL` | `1` | `0` / `false` / `off` / `no`：本机与局域网也要口令；其余值免门禁 |
 
 锁与备份：状态目录带独占锁（另一个活着的游戏进程拿同一路径会拒绝启动；陈锁按 pid 探活自动回收）。升级流程：
 正常停服（关停时先写终档再关大厅）→ 备份状态目录 → 更新 → 启动。坏了的的单个分片只丢那个房间的对局，

@@ -1268,13 +1268,16 @@ when completed results still leak, under six strict tick caps. Full policy and i
 [BOT_STRATEGIES](BOT_STRATEGIES.md). Production LP and unite rules are unchanged.
 
 Optional server rehearsal pool (#756, §35.86): only default-version vanilla matches receive the pool.
-SP_WORKERS is unset by default. Host/process options never contain the pool object. Jobs carry BattleSpecs, the
+SP_WORKERS defaults to 4 threads; `0` disables the pool, and unset/junk values also mean 4. Host/process options never
+contain the pool object. Jobs carry BattleSpecs, the
 Final Assault cap and optional adaptive limits; failure resumes those same local candidates. Prep ending cancels
 pending work. The normal combat loop and authoritative results retain their existing execution path.
 
 State transport (§35.89): negotiated m.state frames reconstruct ordinary m.public before UI listeners run.
-Room changes reset both endpoints; a sequence gap requests one rate-limited state.resync. Plain clients, m.private
-and replay records keep full frames.
+Room changes reset both endpoints; a sequence gap requests one rate-limited state.resync. Snapshot sequences are
+process-wide (one per broadcast) and each snapshot is parsed once for every recipient; `/healthz` exposes the
+stateDelta counters, and SP_STATE_DELTA_VERIFY=1 replays every emitted delta against the state it describes.
+Plain clients, m.private and replay records keep full frames.
 
 ### Optional spectator AI handover (§35.100, PR #691)
 

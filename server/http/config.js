@@ -14,6 +14,9 @@
 //     `versions: { enabled, default, maxHosts }` option, which wins) → the official versions this server offers
 //     (DESIGN §35.23, versionsFrom): every registry id unless one of them narrows the list (SP_VERSIONS=act2autochess
 //     is 第二期下半 alone, the switch off);
+//   * SP_GATE_PASSWORD / SP_GATE_SECRET / SP_GATE_TTL_DAYS / SP_GATE_LOCAL (or the `gatePassword` / `gateSecret` /
+//     `gateTtlDays` / `gateLocal` options) → the access gate (server/http/gate.js gateOptionsFrom): a password in front
+//     of every remote client, loopback / LAN exempt by default;
 //   * the served directories (public/, data/, shared/, the content packs' packs/ and the plugins' plugins/ of this
 //     repository unless the options name others), and which startServer() options are handed on to net.js Network and
 //     lobby.js Lobby.
@@ -52,7 +55,7 @@ export const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 const NET_OPTION_KEYS = ['reconnectWindowMs', 'heartbeatMs', 'helloTimeoutMs', 'ratePerSec', 'rateBurst', 'maxConnections', 'maxOnline', 'abuseDropsPerSec',
   'maxConnectionsPerAddr', 'heavyPerSec', 'heavyBurst', 'trustProxy'];
 const LOBBY_OPTION_KEYS = ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMatchesPerAddr', 'resyncMinGapMs', 'soloReconnectWindowMs', 'versionVoteMs', 'versionRetryMs',
-  'roomCreateBurst', 'roomCreateRefillMs', 'matchStartBurst', 'matchStartRefillMs', 'chatEnabled'];
+  'roomCreateBurst', 'roomCreateRefillMs', 'matchStartBurst', 'matchStartRefillMs', 'chatEnabled', 'afkRemoveRounds'];
 
 /**
  * Bind address used when neither the `host` option nor `HOST` says otherwise: one dual-stack socket, so the server

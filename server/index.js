@@ -26,7 +26,8 @@
 //   http/assetViews.js the served /data/assets.json, /data/local-assets.json and /data/local-fx.json: every art URL with
 //                      its hash segment (/assets/~<hash>/…, immutable when the hash matches); the files stay unchanged
 //   http/buildTag.js   the build tag of the served browser runtime (/healthz `build`, public/js/ui/buildGuard.js)
-//   http/routes.js     the request listener: security headers, 414 / 400, the plugin studio (/studio/, studio/index.js —
+//   http/routes.js     the request listener: security headers, 414 / 400, the access gate (http/gate.js — /entry, the
+//                      login endpoints and the cookie; SP_GATE_PASSWORD), the plugin studio (/studio/, studio/index.js —
 //                      this machine and the local network only), 405, GET /healthz → JSON status, else static
 //   http/traffic.js    the traffic counters: bytes sent per category (assets / audio / code / data) and on the
 //                      WebSocket, since the start (GET /healthz?traffic=1)
@@ -66,6 +67,7 @@ import { createStudio } from './studio/index.js';
 import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
+import { gateFrom } from './http/gate.js';
 import { ChatLog } from './chatLog.js';
 import { chatEnabled } from './moderation/chat.js';
 import { initializeModeration } from './moderation/nickname.js';
@@ -105,13 +107,18 @@ export {
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
  *   heavyPerSec?: number, heavyBurst?: number, trustProxy?: 'auto' | boolean, soloReconnectWindowMs?: number,
- *   versionVoteMs?: number, versionRetryMs?: number,
+ *   versionVoteMs?: number, versionRetryMs?: number, afkRemoveRounds?: number,
  *   roomCode?: string | null,
  *   stateFile?: string | null, store?: object | null, resume?: boolean, saveMs?: number,
  *   assetIndex?: boolean | { cacheFile?: string | null, delayMs?: number }, studio?: boolean,
  *   matchHost?: object, versions?: { enabled?: 'all' | string[], default?: string, maxHosts?: number },
+ *   gatePassword?: string | null, gateSecret?: string | null, gateTtlDays?: number, gateLocal?: boolean,
+ *   gate?: false,
  *   healthMetricsFactory?: typeof import('./healthMetrics.js').createHealthMetrics, phaseMetrics?: object,
  * }} [opts]
+ *   gatePassword / gateSecret / gateTtlDays / gateLocal: the access gate (http/gate.js; SP_GATE_PASSWORD … — a
+ *   password enables it, loopback and the private network skip it unless gateLocal is false); gate: false disables it
+ *   even when the environment names one (tests);
  *   assetIndex: the content-hash index (default on; false or SP_ASSET_INDEX=0: off — config.js assetIndexOptionsFrom);
  *   studio: the plugin studio at /studio/ (default on for this machine and the local network — SP_STUDIO=local|off;
  *   false: none);
@@ -205,6 +212,9 @@ export async function startServer(opts = {}) {
     : null;
   log.info(`[versions] enabled: ${versions.ids.map((id) => `${id} (${t(/** @type {any} */ (versionById(id)).label)}${id === versions.defaultId ? ', default' : ''})`).join(', ')}`);
   const simPool = createRoomWorkerPool({ data });
+  log.info(simPool
+    ? `[workers] simulation pool: ${simPool.stats().size} thread(s) (SP_WORKERS; 0 disables it)`
+    : '[workers] simulation pool: off (SP_WORKERS=0)');
   const { registry, lobby, network } = createSessionStack({ ...opts, chatEnabled: chatEnabledOpt }, { data, log, content, plugins: roomSets, hosts, versions, versionHosts, simPool, chatLog });
 
   // 持久化 (server/persist.js + server/stateFile.js, 移植自用户分支): 会话/房间/运行中对局的检查点落盘, 重启恢复。
@@ -320,13 +330,17 @@ export async function startServer(opts = {}) {
   buildTag(ROOT, { servedVersionDirs: versions.servedDirs() });
 
   const traffic = createTrafficCounter();
+  // 门禁 (server/http/gate.js, 2026-11-03): one shared password in front of every remote client — HTTP pages, data,
+  // assets and the /ws upgrade alike; loopback and the private network skip it unless SP_GATE_LOCAL=0. Off when no
+  // password is configured (`gate: false` disables even an environment one).
+  const gate = opts.gate === false ? null : gateFrom(opts, process.env, log);
   // 只读性能采样器 (server/healthMetrics.js, 移植自 Stardust fork): 主线程 CPU/ELU/内存/事件循环延迟的 10 s 缓存,
   // 只随 ?traffic=1 进 /healthz 的 `performance` 块 (routes.js 的回环/私网门控);不与 Worker/对局进程通信。
   let healthMetrics = null;
-  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic, chatLog, persister, store, getHealthMetrics: () => healthMetrics }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime,
+  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic, chatLog, persister, store, getHealthMetrics: () => healthMetrics }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime, gate,
     readAnnouncement, announcementSource: announcementOptions.source }));
   server.on('clientError', answerClientError);
-  const wss = attachWebSocket(server, { network, log, traffic });
+  const wss = attachWebSocket(server, { network, log, traffic, gate, trustProxy: network.opts.trustProxy });
 
   // The address actually bound. The default may fall back to IPv4; the returned host and url follow that.
   let boundHost;
@@ -442,7 +456,7 @@ export async function startServer(opts = {}) {
     return closing;
   }
 
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, versions, versionHosts, traffic, assetIndex, views, studio, eventLoop, simPool, chatLog, store, persister, healthMetrics, close };
+  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, versions, versionHosts, traffic, assetIndex, views, studio, gate, eventLoop, simPool, chatLog, store, persister, healthMetrics, close };
 }
 
 /**

@@ -26,7 +26,7 @@ import { mergeLocalChars } from '../plugins/artReferences.js';
 export { mergeLocalChars } from '../plugins/artReferences.js';
 
 /** The manifests that have a view, by their name under data/. */
-export const VIEW_MANIFESTS = Object.freeze(['assets.json', 'local-assets.json', 'local-fx.json']);
+export const VIEW_MANIFESTS = Object.freeze(['assets.json', 'local-assets.json', 'local-fx.json', 'assets-collab.json', 'local-fx-collab.json']);
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const ART_URL = /^\/(?:assets|fonts)\/./;
@@ -86,7 +86,7 @@ export function rewriteManifest(doc, name, index) {
     if (typeof v === 'string') return ART_URL.test(v) ? own(v) : v;
     if (Array.isArray(v)) return v.map(walk);
     if (!isObj(v)) return v;
-    if ((name === 'assets.json' || name === 'local-assets.json') && isSpine(v)) {
+    if ((name === 'assets.json' || name === 'local-assets.json' || name === 'assets-collab.json') && isSpine(v)) {
       const h = model(spineUrls(v));
       const out = {};
       for (const [k, x] of Object.entries(v)) {

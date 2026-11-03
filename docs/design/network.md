@@ -296,7 +296,8 @@ WebRTC / WebCrypto, opted out) keeps receiving `m.state` frames over its own soc
 (`server/stateTransport.js`, `shared/stateDelta.js`), and its per-connection baseline is never advanced by snapshot
 bytes it did not receive: while peer delivery serves a receiver, the server sends that socket no `m.state` frame at all, so
 when the route is abandoned the stream simply resumes from the baseline it already had (an exact patch, or a full frame
-after a reset). The room-wide `deliveryEpoch` / `deliverySeq` stamps ride inside every `m.public` — peer and WebSocket
+after a reset). The baseline is per connection, but a snapshot's `seq` is process-wide and shared by everyone who
+receives it — one broadcast costs one number, not one per recipient. The room-wide `deliveryEpoch` / `deliverySeq` stamps ride inside every `m.public` — peer and WebSocket
 alike — so a delayed copy from either transport can never overwrite newer state, even where two snapshots share a
 `serverNow`.
 
@@ -479,14 +480,21 @@ phase and before projectiles carries changes; its baseline is seeded by birth in
 the queued timestamp, including a rate later in that batch, without borrowing a later timestamp’s value. A b.ev batch may contain several simulation ticks; [ASSUMED] its latest interval per unit paces that timestamp, including batches without an attack (§35.101). Its 0.2–6 second display
 window is [ASSUMED]; damage, attack timing and targeting are unchanged.
 
-Server rehearsal offload (§35.86) is opt-in via SP_WORKERS; plugin and historical-version match hosts retain their own
-data and execution. No socket or authoritative combat operation moves to this pool.
+Server rehearsal offload (§35.86) runs on the process-wide pool whose size `SP_WORKERS` sets (default 4; `0` disables
+it); plugin and historical-version match hosts retain their own data and execution. No socket or authoritative combat
+operation moves to this pool.
 
 Public-state deltas (#772, §35.89): hello.delta opts a socket into m.state for m.public only. Unnegotiated clients
 keep full messages; private views retain their current encoding. Commit a baseline only after a successful reliable
-send; malformed pre-encoded JSON falls back to ordinary m.public and advances no baseline. state.resync is rate
-limited and sends a full baseline. Clear both endpoints on room change, retain same-room repeated-hello baselines,
-and keep full replay records. Version negotiation/votes and hello identity ownership remain unchanged.
+send; malformed pre-encoded JSON falls back to ordinary m.public and advances no baseline. A snapshot's sequence comes
+from one process-global counter and its JSON is parsed once for every recipient; the transition is cached per
+(snapshot, baseline) pair and shared by every socket holding that baseline, and the full-frame text is built only when
+a full frame is sent (its byte length is arithmetic). Resending bytes a socket already holds is a full frame under a
+fresh number, so a receiver never sees its sequence rewind. state.resync is rate limited and sends a full baseline.
+Clear both endpoints on room change, retain same-room repeated-hello baselines, and keep full replay records.
+`SP_STATE_DELTA_VERIFY=1` replays every emitted delta through the client decoder and compares it with the state it
+describes; the `/healthz` `stateDelta` object exposes frames, the full/delta split, parsed baselines and those replay
+mismatches (poll twice for rates). Version negotiation/votes and hello identity ownership remain unchanged.
 
 ### Spectator AI handover (PR #691, §35.100, [ASSUMED])
 

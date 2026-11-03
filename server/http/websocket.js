@@ -130,7 +130,7 @@ function applySendThreshold(ws) {
  * @param {{ network: Network, log: object, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter> }} deps
  * @returns {WebSocketServer}
  */
-export function attachWebSocket(server, { network, log, traffic = null }) {
+export function attachWebSocket(server, { network, log, traffic = null, gate = null }) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD, perMessageDeflate: { ...WS_DEFLATE }, clientTracking: false });
   wss.on('connection', (ws, req) => {
     applySendThreshold(ws);
@@ -143,9 +143,17 @@ export function attachWebSocket(server, { network, log, traffic = null }) {
     socket.on('error', () => {});
     const parts = splitUrl(req.url || '/');
     const reject = (status, text) => {
+      // The client may never read our answer: end the handshake, then drop the TCP connection if it still lingers.
+      const timer = setTimeout(() => { try { socket.destroy(); } catch { /* already gone */ } }, 1000);
+      timer.unref?.();
+      socket.once('close', () => clearTimeout(timer));
       try { socket.end(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); } catch { socket.destroy(); }
     };
     if (!parts || parts.rawPath !== '/ws') { reject(404, 'Not Found'); return; }
+    // 门禁 (server/http/gate.js): the upgrade carries the page's cookie; without it a script could join a gated server
+    // through /ws alone. Local / private-network clients pass without one (gate.bypass) — and, as in gate.js, that is
+    // decided by the real socket peer only: a forwarded address never grants the bypass.
+    if (gate && !gate.check(req)) { reject(401, 'Unauthorized'); return; }
     const refused = network.admission(req);
     if (refused === 'per-address') { reject(429, 'Too Many Requests'); return; }
     if (refused) { reject(503, 'Service Unavailable'); return; }

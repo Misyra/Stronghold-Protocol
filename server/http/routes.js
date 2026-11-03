@@ -9,7 +9,8 @@
 //     hash `content.vanilla`, the modded content sets in use `content.sets` and — only when there are some — how many
 //     unofficial plugins the server has, `content.plugins` (the title screen's count before any hello) — DESIGN §32 —,
 //     sockets, sessions,
-//     rooms, matches; `versions: { enabled, default, hosts }` only when the server enables another official version than
+//     rooms, matches, and the negotiated state-delta counters `stateDelta` (frames, full/delta split, parsed
+//     baselines, and the SP_STATE_DELTA_VERIFY replay checks); `versions: { enabled, default, hosts }` only when the server enables another official version than
 //     第二期下半 — DESIGN §35.23), never cached; `?traffic=1` adds the traffic counters (traffic.js: bytes by category since the
 //     start, WebSocket wire and payload bytes) and the cached `performance` sample (healthMetrics.js: the main thread's
 //     event-loop delay / ELU / memory / CPU over its 10 s window, `performance.phases` when a phase recorder is wired)
@@ -27,14 +28,25 @@ import { PERFORMANCE_UNAVAILABLE } from '../healthMetrics.js';
 import { buildTag } from './buildTag.js';
 import { setSecurityHeaders, sendError, sendJson, splitUrl } from './common.js';
 import { clientAddress, isLocalIp } from '../net.js';
+import { stateDeltaStats } from '../stateTransport.js';
 
 const MAX_URL_LENGTH = 4096;
 
 // GET /api/online (the title screen's 当前在线人数, 合并自用户分支): the sessions currently bound to a socket.
-// Cached for 10 s — the value changes on hello / disconnect only, and the page polls it every 10 s, so a per-request
-// walk of the session registry would be wasted work.
+// Cached for 10 s per server instance — the value changes on hello / disconnect only, and the page polls it every 10 s,
+// so a per-request walk of the session registry would be wasted work. The cache hangs off the registry (a WeakMap
+// keyed by it, with the network/health object as fallback), never a module variable: two servers in one process must
+// not answer each other's count.
 const ONLINE_TTL_MS = 10_000;
-const onlineCache = { at: -Infinity, value: 0 };
+const onlineCaches = new WeakMap();
+
+/** @param {{ registry?: any, network?: any }} health */
+function onlineCacheOf(health) {
+  const scope = health.registry || health.network || health;
+  let cache = onlineCaches.get(scope);
+  if (!cache) { cache = { at: -Infinity, value: 0 }; onlineCaches.set(scope, cache); }
+  return cache;
+}
 
 /**
  * The cached online count for /api/online.
@@ -42,15 +54,17 @@ const onlineCache = { at: -Infinity, value: 0 };
  * @returns {number}
  */
 // [ASSUMED] 在线人数 = 当前连接中的会话数（不含断线后重连窗口内保留的会话）；没有专门的快速匹配/在线统计协议，这是最简单的口径
-function onlineCount({ registry, network }) {
+function onlineCount(health) {
+  const cache = onlineCacheOf(health);
   const now = Date.now();
-  if (now - onlineCache.at >= ONLINE_TTL_MS) {
-    onlineCache.at = now;
-    onlineCache.value = registry
+  if (now - cache.at >= ONLINE_TTL_MS) {
+    cache.at = now;
+    const { registry, network } = health;
+    cache.value = registry
       ? registry.connectedSize
       : (network ? network.connectionCount : 0);
   }
-  return onlineCache.value;
+  return cache.value;
 }
 
 /** `{ plugins: n }` when the server has n > 0 unofficial plugins (the lobby's visual sets count them), else nothing. */
@@ -95,6 +109,10 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
     // the per-network action budgets (server/roomProtection.js, 合并自用户分支): allowed / denied counts per action
     roomProtection: lobby.roomActions?.stats() || null,
+    // state-delta accounting (server/stateTransport.js): how many state frames were sent whole / as a patch, how often
+    // a baseline had to be parsed, and (with SP_STATE_DELTA_VERIFY=1) how many replayed deltas disagreed with the
+    // state they describe. Poll twice for rates — this is the sampling hook for the state-sync chain.
+    stateDelta: { ...stateDeltaStats },
     // 持久化 (server/persist.js, 移植自用户分支): write rounds / failures / held checkpoints and the checkpoint
     // encode bookkeeping — `failures` growing means saving is broken (本仓无独立 /metrics 面, 计数进 /healthz)
     persist: persister ? {
@@ -139,12 +157,20 @@ const wantsTraffic = (query) => /(?:^|&)traffic(?:=(?:1|true|yes))?(?:&|$)/i.tes
  *   plugin studio (server/studio/index.js), or none
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void}
  */
-export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto', studio = null, csp = null, trustedRuntime = null, readAnnouncement = null, announcementSource = null }) {
+export function createRequestHandler({ serveStatic, health, log, trustProxy = 'auto', studio = null, csp = null, trustedRuntime = null, readAnnouncement = null, announcementSource = null, gate = null }) {
   async function handleRequest(req, res) {
     const url = req.url || '/';
     if (url.length > MAX_URL_LENGTH) { sendError(req, res, 414, '请求地址过长 · URI too long'); return; }
     const parts = splitUrl(url);
     if (!parts) { sendError(req, res, 400, '请求地址无效 · Bad request'); return; }
+    // 门禁 (server/http/gate.js): /entry and the login endpoints first, then the cookie for everything but /healthz.
+    // A remote client's HTML navigation is redirected to /entry; its assets, data and the WebSocket upgrade (websocket.js)
+    // are refused. Loopback / private-network clients skip the gate (gate.bypass).
+    if (gate) {
+      const { ip, key } = clientAddress(req, trustProxy);
+      if (await gate.handle(req, res, { method: req.method, rawPath: parts.rawPath, query: parts.query, ip, key })) return;
+      if (!gate.isPublic(parts.rawPath) && !gate.check(req)) { gate.deny(req, res, { ...parts, method: req.method }); return; }
+    }
     if (trustedRuntime && parts.rawPath.startsWith('/x/') && await trustedRuntime.route(req,res,parts.rawPath)) return;
     if (studio && studio.handles(parts.rawPath)) { await studio.handle(req, res, parts.rawPath, parts.query); return; }
     if (req.method !== 'GET' && req.method !== 'HEAD') {

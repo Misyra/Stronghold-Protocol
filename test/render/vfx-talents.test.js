@@ -416,3 +416,18 @@ describe("skills' projectiles and buff lives, attacks' shots and group choice (i
     assert.equal(pickAttacks(burst, { ranged: false }, 0)[1].k, 'plain');
   });
 });
+
+describe('FxWiring.sync re-entrancy guard', () => {
+  test('a throwing sync pass releases the guard; the kept views list refills again afterwards', async () => {
+    const { w, view } = await setup();
+    const views = new Map([['u1', view('u1', 'char_800_dep')]]);
+    const boom = new Error('malformed kit def');
+    w.skills.sync = () => { throw boom; };
+    assert.throws(() => w.sync(views.values()), boom);
+    assert.equal(w._syncing, 0, 'finally releases the re-entrancy counter');
+    w.skills.sync = () => {};
+    w.sync(views.values());
+    assert.equal(w._syncViews.length, 1, 'the kept list is refilled by the next sync, not sliced away');
+    assert.equal(w._syncing, 0);
+  });
+});

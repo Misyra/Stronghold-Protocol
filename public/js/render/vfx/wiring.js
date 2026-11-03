@@ -1495,10 +1495,15 @@ export class FxWiring {
       else for (const v of views) list.push(v);
     }
     this._syncing = (this._syncing || 0) + 1;
-    this.skills.sync(list);
-    this.talents.sync(list);
-    this.funnels.sync(list);
-    this._syncing--;
+    try {
+      this.skills.sync(list);
+      this.talents.sync(list);
+      this.funnels.sync(list);
+    } finally {
+      // a throw inside a sync pass must not leave the counter up: every later sync would take the re-entrant
+      // slice path and the kept list would freeze at the pre-throw frame
+      this._syncing--;
+    }
   }
 
   /**

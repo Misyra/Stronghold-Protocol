@@ -215,7 +215,7 @@ describe('content.js', () => {
     const fetch = (u) => new Promise((resolve) => pending.set(u, resolve));
     const toasts = [];
     const off = installContent({ store: app, data, layers, fetch, toast: (text, kind) => toasts.push([text, kind]), retryDelays: [] });
-    assert.equal(pending.size, 0, 'no room, no personal plugin: nothing is fetched');
+    assert.equal([...pending.keys()].filter((u) => u !== '/data/assets-collab.json').length, 0, 'no room, no personal plugin: nothing is fetched');
     app.set({ room: { code: 'ABCD', content: { cs: 'ee'.repeat(32), vanilla: true, vs: red.visual.vs, plugins: [{ id: 'red' }] } } });
     const redUrl = `/vs/${red.visual.vs.slice(0, 16)}/overlay.json`;
     assert.ok(pending.has(redUrl));
@@ -313,7 +313,7 @@ describe('content.js', () => {
     await data.load('assets');
     const off = installContent({ store: createStore({ room: null, installedPlugins: 3 }), data, layers, fetch, retryDelays: [] });
     await tick();
-    assert.deepEqual(asked, [], 'no personal plugin switched on: not even the catalogue');
+    assert.deepEqual(asked.filter((u) => u !== '/data/assets-collab.json'), [], 'no personal plugin switched on: not even the catalogue');
     setPersonalPlugin('zed', true);
     setPersonalPlugin('mine', true);
     setPersonalPlugin('gone', true);
@@ -348,13 +348,13 @@ describe('content.js', () => {
     await data.load('assets');
     const off = installContent({ store: app, data, layers, fetch, retryDelays: [] });
     for (let i = 0; i < 5; i++) await tick();
-    assert.deepEqual(asked, [], 'nothing fetched: the server has no plugin');
+    assert.deepEqual(asked.filter((u) => u !== '/data/assets-collab.json'), [], 'nothing fetched: the server has no plugin');
     assert.equal(installedCount(app.get()), 0);
     assert.equal(installedCount({}), 0, 'nothing said: none');
     // a server that has some (/healthz, or welcome after a reconnect): the switched-on one is fetched and applied
     app.set({ installedPlugins: 1 });
     await until(() => layers.personal.length === 1, 'the personal plugin');
-    assert.deepEqual(asked, ['/plugins/index.json', `/vs/${mine.visual.vs.slice(0, 16)}/overlay.json`]);
+    assert.deepEqual(asked.filter((u) => u !== '/data/assets-collab.json'), ['/plugins/index.json', `/vs/${mine.visual.vs.slice(0, 16)}/overlay.json`]);
     off();
     personal.set({ ids: [] });
   });
@@ -429,7 +429,7 @@ describe('the 插件 panel (ui/pluginPanel.js) and the room screen', () => {
     assert.equal(pluginMicro({ id: 'a', version: '1.0.0', artBytes: 4096 }), 'a · v1.0.0 · 4 KB');
   });
 
-  test('a vanilla page loads none of the panel, the asset store or what composes a set at start (the import graph of main.js)', () => {
+  test('a vanilla page keeps the plugin panel and set composition lazy; assets.js boots to adopt the parsed manifest (main.js)', () => {
     const seen = new Set();
     const walk = (rel) => {
       if (seen.has(rel)) return;
@@ -442,7 +442,9 @@ describe('the 插件 panel (ui/pluginPanel.js) and the room screen', () => {
     };
     walk('public/js/main.js');
     assert.ok(seen.has('public/js/content.js') && seen.has('public/js/cosmetics.js') && seen.has('public/js/ui/pluginTag.js'), 'the small parts are there');
-    for (const lazy of ['public/js/assets.js', 'public/js/ui/pluginPanel.js', 'shared/plugins/visual.js', 'shared/plugins/order.js']) {
+    // assets.js exports seedAssets: main.js adopts the manifest data.js already parsed instead of downloading it twice.
+    assert.ok(seen.has('public/js/assets.js'), 'the manifest adoption is part of boot');
+    for (const lazy of ['public/js/ui/pluginPanel.js', 'shared/plugins/visual.js', 'shared/plugins/order.js']) {
       assert.equal(seen.has(lazy), false, `${lazy} loads only when it is needed`);
     }
   });

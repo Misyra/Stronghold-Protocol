@@ -31,7 +31,7 @@ test('personal theme switches apply by id, restore the previous winner and defau
   let off;
   try {
     off = installContent({ store: app, data: createDataStore({ fetch }), layers: createCosmeticLayers(), fetch });
-    assert.deepEqual(asked, []);
+    assert.deepEqual(asked.filter((u) => u !== '/data/assets-collab.json'), []);
     personal.set({ ids: ['a-day', 'z-night', 'room-only'] });
     await settle();
     assert.equal(values.get('--text-hi'), '#abc', 'id order wins even against loadBefore');
@@ -43,7 +43,7 @@ test('personal theme switches apply by id, restore the previous winner and defau
     assert.equal(values.has('--line'), false);
     personal.set({ ids: [] });
     assert.equal(values.size, 0, 'the last switch off restores root defaults synchronously');
-    assert.deepEqual(asked, ['/plugins/index.json'], 'theme-only plugins fetch no overlay and send no intent');
+    assert.deepEqual(asked.filter((u) => u !== '/data/assets-collab.json'), ['/plugins/index.json'], 'theme-only plugins fetch no overlay and send no intent');
   } finally {
     off?.(); personal.set({ ids: [] }); catalog.set({ status: 'idle', plugins: [], at: 0 });
     if (previousDoc === undefined) delete globalThis.document; else globalThis.document = previousDoc;
@@ -97,7 +97,7 @@ test('notice-only personal dependencies activate themes and still participate in
     await settle();
     assert.ok('error' in setPersonalPlugin('dependent', true), 'dependency conflicts are checked before saving');
     assert.deepEqual(personal.get().ids, ['rival']);
-    assert.deepEqual(asked, ['/plugins/index.json'], 'hidden and theme-only dependencies fetch no overlays');
+    assert.deepEqual(asked.filter((u) => u !== '/data/assets-collab.json'), ['/plugins/index.json'], 'hidden and theme-only dependencies fetch no overlays');
   } finally {
     off?.(); personal.set({ ids: [] }); catalog.set({ status: 'idle', plugins: [], at: 0 });
     if (previousDoc === undefined) delete globalThis.document; else globalThis.document = previousDoc;

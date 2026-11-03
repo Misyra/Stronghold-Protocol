@@ -9,15 +9,25 @@ Human contributors: [CONTRIBUTING.md](CONTRIBUTING.md) is the same material in f
 A non-commercial fan remake of Arknights「卫戍协议：盟约」 that runs in the browser: a Node.js server (economy, rounds,
 rooms) and a deterministic battle sim shared by the server and the browser. It aims to be faithful to the official mode.
 
+Code shape in one glance: three classes keep their constructor in one file and their methods in a folder installed on
+the prototype (`server/sim/Battle.js` + `server/sim/battle/`, `server/match/Match.js` + `server/match/match/`,
+`server/match/PlayerState.js` + `server/match/player/`); two client modules are barrels over folders
+(`public/js/ui/gameLogic.js`, `public/js/render/fx.js`). `server/sim/` is served verbatim to browsers at `/sim/` —
+that is why its imports are constrained. Every file is mapped in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §3.
+
 ## Read first
 
 1. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the code map: where things live, data flow, golden results,
-   import boundaries, where common changes start.
+   import boundaries, where common changes start. §6's table maps each kind of change to its files; §7 states the
+   worker-pool rule of thumb (pure CPU over data the worker can hold → a pool task; sockets, timers, lobby → the
+   main thread).
 2. [docs/DESIGN.md](docs/DESIGN.md) — the index of the rules: current rules in `docs/design/`, each release's
-   revisions and their evidence in `docs/history/`.
+   revisions and their evidence in `docs/history/`. Section numbers are global and never change; code and tests cite
+   them as "DESIGN §N".
 3. The reference for the part you touch: [docs/SIM.md](docs/SIM.md) (battle engine API, hooks, test harness),
    [docs/META.md](docs/META.md) (match flow, shop, protocol), [docs/DATA.md](docs/DATA.md) (generated data),
-   [docs/I18N.md](docs/I18N.md) (interface strings), `server/sim/content/kits/README.md` (operator kits).
+   [docs/I18N.md](docs/I18N.md) (interface strings), [docs/PLUGINS.md](docs/PLUGINS.md) (plugin system, content hash),
+   [docs/DEPLOY.md](docs/DEPLOY.md) (deployment, access gate, P2P), `server/sim/content/kits/README.md` (operator kits).
 4. Before editing battle simulation code, read [server/sim/AGENTS.md](server/sim/AGENTS.md) for a short settlement API usage guide.
 5. [docs/CI.md](docs/CI.md) — the CI jobs, the test-sharding contract (`ci-shards.json`), how to re-weigh it, the
    timeout policy, and the ways a CI measurement lies.
@@ -34,7 +44,8 @@ rooms) and a deterministic battle sim shared by the server and the browser. It a
 - **Golden results.** A refactor must not change `test/golden/*.json`. An intended gameplay change runs
   `npm run golden:update` in the same commit, and the commit / PR names every moved scenario and why
   ([test/golden/README.md](test/golden/README.md)).
-- **Generated data.** Never hand-edit `data/*.json`: change `tools/build-data.mjs` and regenerate.
+- **Generated data.** Never hand-edit `data/*.json`: change `tools/build-data.mjs` and regenerate. A rebuild's JSON
+  diff must show only the intended change.
 - **No game art in git.** `public/assets/` is ignored; never commit extracted or downloaded game files.
 - **Preload packs are not art.** `public/resource-packs/*.zip` (git-ignored) and their index
   `data/resource-packs.json` are the player preload packs, built with `npm run resources:packs` and handed out through
@@ -52,7 +63,24 @@ rooms) and a deterministic battle sim shared by the server and the browser. It a
   rewrite, renumber, re-pack or delete an existing pack. Every ZIP an older index names must keep resolving — a client
   must never 404 or fail because of a publish. Adding is the only safe operation there.
 - **Interface strings** go through `t('…')`, with entries in every pack under `public/i18n/`
-  (`node tools/i18n.mjs check --all --strict`).
+  (`node tools/i18n.mjs check --all --strict`). Developer logs are exempt (`// i18n-ignore`).
+- **The browser client is native ESM.** `public/js/` loads with no bundler and no build step: no Node APIs, no
+  `require`, imports resolve as URLs (see `tools/check-imports.mjs`). Pure in-match logic lives in
+  `public/js/ui/gameLogic/` and must stay DOM-free and clock-free — Node unit-tests it directly.
+- **The protocol is normative.** `shared/protocol.js` holds one `C2S` validator per client message; a new message
+  starts there, and the handler never trusts what the validator does not already bound (types, lengths, shapes).
+  Requests carrying `rid` are answered `ok`/`error` echoing it ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §2).
+- **CPU-heavy server work goes to the worker pool.** Pure CPU over data a worker thread can hold
+  (`server/workers/pool.js`) belongs in a task with a fallback for `POOL_FULL`/failure; anything touching sockets,
+  timers or the lobby stays on the main thread (docs/ARCHITECTURE.md §7).
+- **Performance changes are measured.** Before/after on the same machine, with the project's tools
+  (`tools/workerbench.mjs`, `tools/memorybench.mjs`, `tools/state-sync-micro.mjs`, `tools/bench-state-delta.mjs`,
+  `tools/perfbench.mjs`, `tools/loadgen.mjs`) — and golden results must not move. A change without a verified A/B
+  win is not merged.
+- **Security-sensitive surfaces keep their guards.** The studio is local-network only and every change carries the
+  studio key (`server/studio/`), plugin installs re-validate zips and hashes (`server/plugins/install.js`,
+  `zip.js`), the access gate binds a cookie and rate-limits (`server/http/gate.js`), paths go through
+  `server/pathSafety.js`. A change to one of these names the security impact in the PR.
 - **Docs follow the code.** A rule change updates `docs/design/`, the current `docs/history/` file and the reference
   docs; run `node --test test/docs-consistency.test.js test/docs-paths.test.js`.
 - **Commits and PRs**: one topic per PR; a one-line message of what changed (Chinese or English) with the issue number;
@@ -69,6 +97,10 @@ node --test test/<area>/<file>.test.js      # targeted
 npm run ci                                  # the CI checks locally (tools/ci.mjs): npm test, smoke, lint, imports, types
 npm run golden                              # golden results
 ```
+
+`npm run lint` allows warnings but not errors; `npm run typecheck` checks the JSDoc slice (`jsconfig.json`,
+`types/README.md`); `npm run check:imports` enforces the sim/match/net import boundaries. All three run inside
+`npm run ci`.
 
 Browser suites are off by default and need Chrome: `SP_E2E=1` (UI), `SP_REAL_E2E=1` (real match, needs assets),
 `RENDER_E2E=1`, `SIM_E2E=1` — see CONTRIBUTING.md §2. Battle tests are easiest with the helpers described in

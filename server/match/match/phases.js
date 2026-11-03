@@ -90,7 +90,9 @@ export class MatchPhases {
     this.cancel(this._turnTimer);
     this._turnTimer = null;
     if (this.test) this.setDeadline(0);
-    while (d.idx < d.order.length && d.picks[d.order[d.idx]]) d.idx++; // loop-cap: draft order
+    // picked seats and seats that departed before their pick (INFO_CHECK) are both out: a dead seat never takes a
+    // turn, so its timeout cannot assign it a strategy and a full LP bar over its elimination
+    while (d.idx < d.order.length && (d.picks[d.order[d.idx]] || !this.players.get(d.order[d.idx])?.alive)) d.idx++; // loop-cap: draft order
     if (d.idx >= d.order.length) {
       d.turnDeadline = 0;
       this.deadline = 0;
@@ -275,11 +277,15 @@ export class MatchPhases {
     this._turnTimer = null;
     for (const ps of this.order) {
       if (!this.draft.picks[ps.playerId]) {
-        // one after another in seat order, so each default sees the ones assigned before it (no duplicates)
-        const id = this.defaultBand(ps.playerId);
-        this.draft.picks[ps.playerId] = id;
-        ps.bandId = id;
-        ps.lp = this.gd.startLp(id);
+        // a seat that departed before its pick (INFO_CHECK or earlier) stays eliminated: no band, lp stays 0 —
+        // never resurrected with a full LP bar (its _quit already ran eliminate)
+        if (ps.alive) {
+          // one after another in seat order, so each default sees the ones assigned before it (no duplicates)
+          const id = this.defaultBand(ps.playerId);
+          this.draft.picks[ps.playerId] = id;
+          ps.bandId = id;
+          ps.lp = this.gd.startLp(id);
+        }
       }
       this.markPrivate(ps);
     }

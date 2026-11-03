@@ -65,6 +65,33 @@ test('band draft (co-op): random order, one pick per turn, NOT_YOUR_TURN, one sk
   m.dispose();
 });
 
+test('finishBandDraft never resurrects a seat that departed during INFO_CHECK (no band, lp stays 0)', () => {
+  const h = makeMatch({ mode: 'coop', humans: 3, seed: 5 }).start();
+  const m = h.m;
+  // p_2 leaves while the briefing is still up: eliminated at once, never picks a strategy
+  m.onLeave('p_2');
+  assert.equal(h.ps('p_2').alive, false);
+  assert.equal(h.ps('p_2').lp, 0);
+  for (const id of ['p_0', 'p_1']) assert.deepEqual(m.handle(id, { t: 'g.infoReady' }), { ok: true });
+  h.sched.advance(1);
+  assert.equal(m.phase, PHASE.BAND_DRAFT);
+  const picks = ['band_amiya', 'band_sarkazb'];
+  for (const bandId of picks) {
+    const turn = m.draftTurn();
+    assert.ok(turn && turn !== 'p_2' && h.ps(turn).alive, `a live seat's turn, never the departed one (${turn})`);
+    assert.deepEqual(m.handle(turn, { t: 'g.band', bandId }), { ok: true });
+  }
+  h.run(() => m.phase !== PHASE.BAND_DRAFT, { maxTime: 2 * TURN_MS }); // the departed seat's turn runs out; the draft finishes
+  assert.ok(m.phase === PHASE.BATTLE_CHECK || m.phase === PHASE.PREP, 'the draft is over');
+  // the departed seat: no strategy, no LP — the elimination is not overwritten with a full bar
+  assert.equal(h.ps('p_2').bandId, null);
+  assert.equal(h.ps('p_2').lp, 0);
+  assert.equal(Object.hasOwn(m.draft.picks, 'p_2'), false, 'no strategy recorded for it');
+  assert.equal(m.publicView().players.find((p) => p.playerId === 'p_2').lp, 0, 'the public row stays at 0');
+  for (const id of ['p_0', 'p_1']) assert.equal(h.ps(id).lp, DATA.bands[h.ps(id).bandId].totalHp, 'alive seats keep full LP');
+  m.dispose();
+});
+
 test('band draft timers (user playtest #4 item 4): one countdown of BAND_TURN_SECONDS per turn → the highlighted band or 华法琳; AI seats pick at once; no step cap', () => {
   const h = makeMatch({ mode: 'coop', humans: 2, bots: 2, seed: 9 }).start();
   const m = h.m;

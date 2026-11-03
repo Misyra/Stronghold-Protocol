@@ -135,6 +135,9 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
       hosts: versionHosts ? versionHosts.stats() : { workers: 0, matches: 0, transport: 'process' } };
   }
   if (withTraffic && traffic) report.traffic = traffic.snapshot();
+  // the static layer's response caches (files.js CompressCache / TransformCache): bytes held, entries, budget —
+  // an operator sees what a hot page load keeps in memory and when a budget starts churning (entries evicted)
+  if (withTraffic && serveStatic?.cacheStats) report.staticCache = serveStatic.cacheStats();
   // content-hashed asset URLs (assetIndex.js / assetViews.js): off, building, or ready with how many files and URLs
   if (withTraffic) report.assetHashes = assetIndex ? { ...assetIndex.stats(), views: views ? views.stats() : null } : null;
   // the cached performance summary (healthMetrics.js, 移植自 Stardust fork): same loopback / private gate as the

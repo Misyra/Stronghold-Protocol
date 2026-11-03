@@ -51,10 +51,13 @@ export const MIME = Object.freeze({
   '.ttf': 'font/ttf',
 });
 
-/** Extensions worth compressing (text-like, .skel, uncompressed fonts). */
+/** Extensions worth compressing (text-like, .skel, uncompressed fonts). The game's audio ships as .mp3 / .ogg —
+ *  already-compressed formats that stay out like their siblings; a .wav is raw PCM, so compressing a large one
+ *  (music stems run tens of MB) paid a streaming gzip of the whole file on every request, while browsers ask for
+ *  audio with Range and got no compression anyway. */
 export const COMPRESSIBLE = new Set([
   '.html', '.htm', '.js', '.mjs', '.css', '.json', '.map', '.webmanifest', '.txt', '.md', '.csv', '.xml',
-  '.atlas', '.skel', '.bin', '.wasm', '.svg', '.ico', '.otf', '.ttf', '.wav',
+  '.atlas', '.skel', '.bin', '.wasm', '.svg', '.ico', '.otf', '.ttf',
 ]);
 
 /** Types brotli compresses in its text mode (the rest of COMPRESSIBLE: generic mode). */
@@ -63,6 +66,7 @@ const TEXT_LIKE = new Set(['.html', '.htm', '.js', '.mjs', '.css', '.json', '.ma
 const GZIP_MIN_BYTES = 512;
 const GZIP_CACHE_MAX_FILE = 8 << 20;      // larger files are compressed as a stream on the fly
 const GZIP_CACHE_MAX_TOTAL = 96 << 20;    // both encodings together
+const TRANSFORM_CACHE_MAX_TOTAL = 32 << 20; // rewritten bodies + their ETag hashes (files.js serveFile)
 /**
  * Brotli quality of the on-the-fly compression: faster than gzip-6 and smaller — measured on this repository against
  * gzip-6: .skel −27 %, data/*.json −26 %, vendor −14 %, public/js and server/sim −5 %, .atlas −7 %. Quality 11 would gain
@@ -154,6 +158,59 @@ export class CompressCache {
 
 /** The cache's former name (it held gzip only). */
 export const GzipCache = CompressCache;
+
+// ---------------------------------------------------------------------------------------------------
+// transform cache (LRU by bytes; rewritten bodies keyed by file identity and transform context)
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The rewritten bytes of served files (serveFile's `opts.transform`) and their ETag base, so a hot page load pays the
+ * rewrite and its SHA-256 once per version of a file instead of once per request — 304s included. The key is the
+ * caller's: the absolute path, the stat identity that CompressCache uses too (a rewrite that kept size and mtime still
+ * moves ctime), and a context string separating the rewrites one file can be served under (a plain URL and its
+ * /_v/<tag>/ twin carry different bytes).
+ */
+export class TransformCache {
+  constructor(maxTotal = TRANSFORM_CACHE_MAX_TOTAL) {
+    this.maxTotal = maxTotal;
+    this.total = 0;
+    /** @type {Map<string, { body: Buffer, tag: string }>} */
+    this.map = new Map();
+    /** @type {Map<string, Promise<{ body: Buffer, tag: string }>>} */
+    this.inflight = new Map();
+  }
+
+  /**
+   * @param {string} key the caller's (path, stat identity, transform context)
+   * @param {() => Promise<{ body: Buffer, tag: string }>} read produce the rewritten body and its ETag base
+   * @returns {Promise<{ body: Buffer, tag: string }>} one transform per entry at a time
+   */
+  get(key, read) {
+    const hit = this.map.get(key);
+    if (hit) { this.map.delete(key); this.map.set(key, hit); return Promise.resolve(hit); }
+    const pending = this.inflight.get(key);
+    if (pending) return pending;
+    const p = (async () => {
+      const out = await read();
+      this.store(key, out);
+      return out;
+    })().finally(() => this.inflight.delete(key));
+    this.inflight.set(key, p);
+    return p;
+  }
+
+  /** @param {{ body: Buffer }} entry */
+  store(key, entry) {
+    if (entry.body.length > this.maxTotal) return;
+    this.map.set(key, entry);
+    this.total += entry.body.length;
+    for (const [k, v] of this.map) {
+      if (this.total <= this.maxTotal) break;
+      this.map.delete(k);
+      this.total -= v.body.length;
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------------------------------
 // HTTP helpers
@@ -307,10 +364,22 @@ export async function serveFile(req, res, absPath, stat, mountName, segments, qu
   const type = MIME[ext] || 'application/octet-stream';
   // 本仓库追加：`opts.transform(source, ext)` —— 服务端把 CDN 基址与版本前缀写进 html/css/js/json。
   // 改写后的字节与源文件不同（同一次发布里相同），所以 ETag 必须用改写结果的哈希，不能用 size+mtime。
+  // 改写结果与它的哈希按 (路径, stat 身份, transform 上下文) 记忆化 —— 每个请求重付三步（读、正则全文改写、
+  // 对改写后全 body 算 SHA-256）的话，连 304 都躲不开；上下文区分同一个文件可能以两种字节送出的地址
+  // （普通 URL 与它的 /_v/<tag>/ 孪生，见 static.js transformFor）。stat 身份里带上 ctime/ino：
+  // 保着 size 和 mtime 的原地改写（rsync -t、touch -r）是另一份字节。
   let transformed = null;
+  let transformedTag = '';
   if (typeof opts.transform === 'function' && TRANSFORMABLE.has(ext)) {
-    const source = await fsp.readFile(absPath, 'utf8');
-    transformed = Buffer.from(opts.transform(source, ext), 'utf8');
+    const produce = async () => {
+      const source = await fsp.readFile(absPath, 'utf8');
+      const body = Buffer.from(opts.transform(source, ext), 'utf8');
+      return { body, tag: `t${createHash('sha256').update(body).digest('hex').slice(0, 16)}` };
+    };
+    const key = `${absPath}\0${stat.size}\0${stat.mtimeMs}\0${stat.ino}\0${stat.ctimeMs}\0${opts.transformKey || ''}`;
+    const entry = opts.transformCache ? await opts.transformCache.get(key, produce) : await produce();
+    transformed = entry.body;
+    transformedTag = entry.tag;
   }
   const compressible = COMPRESSIBLE.has(ext);
   // RFC 9110 §14.2: Range is defined only for GET; other methods ignore it, including for encoding selection.
@@ -321,7 +390,7 @@ export async function serveFile(req, res, absPath, stat, mountName, segments, qu
   const sibling = encoding && mountName === 'public' && ['assets', 'fonts'].includes(segments[0])
     ? await compressedSibling(absPath, stat, encoding) : null;
   const baseTag = opts.contentHash
-    || (transformed ? `t${createHash('sha256').update(transformed).digest('hex').slice(0, 16)}` : `${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}`);
+    || (transformed ? transformedTag : `${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}`);
   const sideTag = sibling ? `-static-${sibling.stat.size.toString(16)}-${sibling.stat.mtimeMs}` : '';
   const etag = `"${baseTag}${encoding === 'br' ? '-br' : encoding === 'gzip' ? '-gz' : ''}${sideTag}"`;
   const lastModified = stat.mtime.toUTCString();

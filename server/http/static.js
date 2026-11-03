@@ -58,7 +58,7 @@ import path from 'node:path';
 import { MEDIA_PREFIX } from '../../shared/media.js';
 import { ROOT, noopLog } from './config.js';
 import { sendError, sendJson } from './common.js';
-import { MIME, CompressCache, isNotModified, serveFile, acceptsGzip, IMMUTABLE_CACHE, serveBuffer as serveHashedBuffer } from './files.js';
+import { MIME, CompressCache, TransformCache, isNotModified, serveFile, acceptsGzip, IMMUTABLE_CACHE, serveBuffer as serveHashedBuffer } from './files.js';
 import { serveMedia } from './media.js';
 import { createPluginRegistry, sameIdentity, statIdentity } from '../plugins/registry.js';
 import { computeVanillaContent } from '../plugins/identity.js';
@@ -111,11 +111,13 @@ const CS_FILE = /^\/cs\/([0-9a-f]{16})\/([A-Za-z0-9._\/-]{1,200})$/;
 /**
  * The body of a pack or plugin index, taken from a scan that includes the folders as they are now. Both are served
  * "never cached" and both are how a freshly installed pack or plugin is found (docs/PACKS.md, docs/PLUGINS.md). The
- * registry of server/index.js scans in a worker (background: true): there a read only kicks the scan and answers with
- * the previous snapshot, so an index route waits for the one its own request started instead of showing a pack that
- * was installed a second ago as absent. A rescan that fails keeps the last good index — a broken folder must not
- * take the catalogue down with it.
- * @param {{ pending?: () => Promise<unknown> | null }} registry the pack registry, when it scans in the background
+ * registry rescans synchronously on the calling thread when a route asks and its recheck window (registry.js
+ * recheckMs, 1 s) has lapsed, so `body()` already reflects the folders as they are now — there is no worker scan
+ * behind it. `registry.pending()` is an optional hook for a registry that does scan in the background: there a read
+ * only kicks the scan and answers with the previous snapshot, and an index route waits for the one its own request
+ * started instead of showing a pack that was installed a second ago as absent. A rescan that fails keeps the last
+ * good index — a broken folder must not take the catalogue down with it.
+ * @param {{ pending?: () => Promise<unknown> | null }} registry the pack registry (pending: only a background scanner)
  * @param {() => unknown} body
  */
 async function settledIndex(registry, body) {
@@ -190,6 +192,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     return shimVersioned;
   };
   const gzipCache = new CompressCache(); // brotli and gzip bodies (files.js)
+  const transformCache = new TransformCache(); // rewritten bodies and their ETag base (files.js serveFile)
   /** 每文件指纹清单的响应体（一次构建，按 tag 重建时随进程重启） */
   let manifestBody = null;
 
@@ -286,7 +289,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     if (useBuiltClient && (decoded === '/' || decoded === '/index.html')) {
       // 打包页同样要带上发布标签（内联脚本、importmap 的 CDN 改写），CSP 会把这段内联脚本算进 script-src
       await serveFile(req, res, builtIndex, await fsp.stat(builtIndex), 'public', ['build', 'index.html'], query, gzipCache, log,
-        { transform: transformFor('.html', versioned) });
+        { transform: transformFor('.html', versioned), transformCache, transformKey: versioned ? `v${decoded}` : 'plain' });
       return;
     }
     // 每文件指纹清单：只有本次发布的 `?v=<tag>` 能取到，别的 tag 一律 404 —— 一份清单的指纹不能被挂到另一次发布的
@@ -607,6 +610,10 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     await serveFile(req, res, absPath, stat, mount.name, segments, query, gzipCache, log, {
       ...(Object.keys(workerHeaders).length ? { headers: workerHeaders } : {}),
       transform: transformFor(ext, versioned, decoded),
+      // 改写结果的记忆化键要区分同一文件的两种送出字节（普通地址与 /_v/<tag>/ 孪生，js 的相对说明符
+      // 还按模块的逻辑路径改写）：上下文带上 decoded，大小写等磁盘别名指到同一文件时也不会串字节。
+      transformCache,
+      transformKey: versioned ? `v${decoded}` : 'plain',
       ...(versioned || tagVerified || contentTagVerified ? { cacheControl: IMMUTABLE_CACHE } : {}),
     });
   };
@@ -617,7 +624,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   serveStatic.artVersion = release.artTag;
   serveStatic.runtimeVersion = release.runtimeTag;
   serveStatic.close = () => manifestEncoder.close();
-  serveStatic.cacheStats = () => ({ gzipBytes: gzipCache.total, gzipEntries: gzipCache.map.size, gzipLimitBytes: gzipCache.maxTotal, gzipInflight: gzipCache.inflight.size });
+  serveStatic.cacheStats = () => ({ gzipBytes: gzipCache.total, gzipEntries: gzipCache.map.size, gzipLimitBytes: gzipCache.maxTotal, gzipInflight: gzipCache.inflight.size,
+    transformBytes: transformCache.total, transformEntries: transformCache.map.size, transformLimitBytes: transformCache.maxTotal, transformInflight: transformCache.inflight.size });
   return serveStatic;
 }
 

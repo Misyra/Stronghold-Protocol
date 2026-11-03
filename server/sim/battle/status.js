@@ -106,7 +106,9 @@ export class BattleStatus {
           for (let k = 0; k < arr.length; k++) {
             const b = arr[k];
             if (!u.alive) break;
-            if (u.buffs.indexOf(b) < 0) continue;
+            // membership guard: `arr` was filled from `u.buffs`, so the buff still in its snapshot slot is a member —
+            // only a handler's add / remove since then needs the indexOf. The O(1) probe replaces a per-buff O(k) scan.
+            if (u.buffs[k] !== b && u.buffs.indexOf(b) < 0) continue;
             if (b.onTick) {
               if (b.interval > 0) {
                 b._acc += dt;

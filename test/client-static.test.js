@@ -581,6 +581,30 @@ describe('net.js', () => {
     assert.equal(net.ping, 25, 'the new connection measures its own');
   });
 
+  test('a steady connection does not re-emit status per pong (the pill\'s jitter is not churn)', async () => {
+    const { net, ws, timers } = await onlineNet();
+    net.probe();
+    timers.advance(50);
+    ws().recv({ t: 'pong', c: ws().last('ping').c, s: ws().last('ping').c });   // baseline ~50 ms: the pill lights up (off → low)
+    const events = [];
+    net.on('status', (snap) => events.push(snap));
+    for (const ms of [54, 50, 55, 52]) {        // a few ms of jitter around the baseline
+      net.probe();
+      timers.advance(ms);
+      ws().recv({ t: 'pong', c: ws().last('ping').c, s: ws().last('ping').c });
+    }
+    assert.equal(events.length, 0, '±2 ms pongs say nothing new');
+    net.probe();
+    timers.advance(70);
+    ws().recv({ t: 'pong', c: ws().last('ping').c, s: ws().last('ping').c });   // 70 ms: inside the band, but a tier crossing
+    assert.equal(events.length, 1, 'a tier crossing is reported');
+    net.probe();
+    timers.advance(120);
+    ws().recv({ t: 'pong', c: ws().last('ping').c, s: ws().last('ping').c });   // 120 ms: same tier, past the band
+    assert.equal(events.length, 2, 'a real move is reported');
+    assert.equal(events.at(-1).ping, net.ping);
+  });
+
   test('silent socket is detected and replaced', async () => {
     const { net, sockets, timers } = await quiet(() => onlineNet());
     await quiet(async () => { timers.advance(20000); });

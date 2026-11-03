@@ -40,6 +40,13 @@ export const REQUEST_TIMEOUT_MS = 8000;
 export const HELLO_TIMEOUT_MS = 8000;
 export const PING_INTERVAL_MS = 4000;
 export const DEAD_AFTER_MS = 15000;
+/**
+ * [ASSUMED] An unchanged connection re-reports its RTT only past this jitter (or across a pill tier): a pong every
+ * 4 s would otherwise re-render every screen for a ±2 ms wobble of the latency pill.
+ */
+const PING_EMIT_DEADBAND_MS = 25;
+/** The latency pill's own buckets (ui/components.js PingPill). */
+const pingTier = (ms) => (ms == null || !Number.isFinite(ms) ? 'off' : ms < 60 ? 'low' : ms < 200 ? 'medium' : 'high');
 /** Minimum gap between two `state.resync` requests: a gap in one channel is answered by the full frame of the next one. */
 export const RESYNC_GAP_MS = 1000;
 export const BACKOFF = Object.freeze({ base: 500, factor: 2, max: 10000, jitter: 0.2 });
@@ -219,7 +226,9 @@ export class Net {
 
   _setStatus(status) {
     this.status = status;
-    this._emit('status', this.snapshot());
+    const snap = this.snapshot();
+    this._lastStatus = snap;
+    this._emit('status', snap);
   }
 
   // ---- lifecycle -------------------------------------------------------------------------------
@@ -685,7 +694,23 @@ export class Net {
     this.ping = Math.round(rtt);
     if (Number.isFinite(msg.s)) this._addClockSample(msg.s + rtt / 2 - now, rtt);
     this._emit('ping', this.ping);
-    this._emit('status', this.snapshot());
+    this._emitStatus();
+  }
+
+  /**
+   * 'status' for the interface — only when a field it shows moved: the connection's state fields, or the RTT past
+   * its jitter band (a pong every PING_INTERVAL_MS would otherwise churn the store 15×/min for nothing).
+   */
+  _emitStatus() {
+    const snap = this.snapshot();
+    const prev = this._lastStatus;
+    if (prev
+      && prev.status === snap.status && prev.attempt === snap.attempt && prev.retryAt === snap.retryAt
+      && prev.playerId === snap.playerId && prev.lastError?.code === snap.lastError?.code
+      && pingTier(prev.ping) === pingTier(snap.ping)
+      && Math.abs((prev.ping ?? 0) - (snap.ping ?? 0)) < PING_EMIT_DEADBAND_MS) return;
+    this._lastStatus = snap;
+    this._emit('status', snap);
   }
 
   _addClockSample(offset, rtt) {

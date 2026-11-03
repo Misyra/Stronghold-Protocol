@@ -40,6 +40,75 @@ test('cold load has its own budget; install keeps the short watchdog; stop settl
   another.stop(); await waiting; assert.equal(another.pending.size, 0);
 });
 
+const startedHost = async (port, options = {}) => {
+  const host = new WorkerSimHost({ timeoutMs: 20, workerFactory: () => port, ...options });
+  await host.load('a', { cs: 'a', data: {} });
+  await host.start({});
+  return host;
+};
+const packetOf = (ticks) => ({ ticks, slices: [], ev: [], state: { finished: false, tickCount: ticks }, meter: { lp: 0 }, snap: {}, meta: { units: [] }, players: {} });
+
+test('a step deadline scales with its slice; a control RPC keeps the flat budget and its kill', async () => {
+  let terminated = 0;
+  const port = {
+    terminate: () => terminated++,
+    postMessage(m) {
+      if (m.method === 'load') port.onmessage({ data: { id: m.id, value: {} } });
+      if (m.method === 'start') port.onmessage({ data: { id: m.id, value: packetOf(0) } });
+      if (m.method === 'step') setTimeout(() => port.onmessage({ data: { id: m.id, value: packetOf(m.args[0]) } }), 30);
+    },
+  };
+  const host = await startedHost(port);
+  await host.step(240);                       // 30 ms of work inside 20·(1+240/240) = 40 ms
+  await assert.rejects(host.rpc('probe', []), e => e.code === 'PLUGIN_WORKER_TIMEOUT', 'control: 20 ms flat');
+  assert.equal(terminated, 1, 'the timed-out control RPC still stops the worker');
+});
+
+test('a healthy step slower than the flat budget is not taken over; a stuck one still dies', async () => {
+  let terminated = 0;
+  const waiters = new Map();
+  const port = {
+    terminate: () => terminated++,
+    postMessage(m) {
+      if (m.method === 'load') port.onmessage({ data: { id: m.id, value: {} } });
+      if (m.method === 'start') port.onmessage({ data: { id: m.id, value: packetOf(0) } });
+      if (m.method === 'step') waiters.set(m.id, () => port.onmessage({ data: { id: m.id, value: packetOf(m.args[0]) } }));
+    },
+  };
+  const host = await startedHost(port);
+  let settled = false;
+  const slow = host.step(600).then(() => { settled = true; }, () => { settled = true; });
+  await new Promise(r => setTimeout(r, 40));  // past the flat 20 ms budget, inside 20·(1+600/240) = 70 ms
+  assert.equal(host.stopped, false, 'no takeover while the slice is inside its own deadline');
+  assert.equal(settled, false);
+  waiters.get([...waiters.keys()][0])?.();   // the reply arrives; the battle goes on
+  await slow;
+  assert.equal(settled, true);
+  await assert.rejects(host.step(600), e => e.code === 'PLUGIN_WORKER_TIMEOUT', 'past the scaled deadline the worker dies');
+  assert.equal(terminated, 1);
+});
+
+test('a timed-out stat/pool probe does not kill the worker', async () => {
+  let terminated = 0;
+  const port = {
+    terminate: () => terminated++,
+    postMessage(m) {
+      if (m.method === 'load') port.onmessage({ data: { id: m.id, value: {} } });
+      if (m.method === 'start') port.onmessage({ data: { id: m.id, value: packetOf(0) } });
+      if (m.method === 'step') port.onmessage({ data: { id: m.id, value: packetOf(m.args[0]) } });
+      // unitStats / syncPool are never answered (queued behind a long step on a real worker)
+    },
+  };
+  const host = await startedHost(port);
+  await host.syncPool(3, {});
+  assert.equal(host.unitStats(7), null);
+  await new Promise(r => setTimeout(r, 40));  // past the 20 ms probe budget
+  assert.equal(host.stopped, false, 'the probes only miss their answer');
+  await host.step(8);
+  assert.equal(terminated, 0);
+  host.stop();
+});
+
 test('runner on a real Worker reports its simulated cs and cached detail stats; pause and clear preserve ownership', async t => {
   const set = fixtureSet(), spec = { ...fixtureSpec(), cs: set.cs }, sent = [];
   let now = 1000;

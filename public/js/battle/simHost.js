@@ -2,8 +2,14 @@
 import { loadBrowserSim, checkOperatorTraitRuntime } from './simLoader.js';
 import { unitStatsEntry } from '../../../shared/protocol.js';
 
-/** [ASSUMED] 2 s per RPC, including construction and forceEnd (both can execute plugin hooks). */
+/** [ASSUMED] 2 s per control RPC, including construction and forceEnd (both can execute plugin hooks). */
 export const WORKER_TIMEOUT_MS = 2000;
+/**
+ * [ASSUMED] A step's deadline grows past the control budget with its slice — the worker accepts up to 600-tick
+ * catch-up slices (simWorkerRuntime.js), and a healthy heavy plugin set may legibly need more than the flat 2 s
+ * for one of them. 240 ticks fit the base budget.
+ */
+export const WORKER_STEP_TICKS_PER_TIMEOUT = 240;
 /** [ASSUMED] Trusted engine/module/data cold load can take longer; plugin code runs in a separate 2 s install RPC. */
 export const WORKER_LOAD_TIMEOUT_MS = 15000;
 const failure = (code, message) => Object.assign(new Error(message), { code });
@@ -91,11 +97,17 @@ export class WorkerSimHost {
     this.worker.onerror = () => this.fail(failure('PLUGIN_WORKER_FAILED', 'simulation worker failed'));
     this.worker.onmessageerror = () => this.fail(failure('PLUGIN_WORKER_FAILED', 'simulation worker message failed'));
   }
-  rpc(method, args = [], timeoutMs = this.timeoutMs) {
+  rpc(method, args = [], timeoutMs = this.timeoutMs, fatal = true) {
     if (this.stopped) return Promise.reject(failure('PLUGIN_WORKER_STOPPED', 'simulation worker stopped'));
     const id = ++this.seq;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.fail(failure('PLUGIN_WORKER_TIMEOUT', `simulation worker ${method} exceeded ${timeoutMs} ms`)), timeoutMs);
+      const timer = setTimeout(() => {
+        const err = failure('PLUGIN_WORKER_TIMEOUT', `simulation worker ${method} exceeded ${timeoutMs} ms`);
+        // A control RPC that answers too late means the worker is good for nothing; a stat/pool probe queued
+        // behind a long step only misses its answer — the step's own deadline is what judges the worker.
+        if (fatal) this.fail(err);
+        else { this.pending.delete(id); reject(err); }
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       try { this.worker.postMessage({ id, method, args }); } catch (err) { this.fail(err); }
     });
@@ -129,7 +141,11 @@ export class WorkerSimHost {
     this.accept(packet);
     return this;
   }
-  async step(n, opts) { return this.accept(await this.rpc('step', [n, opts])); }
+  async step(n, opts) {
+    // The slice's own deadline: 240 ticks fit the control budget, a 600-tick catch-up slice gets proportionally
+    // more — a heavy-but-healthy set is not taken over for being slow. A genuinely stuck worker still dies.
+    return this.accept(await this.rpc('step', [n, opts], this.timeoutMs * (1 + n / WORKER_STEP_TICKS_PER_TIMEOUT)));
+  }
   progress() { return this.packet.progress; }
   uniteLeft() { return this.packet.left; }
   compactResult() { return this.packet.result; }
@@ -137,7 +153,7 @@ export class WorkerSimHost {
     if (!this.stopped && !this.statsPending.has(id)) {
       this.statsPending.add(id);
       const generation = this.statsGeneration || 0;
-      this.rpc('unitStats', [id]).then(v => {
+      this.rpc('unitStats', [id], this.timeoutMs, false).then(v => {
         if (generation === (this.statsGeneration || 0)) this.statsCache.set(id, v);
       }, () => {}).finally(() => {
         if (generation === (this.statsGeneration || 0)) this.statsPending.delete(id);
@@ -146,7 +162,7 @@ export class WorkerSimHost {
     return this.statsCache.get(id) || null;
   }
   ownerOps(pid) { return this.packet?.ops?.[pid] || []; }
-  syncPool(hp, acked) { return this.rpc('syncPool', [hp, acked]).catch(() => {}); }
+  syncPool(hp, acked) { return this.rpc('syncPool', [hp, acked], this.timeoutMs, false).catch(() => {}); }
   async forceEnd(reason) { this.accept(await this.rpc('forceEnd', [reason])); }
   stop(err = failure('PLUGIN_WORKER_STOPPED', 'simulation worker stopped')) {
     if (this.stopped) return;

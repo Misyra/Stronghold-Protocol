@@ -33,11 +33,12 @@ test('coverage fails for missing earlier-version pictures, model, skill icon, en
 
 test('presentation union retains the operators behind reused chess ids and their skills', () => {
   const sets = versionAssetData(root), all = presentationUnion(sets);
-  assert.equal(Object.keys(all.operators).length, 229);
+  assert.equal(Object.keys(all.operators).length, 239); // 塔露拉, 冻河, 国度 and the 7 collab 6★ (rel25; the collab ones' art is the collab pack)
+  assert.equal(Object.keys(presentationUnion(sets, { collab: false }).operators).length, 232, 'the normal pack plans the 3 formal picks but no collab operator');
   assert.ok(all.operators.char_198_blackd.skills.some((s) => s.skillId === 'skchr_blackd_2'));
   assert.ok(all.enemies.enemy_1254_lypa);
   assert.ok(all.bands.band_zumama);
-  assert.equal(Object.keys(all.tokens).length, 60, 'including enemy/char-backed summons');
+  assert.equal(Object.keys(all.tokens).length, 61, 'including enemy/char-backed summons (61: 艾拉\'s 雷鸣地雷, rel25)');
 });
 
 test('add-only keeps existing nested values, arrays and null while admitting new identities', () => {

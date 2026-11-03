@@ -68,11 +68,12 @@ test('pre-encoded bytes that are not JSON fall back to a full frame instead of b
   assert.equal(send(ws, { t: 'm.public', funds: 10 }, 'not json at all'), true);
   assert.deepEqual(JSON.parse(ws.frames[0]), { t: 'm.public', funds: 10 }, 'the full frame is encoded here instead');
 
-  // and no baseline was taken from the garbage: the next frame starts the connection at seq 1
+  // and no baseline was taken from the garbage: the next frame starts this connection's channel with a full frame.
+  // (The number comes from the process-global snapshot sequence, so only its direction is a contract — not a 1.)
   assert.equal(send(ws, { t: 'm.public', funds: 11 }, '{"t":"m.public","funds":11}'), true);
   const frame = JSON.parse(ws.frames[1]);
   assert.equal(frame.t, 'm.state');
-  assert.equal(frame.seq, 1);
+  assert.ok(Number.isSafeInteger(frame.seq) && frame.seq > 0, 'a state frame carries a positive sequence');
   assert.ok('full' in frame, 'the first usable frame of the connection is a full one');
 });
 

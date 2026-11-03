@@ -82,15 +82,16 @@ test('registry: unique ids, one default with dir \'\', OS-safe unique dirs, msgi
   await assert.rejects(loadProfile('act1vautochess'), /unknown version/);
 });
 
-test('profiles: the default is today\'s build; pins pick a commit per file group', async () => {
+test('profiles: the default stays on the commit its data was built from; pins pick a commit per file group', async () => {
   const { profile: def } = await loadProfile(DEFAULT_VERSION);
-  assert.equal(def.pins, null);
+  assert.deepEqual(def.pins, { default: '17759cc8cdf37388414145d16262a3a06f3ab25e' });
+  assert.deepEqual(def.lateOperators, { sha: '08ba2aea0e8dba88eff0ec0d2c87e24b4db626f8', charIds: ['char_4244_tocka', 'char_4246_dminon', 'char_4247_oxi'] });
   assert.deepEqual(def.adapters, []);
   assert.equal(def.tables, 'default');
   assert.deepEqual(def.config.hiddenCore, { single: 350, multi: 1200 });
   assert.equal(def.config.rules, undefined, 'no rules: the default build emits no config.version');
   assert.deepEqual(def.expect, { bonds: 23, bands: 40, visibleNonDiy: 112, triggerDeviations: 'default' });
-  assert.equal(pinnedShaOf(def, 'excel/activity_table.json'), null);
+  assert.equal(pinnedShaOf(def, 'excel/activity_table.json'), '17759cc8cdf37388414145d16262a3a06f3ab25e');
 
   const { profile: v12 } = await loadProfile('act1autochess');
   assert.equal(pinnedShaOf(v12, 'excel/activity_table.json'), '21b1f240817dafe486653adda7a5085ff8a1ba17');
@@ -295,9 +296,11 @@ test('data/versions/act2autochess-v2_1: the same-id records that differ from tod
   // V2_1-only 自选 picks (pending: the kitted gate drops them); 焰狐龙梓兰 and 结城理 are not excluded yet
   const minus = (a, b) => a.filter((c) => !b.includes(c)).sort();
   const later = ['char_1015_aglna2', 'char_1051_headb2', 'char_1052_kalts2', 'char_4226_veen', 'char_4228_closur', 'char_4229_aphris',
-    'char_4230_mcnist', 'char_4231_clemnt', 'char_4235_thumpy'];
+    'char_4230_mcnist', 'char_4231_clemnt', 'char_4235_thumpy', 'char_4244_tocka', 'char_4246_dminon', 'char_4247_oxi'];
   const own = ['char_172_svrash', 'char_332_archet', 'char_426_billro', 'char_427_vigil'];
-  assert.deepEqual([minus(Object.keys(today.diy.operators), Object.keys(v21b.diy.operators)), minus(Object.keys(v21b.diy.operators), Object.keys(today.diy.operators))], [later, own]);
+  // today also builds the operator records of the 7 collab picks (diy.excluded, offered with 联动干员 on); V2_1 does not
+  const collab = ['char_456_ash', 'char_1029_yato2', 'char_1048_orchd2', 'char_4123_ela', 'char_4141_marcil', 'char_4182_oblvns', 'char_4217_makoto'];
+  assert.deepEqual([minus(Object.keys(today.diy.operators), Object.keys(v21b.diy.operators)), minus(Object.keys(v21b.diy.operators), Object.keys(today.diy.operators))], [[...later, ...collab].sort(), own]);
   assert.deepEqual([minus(today.diy.ownedPool, v21b.diy.ownedPool), minus(v21b.diy.ownedPool, today.diy.ownedPool), v21b.diy.ownedPool.length], [later, own, 67]);
   assert.deepEqual([minus(today.diy.excluded, v21b.diy.excluded), minus(v21b.diy.excluded, today.diy.excluded)], [['char_1048_orchd2', 'char_4217_makoto'], []]);
   const v21 = read('versions/act2autochess-v2_1', 'enemies');

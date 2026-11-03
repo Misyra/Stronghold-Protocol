@@ -10,6 +10,9 @@ import { spawnSync } from 'node:child_process';
 
 const SCRIPT = fileURLToPath(new URL('../tools/build-data.mjs', import.meta.url));
 const source = await readFile(SCRIPT, 'utf8');
+// The default profile pins its tables to a commit (tools/versions/act2autochess.mjs): ensureGamedata then works in
+// `<cache>@<sha>`, a directory of its own (the 0.3.4 collab ports' build-data pinning).
+const DEFAULT_PROFILE = (await import('../tools/versions/act2autochess.mjs')).default;
 // Exercise the real downloader without running the CLI or needing full official game tables.
 const begin = source.indexOf('async function ensureGamedata(');
 const end = source.indexOf('/** Load (and cache in memory)', begin);
@@ -144,8 +147,13 @@ for (const force of [false, true]) {
     // A schema error from these tiny fixtures would also exit 1: require the actual download error.
     assert.match(result.stderr, /cannot obtain excel\/skill_table.json: simulated outage/);
     assert.doesNotMatch(result.stdout + result.stderr, /using stale cache|building…/);
-    assert.equal(await readFile(join(cache, TABLES[0]), 'utf8'), NEW, 'another download succeeded');
-    assert.equal(await readFile(join(cache, TABLES[1]), 'utf8'), OLD);
+    // The pinned profile downloads into `<cache>@<sha>`: the successful table lands there, the failing one never does,
+    // and the unpinned fixture cache stays untouched.
+    const pin = DEFAULT_PROFILE.pins?.default;
+    const cacheDir = pin ? `${cache}@${pin}` : cache;
+    assert.equal(await readFile(join(cacheDir, TABLES[0]), 'utf8'), NEW, 'another download succeeded');
+    assert.equal(existsSync(join(cacheDir, TABLES[1])), false, 'the failing table never lands');
+    assert.equal(await readFile(join(cache, TABLES[1]), 'utf8'), OLD, 'the unpinned cache is untouched');
     assert.deepEqual((await readdir(out)).sort(), ['chess.json', 'config.json']);
     for (const name of ['chess.json', 'config.json']) assert.equal(await readFile(join(out, name), 'utf8'), OLD);
     assert.equal(await readFile(report, 'utf8'), OLD);

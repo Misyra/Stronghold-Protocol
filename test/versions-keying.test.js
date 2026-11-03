@@ -109,7 +109,7 @@ const SHANG = Object.freeze({
 });
 const EXPECT = Object.freeze({
   data: {
-    kits: { own: 129, tier: 0, op: 0, pending: 0 }, diy: { kitted: 81, generic: 6, pending: 0 }, standIns: { kitted: 82, generic: 28 },
+    kits: { own: 129, tier: 0, op: 0, pending: 0 }, diy: { kitted: 84, generic: 6, pending: 0 }, standIns: { kitted: 82, generic: 28 },
     items: 54, handlers: 27, battleEffect: 82,
     hammers: ['chess_item_4_09_e', 'chess_item_3_09_e', 'chess_item_3_10_e', 'chess_item_2_03_e'], meta: DEFAULT_META,
     cells: ['chess_item_5_08_e_a'],

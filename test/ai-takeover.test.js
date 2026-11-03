@@ -56,7 +56,7 @@ for (const change of ['applicant leaves', 'applicant disconnects', 'voter discon
       case 'phase changes': m.phase='COMBAT';m.markPublic();m.flush(true);break;
       case 'round changes': m.round++;m.markPublic();m.flush(true);break;
       case 'AI eliminated': bot.alive=false;m.markPublic();m.flush(true);break;
-      case 'expires': t.mock.method(Date,'now',()=>vote.expiresAt+1);srv.lobby.broadcastState(room);break;
+      case 'expires': t.mock.method(srv.lobby,'now',()=>vote.expiresAt+1);srv.lobby.broadcastState(room);break;
     }
     // Socket closes reach the server asynchronously; no extra room action is needed to clear the request.
     for(let i=0;i<50&&room.aiTakeoverVotes.length;i++)await new Promise(r=>setTimeout(r,10));

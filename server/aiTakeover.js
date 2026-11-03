@@ -60,7 +60,7 @@ export function reconcileAiTakeover(lobby, room) {
     if (room.aiTakeoverEnabled !== true || room.modded || m?.hosted || room.version !== DEFAULT_VERSION
       || m !== v.match || m.phase !== 'PREP' || m.round !== v.round || m.ended || m.disposed || m.emergencyFrozen
       || !room.spectatorOf(v.applicantId)?.connected || !applicant?.connected || applicant.roomCode !== room.code
-      || !bot?.isBot || !bot.alive || bot.left || Date.now() >= v.expiresAt
+      || !bot?.isBot || !bot.alive || bot.left || lobby.now() >= v.expiresAt
       || eligible.length !== v.eligible.length || eligible.some((id, i) => id !== v.eligible[i])) {
       drop(votes, id); changed = true;
     }
@@ -82,8 +82,10 @@ export function aiTakeover(lobby, session, msg) {
     if (!eligible.length) return fail('no online voter available');
     const id = String(room.aiTakeoverSeq = (room.aiTakeoverSeq || 0) + 1);
     // [ASSUMED] A 30-second vote expires without approval; the whole room elects by strict majority.
+    // The expiry reads the lobby's clock (the same injected now the rest of the lifecycle uses); the setTimeout is
+    // only the wake-up — every message reconciles too, so a mock clock still sees expired votes dropped.
     const vote = { id, applicantId: session.playerId, applicantName: session.name, botId: msg.botId,
-      match: m, round: m.round, eligible, expiresAt: Date.now() + 30000, yes: new Set(), no: new Set() };
+      match: m, round: m.round, eligible, expiresAt: lobby.now() + 30000, yes: new Set(), no: new Set() };
     votes.set(id, vote);
     vote.timer = setTimeout(() => { if (votes.get(id) === vote) { drop(votes, id); sync(); } }, 30000);
     vote.timer.unref?.(); sync(); return { ok: true };

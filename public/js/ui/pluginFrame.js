@@ -572,7 +572,9 @@ function sync() {
   const off = uiPluginsOff.get().ids;
   const roomIds = roomPluginIds(store.get());
   if (!ids.length && !off.length && !roomIds.length) { destroyAll(); return; }
-  if (!installedCount(store.get())) return;
+  // the server stopped reporting plugins (a restart without them): no catalogue can serve the mounted frames
+  // this session — tear them down like the nothing-configured case instead of letting them run untethered
+  if (!installedCount(store.get())) { destroyAll(); return; }
   const cat = catalog.get();
   if (cat.status !== 'ready') {
     if (cat.status !== 'loading') loadCatalog();

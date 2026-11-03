@@ -36,6 +36,21 @@ rooms) and a deterministic battle sim shared by the server and the browser. It a
   ([test/golden/README.md](test/golden/README.md)).
 - **Generated data.** Never hand-edit `data/*.json`: change `tools/build-data.mjs` and regenerate.
 - **No game art in git.** `public/assets/` is ignored; never commit extracted or downloaded game files.
+- **Preload packs are not art.** `public/resource-packs/*.zip` (git-ignored) and their index
+  `data/resource-packs.json` are the player preload packs, built with `npm run resources:packs` and handed out through
+  the 预载资源 ZIP card and the maintainer's download page (`SP_RESOURCE_PACK_ROUTES`). They are a delivery line of
+  their own: a pack missing from the R2 bucket, from `.assets-manifest.json` or from an asset-coverage report is not a
+  missing asset — leave it alone. Art means `public/{assets,fonts,media}` and its manifest
+  ([docs/ASSETS.md](docs/ASSETS.md)「ZIP resource packs」).
+- **Two delivery paths, fixed roles.** Per-file requests go to the R2 bucket over its S3-compatible API
+  (`tools/r2-s3-upload.mjs`, SigV4, `.assets-manifest.json` as the resume state): that is a preload that fell back, and
+  everything a match asks for outside the preloaded set. Preload itself prefers the ModelScope dataset
+  `Misyra/Arknight_Assets` through the category ZIPs. Do not make packs the primary R2 path, and do not serve per-file
+  art from ModelScope.
+- **ModelScope is append-only and incomplete.** The dataset predates the current art and does not hold all of it:
+  publish only the packs built from newly added files, append their entries to `data/resource-packs.json`, and never
+  rewrite, renumber, re-pack or delete an existing pack. Every ZIP an older index names must keep resolving — a client
+  must never 404 or fail because of a publish. Adding is the only safe operation there.
 - **Interface strings** go through `t('…')`, with entries in every pack under `public/i18n/`
   (`node tools/i18n.mjs check --all --strict`).
 - **Docs follow the code.** A rule change updates `docs/design/`, the current `docs/history/` file and the reference

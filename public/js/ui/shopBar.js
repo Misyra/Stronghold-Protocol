@@ -28,6 +28,7 @@
 // portrait, class, the bonds of its factions, the pick's skill and module — with a mint 「自选」 badge.
 
 import { useEffect, useState } from '../../vendor/hooks.module.js';
+import { memo } from './memo.js';
 import { html, Icon, HexBadge, TierChip, Tooltip, MicroLabel } from './components.js';
 import { OperatorImage, Img, BondGlyph, CoinGlyph, GIcon, RichText } from './gameComponents.js';
 import { priceTone, mergeProgress, mergeTarget, shopBlockReason, chessLoadout, offerHeader, briefingBondTip, ownStandIn, standInLoadout, standInLabel, standInTip, standInForText, ownDiyRecord, diyGetter } from './gameLogic.js';
@@ -75,11 +76,31 @@ function ArmedTag({ reason, free }) {
 }
 
 /**
+ * Memo compare of the bar's cards (ui/memo.js): every prop shallow-equal except `onTap` — the ShopBar rebuilds
+ * that closure on every render of its own, always over values the compare already covers (the card's `slot`,
+ * `reason`, `armed`, `priv`, `onBuy`): equal ones make the two closures behave the same, because tapCard's branch
+ * reads the ShopBar's `armed` state, which the card's `armed` prop mirrors (false in both renders taps the same
+ * way whatever other card was armed). A changed `priv` re-renders every card that holds it, as before.
+ * onDetailClose / onRefuse are not card props; their call sites bind them once (screens/game.js useCallback).
+ */
+function cardPropsEqual(a, b) {
+  if ((a.onTap == null) !== (b.onTap == null)) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    if (k === 'onTap') continue;
+    if (!Object.prototype.hasOwnProperty.call(b, k) || !Object.is(a[k], b[k])) return false;
+  }
+  return true;
+}
+
+/**
  * Operator card (shop and merge reward). `armed`: first tap done (second tap = `onBuy(idx)`).
  * @param {{ slot:any, idx:number, priv:any, frozen?:boolean, reason?:string|null, free?:boolean, armed?:boolean,
  *   onTap?:(idx:number)=>void, onBuy:Function, onDetail:Function }} props
  */
-export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free = false, armed = false, onTap = null, onBuy, onDetail, offBonds = null }) {
+function ChessCardView({ slot, idx, priv, frozen = false, reason = null, free = false, armed = false, onTap = null, onBuy, onDetail, offBonds = null }) {
   const c0 = data.lookup('chess', slot.id);
   // 0.2.0 自选编队: a DIY slot the player filled is its operator (shared/diy.js, the pick of m.private.diy)
   const diyData = { chess: data.get('chess'), backups: data.get('backups') };
@@ -136,6 +157,7 @@ export function ChessCard({ slot, idx, priv, frozen = false, reason = null, free
   </button>`;
   return reason && reason !== t('已售出') && !armed ? html`<${Tooltip} text=${reason} block=${true} class="scard-wrap">${card}<//>` : card;
 }
+export const ChessCard = memo(ChessCardView, cardPropsEqual);
 
 /** The loadout's skill (icon; name + 已调配 in the tooltip) and an elite's module type, on an operator card. */
 function SkillBadge({ chess, lo, standIn = false }) {
@@ -157,7 +179,7 @@ function SkillBadge({ chess, lo, standIn = false }) {
  * @param {{ slot:any, idx:number, frozen?:boolean, reason?:string|null, armed?:boolean, onTap?:(idx:number)=>void,
  *   onBuy:Function, onDetail:Function }} props
  */
-export function ItemCard({ slot, idx, frozen = false, reason = null, free = false, armed = false, onTap = null, onBuy, onDetail }) {
+function ItemCardView({ slot, idx, frozen = false, reason = null, free = false, armed = false, onTap = null, onBuy, onDetail }) {
   const it = data.lookup('items', slot.id);
   const m = data.get('assets');
   const disabled = !!reason;
@@ -183,6 +205,7 @@ export function ItemCard({ slot, idx, frozen = false, reason = null, free = fals
   </button>`;
   return reason && reason !== t('已售出') && !armed ? html`<${Tooltip} text=${reason} block=${true} class="scard-wrap">${card}<//>` : card;
 }
+export const ItemCard = memo(ItemCardView, cardPropsEqual);
 
 function SoldCard({ item = false }) {
   return html`<div class=${cx('scard', 'scard--sold', item && 'scard--item')} aria-label=${t('已售出')}>
@@ -267,7 +290,7 @@ export function useTwoTap({ editable, keys }) {
  * report #6 after 0.1.0, the items used to be drawn as nameless operator cards — and the header names the offer
  * (gameLogic.offerHeader: 晋升奖励 / the strategy's effect name …; "之后还有 N 项" while more offers wait behind it).
  */
-export function RewardCards({ offer, priv, editable, onPick, onDetail, onLater, armed, onTap, offBonds = null }) {
+function RewardCardsView({ offer, priv, editable, onPick, onDetail, onLater, armed, onTap, offBonds = null }) {
   const head = offerHeader(offer);
   return html`<div class=${cx('shopbar__reward', head.items && 'is-items')} role="group" aria-label=${head.title}>
     <div class="rwtag">
@@ -290,6 +313,7 @@ export function RewardCards({ offer, priv, editable, onPick, onDetail, onLater, 
     </div>
   </div>`;
 }
+export const RewardCards = memo(RewardCardsView, cardPropsEqual);
 
 /**
  * The bar.
@@ -299,7 +323,7 @@ export function RewardCards({ offer, priv, editable, onPick, onDetail, onLater, 
  *   reward?: any, onReward?: (idx:number)=>void, onRewardLater?: Function, offBonds?: Set<string>|null }} props — offBonds:
  *   the bonds this mode never activates (gameLogic modeOffBonds), struck through on the operator cards
  */
-export function ShopBar({ priv, editable, collapsed, refreshBusy = false, onCollapse, onBuy, onLevel, onRefresh, onFreeze, onDetail, onDetailClose, onRefuse, barRef,
+function ShopBarView({ priv, editable, collapsed, refreshBusy = false, onCollapse, onBuy, onLevel, onRefresh, onFreeze, onDetail, onDetailClose, onRefuse, barRef,
   reward = null, onReward, onRewardLater, onArm = null, offBonds = null }) {
   const shop = priv?.shop || {};
   const slots = Array.isArray(shop.slots) ? shop.slots : [];
@@ -409,3 +433,4 @@ export function ShopBar({ priv, editable, collapsed, refreshBusy = false, onColl
     </div>
   </section>`;
 }
+export const ShopBar = memo(ShopBarView);

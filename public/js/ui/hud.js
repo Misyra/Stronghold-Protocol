@@ -28,6 +28,7 @@
 // (user playtest #3 item 3; the row's own label is ui/underframe.js TempRowNotice).
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
+import { memo } from './memo.js';
 import { PHASE } from '../../../shared/constants.js';
 import { html, Button, Icon, PingPill, Countdown, Tooltip, MicroLabel, DifficultyTag, Modal, useTicker } from './components.js';
 import { Sprite, LpTower, GIcon, LocalSprite } from './gameComponents.js';
@@ -525,7 +526,7 @@ export function SpeedButton({ voted = false, count = 0, need = 0, pending = fals
  *     `left` (a leaker in 联防): its enemies still standing — the capsule's ×N tag
  *   held: the HUD waits hidden under 协议启动！ — a phase change's capsule scene waits for it (useCapsuleFx)
  */
-export function TopBar({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, onReady, readyBusy, readyCount, playerCount, pen = false, penAvail = false, onPen = () => {},
+function TopBarView({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, onReady, readyBusy, readyCount, playerCount, pen = false, penAvail = false, onPen = () => {},
   config = null, frozenAt = null, pause = null, speed = null, live = null, spectator = false,
   spectators = null, myId = null, isHost = false, onRemoveSpectator = null, room = null, held = false }) {
   const phase = pub?.phase;
@@ -620,6 +621,8 @@ export function TopBar({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, 
     </div>
   </header>`;
 }
+
+export const TopBar = memo(TopBarView);
 
 /** DP counter shown at the right edge during combat. */
 export function DpCounter({ dp }) {

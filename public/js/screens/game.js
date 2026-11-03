@@ -272,9 +272,7 @@ function MatchScreen() {
   const [bondOpen, setBondOpen] = useState(null);        // { id, ownerId, from }: the bond popup and whose bond it shows
   const [bondsCollapsed, setBondsCollapsed] = useState(false);
   const [detail, setDetail] = useState(null);            // detail target
-  // every shop / reward card opened by a tap is a new tap — `tap` in the target: two cards of one operator (the pool
-  // deals duplicates) carry the same chess id and no piece, and each must say its 选中干员 (detailPanel selectVoiceKey)
-  const cardTap = useRef(0);
+  const cardTap = useRef(0);                             // every tap opens a new card (see openCardDetail below)
   const [collapsed, setCollapsed] = useState(false);
   // GitHub #501: a g.refresh is still waiting for its reply — the shop's 刷新 button dims while it is (gameActions.js
   // single-flights the intent; the R hotkey is dropped by the same guard)
@@ -385,6 +383,14 @@ function MatchScreen() {
     uniteLeft: leaker ? uniteRemaining(localLeft, meP?.uniteLeft) : null,
   });
   lpBaseRef.current = liveLpNow.base;
+  // TopBar's `live` prop: liveLp rebuilds the object every render — keep the reference while the values are
+  // shallow-equal, so the memoized TopBar sits out the renders that changed nothing it shows (ui/memo.js)
+  const liveLpPropRef = useRef(null);
+  const liveLpProp = liveLpPropRef.current && shallowEqual(liveLpPropRef.current, liveLpNow) ? liveLpPropRef.current : (liveLpPropRef.current = liveLpNow);
+  // TeamPanel's own row (`self`): the four shown values as one object, rebuilt only when one of them changed
+  const selfLive = useMemo(() => (Number.isFinite(priv?.lp)
+    ? { lp: priv.lp, pending: liveLpNow.pending, unite: liveLpNow.unite, left: liveLpNow.left } : null),
+    [priv?.lp, liveLpNow.pending, liveLpNow.unite, liveLpNow.left]);
   // what this round's battle cost me, kept while it runs for the result box and the 战斗结束 sound at SETTLE (GitHub
   // #235, PR #112 by @Convey123): by then the settlement has landed (Match.flush sends m.private before the SETTLE
   // m.public) and the live count reads 0. A per-round MAXIMUM — leaks only grow within a round, and a frame that lands
@@ -1087,7 +1093,10 @@ function MatchScreen() {
 
   // emote bubbles (and a sound for teammates' emotes)
   const bubbleMs = (gd.config?.timers?.chatBubble ?? 3) * 1000;
-  const bubbles = activeBubbles(emotes, Date.now(), bubbleMs);
+  // bucketed on the 500 ms the ticker below re-renders at: between boundaries the memoized TeamPanel keeps the
+  // same Map while pushes re-render this screen; a boundary re-runs activeBubbles so bubbles expire as before
+  const bubbleTick = Math.ceil(Date.now() / 500);
+  const bubbles = useMemo(() => activeBubbles(emotes, Date.now(), bubbleMs), [emotes, bubbleMs, bubbleTick]);
   useTicker(bubbles.size ? 500 : 0); // re-render only while a bubble is showing (to expire it)
   const lastEmote = useRef(emotes.length ? emotes[emotes.length - 1].seq : 0);
   useEffect(() => {
@@ -1096,6 +1105,24 @@ function MatchScreen() {
   }, [emotes]);
 
   // ---- actions ----------------------------------------------------------------------------------------------
+  // the shop bar's handlers, bound once — the memoized ShopBar (ui/memo.js) sits out the renders that change
+  // none of its props (every card tap's setDetail re-render among them)
+  const doLevelUp = useCallback(() => actions.levelUp(), []);
+  const doRefresh = useCallback(() => actions.refresh(), []);
+  const doFreeze = useCallback(() => actions.freeze(), []);
+  // every shop / reward card opened by a tap is a new tap — `tap` in the target: two cards of one operator (the pool
+  // deals duplicates) carry the same chess id and no piece, and each must say its 选中干员 (detailPanel selectVoiceKey)
+  const openCardDetail = useCallback((id, kind, hint) => setDetail({ kind: kind === 'item' ? 'item' : 'chess', id, hint: hint || null, tap: ++cardTap.current }), []);
+  const closeCardDetail = useCallback(() => setDetail((d) => (d?.kind === 'chess' || d?.kind === 'item' ? null : d)), []);
+  const refuseCard = useCallback((reason) => { toast(reason, 'warn'); audio.sfx('error', { volume: 0.5 }); }, []);
+  const doReward = useCallback((i) => actions.reward(i), []);
+  const rewardLater = useCallback(() => setRewardMin(true), []);
+  // the detail card's close / 配发装备 unequip, bound once for the memoized DetailPanel (ui/memo.js)
+  const closeDetail = useCallback(() => { setDetail(null); setSel(null); }, []);
+  const unequipItem = useCallback((itemUid) => actions.unequip(itemUid), []);
+  // the exit flow and the top bar's drawer toggle (🔍 本局信息 / 敌方情报), bound once for the memoized TopBar
+  const openExit = useCallback(() => setExitOpen(true), []);
+  const toggleDrawer = useCallback((which) => setDrawer((d) => (d ? null : which)), []);
   const buy = useCallback(async (i) => {
     // Clicks and hotkeys share this guard while the same slot's purchase is awaiting a reply.
     if (buyPending.current.has(i)) return false;
@@ -1202,6 +1229,13 @@ function MatchScreen() {
   }, []);
 
   const watchField = useCallback((fid) => { requestWatch(fid); }, []);
+
+  // TeamPanel's observe prop (client-side combat) as one object, rebuilt only when observing switches on or off;
+  // canObserve reads the live ref so a skipped re-render still decides on the newest pub (ui/memo.js)
+  const canObserveNow = useCallback((p) => observeTarget(p, live.current.pub, live.current.myId,
+    { observing: live.current.watchingOther, ownDone: live.current.localDone }), []);
+  const observeCtl = useMemo(() => (cc ? { canObserve: canObserveNow, observing: watchingOther, onBack: backHome } : null),
+    [cc, watchingOther, canObserveNow, backHome]);
 
   // an eliminated player or a spectator seat follows a player through every phase reset (community report of
   // 2026-10-06, item 56; the idea of PR #189): the server pushes that player's prep board (Match._followScout) — the one
@@ -1404,6 +1438,8 @@ function MatchScreen() {
   }, []);
   const togglePauseRef = useRef(togglePause);
   togglePauseRef.current = togglePause;
+  // 战斗 2 倍速 vote (the TopBar's SpeedButton), bound once for the memoized TopBar
+  const speedToggle = useCallback((on) => actions.speedVote(on), []);
 
   // a press on the field deselects (a tap on a piece selects it again at release — see pieceClick)
   useEffect(() => {
@@ -1563,10 +1599,16 @@ function MatchScreen() {
   }, [detail, field]);
   const resolved = useMemo(() => resolveDetail(detailTarget, placeCtx.pieces, { priv, backups: gd.backups }), [detailTarget, placeCtx, gd.ready, data.locale()]);
   useEffect(() => { if (detail && !resolved && detail.kind === 'piece') setDetail(null); }, [resolved]);
+  // the snapshot tuple of the open card's unit, cached as { hp, max } while it is the same tuple (see below)
+  const snapHpRef = useRef({ t: null, v: null });
   const snapHp = (() => {
     const id = resolved?.unitId;
     const t = id != null ? snapUnitsRef.current.get(id) : null;
-    return t ? { hp: t[3], max: t[4] } : null;
+    if (!t) return null;
+    // the same snapshot tuple keeps the same { hp, max } object: the memoized DetailPanel sits out the renders
+    // between snapshots, a new tuple (new b.snap) re-renders the card (ui/memo.js)
+    if (snapHpRef.current.t !== t) snapHpRef.current = { t, v: { hp: t[3], max: t[4] } };
+    return snapHpRef.current.v;
   })();
   // a crate's / turret's card closes with it: destroyed (HP gone, or its tuple left the snapshots once the die animation
   // is over — before the first snapshot of a battle nothing is judged)
@@ -1598,7 +1640,10 @@ function MatchScreen() {
     }, 120);
     return () => clearTimeout(t);
   }, [prepStatsUid, priv, phase]);
-  const liveStats = (() => {
+  // memoized so the open DetailPanel holds one reference between the pushes that change the stats (ui/memo.js):
+  // the prep branch rebuilds its object only on a fresh m.unitStats, the battle branch returns a fresh closure
+  // only when the unit it reads changed
+  const liveStats = useMemo(() => {
     if (prepStatsUid != null) {
       const e = unitStats && unitStats.round === pub?.round ? unitStats.units.get(prepStatsUid) : null;
       return e ? { ...e, src: 'prep' } : null;
@@ -1613,14 +1658,16 @@ function MatchScreen() {
       const e = uid != null ? battleRunner.unitStats(uid, fid) : null;
       return e ? { ...e, src: 'battle' } : null;
     };
-  })();
+  }, [prepStatsUid, unitStats, pub?.round, resolved?.unitId, resolved?.piece?.uid, cc, showPrep, field?.local, field?.fieldId, myId]);
 
   // One snapshot path for local/Worker/server fields, spectators and reconnects; no wall-clock countdown.
-  const bondTimers = playerSettings.bondTimers && !showPrep && !field?.prep && field?.fieldId ? () => {
+  // Memoized on the field itself (the closure reads its units) so the open DetailPanel holds one reference
+  // between the pushes that change it (ui/memo.js).
+  const bondTimers = useMemo(() => (playerSettings.bondTimers && !showPrep && !field?.prep && field?.fieldId ? () => {
     const id = resolved?.unitId ?? (Number.isInteger(resolved?.piece?.uid)
       ? field.units?.find(u => u.uid === resolved.piece.uid && u.ownerId === myId)?.id : null);
     return selectedBondTimers(bondTimerSnapRef.current, field.fieldId, id);
-  } : null;
+  } : null), [playerSettings.bondTimers, showPrep, field, resolved?.unitId, resolved?.piece?.uid, myId]);
 
   // ---- keyboard ---------------------------------------------------------------------------------------------
   useEffect(() => {
@@ -1739,6 +1786,14 @@ function MatchScreen() {
   // the solo pause button: only while the own battle still runs (the server refuses it afterwards)
   const canPause = pauseAvailable(pub, { solo, alive, done: meP?.status === 'done' || localDone });
   live.current.canPause = canPause;
+  // the TopBar's pause / 2× speed controls as one object each, rebuilt only when a shown value changed (ui/memo.js)
+  const pauseCtl = useMemo(() => (canPause || paused
+    ? { show: canPause, paused, busy: pauseBusy, onToggle: () => togglePause(!paused) } : null),
+    [canPause, paused, pauseBusy, togglePause]);
+  const speedCtl = useMemo(() => (spectator ? null : { show: true, voted: !!priv?.speedVoted,
+    count: pub?.speedVote?.count ?? 0, need: pub?.speedVote?.need ?? 0,
+    pending: !!pub?.speedVote?.pending, on: !!pub?.speedVote?.on, onToggle: speedToggle }),
+    [spectator, priv?.speedVoted, pub?.speedVote?.count, pub?.speedVote?.need, pub?.speedVote?.pending, pub?.speedVote?.on, speedToggle]);
   // client-side combat: observing a teammate's battle (research 09 §3.1) and the 联防 / 最终攻势 camera halves
   // (an eliminated player auto-observes a teammate's normal field — research 09 "keep-watching" — without asking)
   const watchedFid = watchingOther ? watching : (cc && combat && !alive && battleState && battleState.watch && battleState.kind === 'normal' ? battleState.fieldId : null);
@@ -1775,7 +1830,7 @@ function MatchScreen() {
   // (the runner's field meta is taken before they deploy); a battle sends no bench (a prep scout does: ownerBoard)
   const popOps = cc && battleRunner && field?.local && bondOpen && bondOpen.ownerId !== myId ? battleRunner.ownerOps(bondOpen.ownerId, field.fieldId) : null;
   const bondPop = popupView({ open: bondOpen, pub, priv, myId, field, units: popOps, live: liveLayers });
-  const openBond = (id, ownerId, from) => { setBondOpen((b) => toggleBond(b, id, ownerId, from)); audio.sfx('click', { volume: 0.4 }); };
+  const openBond = useCallback((id, ownerId, from) => { setBondOpen((b) => toggleBond(b, id, ownerId, from)); audio.sfx('click', { volume: 0.4 }); }, []);
   const watchingNow = combat ? (watching || field?.fieldId || home) : watching;
   const shopOpen = showShop && !barCollapsed;
   const ufShown = !!(selEntry && editable && !facing && !drag && showPrep && ufGeo);
@@ -1847,9 +1902,15 @@ function MatchScreen() {
   // teammate's — m.public + live layers), your own piece's yours, a popup member card the popup's player; shop / reward
   // cards read the strip's (ui/watchBonds.js detailBondOwner)
   const detailOwner = detailBondOwner(detailTarget, { pub, myId, stripOwnerId: strip.ownerId });
-  const detailBonds = detailOwner === strip.ownerId ? stripBonds : playerBonds({ pub, priv, myId, ownerId: detailOwner, live: liveLayers });
-  // bonds this mode never activates (标准: 10 of 23, 奥术 among them) — shown 本局禁用 on cards, chips and the popup
-  const offBonds = modeOffBonds(getMode(pub?.modeId));
+  // the card's bond chips, memoized so the open DetailPanel holds one reference between the pushes that change
+  // them (ui/memo.js): for the strip's owner this is exactly the strip's list — screenStrip computes the same
+  // withLiveLayers(ownerBonds(...)) (ui/watchBonds.js)
+  const detailBonds = useMemo(() => playerBonds({ pub, priv, myId, ownerId: detailOwner, live: liveLayers }),
+    [pub, priv, myId, detailOwner, liveLayers]);
+  const detailBond = useCallback((id) => openBond(id, detailOwner, 'detail'), [openBond, detailOwner]);
+  // bonds this mode never activates (标准: 10 of 23, 奥术 among them) — shown 本局禁用 on cards, chips and the popup;
+  // one Set per mode for the memoized cards / panels (ui/memo.js)
+  const offBonds = useMemo(() => modeOffBonds(getMode(pub?.modeId)), [pub?.modeId]);
 
   return html`<div class=${cx('screen', 'gm', `gm--${mode}`, drag && 'is-dragging', barCollapsed && 'is-collapsed', deployPartial && 'is-deploy-partial', (sp || hasPersonalChoice || offerBlocksPrep(pub?.offers)) && 'has-sp', sp && 'has-spdraft', pen && 'is-pen', readyWhy && 'has-readywhy')}
       data-camera=${pen ? 'pen' : camKind}>
@@ -1869,14 +1930,12 @@ function MatchScreen() {
 
     <div class=${cx('gm__hud', hudIn && `is-${hudIn}`)} ref=${hudElRef}>
       <${TopBar} pub=${pub} priv=${priv} conn=${conn} hud=${hud} total=${total} drawer=${drawer}
-        onExit=${() => setExitOpen(true)} onDrawer=${(t) => setDrawer((d) => (d ? null : t))} onReady=${toggleReady}
+        onExit=${openExit} onDrawer=${toggleDrawer} onReady=${toggleReady}
         readyBusy=${readyBusy} readyCount=${readyCount} playerCount=${solo ? 1 : aliveCount}
         pen=${pen} penAvail=${penAvail} onPen=${togglePen} config=${gd.config} frozenAt=${frozenAt}
-        pause=${canPause || paused ? { show: canPause, paused, busy: pauseBusy, onToggle: () => togglePause(!paused) } : null}
-        speed=${spectator ? null : { show: true, voted: !!priv?.speedVoted,
-          count: pub?.speedVote?.count ?? 0, need: pub?.speedVote?.need ?? 0,
-          pending: !!pub?.speedVote?.pending, on: !!pub?.speedVote?.on, onToggle: (on) => actions.speedVote(on) }}
-        live=${liveLpNow} spectator=${spectator}
+        pause=${pauseCtl}
+        speed=${speedCtl}
+        live=${liveLpProp} spectator=${spectator}
         spectators=${specFacts.list} myId=${myId} isHost=${specFacts.isHost} onRemoveSpectator=${removeSpectator} room=${modRoom}
         held=${hudIn === 'wait'} />
 
@@ -1901,8 +1960,8 @@ function MatchScreen() {
       <${KickVoteNotice} pub=${pub} />
       <${TeamPanel} pub=${pub} myId=${myId} watching=${watchingNow} bubbles=${bubbles} onWatch=${watchPlayer} cap=${gd.config?.lpCapPerRound ?? 10} uniteLocal=${uniteLocal}
         spMarks=${sp ? spMarks(sp, { solo }) : null}
-        self=${Number.isFinite(priv?.lp) ? { lp: priv.lp, pending: liveLpNow.pending, unite: liveLpNow.unite, left: liveLpNow.left } : null}
-        observe=${cc ? { canObserve: (p) => observeTarget(p, pub, myId, { observing: watchingOther, ownDone: localDone }), observing: watchingOther, onBack: backHome } : null} />
+        self=${selfLive}
+        observe=${observeCtl} />
 
       <div class="gm__effects"><${EffectsList} effects=${viewedEffects} /></div>
 
@@ -1913,12 +1972,12 @@ function MatchScreen() {
 
       ${showShop ? html`<${ShopBar} priv=${priv} editable=${editable} collapsed=${barCollapsed} refreshBusy=${refreshBusy} onCollapse=${setCollapsed}
         barRef=${barRef} offBonds=${offBonds}
-        onBuy=${buy} onLevel=${() => actions.levelUp()} onRefresh=${() => actions.refresh()} onFreeze=${() => actions.freeze()}
-        onDetail=${(id, kind, hint) => setDetail({ kind: kind === 'item' ? 'item' : 'chess', id, hint: hint || null, tap: ++cardTap.current })}
-        onDetailClose=${() => setDetail((d) => (d?.kind === 'chess' || d?.kind === 'item' ? null : d))}
-        onRefuse=${(reason) => { toast(reason, 'warn'); audio.sfx('error', { volume: 0.5 }); }}
+        onBuy=${buy} onLevel=${doLevelUp} onRefresh=${doRefresh} onFreeze=${doFreeze}
+        onDetail=${openCardDetail}
+        onDetailClose=${closeCardDetail}
+        onRefuse=${refuseCard}
         reward=${phase === PHASE.PREP && !rewardMin ? priv?.shop?.rewardOffer || null : null}
-        onReward=${(i) => actions.reward(i)} onRewardLater=${() => setRewardMin(true)} onArm=${setArmedCard} />` : null}
+        onReward=${doReward} onRewardLater=${rewardLater} onArm=${setArmedCard} />` : null}
 
       ${phase === PHASE.PREP && priv?.shop?.rewardOffer ? html`<${RewardOverlay} priv=${priv} minimized=${rewardMin || barCollapsed}
         onMinimize=${(m) => { setRewardMin(m); if (!m) setCollapsed(false); }} />` : null}
@@ -1966,11 +2025,11 @@ function MatchScreen() {
         place=${bpPlace} over=${!!resolved && bpPlace === dSide}
         onClose=${() => setBondOpen(null)} onMember=${(id, items, standInFor, diy) => setDetail({ kind: 'chess', id, owner: bondPop.ownerId, items: items || null, standInFor: standInFor || null, diy: diy || null })} />` : null}
 
-      ${resolved ? html`<${DetailPanel} detail=${resolved} snapHp=${snapHp} onClose=${() => { setDetail(null); setSel(null); }}
+      ${resolved ? html`<${DetailPanel} detail=${resolved} snapHp=${snapHp} onClose=${closeDetail}
         bonds=${detailBonds} offBonds=${offBonds} loadout=${detailLoadout} ops=${priv?.ops ?? null} side=${dSide} shopOpen=${shopOpen} live=${liveStats} bondTimers=${bondTimers} voice=${true}
         morphMode=${morphMode} unequipAllowed=${unequipAllow}
-        onUnequip=${editable && unequipAllow ? (itemUid) => actions.unequip(itemUid) : null}
-        onBond=${(id) => openBond(id, detailOwner, 'detail')} />` : null}
+        onUnequip=${editable && unequipAllow ? unequipItem : null}
+        onBond=${detailBond} />` : null}
 
       ${selEntry && editable && !facing && !drag && showPrep ? html`<${Underframe} key=${sel.uid} view=${view} uid=${sel.uid}
         row=${pieceTile(selEntry)?.row} col=${pieceTile(selEntry)?.col} actions=${underframeActions(placeCtx, sel.uid)} busy=${selBusy}

@@ -115,7 +115,7 @@ test('bond popup: 本局禁用 instead of 未激活, a note, and no misleading m
 
 test('the game screen hands the mode-disabled set to the shop bar, the detail card and the bond popup', () => {
   const src = read('public/js/screens/game.js');
-  assert.match(src, /const offBonds = modeOffBonds\(getMode\(pub\?\.modeId\)\)/);
+  assert.match(src, /const offBonds = useMemo\(\(\) => modeOffBonds\(getMode\(pub\?\.modeId\)\), \[pub\?\.modeId\]\)/);
   assert.match(src, /<\$\{ShopBar\}[\s\S]*?offBonds=\$\{offBonds\}/);
   assert.match(src, /<\$\{DetailPanel\}[\s\S]*?offBonds=\$\{offBonds\}/);
   assert.match(src, /<\$\{BondPopup\}[\s\S]*?off=\$\{offBonds\.has\(bondPop\.bondId\)\}/);

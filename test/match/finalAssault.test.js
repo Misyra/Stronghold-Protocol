@@ -210,6 +210,28 @@ test('all-human overtime: −1 team LP per REAL second after 120 real s (240 gam
   m.dispose();
 });
 
+test('no client authority at the Final Assault: the pool emptying ends the fight (server-run fields) before overtime drains the team LP', () => {
+  const h = makeMatch({ mode: 'coop', difficulty: 'FUNNY', humans: 3, seed: 61, fake: true, clientCombat: true, clients: false,
+    // a long field (escorts keep it alive past the overtime mark) whose boss dies in the first ticks
+    script: (b) => (b.kind === 'boss' ? { bossDps: 1e6, duration: 5000 } : { duration: 1 }) }).start();
+  const m = h.m;
+  h.drive(() => m.phase === PHASE.PREP && m.round === 14);
+  for (const pid of ['p_0', 'p_1', 'p_2']) m.onDisconnect(pid); // every browser dropped: nobody simulates on a client
+  const lps = new Map([...m.players.values()].map((p) => [p.playerId, p.lp]));
+  h.drive(() => m.phase === PHASE.FINAL_ASSAULT);
+  const merged = [...lps.values()].reduce((a, b) => a + b, 0);
+  assert.equal(m.teamLp, merged, 'merged team LP');
+  const end = h.runToEnd();
+  assert.equal(end.victory, true);
+  assert.equal(end.roundsPassed, 14);
+  assert.equal(m._finalEnding, 'cleared', 'the pool\'s own depletion ended the fight');
+  assert.ok(bossFields()[0].time < 50, `the fight ended at the depletion, not at the field's duration (${bossFields()[0].time})`);
+  assert.equal(m.teamLp, merged, 'the overtime drain never zeroed the team LP');
+  for (const p of end.players) assert.equal(p.lp, lps.get(p.playerId), `${p.playerId} keeps its pre-drain share`);
+  checkInvariants(m);
+  m.dispose();
+});
+
 test('Final Assault leaks cost their lpr from the merged LP', () => {
   const h = makeMatch({ mode: 'solo', difficulty: 'FUNNY', seed: 51, fake: true, instant: false, script: (b) => (b.kind === 'boss' ? { bossDps: 1, leakEvents: [{ at: 5, lpr: 1 }, { at: 10, lpr: 30, boss: true }] } : {}) }).start();
   const m = h.m;

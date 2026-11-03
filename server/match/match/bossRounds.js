@@ -511,6 +511,11 @@ export class MatchBoss {
   _bossTick(runner) {
     this._applyOvertime(runner.time);
     if (this.teamLp <= 0 && this.bossPool.hp > 0) runner.forceAll('forced');
+    // a server-run Final Assault (no boss field kept a client authority: every browser dropped, or none ever came)
+    // has no boss clock — the pool's own depletion must end the fight here, before the overtime drain above can zero
+    // the team's LP past a won fight's shares (_checkFinalEnd is idempotent via _finalEnding and a no-op while any
+    // client field holds the clock: then the armed _bossClockTick owns the end conditions)
+    else this._checkFinalEnd();
     // client-side combat with every boss field on the server: humans that reconnect / watch run display replicas
     // whose LocalBossPool follows b.pool
     if (this.fields.some((f) => f.cc)) { this._broadcastPool(false); this._bossPublic(); }

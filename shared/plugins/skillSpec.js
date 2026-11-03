@@ -11,8 +11,9 @@ const shape = (properties, required = []) => ({ type: 'object', properties, requ
 export const GRID_SCHEMA = { type: 'array', maxItems: 1024, items: { type: 'array', minItems: 2, maxItems: 2, items: { type: 'integer', minimum: -64, maximum: 64 } } };
 export const MODS_SCHEMA = shape(Object.fromEntries(MOD_KEYS.map(k => [k, signed])));
 const flags = shape(Object.fromEntries(FLAG_KEYS.map(k => [k, bool])));
-/** The skill trigger rules the engine implements (server/sim/skills.js); tools/bb-audit.mjs lists a version's others. */
-export const TRIGGER_RULES = Object.freeze('DEFAULT SKILL_RANGE ACTIVE_RANGE TAKE_DAMAGE SP_FULL ALWAYS CUSTOM_RANGE SEARCH MLYSS_WTRMAN GDGLOW_SKILL_2 AUTO_STOP NEVER MANUAL'.split(' '));
+/** The skill trigger rules the engine implements (server/sim/skills.js; MLYSS_WTRMAN and MARCILS2 in their kits,
+ * op-marcil.js: 玛露西尔 S2's close-and-reopen); tools/bb-audit.mjs lists a version's others. */
+export const TRIGGER_RULES = Object.freeze('DEFAULT SKILL_RANGE ACTIVE_RANGE TAKE_DAMAGE SP_FULL ALWAYS CUSTOM_RANGE SEARCH MLYSS_WTRMAN GDGLOW_SKILL_2 MARCILS2 AUTO_STOP NEVER MANUAL'.split(' '));
 const rule = { enum: [...TRIGGER_RULES] };
 export const SKILL_SPEC_SCHEMA = shape({
   kind: enums('duration ammo instant charges passive toggle'), activateOnDeploy: bool,

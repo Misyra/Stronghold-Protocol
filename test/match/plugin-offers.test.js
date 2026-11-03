@@ -589,3 +589,58 @@ test('a card condition that goes stale between open and pick is refused and mark
   assert.equal(w.picks.has('p_0'), false, 'the refused pick consumed nothing');
   h.m.dispose();
 });
+
+// slots is an upper bound: a picker whose `when` cards are filtered out can hold one card in a two-slot window. The
+// fallback must read that picker's own options — indexing the declared count threw a TypeError inside the phase and
+// left the window (and a blocking one, the phase) open forever.
+test('a bot holding fewer eligible cards than slots falls back over its own options, never an absent slot', () => {
+  const offer = window_({ slots: 2 }, { at: 'prep', rounds: 'any' });
+  offer.cards = [
+    { id: 'seat2', name: 'Seat 2', desc: 'd', icon: 'funds', effect: { funds: 1 }, when: { seat: 2 } },
+    { id: 'grant', name: 'Grant', desc: 'd', icon: 'item', effect: { item: 'chess_item_1_01_e_a' } },
+  ];
+  const h = matchWith([offer], { fake: true, humans: 1, bots: 1 });
+  // the bot sits on seat 2, so the seat-2 card is filtered for it; the only card left cannot be granted (empty pool)
+  for (let n = 0; n < 20 && h.m.itemPool.canGain('chess_item_1_01_e_a'); n++) assert.ok(h.ps('p_0').acquireItem('chess_item_1_01_e_a'));
+  let resumed = 0;
+  h.m._offerResume = () => resumed++;
+  assert.equal(h.m.openOfferWindow('prep', 1), 'open');
+  const w = h.m.offerWin[0];
+  assert.deepEqual(w.options.get('ai_0').map(c => c.id), ['grant'], 'the seat holder sees one of the two declared slots');
+  assert.deepEqual(w.picks.get('ai_0'), { idx: null, timeout: true }, 'the absent-slot fallback is an explicit skip');
+  assert.equal(h.m.errorCount, 0);
+  // the human still holds both cards; picking closes the window and the held continuation runs
+  assert.equal(w.options.get('p_0').length, 2);
+  const pick = w.options.get('p_0').findIndex(c => c.id === 'seat2');
+  assert.ok(pick >= 0);
+  assert.deepEqual(h.m.requestOffer(h.ps('p_0'), offer.id, pick), { ok: true });
+  h.sched.advance(0);
+  assert.equal(resumed, 1, 'the phase continues once the window closes');
+  h.m.dispose();
+});
+
+test('a human timeout with a picker that holds fewer slots closes the window and the held prep runs', () => {
+  const offer = window_({ slots: 2, windowSec: 5, quorum: 'all' }, { at: ['prep'], rounds: [1] });
+  offer.cards = [
+    { id: 'seat1', name: 'Seat 1', desc: 'd', icon: 'funds', effect: { funds: 1 }, when: { seat: 1 } },
+    { id: 'grant', name: 'Grant', desc: 'd', icon: 'item', effect: { item: 'chess_item_1_01_e_a' } },
+  ];
+  const h = matchWith([offer], { fake: true, humans: 2, bots: 0 });
+  // p_0 holds seat 1, so the seat-1 card is filtered for it; the only card left cannot be granted (empty pool)
+  for (let n = 0; n < 20 && h.m.itemPool.canGain('chess_item_1_01_e_a'); n++) assert.ok(h.ps('p_1').acquireItem('chess_item_1_01_e_a'));
+  h.start();
+  assert.ok(h.run(() => h.m.offerWin.length > 0 && h.m.offerWin[0].round === 1), 'the R1 prep window opened');
+  const w = h.m.offerWin[0];
+  assert.deepEqual(w.options.get('p_0').map(c => c.id), ['grant']);
+  const idx = w.options.get('p_1').findIndex(c => c.id === 'seat1');
+  assert.ok(idx >= 0);
+  assert.deepEqual(h.m.requestOffer(h.ps('p_1'), offer.id, idx), { ok: true });
+  assert.ok(h.m.offerWin.length > 0, 'p_0 has not answered yet');
+  h.sched.advance(5000);
+  assert.equal(h.sched.errors.length, 0, 'the timeout fallback never indexes an absent slot');
+  assert.equal(h.m.offerWin.length, 0, 'the window closed');
+  assert.deepEqual(w.picks.get('p_0'), { idx: null, timeout: true }, 'the seat with one card skips instead of crashing');
+  assert.ok(h.run(() => h.m.phase === PHASE.PREP && h.m.round === 1), 'the held prep runs after the window closed');
+  h.m.dispose();
+});
+

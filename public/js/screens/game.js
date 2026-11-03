@@ -157,7 +157,7 @@ import { DEFAULT_VERSION, shownVersion } from '../versions.js';
 import { VersionVote } from '../ui/versionVote.js';
 import { TestConsole } from '../ui/testConsole.js';
 
-// 作战统计 is opt-in (settings `combatMetrics`, default off). The runner does not import the settings store;
+// 作战统计 is a setting (`combatMetrics`, on by default since 2026-11-02). The runner does not import the settings store;
 // this screen pushes the switch. Outside a browser battleRunner is null, so this is a no-op.
 if (battleRunner) {
   const applyCombatMetrics = (s) => battleRunner.setCombatMetrics(s?.combatMetrics === true);
@@ -353,6 +353,9 @@ function MatchScreen() {
   const unequipAllow = ruleOption(roomRules, 'unequip') === 'allow';
   const prepLoadoutOpen = ruleOption(roomRules, 'prepLoadout') === 'prep';
   const hasOffers = !!pub?.offers?.length;
+  // A prep window may open before PREP proper (a blocking window holds the prep while the draft/round start sits at
+  // ROUND_START or SP_DRAFT); it must not render once the round moved on to its battle or settlement.
+  const offersLive = hasOffers && (phase === PHASE.PREP || phase === PHASE.SP_DRAFT || phase === PHASE.ROUND_START);
   const editable = !offerBlocksPrep(pub?.offers) && phase === PHASE.PREP && !!priv && alive && !priv.ready && !watchingOther && !hasPersonalChoice;
   const showShop = !!priv && alive && (phase === PHASE.PREP || phase === PHASE.SP_DRAFT || phase === PHASE.ROUND_START) && !watchingOther;
   const layersDisabled = phase === PHASE.UNITE || isBossPhase(phase);
@@ -582,6 +585,10 @@ function MatchScreen() {
       lastFieldRef.current = null;
       viewModeRef.current = null;
       reentryRef.current = null;
+      // A new field view must not enter the store's copy of a running local battle first: that m.field is the battle's
+      // OPENING meta, and the subscription effect below re-shows the runner's current meta + snapshot for this view.
+      // Entering the old copy here would be reset by that re-show — the battle appeared (and restarted) twice.
+      if (view && field?.local && !showPrep) return;
     }
     if (!view) return;
     if (showPrep) {
@@ -683,6 +690,12 @@ function MatchScreen() {
     const done = field.local ? battleState?.fieldId === field.fieldId && battleState.done : pf?.live === false;
     if (done || field.live === false) view.finishBattle?.();
   }, [view, showPrep, field, battleState?.fieldId, battleState?.done, pub?.fields]);
+
+  // 战斗 2 倍速 (m.public speedVote): a streamed field's interpolation clock runs at the battle speed from its first
+  // frame (a local replica takes the same speed from b.start through setLocalFeed). After the wiring effect above, so
+  // enterBattle's buffer reset has already happened.
+  const streamSpeed = pub?.speedVote?.on ? Number(pub.speedVote.speed) || 0 : 0;
+  useEffect(() => { view?.raw?.setStreamSpeed?.(streamSpeed); }, [view, streamSpeed]);
 
   // the round start (PR #416 by @Cromemadnd; the maintainer's confirmation from official play, 2026-10-13): the own board's
   // pieces replay their Start clip and landing sound one after another in deployment order — once per round, in 回合开始, on
@@ -1839,6 +1852,13 @@ function MatchScreen() {
       data-camera=${pen ? 'pen' : camKind}>
     <div class="gm__field" ref=${hostRef} onContextMenu=${(e) => e.preventDefault()}></div>
     ${viewKind === 'loading' ? html`<div class="gm__loading"><${Spinner} label="LOADING FIELD" /></div>` : null}
+    ${cc && combat && battleState?.loading && battleState?.error ? html`<div class="gm__loadfail" role="alert">
+      <p class="t-lo">${t('战斗模拟未能载入')}</p>
+      <div class="gm__loadfail__actions">
+        <${Button} variant="primary" onClick=${() => battleRunner?.retry()}>${t('重试')}<//>
+        <${Button} variant="secondary" onClick=${() => globalThis.location?.reload()}>${t('刷新页面')}<//>
+      </div>
+    </div>` : null}
     <div class="gm__vignette" aria-hidden="true"></div>
     ${tempNotice ? html`<${TempRowNotice} view=${view} count=${temp.count} items=${temp.items} label=${!drag && !facing}
       ready=${phase === PHASE.PREP && !!priv?.ready} />` : null}
@@ -1955,7 +1975,7 @@ function MatchScreen() {
         onRetreat=${retreatSel} onSell=${sellSel} onDestroy=${sellSel} />` : null}
     </div>
 
-    ${hasOffers && !sp && !personalChoice ? html`<${OfferOverlay} pub=${pub} priv=${priv} myId=${myId} readOnly=${spectator || !alive} onAction=${actions.offer} />` : null}
+    ${offersLive && !sp && !personalChoice ? html`<${OfferOverlay} pub=${pub} priv=${priv} myId=${myId} readOnly=${spectator || !alive} onAction=${actions.offer} />` : null}
     ${sp ? html`<${ChoiceOverlay} pub=${pub} sp=${sp} myId=${myId} solo=${solo} busyIdx=${spBusy} total=${total}
       onPick=${async (i) => { setSpBusy(i); await actions.choice(i); setSpBusy(null); }} />` : null}
     ${personalChoice ? html`<${ChoiceOverlay} key=${personalChoice.id} pub=${pub} sp=${personalChoice} myId=${myId} solo=${solo} personal=${true}

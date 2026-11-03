@@ -120,7 +120,7 @@ export function OfferView({ offer, priv, myId, readOnly = false, busy = null, ar
         class=${variantId?.split(':')[index] === option.id ? 'is-selected' : ''} aria-pressed=${variantId?.split(':')[index] === option.id}
         onClick=${() => { const ids = (variantId || offerDefaultVariant(offer)).split(':'); ids[index] = option.id; onVariant(ids.join(':')); }}>${option.name}</button>`)}
     </div></div>`)}
-  <div class="spov__grid spov__grid--3">
+  <div class="spov__grid" style=${`--offer-cols:${Math.max(1, (seat?.slots || []).length)}`}>
     ${(seat?.slots || []).map(source => { const card = offerCard(source, variantId, mine && !mine.picked && !readOnly ? priv : null); return html`<div class="offerov__slot" key=${card.idx}>
       <button type="button" class=${`spcard ${can && card.available !== false ? 'is-pickable' : ''} ${can && card.available !== false && armed === card.idx ? 'is-armed' : ''}`}
         disabled=${!can || card.available === false} aria-pressed=${can && card.available !== false && armed === card.idx} aria-busy=${busy != null} onClick=${() => onTap(card.idx)}

@@ -363,7 +363,7 @@ test('when.bands narrows a window to named bands; a card when reads the closed s
   ], { slots: 2, apply: { funds: 3 } });
   assert.deepEqual(good.problems, []);
   assert.deepEqual(good.cards.map(c => c.when), [{ solo: true }, { seat: 4 }, null]);
-  for (const when of [{ seat: 0 }, { seat: 9 }, { solo: false }, { solo: true, seat: 2 }, 'solo']) {
+  for (const when of [{ seat: 0 }, { seat: 5 }, { seat: 9 }, { solo: false }, { solo: true, seat: 2 }, 'solo']) {
     const bad = readOfferCards([{ id: 'x', name: 'S', desc: 'd', icon: 'funds', when }], { slots: 1, apply: { funds: 3 } });
     assert.deepEqual(bad.problems.map(p => p.path), ['cards[0].when'], JSON.stringify(when));
   }

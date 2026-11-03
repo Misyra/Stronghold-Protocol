@@ -314,7 +314,6 @@ export class MatchPhases {
   _startRoundAfterOffers(r) {
     this.phase = PHASE.ROUND_START;
     this.round = r;
-    this._applySpeedVote(); // 已完成的全员 2 倍速投票从本回合生效（match/speedVote.js）
     this.fields = [];
     this.watchers.clear();
     this.unitePlan = null;

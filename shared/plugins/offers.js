@@ -13,6 +13,7 @@
 // Nothing in this module is on the vanilla loading path: a content set without a plugin that declares the part
 // resolves no offer at all, so a room without plugins never opens a window (docs/PLUGINS.md, "Compatibility").
 import { problem } from './dataUtils.js';
+import { MAX_SEATS } from '../constants.js';
 import { PLUGIN_OFFERS_MAX_WINDOW_SEC, PLUGIN_OFFER_SLOTS } from './limits.js';
 
 /** The manifest field and permission of this part (shared/plugins/manifest.js PARTS / PERMISSIONS). */
@@ -163,7 +164,7 @@ export function readCardWhen(v) {
   if (!isObj(v)) return null;
   const keys = Object.keys(v);
   if (keys.length === 1 && v.solo === true) return { solo: true };
-  if (keys.length === 1 && int(v.seat, 1, 8)) return { seat: v.seat };
+  if (keys.length === 1 && int(v.seat, 1, MAX_SEATS)) return { seat: v.seat };
   return null;
 }
 
@@ -187,7 +188,7 @@ export function readOfferCards(raw, offer) {
     }
     if (!OFFER_ICONS.includes(c.icon)) bad(`${at}.icon`, `one of ${OFFER_ICONS.join(', ')}`);
     const when = readCardWhen(c.when);
-    if (c.when !== undefined && !when) bad(`${at}.when`, '"when" is { "solo": true } or { "seat": 1–8 } (a picker condition, see PLUGINS.md §10b)');
+    if (c.when !== undefined && !when) bad(`${at}.when`, `"when" is { "solo": true } or { "seat": 1–${MAX_SEATS} } (a picker condition, see PLUGINS.md §10b)`);
     const effect = c.apply ?? offer.apply;
     const err = effectProblem(effect, `${at}.apply`);
     if (err) bad(`${at}.apply`, err);

@@ -37,9 +37,17 @@ export async function initializeSandbox({ loadSES, loadMath = () => import('../.
   initialized = true;
 }
 
+/**
+ * A null-prototype, frozen copy of the SDK handed into a compartment. The copy keeps the host object's prototype
+ * chain (and any inherited mutable state) off the script's reach; every function on it is the same frozen host one.
+ */
+function sdkView(sp) {
+  return globalThis.harden(Object.assign(Object.create(null), sp));
+}
+
 export function createPluginCompartment(sp) {
   if (!initialized) throw denied('PLUGIN_SANDBOX_UNAVAILABLE', 'initializeSandbox first');
-  const c = new globalThis.Compartment({ sp: globalThis.harden(sp), Math: safeMath });
+  const c = new globalThis.Compartment({ sp: sdkView(sp), Math: safeMath });
   // [ASSUMED] No eval/Function/Promise: runtime source must not bypass the parsed synchronous module surface.
   // SES already omits host powers; explicitly shadow even its tamed Date and the child-Compartment constructor.
   for (const name of ['Date', 'performance', 'Intl', 'WeakRef', 'FinalizationRegistry', 'SharedArrayBuffer', 'Atomics',
@@ -153,14 +161,15 @@ export function loadSandboxPlugin({ plugin, sp, parse }) {
     visiting.delete(path); seen.add(path); order.push(path);
   };
   entryPoints.forEach(visit);
-  const compartment = createPluginCompartment(sp);
-  const modules = new Map([['sp:sdk@1', globalThis.harden({ ...sp, default: sp, sp })]]);
+  const sdk = sdkView(sp);
+  const compartment = createPluginCompartment(sdk);
+  const modules = new Map([['sp:sdk@1', globalThis.harden({ ...sdk, default: sdk, sp: sdk })]]);
   for (const path of order) modules.set(path, compartment.evaluate(compiled.get(path).code)(
     globalThis.harden(compiled.get(path).paths.map(p => modules.get(p)))));
   for (const entry of entryPoints) {
     const setup = modules.get(entry)?.default;
     if (typeof setup !== 'function') throw denied('PLUGIN_SANDBOX_SYNTAX', 'export default function setup(sp) required');
-    if (setup(sp)?.then) throw denied('PLUGIN_SANDBOX_SYNTAX', 'setup must be synchronous');
+    if (setup(sdk)?.then) throw denied('PLUGIN_SANDBOX_SYNTAX', 'setup must be synchronous');
   }
   return compartment;
 }

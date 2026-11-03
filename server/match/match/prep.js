@@ -1,6 +1,6 @@
 // server/match/match/prep.js — Match methods: the PREP phase — its start (deferred item merges, onPrepStart), the AI
 // seats' sliced preps (scheduleBotPrep: economy + layout, rehearsal, Ready), Ready and the deadline, and its end
-// (onPrepEnd, PlayerState.endPrep, then COMBAT or the Final Assault / Hidden Core).
+// (the AFK rule's check, onPrepEnd, PlayerState.endPrep, then COMBAT or the Final Assault / Hidden Core).
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
 
 import { PHASE } from '../../../shared/constants.js';
@@ -179,12 +179,18 @@ export class MatchPrep {
     // 掉线由 AI 接管(移植自用户分支): a seat offline for OFFLINE_TAKEOVER_ROUNDS prep ends is the AI's from the next
     // phase on (MatchPlatform._checkOffline)
     this._checkOffline();
+    // 挂机移出(移植自用户分支): an idle human is removed before this round's battle exists (it may end the match)
+    this._checkIdle();
+    if (this.ended || this.disposed || this.phase !== PHASE.PREP) return;
     // an open 投票移出 ends with the prep (kickVote.js)
     this.cancelKickVote('prepEnd');
     // rehearsals still waiting for a host's answer die with the prep: their bots place the default layout, a late answer
     // is ignored (Match._takeOverRehearsal / MatchRehearsal) and nothing of them runs after the phase ended
     this._cancelRehearsal();
     this.setDeadline(0);
+    // A prep window ends with the prep: settle its waiting seats and drop every window before the battle exists, so
+    // no stale g.offer can still grant during COMBAT (P1; phases.startRound used to be the only close point).
+    this.offersEndPrep?.();
     const alive = this.alivePlayers();
     for (const ps of alive) this.dispatch(ps, 'onPrepEnd', { round: this.round });
     for (const ps of alive) ps.endPrep();

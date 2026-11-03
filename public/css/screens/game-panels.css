@@ -72,6 +72,14 @@
 .dhead { display: flex; gap: .16rem; }
 .dhead__art { position: relative; width: 1.3rem; height: 1.9rem; flex: none; overflow: hidden; background: linear-gradient(180deg, #1c2421, #0e1210); border: 1px solid var(--line-2); }
 .dhead__art img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+/* 动态立绘 entry point on the operator's portrait (detailPanel.js): a small tag, not a second large control */
+.dhead__illust {
+  position: absolute; left: .06rem; bottom: .06rem; z-index: 1; padding: .03rem .07rem;
+  font: inherit; font-size: max(calc(.12 * var(--utility-text, var(--t))), 9px); line-height: 1.2; color: var(--mint-300, #8ce8c8);
+  background: rgba(0, 0, 0, .68); border: 1px solid rgba(78, 216, 175, .55); cursor: pointer;
+}
+.dhead__illust:hover { color: #fff; border-color: var(--mint-400); background: rgba(0, 0, 0, .82); }
+.dhead__illust:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 1px; }
 .dhead__art.is-golden { border-color: var(--gold); box-shadow: 0 0 .16rem rgba(255, 198, 0, .35); }
 .dhead__art .uthumb { margin: .4rem auto; display: block; }
 .dhead__icon { width: 1.1rem; height: 1.1rem; flex: none; display: grid; place-items: center; background: radial-gradient(circle, #26302c, #111513); border: 1px solid var(--line-2); }
@@ -792,7 +800,7 @@ button.bpop__harmony:hover { border-style: solid; color: #fff; }
 .offerov__dock button { min-height: .44rem; }
 .offerov .spov__inner { top: .3rem; overflow: auto; padding: .2rem; }
 .offerov .spov__head { flex-wrap: wrap; font-size: calc(.18 * var(--t)); }
-.offerov .spov__grid { flex: none; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: auto; overflow: visible; }
+.offerov .spov__grid { flex: none; grid-template-columns: repeat(var(--offer-cols, 3), minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: auto; overflow: visible; }
 .offerov__tabs { display: flex; flex-wrap: wrap; gap: .08rem; }
 .offerov__slot { display: flex; flex-direction: column; gap: .08rem; min-width: 0; }
 .offerov .spcard { flex: 1; min-height: 1.7rem; height: auto; }
@@ -803,13 +811,13 @@ button.bpop__harmony:hover { border-style: solid; color: #fff; }
   .offerov .spov__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .offerov .spcard__icon { width: .6rem; height: .6rem; }
-.offerov__selector { display: flex; flex-wrap: wrap; align-items: center; gap: .12rem .2rem; margin-top: .2rem; padding: .16rem; border: 1px solid #64748b66; border-radius: .1rem; background: #101b29; font-size: max(calc(.2 * var(--t)), calc(12px * var(--sp-ui, 1))); }
+.offerov__selector { display: flex; flex-wrap: wrap; align-items: center; gap: .12rem .2rem; margin-top: .2rem; padding: .16rem; border: 1px solid #64748b66; border-radius: .1rem; background: #101b29; font-size: max(calc(.2 * var(--t)), 12px); }
 .offerov__options { display: grid; grid-template-columns: repeat(5, minmax(44px, 1fr)); gap: .08rem; flex: 1; }
-.offerov__options button { min-height: max(.44rem, 44px); border: 1px solid #64748b; border-radius: .06rem; padding: .08rem; background: #1e293b; color: #e2e8f0; font: inherit; cursor: pointer; }
+.offerov__options button { min-height: max(.44rem, 32px, calc(44px * var(--sp-ui, 1))); border: 1px solid #64748b; border-radius: .06rem; padding: .08rem; background: #1e293b; color: #e2e8f0; font: inherit; cursor: pointer; }
 .offerov__options button.is-selected { border-color: #f6cc78; background: #614b22; color: #fff5db; box-shadow: inset 0 0 0 1px #f6cc78; font-weight: 700; }
 .offerov__options button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .offerov__options button:disabled { opacity: .65; cursor: default; }
-.offerov__quote { display: grid; gap: .06rem; margin-top: .14rem; padding: .12rem; background: #080f1bcc; border-radius: .08rem; font-size: max(calc(.2 * var(--t)), calc(12px * var(--sp-ui, 1))); font-variant-numeric: tabular-nums; }
+.offerov__quote { display: grid; gap: .06rem; margin-top: .14rem; padding: .12rem; background: #080f1bcc; border-radius: .08rem; font-size: max(calc(.2 * var(--t)), 12px); font-variant-numeric: tabular-nums; }
 .offerov__profit { color: #91e4b4; }
 .offerov__loss { color: #ffb4a9; }
 .offerov__quote small { color: #f6cc78; }

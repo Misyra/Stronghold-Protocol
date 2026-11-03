@@ -613,8 +613,8 @@ node tools/plugin.mjs import-forge <工坊包目录或 zip> [--out plugins/<id>]
 静态导入支持别名和命名空间，其他静态导出会拒绝。`styles` 只能指向 `.css`，CSS / JSON 与入口都计入 64 个唯一文件上限。
 
 依赖宿主 URL、桌面桥或宿主调用全局控制器的面板暂需人工适配：演示包的 guest-strip、lan-panel、match-overlay 都缺少
-启动输入，不会作为兼容面板复制。[ASSUMED] 本服固定四席，没有容量设置；capacity-panel 的扩容字段 `playerCapacity` /
-`seatCap` 会被点名为 `room.capacity`，暂不展示其 8/12/16/20 档位与房间设置提示。
+启动输入，不会作为兼容面板复制。本服固定四席：capacity-panel 的扩容字段 `playerCapacity` / `seatCap` 现在会被
+`room.setExperimental` 直接拒绝（`playerCapacity ≠ 4` 不生效），不只是"暂不展示"。
 
 技能怎么办：
 

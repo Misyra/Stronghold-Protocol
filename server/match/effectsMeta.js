@@ -484,6 +484,78 @@ function grantSpeaker(gd, source) {
   return offerLabel(gd, source) || (source && source.kind === 'choice' && source.card && source.card.name) || '';
 }
 
+/** Recursively freeze a data graph once (the same rule server/data.js applies when it loads a table). */
+const FROZEN_DATA = new WeakSet();
+function freezeData(root) {
+  if (!root || typeof root !== 'object' || Object.isFrozen(root) || FROZEN_DATA.has(root)) return root;
+  const stack = [root], seen = new Set();
+  while (stack.length) { // loop-cap: the data graph (finite, acyclic-or-memoised walk)
+    const o = stack.pop();
+    if (!o || typeof o !== 'object' || seen.has(o)) continue;
+    seen.add(o);
+    for (const v of Object.values(o)) if (v !== null && typeof v === 'object') stack.push(v);
+    Object.freeze(o);
+  }
+  FROZEN_DATA.add(root);
+  return root;
+}
+
+/** A frozen read-only view of a Set (size/has/iteration; no add/delete/clear). */
+function readOnlySet(set) {
+  return Object.freeze({
+    get size() { return set.size; },
+    has: (v) => set.has(v),
+    forEach: (fn, thisArg) => set.forEach(fn, thisArg),
+    keys: () => set.keys(), values: () => set.values(), entries: () => set.entries(),
+    [Symbol.iterator]: () => set[Symbol.iterator](),
+  });
+}
+
+/**
+ * The sandbox's view of GameData: public reads only. Private fields (`_items`, `matchData`, memo maps) and the
+ * prototype chain are not reachable, every mutable collection is wrapped, and `raw` is deep-frozen — a script can
+ * read the data tables but cannot write the host's state through them.
+ */
+function gdFacade(gd) {
+  const target = Object.freeze(Object.create(null));
+  const bound = new Map();
+  return new Proxy(target, {
+    get(_t, key) {
+      if (typeof key !== 'string' || key === 'constructor' || key === 'matchData' || key.startsWith('_')) return undefined;
+      if (key === 'raw') return freezeData(gd.raw);
+      const value = gd[key];
+      if (typeof value === 'function') {
+        if (!bound.has(key)) bound.set(key, value.bind(gd));
+        return bound.get(key);
+      }
+      if (value instanceof Set) return readOnlySet(value);
+      if (value instanceof Map) return undefined; // lookup memos are host caches, never plugin reads
+      return value;
+    },
+    set() { throw new TypeError('ctx.gd is read-only'); },
+    defineProperty() { throw new TypeError('ctx.gd is read-only'); },
+    deleteProperty() { throw new TypeError('ctx.gd is read-only'); },
+    setPrototypeOf() { throw new TypeError('ctx.gd is read-only'); },
+  });
+}
+
+/**
+ * The sandbox's RNG: value-taking functions bound to the live stream, nothing else. The stream itself (its mutable
+ * state, `state()`/`clone()`, or a writable receiver) never crosses the boundary; a script may advance the match's
+ * deterministic draw exactly as before, but cannot replace or inspect it.
+ */
+function rngFacade(stream) {
+  const view = () => stream();
+  view.next = () => stream();
+  view.int = (n) => stream.int(n);
+  view.range = (a, b) => stream.range(a, b);
+  view.chance = (p) => stream.chance(p);
+  view.pick = (arr) => stream.pick(arr);
+  view.shuffle = (arr) => stream.shuffle(arr);
+  view.weighted = (arr, weightFn) => stream.weighted(arr, weightFn);
+  return Object.freeze(view);
+}
+
 /**
  * @param {import('./Match.js').Match} m
  * @param {import('./PlayerState.js').PlayerState} ps
@@ -764,11 +836,21 @@ export function makeCtx(m, ps, source, hook, ev = null, preview = null) {
     alivePlayers: () => m.alivePlayers().map((p) => makeCtx(m, p, source, hook, null)),
     player: (playerId) => { const p = m.players.get(playerId); return p && p.alive ? makeCtx(m, p, source, hook, null) : null; },
   };
-  if (!preview) return ctx;
+  if (!preview) {
+    // The live context is a frozen facade: a plugin handler can call the documented effect methods, but cannot
+    // rewrite the context, the data tables, GameData internals or the match RNG stream.
+    ctx.data = freezeData(gd.raw);
+    ctx.gd = gdFacade(gd);
+    ctx.rng = rngFacade(rng);
+    return Object.freeze(ctx);
+  }
   const forPlayer = (p) => makeCtx(m, preview.players.get(p.playerId) || p, source, hook, null, preview);
-  return previewContext(ctx, preview, {
+  // The rehearsal context must keep preview.js's own `gd` (a frozen, cloned data view) and its own RNG stream: they are
+  // the isolation a rehearsal promises. Overwriting them with the live facades leaks the match's tables and stream into
+  // the preview (bot.test.js: the duck swap drew from the live data and moved the wave).
+  return Object.freeze(previewContext(ctx, preview, {
     teammates: () => m.alivePlayers().filter((p) => p.playerId !== ps.playerId).map(forPlayer),
     alivePlayers: () => m.alivePlayers().map(forPlayer),
     player: (id) => { const p = m.players.get(id); return p?.alive ? forPlayer(p) : null; },
-  });
+  }));
 }

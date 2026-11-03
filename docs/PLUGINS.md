@@ -1050,8 +1050,8 @@ nonempty `name` (≤80 characters), `desc` (≤240), `icon` (`funds`, `layers`, 
 `apply` primitive (or inherits the window's). Icons are native symbols; text is rendered as text, never HTML.
 
 An optional card `when` carries a per-picker condition from a closed vocabulary: `{ "solo": true }` shows the card
-only while its picker is the room's last standing player, and `{ "seat": k }` (1–8) only while **another** player
-occupies seat k (the room UI's 1-based numbering). Ineligible cards never enter a seat's slots — a seat sees only
+only while its picker is the room's last standing player, and `{ "seat": k }` (1–4, the room's `MAX_SEATS`) only while
+**another** player occupies seat k (the room UI's 1-based numbering). Ineligible cards never enter a seat's slots — a seat sees only
 its eligible cards — and the condition is checked again at every pick, so a room that changed between opening and
 picking refuses with `BAD_TARGET` without recording a pick.
 

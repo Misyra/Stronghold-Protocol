@@ -3,12 +3,16 @@
 // Strict majority resolves the rest with that fallback. quorum:none never gates the phase.
 // `when.bands` narrows the participants to players of these bands; a card's `when` ({ solo: true } / { seat: k })
 // is a per-picker condition checked at open time and again at every pick — declarative data, never code.
-import { ERR } from '../../../shared/constants.js';
+import { ERR, PHASE } from '../../../shared/constants.js';
 import { offerAt, offersAt, offerSelectors, offerVariantIds, offerDefaultVariant } from '../../../shared/plugins/offers.js';
 import { createRng, deriveSeed } from '../../sim/rng.js';
 import { OK, fail } from './common.js';
 
 export const OFFER_CLOSED = Object.freeze(['settled', 'timeout', 'none']);
+/** Phases a `prep` window can no longer be answered in: the prep is over (the round's battle or its settlement). */
+const PREP_OVER = Object.freeze([
+  PHASE.COMBAT, PHASE.UNITE, PHASE.SETTLE, PHASE.FINAL_ASSAULT, PHASE.HIDDEN_CORE, PHASE.RESULT,
+]);
 
 export class MatchOffers {
   /** Returns open only when the caller must install a continuation. Zero seconds creates nothing. */
@@ -17,6 +21,13 @@ export class MatchOffers {
     const alive = this.alivePlayers().filter(p => !p.left);
     if (!list.length || !alive.length) return 'none';
     for (const { pluginId, offer } of list) {
+      // A card's display quote must agree with its item's contract spec; a disagreement is a data bug, so the window
+      // is not loaded rather than showing one economy and settling another (PLUGINS §10b, cards `quote`).
+      const mismatch = this._offerQuoteMismatch(offer);
+      if (mismatch) {
+        this.log?.error?.(`[match ${this.roomCode}] offer ${pluginId}/${offer.id} refused: ${mismatch}`);
+        continue;
+      }
       const participants = alive.filter(ps => this._offerBandOk(ps, offer));
       if (!participants.length) continue; // a window nobody may open creates nothing
       const w = {
@@ -25,6 +36,10 @@ export class MatchOffers {
         deadline: this.sched.now() + this.scaled(offer.windowSec * 1000),
         options: new Map(), picks: new Map(), refreshUsed: new Map(), closed: false,
       };
+      // `slots` is the window's *upper bound*, not a promise of that many cards: a picker whose `when` cards are
+      // filtered out may see fewer (never zero — such a picker does not hold a seat in the window). The rest of the
+      // window therefore always reads each picker's own `options.length`, never the declared count (a fallback that
+      // ran over `slots` would reach a slot this seat does not have).
       for (const ps of participants) {
         const options = this._offerOptions(w, ps);
         if (!options.length) continue; // no card is eligible for this picker — the window does not open for them
@@ -50,6 +65,32 @@ export class MatchOffers {
   _offerBandOk(ps, offer) {
     const bands = offer.when?.bands;
     return !bands?.length || bands.includes(ps.bandId);
+  }
+
+  /**
+   * The first card/variant whose display `quote` disagrees with the `contract` spec of the item it grants, or null.
+   * The spec (`{ fraction, multiplier }` on the item record, data plugin side) is the settlement's own table, so a
+   * quote can never promise an economy the handler does not pay. An item without a spec is not checked (the quote is
+   * still display-only); a variant inherits the base quote when it declares none.
+   */
+  _offerQuoteMismatch(offer) {
+    const check = (effect, quote, at) => {
+      if (!quote) return null;
+      const itemId = effect && typeof effect === 'object' && typeof effect.item === 'string' ? effect.item : null;
+      const spec = itemId ? this.gd.item(itemId)?.contract : null;
+      if (!spec) return null;
+      if (quote.fraction === spec.fraction && quote.multiplier === spec.multiplier) return null;
+      return `${at} quote ${quote.fraction}x${quote.multiplier} != ${itemId} contract ${spec.fraction}x${spec.multiplier}`;
+    };
+    for (const card of offer.cards || []) {
+      const bad = check(card.effect, card.quote, card.id);
+      if (bad) return bad;
+      for (const [id, variant] of Object.entries(card.variants || {})) {
+        const vbad = check(variant.effect, variant.quote, `${card.id}/${id}`);
+        if (vbad) return vbad;
+      }
+    }
+    return null;
   }
 
   /** A card's picker condition: solo = the picker is the room's last standing player; seat k = another player holds it. */
@@ -121,6 +162,11 @@ export class MatchOffers {
 
   _offerCanPick(ps, w, idx, cardId) {
     if (!w || this.disposed || this.ended || this.sched.now() >= w.deadline) return fail(ERR.WRONG_PHASE);
+    // A prep window is live only while the prep is still ahead or running: once the round moved into its battle or
+    // settled it (COMBAT/UNITE/SETTLE, the Final Assault / Hidden Core, RESULT), a stale window must not accept a pick
+    // (P1: a pref window left open at endPrep accepted g.offer during COMBAT). The pre-prep holds (ROUND_START, the
+    // 機变 draft, PREP itself) all answer for the same prep.
+    if (w.at === 'prep' && PREP_OVER.includes(this.phase)) return fail(ERR.WRONG_PHASE);
     if (!ps || !ps.alive || ps.left || !w.options.has(ps.playerId)) return fail(ERR.ELIMINATED);
     if (!Number.isInteger(idx) || idx < 0 || idx >= w.slots || !w.options.get(ps.playerId)[idx]) return fail(ERR.BAD_TARGET);
     if (w.picks.has(ps.playerId)) return fail(ERR.ALREADY);
@@ -157,7 +203,13 @@ export class MatchOffers {
   }
 
   _offerApply(ps, w, idx, variantId = offerDefaultVariant(w.offer)) {
-    const base = w.options.get(ps.playerId)[idx];
+    // A picker can hold fewer cards than the window declares (`when` filtering, see openOfferWindow); a fallback or a
+    // stale pick that names an absent slot grants nothing rather than throwing inside the phase.
+    const base = w.options.get(ps.playerId)?.[idx];
+    if (!base) return false;
+    // A card that declares variants must answer the requested one: a missing key is a stale/forged pick, never a
+    // silent fallback to the base effect (a variant-free card — the shared Skip card — still uses its base effect).
+    if (base.variants && !Object.hasOwn(base.variants, variantId)) return false;
     const card = { ...base, ...(base.variants?.[variantId] || {}) };
     if (!this._offerAvailable(ps, card)) return false;
     const effect = card.effect;
@@ -174,9 +226,11 @@ export class MatchOffers {
 
   _offerDefault(ps, w) {
     if (w.picks.has(ps.playerId)) return;
-    // [ASSUMED] Try current slots in order; if none can grant, close with an explicit skipped pick.
+    // [ASSUMED] Try this picker's actual slots in order (it may hold fewer than the declared `slots`); if none can
+    // grant, close with an explicit skipped pick.
     let idx = null;
-    if (w.onTimeout !== 'skip') for (let i = 0; i < w.slots; i++) {
+    const options = w.options.get(ps.playerId) || [];
+    if (w.onTimeout !== 'skip') for (let i = 0; i < options.length; i++) {
       if (this._offerApply(ps, w, i)) { idx = i; break; }
     }
     w.picks.set(ps.playerId, { idx, timeout: true });
@@ -236,6 +290,17 @@ export class MatchOffers {
     const found = this.offerWin.filter(w => !w.closed && w.id === offerId
       && (!identity || w.pluginId === identity.pluginId && w.seq === identity.seq));
     return found.length === 1 ? found[0] : null;
+  }
+
+  /**
+   * A prep boundary: settle every window still open for the seats that did not pick, then drop all of them (and any
+   * continuation they held). Called by MatchPrep.endPrep — a window declared at `prep` must not survive into the
+   * battle where a stale g.offer could still grant (P1: COMBAT accepted picks because only the next startRound
+   * closed them).
+   */
+  offersEndPrep() {
+    for (const w of this.offerWin) this._closeOffer(w);
+    this.offersDispose();
   }
 
   offersDispose() {

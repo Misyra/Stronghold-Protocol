@@ -8,7 +8,10 @@
 // into data/assets.json — in a couple of seconds.
 //
 // The seven files are Front and Back (each a .skel, a .atlas and a page .png) plus the 180×180 avatar. They come
-// from the same upstream sources as a full run, so a rebuilt manifest and an installed skin never disagree.
+// from the same upstream sources as a full run, so a rebuilt manifest and an installed skin never disagree. An
+// outfit the official table gives a 动态立绘 also gets its optional layered illustration (one more Spine model plus,
+// when present, background / foreground layers); that step is best-effort — a missing illustration never fails the
+// outfit, it just leaves the static picture in the picker.
 //
 // Interrupting an install is safe, and resuming is just running it again:
 //   * the files — the Downloader writes through a temp file and renames, and skips whatever is already on disk
@@ -31,6 +34,8 @@ import { processModels } from './assets/spine.mjs';
 import { Downloader } from './assets/downloader.mjs';
 import { contentHash, MANIFEST_VERSION } from './assets/manifest.mjs';
 import { assetUrl } from './assets/sources.mjs';
+import { illustrationFor } from '../shared/skins.js';
+import { illustrationSources } from './assets/illustrations.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ASSETS = path.join(ROOT, 'public', 'assets');
@@ -191,7 +196,12 @@ export async function installSkins(ids, { log = console.log, force = false, onPr
     // download and nothing worth writing. The rewrite would be byte-identical, and even that breaks the running
     // release signature (new inode, new mtime) → 503 for every client until the next restart. A half-finished
     // install is unaffected: its entry is missing from the manifest, so it falls through to the normal path below.
-    if (installed.has(id) && manifest.chars?.[charId]?.skins?.[id]) {
+    // Exception: an outfit installed before 动态立绘 support (or whose illustration failed then) still has no
+    // `dynamic` record, and a verified declaration is worth adding — the model/avatar steps skip the files already
+    // on disk, so the fall-through costs a manifest write, not a second download of the outfit.
+    const installedRecord = manifest.chars?.[charId]?.skins?.[id];
+    const wantsIllustration = !!illustrationFor(id)?.verified;
+    if (installed.has(id) && installedRecord && (installedRecord.dynamic || !wantsIllustration)) {
       ok.push(id);
       log(`[skins] · ${id} 已安装，跳过`);
       continue;
@@ -243,11 +253,59 @@ export async function installSkins(ids, { log = console.log, force = false, onPr
       }
     }
 
+    // 2b. 动态立绘 (docs/OPERATOR-SKINS.md): an optional layered Spine model of the same outfit. Best effort on
+    //     purpose — the outfit is already complete without it, and every missing file only means the picker keeps
+    //     its static illustration. The source is the same public Ark-Models dump the full plan uses.
+    let dynamic = null;
+    let dynamicBackground = null;
+    let dynamicForeground = null;
+    const ill = illustrationFor(id) || illustrationFor(skin.skinId);
+    const illSrc = ill?.verified ? illustrationSources(ill.id) : null;
+    if (illSrc) {
+      const dynKey = `skin:${skin.stem}:dynamic`;
+      const dynDir = `spine/op/${charId}/${skin.stem}/dynamic/`;
+      try {
+        const def = fexliModelDef(dynKey, 'op', dynDir, {
+          skel: { url: illSrc.skel }, atlas: { url: illSrc.atlas }, png: { url: illSrc.page },
+        }, skillIdx.get(charId) || [0]);
+        if (def) {
+          const dynModels = await processModels(new Map([[dynKey, { ...def, pma: true }]]), {
+            root: ASSETS, dl, cachePath: path.join(CACHE, 'spine-info.json'), download: true, log,
+          });
+          const de = dynModels.entries.get(dynKey);
+          if (de) {
+            const clips = Object.keys(de.animations || {});
+            const idle = clips.find((name) => /^idle$/i.test(name)) || clips[0] || null;
+            dynamic = {
+              skel: de.skel, atlas: de.atlas, textures: de.textures, pma: true,
+              anims: idle ? { idle } : {}, animations: de.animations, bounds: de.bounds,
+            };
+            const layer = async (suffix, url) => {
+              if (!url) return null;
+              const rel = `${dynDir}${suffix}.png`;
+              await dl.run([alt(rel, url)], 'skin-illustration');
+              try { await readFile(path.join(ASSETS, rel)); return assetUrl(rel); } catch { return null; }
+            };
+            if (ill.background) dynamicBackground = await layer('background', illSrc.background);
+            if (ill.foreground) dynamicForeground = await layer('foreground', illSrc.foreground);
+          }
+        }
+      } catch (error) {
+        log(`[skins] ${id}: 动态立绘不可用，保留静态立绘（${error?.message || error}）`);
+        dynamic = null; dynamicBackground = null; dynamicForeground = null;
+      }
+    }
+
     // 3. splice it in, exactly where the plan would have put it
     const entry = { spine: { front } };
     if (back) entry.spine.back = back;
     if (avatarUrl) entry.avatar = avatarUrl;
     if (portraitUrl) entry.portrait = portraitUrl;
+    if (dynamic) {
+      entry.dynamic = dynamic;
+      if (dynamicBackground) entry.dynamicBackground = dynamicBackground;
+      if (dynamicForeground) entry.dynamicForeground = dynamicForeground;
+    }
     entry.name = skin.name;
     entry.group = skin.group;
     const c = manifest.chars[charId] || (manifest.chars[charId] = {});
@@ -255,7 +313,7 @@ export async function installSkins(ids, { log = console.log, force = false, onPr
     c.skins[id] = entry;
     installed.add(id);
     ok.push(id);
-    log(`[skins] ✓ ${id}  ${skin.name}${skin.group ? ` [${skin.group}]` : ''}  (a${Object.keys(front.anims || {}).length}项角色, ${back ? '有' : '无'}Back)`);
+    log(`[skins] ✓ ${id}  ${skin.name}${skin.group ? ` [${skin.group}]` : ''}  (a${Object.keys(front.anims || {}).length}项角色, ${back ? '有' : '无'}Back${dynamic ? ', 含动态立绘' : ''})`);
     // the download is over; the parse and the manifest write are what remains, and neither can report a fraction
     if (onProgress) onProgress({ skinId: id, phase: 'finishing', done: seen.spine[1] + seen['skin-avatar'][1], total: seen.spine[1] + seen['skin-avatar'][1] });
     await saveProgress();

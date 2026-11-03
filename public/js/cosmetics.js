@@ -8,6 +8,8 @@
 // and sets a document —, and the asset store with its Spine cache (public/js/assets.js) still loads with the first match,
 // as in 0.2.6. A page without plugins loads neither.
 
+import { mergeCollabManifest } from '../../shared/collabAssets.js';
+
 /** shared/plugins/visual.js, once something needed it (loadVisual). */
 let visual = null;
 let effects = null;
@@ -53,6 +55,9 @@ function plainUrl(url) {
  *   2. the room's visual set (setRoom: its checked document, /vs/<vs16>/overlay.json; null outside a room or in a room
  *      without plugins: a room's art never stays behind or piles up);
  *   3. the player's personal plugins (setPersonal: `[{ id, doc }]`, in the order they apply) — over the room's art too.
+ * Beneath the plugin layers, on the installation's manifest itself: the collab pack (setCollab: data/assets-collab.json
+ * in a room with 联动干员 on, else null — shared/collabAssets.js mergeCollabManifest, add-only), so a plugin may draw
+ * over a collab operator too. Without a loaded manifest it is not laid (the store's empty manifest stays empty).
  * Every plugin URL is built from a document's composition and every reference is copied out of `base` itself
  * (shared/plugins/visual.js prepareVisualDoc, layVisualOps), so what the page draws is exactly what the documents' `vs`
  * name; a write that does not fit is left out (its entry keeps the art beneath it) and told to `onDrop` (once per
@@ -69,6 +74,8 @@ export function createCosmeticLayers() {
   let room = null;
   /** @type {(Layer & { id: string })[]} */
   let personal = [];
+  /** the collab pack's manifest (setCollab), or null */
+  let collab = null;
   /** @type {Set<string>} plugin URLs that failed to load */
   const failed = new Set();
   let gen = 0;
@@ -120,12 +127,21 @@ export function createCosmeticLayers() {
       personal = next.map((p) => ({ id: p.id, doc: p.doc, prep: prepare(p.doc) }));
       changed();
     },
+    /** The collab pack's manifest (data/assets-collab.json) in a room with 联动干员 on, or null (any other room, no room). */
+    setCollab(doc) {
+      const next = isObj(doc) ? doc : null;
+      if (next === collab) return;
+      collab = next;
+      changed();
+    },
+    /** The collab pack laid now, or null. */
+    get collab() { return collab; },
     /** The room's document, or null. */
     get room() { return room ? room.doc : null; },
     /** The personal plugins applied: `[{ id, doc }]`. */
     get personal() { return personal; },
-    /** Is any layer on (a room set or a personal plugin)? */
-    get active() { return !!room || personal.length > 0; },
+    /** Is any layer on (a room set, a personal plugin, the collab pack)? */
+    get active() { return !!room || personal.length > 0 || !!collab; },
     /**
      * A file of a layer failed to load (an image, a Spine model — any of its files —, a sound): its writes are left out
      * from now on and the listeners are told (the entry draws the art beneath it). Whether it was one of the layers'.
@@ -146,12 +162,18 @@ export function createCosmeticLayers() {
     /** `fn(reasons, count)` when writes had to be left out (see above); one listener. */
     onDrop(fn) { dropFn = typeof fn === 'function' ? fn : null; },
     apply(base) {
-      if (!room && !personal.length) return base;
+      if (!room && !personal.length && !collab) return base;
       const key = isObj(base) ? base : EMPTY_MANIFEST;
       const hit = memo.get(key);
       if (hit && hit.gen === gen) return hit.value;
+      // the collab pack beneath the plugin layers, on a loaded manifest only
+      const under = collab && key !== EMPTY_MANIFEST ? mergeCollabManifest(key, collab) : key;
+      if (!room && !personal.length) {
+        memo.set(key, { gen, value: under });
+        return under;
+      }
       // (a layer is only ever set with shared/plugins/visual.js there)
-      const { manifest, dropped } = visual.layVisualOps(key, [...(room ? [room.prep] : []), ...personal.map((p) => p.prep)], { failed });
+      const { manifest, dropped } = visual.layVisualOps(under, [...(room ? [room.prep] : []), ...personal.map((p) => p.prep)], { failed });
       // a reference the page's manifest lacks (told once per change, for a manifest that is loaded)
       if (dropped.length && key !== EMPTY_MANIFEST && toldLay !== gen) {
         toldLay = gen;

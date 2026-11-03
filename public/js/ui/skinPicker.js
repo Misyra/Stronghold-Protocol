@@ -23,7 +23,8 @@
 //   * the group's own tiles (原始立绘 / 精英二立绘 / 默认) go back to the operator's own art / model
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
-import { html, MicroLabel } from './components.js';
+import { html, MicroLabel, Button, Modal, Fragment } from './components.js';
+import { Img } from './gameComponents.js';
 import { recoverImageError } from '../image.js';
 import { useStore, shallowEqual } from '../store.js';
 import { data } from '../data.js';
@@ -36,7 +37,9 @@ import {
   skinsStore, availableSkins, loadSkinData, setSkin, clearSkin,
   setPortrait, clearPortrait,
 } from './skins.js';
-import { manifestSkinKey } from '../../../shared/skins.js';
+import { manifestSkinKey, illustrationFor } from '../../../shared/skins.js';
+import { appearanceDynamic, appearanceStaticSrc } from './skinAssets.js';
+import { DynamicIllustration } from './dynamicIllustration.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -128,13 +131,14 @@ function SkinGroup(p) {
       <span class="lo-skin__text">
         <b class="lo-skin__name">${name}</b>
         <span class="lo-skin__group">${note}</span>
+        ${extra.dynamic ? html`<span class="lo-skin__dynamic">${t('动态立绘')}</span>` : extra.declared ? html`<span class="lo-skin__dynamic">${t('动态立绘待补 · 静态预览')}</span>` : null}
       </span>
     </button>`;
   return html`<div class=${cx('lo-skins', !thumbnails && 'lo-skins--text', tall && 'lo-skins--tall')} role="radiogroup"
       aria-label=${p.ariaLabel} data-skin-group=${p.name}>
     ${leading.map((x) => tile('own:' + x.id, x.id, x.name, x.sub, x.art, { onClick: () => onPick(x.id), title: x.sub }))}
     ${list.map((x) => tile(x.id, x.id, x.name, x.installed ? x.group : t('未安装（服务器没装这套）'), x.installed ? art(x) : null,
-      { missing: !x.installed, onClick: () => onPick(x.id), title: x.name + (x.group ? ' · ' + x.group : '') }))}
+      { missing: !x.installed, onClick: () => onPick(x.id), title: x.name + (x.group ? ' · ' + x.group : ''), dynamic: x.dynamic, declared: x.declared }))}
   </div>`;
 }
 
@@ -173,7 +177,11 @@ export function SkinSection({ chess, onChange }) {
   // it the effect would run once against a null ref and never again, and the live canvas would never mount.
   // (0.3.3 合并注: availableSkins 的第一行是干员自己的默认像(own: true)——选择器的「原始立绘 / 默认」两块砖就是它,
   // 所以从 list 里滤掉, 不作为一张皮肤瓦片出现。)
-  const list = charId ? availableSkins(charId).filter((x) => !x.own) : [];
+  const list = charId ? availableSkins(charId).filter((x) => !x.own).map((x) => ({
+    ...x,
+    dynamic: !!appearanceDynamic(skinRecord(charId, x.id)),
+    declared: !!illustrationFor(x.id),
+  })) : [];
   // The section is NOT only about skins: the 商店立绘 switch (原始 / 精英二) and the model preview belong to any
   // operator that has art or a model, and plenty of them ship no outfit at all (溯光星源 has none and wants both).
   // So it renders when there is a catalogue, an operator record, or both — and hides only for a piece whose art is
@@ -224,6 +232,12 @@ export function SkinSection({ chess, onChange }) {
   // with it. Reset per (operator, skin) — a different choice is a different file.
   const [artBad, setArtBad] = useState(false);
   useEffect(() => { setArtBad(false); }, [charId, previewSkin]);
+
+  // 查看立绘: a modal opened on demand. The dynamic model mounts only while that modal is open (dynamicIllustration.js),
+  // so a roster of operators never starts a renderer or downloads a skeleton.
+  const [artOpen, setArtOpen] = useState(false);
+  const [dynamicOn, setDynamicOn] = useState(true);
+  useEffect(() => { setDynamicOn(true); }, [charId, previewSkin]);
 
   // LIVE playback: mount the model in the frame and step it every frame, exactly like a battlefield view. Mounted
   // once per (operator, skin); the clip buttons only re-play on the existing instance.
@@ -279,7 +293,15 @@ export function SkinSection({ chess, onChange }) {
   const previewName = chosen ? (list.find((x) => x.id === chosen)?.name || chosen) : t('默认');
   const currentClip = clips.find((c) => c.id === (clipId || 'idle')) || clips[0] || null;
   const note = previewStateNow === 'failed' ? ` · ${t('模型不可用')}` : '';
-  return html`<section class="lo-sec lo-sec--skin" data-testid="skin-section">
+  // the enlarged 立绘: the current outfit's own illustration (its static picture) and, when the manifest carries the
+  // layered Spine record, the animated preview on top of it.
+  const artEntry = previewSkin && charId ? skinRecord(charId, previewSkin) : null;
+  const artDynamic = appearanceDynamic(artEntry);
+  const ownIllust = charId ? m?.chars?.[charId]?.illust : null;
+  const artSrc = appearanceStaticSrc(artEntry) || ownIllust || ownPortrait;
+  const canArt = !!(artDynamic || appearanceStaticSrc(artEntry) || ownIllust);
+  return html`<${Fragment}>
+    <section class="lo-sec lo-sec--skin" data-testid="skin-section">
     <header class="lo-sec__head">
       <h3>${t('皮肤')}<${MicroLabel}>SKIN<//></h3>
       <span class="lo-sec__note">
@@ -321,6 +343,19 @@ export function SkinSection({ chess, onChange }) {
       </div>
     </div>` : null}
     </details>
+    <div class="lo-skin__tools">
+      ${canArt ? html`<${Button} variant="secondary" size="sm" data-testid="skin-art-preview" onClick=${() => setArtOpen(true)}>${t('查看立绘')}<//>` : null}
+    </div>
     <p class="lo-skin__hint">${t('选择立绘会切换至对应战斗模型（队友也看得见）；立绘样式只影响你自己看到的商店卡。')}</p>
-  </section>`;
+  </section>
+  ${artOpen ? html`<${Modal} open=${true} onClose=${() => setArtOpen(false)} title=${previewName} micro="OPERATOR ARTWORK"
+      actions=${html`<${Button} variant="secondary" onClick=${() => setArtOpen(false)}>${t('关闭')}<//>`}>
+    ${artDynamic ? html`<div class="lo-dynamic-switch"><${Button} variant="ghost" size="sm" data-testid="dynamic-toggle"
+        onClick=${() => setDynamicOn(!dynamicOn)}>${dynamicOn ? t('切换静态立绘') : t('切换动态立绘')}<//></div>` : null}
+    ${artDynamic && dynamicOn
+      ? html`<${DynamicIllustration} entry=${artDynamic} staticSrc=${artSrc} alt=${previewName} />`
+      : html`<div class="lo-skin-preview"><${Img} src=${artSrc} alt=${previewName}
+          fallback=${html`<p class="lo-skin__error">${t('立绘暂时无法载入')}</p>`} /></div>`}
+  <//>` : null}
+  <//>`;
 }

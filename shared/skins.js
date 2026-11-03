@@ -8,9 +8,10 @@
 //   * `manifestSkinKey` — our data/assets.json keys a skin by its OFFICIAL id (`char_498_inside@kitchen#2`, the id
 //     tools/assets/plan.mjs writes) while the catalogue's own `id` is the stem (`char_498_inside_kitchen_2`). Their
 //     manifest is flat and keyed by the stem. One helper translates, so nothing else has to know.
-import { SKIN_CATALOGUE } from './skin-catalogue.js';
+import { SKIN_CATALOGUE, ILLUSTRATION_SPINES } from './skin-catalogue.js';
 
 export const OPERATOR_SKINS = SKIN_CATALOGUE;
+export { ILLUSTRATION_SPINES };
 export const SKIN_LIMITS = Object.freeze({
   // The wire's ceiling for one `room.skins` (shared/protocol.js isSkinSelection): 256 is above the vanilla roster
   // (210 operators) and the same order as the loadout's own limit.
@@ -67,4 +68,36 @@ export function manifestSkinKey(skinId) {
 /** The catalogue record of a skin, given either id form (used by the picker and the preview). */
 export function skinById(skinId) {
   return (typeof skinId === 'string' && (byId.get(skinId) || byOfficial.get(skinId))) || null;
+}
+
+/**
+ * The layered illustration declaration of an appearance (shared/skin-catalogue.js ILLUSTRATION_SPINES), given either
+ * id form. `verified` means the public Ark-Models dump listed its skel / atlas / page when the catalogue was generated;
+ * it says nothing about whether THIS installation downloaded them — the manifest's `dynamic` record does.
+ * @param {unknown} skinId catalogue id or official id
+ * @returns {{ id: string, verified: boolean, background?: boolean, foreground?: boolean } | null}
+ */
+export function illustrationFor(skinId) {
+  const skin = skinById(skinId);
+  return (skin && ILLUSTRATION_SPINES[skin.officialId]) || null;
+}
+
+/**
+ * The playable dynamic-illustration entry of one manifest skin record, or null. The full plan stores the Spine model
+ * under `dynamic` and the optional layers beside it (`dynamicBackground` / `dynamicForeground`); install-skins.mjs may
+ * write the same three fields. A record without a usable `dynamic.skel` is a static illustration.
+ * @param {any} skin manifest record (`chars[charId].skins[skinKey]`)
+ * @returns {{ skel: string, atlas?: string, textures?: string[], anims: Record<string, string>, animations: Record<string, number>, bounds?: any, background: string|null, foreground: string|null } | null}
+ */
+export function dynamicIllustration(skin) {
+  const d = skin && typeof skin === 'object' ? skin.dynamic : null;
+  if (!d || typeof d !== 'object' || typeof d.skel !== 'string' || !d.skel) return null;
+  const str = (v) => (typeof v === 'string' && v ? v : null);
+  return {
+    ...d,
+    anims: d.anims && typeof d.anims === 'object' ? d.anims : {},
+    animations: d.animations && typeof d.animations === 'object' ? d.animations : {},
+    background: str(skin.dynamicBackground) || str(d.background),
+    foreground: str(skin.dynamicForeground) || str(d.foreground),
+  };
 }

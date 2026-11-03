@@ -74,6 +74,8 @@ import { COLLAB_MANIFEST_URL, collabManifestProblems } from '../../shared/collab
 export const PERSONAL_PREF = 'cosmetics';
 /** Waits (ms) before a visual set's document is fetched again after a transient failure (like data.js). */
 export const VISUAL_RETRY_MS = Object.freeze([600, 2000]);
+/** Waits (ms) before the catalogue is fetched again after a transient failure (like a visual set's document). */
+export const CATALOG_RETRY_MS = Object.freeze([600, 2000]);
 /** How long one attempt at a visual set's document may take before it counts as a transient failure [ASSUMED]. */
 export const VISUAL_TIMEOUT_MS = 30000;
 /** What the page says (once) when a set's document will not load, or when writes were left out / a file failed. */
@@ -102,28 +104,38 @@ export const loadPluginOrder = () => (orderModule ? Promise.resolve(true)
 /**
  * Fetch the catalogue (never cached by the browser: the server lists what its plugins/ holds now) — and the load-order
  * function the personal plugins need with it (loadPluginOrder). Shared while one is on its way; `force` fetches again
- * even when one is there (a panel opened later sees a plugin dropped in meanwhile).
- * @param {{ force?: boolean, fetch?: typeof fetch }} [opts]
+ * even when one is there (a panel opened later sees a plugin dropped in meanwhile). A first load that fails is tried
+ * again (CATALOG_RETRY_MS); a refetch over a ready catalogue keeps the last-good list.
+ * @param {{ force?: boolean, fetch?: typeof fetch, retryDelays?: readonly number[], wait?: (ms: number) => Promise<void> }} [opts]
  * @returns {Promise<any[]>} the entries ([] when it is unavailable)
  */
-export function loadCatalog({ force = false, fetch: doFetch = defaultFetch } = {}) {
+export function loadCatalog({ force = false, fetch: doFetch = defaultFetch, retryDelays = CATALOG_RETRY_MS, wait = sleep } = {}) {
   const cur = catalog.get();
   if (catalogLoad) return catalogLoad;
   if (cur.status === 'ready' && !force) return Promise.resolve(cur.plugins);
   catalog.set({ status: cur.status === 'ready' ? 'ready' : 'loading' });
   catalogLoad = (async () => {
+    // A first load that fails would leave the applied personal plugins with nothing to serve them (syncPersonal keeps
+    // its layers only while the catalogue is out of reach): a couple of automatic retries before giving up. A refetch
+    // over a ready catalogue needs none — its failure keeps the last-good list.
+    const retries = cur.status === 'ready' ? 0 : retryDelays.length;
     try {
-      const res = await doFetch(`${PLUGINS_URL}index.json`, { cache: 'no-store' });
-      if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : '???'}`);
-      const body = await res.json();
-      const plugins = isObj(body) && Array.isArray(body.plugins) ? body.plugins.filter(isObj) : [];
-      await loadPluginOrder();
-      catalog.set({ status: 'ready', plugins, app: typeof body?.app === 'string' ? body.app : null, at: Date.now() });
-      return plugins;
-    } catch (err) {
-      console.warn(`[content] ${PLUGINS_URL}index.json unavailable (${err?.message || err})`);
-      catalog.set({ status: cur.status === 'ready' ? 'ready' : 'failed' });
-      return catalog.get().plugins;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const res = await doFetch(`${PLUGINS_URL}index.json`, { cache: 'no-store' });
+          if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : '???'}`);
+          const body = await res.json();
+          const plugins = isObj(body) && Array.isArray(body.plugins) ? body.plugins.filter(isObj) : [];
+          await loadPluginOrder();
+          catalog.set({ status: 'ready', plugins, app: typeof body?.app === 'string' ? body.app : null, at: Date.now() });
+          return plugins;
+        } catch (err) {
+          console.warn(`[content] ${PLUGINS_URL}index.json unavailable (${err?.message || err})`);
+          if (attempt < retries) { await wait(retryDelays[attempt]); continue; }
+          catalog.set({ status: cur.status === 'ready' ? 'ready' : 'failed' });
+          return catalog.get().plugins;
+        }
+      }
     } finally {
       catalogLoad = null;
     }
@@ -407,8 +419,10 @@ export function installContent({ store = appStore, data = dataStore, layers = co
     // none switched on, or a server without plugins (never even asked for its catalogue)
     if (!ids.length || !installedCount(store.get())) { layers.setPersonal([]); syncTheme([], []); return; }
     // Keep hidden notice-only cosmetics in dependency lookup; filter switches and overlay fetches separately.
-    const offered = cosmeticPlugins(await loadCatalog({ fetch: doFetch }), 'personal');
+    const offered = cosmeticPlugins(await loadCatalog({ fetch: doFetch, retryDelays }), 'personal');
     if (req !== personalReq) return;
+    // the catalogue is out of reach (its retries spent): keep the layers applied so far instead of wiping them
+    if (catalog.get().status !== 'ready') return;
     // the set as a room's would be (requirements switched on, a conflict refused — what still fits), in its load order.
     // Theme variables are then taken in plugin-id order (the later id wins), on this page only.
     const set = personalSet(ids, offered);

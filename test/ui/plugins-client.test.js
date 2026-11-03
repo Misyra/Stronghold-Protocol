@@ -404,6 +404,53 @@ describe('content.js', () => {
     assert.equal(pluginName(body.plugins[0]), '甲', 'the interface language (Chinese here)');
     assert.equal(pluginName({ id: 'x' }), 'x');
   });
+
+  test('loadCatalog: a first load that fails is retried (bounded) before it gives up', async () => {
+    catalog.set({ status: 'idle', plugins: [], app: null, at: 0 });
+    let n = 0;
+    const flaky = async () => { n++; if (n < 3) throw new Error('offline'); return res(200, { plugins: [] }); };
+    await loadCatalog({ fetch: flaky, retryDelays: [1, 1] });
+    assert.equal(n, 3, 'two automatic retries');
+    assert.equal(catalog.get().status, 'ready');
+    catalog.set({ status: 'idle', plugins: [], app: null, at: 0 });
+    n = 0;
+    await loadCatalog({ fetch: async () => { n++; throw new Error('offline'); }, retryDelays: [1, 1] });
+    assert.equal(n, 3, 'the retries are bounded');
+    assert.equal(catalog.get().status, 'failed');
+    catalog.set({ status: 'idle', plugins: [], app: null, at: 0 });
+  });
+
+  test('the catalogue going dark keeps the applied personal layers (a failed refetch keeps the last-good list)', async () => {
+    catalog.set({ status: 'idle', plugins: [], app: null, at: 0 });
+    personal.set({ ids: ['mine'] });
+    const mine = personalDoc('mine', 'm.png');
+    let up = true;
+    const fetch = async (u) => {
+      if (u === '/plugins/index.json') {
+        if (!up) throw new Error('offline');
+        return res(200, { plugins: [{ id: 'mine', class: 'cosmetic', status: 'loaded', scope: ['personal'], vs: mine.visual.vs, unofficial: true }] });
+      }
+      return u.startsWith('/vs/') ? res(200, mine) : res(404, '');
+    };
+    const layers = createCosmeticLayers();
+    const data = createDataStore({ fetch: async () => res(200, BASE), retryDelays: [], timeoutMs: 0 });
+    await data.load('assets');
+    const app = createStore({ room: null, installedPlugins: 1 });
+    const off = installContent({ store: app, data, layers, fetch, retryDelays: [] });
+    await until(() => layers.personal.length === 1, 'applied');
+    assert.equal(data.get('assets').chars.char_112_siege.avatar, urlOf('mine', 'm.png'));
+    up = false; // the server stops answering the catalogue
+    // a panel-style forced refetch fails: the last-good list stays, and a later sync keeps the layer
+    await loadCatalog({ force: true, fetch, retryDelays: [] });
+    assert.equal(catalog.get().status, 'ready', 'a failure keeps the ready state and its list');
+    app.set({ installedPlugins: 2 }); // a reconnect's welcome: syncPersonal runs again
+    for (let i = 0; i < 10; i++) await tick();
+    assert.deepEqual(layers.personal.map((p) => p.id), ['mine'], 'the layer is not wiped');
+    assert.equal(data.get('assets').chars.char_112_siege.avatar, urlOf('mine', 'm.png'), 'the art still applies');
+    off();
+    personal.set({ ids: [] });
+    catalog.set({ status: 'idle', plugins: [], app: null, at: 0 });
+  });
 });
 
 describe('the 插件 panel (ui/pluginPanel.js) and the room screen', () => {

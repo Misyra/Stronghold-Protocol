@@ -32,7 +32,7 @@ export class RoomReclamation {
     for (const room of lobby.rooms.values()) {
       const seats = this.members(room);
       if (seats.some((seat) => this.online(seat))) continue;
-      // (本仓的 registry 会话不带 disconnectedAt, 只能以建房时间兜底 — 与 fork 的回退路径相同)
+      // 本仓的 registry 会话带 disconnectedAt（net.js 断线时写入，在线为 null）；会话不在或从未掉线时以建房时间兜底
       let offlineSince = room.createdAt;
       for (const seat of seats) {
         const at = lobby.registry.byId(seat.playerId)?.disconnectedAt;

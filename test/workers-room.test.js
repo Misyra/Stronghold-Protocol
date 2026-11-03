@@ -53,10 +53,12 @@ test('an overloaded pool refuses the task instead of starting another thread', a
   assert.equal(pool.stats().threads, 1);
 });
 
-test('no pool is created unless SP_WORKERS says which size', async () => {
-  assert.equal(createRoomWorkerPool({ data: DATA, env: {} }), null, 'unset starts no pool');
-  assert.equal(createRoomWorkerPool({ data: DATA, env: { SP_WORKERS: 'junk' } }), null);
-  assert.equal(createRoomWorkerPool({ data: DATA, env: { SP_WORKERS: '0' } }), null);
+test('the room pool is created by default; only SP_WORKERS=0 disables it', async () => {
+  assert.equal(createRoomWorkerPool({ data: DATA, env: { SP_WORKERS: '0' } }), null, 'no pool, the work stays inline');
+  const defaults = createRoomWorkerPool({ data: DATA, env: {}, workerUrl: fixture });
+  assert.ok(defaults instanceof RoomWorkerPool);
+  assert.equal(defaults.stats().size, 4);
+  await defaults.close();
   const pool = createRoomWorkerPool({ data: DATA, env: { SP_WORKERS: '2' }, workerUrl: fixture });
   assert.ok(pool instanceof RoomWorkerPool);
   assert.equal(pool.stats().size, 2);

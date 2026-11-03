@@ -11,12 +11,59 @@
 import { randomUUID } from 'node:crypto';
 import { ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN } from '../shared/constants.js';
 import { N_ } from '../shared/i18n.js';
+import { DEFAULT_VERSION } from '../shared/versions.js';
 import { restoreMatch as applyMatchCheckpoint } from './match/snapshot.js';
 import { createRngFromState } from './sim/rng.js';
 
 const OK = Object.freeze({ ok: true });
 /** Mirrors Lobby's local `fail` (server/lobby.js): a result object, never a throw. */
 const fail = (code, detail) => (detail ? { error: code, detail } : { error: code });
+
+/**
+ * The content a restored room plays (roomDoc.content). The resolved set is rebuilt through Lobby.resolveContent with
+ * the persisted plugin ids and settings — the same seam setPlugins uses — so a plugin set that changed on disk is
+ * re-applied rather than frozen, and the room holds its set again (Lobby.holdContent, counted against maxSets).
+ *
+ * A set that can no longer be made (a plugin uninstalled, refused by the server policy, or a modded room whose plugin
+ * list is gone) refuses the room: silently restoring it as the original game would let an unofficial room into the
+ * official matchmaking queue. Old documents carry no content: the room gets its version's base content, which is the
+ * best the document can say.
+ * @param {object} lobby @param {object} room @param {object} d the persisted room
+ * @returns {object | null | undefined} the content, null for a lobby with no content identity, undefined = refuse
+ */
+function restoredContent(lobby, room, d) {
+  const doc = d.content;
+  if (!doc || typeof doc !== 'object' || typeof doc.cs !== 'string' || !doc.cs) {
+    const base = lobby.baseContent(room.version);
+    if (room.version !== DEFAULT_VERSION && !base) {
+      lobby.log.warn?.(`[lobby] ${room.code}: the content of ${room.version} is no longer available — the room is not restored`);
+      return undefined;
+    }
+    return base || null;
+  }
+  const plugins = Array.isArray(doc.plugins) ? doc.plugins : [];
+  const ids = [...new Set(plugins.filter((p) => p && typeof p.id === 'string' && p.id && !p.auto).map((p) => p.id))];
+  const settings = {};
+  for (const p of plugins) if (p && typeof p.id === 'string' && p.settings && typeof p.settings === 'object') settings[p.id] = p.settings;
+  const r = lobby.resolveContent(room, ids, settings, room.version, null);
+  if ('error' in r || !r.content) {
+    lobby.log.warn?.(`[lobby] ${room.code}: the room's content ${String(doc.cs).slice(0, 8)} is no longer available (${'error' in r ? r.error : 'none'}) — the room is not restored`);
+    return undefined;
+  }
+  // A room that was modded must stay modded: an empty plugin list resolving to the version base is exactly the silent
+  // degradation this restore path exists to prevent.
+  if (doc.vanilla === false && r.content.vanilla !== false) {
+    lobby.log.warn?.(`[lobby] ${room.code}: the room's content set ${String(doc.cs).slice(0, 8)} is gone — the room is not restored`);
+    return undefined;
+  }
+  // the mode the room picked survives while the set still provides it (Lobby.setPlugins / setMode)
+  const content = doc.modeId && r.content.modes?.some((m) => m && m.id === doc.modeId)
+    ? Object.freeze({ ...r.content, modeId: doc.modeId })
+    : r.content;
+  lobby.holdContent(content);
+  return content;
+}
+
 
 /**
  * The seats a match is built from: the checkpoint's players when restoring, the room's own seats
@@ -119,6 +166,12 @@ export function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() } = {})
     }
     room.hostId = room.seatOf(d.hostId) ? d.hostId : null;
     if (!room.hostId) lobby.migrateHost(room);
+    // The room's content set (roomDoc.content): rebuilt and held again, or the room is refused — a plugin room must
+    // never come back as the original game (header "Gameplay plugins"; P1c). Resolved only once the room is otherwise
+    // accepted, so a refused room never leaves a held set behind. undefined = the set is gone.
+    const content = restoredContent(lobby, room, d);
+    if (content === undefined) { stats.droppedSeats += room.seats.filter(Boolean).length; continue; }
+    room.content = content;
     lobby.rooms.set(room.code, room);
     stats.rooms++;
     for (const s of room.seats) if (s && !s.isBot && !s.left && !s.connected) lobby.startGrace(room, s);

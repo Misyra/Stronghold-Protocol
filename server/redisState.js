@@ -246,13 +246,18 @@ export class RedisStateStore extends StateStore {
     const snapshot = shards instanceof Map ? new Map(shards) : new Map(Object.entries(shards || {}));
     const savedAt = Number.isFinite(index.savedAt) ? index.savedAt : Date.now();
     const rooms = new Map((index.rooms || []).map((room) => [room.code, room]));
+    /** Keys this round does not rewrite because nothing changed — their TTL is re-armed after the writes (step 3b). */
+    const refresh = [];
 
     // 1. the checkpoints first: nothing below may name one that did not land
     for (const [code, body] of snapshot) {
       if (!code || typeof body !== 'string') continue;
       const matchCount = rooms.get(code)?.matchCount;
       const previous = this.shardRevs.get(code);
-      if (this.shards.get(code) === body && previous && previous.matchCount === matchCount) continue;
+      if (this.shards.get(code) === body && previous && previous.matchCount === matchCount) {
+        refresh.push(this.cpKey(code));          // unchanged: keep it alive (step 3b)
+        continue;
+      }
       const revision = randomUUID();
       const clocks = index.clocks?.[code] || {};
       // Embed the Worker-encoded JSON verbatim: no parse/encode of the large checkpoint on the game thread.
@@ -272,7 +277,7 @@ export class RedisStateStore extends StateStore {
       this.indexCommit = commit;                   // only a successful write becomes the retry/dirty baseline
       this.indexRevision = revision;
       this.indexWrites++;
-    }
+    } else refresh.push(this.indexKey);
 
     // 3. then the clocks, which tick in real time and must never dirty a checkpoint
     const clocks = {};
@@ -285,7 +290,12 @@ export class RedisStateStore extends StateStore {
       if (!await this.setKey(this.runtimeKey, await encodeValue(runtime))) return false;
       this.runtimeCommit = runtime;
       this.runtimeWrites++;
-    }
+    } else refresh.push(this.runtimeKey);
+
+    // 3b. a write skipped because nothing changed must not let the key expire while this process is alive: the next
+    // boot would read an empty store although the state was always here. EXPIRE re-arms the configured TTL (it never
+    // makes the key permanent).
+    if (!await this.expireKeys(refresh)) return false;
 
     // 4. drop the checkpoints the document stopped naming — only now, after it stopped naming them
     let ok = true;

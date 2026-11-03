@@ -142,6 +142,16 @@ export class ValkeyStateStore extends RedisStateStore {
     } catch (e) { this.warn('write failed', e); return false; }
   }
 
+  /** Re-arm the TTL of a key this round deliberately did not rewrite (see RedisStateStore.expireKeys). */
+  async expireKeys(keys) {
+    const list = (Array.isArray(keys) ? keys : [keys]).filter((k) => typeof k === 'string' && k);
+    if (!list.length) return true;
+    try {
+      for (const key of list) await this.client.command('EXPIRE', key, String(this.ttlSec));
+      return true;
+    } catch (e) { this.warn('expire failed', e); return false; }
+  }
+
   /** Delete keys, never throws. @returns {Promise<boolean>} true = 存储应答了 */
   async delKeys(keys) {
     const list = (Array.isArray(keys) ? keys : [keys]).filter((k) => typeof k === 'string' && k);

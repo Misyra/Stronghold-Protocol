@@ -119,6 +119,24 @@ export function roomDoc(room) {
     difficulty: room.difficulty,
     // the official version the room plays (header "Official versions", 本仓补录: fork 无版本面)
     version: room.version,
+    // The content set the room plays (header "Gameplay plugins", "Official versions"). Without it a restart turns a
+    // plugin room back into the original game: `modded` reads false, matchmaking accepts the room, and the match is
+    // built with the vanilla data. Only what has to be resolved again is stored — the plugins and their settings; the
+    // reader rebuilds the set through Lobby.resolveContent (server/matchRestore.js) and refuses the room when the set
+    // is no longer installed. A document written before this field existed carries none (the reader falls back to the
+    // room's version base).
+    content: room.content ? {
+      cs: room.content.cs,
+      vanilla: room.content.vanilla === true,
+      ...(room.content.version ? { version: room.content.version } : {}),
+      ...(room.content.vs ? { vs: room.content.vs } : {}),
+      plugins: (room.content.plugins || []).map((p) => ({
+        id: p.id,
+        ...(p.settings && typeof p.settings === 'object' ? { settings: p.settings } : {}),
+        ...(p.auto ? { auto: true } : {}),
+      })),
+      ...(room.content.modeId ? { modeId: room.content.modeId } : {}),
+    } : null,
     aiPicksLast: room.aiPicksLast === true,
     bandDupes: room.bandDupes === true,
     consoleEnabled: room.consoleEnabled === true,
@@ -446,6 +464,9 @@ export class Persister {
       const { deadlineRemainingMs, startedAtAgoMs, ...body } = checkpoint;
       try { this.matchDocs.set(code, JSON.stringify(body)); }
       catch { continue; }                      // an unusable checkpoint is dropped, never saved as text
+      // The recovered body replaces whatever this run had; its version is unknown, so the next encode must not trust a
+      // version recorded against another match/body and skip it (that skip would put the old body back on the store).
+      this.matchVersions.delete(code);
       const c = clocks[code];
       const remaining = c && typeof c === 'object' ? c.deadlineRemainingMs : deadlineRemainingMs;
       const started = c && typeof c === 'object' ? c.startedAtAgoMs : startedAtAgoMs;

@@ -1,15 +1,15 @@
 // One process-wide pool for CPU work. Each thread loads game data once; tasks carry only battle inputs.
 //
-// SP_WORKERS is opt-in: unset (or junk) means NO pool at all, see createSimulationPool — the server keeps doing the work
-// inline, exactly as before the pool existed. Set it to a thread count (1..32) to turn the pool on; 0 is the explicit
-// "off" and stays off. SP_WORKER_QUEUE bounds the queue and SP_WORKER_TIMEOUT_MS the per-task timeout. A thread that is
+// SP_WORKERS defaults to 4 threads: unset, empty or an unusable value all mean 4, see createSimulationPool — the operator
+// tunes the number to the server. SP_WORKERS=0 is the explicit "off" (no pool, the work stays inline); 1..32 picks that
+// many threads. SP_WORKER_QUEUE bounds the queue and SP_WORKER_TIMEOUT_MS the per-task timeout. A thread that is
 // being terminated after a crash or a timeout keeps its place in the size budget until it has actually stopped, so the
 // pool never runs more threads than its size and never overruns its queue while a thread is retiring.
 import { availableParallelism } from 'node:os';
 import { Worker } from 'node:worker_threads';
 import { performance } from 'node:perf_hooks';
 
-/** The thread count the default (no SP_WORKERS) would pick — kept for callers that want to report it without starting a pool. */
+/** The fallback size of a pool built without one (SimulationPool's constructor) — not the SP_WORKERS default. */
 export function defaultWorkerCount(cpus = availableParallelism()) {
   return Math.min(8, Math.max(1, cpus - 2));
 }
@@ -20,11 +20,11 @@ export function workerSettings(env = process.env) {
     const n = Number(value);
     return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
   };
-  // Opt-in: an unset SP_WORKERS is 0 (no pool), not a CPU-derived count. A server only starts threads when the operator
-  // asked for them; junk falls back to the same safe, off state. Nothing here depends on the CPU count any more, which
-  // is why the old `cpus` parameter is gone — a pool that does not exist never needed a size.
+  // The pool is on by default with 4 threads; the operator tunes it to the server. Unset, empty, junk and out-of-range
+  // values all fall back to 4; 0 is the explicit "off"; 1..32 is that thread count. Nothing here depends on the CPU
+  // count, which is why the old `cpus` parameter is gone — the default is a fixed number, not a CPU-derived guess.
   return {
-    size: integer(env.SP_WORKERS, 0, 0, 32),
+    size: integer(env.SP_WORKERS, 4, 0, 32),
     maxQueue: integer(env.SP_WORKER_QUEUE, 256, 0, 10000),
     timeoutMs: integer(env.SP_WORKER_TIMEOUT_MS, 120000, 1, 3600000),
   };
@@ -34,7 +34,7 @@ const failure = (code, message) => Object.assign(new Error(message), { code });
 
 export class SimulationPool {
   // A pool always has at least one thread when it exists at all: createSimulationPool / workerSettings decide whether to
-  // start one (unset or 0 SP_WORKERS = no pool), so the constructor's fallback is the CPU-derived count, never 0.
+  // start one (SP_WORKERS=0 = no pool; the default is 4), so the constructor's fallback is the CPU-derived count, never 0.
   constructor({ data, size = defaultWorkerCount(), maxQueue = 256, timeoutMs = 120000,
     workerUrl = new URL('./simulation.js', import.meta.url) } = {}) {
     if (!Number.isInteger(size) || size < 1 || size > 32) throw new RangeError('worker size must be 1..32');
@@ -221,9 +221,9 @@ export class SimulationPool {
 }
 
 /**
- * The pool a server should run with, or null when it is switched off. The pool is opt-in: an unset SP_WORKERS (and the
- * explicit 0, and any junk value) all mean "do not start a pool", and the callers keep doing the work inline, exactly as
- * before the pool existed. Only SP_WORKERS=1..32 starts threads.
+ * The pool a server should run with, or null when it is switched off. SP_WORKERS defaults to 4; 1..32 picks that many
+ * threads, and only the explicit 0 means "do not start a pool" (the callers then keep doing the work inline). Unset,
+ * empty, junk and out-of-range values all fall back to 4.
  * @param {{ data?: object, env?: NodeJS.ProcessEnv, workerUrl?: URL }} [opts]
  * @returns {SimulationPool | null}
  */

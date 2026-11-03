@@ -17,20 +17,20 @@ async function until(pred) {
   }
 }
 
-test('worker settings are opt-in: no SP_WORKERS means no pool', () => {
-  // The pool starts threads only when the operator asked for them. Unset, empty, junk and 0 all mean "off".
-  assert.equal(workerSettings({}, 1).size, 0, 'unset starts nothing');
-  assert.equal(workerSettings({}, 32).size, 0);
-  assert.equal(workerSettings({ SP_WORKERS: '' }, 8).size, 0);
-  assert.equal(workerSettings({ SP_WORKERS: '0' }, 8).size, 0);
-  assert.equal(workerSettings({ SP_WORKERS: '-1' }, 8).size, 0, 'out of range falls back to off, not to the CPU budget');
-  assert.equal(workerSettings({ SP_WORKERS: 'junk' }, 8).size, 0);
-  assert.equal(workerSettings({ SP_WORKERS: '33' }, 32).size, 0);
-  assert.equal(workerSettings({ SP_WORKERS: '1' }, 8).size, 1);
-  assert.equal(workerSettings({ SP_WORKERS: '8' }, 32).size, 8);
+test('worker settings default to 4 threads; only 0 disables the pool', () => {
+  // The pool is on by default. Unset, empty, junk and out-of-range values all mean the 4-thread default; 0 is the
+  // explicit "off"; 1..32 is that thread count.
+  assert.equal(workerSettings({}).size, 4, 'unset means the default');
+  assert.equal(workerSettings({ SP_WORKERS: '' }).size, 4);
+  assert.equal(workerSettings({ SP_WORKERS: '0' }).size, 0, 'the explicit off stays off');
+  assert.equal(workerSettings({ SP_WORKERS: '-1' }).size, 4, 'out of range falls back to the default');
+  assert.equal(workerSettings({ SP_WORKERS: 'junk' }).size, 4);
+  assert.equal(workerSettings({ SP_WORKERS: '33' }).size, 4);
+  assert.equal(workerSettings({ SP_WORKERS: '1' }).size, 1);
+  assert.equal(workerSettings({ SP_WORKERS: '32' }).size, 32);
   assert.deepEqual(workerSettings({ SP_WORKERS: '3', SP_WORKER_QUEUE: '9', SP_WORKER_TIMEOUT_MS: '456' }),
     { size: 3, maxQueue: 9, timeoutMs: 456 });
-  assert.deepEqual(workerSettings({}, 8), { size: 0, maxQueue: 256, timeoutMs: 120000 }, 'the queue bounds keep their defaults');
+  assert.deepEqual(workerSettings({}), { size: 4, maxQueue: 256, timeoutMs: 120000 }, 'the queue bounds keep their defaults');
 });
 
 test('bounded queue, priority, queued cancellation, and thread reuse', async (t) => {
@@ -87,19 +87,16 @@ test('crashed / timed out workers are replaced; running cancellation and shutdow
   await assert.rejects(pool.submit('burn', {}).promise, { code: 'POOL_CLOSED' });
 });
 
-test('no pool is created unless SP_WORKERS says which size', async () => {
-  // Unset, empty, junk and the explicit 0 all leave the work inline; the server behaves exactly as before the pool existed.
-  assert.equal(createSimulationPool({ data: {}, env: {} }), null, 'unset starts no pool');
-  assert.equal(createSimulationPool({ data: {}, env: { SP_WORKERS: '' } }), null);
-  assert.equal(createSimulationPool({ data: {}, env: { SP_WORKERS: 'junk' } }), null);
+test('the pool is created by default and only SP_WORKERS=0 disables it', async (t) => {
+  // Unset means the 4-thread default; the explicit 0 leaves the work inline, exactly as before the pool existed.
   assert.equal(createSimulationPool({ data: {}, env: { SP_WORKERS: '0' } }), null, 'no pool, the work stays inline');
-  const pool = createSimulationPool({ data: {}, env: { SP_WORKERS: '1' }, workerUrl: fixture });
-  try {
-    assert.ok(pool instanceof SimulationPool, 'a size of 1 is an ordinary pool');
-    assert.equal(pool.size, 1);
-  } finally {
-    await pool.close();
-  }
+  const defaults = createSimulationPool({ data: {}, env: {}, workerUrl: fixture });
+  const explicit = createSimulationPool({ data: {}, env: { SP_WORKERS: '1' }, workerUrl: fixture });
+  t.after(() => Promise.all([defaults.close(), explicit.close()]));
+  assert.ok(defaults instanceof SimulationPool, 'unset starts the default pool');
+  assert.equal(defaults.size, 4);
+  assert.ok(explicit instanceof SimulationPool, 'a size of 1 is an ordinary pool');
+  assert.equal(explicit.size, 1);
 });
 
 test('a retiring thread keeps its place until terminate() resolves', async (t) => {

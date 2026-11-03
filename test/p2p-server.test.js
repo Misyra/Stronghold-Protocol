@@ -77,6 +77,19 @@ test('private state, commands, and every event stay on WebSocket; unicast public
   assert.equal(calls[0].id, clients[1].playerId);
 });
 
+test('an unserializable unicast is dropped like a broadcast: no stamp, no throw', (t) => {
+  const { lobby, room, clients: [, b], start } = setup(t);
+  start();
+  const cyclic = { t: 'm.public', serverNow: 1 };
+  cyclic.self = cyclic;
+  assert.equal(lobby.sendToPlayer(room, b.playerId, cyclic), false);
+  assert.equal(b.ws.frames.length, 0, 'nothing reached the socket');
+  assert.equal(lobby.publicStream(room).seq, 0, 'the failed frame consumed no delivery slot');
+  assert.equal(lobby.sendToPlayer(room, b.playerId, { t: 'm.public', serverNow: 2 }), true);
+  assert.equal(lobby.publicStream(room).seq, 1);
+  assert.equal(stateOnly(b.ws.frames.at(-1)).t, 'm.public');
+});
+
 test('transport readiness bypasses a plugin match queue and stays bound to its source socket', (t) => {
   const { lobby, room, clients: [a, b], enable, ready, plan } = setup(t, 2);
   // An unresolved gameplay request keeps a plugin host's normal room messages queued.

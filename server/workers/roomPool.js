@@ -52,7 +52,8 @@ export class RoomWorkerPool {
 
 /**
  * The pool a server should run with, or null when the workers are switched off: the callers then keep doing the work on
- * the main thread, exactly as before the pool existed. Opt-in, like the pool itself — an unset SP_WORKERS starts nothing.
+ * the main thread, exactly as before the pool existed. SP_WORKERS defaults to 4 threads; only the explicit 0 starts
+ * nothing (unset, junk and out-of-range values fall back to 4).
  * @param {{ data?: object, env?: NodeJS.ProcessEnv, workerUrl?: URL }} [opts]
  * @returns {RoomWorkerPool | null}
  */

@@ -267,6 +267,28 @@ export class StateStore {
     }
   }
 
+  /**
+   * Re-arm the TTL of keys that were deliberately not rewritten. The incremental writer skips an unchanged value, so
+   * without this an index/checkpoint written hours ago would expire (SP_REDIS_TTL) while the process still uses its
+   * in-memory state, and the next boot would read an empty store. The TTL stays the configured one, never "forever".
+   * @param {string[]} keys
+   * @returns {Promise<boolean>} true when the store answered
+   */
+  async expireKeys(keys) {
+    const list = (Array.isArray(keys) ? keys : [keys]).filter((k) => typeof k === 'string' && k);
+    if (!list.length) return true;
+    const client = await this.connect();
+    if (!client) return false;
+    try {
+      await this.#command(Promise.all(list.map((key) => client.expire(key, this.ttlSec))), 'expire');
+      return true;
+    } catch (e) {
+      this.#warn('expire failed', e);
+      if (!this.client?.isReady) this.#drop();
+      return false;
+    }
+  }
+
   /** Delete keys, never throws. @returns {Promise<boolean>} true when the store answered */
   async delKeys(keys) {
     const list = (Array.isArray(keys) ? keys : [keys]).filter((k) => typeof k === 'string' && k);

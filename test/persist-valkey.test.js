@@ -72,6 +72,16 @@ const bulk = (v) => `$${Buffer.byteLength(v)}\r\n${v}\r\n`;
  */
 function fakeValkey({ password = null } = {}) {
   const data = new Map();
+  /** key → the fake clock (ms) at which the key disappears (SET ... EX / EXPIRE). */
+  const expiresAt = new Map();
+  let clock = 0;
+  /** A key is present only while its TTL has not run out; reads expire lazily, as a real store does, */
+  const alive = (key) => {
+    if (!data.has(key)) return false;
+    const at = expiresAt.get(key);
+    if (at != null && at <= clock) { data.delete(key); expiresAt.delete(key); return false; }
+    return true;
+  };
   const record = [];
   const state = { mode: 'ok', loadingHandshakes: 2 };
   const server = net.createServer((socket) => {
@@ -97,18 +107,33 @@ function fakeValkey({ password = null } = {}) {
           continue;
         }
         if (cmd === 'GET') {
-          const v = data.get(rest[0]);
+          const v = alive(rest[0]) ? data.get(rest[0]) : null;
           socket.write(v == null ? '$-1\r\n' : bulk(v));
           continue;
         }
         if (cmd === 'MGET') {
           const parts = [`*${rest.length}\r\n`];
-          for (const k of rest) parts.push(data.get(k) == null ? '$-1\r\n' : bulk(data.get(k)));
+          for (const k of rest) parts.push(alive(k) ? bulk(data.get(k)) : '$-1\r\n');
           socket.write(parts.join(''));
           continue;
         }
-        if (cmd === 'SET') { data.set(rest[0], rest[1]); socket.write('+OK\r\n'); continue; }
-        if (cmd === 'DEL') { let n = 0; for (const k of rest) if (data.delete(k)) n++; socket.write(`:${n}\r\n`); continue; }
+        if (cmd === 'SET') {
+          data.set(rest[0], rest[1]);
+          const ex = rest.findIndex((a) => String(a).toUpperCase() === 'EX');
+          if (ex >= 0 && Number.isFinite(Number(rest[ex + 1]))) expiresAt.set(rest[0], clock + Number(rest[ex + 1]) * 1000);
+          else expiresAt.delete(rest[0]);
+          socket.write('+OK\r\n'); continue;
+        }
+        if (cmd === 'EXPIRE') {
+          const exists = alive(rest[0]);
+          if (exists) expiresAt.set(rest[0], clock + Number(rest[1]) * 1000);
+          socket.write(`:${exists ? 1 : 0}\r\n`); continue;
+        }
+        if (cmd === 'DEL') {
+          let n = 0;
+          for (const k of rest) { expiresAt.delete(k); if (data.delete(k)) n++; }
+          socket.write(`:${n}\r\n`); continue;
+        }
         socket.write('-ERR unknown command\r\n');
       }
     });
@@ -117,6 +142,8 @@ function fakeValkey({ password = null } = {}) {
   liveServers.add(server);
   return {
     data, record, state,
+    /** Move the fake clock; reads then treat keys past their TTL as absent. */
+    advance(ms) { clock += Math.max(0, Number(ms) || 0); },
     async url() { await listening; return `valkey://127.0.0.1:${server.address().port}/0`; },
     close() {
       liveServers.delete(server);
@@ -314,6 +341,39 @@ describe('ValkeyStateStore：契约与语义', () => {
     assert.ok(tail.findIndex((l) => l.startsWith('SET stronghold:index')) < tail.findIndex((l) => l.startsWith('DEL ')));
     assert.equal(fake.data.has('stronghold:cp:ROOM2'), false);
 
+    await store.close();
+    await fake.close();
+  });
+
+  test('unchanged rounds re-arm the TTL of skipped keys: they outlive the original deadline, then expire once flushes stop', async () => {
+    const fake = fakeValkey();
+    const store = createValkeyStore({ env: { SP_VALKEY_URL: await fake.url(), SP_VALKEY_TTL: '60' }, log: quiet });
+    assert.equal(store.ttlSec, 60);
+    const doc = sampleDoc();
+    assert.equal(await store.saveSharded(doc), true);
+    assert.ok(!fake.record.some((r) => r.cmd === 'EXPIRE'), 'a written key already carries its SET EX');
+
+    // 50 s later nothing changed: no value is rewritten, but every skipped key is kept alive
+    fake.advance(50_000);
+    const writes = store.shardWrites + store.indexWrites + store.runtimeWrites;
+    assert.equal(await store.saveSharded(doc), true);
+    assert.equal(store.shardWrites + store.indexWrites + store.runtimeWrites, writes, 'unchanged keys are not rewritten');
+    const expires = fake.record.filter((r) => r.cmd === 'EXPIRE').map((r) => r.args[0]);
+    for (const key of ['stronghold:cp:ROOM1', 'stronghold:cp:ROOM2', 'stronghold:index', 'stronghold:runtime']) {
+      assert.ok(expires.includes(key), `${key} keeps its TTL`);
+    }
+
+    // 20 s later (past the first write's 60 s) the state is still readable: the process never lost it
+    fake.advance(20_000);
+    const back = await store.load();
+    assert.equal(store.loadState, 'loaded');
+    assert.equal(back.matches.ROOM1.log.length, 2048);
+    assert.equal(back.sessions.length, 1);
+
+    // the process stops flushing: the last EXPIRE still governs — the keys disappear on their own TTL, not never
+    fake.advance(61_000);
+    assert.equal(await store.load(), null);
+    assert.equal(store.loadState, 'empty');
     await store.close();
     await fake.close();
   });

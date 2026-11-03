@@ -13,7 +13,9 @@ import { StubMatch } from '../server/match/StubMatch.js';
 import { Match as RealMatch } from '../server/match/Match.js';
 import { VirtualScheduler } from '../server/match/scheduler.js';
 import { snapshotServer, restoreServer, sessionDoc, PERSIST_VERSION, Persister } from '../server/persist.js';
-import { PHASE } from '../shared/constants.js';
+import { PHASE, ERR } from '../shared/constants.js';
+import { DEFAULT_VERSION } from '../shared/versions.js';
+import { matchmakingAvailable, matchmakingMembers } from '../server/matchmakingRooms.js';
 import { TestClient } from './helpers/wsClient.js';
 import { FakeBattle } from './match/fakeBattle.js';
 
@@ -381,3 +383,155 @@ test('operator potential and development survive session and room metadata recov
     assert.deepEqual(lobby2.getRoom(player.roomCode).seatOf(player.playerId).ops, player.ops);
   } finally { lobby.shutdown(); lobby2.shutdown(); }
 });
+
+// ---------------------------------------------------------------------------------------------------
+// content identity: a plugin room does not come back as the original game
+// ---------------------------------------------------------------------------------------------------
+
+const CS_VANILLA = 'b'.repeat(64);
+const CS_MODDED = 'a'.repeat(64);
+const CS_VERSION = 'c'.repeat(64);
+const VS_MODDED = '0123456789abcdef';
+
+/** The subset of server/plugins/roomSets.js the lobby uses; `gone` resolves to PLUGIN_UNKNOWN. */
+function contentPlugins() {
+  const held = { cs: [], vs: [] };
+  return {
+    held,
+    resolve(ids, { settings = {} } = {}) {
+      if (ids.includes('gone')) return { error: ERR.PLUGIN_UNKNOWN, detail: 'gone is not installed' };
+      return { ok: true, set: {
+        cs: CS_MODDED, vs: VS_MODDED,
+        plugins: ids.map((id) => ({ id, version: '1.0.0', class: 'content', hash: '0123456789abcdef', ...(settings[id] ? { settings: settings[id] } : {}) })),
+        warnings: [], bytes: 3, dataBytes: 9, modes: [{ id: 'mode_x_demo' }], kitted: [],
+      } };
+    },
+    holdContent: (cs) => held.cs.push(cs),
+    releaseContent: () => {},
+    hold: (vs) => held.vs.push(vs),
+    release: () => {},
+    dataOf: () => ({ chess: {} }),
+    kittedOf: () => null,
+    defaults: () => [],
+  };
+}
+
+const contentLobby = (registry, plugins, versions = null) => new Lobby({
+  registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}), content: { cs: CS_VANILLA }, plugins, versions,
+});
+
+test('a restarted room keeps its content set: modded, vs and cs survive and matchmaking still refuses it', () => {
+  const now = Date.now();
+  const registry = new SessionRegistry();
+  const plugins = contentPlugins();
+  const lobby = contentLobby(registry, plugins);
+  try {
+    const a = registry.create('Alice');
+    assert.deepEqual(lobby.create(a, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
+    assert.deepEqual(lobby.setPlugins(a, { plugins: [{ id: 'demo' }] }), { ok: true });
+    const room = lobby.getRoom(a.roomCode);
+    assert.equal(room.modded, true);
+    assert.equal(room.content.cs, CS_MODDED);
+    assert.equal(room.content.vs, VS_MODDED);
+    const doc = snapshotServer({ registry, lobby, now });
+    assert.equal(doc.rooms[0].content.cs, CS_MODDED);
+    assert.equal(doc.rooms[0].content.vs, VS_MODDED);
+    assert.deepEqual(doc.rooms[0].content.plugins.map((p) => p.id), ['demo']);
+
+    // restart: a fresh lobby, the same plugin installed
+    const registry2 = new SessionRegistry();
+    const plugins2 = contentPlugins();
+    const lobby2 = contentLobby(registry2, plugins2);
+    try {
+      assert.equal(restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog }).rooms, 1);
+      const room2 = lobby2.getRoom(room.code);
+      assert.ok(room2);
+      assert.equal(room2.modded, true, 'a plugin room does not come back as the original game');
+      assert.equal(room2.content.cs, CS_MODDED);
+      assert.equal(room2.content.vs, VS_MODDED);
+      assert.equal(room2.needsContent, true);
+      assert.deepEqual(plugins2.held.cs, [CS_MODDED], 'the restored room holds its content set again');
+      assert.deepEqual(plugins2.held.vs, [VS_MODDED]);
+      // ... and the official queue refuses it for the same reason it did before the restart
+      const session = registry2.byToken(a.token);
+      assert.equal(matchmakingAvailable(lobby2, session, null), false);
+      assert.equal(matchmakingMembers(lobby2, session, 'NORMAL', true).error, ERR.ROOM_MODDED);
+    } finally { lobby2.shutdown(); }
+
+    // a set that is no longer installed refuses the room instead of degrading it to the original game
+    const doc2 = JSON.parse(JSON.stringify(doc));
+    doc2.rooms[0].content.plugins = [{ id: 'gone' }];
+    const registry3 = new SessionRegistry();
+    const plugins3 = contentPlugins();
+    const lobby3 = contentLobby(registry3, plugins3);
+    try {
+      const stats = restoreServer({ doc: doc2, registry: registry3, lobby: lobby3, now: now + 1000, log: quietLog });
+      assert.equal(stats.rooms, 0);
+      assert.equal(lobby3.rooms.size, 0);
+      assert.deepEqual(plugins3.held.cs, [], 'a refused room holds nothing');
+    } finally { lobby3.shutdown(); }
+  } finally { lobby.shutdown(); }
+});
+
+test('a restarted version room regains its version base content, and is refused when that version is gone', () => {
+  const now = Date.now();
+  const VERSION = 'act1demo';
+  const versions = {
+    defaultId: DEFAULT_VERSION,
+    isEnabled: (id) => id === DEFAULT_VERSION || id === VERSION,
+    available: () => true,
+    offered: () => ['NORMAL', 'HARD'],
+    content: (id) => (id === VERSION ? { cs: CS_VERSION, vanilla: true, version: VERSION, plugins: [] } : null),
+    data: () => ({}),
+  };
+  const registry = new SessionRegistry();
+  const lobby = contentLobby(registry, contentPlugins(), versions);
+  try {
+    const a = registry.create('Alice');
+    assert.deepEqual(lobby.create(a, { mode: 'coop', difficulty: 'NORMAL', version: VERSION }), { ok: true });
+    const room = lobby.getRoom(a.roomCode);
+    assert.equal(room.version, VERSION);
+    assert.equal(room.needsContent, true, 'a version room makes every page load its content (requireCs at start)');
+    assert.equal(room.content.cs, CS_VERSION);
+    const doc = snapshotServer({ registry, lobby, now });
+    assert.equal(doc.rooms[0].version, VERSION);
+    assert.equal(doc.rooms[0].content.cs, CS_VERSION);
+
+    const registry2 = new SessionRegistry();
+    const lobby2 = contentLobby(registry2, contentPlugins(), versions);
+    try {
+      assert.equal(restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog }).rooms, 1);
+      const room2 = lobby2.getRoom(room.code);
+      assert.ok(room2);
+      assert.equal(room2.version, VERSION);
+      assert.equal(room2.content.cs, CS_VERSION, 'the version base is rebuilt, not left null');
+      assert.equal(room2.needsContent, true);
+    } finally { lobby2.shutdown(); }
+
+    // the version's data is gone: no room that could not load its content is restored
+    const registry3 = new SessionRegistry();
+    const versions3 = { ...versions, content: () => null };
+    const lobby3 = contentLobby(registry3, contentPlugins(), versions3);
+    try {
+      assert.equal(restoreServer({ doc, registry: registry3, lobby: lobby3, now: now + 1000, log: quietLog }).rooms, 0);
+      assert.equal(lobby3.rooms.size, 0);
+    } finally { lobby3.shutdown(); }
+  } finally { lobby.shutdown(); }
+});
+
+test('seedMatches drops a version recorded against another checkpoint so it cannot be skipped', async () => {
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
+  const store = new MemoryStore();
+  const persister = new Persister({ store, registry, lobby, log: quietLog });
+  try {
+    const match = {};
+    persister.matchDocs.set('ROOM1', '{"round":9}');
+    persister.matchVersions.set('ROOM1', { match, version: 5 });
+    persister.seedMatches({ matches: { ROOM1: { round: 3 } } });
+    assert.equal(persister.matchDocs.get('ROOM1'), '{"round":3}', 'the recovered body replaces the run\'s');
+    assert.equal(persister.matchVersions.has('ROOM1'), false,
+      'the recovered body has no trusted version: the next encode must rewrite it');
+  } finally { await persister.encoder.close(); lobby.shutdown(); }
+});
+

@@ -213,6 +213,7 @@ export class BattleTiles {
     const occ = this._occ[r * COLS + c];
     if ((occ && occ.alive && occ !== u) || this.downOn(r, c, u)) return DOWN_STATE.WAIT_TILE;
     const ps = this.getPlayer(u.ownerId);
-    return !ps || ps.dp + 1e-9 < u.base.cost ? DOWN_STATE.WAIT_DP : DOWN_STATE.COUNTING;
+    // the redeploy price _checkRedeploys charges, cost modifiers included (deploy.js), not the raw base cost
+    return !ps || ps.dp + 1e-9 < u.base.cost * u.s.costMul ? DOWN_STATE.WAIT_DP : DOWN_STATE.COUNTING;
   }
 }

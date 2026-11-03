@@ -302,7 +302,8 @@ export function performAttack(b, u, prof, targets, opts = null) {
     if (ranged && foe && prof.projectile === 'boomerang') {
       throwBoomerang(b, u, prof, t, info);
     } else if (ranged && foe) {
-      const speed = PROJECTILE_SPEEDS[prof.projectile] ?? PROJECTILE_SPEED;
+      // `projectileSpeed` (tiles/s): a profile whose shots fly slower than its visual's speed (丰川祥子's 音符, op-oblvns.js)
+      const speed = prof.projectileSpeed > 0 ? prof.projectileSpeed : (PROJECTILE_SPEEDS[prof.projectile] ?? PROJECTILE_SPEED);
       // projectiles land even if the shooter died meanwhile (damage is credited to it)
       b.addProjectile({ from: u, target: t, speed, visual: prof.projectile, source: u, hitDead: prof.splashRadius > 0,
         onHit: (c) => resolveHit(b, u, prof, c.target, info, c.x, c.y) });

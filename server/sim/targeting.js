@@ -208,8 +208,11 @@ const PRIORITY_FNS = {
  * @param {string|null} priority profile/skill priority key
  */
 export function sortEnemyTargets(battle, attacker, cands, priority) {
+  const pf = priority ? (PRIORITY_FNS[priority] ?? null) : null;
+  // 'nearest' / 'farthest' are distances, not PRIORITY_FNS keys (the key function below); any other unknown key is a
+  // content bug: it sorts by nothing, so name it once in the sim log instead of silently ignoring it.
+  if (priority && !pf && priority !== 'nearest' && priority !== 'farthest') battle.log(`unknown targeting priority '${priority}'`);
   if (cands.length <= 1) return cands;
-  const pf = priority ? (PRIORITY_FNS[priority] || (priority === 'nearest' || priority === 'farthest' ? null : null)) : null;
   const airFirst = priority === 'fly';
   const ax = attacker.x, ay = attacker.y;
   const keyed = cands.map((e) => ({

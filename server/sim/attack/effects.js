@@ -1,6 +1,11 @@
 // PRTS 伤判效果: higher priority first, then the buff's actual acquisition order.
 // Injury observers retain their ordered position even after a previous effect cancels the damage.
 import { ignoresDamageCancellation } from './helpers.js';
+import { powi } from '../detmath.js';
+
+// A stacked damage-taken multiplier can overflow a double; the instance is then clamped to this finite ceiling rather
+// than collapsing to 0 (no damage), which would invert an overwhelming hit into a harmless one.
+const MAX_STACKED_AMOUNT = 1e300;
 
 export function injuryEffects(battle, target, amount, type, { dodgeMode = 'ignore', onDodge = null, onBlock = null, context = null } = {}) {
   let rest = amount;
@@ -10,9 +15,9 @@ export function injuryEffects(battle, target, amount, type, { dodgeMode = 'ignor
   let notifyZero = false;
   let outcome = amount > 0 ? null : 'zero';
   const blockUncancellable = ignoresDamageCancellation(context?.dmg, 'block');
-  const invoke = (label, buff, fn) => battle._safe(() => {
-    try { fn(); } catch (error) { battle._internalError(label, error); }
-  }, label, buff.source ?? target);
+  // Content callbacks are isolated by _safe: a throwing injury / observeInjury handler is a content error (skipped and
+  // logged), never an engine-internal one — an inner catch would count toward MAX_INTERNAL_ERRORS and time the battle out.
+  const invoke = (label, buff, fn) => battle._safe(fn, label, buff.source ?? target);
   const succeeds = probability => probability === undefined || (Number.isFinite(probability) && probability > 0
     && battle.rng() < Math.min(1, probability));
   const block = probability => {
@@ -52,8 +57,9 @@ export function injuryEffects(battle, target, amount, type, { dodgeMode = 'ignor
       let consumed = false;
       const mod = key => Number.isFinite(buff.mods?.[key]) ? buff.mods[key] : 1;
       const multiplier = (type === 'elemental' ? 1 : mod('dmgTakenMul')) * mod(takenKey);
-      for (let i = 0; i < buff.stacks; i++) rest *= multiplier;
-      if (!Number.isFinite(rest) || rest < 0) rest = 0;
+      rest *= powi(multiplier, buff.stacks);
+      if (!(rest >= 0)) rest = 0; // NaN / negative product: no damage
+      else if (rest > MAX_STACKED_AMOUNT) rest = MAX_STACKED_AMOUNT;
       if (reductions.has(buff)) rest = Math.max(0, rest - buff.damageReduction[type]);
       const absorbs = !buff.shieldType || (Array.isArray(buff.shieldType) ? buff.shieldType.includes(type) : buff.shieldType === type);
       const beforeShield = rest;
@@ -111,8 +117,6 @@ export function injuryEffects(battle, target, amount, type, { dodgeMode = 'ignor
 export function settleEffects(battle, result, apply) {
   try { return result.cancelled && !result.notifyZero ? 0 : apply(result.amount); }
   finally {
-    for (const callback of result.after) {
-      try { callback(); } catch (error) { battle._internalError('injury.cleanup', error); }
-    }
+    for (const callback of result.after) battle._safe(callback, 'injury.cleanup');
   }
 }

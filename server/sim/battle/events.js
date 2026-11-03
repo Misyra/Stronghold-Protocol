@@ -5,7 +5,7 @@
 import { bondTimerView } from '../content/bonds/timers.js';
 import { EVENT_BUFFER_CAP } from '../constants.js';
 import { elementView } from '../attack.js';
-import { unitInfo, snapshotUnits, ammoView, wolfView, negView, moteView, coinView, mysticView, layerView, chargeView } from '../snapshot.js';
+import { unitInfo, snapshotUnits, ammoView, wolfView, negView, moteView, coinView, mysticView, layerView, chargeView, feverView } from '../snapshot.js';
 
 export class BattleEvents {
   fx(kind, params = {}) {
@@ -87,13 +87,15 @@ export class BattleEvents {
    *         count + next expiry in simulation seconds; omitted when no declared effect is active.
    *   motes: [[id, count, wide]] — the orbiting 「微尘」 of a unit (snapshot.js moteView; 魔王's T1 过往尘埃): how many
    *         still circle her and whether S2's wider radius is up (display only: render/motes.js draws them);
+   *   fever: [[id, fill, on]] — a Fever gauge (snapshot.js feverView; 丰川祥子's): its fill (0–1) while it fills, the share
+   *         of the Fever seconds left while it runs (on 1) — the bar under her HP bar;
    *   stand: [[id, until]] — when each enemy's attack recovery ends (atkStandUntil; alive, deployed, visible, not
    *         feared or stunned) — display metadata (render/interp.js holds the position until then);
    *   standCut: [[id, at]] — the latest time each listed enemy's recovery was cut or ignored (_cutAttackStand), the
    *         dying ones in their death window included.
    *   face: [[id, ±1]] — a scripted horizontal sign (心虚设计师, mem.publishFacing): the model turns with the front
    *         cut while it stands. Display only; the nine-field tuples and the golden canon omit it.
-   * ammo / wolves / neg / motes / energy / layers / charges / stand / standCut / face are display only: no sim state
+   * ammo / wolves / neg / motes / fever / energy / layers / charges / stand / standCut / face are display only: no sim state
    * reads them, and the nine-field unit tuples are unchanged. bondTimers is also display only (golden canon excludes it).
    */
   snapshot() {
@@ -151,13 +153,15 @@ export class BattleEvents {
       if (en) (energy || (energy = [])).push([u.id, en[0], en[1]]);
       const ly = layerView(u);
       if (ly) (snap.layers || (snap.layers = [])).push([u.id, ly]);
+      const fv = feverView(u);
+      if (fv) (snap.fever || (snap.fever = [])).push([u.id, fv[0], fv[1]]);
       const ch = chargeView(u);
-    if (motes) snap.motes = motes;
       if (ch) (snap.charges || (snap.charges = [])).push([u.id, ch[0], ch[1]]);
     }
     if (elem) snap.elem = elem;
     if (ammo) snap.ammo = ammo;
     if (wolves) snap.wolves = wolves;
+    if (motes) snap.motes = motes;
     if (neg) snap.neg = neg;
     if (energy) snap.energy = energy;
     if (stand) snap.stand = stand;

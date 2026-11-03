@@ -245,6 +245,19 @@ export function moteView(u) {
 /** Upper bound of the mote count a snapshot may carry (the sim's own caps: 3, six while S2 runs). */
 export const MOTE_MAX = 9;
 
+/**
+ * `feverView(u)` = `[fill, on]` of a Fever gauge, null without one: 丰川祥子's (kits/ops/op-oblvns.js sets `unit.feverView`,
+ * read when the snapshot is taken) — `fill` (0–1, three decimals) the gauge's share of 450 while it fills, an empty one
+ * included, and the share of the 20 s left while Fever runs (`on` 1). Display only: render/units.js draws the bar under
+ * her HP bar; the sim's Fever is untouched.
+ */
+export function feverView(u) {
+  if (u.side !== 'ally' || typeof u.feverView !== 'function') return null;
+  const v = u.feverView();
+  if (!Array.isArray(v) || !Number.isFinite(v[0])) return null;
+  return [Math.round(Math.min(1, Math.max(0, v[0])) * 1000) / 1000, v[1] ? 1 : 0];
+}
+
 /** Units included in a snapshot: deployed & visible, plus recently dead ones (DIE animation). */
 export function snapshotUnits(units, t) {
   const out = [];

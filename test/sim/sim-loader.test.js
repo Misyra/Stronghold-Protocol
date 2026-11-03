@@ -116,6 +116,41 @@ test('a missing file still goes through the retry of the fetch path', async () =
   assert.deepEqual(asked.filter((n) => n !== 'waves'), [], 'nothing the page held was requested');
 });
 
+test('a file the page is still downloading is awaited instead of fetched a second time', async () => {
+  const have = pageFiles();
+  let release, called;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const started = new Promise((resolve) => { called = resolve; });
+  const loads = [];
+  const { fetched, fetchFn } = recorder();
+  const pending = loadBrowserSim({ base, fetchFn, reuse: (n) => have[n] ?? null, reuseOwner: () => null,
+    reuseLoad: async (name) => {
+      loads.push(name);
+      if (name !== 'waves') return;
+      called();
+      await gate;
+      have.waves = read('waves');
+    } });
+  await started;
+  assert.deepEqual(fetched, [], 'nothing is fetched while the page is still loading the file');
+  release();
+  const sim = await pending;
+  assert.deepEqual(loads, ['waves'], 'only the file the page does not hold asks the store to load');
+  assert.deepEqual(fetched, [], 'the in-flight request is not duplicated');
+  assert.deepEqual(sim.raw.waves, read('waves'));
+});
+
+test('a store load that settles without the file falls back to the loader fetch', async () => {
+  const have = pageFiles();
+  const { fetched, fetchFn } = recorder();
+  const loads = [];
+  const sim = await loadBrowserSim({ base, fetchFn, reuse: (n) => have[n] ?? null, reuseOwner: () => null,
+    reuseLoad: async (name) => { loads.push(name); } });
+  assert.deepEqual(loads, ['waves']);
+  assert.deepEqual(fetched, ['waves'], 'the store could not deliver it: the loader fetches it itself');
+  assert.deepEqual(sim.raw.waves, read('waves'));
+});
+
 test('an explicit content set uses its own files and never the reuse hook', async () => {
   const have = pageFiles();
   let reuseCalls = 0;

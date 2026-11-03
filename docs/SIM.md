@@ -99,9 +99,11 @@ summon order (§30.22).
 
 Register hooks before the first step (e.g. `opts.setup(battle)` or right after `new Battle`).
 
-**Tick order:** scheduled callbacks → spawns → DP → buffs (+HP regen) → enemies (attack, move, block) →
-enemy tile index → allies (skill tick, attack) → rates (a changed attack interval → rate, display only)  → projectiles → auto-redeploys → boss pool sync → `tick` hook →
-release hooks/timers of units removed this tick (§1.4) → `time += TICK` → end checks.
+**Tick order:** scheduled callbacks → spawns → DP → buffs (+HP regen) → attack-commit (an ally whose attack comes off
+cooldown this tick keeps the target it has now, before enemies move) → enemies (attack, move, block) →
+enemy tile index → allies (skill tick, attack) → rates (a changed attack interval → rate, display only) → projectiles →
+auto-redeploys → boss pool sync → `tick` hook → release hooks/timers of units removed this tick (§1.4) →
+`time += TICK` → end checks.
 
 **Knocked-out operators** (PRTS 卫戍协议/帮助 §作战阶段 单位部署; player report F5 after 0.1.0): "干员退场后…原地留下一个
 “倒地干员”…满足再部署条件时，移除场上的该倒地干员并自动部署至该位置" — an operator knocked out (`isDown`) lies on the tile it
@@ -965,6 +967,7 @@ registration order. `battle.off(handle)` / `battle.off(name, fn)` / `battle.offO
 | `beforeAttack` | `{ attacker, targets, isSkill, profile }` | allies **and** enemies; replace/filter `ctx.targets` |
 | `enemyAttackStart` | `{ enemy, targets }` | an enemy starts a normal attack (it has targets), **before** 麻痹 may interrupt it (ai.js enemyAttack; the client's ON_BEFORE_ABILITY_SPELL_ON): a burst a handler causes interrupts that very attack (酒神 堕梦, PRTS 备注 "触发的元素爆发可打断当次普攻"); a handler that kills or stuns the enemy ends it |
 | `attack` | `{ attacker, targets, isSkill, targetDeployments? }` | an attack/heal was performed (projectiles may still be in flight). Normal enemy attacks provide a `Map<Unit, deploySeq>` captured before their damage; post-attack control effects must not cross a target redeployment. |
+| `projectileStep` | `{ projectile, cancel }` | every projectile after this tick's flight step and **before** it lands (`projectiles.js`): set `cancel` to drop the shot — it is removed from the field and its `onHit` never fires (an intercepted / deflected / evaded projectile). Unlike `stopPropagation`, which only stops the later handlers of this same emit, `cancel` ends the projectile itself. |
 | `damageCalculate` | `{ source, credit, target, dmg }` | source calculation; omitted for precomputed/resolved damage |
 | `damageCalculateTarget` | `{ source, credit, target, dmg }` | target calculation; omitted for resolved damage |
 | `damageOutput` | `{ source, credit, target, dmg, amount }` | after calculation, before target injury; not proof of HP loss |

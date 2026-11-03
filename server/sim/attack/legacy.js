@@ -7,7 +7,7 @@ import { heal as applyHeal } from './heal.js';
 export function legacyDamage(battle, source, target, damage, opts = {}) {
   if (!target || !target.alive || target.removed || target.hidden || !target.deployed) return 0;
   const dmg = damage && damage._norm ? damage : makeDamageInfo(damage);
-  if (source == null && opts.credit !== undefined) dmg.sourceless = true;
+  if (source == null) dmg.sourceless = true;
   const credit = opts.credit === undefined ? source : opts.credit;
   return resolveDamage(battle, { source: dmg.sourceless ? null : source, credit, target, dmg });
 }

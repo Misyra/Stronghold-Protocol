@@ -109,6 +109,7 @@ function applyDamage(battle, ctx, final, expected) {
     const hctx = { source, target, amount: final, dmg, credit };
     battle.emit('hpDamage', hctx);
     if (Number.isFinite(hctx.amount)) final = Math.max(0, Math.min(final, hctx.amount));
+    hctx.amount = final; // transfers see the clamped amount, as the HP loss below does
     applyTransfers(battle, hctx);
   }
   return applyHpDecrease(battle, ctx, final, officialDamageMark(final, expected));

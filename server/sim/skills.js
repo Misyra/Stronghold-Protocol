@@ -24,7 +24,9 @@
 //   CUSTOM_RANGE (enemy inside the custom trigger grid), SEARCH (an enemy inside the INITIAL range, checked every tick
 //   without waiting for an attack: "不受基础策略影响，在初始攻击范围内存在敌人时释放技能" — not any enemy on the field,
 //   which burnt the skill on enemies that had just spawned), GDGLOW_SKILL_2 ("全场存在可选目标时释放技能": a targetable
-//   enemy anywhere on the field — for a heal skill an ally that needs healing — every tick), NEVER/MANUAL (never
+//   enemy anywhere on the field — for a heal skill an ally that needs healing — every tick), AUTO_STOP (a running skill
+//   ends itself once past half its duration with an enemy in its running range: 斩业星熊 S3, PRTS 卫戍协议/帮助 2026-03-14),
+//   NEVER/MANUAL (never
 //   auto-cast: the kit calls skill.activate() itself); any unknown rule falls back to DEFAULT. Units that never attack
 //   (noAttack profiles) evaluate DEFAULT every tick instead. DEFAULT with `trigger.allies` (+ `hpAtMost`): the basic
 //   rule AND such an ally on the trigger grid — the cast replaces the attack about to be made (塞雷娅 S1 "触发时会替换当

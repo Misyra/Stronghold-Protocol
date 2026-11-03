@@ -1,18 +1,12 @@
-// 联动干员 (the owner's decision of 2026-11-02): the room switch `experimental.collabOps` (shared/experimental.js), the
-// 自选 rule it opens (shared/diy.js `collab`, the lobby's room.diy and match start, the match's own check), and the
-// collab art pack (shared/collabAssets.js, data/assets-collab.json, the page's layer and fetch, the served view).
-// The owner's two cuts for this repo: no copyright warning / hold (the host switches it directly) and a room with it on
-// still enters the official matchmaking queue (the ROOM_MODDED guard stays for gameplay-plugin rooms only).
+// 联动干员 (the owner's decision of 2026-11-03): the collab 6★ (data/backups.json `diy.excluded`) are ordinary 自选
+// picks — built in the data, offered by diyPool and composed like an owned operator, with no room switch and no separate
+// rule (they used to need `experimental.collabOps`; shared/diy.js says where). Plus the collab art pack
+// (shared/collabAssets.js, data/assets-collab.json, the page's layer and its one-per-page fetch, the served view).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
 import { Lobby } from '../server/lobby.js';
 import { SessionRegistry } from '../server/net.js';
-import { ERR } from '../shared/constants.js';
-import { validateC2S } from '../shared/protocol.js';
-import { experimentalOptions, experimentalKey, sameExperimental, isExperimental, isCollabRoom } from '../shared/experimental.js';
 import { COLLAB_ASSET_PREFIX, isCollabUrl, toCollabUrl, collabManifestProblems, mergeCollabManifest, collabManifestOf, manifestUrls } from '../shared/collabAssets.js';
 import { collabPackProblems } from '../tools/collab-assets.mjs';
 import { rewriteManifest } from '../server/http/assetViews.js';
@@ -24,30 +18,24 @@ import { createCosmeticLayers } from '../public/js/cosmetics.js';
 import { installContent } from '../public/js/content.js';
 import { makeMatch } from './match/harness.js';
 
-const ROOT = resolve(import.meta.dirname, '..');
 const json = (f) => JSON.parse(readFileSync(new URL(`../${f}`, import.meta.url), 'utf8'));
 const chess = json('data/chess.json');
 const backups = json('data/backups.json');
 const COLLAB = backups.diy.excluded;
 const ASH = 'char_456_ash';
-const T6A = 'chess_char_6_diy1_a', T5A = 'chess_char_5_diy1_a';
+const T6A = 'chess_char_6_diy1_a';
 const ASH_PICK = { charId: ASH, skillIndex: 2, uniEquipId: null };
 const rules = (o = {}) => ({ revivalEnabled: false, disableSharedPool: false, ...o });
-const ON = rules({ collabOps: true });
 const REAL = { skip: !hasGeneratedData() };
 
-test('the switch: an optional strict boolean, absent when off; its own key', () => {
-  assert.deepEqual(experimentalOptions(rules({ collabOps: false })), rules());
-  assert.deepEqual(experimentalOptions(ON), ON);
-  assert.equal(experimentalKey(ON), '00:collab');
-  assert.equal(experimentalKey(rules()), '00');
-  assert.equal(sameExperimental(ON, rules()), false);
-  assert.equal(sameExperimental(ON, rules({ collabOps: true })), true);
-  for (const bad of ['true', 1, null]) assert.equal(isExperimental(rules({ collabOps: bad })), false, String(bad));
-  assert.equal(isCollabRoom(ON), true);
-  assert.equal(isCollabRoom(rules()), false);
-  assert.equal(isCollabRoom(null), false);
-  assert.equal(validateC2S({ t: 'room.setExperimental', experimental: ON }), null);
+test('the collab 6★ are ordinary picks: built as 自选 operators, kept out of the owned pool', () => {
+  assert.ok(COLLAB.length > 0, 'the data names the collab 6★');
+  for (const id of COLLAB) {
+    assert.equal(backups.diy.operators[id]?.rarity, 6, `${id}: a 6★ 自选 record`);
+    assert.equal(backups.diy.ownedPool.includes(id), false, `${id}: not in the owned pool`);
+  }
+  // no room switch opens them: the room options carry no collab rule at all (the owner's decision of 2026-11-03)
+  assert.equal(Object.hasOwn(rules(), 'collabOps'), false);
 });
 
 function fixture(t) {
@@ -83,64 +71,23 @@ function fixture(t) {
   return { lobby, room, player };
 }
 
-test('lobby: the host of a private room only, never a matchmade room; it still queues (no ROOM_MODDED)', (t) => {
-  const h = fixture(t);
-  const { owner, members } = h.room(2);
-  assert.equal(h.lobby.setExperimental(members[1], { experimental: ON }).error, ERR.NOT_HOST);
-  assert.deepEqual(h.lobby.setExperimental(members[0], { experimental: ON }), { ok: true });
-  assert.deepEqual(owner.toState().experimental, ON);
-  assert.equal(owner.seatOf(members[1].playerId).ready, false, 'a rule change un-readies the teammates');
-  // the owner's cut: a room with 联动干员 on is not modded, so the official queue still takes it
-  assert.equal(owner.modded, false);
-  assert.equal(h.lobby.collabOn(owner), true);
-  assert.deepEqual(h.lobby.setExperimental(members[0], { experimental: rules() }), { ok: true }, 'off at once');
-  assert.equal(h.lobby.collabOn(owner), false);
-  // a matchmade room never has it
-  const other = h.room(1);
-  other.owner.source = 'matchmaking';
-  assert.equal(h.lobby.setExperimental(other.members[0], { experimental: ON }).error, ERR.BAD_MSG);
-  assert.equal(h.lobby.collabOn(other.owner), false);
-  // room.state carries the switch only while it is on
-  assert.equal(Object.hasOwn(other.owner.toState(), 'experimental'), false);
-});
-
-test('lobby: room.diy keeps a collab pick only while the room has it on; the match start drops it once the host turned it off', REAL, async (t) => {
+test('lobby: a collab pick is an ordinary 自选 pick — kept with no switch and handed to the match', REAL, async (t) => {
   const h = fixture(t);
   const { owner, members } = h.room(1, 'solo');
-  const picks = { [T5A]: { charId: 'char_609_acguad' }, [T6A]: ASH_PICK };
-  assert.deepEqual(h.lobby.diy(members[0], { picks }), { ok: true });
-  assert.equal(members[0].diy[T6A], undefined, 'off: dropped');
-  assert.deepEqual(h.lobby.setExperimental(members[0], { experimental: ON }), { ok: true });
-  assert.deepEqual(h.lobby.diy(members[0], { picks }), { ok: true });
-  assert.deepEqual(members[0].diy[T6A], ASH_PICK, 'on: kept');
+  const got = h.lobby.diy(members[0], { picks: { [T6A]: ASH_PICK } });
+  assert.equal(got.ok, true);
+  assert.deepEqual(got.picks, { [T6A]: ASH_PICK });
+  assert.deepEqual(members[0].diy[T6A], ASH_PICK, 'kept: there is no switch to turn on');
   assert.deepEqual(owner.seatOf(members[0].playerId).diy[T6A], ASH_PICK);
-  // turned off before the start: the seat's collab pick does not reach the match
-  assert.deepEqual(h.lobby.setExperimental(members[0], { experimental: rules() }), { ok: true });
-  assert.deepEqual(await h.lobby.start(members[0]), { ok: true });
-  const seat = owner.match.opts.seats[0];
-  assert.equal(seat.diy[T6A], undefined);
-  assert.ok(seat.diy[T5A], 'the other picks stay');
-});
-
-test('lobby: a room with it on hands the collab pick to the match, with the switch in its options', REAL, async (t) => {
-  const h = fixture(t);
-  const { owner, members } = h.room(1, 'solo');
-  assert.deepEqual(h.lobby.setExperimental(members[0], { experimental: ON }), { ok: true });
-  assert.deepEqual(h.lobby.diy(members[0], { picks: { [T6A]: ASH_PICK } }), { ok: true });
   assert.deepEqual(await h.lobby.start(members[0]), { ok: true });
   assert.deepEqual(owner.match.opts.seats[0].diy, { [T6A]: ASH_PICK });
-  assert.deepEqual(owner.match.opts.experimental, ON);
 });
 
-test('match: the player fields a collab pick only in a match with the switch on (its own check)', REAL, () => {
+test('match: the player fields a collab pick like any other 自选 pick', REAL, () => {
   const seats = [{ seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true, diy: { [T6A]: ASH_PICK } }];
-  const kitted = [...KITTED_CHARS, ASH];
-  const on = makeMatch({ mode: 'solo', seats, seed: 3, experimental: ON, kitted }).start();
-  assert.deepEqual(on.ps('p_0').diy, { [T6A]: ASH_PICK });
-  on.m.dispose();
-  const off = makeMatch({ mode: 'solo', seats, seed: 3, kitted }).start();
-  assert.deepEqual(off.ps('p_0').diy, {});
-  off.m.dispose();
+  const m = makeMatch({ mode: 'solo', seats, seed: 3, kitted: [...KITTED_CHARS, ASH] }).start();
+  assert.deepEqual(m.ps('p_0').diy, { [T6A]: ASH_PICK });
+  m.m.dispose();
 });
 
 test('collabAssets: the prefix (hashed too), the move of a URL, the checks, the add-only merge', () => {
@@ -209,7 +156,7 @@ test('cosmetic layers: the pack lies beneath the plugin layers, add-only, only o
   assert.equal(told, 2);
 });
 
-test('content.js: the pack is fetched only in a room with the switch on, once per page, and laid there only', async () => {
+test('content.js: the collab pack is fetched once per page, with or without a room, and laid when it validates', async () => {
   const urls = [];
   const pack = { kind: 'collab', chars: { [ASH]: { avatar: '/assets/collab/char/avatar/char_456_ash.png' } } };
   const fetch = async (url) => {
@@ -222,41 +169,25 @@ test('content.js: the pack is fetched only in a room with the switch on, once pe
   const off = installContent({ store: app, data: createDataStore({ fetch }), layers, fetch, retryDelays: [] });
   const tick = () => new Promise((r) => setTimeout(r, 10));
   try {
-    app.set({ room: { code: 'A', experimental: rules() } });
     await tick();
-    assert.equal(urls.filter((u) => u.includes('assets-collab')).length, 0, 'a room without it fetches nothing');
-    assert.equal(layers.collab, null);
-    app.set({ room: { code: 'A', experimental: ON } });
+    assert.deepEqual(layers.collab, pack, 'loaded with no room: the collab 6★ are ordinary picks');
+    assert.equal(urls.filter((u) => u.includes('assets-collab')).length, 1);
+    app.set({ room: { code: 'A' } });
     await tick();
-    assert.deepEqual(layers.collab, pack);
-    app.set({ room: null });
-    await tick();
-    assert.equal(layers.collab, null, 'leaving takes it away');
-    app.set({ room: { code: 'B', experimental: ON } });
-    await tick();
-    assert.deepEqual(layers.collab, pack);
     assert.equal(urls.filter((u) => u.includes('assets-collab')).length, 1, 'fetched once per page');
+    assert.deepEqual(layers.collab, pack, 'a room does not take it away');
   } finally { off(); }
   // a pack that names a normal-pack file is refused
   const bad = createCosmeticLayers();
   const badFetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ chars: { x: { avatar: '/assets/x.png' } } }) });
   const toasts = [];
-  const app2 = createStore({ room: { code: 'C', experimental: ON } });
+  const app2 = createStore({ room: { code: 'C' } });
   const off2 = installContent({ store: app2, data: createDataStore({ fetch: badFetch }), layers: bad, fetch: badFetch, retryDelays: [], toast: (text) => toasts.push(text) });
   await tick();
   off2();
   assert.equal(bad.collab, null);
-  assert.equal(toasts.length, 1);
-});
-
-test('the room UI: the 联动干员 row is a private room\'s only, the host\'s to switch', async () => {
-  const room = (o = {}) => ({ code: 'ABCD', hostId: 'h', mode: 'coop', difficulty: 'NORMAL', seats: [{ seat: 0, playerId: 'h', name: 'Host', isBot: false, ready: false, connected: true }, null, null, null], ...o });
-  const { collabOption } = await import(pathToFileURL(resolve(ROOT, 'public/js/screens/room.js')).href);
-  assert.deepEqual(collabOption(room(), 'h'), { on: false, editable: true });
-  assert.deepEqual(collabOption(room({ experimental: ON }), 'h'), { on: true, editable: true });
-  assert.deepEqual(collabOption(room({ experimental: ON }), 'g'), { on: true, editable: false });
-  assert.equal(collabOption(room({ source: 'matchmaking' }), 'h'), null, 'matchmade: no row');
-  assert.equal(collabOption(null, 'h'), null);
+  // a stock deployment without the pack warns quietly: no toast on every page
+  assert.equal(toasts.length, 0);
 });
 
 test('server: the collab files are presentation data — never loaded as game data, never in the content hash', async () => {

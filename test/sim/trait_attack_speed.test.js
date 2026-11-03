@@ -411,6 +411,9 @@ test('覆盖锁定（补位 / 自选）: 每个补位干员和每个自选组合
   }
   assert.ok(tally.standIn > 100, `every stand-in was scanned (${tally.standIn})`);
   assert.ok(tally.diy > 1000, `every 自选 combination was scanned (${tally.diy})`);
-  assert.deepEqual(applied, [], 'no stand-in or 自选 pick gains the engine rule');
-  assert.deepEqual(Object.keys(reasons).sort(), ['kit'], 'every line they carry is a kit-owned shape (no unknown, no other mode)');
+  // 乌尔比安's collab kit leaves its module line to the engine on purpose (kits/ops/op-oblvns.js: 「攻击范围内存在
+  // 2名及以上敌人时攻击速度+12」 is content/traitMods.js's), so this one combination is expected to install the rule.
+  const ENGINE_OWNED = /^diy .*\|char_4182_oblvns\|.*\|uniequip_002_oblvns$/;
+  assert.deepEqual(applied.filter((x) => !ENGINE_OWNED.test(x)), [], 'no stand-in or 自选 pick gains the engine rule');
+  assert.deepEqual(Object.keys(reasons).sort(), ['kit', 'ok'], 'every line they carry is kit-owned or the collab kit\'s own engine line');
 });

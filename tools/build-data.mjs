@@ -762,6 +762,9 @@ function buildBackups(ctx, chess) {
 
   const coreBonds = Object.values(ac.bondInfoDict || {}).filter((b) => b.isPower && (b.powerIdList || []).length);
   const fallback = act.constData.fallbackBondId;
+  // The bonds this version actually carries: an official version older than a collab operator's own bond (DIY_EXTRA_BONDS)
+  // keeps the pick with the bonds it does have instead of failing the whole build.
+  const bondSet = new Set(Object.keys(act.bondInfoDict || {}));
   const operators = {};
   for (const id of [...new Set([...ownedPool, ...excluded, ...Object.values(prototypes).flat()])].sort(naturalCmp)) {
     const ch = charTable[id];
@@ -770,9 +773,12 @@ function buildBackups(ctx, chess) {
       for (const k of ['nationId', 'groupId', 'teamId']) if (p?.[k] && !powers.includes(p[k])) powers.push(p[k]);
     }
     const hit = coreBonds.filter((b) => b.powerIdList.some((x) => powers.includes(x))).map((b) => b.bondId);
+    const wantedBonds = [...(hit.length ? hit : [fallback]), ...(DIY_EXTRA_BONDS[id] ?? [])];
+    const bonds = wantedBonds.filter((b) => bondSet.has(b));
+    for (const b of wantedBonds) if (!bondSet.has(b)) warn(`DIY pick ${id}: bond ${b} not in this version — dropped`);
     operators[id] = {
       name: ch.name, rarity: rarityOf(ch), profession: ch.profession, subProfessionId: ch.subProfessionId,
-      obtainable: !ch.isNotObtainable, powers, bonds: [...(hit.length ? hit : [fallback]), ...(DIY_EXTRA_BONDS[id] ?? [])],
+      obtainable: !ch.isNotObtainable, powers, bonds,
     };
   }
   return { units, tokens, diy: { slots, prototypes, locked, ownedPool, excluded, operators } };

@@ -98,8 +98,9 @@ const DEFAULT_META = Object.freeze({
   scroll: ['chess_item_6_02_m'], customerDestroy: ['chess_item_6_01_m'], cauldron: ['chess_item_6_03_e'],
 });
 const SHANG = Object.freeze({
-  // 自选: the 24 borrowed charId kits (§35.22.9) are kitted; V1_1's owned pool has one operator less (娜斯提)
-  kits: { own: 46, tier: 19, op: 31, pending: 0 }, diy: { kitted: 81, generic: 6, pending: 0 }, standIns: { kitted: 64, generic: 68 },
+  // 自选: the 24 borrowed charId kits (§35.22.9) are kitted; V1_1's owned pool has one operator less (娜斯提).
+  // 2026-11-03: the collab 6★ are ordinary picks and carry their kits (+5 here, +7 in today's data).
+  kits: { own: 46, tier: 19, op: 31, pending: 0 }, diy: { kitted: 86, generic: 6, pending: 0 }, standIns: { kitted: 64, generic: 68 },
   items: 44, handlers: 22, battleEffect: 68,
   hammers: ['chess_item_2_03_e', 'chess_item_2_04_e', 'chess_item_2_05_e', 'chess_item_2_06_e'],
   // 上半 has no 紧急调度券, and its 寻呼模块 (eff_acarm075) reads use_equip_add_goods_rule_with_refresh_shop: unbound (M2)
@@ -109,17 +110,17 @@ const SHANG = Object.freeze({
 });
 const EXPECT = Object.freeze({
   data: {
-    kits: { own: 129, tier: 0, op: 0, pending: 0 }, diy: { kitted: 84, generic: 6, pending: 0 }, standIns: { kitted: 82, generic: 28 },
+    kits: { own: 129, tier: 0, op: 0, pending: 0 }, diy: { kitted: 91, generic: 6, pending: 0 }, standIns: { kitted: 82, generic: 28 },
     items: 54, handlers: 27, battleEffect: 82,
     hammers: ['chess_item_4_09_e', 'chess_item_3_09_e', 'chess_item_3_10_e', 'chess_item_2_03_e'], meta: DEFAULT_META,
     cells: ['chess_item_5_08_e_a'],
   },
   'data/versions/act1autochess': SHANG,
-  'data/versions/act1autochess-v1_1': { ...SHANG, diy: { kitted: 80, generic: 6, pending: 0 } },
+  'data/versions/act1autochess-v1_1': { ...SHANG, diy: { kitted: 85, generic: 6, pending: 0 } },
   // 下半 V2_1: the chess and item ids of today's data, 13 chess entries fewer (V2_2's 5 new operators and 8 re-tiered
   // entries); 4 owned 自选 picks borrow the shop kit (银灰, 空弦, 卡涅利安, 伺夜)
   'data/versions/act2autochess-v2_1': {
-    kits: { own: 116, tier: 0, op: 0, pending: 0 }, diy: { kitted: 76, generic: 6, pending: 0 }, standIns: { kitted: 74, generic: 26 },
+    kits: { own: 116, tier: 0, op: 0, pending: 0 }, diy: { kitted: 81, generic: 6, pending: 0 }, standIns: { kitted: 74, generic: 26 },
     items: 54, handlers: 27, battleEffect: 82,
     hammers: ['chess_item_4_09_e', 'chess_item_3_09_e', 'chess_item_3_10_e', 'chess_item_2_03_e'], meta: DEFAULT_META,
     cells: ['chess_item_5_08_e_a'],

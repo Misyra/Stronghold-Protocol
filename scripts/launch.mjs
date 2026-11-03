@@ -182,7 +182,9 @@ async function main() {
 
   const env = serverEnv(o);
   warnTestMode(o, env);
-  const serverArgs = [path.join(ROOT, 'server', 'index.js')];
+  // the V8 compile cache first (server/compile-cache.mjs): npm start passes the same --import — every boot after
+  // the first reads the compiled modules from .cache/compile instead of compiling them again
+  const serverArgs = ['--import', path.join(ROOT, 'server', 'compile-cache.mjs'), path.join(ROOT, 'server', 'index.js')];
   // one instance only: the child reads this argument at startup; nothing is written to the environment or to disk
   if (o.roomCode) serverArgs.push('--room-code', String(o.roomCode).trim().toUpperCase());
   const child = spawn(process.execPath, serverArgs, { cwd: ROOT, env, stdio: 'inherit' });

@@ -100,6 +100,17 @@ export function gameplayDataFiles(dataDir) {
  *   index: the body of GET /cs/<cs16>/index.json (contentIndexOf)
  */
 
+/** The content object from the hashed files (both computeVanillaContent and computeVanillaContentAsync end here). */
+function assembleVanillaContent({ simFiles, data, app }) {
+  const sorted = Object.fromEntries(Object.entries(simFiles).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)));
+  const sim = simHashOf(sorted);
+  const cs = contentHashOf({ app, sim, data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.sha256])) });
+  /** @type {VanillaContent} */
+  const content = { cs, app, vanilla: true, sim, simFiles: sorted, data, index: null };
+  content.index = contentIndexOf(content);
+  return content;
+}
+
 /**
  * The vanilla content of this server: every served code file's and data file's hash, and `cs` (see the header).
  * @param {{ simDir: string, sharedDir: string, dataDir: string, shim: string, app?: string,
@@ -123,13 +134,36 @@ export function computeVanillaContent({ simDir, sharedDir, dataDir, shim, app = 
       data[f.name] = { file: f.file, sha256: hash(buf), bytes: buf.length };
     } catch (e) { log.warn(`[content] cannot read data/${f.file}: ${e?.code || e?.message || e}`); }
   }
-  const sorted = Object.fromEntries(Object.entries(simFiles).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)));
-  const sim = simHashOf(sorted);
-  const cs = contentHashOf({ app, sim, data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.sha256])) });
-  /** @type {VanillaContent} */
-  const content = { cs, app, vanilla: true, sim, simFiles: sorted, data, index: null };
-  content.index = contentIndexOf(content);
-  return content;
+  return assembleVanillaContent({ simFiles, data, app });
+}
+
+/**
+ * The async computeVanillaContent: the same files, hashes, warnings and result, but the files are read
+ * concurrently (fs.promises) and `reads`, when given, supplies buffers the data preload already read
+ * (server/data.js loadDataAsync) instead of reading those files a second time.
+ * @param {{ simDir: string, sharedDir: string, dataDir: string, shim: string, app?: string,
+ *   hash?: (bytes: Buffer) => string, log?: { warn: Function }, reads?: Map<string, Buffer> | null }} opts
+ * @returns {Promise<VanillaContent>}
+ */
+export async function computeVanillaContentAsync({ simDir, sharedDir, dataDir, shim, app = APP_VERSION, hash = nodeSha256, log = noopLog, reads = null }) {
+  if (typeof shim !== 'string') throw new TypeError('computeVanillaContent: shim (the /data.js text) required');
+  const load = (abs) => (reads && reads.has(abs) ? Promise.resolve(/** @type {Buffer} */ (reads.get(abs))) : fs.promises.readFile(abs));
+  /** @type {Record<string, string>} */
+  const simFiles = {};
+  const code = await Promise.all(servedCodeFiles({ simDir, sharedDir }).map(async (f) => [f, await load(f.abs).catch((e) => e)]));
+  for (const [f, got] of code) {
+    if (got instanceof Error) { log.warn(`[content] cannot read ${f.path}: ${got?.code || got?.message || got}`); continue; }
+    simFiles[f.path] = hash(got);
+  }
+  simFiles['data.js'] = hash(Buffer.from(shim));
+  /** @type {VanillaContent['data']} */
+  const data = {};
+  const tables = await Promise.all(gameplayDataFiles(dataDir).map(async (f) => [f, await load(f.abs).catch((e) => e)]));
+  for (const [f, got] of tables) {
+    if (got instanceof Error) { log.warn(`[content] cannot read data/${f.file}: ${got?.code || got?.message || got}`); continue; }
+    data[f.name] = { file: f.file, sha256: hash(got), bytes: got.length };
+  }
+  return assembleVanillaContent({ simFiles, data, app });
 }
 
 /**
@@ -160,15 +194,17 @@ export function contentIndexOf(content, { dataUrl = '/data/', version = null, bo
  * tables, no art manifest) and `cs = contentHashOf({ app, sim, data })`. Hashes the bytes only (no JSON parse). No index:
  * server/versions.js writes it (contentIndexOf with the version's URL and bounds). Null when the directory has no data file.
  * @param {{ vanilla: VanillaContent, dataDir: string, dataUrl: string, version: string, hash?: (bytes: Buffer) => string,
- *   log?: { warn: Function } }} opts dataDir: the version's directory; dataUrl: its URL prefix ('/data/versions/<slug>/')
+ *   log?: { warn: Function }, reads?: Map<string, Buffer> | null }} opts dataDir: the version's directory; dataUrl: its URL
+ *   prefix ('/data/versions/<slug>/'); reads: buffers pre-read for the boot (server/versions.js preloadVersionFiles),
+ *   used instead of reading the file again
  * @returns {(Omit<VanillaContent, 'index'> & { version: string, dataUrl: string }) | null}
  */
-export function versionContentOf({ vanilla, dataDir, dataUrl, version, hash = nodeSha256, log = noopLog }) {
+export function versionContentOf({ vanilla, dataDir, dataUrl, version, hash = nodeSha256, log = noopLog, reads = null }) {
   /** @type {VanillaContent['data']} */
   const data = {};
   for (const f of gameplayDataFiles(dataDir)) {
     try {
-      const buf = fs.readFileSync(f.abs);
+      const buf = reads && reads.has(f.abs) ? /** @type {Buffer} */ (reads.get(f.abs)) : fs.readFileSync(f.abs);
       data[f.name] = { file: f.file, sha256: hash(buf), bytes: buf.length };
     } catch (e) { log.warn(`[versions] cannot read ${version} ${f.file}: ${e?.code || e?.message || e}`); }
   }

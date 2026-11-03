@@ -96,7 +96,62 @@ export function loadData(dir = DATA_DIR, { log = console, expected = DATA_FILES 
 let singleton = null;
 
 /**
- * Process-wide data singleton; loads on first call (later calls ignore the options).
+ * The async loadData: the same files, rules, warnings and result as loadData, but the files are read
+ * concurrently (fs.promises) instead of one after another, so the boot's data reads overlap with the other
+ * startup work. `reads`, when given, collects every successfully read Buffer by absolute path — the vanilla
+ * content hash (server/plugins/identity.js computeVanillaContentAsync) reuses them instead of reading the
+ * files a second time.
+ * @param {string} [dir] data directory (default ROOT/data)
+ * @param {{ log?: { warn: Function, error: Function, info?: Function }, expected?: readonly string[],
+ *   reads?: Map<string, Buffer> | null }} [opts]
+ * @returns {Promise<Readonly<Record<string, any>>>}
+ */
+export async function loadDataAsync(dir = DATA_DIR, { log = console, expected = DATA_FILES, reads = null } = {}) {
+  let names = [];
+  try {
+    names = (await fs.promises.readdir(dir, { withFileTypes: true }))
+      .filter((d) => d.isFile() && d.name.toLowerCase().endsWith('.json') && !UNLOADED_DATA.includes(d.name.toLowerCase()))
+      .map((d) => d.name)
+      .sort();
+  } catch (e) {
+    log.warn(`[data] cannot read ${dir}: ${e.code || e.message} — running without game data`);
+  }
+  const out = {};
+  const bufs = await Promise.all(names.map((file) => fs.promises.readFile(path.join(dir, file)).then(
+    (buf) => [file, buf],
+    (e) => [file, e],
+  )));
+  for (const [file, got] of bufs) {
+    const key = file.slice(0, -'.json'.length);
+    if (got instanceof Error) { log.error(`[data] skipping ${file}: ${got.message}`); continue; }
+    if (reads) reads.set(path.join(dir, file), got);
+    try {
+      out[key] = JSON.parse(got.toString('utf8'));
+    } catch (e) {
+      log.error(`[data] skipping ${file}: ${e.message}`);
+    }
+  }
+  const missing = expected.filter((k) => !(k in out));
+  if (missing.length) log.warn(`[data] missing data files: ${missing.map((k) => k + '.json').join(', ')}`);
+  return deepFreeze(out);
+}
+
+/**
+ * The async first fill of the process-wide data singleton (startServer): the same singleton and the same
+ * official-bounds cache getData() fills, with the files read concurrently. Later getData() calls return it.
+ * @param {{ dir?: string, log?: object, reads?: Map<string, Buffer> | null }} [opts]
+ * @returns {Promise<Readonly<Record<string, any>>>}
+ */
+export async function preloadData({ dir = DATA_DIR, log = console, reads = null } = {}) {
+  if (!singleton) {
+    singleton = await loadDataAsync(dir, { log, reads });
+    rememberOfficialBounds(singleton);
+  }
+  return singleton;
+}
+
+/**
+ * The process-wide data singleton; loads on first call (later calls ignore the options).
  * @param {{ dir?: string, log?: object }} [opts]
  * @returns {Readonly<Record<string, any>>}
  */

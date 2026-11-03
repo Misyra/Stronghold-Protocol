@@ -23,8 +23,8 @@
   "type": "module",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch --watch-path=server --watch-path=public --watch-path=shared server/index.js",
+    "start": "node --import server/compile-cache.mjs server/index.js",
+    "dev": "node --import server/compile-cache.mjs --watch --watch-path=server --watch-path=public --watch-path=shared server/index.js",
     "test": "node tools/test-run.mjs",
     "test:guards": "node --test test/ci.test.js test/ci-shards.test.js test/test-run.test.js",
     "golden": "node tools/golden.mjs",

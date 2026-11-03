@@ -37,10 +37,33 @@ import { DEFAULT_VERSION, VERSIONS, versionById, versionSlug } from '../shared/v
 import { canonicalJson, csUrlPart } from '../shared/plugins/identity.js';
 import { officialBoundsOf } from '../shared/plugins/officialBounds.js';
 import { DATA_DIR, VERSION_DATA_FILES, getData, loadData, versionDataDir } from './data.js';
-import { contentIndexOf, nodeSha256, versionContentOf } from './plugins/identity.js';
+import { contentIndexOf, gameplayDataFiles, nodeSha256, versionContentOf } from './plugins/identity.js';
 
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 const JSON_TYPE = 'application/json; charset=utf-8';
+
+/**
+ * Read the files createVersionSets hashes at boot (every enabled non-default version's config.json and data tables)
+ * concurrently, ahead of the synchronous compose — the boot reads them while the data and content loads run instead
+ * of one after another. Returns a Map by absolute path for versionContentOf / createVersionSets's `reads`; a file
+ * that cannot be read is simply absent (the synchronous pass then reports it exactly as before).
+ * @param {{ enabled: string[], dataDir?: string }} opts
+ * @returns {Promise<Map<string, Buffer>>}
+ */
+export async function preloadVersionFiles({ enabled, dataDir = DATA_DIR }) {
+  /** @type {Map<string, Buffer>} */
+  const reads = new Map();
+  const dirs = VERSIONS.map((v) => v.id)
+    .filter((id) => enabled.includes(id) && id !== DEFAULT_VERSION)
+    .map((id) => versionDataDir(id, dataDir))
+    .filter((dir) => !!dir);
+  await Promise.all(dirs.map(async (dir) => {
+    await Promise.all(gameplayDataFiles(dir).map(async (f) => {
+      try { reads.set(f.abs, await fs.promises.readFile(f.abs)); } catch { /* the sync pass reports it */ }
+    }));
+  }));
+  return reads;
+}
 
 /**
  * The version service of one server (see the header).
@@ -50,7 +73,7 @@ const JSON_TYPE = 'application/json; charset=utf-8';
  *   enabled / defaultId: versionsFrom's; dataDir: the server's data directory (versions/<slug>/ under it); vanilla: the
  *   server's vanilla content (server/plugins/identity.js); defaultData: the server's data (the default version's)
  */
-export function createVersionSets({ enabled, defaultId = DEFAULT_VERSION, dataDir = DATA_DIR, vanilla, defaultData = null, log = noopLog }) {
+export function createVersionSets({ enabled, defaultId = DEFAULT_VERSION, dataDir = DATA_DIR, vanilla, defaultData = null, log = noopLog, reads = null }) {
   /** @type {Map<string, { entry: import('../shared/versions.js').OfficialVersion, dir: string, slug: string,
    *   content: NonNullable<ReturnType<typeof versionContentOf>>, modes: Set<string>, data?: any, bounds?: any,
    *   boundsBody?: Buffer, index?: Buffer }>} */
@@ -64,13 +87,15 @@ export function createVersionSets({ enabled, defaultId = DEFAULT_VERSION, dataDi
     const slug = versionSlug(entry);
     let modes;
     try {
-      const config = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+      const configAbs = path.join(dir, 'config.json');
+      const configBuf = reads && reads.has(configAbs) ? /** @type {Buffer} */ (reads.get(configAbs)) : fs.readFileSync(configAbs);
+      const config = JSON.parse(configBuf.toString('utf8'));
       modes = new Set(Object.keys(config?.modes && typeof config.modes === 'object' ? config.modes : {}));
     } catch (e) {
       log.warn(`[versions] ${id} disabled: cannot read ${path.join(dir, 'config.json')} (${e?.code || e?.message || e})`);
       continue;
     }
-    const content = versionContentOf({ vanilla, dataDir: dir, dataUrl: `/data/versions/${slug}/`, version: id, log });
+    const content = versionContentOf({ vanilla, dataDir: dir, dataUrl: `/data/versions/${slug}/`, version: id, log, reads });
     const missing = VERSION_DATA_FILES.filter((f) => !content?.data[f]);
     if (!content || missing.length) {
       log.warn(`[versions] ${id} disabled: ${content ? `${missing.map((f) => `${f}.json`).join(', ')} missing` : 'no data file'} in ${dir}`);

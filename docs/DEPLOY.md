@@ -334,6 +334,8 @@ volumes:
 ## 4. macOS / Linux 常驻
 
 - 临时开服：`scripts/start.sh`（或 `npm start`），保持终端窗口打开。macOS 首次会询问是否允许 node 接受传入连接，选「允许」。
+- 启动加速（0.3.4 起）：`npm start`、`scripts/start.sh` 和 `scripts/start-windows.bat` 都经 `node --import server/compile-cache.mjs` 先启用 V8 编译缓存（`.cache/compile/`，已忽略；首次启动写入，之后每次启动/重启少约 50ms 的模块编译，删除该目录无副作用，源码变更自动失效）。直接 `node server/index.js` 同样能跑，只是没有这份缓存；自定义 systemd 等启动想把加速带上，把 `ExecStart` 换成 `/usr/bin/node --import /opt/Stronghold-Protocol/server/compile-cache.mjs /opt/Stronghold-Protocol/server/index.js`。
+- 启动日志顺序：数据表、内容哈希与版本文件三路读取并行读盘，插件/语言包扫描在读取期间进行，所以 `[packs]` 行可能先于 `[content]` 行打印；各行内容与含义不变。
 - 可选：`npm run build` 把浏览器 UI 打包进 `public/build/`（Vite，`SP_CLIENT=source` 回退）。服务器检测到构建产物就提供打包页（首屏加载更快），没有时用源码模块，两者功能一致。
 - Linux systemd（`/etc/systemd/system/stronghold.service`，路径与用户按实际修改）：
 

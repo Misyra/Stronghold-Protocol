@@ -44,7 +44,7 @@
 
 import http from 'node:http';
 import path from 'node:path';
-import { getData, loadData } from './data.js';
+import { loadDataAsync, preloadData } from './data.js';
 import { getBotStrategy, getBotStrategySeats } from './match/botStrategies.js';
 import { noteLlmIgnored, releaseIgnoresExternalAi, validateExternalConfig } from './match/llmGate.js';
 import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, parseAssetCdn, assetIndexOptionsFrom, versionsFrom, parseRoomCode, announcementOptionsFrom } from './http/config.js';
@@ -52,13 +52,13 @@ import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/webs
 import { siteCsp } from './http/csp.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPluginRegistry } from './plugins/registry.js';
-import { computeVanillaContent } from './plugins/identity.js';
+import { computeVanillaContentAsync } from './plugins/identity.js';
 import { createVisualSets } from './plugins/visualSet.js';
 import { createContentSets } from './plugins/contentSets.js';
 import { createPluginPolicy } from './plugins/policy.js';
 import { createRoomSets } from './plugins/roomSets.js';
 import { createMatchHosts } from './match/host/index.js';
-import { createVersionSets } from './versions.js';
+import { createVersionSets, preloadVersionFiles } from './versions.js';
 import { versionById } from '../shared/versions.js';
 import { t } from '../shared/i18n.js';
 import { createTrustedRuntime } from './plugins/trustedRuntime.js';
@@ -175,17 +175,28 @@ export async function startServer(opts = {}) {
     retentionDays: opts.chatLogRetentionDays ?? process.env.SP_CHAT_LOG_RETENTION_DAYS,
     publicDirs: [publicDir, dataDir, sharedDir, packsDir], log });
 
+  // The three boot loads over independent trees start together (server/data.js, server/plugins/identity.js,
+  // server/versions.js): the data tables, the sim/shared content bytes and the versions' files are read
+  // concurrently instead of one after another, and the plugin scan below runs while those reads are in flight.
+  // Every consumer waits in the old order, so the results — values, log lines, per-file warnings — are the ones
+  // the sequential boot produced (none of the three throws at the read level; failures are warned per file).
+  const versionCfg = versionsFrom(opts, log);
+  /** data/*.json bytes, read once and shared by the data load and the content hash */
+  const reads = new Map();
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
-  const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
+  const dataReady = opts.dataDir ? loadDataAsync(dataDir, { log, reads }) : preloadData({ dir: dataDir, log, reads });
   // the vanilla content hash `cs` (DESIGN §32): the bytes of the served sim, shared code and game data, read once now —
   // like the data the matches use and the build tag below
-  const content = computeVanillaContent({ simDir, sharedDir, dataDir, shim: DATA_SHIM_JS, log });
-  log.info(`[content] vanilla ${content.cs.slice(0, 16)} (${Object.keys(content.simFiles).length} code files, ${Object.keys(content.data).length} data files)`);
+  const contentReady = computeVanillaContentAsync({ simDir, sharedDir, dataDir, shim: DATA_SHIM_JS, log, reads });
+  const versionBytesReady = preloadVersionFiles({ enabled: versionCfg.enabled, dataDir });
   // language packs and plugins (docs/PACKS.md, docs/PLUGINS.md): scanned now — the start log names them — and again
   // whenever their folders change
   const scriptMode = process.env.SP_PLUGIN_SCRIPTS;
   const packs = createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log, scriptHost:host, scriptMode });
   packs.refresh(true);
+  const data = await dataReady;
+  const content = await contentReady;
+  log.info(`[content] vanilla ${content.cs.slice(0, 16)} (${Object.keys(content.simFiles).length} code files, ${Object.keys(content.data).length} data files)`);
   // the content hashes of the art (built in the background once listening) and the manifests served with them —
   // 不再构建(用户分支的预载/CDN 缓存体系取代了它,见上方的 import 说明): assetIndex 与 views 保持 null,
   // /healthz 的 assetHashes 报告 null,清单由静态层按 CDN/发布语义改写后原样送出。
@@ -204,8 +215,7 @@ export async function startServer(opts = {}) {
   const hosts = createMatchHosts({ contents, log, options: { transport, maxWorkers: Math.max(1, policy.get().maxSets), ...(opts.matchHost || {}) } });
   // the official versions (DESIGN §35.23, M1): which ones (the option, else SP_VERSIONS …), their content, and — only
   // when one beyond 第二期下半 is enabled — the match hosts their rooms play in (counted apart from the plugin hosts)
-  const versionCfg = versionsFrom(opts, log);
-  const versions = createVersionSets({ enabled: versionCfg.enabled, defaultId: versionCfg.default, dataDir, vanilla: content, defaultData: data, log });
+  const versions = createVersionSets({ enabled: versionCfg.enabled, defaultId: versionCfg.default, dataDir, vanilla: content, defaultData: data, log, reads: await versionBytesReady });
   // (the test options of matchHost apply to both pools, but never the version pool's kind or its own SP_MAX_VERSION_HOSTS)
   const versionHosts = versions.nonDefault.length
     ? createMatchHosts({ contents: versions, log, options: { transport, ...(opts.matchHost || {}), kind: 'version', maxWorkers: Math.max(1, versionCfg.maxHosts) } })

@@ -654,10 +654,19 @@ export function RoomScreen() {
   }, [room?.code, room?.seats?.filter(Boolean).length]);
   useEffect(() => { if (!found) return undefined; const id = setTimeout(() => alive.current && setFound(false), 1900); return () => clearTimeout(id); }, [found]);
 
+  // The room facts and the two usePresence hooks sit above the early return: a re-render with the room gone while the
+  // screen is still mounted must not change the hooks order (their inputs are null-safe; briefing.js keeps the same
+  // rule for planBonds).
+  const facts = roomFacts(room, me.playerId);
+  const coop = room?.mode !== 'solo';
+  const searching = coop && !!facts.searching;
+  // overlay 淡出期间保持挂载
+  const [searchShown, searchLeaving] = usePresence(searching && !found, 220);
+  const offerShown = !!(searching && mm?.offerId);
+  const [foundShown, foundLeaving] = usePresence(found, 320);
+
   if (!room) return null;
   const online = conn.status === 'online';
-  const coop = room.mode !== 'solo';
-  const facts = roomFacts(room, me.playerId);
   const myReady = !!facts.mine?.ready;
   const info = difficultyInfo(room.mode, room.difficulty);
   // 开发者控制台与匹配互斥 (server/matchmakingRooms.js) —— 开着控制台的房间不进队列,所以「开始搜寻」留在原地并说明
@@ -666,13 +675,8 @@ export function RoomScreen() {
   // 玩法插件房间与官方匹配互斥 (server/matchmakingRooms.js matchmakingMembers): 官方队列只收原生内容,和开发者控制台同一条规则。
   const modded = isModdedRoom(room);
   const searchable = coop && facts.canMatch;
-  const searching = coop && !!facts.searching;
   // 队列自己的时钟: server/matchmaking.js 搜寻中报 { joinedAt, players, target, serverNow }
   const mmView = matchmakingProgress(mm, facts.occupied.length);
-  // overlay 淡出期间保持挂载
-  const [searchShown, searchLeaving] = usePresence(searching && !found, 220);
-  const offerShown = !!(searching && mm?.offerId);
-  const [foundShown, foundLeaving] = usePresence(found, 320);
   const searchElapsed = mmView.elapsed;
 
   /** Runs one request at a time; resolves true once the server took it (false: not sent, or refused — toasted). */

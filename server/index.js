@@ -399,6 +399,7 @@ export async function startServer(opts = {}) {
     versionHosts?.close();
     assetIndex?.close();
     studio?.close();
+    packs.close();
     eventLoop?.close();
     await simPool?.close();
     await trustedRuntime?.close();
@@ -453,6 +454,7 @@ export async function startServer(opts = {}) {
       network.close();
       assetIndex?.close();
       studio?.close();
+      packs.close();
       await trustedRuntime?.close();
       try { await chatLog.close(); } catch (e) { log.error('[shutdown] chat log', e); }
       await new Promise((resolve) => {

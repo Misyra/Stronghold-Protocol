@@ -35,9 +35,10 @@
 // macOS) or a language already taken: reported (`skipped`: the start log, `node tools/plugin.mjs list`), never listed.
 // An entry that cannot even be read (an error while reading it) is skipped the same way: one bad folder never stops
 // the scan, the index or the server's start.
-// The folders are re-read when something in them changes (checked when the index or a pack file is asked for, at most
-// once a second: a few stat calls), so a language pack or a plugin dropped in shows on the next page load — no restart;
-// every such rescan is told to its listeners (onScan: the visual sets look for the sets in use whose plugins changed).
+// The folders are re-read when something in them changes (a timer looks every recheckMs, off the request path, and
+// an ask that comes more than recheckMs after the last look checks too: a few stat calls), so a language pack or a
+// plugin dropped in shows on the next page load — no restart; every such rescan is told to its listeners (onScan: the
+// visual sets look for the sets in use whose plugins changed).
 // server/packs.js re-exports the pack API of this file for its old callers.
 
 import { nodeSha256 } from './identity.js';
@@ -958,8 +959,24 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     return state;
   }
 
+  // The folders are looked at on a timer (off the request path): a pack or plugin dropped in shows within recheckMs
+  // even when no page asks, and a request finds `checkedAt` fresh, so it never pays for the walk itself. recheckMs 0
+  // (tests) keeps the old all-on-ask behavior and no timer. unref'd: the timer never holds the process open.
+  /** @type {ReturnType<typeof setInterval> | null} */
+  let recheckTimer = null;
+  if (recheckMs > 0) {
+    recheckTimer = setInterval(() => {
+      try { refresh(); } catch (e) { log.warn?.(`[packs] the folder recheck failed: ${e?.message || e}`); }
+    }, recheckMs);
+    recheckTimer.unref?.();
+  }
+
   return {
     contentDirs: { ...dirs },
+    /** Stop the periodic folder recheck (server shutdown). The registry stays readable with its last scan. */
+    close() {
+      if (recheckTimer) { clearInterval(recheckTimer); recheckTimer = null; }
+    },
     /** Recheck the actual listening address, and retain it across every subsequent rescan. */
     setScriptHost(host) {
       scriptHost = host;

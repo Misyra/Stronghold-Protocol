@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { OPERATOR_SKINS, ILLUSTRATION_SPINES, illustrationFor, dynamicIllustration, manifestSkinKey, skinFor } from '../../shared/skins.js';
-import { appearanceEntry, appearanceStaticSrc, appearanceDynamic, dynamicFor } from '../../public/js/ui/skinAssets.js';
+import { appearanceEntry, appearanceStaticSrc, appearanceDynamic, dynamicFor, illustrationBounds } from '../../public/js/ui/skinAssets.js';
 import {
   illustrationFolder, illustrationSources, illustrationRows, recordedRows, withIllustrationBlock,
   officialIllustrationId, catalogueOfficialIds,
@@ -50,6 +50,20 @@ test('a manifest record contributes its optional background / foreground layers,
   assert.equal(dynamicIllustration({ dynamic: { skel: '' } }), null, 'a record without a skeleton is static');
   assert.equal(dynamicIllustration({}), null);
   assert.equal(dynamicIllustration(null), null);
+});
+
+test('a record without bounds is fitted from the posed actor, never from an unset setup pose', () => {
+  assert.deepEqual(
+    illustrationBounds({ x: 1, y: -2, width: 30, height: 40 }, null),
+    { x: 1, y: -2, width: 30, height: 40 },
+    'the manifest bounds win when they are usable',
+  );
+  const actor = { getLocalBounds: () => ({ x: -5, y: -120, width: 200, height: 300 }) };
+  assert.deepEqual(illustrationBounds({ x: 0, y: 0, width: 0, height: 0 }, actor), { x: -5, y: -120, width: 200, height: 300 });
+  assert.deepEqual(illustrationBounds(null, actor), { x: -5, y: -120, width: 200, height: 300 });
+  assert.equal(illustrationBounds(null, { getLocalBounds: () => ({ x: 0, y: 0, width: 0, height: 0 }) }), null, 'an empty pose stays on the static picture');
+  assert.equal(illustrationBounds(null, { getLocalBounds: () => { throw new Error('no pose'); } }), null);
+  assert.equal(illustrationBounds(null, null), null);
 });
 
 test('the UI resolves an outfit through either id and falls back to its own illustration / portrait', () => {

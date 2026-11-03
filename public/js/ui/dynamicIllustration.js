@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, Button } from './components.js';
 import { Img } from './gameComponents.js';
+import { illustrationBounds } from './skinAssets.js';
 import { ensurePixi } from '../render/app/pixi.js';
 import { t } from '../../../shared/i18n.js';
 
@@ -67,8 +68,13 @@ export function DynamicIllustration({ entry, staticSrc = null, alt = '' }) {
         actor = new P.spine.Spine(data);
         actor.autoUpdate = false;
         actorRef.current = actor;
-        const b = entry.bounds;
-        if (!b || !(b.width > 0 && b.height > 0)) throw new Error('dynamic illustration bounds missing');
+        // Pose the idle clip before measuring: a record installed before its skeleton carried a size has no `bounds`, and
+        // the runtime can measure the posed actor (skinAssets.js illustrationBounds). The later effects only re-pose it.
+        const idle = entry.anims?.idle || clips[0];
+        if (idle) actor.state.setAnimation(0, idle, true);
+        actor.update(0);
+        const b = illustrationBounds(entry.bounds, actor);
+        if (!b) throw new Error('dynamic illustration bounds missing');
         const container = new P.Container();
         container.addChild(actor);
         app.stage.addChild(container);
@@ -87,9 +93,6 @@ export function DynamicIllustration({ entry, staticSrc = null, alt = '' }) {
         await layer(entry.background, false);
         await layer(entry.foreground, true);
         if (disposed) return;
-        const idle = entry.anims?.idle || clips[0];
-        if (idle) actor.state.setAnimation(0, idle, true);
-        actor.update(0);
         resize = () => {
           if (disposed || !host.current) return;
           const width = Math.max(1, host.current.clientWidth);

@@ -33,3 +33,23 @@ export function appearanceDynamic(entry) {
 export function dynamicFor(m, charId, skinId) {
   return appearanceDynamic(appearanceEntry(m, charId, skinId));
 }
+
+/**
+ * The box a dynamic illustration is fitted to: the manifest's `bounds` (the setup-pose union the installer wrote), or,
+ * when a record was installed before its skeleton carried a size, the posed actor measured by the runtime. Posing first
+ * is what makes the measurement meaningful — pixi-spine leaves the RegionAttachment offsets unset in a setup pose
+ * (render/spine.js), and render/spinePreview.js already fits from `getLocalBounds()` the same way.
+ * @param {{ x?: number, y?: number, width?: number, height?: number } | null | undefined} record the manifest bounds
+ * @param {{ getLocalBounds?: () => any } | null | undefined} actor the posed Spine instance
+ * @returns {{ x: number, y: number, width: number, height: number } | null}
+ */
+export function illustrationBounds(record, actor) {
+  if (record && record.width > 0 && record.height > 0) {
+    return { x: Number(record.x) || 0, y: Number(record.y) || 0, width: record.width, height: record.height };
+  }
+  try {
+    const r = actor?.getLocalBounds?.();
+    if (r && r.width > 0 && r.height > 0) return { x: Number(r.x) || 0, y: Number(r.y) || 0, width: r.width, height: r.height };
+  } catch { /* a skeleton the runtime cannot measure keeps the static picture */ }
+  return null;
+}

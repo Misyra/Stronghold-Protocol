@@ -236,6 +236,13 @@ describe('the studio over HTTP', () => {
     for (const url of ['/Studio/', '/STUDIO/api/info', '//studio/', '/%73tudio/', '/studio%2Fapi/info', '//studio/js/main.js']) {
       assert.equal((await raw('GET', url)).status, 404, url);
     }
+    // a malformed percent-encoding in a studio address (plugin id, file path) never reaches a 500: the site layer
+    // refuses it 400 before the studio, and the studio's own per-segment decodes answer 404 for the same input
+    for (const url of ['/studio/api/plugins/handmade%ZZ', '/studio/api/plugins/handmade/files/a%ZZ',
+                       '/studio/api/plugins/handmade/files/a%C3.png']) {
+      const res = await raw('GET', url);
+      assert.ok(res.status === 400 || res.status === 404, `${url}: ${res.status}`);
+    }
     // the game's pages are untouched by the studio's routes
     assert.equal((await raw('GET', '/')).status, 200);
     assert.equal((await raw('POST', '/')).status, 405);

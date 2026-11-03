@@ -101,6 +101,21 @@ describe('gate options and cookie', () => {
     assert.match(warns[0], /SP_GATE_TTL_DAYS/);
   });
 
+  test('SP_GATE_LOCAL_BYPASS=off turns the loopback/LAN bypass off (the headerless-tunnel opt-out)', () => {
+    assert.equal(gateOptionsFrom({}, { SP_GATE_LOCAL_BYPASS: 'off' }, null).localBypass, false);
+    assert.equal(gateOptionsFrom({}, { SP_GATE_LOCAL_BYPASS: '0' }, null).localBypass, false);
+    assert.equal(gateOptionsFrom({ gateLocalBypass: false }, {}, null).localBypass, false, 'an explicit option wins');
+    assert.equal(gateOptionsFrom({}, { SP_GATE_LOCAL_BYPASS: 'on' }, null).localBypass, true);
+    // either knob off is enough; SP_GATE_LOCAL_BYPASS cannot re-enable what SP_GATE_LOCAL turned off
+    assert.equal(gateOptionsFrom({}, { SP_GATE_LOCAL: '0', SP_GATE_LOCAL_BYPASS: 'on' }, null).localBypass, false);
+    // the same knob read through createGate: a loopback peer is gated once the bypass is off
+    const on = createGate({ password: PASSWORD, secret: SECRET, localBypass: true, log });
+    const off = createGate({ password: PASSWORD, secret: SECRET, localBypass: false, log });
+    const req = { socket: { remoteAddress: '127.0.0.1' }, headers: {} };
+    assert.equal(on.check(req), true, 'the default bypass covers a headerless local peer');
+    assert.equal(off.check(req), false, 'SP_GATE_LOCAL_BYPASS=off gates it like any internet client');
+  });
+
   test('the cookie is bound to the password: changing it invalidates old cookies', () => {
     const now = Date.now();
     const value = gateCookie(SECRET, 60_000, false, 'old-pass').split(';')[0];

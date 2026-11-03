@@ -227,6 +227,7 @@ function acceptedEncodings(header) {
     for (const p of params) {
       const m = /^\s*q=([0-9.]+)\s*$/.exec(p);
       if (m) q = Number(m[1]);
+      else if (/^\s*q=/.test(p)) q = 0; // a malformed qvalue (`q=abc`) counts as 0, not as the default 1
     }
     out[token.trim()] = Number.isFinite(q) ? q : 0;
   }
@@ -249,24 +250,10 @@ export function pickEncoding(header) {
   return null;
 }
 
-/** Does the Accept-Encoding header allow gzip (q > 0)? @param {string | undefined} header */
+/** Does the Accept-Encoding header allow gzip (q > 0)? The same parser acceptedEncodings uses (one qvalue rule). */
 export function acceptsGzip(header) {
-  if (!header || typeof header !== 'string') return false;
-  let gzipQ = null;
-  let starQ = null;
-  for (const part of header.split(',')) {
-    const [token, ...params] = part.trim().toLowerCase().split(';');
-    let q = 1;
-    for (const p of params) {
-      const m = /^\s*q=([0-9.]+)\s*$/.exec(p);
-      if (m) q = Number(m[1]);
-    }
-    if (!Number.isFinite(q)) q = 0;
-    if (token === 'gzip' || token === 'x-gzip') gzipQ = q;
-    else if (token === '*') starQ = q;
-  }
-  if (gzipQ != null) return gzipQ > 0;
-  return starQ != null && starQ > 0;
+  const acc = acceptedEncodings(header);
+  return (acc.gzip ?? acc['x-gzip'] ?? acc['*'] ?? 0) > 0;
 }
 
 /**

@@ -14,11 +14,15 @@
 // Every other request from a client that is neither local nor on the private network needs the cookie:
 //   * an HTML navigation is redirected to /entry?next=<path+query>;
 //   * anything else (assets, /data/*.json, the WebSocket upgrade) is refused with 401.
-// Loopback and private-network clients bypass the gate (SP_GATE_LOCAL=0 turns that off). That shortcut uses the real
-// socket peer only (req.socket.remoteAddress) and is off whenever a trusted proxy forwarded a client at all — the
-// forwarded value (CF-Connecting-IP, X-Real-IP, X-Forwarded-For) is for per-network limits and statistics, and never
-// grants a bypass. Otherwise a tunnel on this machine (peer 127.0.0.1) would skip the gate for the whole internet it
-// forwards. The WebSocket upgrade is checked too (http/websocket.js): gating only HTTP would leave ws://host/ws open.
+// Loopback and private-network clients bypass the gate (SP_GATE_LOCAL=0 turns that off, SP_GATE_LOCAL_BYPASS=off is
+// the dedicated tunnel-deployment opt-out). What the bypass actually requires: a loopback / private **socket peer**
+// and **no forwarding header at all** — a forwarded client (CF-Connecting-IP, X-Real-IP, X-Forwarded-For) never gets
+// the bypass, those headers are for per-network limits and statistics only. But a **headerless** TCP tunnel (frpc tcp
+// mode, `ssh -R`, ngrok tcp) running on this machine or a LAN box presents every internet visitor as a loopback /
+// private peer with no forwarding headers — with the default bypass the gate is then fully open for the whole
+// internet that tunnel forwards. A tunnel deployment must set SP_GATE_LOCAL_BYPASS=off (or SP_GATE_LOCAL=0); a
+// header-carrying reverse proxy is the covered case, and the WebSocket upgrade is checked too (http/websocket.js):
+// gating only HTTP would leave ws://host/ws open.
 //
 // The cookie is `sp_gate=<expires ms>.<HMAC-SHA256(secret, "gate:" + expires + ":" + sha256(password))>` — HttpOnly,
 // SameSite=Lax, Secure when the request arrived over HTTPS (behind an FRP that terminates TLS, X-Forwarded-Proto says
@@ -63,11 +67,13 @@ function trustProxySetting(value) {
  * The gate's settings from startServer() options and the environment (an option wins):
  * `gatePassword` / SP_GATE_PASSWORD / SP_GATE_PASSWORD_FILE (a UTF-8 file: first line, at most 1 KB, not trimmed;
  * unreadable = the boot fails; empty or absent = no gate), `gateSecret` / SP_GATE_SECRET, `gateTtlDays` /
- * SP_GATE_TTL_DAYS (default 7), `gateLocal` / SP_GATE_LOCAL (default on: loopback and LAN skip it). The file form keeps
+ * SP_GATE_TTL_DAYS (default 7), `gateLocal` / SP_GATE_LOCAL (default on: loopback and LAN skip it),
+ * `gateLocalBypass` / SP_GATE_LOCAL_BYPASS (default on; off = no local bypass at all — the headerless-tunnel opt-out).
+ * The file form keeps
  * a non-ASCII password out of a shell whose code page would mangle it (`set SP_GATE_PASSWORD=…` in cmd turns
  * 阿米娅不是驴 into mojibake).
  * @param {{ gatePassword?: string | null, gateSecret?: string | null, gateTtlDays?: number, gateLocal?: boolean,
- *           trustProxy?: 'auto' | boolean }} [opts]
+ *           gateLocalBypass?: boolean, trustProxy?: 'auto' | boolean }} [opts]
  * @param {Record<string, string | undefined>} [env]
  * @param {{ warn?: Function } | null} [log]
  */
@@ -93,7 +99,14 @@ export function gateOptionsFrom(opts = {}, env = process.env, log = null) {
   const ttlDays = Number.isFinite(days) ? Math.min(365, Math.max(1, Math.floor(days))) : 7;
   if (daysRaw !== undefined && daysRaw !== '' && !Number.isFinite(days)) log?.warn?.(`[gate] invalid SP_GATE_TTL_DAYS ${daysRaw}, using 7`);
   const localRaw = pick('gateLocal', 'SP_GATE_LOCAL');
-  const localBypass = localRaw === undefined ? true : !/^(0|false|off|no)$/i.test(String(localRaw));
+  const localOn = localRaw === undefined ? true : !/^(0|false|off|no)$/i.test(String(localRaw));
+  // SP_GATE_LOCAL_BYPASS=off: the loopback/LAN bypass is off entirely. A headerless TCP tunnel (frpc tcp mode,
+  // `ssh -R`, ngrok tcp) running on this machine — or any LAN box — presents every internet visitor as a
+  // loopback/private peer with no forwarding headers, so with the default bypass the gate is fully open for the
+  // internet such a tunnel forwards; a tunnel deployment should set this (or SP_GATE_LOCAL=0).
+  const bypassRaw = pick('gateLocalBypass', 'SP_GATE_LOCAL_BYPASS');
+  const bypassOn = bypassRaw === undefined ? true : !/^(0|false|off|no)$/i.test(String(bypassRaw));
+  const localBypass = localOn && bypassOn;
   const trustProxy = trustProxySetting(pick('trustProxy', 'TRUST_PROXY'));
   return { password, secret, ttlDays, localBypass, trustProxy };
 }
@@ -401,7 +414,7 @@ export function createGate({ password, secret, ttlDays = 7, localBypass = true, 
 /**
  * Create the gate of startServer() options / environment. null when no password is configured.
  * @param {{ gatePassword?: string | null, gateSecret?: string | null, gateTtlDays?: number, gateLocal?: boolean,
- *           trustProxy?: 'auto' | boolean }} [opts]
+ *           gateLocalBypass?: boolean, trustProxy?: 'auto' | boolean }} [opts]
  * @param {Record<string, string | undefined>} [env]
  * @param {{ warn?: Function, info?: Function } | null} [log]
  */

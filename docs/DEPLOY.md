@@ -283,6 +283,7 @@ https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://�
 - **放行**：`/entry`、`/_gate/login`、`/_gate/logout`，以及公开只读接口 `/healthz`（隧道 / 探活）、`/api/online`（当前在线人数）、`/api/announcement`（维护公告）——它们不含任何玩家状态。其余一律在门禁后面。
 - **cookie**：`sp_gate=<过期毫秒>.<HMAC-SHA256>`，HttpOnly、SameSite=Lax，默认 7 天（`SP_GATE_TTL_DAYS`）；HTTPS 请求自动加 `Secure`。签名输入里带口令摘要，**改口令会让所有旧 cookie 立即失效**。签名密钥取 `SP_GATE_SECRET`，没有就生成 `.cache/gate-secret`（0600），删掉它等于让所有人重新登录；没有可写目录时退化为进程内随机值（重启即全员重登）。
 - **本机免门禁只认真实对端**：`SP_GATE_LOCAL` 的旁路只看 TCP 连接的对端地址（`req.socket.remoteAddress`），**不看** `CF-Connecting-IP` / `X-Real-IP` / `X-Forwarded-For`。放在 FRP / 反代后面时这些头永远换不来旁路；确实要从公网进来就保持门禁开着，或按 `TRUST_PROXY` 的语义另行配置。
+- **无头 TCP 隧道要关掉本机旁路**：`frpc` tcp 模式、`ssh -R`、ngrok tcp 这类不转发任何 HTTP 头的隧道跑在本机（或局域网任一台机器）上时，公网访客在本服务眼里就是 loopback / 内网对端、且没有任何转发头——默认旁路会替**整个互联网**放行，门禁形同虚设。这类部署必须设 `SP_GATE_LOCAL_BYPASS=off`（或 `SP_GATE_LOCAL=0`）关掉本机旁路；带转发头的反代（Cloudflare Tunnel、nginx）不在其列，旁路对它们本来就是关的。
 - **口令的编码**：Windows 的 cmd 里 `set SP_GATE_PASSWORD=阿米娅不是驴` 会被代码页弄成乱码。中文（或任何非 ASCII）口令请用 PowerShell 设置 `$env:SP_GATE_PASSWORD = '…'`，或者写成 UTF-8 文件并设 `SP_GATE_PASSWORD_FILE=gate-password.txt`。口令文件读首行、上限 1 KB、不做 trim（口令首尾的空格会被保留）；环境变量仍优先于文件；**文件不可读时服务直接启动失败**，不会静默敞开。
 - **登录页**：单文件 HTML、内联样式、没有脚本（站点 CSP 不允许内联脚本），中文 + English；令牌用双提交 cookie 校验，口令按 SHA-256 定长比较；同一 IP（IPv6 按 /64 归一）10 分钟内 5 次失败后 429（`Retry-After`），成功即清零；失败页会重新签发 CSRF，输错一次可以直接重试。
 - **部署提示**：门禁只保护本服务。`X-Forwarded-Proto: https` 只有在 `TRUST_PROXY` 信任对端时才会让 `Secure` 生效；限速与统计用同一套客户端地址解析（`clientAddress().key`）。
@@ -754,6 +755,7 @@ npm start
 | `SP_GATE_SECRET` | `.cache/gate-secret` | 门禁 cookie 的 HMAC 密钥；缺省自动生成 0600 文件，删掉等于让所有人重新登录 |
 | `SP_GATE_TTL_DAYS` | 7 | 授权 cookie 有效期（天，1–365） |
 | `SP_GATE_LOCAL` | `1` | `0` / `false` / `off` / `no`：本机与局域网也要口令；其余值免门禁 |
+| `SP_GATE_LOCAL_BYPASS` | `1` | `0` / `false` / `off` / `no`：同上，关掉本机 / 局域网旁路——无头 TCP 隧道（frpc tcp、`ssh -R`）部署的专用开关，见 2.7 |
 
 锁与备份：状态目录带独占锁（另一个活着的游戏进程拿同一路径会拒绝启动；陈锁按 pid 探活自动回收）。升级流程：
 正常停服（关停时先写终档再关大厅）→ 备份状态目录 → 更新 → 启动。坏了的的单个分片只丢那个房间的对局，

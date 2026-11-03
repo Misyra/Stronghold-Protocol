@@ -496,6 +496,7 @@ describe('static http server', () => {
     assert.equal(acceptsGzip('gzip'), true);
     assert.equal(acceptsGzip('deflate, gzip;q=0.5'), true);
     assert.equal(acceptsGzip('gzip;q=0'), false);
+    assert.equal(acceptsGzip('gzip;q=abc'), false, 'a malformed qvalue counts as 0, not as the default 1');
     assert.equal(acceptsGzip('*'), true);
     assert.equal(acceptsGzip('*;q=0'), false);
     assert.equal(acceptsGzip('br'), false);

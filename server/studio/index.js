@@ -239,6 +239,15 @@ function fileKind(rel) {
 }
 
 /**
+ * One decoded route segment, or null when its percent-encoding is malformed: the route 404s (handle()'s own route /
+ * rel decodes answer the same), never a 500 out of a URIError.
+ * @param {string} s @returns {string | null}
+ */
+function decodeSeg(s) {
+  try { return decodeURIComponent(s); } catch { return null; }
+}
+
+/**
  * A free plugin id for a new plugin (see GET /studio/api/suggest-id): from the name when it has Latin letters, else from
  * the target's key (char_102_texas → texas) and the template — lower case, digits and '-', 2–32, with -2, -3 … when taken.
  * @param {{ name?: string, target?: { key: string } | null, template?: string }} what @param {Set<string>} taken (lower case)
@@ -959,7 +968,8 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     }
     const m = /^plugins\/([^/]+)(?:\/(.*))?$/.exec(route);
     if (!m) return false;
-    const id = decodeURIComponent(m[1]);
+    const id = decodeSeg(m[1]);
+    if (id === null) return false;
     const sub = m[2] ?? '';
     if (!isPluginId(id)) throw new StudioError('PLUGIN_ID', 400, { id: id.slice(0, 40) });
     if (method === 'GET' || method === 'HEAD') {
@@ -978,7 +988,12 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
         return true;
       }
       const f = /^(?:f\/[0-9a-f]{8}|files)\/(.+)$/.exec(sub);
-      if (f) { await servePluginFile(req, res, id, f[1].split('/').map(decodeURIComponent).join('/'), query); return true; }
+      if (f) {
+        const rel = f[1].split('/').map(decodeSeg);
+        if (rel.some((x) => x === null)) return false;
+        await servePluginFile(req, res, id, rel.join('/'), query);
+        return true;
+      }
       return false;
     }
     if (!mayChange(req)) return false;
@@ -993,7 +1008,9 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     }
     const fileRoute = /^files\/(.+)$/.exec(sub);
     if (fileRoute && (method === 'PUT' || method === 'DELETE')) {
-      const rel = fileRoute[1].split('/').map(decodeURIComponent).join('/');
+      const segs = fileRoute[1].split('/').map(decodeSeg);
+      if (segs.some((x) => x === null)) return false;
+      const rel = segs.join('/');
       if (method === 'DELETE') files.remove(id, rel);
       else {
         const bytes = await readBody(req, STUDIO_LIMITS.fileBytes);

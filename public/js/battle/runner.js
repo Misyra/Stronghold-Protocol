@@ -474,10 +474,24 @@ export function createBattleRunner(deps) {
     return dt;
   }
 
+  /**
+   * The b.snap frame for the view: the wire shape (shared/protocol.js) with the snapshot's game time in `gt` and
+   * `t` naming the frame type. The in-page Battle builds a fresh snapshot object per call (server/sim/battle/events.js
+   * snapshot), so it is restamped in place — the render feed consumes one frame per animation frame and needs no
+   * second copy of the whole snapshot. A remote host (simHost.js WorkerSimHost) hands back its step packet's
+   * snapshot, shared by every frameOf until the next step: that one is copied, never mutated.
+   */
   function frameOf(e) {
     const snap = e.battle.snapshot();
-    const { t: gt, ...rest } = snap || {};
-    return { ...rest, t: 'b.snap', fieldId: e.fieldId, gt: Number.isFinite(gt) ? gt : 0 };
+    if (!snap) return { t: 'b.snap', fieldId: e.fieldId, gt: 0 };
+    const gt = Number.isFinite(snap.t) ? snap.t : 0;
+    if (!e.host?.remote) {
+      snap.t = 'b.snap';
+      snap.fieldId = e.fieldId;
+      snap.gt = gt;
+      return snap;
+    }
+    return { ...snap, t: 'b.snap', fieldId: e.fieldId, gt };
   }
 
   /** The steps' events, each batch with its own game time: the sliced ones (stepEntry), then the rest at `gt`. */

@@ -692,6 +692,54 @@ test('a Worker host never attaches the combat meter, even when the setting is on
   r.runner.dispose();
 });
 
+test('frameOf: the in-page snapshot frame is restamped in place; a Worker host packet snapshot is copied, never mutated', async () => {
+  // the in-page Battle builds a fresh snapshot per call: the emitted frame is that object (one per frame, not three)
+  const start = realStart();
+  const r = rig();
+  r.net.emit('b.start', start);
+  await r.settle();
+  const e = r.runner._entries.get(start.battleId);
+  const built = [];
+  const rawSnapshot = e.battle.snapshot.bind(e.battle);
+  e.battle.snapshot = () => { const s = rawSnapshot(); built.push(s); return s; };
+  r.advance(1000);
+  const frames = r.feed.snaps.slice(-built.length);
+  assert.ok(built.length >= 10, 'a snapshot per animation frame');
+  assert.ok(frames.every((f, i) => f === built[i]), 'the view frame is the snapshot object itself');
+  assert.ok(frames.every((f) => f.t === 'b.snap' && typeof f.gt === 'number' && f.fieldId === start.fieldId), 'restamped wire shape');
+  r.runner.dispose();
+
+  // a Worker host hands back its step packet's snapshot for every frame of one step: each emitted frame carries
+  // its game time and the packet itself stays untouched (the next frameOf must read the same numeric t)
+  const packet = { snap: { t: 12.5, units: [[1, 2, 3, 10, 10, 0, 0, 0, 0]], dp: 1, killed: 0, total: 2, resolved: 0 }, ev: [], ticks: 1, slices: [] };
+  const battle = {
+    finished: false, time: 0, tickCount: 0, leakedCount: 0, flags: {}, allyUnits: [],
+    snapshot: () => packet.snap, drainEvents: () => [], fieldMeta: () => ({ units: [] }), getPlayer: () => null, heal: () => 0,
+  };
+  const host = {
+    remote: true, battle, meter: { lp: 0 }, async load() {}, async start() {}, async syncPool() {}, stop() {},
+    progress: () => ({ gt: 12.5, killed: 0, total: 2, done: false, leaks: 0 }), compactResult: () => null,
+    step: () => Promise.resolve(packet), forceEnd: () => Promise.resolve(),
+  };
+  const w = rig({ createHost: () => host });
+  const spec = { fieldId: 'n:worker2', kind: 'normal', players: [{ playerId: 'p_0' }] };
+  w.net.emit('b.start', { battleId: 'worker-2', fieldId: 'n:worker2', kind: 'normal', spec, authoritative: true, speed: 2 });
+  await w.settle();
+  w.advance(100);
+  await w.settle();
+  w.advance(100);
+  await w.settle();
+  assert.ok(w.feed.snaps.length >= 2, 'a frame per step');
+  for (const f of w.feed.snaps) {
+    assert.equal(f.t, 'b.snap');
+    assert.equal(f.gt, 12.5, 'each frame reads the packet game time');
+    assert.notEqual(f, packet.snap, 'the frame is a copy');
+  }
+  assert.equal(packet.snap.t, 12.5, 'the shared packet snapshot keeps its numeric time');
+  assert.equal('gt' in packet.snap, false, 'the shared packet snapshot gained no restamp fields');
+  w.runner.dispose();
+});
+
 test('settings expose 作战统计 on by default and the match hides the button unless it is on', () => {
   const settings = readFileSync(new URL('../../public/js/ui/settings.js', import.meta.url), 'utf8');
   const game = readFileSync(new URL('../../public/js/screens/game.js', import.meta.url), 'utf8');

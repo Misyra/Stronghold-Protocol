@@ -189,10 +189,12 @@ export function mergePartyMatchmaking(lobby, group, difficulty) {
     for (const source of parties.slice(1)) lobby.disposeRoom(source, 'merged');
   } else {
     Object.assign(room, previous);
-    for (let i = 0; i < group.length; i++) {
-      group[i].roomCode = origins[i]?.code || null;
-      if (!origins[i]) sendSession(group[i], { t: 'room.closed', reason: 'matchmaking_failed' });
-    }
+    for (let i = 0; i < group.length; i++) group[i].roomCode = origins[i]?.code || null;
+    // The failure travels the channels each member actually listens on: a member of a real room gets room.state
+    // (broadcastState below restores it), a member who was never seated anywhere — a solo merged beside a party —
+    // was only borrowed for the attempt and is back in the queue, where the engine's own breakOffer sends the fresh
+    // queue.state (reason 'allocation_failed'). Never room.closed: that would surface a "room closed" for a room
+    // that never existed for them.
     for (const source of parties) {
       for (const s of source.spectators) {
         const session = lobby.registry.byId(s.playerId);

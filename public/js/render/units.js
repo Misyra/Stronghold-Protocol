@@ -277,6 +277,9 @@ export const HEAD_TILES_CAP_BOSS = 3.2;
  * @param {{ isEnemy:boolean, isBoss:boolean, spineShown:boolean, bounds?:{y?:number,height?:number}|null, modelK:number, modelKY:number }} o
  * @returns {number} tiles
  */
+/** The per-unit call site's argument object, reused every frame (headTilesForUnit is synchronous and keeps none of it). */
+const HEAD_TILES_ARGS = { isEnemy: false, isBoss: false, spineShown: false, bounds: null, modelK: 1, modelKY: 1 };
+
 export function headTilesForUnit(o) {
   const k = (Number.isFinite(o.modelK) ? o.modelK : 1) * (Number.isFinite(o.modelKY) ? o.modelKY : 1);
   if (!o.isEnemy) return UNIT.headroom;
@@ -1998,11 +2001,11 @@ export class UnitView {
     // keep the original short-circuit: many views never build an actor (prep chips, diamonds, tests), so the model
     // only counts when a spine is actually shown
     const actor = spineShown ? this.actor : null;
-    const headTiles = this._headTiles = headTilesForUnit({
-      isEnemy: this.isEnemy, isBoss: this.isBoss, spineShown,
-      bounds: actor && actor.entry ? actor.entry.bounds : null,
-      modelK: this.modelK, modelKY: this.modelKY,
-    });
+    const a = HEAD_TILES_ARGS;
+    a.isEnemy = this.isEnemy; a.isBoss = this.isBoss; a.spineShown = spineShown;
+    a.bounds = actor && actor.entry ? actor.entry.bounds : null;
+    a.modelK = this.modelK; a.modelKY = this.modelKY;
+    const headTiles = this._headTiles = headTilesForUnit(a);
     this.screen.top = by - headTiles * s;
     // the boss HUD `hudDx` tiles beside the model, where the official prefab puts it (BOSS_HUD_DX)
     const hx = this.hudDx ? cam.project(this.x + this.hudDx, this.y, this.z + this.hover + this.lift, HUD_P).x : bx;

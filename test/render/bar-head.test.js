@@ -61,7 +61,7 @@ describe('敌方血条的头顶高度（bounds.y 不能忽略）', () => {
   test('实现只有一处：纯函数算 y + height，units.js 把 bounds 交给它（防止有人改回 height）', () => {
     const units = readFileSync(path.join(ROOT, 'public/js/render/units.js'), 'utf8');
     assert.match(units, /const top = Number\.isFinite\(b\.y\) \? b\.y \+ b\.height : b\.height;/, 'top = y + height');
-    assert.match(units, /bounds: actor && actor\.entry \? actor\.entry\.bounds : null/, 'units.js 把 bounds 交给纯函数');
-    assert.match(units, /headTilesForUnit\(\{/, '而且用的就是它');
+    assert.match(units, /a\.bounds = actor && actor\.entry \? actor\.entry\.bounds : null/, 'units.js 把 bounds 交给纯函数');
+    assert.match(units, /headTilesForUnit\(a\)/, '而且用的就是它');
   });
 });

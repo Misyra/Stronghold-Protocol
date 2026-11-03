@@ -10,16 +10,16 @@ import { DELAYS } from './common.js';
 import { wireMessage } from '../../../shared/i18n.js';
 
 export class MatchMessaging {
-  sendTo(playerId, msg) {
+  sendTo(playerId, msg, encoded = null) {
     if (this.disposed) return false;
     const ps = this.players.get(playerId) || this.spectators.get(playerId);
     if (!ps || ps.isBot || ps.left) return false;
-    try { return !!this.sendFn(playerId, msg); } catch (e) { this.reportError('send', e); return false; }
+    try { return !!this.sendFn(playerId, msg, encoded); } catch (e) { this.reportError('send', e); return false; }
   }
 
-  broadcast(msg) {
+  broadcast(msg, encoded = null) {
     if (this.disposed) return;
-    try { this.broadcastFn(msg); } catch (e) { this.reportError('broadcast', e); }
+    try { this.broadcastFn(msg, encoded); } catch (e) { this.reportError('broadcast', e); }
   }
 
   /** @param {string|{ msgid: string, params?: object }} text a string or msg() (shared/i18n.js) */
@@ -109,10 +109,12 @@ export class MatchMessaging {
   _sendPrivate(ps, force) {
     let view;
     try { view = ps.privateView(); } catch (e) { this.reportError('privateView', e); return; }
+    // One stringify for both uses: `json` is the dedup baseline and, passed on as `encoded`, the wire bytes the
+    // transport would otherwise produce again with encode(view) (server/lobby.js sendToPlayer).
     const json = JSON.stringify(view);
     if (!force && json === ps._lastPriv) return;
     ps._lastPriv = json;
-    this.sendTo(ps.playerId, view);
+    this.sendTo(ps.playerId, view, json);
   }
 
   _maybeSendPublic(force) {
@@ -131,12 +133,19 @@ export class MatchMessaging {
     this._pubDirty = false;
     let view;
     try { view = this.publicView(); } catch (e) { this.reportError('publicView', e); return; }
-    const { serverNow, ...rest } = view;
-    const json = JSON.stringify(rest);
+    // One stringify for both uses: `bytes` is the wire frame (serverNow included) passed on as `encoded`, and the
+    // dedup baseline is the same text with `"serverNow":…,` spliced out — what JSON.stringify of the view minus
+    // serverNow produces. serverNow is the only per-frame field; publicView puts the key right after deadline, and
+    // everything before it is fixed (t / phase / round / lastRound / deadline), so the first `"serverNow":` in the
+    // text is the key and the first `,` after it closes the number.
+    const bytes = JSON.stringify(view);
+    const i = bytes.indexOf('"serverNow":');
+    const cut = i < 0 ? -1 : bytes.indexOf(',', i);
+    const json = cut < 0 ? bytes : bytes.slice(0, i) + bytes.slice(cut + 1);
     if (!force && json === this._lastPubJson) return;
     this._lastPubJson = json;
     // Snapshot building / serialization can take time; throttle from the actual broadcast, not its start.
     this._lastPubAt = this.sched.now();
-    this.broadcast(view);
+    this.broadcast(view, bytes);
   }
 }

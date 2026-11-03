@@ -13,8 +13,8 @@
 // 不测:Worker 编码、WebSocket 写出、差分缓存命中率、持久化落盘。那些在 tools/state-sync-bench.mjs 里按端到端负载测。
 //
 // 本仓适配:server/match/match/messaging.js 不导出 publicStateJson。生产的去重基线是 _maybeSendPublic 里的
-//   const { serverNow, ...rest } = view; const json = JSON.stringify(rest);
-// (server/match/match/messaging.js:134-135) — 这个工具在本地照抄那两行来计时,不往生产代码加导出。
+//   const bytes = JSON.stringify(view); … 从 bytes 里剥掉 `"serverNow":…,`(整帧 stringify 两用:bytes 同时是
+//   encoded 线上字节) — server/match/match/messaging.js:141-144。这个工具在本地照抄那段来计时,不往生产代码加导出。
 import { performance } from 'node:perf_hooks';
 import { makeMatch } from '../test/match/harness.js';
 import { botPrepBegin } from '../server/match/bot.js';
@@ -37,13 +37,16 @@ if (!Number.isInteger(seed) || seed < 0) throw new Error('invalid --seed');
 const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
 
 /**
- * The production dedup baseline (server/match/match/messaging.js:134-135, _maybeSendPublic): serverNow changes every
- * frame, so it is excluded before the stringify that decides "has the public state changed". Copied here on purpose —
- * the benchmark measures the production path, it does not add an export to production code.
+ * The production dedup baseline (server/match/match/messaging.js:141-144, _maybeSendPublic): one stringify of the
+ * whole view serves both as the wire bytes (encoded) and, with `"serverNow":…,` spliced out of the text, as the dedup
+ * baseline — serverNow changes every frame, so it is excluded when deciding "has the public state changed". Copied
+ * here on purpose — the benchmark measures the production path, it does not add an export to production code.
  */
 function publicStateJson(view) {
-  const { serverNow, ...rest } = view;
-  return JSON.stringify(rest);
+  const bytes = JSON.stringify(view);
+  const i = bytes.indexOf('"serverNow":');
+  const cut = i < 0 ? -1 : bytes.indexOf(',', i);
+  return cut < 0 ? bytes : bytes.slice(0, i) + bytes.slice(cut + 1);
 }
 
 /** The public bond column of one player exactly as Match.publicView builds it (server/match/match/views.js:144). */

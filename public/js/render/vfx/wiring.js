@@ -1484,10 +1484,21 @@ export class FxWiring {
   /** Once per frame after the views took the frame's sample (SkillFx.sync: mid-battle, passive, ready and charge loops). */
   sync(views) {
     if (!this.idx) return;
-    const list = Array.isArray(views) ? views : [...views];   // (render/app.js passes the views Map's iterator)
+    // one reused per-instance array: SkillFx.viewList and FunnelFx.views keep it (they read the last sync's views for
+    // a binding's near / remote owner) until the next sync refills it — (render/app.js passes the views Map's iterator)
+    let list;
+    if (this._syncing) list = Array.isArray(views) ? views.slice() : [...views];   // re-entered: never clobber the kept list
+    else {
+      list = this._syncViews ||= [];
+      list.length = 0;
+      if (Array.isArray(views)) for (let i = 0; i < views.length; i++) list.push(views[i]);
+      else for (const v of views) list.push(v);
+    }
+    this._syncing = (this._syncing || 0) + 1;
     this.skills.sync(list);
     this.talents.sync(list);
     this.funnels.sync(list);
+    this._syncing--;
   }
 
   /**

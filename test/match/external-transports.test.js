@@ -166,10 +166,13 @@ test('stdio abort cancels only that request; its late reply is ignored and the c
 });
 
 test('stdio timeout cancels a slow request while the child answers others, and kills a silent child', async t => {
-  const c = new StdioAI({ ...stdioConfig([process.execPath, '-e', ECHO]), timeoutMs: 200 });
+  const c = new StdioAI({ ...stdioConfig([process.execPath, '-e', ECHO]), timeoutMs: 1000 });
   t.after(() => c.close());
   const child = c.child ?? (c.start(), c.child);
-  const slow = c.request({ ...observation, id: 'slow', delay: 400 }, new AbortController().signal);
+  // slow is expected to reject, but under full-suite load its rejection can land after the test ended: mark it
+  // handled up front (assert.rejects below still observes the rejection itself).
+  const slow = c.request({ ...observation, id: 'slow', delay: 1500 }, new AbortController().signal);
+  slow.catch(() => {});
   const quick = c.request({ ...observation, id: 'quick', delay: 20 }, new AbortController().signal);
   assert.equal((await quick).id, 'quick');
   await assert.rejects(slow);

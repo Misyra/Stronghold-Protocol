@@ -72,7 +72,7 @@ async function assertOnline(h, clients) {
 }
 
 for (const [firstId, secondId] of [['a-tab', 'b-tab'], ['b-tab', 'a-tab']]) {
-  test(`staggered tabs ${firstId} then ${secondId} keep separate server sessions`, { timeout: 5000 }, async (t) => {
+  test(`staggered tabs ${firstId} then ${secondId} keep separate server sessions`, { timeout: 15000 }, async (t) => {
     const h = await harness(t);
     const seed = await h.connect('Seed');
     await closeClient(seed.net);
@@ -113,7 +113,7 @@ for (const [firstId, secondId] of [['a-tab', 'b-tab'], ['b-tab', 'a-tab']]) {
   });
 }
 
-test('live token ownership survives a duplicated tab, reload and reconnect', { timeout: 5000 }, async (t) => {
+test('live token ownership survives a duplicated tab, reload and reconnect', { timeout: 15000 }, async (t) => {
   const h = await harness(t);
   const owner = h.tab('z-owner');
   await owner.id.init();

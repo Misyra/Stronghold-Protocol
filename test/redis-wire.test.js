@@ -8,7 +8,7 @@ import net from 'node:net';
 
 import { createRedisStore } from '../server/redisState.js';
 
-/** One minimalist RESP2 server: PING/CLIENT/COMMAND/GET/SET/DEL/MSET/MGET and nothing else. */
+/** One minimalist RESP2 server: PING/CLIENT/COMMAND/GET/SET/DEL/EXPIRE/MGET and nothing else. */
 function fakeRedis() {
   const store = new Map();
   const commands = [];
@@ -60,6 +60,13 @@ function fakeRedis() {
           let n = 0;
           for (const key of args) if (store.delete(key)) n++;
           socket.write(':' + n + '\r\n');
+          continue;
+        }
+        if (cmd === 'EXPIRE') {
+          // saveSharded 对没重写的键只续 TTL（server/redis.js expireKeys）：真 Redis 必有这条，假服务器也得有
+          const exists = store.has(args[0]);
+          if (exists) ttl.set(args[0], Number(args[1]));
+          socket.write(':' + (exists ? 1 : 0) + '\r\n');
           continue;
         }
         socket.write('-ERR unknown command ' + cmd + '\r\n');

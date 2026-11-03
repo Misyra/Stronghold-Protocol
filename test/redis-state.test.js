@@ -19,11 +19,14 @@ function fakeRedis(prefix = 'test:') {
   const data = new Map();
   const writes = [];
   const deletes = [];
+  const expires = [];
   store.getKey = async (key) => (data.has(key) ? data.get(key) : null);
   store.getKeys = async (keys) => [...keys].map((key) => (data.has(key) ? data.get(key) : null));
   store.setKey = async (key, value) => { writes.push(key); if (store.failWrites) return false; data.set(key, value); return true; };
   store.delKeys = async (keys) => { for (const key of [].concat(keys)) { deletes.push(key); data.delete(key); } return true; };
-  return { store, data, writes, deletes };
+  // saveSharded 对没重写的键只续 TTL（server/redis.js expireKeys）：桩掉它，否则会去连真实的 6379
+  store.expireKeys = async (keys) => { for (const key of [].concat(keys)) expires.push(key); return true; };
+  return { store, data, writes, deletes, expires };
 }
 
 const roomIndex = (extra = {}) => ({

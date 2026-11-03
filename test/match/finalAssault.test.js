@@ -232,6 +232,28 @@ test('no client authority at the Final Assault: the pool emptying ends the fight
   m.dispose();
 });
 
+test('no client authority, pool cleared into the Hidden Core: the round starts exactly once (the server runner must not re-settle)', () => {
+  const h = makeMatch({ mode: 'coop', difficulty: 'HARD', humans: 3, seed: 61, fake: true, clientCombat: true, clients: false,
+    script: (b) => (b.kind === 'boss' ? { bossDps: 1e6, duration: 5000 } : { duration: 1 }) }).start();
+  const m = h.m;
+  h.drive(() => m.phase === PHASE.PREP && m.round === 14);
+  for (const pid of ['p_0', 'p_1', 'p_2']) m.onDisconnect(pid); // every browser dropped: nobody simulates on a client
+  h.drive(() => m.phase === PHASE.FINAL_ASSAULT);
+  m.hiddenLayerSum = 1e9; // hidden-core eligibility, race-free: read at the settle after the assault ends
+  const starts = [];
+  const origStartRound = m.startRound.bind(m);
+  m.startRound = (r, ...rest) => { starts.push(r); return origStartRound(r, ...rest); };
+  const end = h.runToEnd();
+  assert.equal(end.victory, true);
+  assert.equal(end.hiddenReached, true, 'the assault cleared and the Hidden Core opened');
+  const hidden = m.gd.hiddenRound;
+  assert.ok(hidden, 'this data set has a hidden round');
+  assert.equal(starts.filter((r) => r === hidden).length, 1,
+    `the hidden round started ${starts.filter((r) => r === hidden).length}× (rounds started: ${starts.join(',')})`);
+  checkInvariants(m);
+  m.dispose();
+});
+
 test('Final Assault leaks cost their lpr from the merged LP', () => {
   const h = makeMatch({ mode: 'solo', difficulty: 'FUNNY', seed: 51, fake: true, instant: false, script: (b) => (b.kind === 'boss' ? { bossDps: 1, leakEvents: [{ at: 5, lpr: 1 }, { at: 10, lpr: 30, boss: true }] } : {}) }).start();
   const m = h.m;

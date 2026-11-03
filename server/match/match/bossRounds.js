@@ -43,6 +43,7 @@ export class MatchBoss {
     if (!alive.length) { this.finish({ victory: false, reason: 'eliminated' }); return; }
     this.phase = hidden ? PHASE.HIDDEN_CORE : PHASE.FINAL_ASSAULT;
     this.lastResults = new Map();
+    this._finalSettledFor = null; // one _finishFinal per boss phase (the SETTLE window races other completion routes)
     if (!hidden) this._openTeamLp();
     const bossId = hidden ? this.hiddenBossId : this.bossId;
     // BOSS_HIT tickers ("对敌方领袖造成的伤害超过20% / 50% / 80%"): the player's damage to THIS leader over its pool —
@@ -528,6 +529,11 @@ export class MatchBoss {
   /** Every boss field is over: stats, bounties, then the Hidden Core or RESULT. */
   _finishFinal(hidden, resultOf) {
     if (this.phase !== (hidden ? PHASE.HIDDEN_CORE : PHASE.FINAL_ASSAULT)) return;
+    // one settle per boss phase: the completion routes (`_maybeFieldsDone` inside _endFinal's own field sweep, the
+    // runner's onDone, a late report) can all fire before the SETTLE timer advanced the phase — the second entry must
+    // not re-count the stats / bounties below or schedule the Hidden-Core start twice
+    if (this._finalSettledFor != null) return;
+    this._finalSettledFor = hidden;
     this._stopClientCombat();
     // the end condition the server registered first decides (client-side combat: _endFinal — pool 0 → victory, team LP 0
     // → defeat); a boss field's final result may never turn a defeat into a victory (user playtest #6 item 5)
@@ -565,6 +571,10 @@ export class MatchBoss {
     this.deadline = 0;
     this.overtimeAt = 0;
     this.markPublic();
+    // stop the server runner before dropping it: its battles were force-ended, but a runner that keeps its interval
+    // would still fire onDone → _finalDone once the ticks unwind — a second _finishFinal while the phase still reads
+    // FINAL_ASSAULT (the SETTLE timer owns the transition) schedules the Hidden-Core start twice
+    if (this.runner) { try { this.runner.stop(); } catch { /* already stopped */ } }
     this.runner = null;
     if (!hidden) {
       const eligible = victory && !!this.hiddenBossId && hiddenEligible(this.gd, { layerSum: this.hiddenLayerSum, teamLp: this.teamLp });

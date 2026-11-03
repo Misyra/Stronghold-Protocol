@@ -86,6 +86,10 @@ export function applyHpDecrease(battle, ctx, amount, mark) {
   target.stats.taken += dealt;
   target.lastHitAt = battle.time;
   if (dmg && !dmg.silent && amount >= 0.5) {
+    // The number is the computed damage (`amount`), not the HP actually removed (`dealt`). A hit-count husk loses one
+    // hit per instance while the number keeps the hit's full value — official behaviour, pinned by
+    // test/sim/official-damage-numbers.test.js and described in docs/design/engine.md (伤害数字 vs 扣除). Do not
+    // "align" the two: a player's damage figure would then lie about overkill and about these enemies.
     const shown = dmg.type === 'element' ? dmg.element : dmg.type === 'elemental' ? (dmg.element || 'true') : dmg.type;
     // 'r' is display-only (official red number). Absent on every other hit, so the tuple stays four elements.
     const ev = ['dmg', target.id, Math.round(amount), shown];

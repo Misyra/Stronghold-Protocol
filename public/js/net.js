@@ -361,6 +361,9 @@ export class Net {
     }
     this.ws = null;
     this._unansweredSince = null;
+    // The RTT belonged to the old socket: the next welcome's clock sample must not skew by half of it
+    // (a changed network would shift serverNow() until this connection's first pong).
+    this.ping = null;
     this._clearTimer('_pingTimer', 'clearInterval');
     this._clearTimer('_helloTimer', 'clearTimeout');
     this._helloRid = null;

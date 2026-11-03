@@ -561,6 +561,26 @@ describe('net.js', () => {
     assert.equal(net.ping, 40);
   });
 
+  test('a reconnect resets the RTT: the new connection reports no latency before its own first pong', async () => {
+    const { net, ws, timers, sockets } = await onlineNet();
+    net.probe();
+    const ping = ws().last('ping');
+    timers.advance(300);
+    ws().recv({ t: 'pong', c: ping.c, s: ping.c });          // a 300 ms RTT on this socket
+    assert.equal(net.ping, 300);
+    // the socket dies and the page reconnects: the stale RTT belongs to the old socket
+    sockets[0].drop();
+    timers.advance(1000);
+    net.setName('凯尔希');
+    ws().open();
+    ws().recv({ t: 'welcome', rid: ws().last('hello').rid, playerId: 'p_1', token: 't', name: '凯尔希', serverNow: timers.now() });
+    assert.equal(net.ping, null, 'no pong of this socket yet (the welcome sample carries no half-RTT term)');
+    net.probe();
+    timers.advance(25);
+    ws().recv({ t: 'pong', c: ws().last('ping').c, s: ws().last('ping').c });
+    assert.equal(net.ping, 25, 'the new connection measures its own');
+  });
+
   test('silent socket is detected and replaced', async () => {
     const { net, sockets, timers } = await quiet(() => onlineNet());
     await quiet(async () => { timers.advance(20000); });

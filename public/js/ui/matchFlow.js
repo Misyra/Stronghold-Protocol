@@ -60,17 +60,23 @@ export function PixelScout({ happy = false }) {
 
 /**
  * 搜寻中 panel.
+ * `players` / `target`: the party progress the queue reports (waiting humans in the same pool / the seats a match needs) —
+ * shown as 「已找到 1/4 名博士」 under the title; omitted (null) the line stays away.
  * @param {{ elapsed: number, tags?: Array<{ key: string, label: string, color?: string, icon?: any }>, onStop?: (() => void)|null,
- *   stopping?: boolean, note?: string|null, title?: string|null, children?: any, class?: string }} props
+ *   stopping?: boolean, note?: string|null, title?: string|null, players?: number|null, target?: number|null,
+ *   children?: any, class?: string }} props
  */
-export function SearchPanel({ elapsed = 0, tags = [], onStop = null, stopping = false, note = null, title = null, children, class: cls = '' }) {
+export function SearchPanel({ elapsed = 0, tags = [], onStop = null, stopping = false, note = null, title = null, players = null, target = null, children, class: cls = '' }) {
   const [tips] = useState(tipList);
   const [i, setI] = useState(() => Math.floor(Math.random() * Math.max(1, tips.length)));
   useEffect(() => { const id = setInterval(() => setI((x) => x + 1), 5000); return () => clearInterval(id); }, []);
   const dots = '.'.repeat((Math.floor(elapsed) % 3) + 1);
+  const progress = Number.isFinite(players) && Number.isFinite(target) && target > 0 ? Math.max(0, Math.min(target, players)) : null;
   return html`<aside class=${`mf-search ${cls}`} role="status" aria-live="polite">
     <${BrandMark} />
     <h3 class="mf-search__title"><span>${title || t('搜寻中')}</span><span class="mf-search__dots" aria-hidden="true">${dots}</span><small class="num">(${searchClock(elapsed)})</small></h3>
+    ${progress != null ? html`<p class="mf-search__progress" data-testid="mf-progress">
+      ${t('已找到 {matched}/{target} 名博士', { matched: progress, target })}</p>` : null}
     ${tags.length ? html`<div class="mf-search__tags">${tags.map((g) => html`<span key=${g.key} class="mf-tag" style=${g.color ? `--tag:${g.color}` : undefined}>${g.icon || null}${g.label}</span>`)}</div>` : null}
     <div class="mf-search__scene"><i class="mf-cross mf-cross--tl"></i><i class="mf-cross mf-cross--tr"></i><${PixelScout} /><i class="mf-cross mf-cross--bl"></i><i class="mf-cross mf-cross--br"></i></div>
     <p key=${i} class="mf-search__tip">${tips.length ? tips[i % tips.length] : ''}</p>

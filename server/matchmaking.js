@@ -52,6 +52,7 @@ export class Matchmaking {
     this.sequence = 0;
     this.timer = null;
     this.populationTimer = null;
+    this.pumpScheduled = false;
     this.closed = false;
     /** diagnostics only (server/phaseMetrics.js) */
     this.metrics = metrics;
@@ -67,17 +68,104 @@ export class Matchmaking {
 
   /** Read-only population: no sweep, offer creation, deadline or party mutation. */
   waitingPopulation() {
-    const counts = new Map(), waiting = [];
+    const pools = new Map(), waiting = [];
     const now = this.now();
     for (const party of this.parties.values()) {
       if (party.entries.some(e => e.offerId || this.entries.get(e.session.playerId) !== e || this.stale(e, now))) continue;
-      for (const e of party.entries) {
-        const key = this.poolKey(e);
-        counts.set(key, (counts.get(key) || 0) + 1);
-        waiting.push({ entry: e, session: e.session, playerId: e.session.playerId, ticketId: e.ticketId });
-      }
+      const key = this.poolKey(party.entries[0]);
+      if (!pools.has(key)) pools.set(key, []);
+      pools.get(key).push(party);
+      for (const e of party.entries) waiting.push({ entry: e, session: e.session, playerId: e.session.playerId, ticketId: e.ticketId });
     }
+    const counts = new Map();
+    for (const parties of pools.values()) this.countMergeable(parties, counts);
     return { counts, waiting };
+  }
+
+  /**
+   * Per-party waiting counts for one queue pool. Parties are indivisible and pumpPools' buckets decide
+   * what may merge: an experimental room only with the same option key (plus solo wildcards), a plain
+   * ticket with one option key's rooms at a time. The count is the party itself plus the most humans
+   * that fit inside the pool's `required`, so an over-full pool can never report more than its target
+   * (a 3-party beside a 2-party in a 4-seat pool reads 3/4, not 5/4). Bots never queue, so none count.
+   * @param {any[]} parties
+   * @param {Map<string, number>} counts keyed by party.id
+   */
+  countMergeable(parties, counts) {
+    const required = parties[0].required;
+    const plain = new Array(required + 1).fill(0);
+    const options = new Map();
+    for (const party of parties) {
+      const size = party.entries.length;
+      if (!party.experimental) { plain[size]++; continue; }
+      const key = experimentalKey(party.experimental);
+      if (!options.has(key)) options.set(key, new Array(required + 1).fill(0));
+      options.get(key)[size]++;
+    }
+    // reachable sums for one bucket of indivisible parties, capped at the remaining seats
+    const reach = (sizes, remaining) => {
+      const out = new Uint8Array(remaining + 1);
+      out[0] = 1;
+      for (let size = 1; size <= remaining; size++) {
+        let copies = Math.min(sizes[size] || 0, Math.floor(remaining / size));
+        for (let step = 1; copies > 0; step <<= 1) {
+          const take = Math.min(step, copies);
+          copies -= take;
+          const weight = size * take;
+          for (let slots = remaining; slots >= weight; slots--) if (out[slots - weight]) out[slots] = 1;
+        }
+      }
+      return out;
+    };
+    // a plain ticket may join one option key's rooms; the union keeps each key separate
+    const unionCache = new Map(), unionAll = new Map(), ownCache = new Map(), plainCache = new Map();
+    const unionReach = (remaining) => {
+      if (unionAll.has(remaining)) return unionAll.get(remaining);
+      let out = null;
+      for (const [key, sizes] of options) {
+        let found = unionCache.get(`${key}:${remaining}`);
+        if (!found) { found = reach(sizes, remaining); unionCache.set(`${key}:${remaining}`, found); }
+        if (!out) out = Uint8Array.from(found);
+        else for (let slots = 0; slots <= remaining; slots++) if (found[slots]) out[slots] = 1;
+      }
+      if (!out) { out = new Uint8Array(remaining + 1); out[0] = 1; }
+      unionAll.set(remaining, out);
+      return out;
+    };
+    for (const party of parties) {
+      const own = party.entries.length;
+      const remaining = required - own;
+      if (remaining <= 0) { counts.set(party.id, own); continue; }
+      const optionKey = party.experimental ? experimentalKey(party.experimental) : null;
+      let ownReach;
+      if (optionKey) ownReach = reach(plain, remaining); // an experimental party is not in the plain bucket
+      else {
+        ownReach = plainCache.get(own);
+        if (!ownReach) {
+          const sizes = plain.slice();
+          sizes[own] = Math.max(0, sizes[own] - 1);
+          ownReach = reach(sizes, remaining);
+          plainCache.set(own, ownReach);
+        }
+      }
+      let partnerReach;
+      if (optionKey) {
+        const cacheKey = `${optionKey}:${own}`;
+        partnerReach = ownCache.get(cacheKey);
+        if (!partnerReach) {
+          const sizes = options.get(optionKey).slice();
+          sizes[own] = Math.max(0, sizes[own] - 1);
+          partnerReach = reach(sizes, remaining);
+          ownCache.set(cacheKey, partnerReach);
+        }
+      } else partnerReach = unionReach(remaining);
+      let best = 0;
+      for (let a = 0; a <= remaining; a++) {
+        if (!ownReach[a]) continue;
+        for (let b = 0; b <= remaining - a; b++) if (partnerReach[b] && a + b > best) best = a + b;
+      }
+      counts.set(party.id, own + best);
+    }
   }
 
   state(session, counts = null) {
@@ -92,7 +180,7 @@ export class Matchmaking {
       t: 'queue.state', state: offer ? 'offered' : 'queued', ticketId: e.ticketId,
       difficulty: e.difficulty, required: e.party.required, joinedAt: e.joinedAt,
       deadline: offer ? offer.deadline : e.expiresAt, ...this.partyState(e.party),
-      ...(!e.offerId ? { waitingCount: (counts || this.waitingPopulation().counts).get(this.poolKey(e)) || 0 } : {}),
+      ...(!e.offerId ? { waitingCount: (counts || this.waitingPopulation().counts).get(e.party.id) || 0 } : {}),
       ...(e.reason ? { reason: e.reason } : {}),
       ...(offer ? { offerId: offer.id, accepted: e.accepted, experimental: { ...offer.experimental }, acceptedCount: offer.entries.filter((x) => x.accepted).length,
         ...(offer.allocation ? { allocationPending: true } : {}) } : {}),
@@ -126,7 +214,7 @@ export class Matchmaking {
       // Resolve a complete current snapshot, never replay a saved queued frame.
       if (this.entries.get(saved.playerId) !== e || e.session !== saved.session || e.session.playerId !== saved.playerId
         || e.ticketId !== saved.ticketId || e.offerId || this.stale(e, this.now())) continue;
-      if (e.lastWaitingCount !== (counts.get(this.poolKey(e)) || 0)) this.push(e, counts);
+      if (e.lastWaitingCount !== (counts.get(e.party.id) || 0)) this.push(e, counts);
     }
     this.metrics.end('queue.population', t0, waiting.length);
   }
@@ -157,9 +245,18 @@ export class Matchmaking {
     const previous = this.entries.get(session.playerId);
     if (previous) {
       if (previous.difficulty !== difficulty) return fail(ERR.QUEUED, 'cancel before changing difficulty');
-      this.push(previous);
-      if (!previous.offerId) { this.pump(); this.arm(); }
-      return OK;
+      // An idempotent join from the same party keeps its ticket. A different room or a changed party size
+      // (someone joined, left, was kicked) makes the old ticket describe a party that no longer exists:
+      // withdraw it first and queue the current one instead of leaving the stale ticket behind.
+      const next = this.members(session, difficulty, party);
+      const changed = next && !next.error && Array.isArray(next.sessions) && ((next.roomCode || null) !== (previous.party.roomCode || null)
+        || next.sessions.length !== previous.party.entries.length);
+      if (!changed) {
+        this.push(previous);
+        if (!previous.offerId) { this.schedulePump(); this.arm(); }
+        return OK;
+      }
+      this.remove(session, 'cancelled');
     }
     const group = this.members(session, difficulty, party);
     if (!group || group.error) return group || fail(ERR.INTERNAL, 'could not inspect party');
@@ -198,7 +295,7 @@ export class Matchmaking {
     this.parties.set(unit.id, unit);
     for (const e of unit.entries) { e.session.matchmakingResult = null; this.entries.set(e.session.playerId, e); }
     this.pushAll(unit.entries);
-    this.pump();
+    this.schedulePump();
     this.arm();
     return OK;
   }
@@ -264,7 +361,7 @@ export class Matchmaking {
     // room.state(inMatch) first: the client clears old game slices on a changed room. Matched is last.
     result.publish?.();
     for (const member of offer.entries) this.send(member.session, this.state(member.session));
-    this.pump();
+    this.schedulePump();
     this.arm();
     return OK;
   }
@@ -373,7 +470,7 @@ export class Matchmaking {
     try { result.publish?.(); }
     finally {
       for (const member of offer.entries) this.send(member.session, this.state(member.session));
-      this.pump();
+      this.schedulePump();
       this.arm();
     }
   }
@@ -384,7 +481,7 @@ export class Matchmaking {
     if (!e) return;
     if (e.offerId) this.breakOffer(this.offers.get(e.offerId), new Set(e.party.entries), reason);
     else this.dropParty(e.party, reason);
-    this.pump();
+    this.schedulePump();
     this.arm();
   }
 
@@ -425,6 +522,24 @@ export class Matchmaking {
     if (this.closed || this.paused()) return;
     const t0 = this.metrics.start();
     try { this.pumpPools(); } finally { this.metrics.end('queue.pump', t0, this.entries.size); }
+  }
+
+  /**
+   * Ask for a pool scan, at most once per event turn. One join already calls this twice (`sweep()` then the join
+   * itself) and a burst of parties would otherwise rescan and re-sort the whole queue per party; coalescing them keeps
+   * one scan whose fairness still comes from the parties' `sequence`. The scan runs as a microtask, so every state
+   * message is sent from one consistent snapshot and no caller sees an offer half-formed.
+   */
+  schedulePump() {
+    if (this.closed || this.pumpScheduled) return;
+    this.pumpScheduled = true;
+    queueMicrotask(() => {
+      this.pumpScheduled = false;
+      if (this.closed) return;
+      this.pump();
+      // New offers carry deadlines: the timer armed before the scan cannot know them.
+      this.arm();
+    });
   }
 
   pumpPools() {
@@ -523,7 +638,7 @@ export class Matchmaking {
     const allocationExpired = !!offer.allocation && offer.deadline <= now;
     if (!removed.size && !allocationExpired) return;
     this.breakOffer(offer, removed, allocationExpired ? 'allocation_timeout' : offer.deadline <= now ? 'confirmation_timeout' : 'unavailable');
-    if (!allocationExpired) this.pump();
+    if (!allocationExpired) this.schedulePump();
     this.arm();
   }
 
@@ -546,7 +661,7 @@ export class Matchmaking {
       }
     }
     for (const e of expired) if (this.entries.get(e.session.playerId) === e) this.dropParty(e.party, e.expiresAt <= now ? 'expired' : 'unavailable');
-    if (!allocationExpired) this.pump();
+    if (!allocationExpired) this.schedulePump();
     this.arm();
   }
 

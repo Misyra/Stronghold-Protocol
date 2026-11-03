@@ -75,6 +75,9 @@ test('matchInfoModel: the two greyed kinds, the briefing order, banned operators
   assert.equal(m.perBond.get('arcaneShip'), 2, '深靛 + 海霓');
   assert.equal(m.perBond.get('preciShip'), 2, '深靛 + 缇缇');
   assert.equal(m.perBond.get('yanShip'), 0);
+  // the lists behind those numbers (the grouped 本局禁用干员 block reads them): the number is their length, always
+  assert.deepEqual(m.perBondMembers.get('arcaneShip'), ['chess_char_1_17_a', 'chess_char_3_09_a']);
+  for (const [bondId, ids] of m.perBondMembers) assert.equal(m.perBond.get(bondId), ids.length, `${bondId}: count === list`);
   // an older payload without drawnDisabledBonds: disabledBonds minus the static list
   const old = matchInfoModel({ disabledBonds: ['arcaneShip', 'sargonShip'] }, { bonds: data.list('bonds'), chess: (id) => data.lookup('chess', id), mode: MODE });
   assert.deepEqual([...old.sets.drawn], ['sargonShip']);
@@ -132,16 +135,29 @@ test('MatchLegend: the grey and the badge; "或本模式禁用" only when the mo
   assert.doesNotMatch(textOf(MatchLegend({ model: hard })), /本模式禁用/);
 });
 
-test('BannedOperators: the count and dimmed avatars in tier order; none ⇒ 本局没有禁用干员', () => {
+test('BannedOperators: 本局禁用干员 grouped by bond (a member with several bonds is listed under each); none ⇒ 本局没有禁用干员', () => {
   const m = model();
   const block = BannedOperators({ model: m });
   assert.match(textOf(block), /本局禁用干员BANNED OPERATORS4/);
+  const groups = [...walk(block)].filter((v) => hasClass(v, 'brief-banned__group'));
+  const withIds = m.bonds.filter((b) => (m.perBondMembers.get(b.bondId) || []).length);
+  assert.deepEqual(groups.map((v) => v.props['data-bond']), withIds.map((b) => b.bondId), 'one row per bond that lost members, in briefing order');
+  for (const g of groups) {
+    const id = g.props['data-bond'];
+    const ids = m.perBondMembers.get(id) || [];
+    const bond = m.bonds.find((b) => b.bondId === id);
+    assert.deepEqual([...walk(g)].filter((v) => v.type === UnitThumb).map((v) => v.props.id), ids, `${id}: exactly its own members`);
+    assert.match(textOf(g), new RegExp(`${bond.name}${ids.length}$`), `${id}: names itself and carries its own count`);
+    for (const tip of [...walk(g)].filter((v) => v.type === Tooltip)) assert.equal(tip.props.text, briefingBondTip(bond.name, m.stateOf(id), ids.length));
+  }
   const thumbs = [...walk(block)].filter((v) => v.type === UnitThumb);
-  assert.deepEqual(thumbs.map((v) => v.props.id), m.banned);
-  assert.ok(thumbs.every((v) => v.props.kind === 'chess' && v.props.dim === true && v.props.size === 'sm'));
+  assert.deepEqual(thumbs.map((v) => v.props.id), withIds.flatMap((b) => m.perBondMembers.get(b.bondId)), 'a member of several bonds appears under each');
+  assert.ok(thumbs.every((v) => v.props.kind === 'chess' && v.props.size === 'sm' && !v.props.dim && v.props.skinId === undefined
+    && hasClass(v, 'is-banned')), 'plain (原皮) avatars, marked is-banned');
   const none = BannedOperators({ model: matchInfoModel({}, SRC('mode_single_normal')) });
   assert.match(textOf(none), /本局没有禁用干员/);
   assert.equal([...walk(none)].filter((v) => v.type === UnitThumb).length, 0);
+  assert.equal([...walk(none)].filter((v) => hasClass(v, 'brief-banned__group')).length, 0);
 });
 
 test('#68 each bond names the operators it lost: every banned member under each of its bonds, in tier order', () => {
@@ -347,6 +363,9 @@ test('a real 标准 match (solo and co-op): the mode\'s 10 inactive bonds are "o
     assert.deepEqual([...m.banned].sort(), [...pub.bannedChess].sort(), 'every banned operator is known');
     assert.deepEqual(m.banned.map((id) => DATA.chess[id].tier), [...m.banned.map((id) => DATA.chess[id].tier)].sort((a, b) => a - b));
     for (const id of m.banned) assert.ok(DATA.chess[id].bonds.every((b) => m.stateOf(b)), `${id}: every bond greyed`);
+    // the grouped block lists every banned operator at least once (nothing may drop out of 本局禁用干员)
+    const grouped = new Set([...m.perBondMembers.values()].flat());
+    for (const id of m.banned) assert.ok(grouped.has(id), `${id}: listed under a bond`);
     assert.equal(m.addon.filter((b) => m.stateOf(b.bondId)).length + m.core.filter((b) => m.stateOf(b.bondId)).length, 11);
     assert.match(textOf(MatchLegend({ model: m })), /或本模式禁用/);
     h.m.dispose();

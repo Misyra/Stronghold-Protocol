@@ -563,7 +563,7 @@ test('a switch: others un-readied, settings cleared, a card the version lacks dr
   assert.equal(seat.notOwned, null);
   assert.equal(seat.loadoutCs, null);
   assert.equal(seat.card, null, '本 version has no 温蒂 (char_494_vendla)');
-  assert.equal(room.seatOf(a.playerId).card, 'char_102_texas');
+  assert.equal(room.seatOf(a.playerId).card?.charId, 'char_102_texas');
   assert.equal(b.loadout?.chess_char_1_02_a?.skill, 0, 'the session keeps its own copy (the page sends again)');
   assert.deepEqual(h.last(a).seats.filter(Boolean).map((s) => s.content), ['loading', 'loading']);
   assert.equal(room.replay, null, 'the replay is gone');
@@ -662,7 +662,7 @@ test('startMatch: a version room plays in its version host (version + requireCs)
   assert.equal(hosted.length, 1);
   const keys = Object.keys(Rec.last).sort();
   // (合并注: bandDupes 是允许重复策略的房间开关, onCheckpoint 是持久化检查点的订阅 —— 都是本仓新增 opts。)
-  assert.deepEqual(keys, ['aiPicksLast', 'bandDupes', 'broadcast', 'cs', 'data', 'difficulty', 'hostId', 'log', 'matchNo', 'mode', 'modeId', 'now', 'onCheckpoint', 'onEnd', 'roomCode', 'seats', 'seed', 'send', 'spectators']);
+  assert.deepEqual(keys, ['afkRemoveRounds', 'aiPicksLast', 'bandDupes', 'broadcast', 'cs', 'data', 'difficulty', 'hostId', 'log', 'matchNo', 'mode', 'modeId', 'now', 'onCheckpoint', 'onEnd', 'onRemove', 'roomCode', 'seats', 'seed', 'send', 'spectators']);
   // a version room without a version host, and the real Match class: never in this process
   const lone = new Lobby({ registry: new SessionRegistry(), log: quiet, content: { cs: VANILLA }, getData, versions: versionStub() });
   const s = lone.registry.create('C');
@@ -714,4 +714,13 @@ test('server/plugins/roomSets.js resolve({ gameplay: false }): a content / scrip
   assert.deepEqual(built, [], 'refused before any set is built');
   assert.equal(sets.resolve(['skin'], { gameplay: false }).ok, true);
   assert.equal(sets.resolve(['rules']).ok, true, 'the default keeps gameplay plugins');
+});
+
+test('room.setExperimental keeps the room at four seats (the capacity panel 8/12/16/20 is not offered)', () => {
+  const h = harness();
+  const { people } = coop(h, 1);
+  const host = people[0];
+  refused(h.lobby.setExperimental(host, { experimental: { revivalEnabled: false, disableSharedPool: false, playerCapacity: 8 } }), ERR.BAD_MSG);
+  refused(h.lobby.setExperimental(host, { experimental: { revivalEnabled: false, disableSharedPool: false, playerCapacity: 20 } }), ERR.BAD_MSG);
+  ok(h.lobby.setExperimental(host, { experimental: { revivalEnabled: true, disableSharedPool: false, playerCapacity: 4 } }));
 });

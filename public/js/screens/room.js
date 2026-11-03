@@ -70,8 +70,9 @@ import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating, serverNow, savePref } from '../store.js';
 import { data, useData, getConfig } from '../data.js';
 import { chessAvatarUrl, chessPortraitUrl } from '../ui/assetUrls.js';
-import { CARD_KEY, CARD_LOOK_KEY, cardStore, setCard, setCardLook, cardOperators, cardContext, seatOperator, seatCardSkin, seatArtSrc, lookUrl, lookOptions } from '../ui/seatArt.js';
-import { OperatorPicker } from '../ui/opPicker.js';
+import { CARD_KEY, CARD_LOOK_KEY, CARD_AVATAR_KEY, CARD_FACE_KEY, CARD_BG_KEY, CARD_BG_Y_KEY, cardStore, setCard, setCardLook, setCardAvatar, setCardFace, setCardBackground, setCardBackgroundY, cardOperators, cardContext, seatOperator, seatCardSkin, seatArtSrc, seatCardView, cardAvatarUrl, lookUrl, lookOptions } from '../ui/seatArt.js';
+import { OperatorPicker, CardAvatarPicker } from '../ui/opPicker.js';
+import { NameCardPicker, NameCardLayer } from '../ui/namecards.js';
 import { skinsStore, SKINS_KEY, ownerSkin } from '../ui/skins.js';
 import { settingsStore } from '../ui/settingsStore.js';
 import { difficultyInfo, ProtocolSelect } from './lobby.js';
@@ -138,6 +139,24 @@ export function roomFacts(room, myId) {
     // spectator seats (never players: not in `humans`, never counted for ready / start)
     spectators: Array.isArray(room?.spectators) ? room.spectators.filter((s) => s && typeof s === 'object') : [],
     spectating: isSpectating(room, myId),
+  };
+}
+
+/**
+ * Search progress shown by the room screen. The queue reports `players` (waiting humans in the ticket's
+ * pool) and `target` (the seats a match needs); clamping keeps an over-full pool from reading 5/4 or 6/4.
+ * Without a search frame — the store's `matchmaking` is null — the room's occupied seats stand in.
+ * @param {any} mm store matchmaking projection (status / players / target / joinedAt, main.js)
+ * @param {number} [occupied] the room's occupied seats
+ */
+export function matchmakingProgress(mm, occupied = 0) {
+  const searching = mm?.status === 'searching';
+  const target = searching && Number.isFinite(mm.target) && mm.target > 0 ? mm.target : MAX_SEATS;
+  const raw = searching && Number.isFinite(mm.players) ? mm.players : occupied;
+  const matched = Number.isFinite(raw) ? Math.max(0, Math.min(raw, target)) : 0;
+  return {
+    matched, target,
+    elapsed: searching && mm.joinedAt ? Math.max(0, (serverNow() - mm.joinedAt) / 1000) : 0,
   };
 }
 
@@ -272,7 +291,7 @@ function BotBandPicker({ open, seat, seats, bands, busy, dupes = false, onClose,
   <//>`;
 }
 
-function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot, onKick, onInvite, portrait = null, portraitDefault = null, operator = null, onPickCard = null, fresh = false, bands = null, onBotBand = null }) {
+function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot, onKick, onInvite, portrait = null, portraitDefault = null, operator = null, avatar = null, bg = '', bgY = null, onPickCard = null, onPickAvatar = null, onPickBg = null, fresh = false, bands = null, onBotBand = null }) {
   const [badArt, setBadArt] = useState([]);
   const coop = room.mode !== 'solo';
   // the 转场 flash: a seat that turns ready (or becomes the host's), and an AI teammate added while the room is open
@@ -341,11 +360,16 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
       onClick=${() => onKick(index, seat.name, seat.playerId)} title=${t('将该博士移出同盟')} aria-label=${t('移出该博士')}><${Icon} name="user" /><${Icon} name="close" /></button>` : null}
     ${seat.isBot && room.mode !== 'solo' ? html`<${BotBandChip} seat=${seat} bands=${bands} editable=${!!facts.isHost} busy=${busy === `band${index}`}
       onOpen=${onBotBand ? () => onBotBand(index) : null} />` : null}
-    <div class="rseat__plate">
+    <div class=${`rseat__plate${bg ? ' has-nc' : ''}`}>
+      ${bg ? html`<${NameCardLayer} card=${bg} y=${bgY} />` : null}
       ${isMe ? html`<span class="rseat__me" role="img" aria-label=${t('你')} title=${t('你')}><${Icon} name="info" /></span>` : null}
-      <${AvatarFrame} size="sm" name=${seat.name} seat=${index} bot=${seat.isBot} self=${isMe} />
+      ${isMe && onPickAvatar
+        ? html`<button type="button" class="rseat__ava" data-testid="seat-avatar-pick" onClick=${onPickAvatar} title=${t('更换头像')} aria-label=${t('更换头像')}>
+            <${AvatarFrame} size="sm" name=${seat.name} src=${avatar || undefined} seat=${index} bot=${seat.isBot} self=${true} /><span class="rseat__ava-pen" aria-hidden="true"><${Icon} name="edit" /></span></button>`
+        : html`<${AvatarFrame} size="sm" name=${seat.name} src=${avatar || undefined} seat=${index} bot=${seat.isBot} self=${isMe} />`}
       <span class="rseat__who"><b class="seat__name">${botPrefix ? html`<span class="seat__name-pre">${botPrefix[0]}</span>${botPrefix[1]}` : seat.name || t('博士')}</b>${isMe ? html`<span class="seat__you" aria-hidden="true">${t('你')}</span>` : null}</span>
       <small class="rseat__doc">${seat.isBot ? 'AUTONOMOUS UNIT' : `DOCTOR #${doctorNo(seat.playerId)}`}</small>
+      ${isMe && onPickBg ? html`<button type="button" class="rseat__bg" data-testid="seat-bg-pick" onClick=${onPickBg} title=${t('更换名片底图')} aria-label=${t('更换名片底图')}><${Icon} name="image" /></button>` : null}
     </div>
   </article>`;
 }
@@ -542,11 +566,16 @@ export function RoomScreen() {
   const cardList = useMemo(() => cardOperators(data.list('chess'), backups), [chess, backups]);
   const cards = useMemo(() => cardContext(cardList, { pending: !backups }), [cardList, backups]);
   const myCard = useStore((s) => s[CARD_KEY], Object.is, cardStore);
-  // 名片展示外观 (移植自用户分支, feedback #9/#24; B 的 room.card 不含 look, 只换自己坐席卡的画): ui/seatArt.js
+  // 名片外观 (Stardust PR2, 2026-10-16): the 名片干员's art, the 名片头像 and its art, the 名片底图 and its framing —
+  // all of them travel with room.card (ui/loadoutSync.js installCardSync) so the room sees the same card
   const myLook = useStore((s) => s[CARD_LOOK_KEY], Object.is, cardStore);
+  const myAvatar = useStore((s) => s[CARD_AVATAR_KEY], Object.is, cardStore) || '';
+  const myFace = useStore((s) => s[CARD_FACE_KEY], Object.is, cardStore) || '';
+  const myBg = useStore((s) => s[CARD_BG_KEY], Object.is, cardStore) || '';
+  const myBgY = useStore((s) => s[CARD_BG_Y_KEY], Object.is, cardStore) ?? null;
   const localSkins = useStore((s) => s[SKINS_KEY], Object.is, skinsStore);
   const otherSkins = useStore((s) => s.otherSkins !== false, Object.is, settingsStore);
-  const [picking, setPicking] = useState(false);
+  const [picking, setPicking] = useState(null);
   // AI 指定策略 (room.setBotBand, 移植自用户分支): the strategies a room's draft may offer (MULTI, sortId order), and
   // the AI seat whose strategy the host is picking
   const gd = useGameData();
@@ -592,14 +621,20 @@ export function RoomScreen() {
   // the room sees one's pick once the server has it (seats[].card): ui/loadoutSync.js installCardSync sends it after
   // every pick, welcome and content change and retries a RATE / TIMEOUT / OFFLINE refusal (review of PR #813).
   // 名片干员选择器 (移植自用户分支 ui/opPicker.js): picking an operator that offers 外观 (精二 / 精一 / 皮肤) keeps the
-  // picker open for its look row; picking a look (a local pref, ui/seatArt.js setCardLook) closes it.
+  // picker open for its look row; picking a look (a pref, ui/seatArt.js setCardLook) closes it. The look now travels with
+  // room.card art (Stardust PR2), so the room sees the same art; 名片头像 and 名片底图 work the same way.
   const pickCard = (charId) => {
     setCard(charId);
     // 换了干员就清掉上一个干员的外观 (皮肤 id 不属于新干员, 精二/精一也回到默认), 交给外观行重挑
     if (charId && myLook && !lookUrl(data.get('assets'), charId, myLook, 'portrait')) setCardLook('');
-    if (!charId || lookOptions(data.get('assets'), charId, 'portrait').length < 2) setPicking(false);
+    if (!charId || lookOptions(data.get('assets'), charId, 'portrait').length < 2) setPicking(null);
   };
-  const pickLook = (look) => { setCardLook(look); setPicking(false); };
+  const pickLook = (look) => { setCardLook(look); setPicking(null); };
+  // 名片头像 (Stardust PR2): the operator avatar on one's plate and its 精一 / 精二 / skin variant
+  const pickAvatar = (charId, face = '') => { setCardAvatar(charId); setCardFace(face); };
+  // 名片底图 (ui/namecards.js): the background and its vertical framing
+  const pickBg = (bg) => setCardBackground(bg);
+  const pickBgY = (y) => setCardBackgroundY(y);
 
   // 同盟匹配的房间侧状态 (移植自用户分支): room.state.matchmaking 是真值(服务器给房间排队,补满或匹配成功时
   // 自行撤单),面板与按钮读它而不是本地意愿;人数与时钟来自玩家侧的 queue.state。
@@ -633,15 +668,12 @@ export function RoomScreen() {
   const searchable = coop && facts.canMatch;
   const searching = coop && !!facts.searching;
   // 队列自己的时钟: server/matchmaking.js 搜寻中报 { joinedAt, players, target, serverNow }
-  const mmView = mm && mm.status === 'searching' ? {
-    matched: mm.players, target: mm.target || MAX_SEATS,
-    elapsed: mm.joinedAt ? Math.max(0, (serverNow() - mm.joinedAt) / 1000) : 0,
-  } : null;
+  const mmView = matchmakingProgress(mm, facts.occupied.length);
   // overlay 淡出期间保持挂载
   const [searchShown, searchLeaving] = usePresence(searching && !found, 220);
   const offerShown = !!(searching && mm?.offerId);
   const [foundShown, foundLeaving] = usePresence(found, 320);
-  const searchElapsed = mmView?.elapsed ?? 0;
+  const searchElapsed = mmView.elapsed;
 
   /** Runs one request at a time; resolves true once the server took it (false: not sent, or refused — toasted). */
   const run = async (kind, fn) => {
@@ -720,7 +752,7 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
     : facts.spectating
       ? html`<span class="t-lo"><${Icon} name="eye" />${t('观战中 · 不占博士席位，模拟开始后可切换观看各位博士')}</span>`
     : facts.searching
-      ? html`<span class="t-mint"><${Icon} name="hourglass" />${mm?.offerId ? matchmakingTitle(mm) : t('正在搜寻队友')} · ${mmView?.matched ?? 1}/${mmView?.target ?? MAX_SEATS} ${t('名博士')}</span>`
+      ? html`<span class="t-mint"><${Icon} name="hourglass" />${mm?.offerId ? matchmakingTitle(mm) : t('正在搜寻队友')} · ${mmView.matched}/${mmView.target} ${t('名博士')}</span>`
     : !coop
       ? html`<span class="t-mint">${t('*模拟协议已就绪，准许进入模拟')}</span>`
     : facts.versionRoom && !facts.contentReady
@@ -841,16 +873,23 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
     <main class=${`seats rs-seats${coop ? '' : ' seats--solo'}`}>
       ${facts.seats.map((s, i) => {
         const op = seatOperator(s, cards, { myId: me.playerId, myCard });
+        // the card's appearance: one's own shows this browser's picks at once (before the server echoes them), a
+        // teammate's what that seat published (room.state seats[].cardAvatar / cardArt / cardFace / cardBg / cardBgY)
+        const view = s && s.playerId === me.playerId
+          ? { charId: myCard, art: myLook, avatar: myAvatar, face: myFace, bg: myBg, bgY: myBgY }
+          : seatCardView(s);
         // the player's outfit for that operator (header "Outfits"); null = the default art.
-        // 名片展示外观 (移植自用户分支): one's own card wears the locally picked look when it has one — 精二 / 精一 /
-        // that operator's skin (ui/seatArt.js lookUrl); a look leaves the outfit aside until 默认 clears it.
-        const look = s && s.playerId === me.playerId ? myLook : '';
-        const lookSrc = op && look ? lookUrl(data.get('assets'), op.chess.charId, look, 'portrait') : null;
+        // 名片展示外观: the card's art when it has one — 精二 / 精一 / that operator's skin (ui/seatArt.js lookUrl);
+        // a look leaves the outfit aside until 默认 clears it.
+        const lookSrc = op && view.art ? lookUrl(data.get('assets'), op.chess.charId, view.art, 'portrait') : null;
         const skin = op ? seatCardSkin(s, op.chess.charId, { myId: me.playerId, localSkins, players: facts.occupied, otherSkins }) : null;
+        const avatarSrc = view.avatar ? cardAvatarUrl(view.avatar, data.get('assets'), view.face) : null;
         return html`<${SeatCard} key=${s ? `p${s.playerId}` : `e${i}`} seat=${s} index=${i} room=${room} facts=${facts}
           myId=${me.playerId} busy=${busy} onAddBot=${addBot} onRemoveBot=${removeBot} onKick=${kick} onInvite=${() => copy('code')}
           portrait=${op ? (lookSrc || chessPortraitUrl(data.get('assets'), op.chess, { skin })) : null}
-          portraitDefault=${op && skin ? chessPortraitUrl(data.get('assets'), op.chess) : null} operator=${op?.chess} onPickCard=${() => setPicking(true)}
+          portraitDefault=${op && skin ? chessPortraitUrl(data.get('assets'), op.chess) : null} operator=${op?.chess}
+          avatar=${avatarSrc} bg=${view.bg} bgY=${view.bgY}
+          onPickCard=${() => setPicking('op')} onPickAvatar=${() => setPicking('avatar')} onPickBg=${() => setPicking('bg')}
           fresh=${shownRoom.current === room.code} bands=${bandList} onBotBand=${setBandSeat} />`;
       })}
       ${coop ? null : html`<aside class="solo-brief rs-brief brackets">
@@ -905,18 +944,23 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
             <//>`}
       </div>
     </footer>
-    ${picking ? html`<${OperatorPicker} title=${t('名片干员')} micro="SEAT CARD OPERATOR" current=${myCard} list=${cardList}
+    ${picking === 'op' ? html`<${OperatorPicker} title=${t('名片干员')} micro="SEAT CARD OPERATOR" current=${myCard} list=${cardList}
       m=${data.get('assets')} faceOf=${(c) => chessAvatarUrl(data.get('assets'), c, { skin: ownerSkin(c.charId, { localSkins }) })}
       autoLabel=${t('默认')} autoTitle=${t('按博士编号自动分配')}
       looks=${{ kind: 'portrait', current: myLook, onLook: pickLook }}
       note=${t('选择后，同盟里的博士都会看到这张立绘')}
-      onPick=${pickCard} onClose=${() => setPicking(false)} />` : null}
+      onPick=${pickCard} onClose=${() => setPicking(null)} />` : null}
+    ${picking === 'avatar' ? html`<${CardAvatarPicker} current=${myAvatar} face=${myFace} list=${cardList} m=${data.get('assets')}
+      onPick=${pickAvatar} onClose=${() => setPicking(null)} />` : null}
+    ${picking === 'bg' ? html`<${NameCardPicker} current=${myBg} y=${myBgY} onPick=${pickBg} onAdjust=${pickBgY}
+      onClose=${() => setPicking(null)} />` : null}
     ${offerShown ? html`<div class="rs-offer brackets" role="status">
       <div class="rs-offer__head"><${MicroLabel}>MATCH FOUND<//><h2>${t('队友已集结')}</h2></div>
       <${MatchmakingOffer} mm=${mm} online=${online} busy=${busy === 'accept-match'} onAccept=${acceptMatch} />
       ${facts.isHost ? html`<${Button} variant="ghost" disabled=${!!busy} onClick=${cancelMatch}>${t('停止搜寻')}<//>` : null}
     </div>` : null}
     ${searchShown && !offerShown ? html`<${SearchPanel} title=${matchmakingTitle(mm)} class=${`rs-searchpanel${searchLeaving ? ' is-leaving' : ''}`} elapsed=${searchElapsed}
+      players=${mmView.matched} target=${mmView.target}
       onStop=${facts.isHost ? cancelMatch : null} stopping=${busy === 'cancel-match'}
       note=${facts.isHost ? t('搜寻期间可随时停止搜寻') : t('创建者正在搜寻队友')}
       tags=${[{ key: 'mode', label: t('精确搜寻'), icon: html`<${Icon} name="search" />` },

@@ -578,7 +578,7 @@ describe('room content sets (P1c: gameplay plugins)', () => {
     // a new vanilla room checks the card again when the player takes the seat (server/lobby.js humanSeat)
     const plain = await room(host, 'solo');
     assert.ok(!('card' in seatOf(plain, host.id)), 'a room without the operator shows no card for it');
-    assert.equal(srv.registry.byId(host.id).card, OP, 'the session keeps it (the page sends the card it can show: installCardSync)');
+    assert.equal(srv.registry.byId(host.id).card?.charId, OP, 'the session keeps it (the page sends the card it can show: installCardSync)');
     await refuse(host, { t: 'room.card', charId: OP }, ERR.BAD_MSG);
     await ok(host, { t: 'room.leave' });
   });

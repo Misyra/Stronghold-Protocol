@@ -72,7 +72,7 @@ import { StatsHost, useStatsOpen } from './screens/stats.js';
 import { CoveredVersionVote } from './ui/versionVote.js';
 import { NameHost } from './ui/nickname.js';
 import { installRehearsal } from './battle/rehearsal.js';
-import { recordResult, installStatsRecorder } from './ui/stats.js';
+import { recordResult, recordQuit, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync, installSkinsSync, installCardSync, installSettingsViews, loadoutStore } from './ui/loadoutSync.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
@@ -80,6 +80,7 @@ import { t, N_, translateWire } from '../../shared/i18n.js';
 import { recordError, installTrafficMeter } from './diag.js';
 import { installContent, installContentSet } from './content.js';
 import { cosmetics } from './cosmetics.js';
+import { seedAssets } from './assets.js';
 import { sanitizeVersions, roomVersion, isDefaultVersion, matchFrameVersion } from './versions.js';
 
 // CDN 配置由服务端在请求时生成（/js/asset-cdn.js，取 SP_ASSETS_CDN / SP_DATA_CDN，移植自用户分支）。
@@ -263,6 +264,8 @@ const CLOSE_REASON = {
   host_left: N_('创建者已离开，同盟已解散'), timeout: N_('由于长时间断开连接，你已离开同盟'), empty: N_('同盟已解散'),
   kicked: N_('你已被移出同盟'), ended: N_('模拟已结束'), expired: N_('同盟已过期'), shutdown: N_('服务器维护中，同盟已关闭'),
   matchmaking_failed: N_('匹配未能启动，已返回大厅'),
+  // 挂机移出 while offline (server/lobby.js matchRemoved): the next connection hears it here instead of m.removed
+  afk: N_('连续多个回合没有任何操作，你已被移出对局'),
 };
 
 function wireNet() {
@@ -287,7 +290,7 @@ function wireNet() {
   net.on('room.state', onRoomState);
   // 匹配队列 (server/matchmaking.js, 移植自用户分支): `queue.state` 是一张票据的完整快照,从不是增量。
   // Hub 屏读同一形状 — { status: 'searching', players, target, joinedAt } — 映射在这里: waitingCount 是票据
-  // 所在池子的等待人数(含本队),required 是该池子的容量。报价帧多带 { offerId, accepted }: 确认入场答 queue.accept。
+  // 所在池子里真正能与本队合并的等待人数(含本队,已按队伍大小与 experimental 兼容桶过滤),required 是该池子的容量。报价帧多带 { offerId, accepted }: 确认入场答 queue.accept。
   net.on('queue.state', (msg) => {
     const previous = store.get().matchmaking;
     if (previous && msg.reason && (previous.offerId || previous.reason !== msg.reason)) {
@@ -298,6 +301,10 @@ function wireNet() {
         toast(t('有队友离开，已继续搜寻'), 'warn');
       } else if (msg.reason === 'allocation_failed' || msg.reason === 'allocation_timeout') {
         toast(continuing ? t('对局准备失败，已继续搜寻') : t('匹配未能启动，已返回大厅'), 'warn');
+      } else if (msg.reason === 'expired') {
+        toast(continuing ? t('排队等待超时，已继续搜寻') : t('排队等待超时，已退出搜寻，请重新发起匹配'), 'warn');
+      } else if (msg.reason === 'unavailable') {
+        toast(continuing ? t('有队友状态变化，已继续搜寻') : t('匹配状态已失效，请重新发起匹配'), 'warn');
       }
     }
     // 出价时池里已经没有等待人数(waitingCount 只在 queued 帧上),用 required 报「一组已凑满」。
@@ -332,11 +339,23 @@ function wireNet() {
     const version = s.room ? roomVersion(s.room) : matchFrameVersion({ result: res, public: s.match.public });
     if (s.room?.test !== true && s.match.public?.test !== true) recordResult(res, { myId: s.me.playerId, roomMode: s.room?.mode ?? null, vs: s.room?.content?.vs ?? null, content: s.room?.content ?? null, version: isDefaultVersion(version) ? null : version, now: Date.now() });
   });
-  // 投票移出 / 挂机移出 (server/match/match/kickVote.js, 移植自用户分支): this seat left the match; the page returns to the lobby
+  // 投票移出 / 挂机移出 (server/match/match/kickVote.js, 移植自用户分支): this seat left the match for good — the server
+  // already detached it (no room.leave to grant), so the page records the run as a quit and returns to the lobby.
   net.on('m.removed', async (msg) => {
     const rounds = Number.isInteger(msg.rounds) && msg.rounds > 0 ? msg.rounds : 2;
+    const before = store.get();
     try { await net.request('room.leave', {}); } catch { /* already out of the room */ }
+    if (!store.get().match.result) {
+      try { recordQuit(before); } catch (err) { console.warn('[stats] quit record failed', err); }
+    }
+    backToLobby();
     toast(msg.reason === 'kicked' ? t('你掉线期间被队友投票移出了对局') : t('连续 {n} 回合没有任何操作，你已被移出对局', { n: rounds }), 'warn', { ttl: 10000 });
+  });
+  // 挂机移出: everyone still in the match hears who the rule removed (server MatchPlatform._removeIdle)
+  net.on('m.notice', (msg) => {
+    if (msg.kind !== 'afkRemoved') return;
+    const rounds = Number.isInteger(msg.rounds) && msg.rounds > 0 ? msg.rounds : 2;
+    toast(t('{name} 连续 {n} 回合没有任何操作，已被移出对局', { name: typeof msg.name === 'string' && msg.name ? msg.name : t('博士'), n: rounds }), 'info', { ttl: 6000 });
   });
   net.on('m.toast', (msg) => {
     const kind = ['info', 'success', 'warn', 'error'].includes(msg.kind) ? msg.kind : 'info';
@@ -609,7 +628,10 @@ async function boot() {
   // 资源预载(移植自用户分支,public/js/resources/index.js):按设置的分包/语音/皮肤/特效范围
   // 下载并进 Cache Storage;战斗期自动暂停。从不阻塞进入或进行一场对局。
   installResourcePreload();
-  data.load('assets').catch(() => {});
+  // Adopt the manifest data.js already parsed (2.6 MiB) for the browser art store instead of downloading it a second
+  // time on the first battle; getRaw skips the cosmetic layers content.js lays over it.
+  data.load('assets').then(() => seedAssets(data.getRaw('assets')))
+    .catch((err) => console.warn('[app] could not seed the art manifest', err));
   // Warm the data cache in the background (missing files are tolerated).
   data.loadAll('config').catch(() => {});
   // Optional local-client art manifest (emotes, tutorial pages, official UI sprites; DESIGN §13).

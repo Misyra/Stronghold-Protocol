@@ -24,9 +24,9 @@ export const matchmakingSend = (session, msg) => sendSession(session, msg);
 export function matchmakingAvailable(lobby, session, entry) {
   if (!session || !session.connected) return false;
   const room = lobby.roomOf(session);
-  // A room that plays gameplay plugins is unofficial (an own content set): it never joins the official queue, and
-  // an allocation must never drop a matched party into it.
-  if (room?.modded === true) return false;
+  // A room that plays gameplay plugins or another official version is unofficial in the queue's eyes: its seats
+  // load content an allocation must never force on matched strangers.
+  if (room?.needsContent === true) return false;
   if (room?.spectatorOf(session.playerId)) return false;
   const partyCode = entry?.party?.roomCode || null;
   if (!partyCode) return !room || !room.match;
@@ -44,15 +44,16 @@ export function matchmakingAvailable(lobby, session, entry) {
  */
 export function matchmakingMembers(lobby, session, difficulty, party) {
   if (!party) {
-    // A solo ticket is fine from the lobby; standing in a gameplay-plugin room, the answer is the same as a party's.
+    // A solo ticket is fine from the lobby; standing in a gameplay-plugin or another-version room, the answer is
+    // the same as a party's.
     const at = lobby.roomOf(session);
-    if (at?.modded === true) return fail(ERR.ROOM_MODDED);
+    if (at?.needsContent === true) return fail(ERR.ROOM_MODDED);
     return { sessions: [session], roomCode: null, leaderId: session.playerId };
   }
   const room = lobby.roomOf(session);
   if (!room) return fail(ERR.NOT_IN_ROOM);
   // Unofficial content never enters the official queue (the same rule the console follows).
-  if (room.modded === true) return fail(ERR.ROOM_MODDED);
+  if (room.needsContent === true) return fail(ERR.ROOM_MODDED);
   if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
   if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
   if (room.match) return fail(ERR.ROOM_STARTED);
@@ -61,7 +62,7 @@ export function matchmakingMembers(lobby, session, difficulty, party) {
   if (room.activeHumans().some((s) => !s.connected || (s.playerId !== room.hostId && !s.ready))) return fail(ERR.NOT_READY);
   const sessions = room.activeHumans().map((seat) => lobby.registry.byId(seat.playerId));
   if (sessions.some((s) => !s) || sessions.length > MAX_SEATS) return fail(ERR.NOT_READY);
-  return { sessions, roomCode: room.code, leaderId: room.hostId, experimental: EXPERIMENTAL_DEFAULTS };
+  return { sessions, roomCode: room.code, leaderId: room.hostId, experimental: room.experimental ?? EXPERIMENTAL_DEFAULTS };
 }
 
 /**
@@ -91,6 +92,8 @@ function allocateCohort(lobby, group, difficulty) {
   if (!created.ok) return created;
   const room = lobby.roomOf(group[0]);
   room.queueCohort = true;
+  // a room the queue allocated: the private-room options (联动干员) are not offered there
+  room.source = 'matchmaking';
   // 野排: any seated human may propose the setup reroll vote (server/lobby.js rerollSetup)
   room.fromMatchmaking = true;
   try {
@@ -114,7 +117,7 @@ export function queuePartyMatchmaking(lobby, session) {
   const room = lobby.roomOf(session);
   if (!room) return fail(ERR.NOT_IN_ROOM);
   // Unofficial content never enters the official queue (the same rule the console follows).
-  if (room.modded === true) return fail(ERR.ROOM_MODDED);
+  if (room.needsContent === true) return fail(ERR.ROOM_MODDED);
   if (room.matchmaking) return { ok: true }; // already queued: the queue answers with a fresh snapshot
   const queued = lobby.matchmaking.join(session, { difficulty: room.difficulty, party: true });
   if (queued?.ok) { room.matchmaking = true; lobby.broadcastState(room); }
@@ -148,16 +151,18 @@ export function dropMatchmakingParty(lobby, room, reason = 'cancelled') {
 export function mergePartyMatchmaking(lobby, group, difficulty) {
   const origins = group.map((s) => lobby.roomOf(s));
   const parties = [...new Set(origins.filter(Boolean))];
-  // Merging puts every matched player into the oldest party's room: a gameplay-plugin room would hand strangers an
-  // unofficial content set they never chose, so a modded party refuses the merge (every ticket stays queued).
-  if (parties.some((r) => r.modded === true)) return fail(ERR.ROOM_MODDED);
+  // Merging puts every matched player into the oldest party's room: a gameplay-plugin room or another official
+  // version would hand strangers a content set they never chose, so such a party refuses the merge (every ticket
+  // stays queued).
+  if (parties.some((r) => r.needsContent === true)) return fail(ERR.ROOM_MODDED);
   if (parties.some((r) => r.match || r.disposed || r.mode !== 'coop' || r.difficulty !== difficulty ||
     r.seats.some((s) => s?.isBot) || r.activeHumans().some((s) => !group.some((p) => p.playerId === s.playerId)))) return fail(ERR.NOT_READY);
   const room = parties[0];
-  room.fromMatchmaking = true;
   const spectators = parties.flatMap((r) => r.spectators);
   if (spectators.length > MAX_SPECTATORS) return fail(ERR.ROOM_FULL);
-  const previous = { seats: room.seats, spectators: room.spectators, matchCount: room.matchCount, replay: room.replay, matchmaking: room.matchmaking };
+  const previous = { seats: room.seats, spectators: room.spectators, matchCount: room.matchCount, replay: room.replay,
+    matchmaking: room.matchmaking, fromMatchmaking: room.fromMatchmaking };
+  room.fromMatchmaking = true;
   room.seats = room.seats.map((s) => s ? { ...s, ready: true } : null);
   room.spectators = spectators;
   for (const s of group) {

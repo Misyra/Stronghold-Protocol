@@ -13,6 +13,9 @@ import { PHASE } from '../../../shared/constants.js';
 
 const isObj = (v) => !!v && typeof v === 'object';
 const BOSS_PHASES = new Set([PHASE.FINAL_ASSAULT, PHASE.HIDDEN_CORE]);
+const BATTLE_PHASES = new Set([PHASE.COMBAT, PHASE.UNITE, PHASE.FINAL_ASSAULT, PHASE.HIDDEN_CORE]);
+/** Game seconds per real second of a normal battle — the official forced 2× (server/match/fields.js GAME_SPEED). */
+export const BASE_BATTLE_SPEED = 2;
 /** Battle phases a solo player may pause (a solo run has no 联防). */
 const PAUSE_PHASES = new Set([PHASE.COMBAT, PHASE.FINAL_ASSAULT, PHASE.HIDDEN_CORE]);
 
@@ -34,10 +37,27 @@ export function bossLevelSeconds(pub, config) {
   return Number.isFinite(v) && v > 0 ? v : BOSS_LEVEL_SECONDS;
 }
 
-/** Team LP lost per real second of overtime (config.bossOvertimeDrainPerSec, default 1). */
-export function overtimeDrainPerSec(config) {
+/** Team LP lost per real second of overtime (config.bossOvertimeDrainPerSec, default 1) at `pub`'s battle speed. */
+export function overtimeDrainPerSec(config, pub = null) {
   const v = config?.bossOvertimeDrainPerSec;
-  return Number.isFinite(v) && v >= 0 ? v : 1;
+  const base = Number.isFinite(v) && v >= 0 ? v : 1;
+  return base * battleSpeedScale(pub);
+}
+
+/**
+ * How much faster than the nominal clock a battle phase runs (战斗 2 倍速, server/match/match/speedVote.js):
+ * `m.public.speedVote.speed` over the base battle speed. 1 outside a battle phase — prep / draft timers are never
+ * scaled — and 1 without a running 2× vote. The countdown gauge's total and the overtime LP projection are real seconds
+ * of the clock the server gave the field, so they divide / multiply by this.
+ * @param {any} pub m.public
+ * @returns {number} 1 (normal) or the battle speed / BASE_BATTLE_SPEED (2 for the vote's SPEED_UP)
+ */
+export function battleSpeedScale(pub) {
+  if (!isObj(pub) || !BATTLE_PHASES.has(pub.phase)) return 1;
+  const v = pub.speedVote;
+  if (!isObj(v) || v.on !== true) return 1;
+  const speed = Number(v.speed);
+  return Number.isFinite(speed) && speed > 0 ? speed / BASE_BATTLE_SPEED : BASE_BATTLE_SPEED;
 }
 
 /**

@@ -1309,6 +1309,18 @@ describe('websocket lobby', () => {
     const third = JSON.parse((await httpReq(srv.port, '/api/online')).body.toString());
     assert.equal(third.online, n, 'the cached value outlives a disconnect (the count refreshes at most every 10 s)');
   });
+
+  test('/api/online keeps its cache per server instance, never across servers', async () => {
+    const other = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
+    try {
+      await pool.player('OnlineSharer');
+      const mine = JSON.parse((await httpReq(srv.port, '/api/online')).body.toString()).online;
+      assert.ok(mine >= 1, 'this server has one connected session');
+      // A second server in the same process has no sessions, and its first answer must not come from the first cache.
+      const theirs = JSON.parse((await httpReq(other.port, '/api/online')).body.toString()).online;
+      assert.equal(theirs, 0, 'a second server never answers with another instance\'s count');
+    } finally { await other.close(); }
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------

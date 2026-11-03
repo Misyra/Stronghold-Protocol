@@ -843,7 +843,7 @@ export function LobbyScreen() {
         <${Button} variant="ghost" disabled=${!!busy} onClick=${cancelMatch}>${t('停止搜寻')}<//>
       </div>`
         : html`<${SearchPanel} title=${matchmakingTitle(mm)} elapsed=${mmElapsed} onStop=${cancelMatch} stopping=${busy === 'cancel'}
-            note=${t('搜寻期间可随时停止搜寻')}
+            note=${t('搜寻期间可随时停止搜寻')} players=${mm?.players ?? 1} target=${mm?.target || MAX_SEATS}
             tags=${mm?.difficulty ? [{ key: 'diff', label: t(DIFFICULTY_NAMES[mm.difficulty] || mm.difficulty), color: DIFFICULTY_COLORS[mm.difficulty],
               icon: html`<${DifficultyIcon} difficulty=${mm.difficulty} />` }] : []} />}`}
     </aside>` : null}

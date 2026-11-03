@@ -171,6 +171,15 @@ describe('GitHub #8 and #484: 本局信息 in the strategy draft (real server, h
       legend: scope.querySelector('.brief-legend')?.textContent.trim() || '',
       count: scope.querySelector('.brief-banned__n')?.textContent.trim() || '',
       banned: [...scope.querySelectorAll('.brief-banned__grid .uthumb')].map((el) => el.getAttribute('title')),
+      bannedSorted: [...new Set([...scope.querySelectorAll('.brief-banned__grid .uthumb')].map((el) => el.getAttribute('title')))].sort(),
+      // 本局禁用干员 grouped by bond (Stardust PR4): one row per bond, its own name / count / avatars
+      groups: [...scope.querySelectorAll('.brief-banned__group')].map((el) => ({
+        id: el.dataset.bond,
+        name: el.querySelector('.brief-banned__gname')?.textContent || '',
+        count: Number(el.querySelector('.brief-banned__gcount')?.textContent.trim() || 'NaN'),
+        marked: !!el.querySelector('.brief-banned__grid .uthumb.is-banned'),
+        ids: [...el.querySelectorAll('.brief-banned__grid .uthumb')].map((n) => n.getAttribute('title')),
+      })),
     };
   }, root);
   /** What the server says: greyed = the drawn set ∪ the mode's inactive bonds; banned names by tier. */
@@ -205,7 +214,16 @@ describe('GitHub #8 and #484: 本局信息 in the strategy draft (real server, h
     const want = await truth(page);
     assert.deepEqual(want.off, [...OFF_FUNNY].sort(), '标准模拟 switches the official 10 bonds off');
     assert.deepEqual(greyedOf(brief), want.greyed, 'the briefing greys D ∪ the mode\'s inactive bonds');
-    assert.deepEqual(brief.banned, want.names, 'the briefing\'s banned operators, by tier');
+    assert.deepEqual(brief.bannedSorted, [...want.names].sort(), 'the briefing\'s banned operators, as a set (grouped by bond, so a multi-bond member is drawn under each bond)');
+    // grouped: one row per bond that lost members, each carrying its own name, its own count and exactly those avatars
+    assert.ok(brief.groups.length > 0, 'the bonds that lost members are listed');
+    for (const g of brief.groups) {
+      assert.ok(g.name, `${g.id}: the row names its bond`);
+      assert.equal(g.count, g.ids.length, `${g.id}: the row's count is its own avatars`);
+      assert.ok(g.marked, `${g.id}: its avatars are marked banned`);
+      for (const name of g.ids) assert.ok(want.names.includes(name), `${g.id}: ${name} is a banned operator`);
+    }
+    assert.deepEqual([...new Set(brief.groups.flatMap((g) => g.ids))].sort(), brief.bannedSorted, 'every banned operator is listed under a bond');
     assert.equal(brief.count, String(want.names.length));
     assert.match(brief.legend, /或本模式禁用/);
     assert.ok(brief.leader.name, 'the leader is announced');
@@ -246,8 +264,11 @@ describe('GitHub #8 and #484: 本局信息 in the strategy draft (real server, h
     assert.equal(status, '轮到你决策', 'solo: untimed — no seconds');
     const box = await page.$eval('.minfo-dlg', (el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; });
     assert.ok(box.top >= 0 && box.bottom <= 1080 && box.left >= 0 && box.right <= 1920, `inside the screen ${JSON.stringify(box)}`);
-    const fits = await page.$eval('.minfo-dlg .modal__body', (el) => el.scrollHeight <= el.clientHeight + 1);
-    assert.ok(fits, 'desktop: everything visible without scrolling');
+    // 本局禁用干员 is one row per bond now, so the list is taller than the old flat grid: the body may have to
+    // scroll on desktop — the box still fits the screen (above) and it opens at the top with a scrollable body.
+    const scroll = await page.$eval('.minfo-dlg .modal__body', (el) => ({ over: el.scrollHeight - el.clientHeight, top: el.scrollTop, overflow: getComputedStyle(el).overflowY }));
+    assert.equal(scroll.top, 0, 'desktop: the dialog opens at the top');
+    assert.ok(scroll.over <= 0 || scroll.overflow === 'auto', `desktop: a long grouped list scrolls inside the box ${JSON.stringify(scroll)}`);
     await shot(page, 'solo-dialog');
 
     // Esc
@@ -297,7 +318,7 @@ describe('GitHub #8 and #484: 本局信息 in the strategy draft (real server, h
     }));
     assert.deepEqual(tab.off.sort(), brief.bonds.filter((b) => b.off).map((b) => b.name).sort(), 'the same greyed bonds');
     for (const b of brief.bonds) if (b.ban) assert.equal(tab.ban[b.name], b.ban, `${b.name}: the same badge`);
-    assert.deepEqual(tab.banned, brief.banned, 'the same banned operators, in the same (tier) order');
+    assert.deepEqual(tab.banned.slice().sort(), brief.bannedSorted, 'the same banned operators (the tab lists them flat, the briefing grouped by bond)');
     assert.equal(tab.count, brief.count);
     await shot(page, 'solo-ingame-tab');
     assert.deepEqual(p.problems, []);
@@ -412,7 +433,7 @@ describe('GitHub #8 and #484: 本局信息 in the strategy draft (real server, h
     assert.equal(want.greyed.length, 7, '3 core + 4 add-on bonds drawn');
     for (const [p, info] of briefs) {
       assert.deepEqual(greyedOf(info), want.greyed, `${p.name}: briefing greyed`);
-      assert.deepEqual(info.banned, want.names, `${p.name}: briefing banned`);
+      assert.deepEqual(info.bannedSorted, [...want.names].sort(), `${p.name}: briefing banned`);
       assert.doesNotMatch(info.legend, /本模式禁用/);
     }
     assert.deepEqual(briefs.get(b), briefs.get(a), 'both players see the same briefing');
@@ -529,7 +550,10 @@ describe('GitHub #8 and #484: 本局信息 in the strategy draft (real server, h
       await sleep(200);
       const bannedVisible = await ph.page.evaluate(() => {
         const body = document.querySelector('.minfo-dlg .modal__body').getBoundingClientRect();
-        const g = document.querySelector('.minfo-dlg .brief-banned__grid').getBoundingClientRect();
+        // the grouped rows: the last one (the bottom of 本局禁用干员) has to be inside the scrolled body
+        const rows = [...document.querySelectorAll('.minfo-dlg .brief-banned__group')];
+        if (!rows.length) return false;
+        const g = rows[rows.length - 1].querySelector('.brief-banned__grid').getBoundingClientRect();
         return g.top >= body.top - 1 && g.bottom <= body.bottom + 1;
       });
       assert.ok(bannedVisible, `${w}×${h}: the banned operators scrolled into view`);

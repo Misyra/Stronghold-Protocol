@@ -9,8 +9,8 @@ import { ERR } from '../../shared/constants.js';
 const session = { playerId: 'p_1', connected: true };
 
 /** Just enough of a Room for the guards: they run before anything touches seats or matches. */
-const room = (modded) => ({
-  code: 'ABCD', modded, disposed: false, match: null, hostId: 'p_1', mode: 'coop', consoleEnabled: false,
+const room = (needsContent) => ({
+  code: 'ABCD', needsContent, disposed: false, match: null, hostId: 'p_1', mode: 'coop', consoleEnabled: false,
   spectatorOf: () => false,
   activeHumans: () => [{ playerId: 'p_1' }],
 });
@@ -22,6 +22,16 @@ test('a gameplay-plugin room is not available to the queue', () => {
   const vanillaRoom = room(false);
   const vanilla = { roomOf: () => vanillaRoom, registry: { byId: () => ({ connected: true }) } };
   assert.equal(matchmakingAvailable(vanilla, session, { party: { roomCode: 'ABCD' } }), true);
+});
+
+test('another official version room is not available either (needsContent, not only modded)', () => {
+  const versionRoom = room(true); // a non-default version needs its own content just like a plugin room
+  const lobby = { roomOf: () => versionRoom, registry: { byId: () => ({ connected: true }) } };
+  assert.equal(matchmakingAvailable(lobby, session, { party: { roomCode: 'ABCD' } }), false);
+  assert.deepEqual(matchmakingMembers(lobby, session, 'HARD', true), { error: ERR.ROOM_MODDED });
+  assert.deepEqual(matchmakingMembers(lobby, session, 'HARD', false), { error: ERR.ROOM_MODDED });
+  assert.deepEqual(queuePartyMatchmaking(lobby, session), { error: ERR.ROOM_MODDED });
+  assert.deepEqual(mergePartyMatchmaking(lobby, [session], 'HARD'), { error: ERR.ROOM_MODDED });
 });
 
 test('a party ticket from a gameplay-plugin room is refused with ROOM_MODDED', () => {

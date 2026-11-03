@@ -245,8 +245,11 @@ export class BattleDeploy {
       const occ = this._occ[r * COLS + c];
       if (occ && occ.alive && occ !== u) continue;
       if (this.downOn(r, c, u)) continue;
+      const paid = Math.min(ps.dp, cost);
       ps.dp = Math.max(0, ps.dp - cost);
-      this._deploy(u, { initial: false, tile: r === u.homeR && c === u.homeC ? null : [r, c] });
+      if (this._deploy(u, { initial: false, tile: r === u.homeR && c === u.homeC ? null : [r, c] })) continue;
+      // a refusal past the pre-checks (a future occupancy rule) gives the DP back, exactly like redeploy()
+      ps.dp = Math.min(this.flags.dpMax, ps.dp + paid);
     }
   }
 

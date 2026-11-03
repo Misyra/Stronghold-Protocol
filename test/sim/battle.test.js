@@ -70,6 +70,33 @@ test('battle.redeploy(unit) is instant and free; retreat() keeps respawn timers'
   assert.equal(g.alive, true);
 });
 
+test('an automatic redeploy refused past its pre-checks gives the DP back, like redeploy()', () => {
+  const h = makeBattle({
+    defs: { chess: { t_guard: guard({ stats: { respawnTime: 5, cost: 20 } }) } },
+    units: [{ chessId: 't_guard', row: 9, col: 5 }], content: 'none', timeLimit: 200,
+  });
+  h.step();
+  const g = h.unit('t_guard');
+  const pl = h.b.getPlayer('p1');
+  h.b.dealDamage(null, g, { amount: 1e9, type: 'true' });
+  h.run(5.2); // the respawn time is over; the automatic redeploy would go once the DP is there
+  // a future _deploy refusal rule the pre-checks cannot see (here: forced) — today a dead path
+  const real = h.b._deploy;
+  h.b._deploy = () => false;
+  h.b.flags.dpPerSec = 0; // freeze the regen so the refund is the only DP movement
+  pl.dp = 25;
+  const dp = pl.dp;
+  assert.ok(dp > 20, `DP above the cost (${dp})`);
+  assert.equal(g.alive, false, 'the redeploy was refused');
+  h.run(2);
+  assert.equal(g.alive, false);
+  assert.ok(Math.abs(pl.dp - dp) < 1e-9, `the deducted DP was refunded in the same tick (${dp} → ${pl.dp})`);
+  h.b._deploy = real;
+  h.run(1);
+  assert.equal(g.alive, true, 'once _deploy accepts, the redeploy lands');
+  assert.ok(pl.dp < dp, `the redeploy paid its cost (${dp} → ${pl.dp})`);
+});
+
 test('pathing: enemies walk around crates and re-path when a crate is destroyed', () => {
   // wall off rows 10–12 at col 6 except via a crate on (9,6): the only route goes through the crate
   const rows = { 10: '##hrrr#rrrfrrrrrrrf##', 11: '##hrrr#rrrfrrrrrrrf##', 12: '##hrrr#rrrSrrrrrrrS##' };

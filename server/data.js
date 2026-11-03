@@ -172,6 +172,30 @@ export function resetData() {
 /** The files a non-default version's directory holds: DATA_FILES but the art manifest, which stays top-level only. */
 export const VERSION_DATA_FILES = Object.freeze(DATA_FILES.filter((f) => f !== 'assets'));
 
+/** Top-level files a simulation worker's tasks can read (server/workers/simulation.js): the read surface of the sim,
+ * its content modules and server/match/fields.js, probed over real battle + rehearsal tasks and grepped statically —
+ * everything else (the art manifests assets / assets-collab, the emote table, the result-title tuning, the boss
+ * records, the faction texts) never reaches a task, so the pool clones ~a third fewer bytes per thread
+ * (simWorkerData; docs/DEPLOY.md 模拟线程池). A worker fails fast when one of these is missing. */
+export const SIM_DATA_KEYS = Object.freeze([
+  'config', 'chess', 'enemies', 'tokens', 'stages', 'waves', 'backups', 'effects',
+  'bonds', 'items', 'bands', 'choices', 'garrisons',
+]);
+
+/**
+ * The subset of `data` a simulation worker needs (SIM_DATA_KEYS): what the pool clones into every thread, one entry
+ * per key present in `data`. Shares the (already frozen) records with `data` — nothing is copied here; the wrapper
+ * itself is frozen. The worker entry (server/workers/simulation.js) fails fast when a key is missing, so a wrongly
+ * wired pool degrades to the main-thread fallback instead of simulating on half the data.
+ * @param {Readonly<Record<string, any>>} data
+ * @returns {Readonly<Record<string, any>>}
+ */
+export function simWorkerData(data) {
+  const out = {};
+  if (data && typeof data === 'object') for (const k of SIM_DATA_KEYS) if (Object.hasOwn(data, k)) out[k] = data[k];
+  return Object.freeze(out);
+}
+
 /**
  * The data directory of an official version: `root` itself for the default, root/<entry.dir> for another, null for an
  * unknown id.

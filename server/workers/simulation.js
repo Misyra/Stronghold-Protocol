@@ -1,14 +1,21 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { setData } from '../data.js';
+import { SIM_DATA_KEYS, setData } from '../data.js';
 import { memorySample } from './memory.js';
 
+// The pool clones only the sim's data subset (server/index.js simWorkerData, server/data.js SIM_DATA_KEYS): fail fast
+// when one of those keys is missing instead of simulating on half the data — a failed worker sends every task back to
+// the main-thread fallback (match/rehearsal.js job.takeOver), never to a wrong result.
+const data = workerData && workerData.data;
+const missing = SIM_DATA_KEYS.filter((k) => !data || typeof data !== 'object' || !Object.hasOwn(data, k));
+if (missing.length) throw new Error(`simulation worker: data is missing ${missing.map((k) => `${k}.json`).join(', ')}`);
+
 // Content imports getData() too: never read a different on-disk version when this thread starts later.
-setData(workerData.data);
+setData(data);
 const [{ DataSource }, { createBattleFromSpec }, { HeadlessJob }, { RehearsalRun }] = await Promise.all([
   import('../sim/simdata.js'), import('../sim/spec.js'),
   import('../match/fields.js'), import('../sim/rehearsal.js'),
 ]);
-const ds = new DataSource(workerData.data, null);
+const ds = new DataSource(data, null);
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
 
 parentPort.on('message', ({ id, type, payload, cancel }) => {

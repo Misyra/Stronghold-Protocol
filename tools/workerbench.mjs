@@ -3,7 +3,7 @@
 // node tools/workerbench.mjs --workers 4 --battles 24
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
-import { getData } from '../server/data.js';
+import { getData, simWorkerData } from '../server/data.js';
 import { DataSource, spawnsFromTemplate } from '../server/sim/simdata.js';
 import { buildBattleSpec, createBattleFromSpec, resultDigest } from '../server/sim/spec.js';
 import { runHeadless } from '../server/match/fields.js';
@@ -31,7 +31,7 @@ const tasks = Array.from({ length: count }, (_, seed) => ({ players: ['p'], spec
   players: [{ playerId: 'p', units: lineup.map(([chessId, row, col], i) => ({ uid: i + 1, kind: 'chess', chessId, row, col, abs: true })) }],
 }) }));
 const local = (payload) => runHeadless(createBattleFromSpec(payload.spec, ds, { recordEvents: false, quiet: true }), { players: payload.players }).result;
-const pool = new SimulationPool({ data, size: workers, maxQueue: count });
+const pool = new SimulationPool({ data: simWorkerData(data), size: workers, maxQueue: count });
 async function measure(run) {
   let previous = performance.now(), maxTimerDelayMs = 0;
   const timer = setInterval(() => {

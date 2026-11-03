@@ -313,8 +313,9 @@ threads; work is submitted as a task (a function name plus its arguments) and co
 - **On by default, four threads.** `SP_WORKERS` names the thread count: unset, empty or an unusable value means the
   default `4`, `0` switches the pool off (the code paths below then keep running on the main thread), and `1`–`32`
   picks that many threads. The default is a deliberate number, not a CPU-derived guess, and the operator tunes it to
-  the server. Cost, measured on the maintainer's machine: each thread structured-clones the game data when it spawns
-  and holds roughly 150–200 MB RSS while it lives; threads start lazily on the first rehearsal task, so an idle server
+  the server. Cost, measured on the maintainer's machine: each thread structured-clones the sim's data subset when it
+  spawns (`server/data.js simWorkerData` — the tables its tasks can read, not the art manifests / emotes / tuning) and
+  holds roughly 75–90 MB RSS while it lives; threads start lazily on the first rehearsal task, so an idle server
   spawns none. On a small box set `SP_WORKERS=0`; on a larger one raise it. Measure with
   `node tools/workerbench.mjs --workers 4 --battles 8` (throughput and main-thread timer delay) and
   `node --expose-gc tools/memorybench.mjs` (RSS per thread). The startup log prints the pool size, or that it is off.

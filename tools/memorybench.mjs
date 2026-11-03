@@ -4,6 +4,7 @@
 import { SimulationPool } from '../server/workers/pool.js';
 import { Lobby } from '../server/lobby.js';
 import { SessionRegistry } from '../server/net.js';
+import { simWorkerData } from '../server/data.js';
 import { DATA, makeMatch } from '../test/match/harness.js';
 import { PHASE } from '../shared/constants.js';
 
@@ -33,7 +34,7 @@ const h = makeMatch({ humans: 2, seed: 9112, clientCombat: true, clients: false 
 h.start();
 h.drive(() => h.m.phase === PHASE.COMBAT);
 const field = h.m.fields[0];
-const pool = new SimulationPool({ data: DATA, size: 8 });
+const pool = new SimulationPool({ data: simWorkerData(DATA), size: 8 });
 try {
   for (const count of [1, 4, 8]) {
     await Promise.all(Array.from({ length: count }, () => pool.submit('battle', { spec: field.spec, players: field.players }).promise));

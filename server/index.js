@@ -44,7 +44,7 @@
 
 import http from 'node:http';
 import path from 'node:path';
-import { loadDataAsync, preloadData } from './data.js';
+import { loadDataAsync, preloadData, simWorkerData } from './data.js';
 import { getBotStrategy, getBotStrategySeats } from './match/botStrategies.js';
 import { noteLlmIgnored, releaseIgnoresExternalAi, validateExternalConfig } from './match/llmGate.js';
 import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, parseAssetCdn, assetIndexOptionsFrom, versionsFrom, parseRoomCode, announcementOptionsFrom } from './http/config.js';
@@ -221,7 +221,10 @@ export async function startServer(opts = {}) {
     ? createMatchHosts({ contents: versions, log, options: { transport, ...(opts.matchHost || {}), kind: 'version', maxWorkers: Math.max(1, versionCfg.maxHosts) } })
     : null;
   log.info(`[versions] enabled: ${versions.ids.map((id) => `${id} (${t(/** @type {any} */ (versionById(id)).label)}${id === versions.defaultId ? ', default' : ''})`).join(', ')}`);
-  const simPool = createRoomWorkerPool({ data });
+  // The pool clones a subset into every thread (server/data.js simWorkerData): the sim's data only, not the art
+  // manifests / emotes / tuning the worker tasks never read. Version rooms and plugin rooms never submit here
+  // (match/rehearsal.js poolRehearsal), so the default pack is always what a worker sees.
+  const simPool = createRoomWorkerPool({ data: simWorkerData(data) });
   log.info(simPool
     ? `[workers] simulation pool: ${simPool.stats().size} thread(s) (SP_WORKERS; 0 disables it)`
     : '[workers] simulation pool: off (SP_WORKERS=0)');

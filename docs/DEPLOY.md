@@ -334,6 +334,7 @@ volumes:
 ## 4. macOS / Linux 常驻
 
 - 临时开服：`scripts/start.sh`（或 `npm start`），保持终端窗口打开。macOS 首次会询问是否允许 node 接受传入连接，选「允许」。
+- 可选：`npm run build` 把浏览器 UI 打包进 `public/build/`（Vite，`SP_CLIENT=source` 回退）。服务器检测到构建产物就提供打包页（首屏加载更快），没有时用源码模块，两者功能一致。
 - Linux systemd（`/etc/systemd/system/stronghold.service`，路径与用户按实际修改）：
 
   ```ini

@@ -372,6 +372,23 @@ the selected variant at battle start (§30.22).
 
 Audio: autochess BGM per phase, UI SFX (buy/sell/refresh/level/merge/ready/timer), a prep piece's landing sound (its battle deploy sound, once per landing, in landing voices of its own that take over the oldest, §31.8), per-unit attack/hit SFX (throttled; an impact plays for a hostile attack's phys / arts / true damage only, never an operator's skill-mode file for a normal attack; each bank's own instance limit, pitch and delay — §34.25; a skill cue that reaches the client before its unit — the sim emits a deploy-tick cast ahead of the unit's `['spawn']` — is held and sounds once when the unit is tracked, `AudioManager.pendingSkill`, GitHub PR #292 by @LimitlessHPPK; entering a field late hands the sound the buffered `spawn` tuples only, `screens/game/early.js audioEarly`, so no old death, deploy or cast replays), boss music in R14/15. While the music is silent — muted, or the BGM volume at 0 — no BGM is downloaded: the track the screen wants is remembered, a different one still playing stops, and the wanted track is fetched once the music is audible again (`AudioManager.bgmSilent`; about 14 MB a match for a player who turned the music off).
 
+### The UI build (public/build, `npm run build`, ported 2026-11-04)
+
+`npm run build` bundles the page's UI layer (public/index.html, public/js, public/css) into `public/build/` with Vite
+(vite.config.js; ported from Stardust-minus, after xinhai-ai/Stronghold-Protocol f164a5e). /shared, /sim and /data stay
+native modules and JSON at their own URLs — the page imports /shared/* and runs the simulation exactly as unbundled —
+and so do the classic boot scripts and web-font links, the icons and web app manifest, the Pixi scripts and three.js
+under /vendor/, and both web workers (/js/battle/simWorker.js keeps its own CSP header and plugin sandbox;
+/js/battle/rehearsalWorker.js is named by a literal URL in battle/rehearsal.js). The static server serves the bundle
+for `/` and `/index.html` when `public/build/index.html` is on disk (no-cache; the release transform still stamps the
+page and rewrites the import map — which the bundle no longer carries), serves its hashed chunks from /build/assets/
+immutable (files.js cacheControlFor; the bundle CSS carries only data: url()s, so the release rewrite is the identity
+on it and its hashed name pins the served bytes), and falls back to the source page without a build or with
+`SP_CLIENT=source` (server/http/static.js clientModeFromEnv). The one server-side module the page can name —
+server/plugins/operatorTraits.js, behind the file:-only branch of battle/simLoader.js — stays out of the bundle by
+construction: its specifier is opaque to rolldown (a runtime-concatenated URL), so the node:fs import never ships.
+test/vite.test.js builds the bundle and serves both modes.
+
 ---
 
 ## 13. Local-client art (optional, host-side)

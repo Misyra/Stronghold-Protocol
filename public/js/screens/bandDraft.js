@@ -54,7 +54,7 @@ import { TurnBanner, TURN_BANNER_LATE_MS } from '../ui/turnBanner.js';
 import { onBootArt, preloadBootArt } from '../ui/protocolBoot.js';
 import { reducedMotion } from '../ui/device.js';
 import { useRise } from '../ui/transitions.js';
-import { CARD_KEY, CARD_LOOK_KEY, cardStore, cardOperators, cardContext, seatOperator, seatCardSkin, seatArtSrc, lookUrl } from '../ui/seatArt.js';
+import { CARD_KEY, CARD_LOOK_KEY, cardStore, cardOperators, cardContext, seatOperator, seatCardSkin, seatArtSrc, seatCardView, lookUrl } from '../ui/seatArt.js';
 import { skinsStore, SKINS_KEY } from '../ui/skins.js';
 import { settingsStore } from '../ui/settingsStore.js';
 import { chessPortraitUrl, uiUrl } from '../ui/assetUrls.js';
@@ -382,7 +382,7 @@ export function BandDraftScreen({ held = null } = {}) {
   // (gd.backups: the room version's 自选编队 pool joins the card list, as on the room's seat cards)
   const cards = useMemo(() => cardContext(cardOperators(gd.list('chess'), gd.backups), { pending: !gd.backups }), [gd.ready, gd.backups]);
   const myCard = useStore((s) => s[CARD_KEY], Object.is, cardStore);
-  // 名片展示外观 (移植自用户分支; B 的 room.card 不含 look, 只在本地生效): one's own card wears the local look
+  // 名片展示外观: one's own card wears the local look; a teammate's the art their seat published (room.card art).
   const myLook = useStore((s) => s[CARD_LOOK_KEY], Object.is, cardStore);
   const localSkins = useStore((s) => s[SKINS_KEY], Object.is, skinsStore);
   const otherSkins = useStore((s) => s.otherSkins !== false, Object.is, settingsStore);
@@ -390,7 +390,7 @@ export function BandDraftScreen({ held = null } = {}) {
     if (p.isBot) return null;
     const seat = (Array.isArray(roomSeats) && roomSeats.find((x) => x && x.playerId === p.playerId)) || { playerId: p.playerId };
     const op = seatOperator(seat, cards, { myId, myCard });
-    const look = p.playerId === myId ? myLook : '';
+    const look = p.playerId === myId ? myLook : seatCardView(seat).art;
     const lookSrc = op && look ? lookUrl(data.get('assets'), op.chess.charId, look, 'portrait') : null;
     const skin = op ? seatCardSkin(p, op.chess.charId, { myId, localSkins, players, otherSkins }) : null;
     return op ? [lookSrc || chessPortraitUrl(data.get('assets'), op.chess, { skin }), skin ? chessPortraitUrl(data.get('assets'), op.chess) : null] : null;

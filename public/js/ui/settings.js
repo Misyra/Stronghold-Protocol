@@ -1,5 +1,5 @@
 // Player settings (BGM/SFX/voice volume, the voice dub 语音语言, mute, damage numbers, the optional 弹药数量 under an ammo
-// skill's bar — not in the official HUD, off by default, PR #552 —, the optional 作战统计 panel — off by default,
+// skill's bar — not in the official HUD, off by default, PR #552 —, the optional 作战统计 panel — on by default,
 // PR #618 —, render quality, 文字大小, the
 // shortcut keys): a tiny observable store persisted in localStorage (`sp.pref.settings`), applied to the audio manager
 // and to the document on every change, plus the settings modal — which also holds the language switch (ui/lang.js; kept
@@ -65,6 +65,33 @@ import { assetImport, pruneImportedAssets } from '../assetPack.js';
 import { cosmetics } from '../cosmetics.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
+
+/**
+ * 设置页签 (SettingsModal): the 27 rows above were one long scroll; they now live in six tabs — 音频 / 显示 / 操作 /
+ * 画面 / 插件 / 数据. The last tab is remembered in localStorage (`sp.pref.settingsTab`); a missing or unknown value
+ * opens 音频. The bar scrolls sideways on a phone; each tab keeps the rows it owns (the panels are all mounted, the
+ * inactive ones `hidden`, so a half-finished pick survives a tab switch).
+ */
+const SETTINGS_TABS = [
+  { id: 'audio', label: N_('音频'), micro: 'AUDIO' },
+  { id: 'display', label: N_('显示'), micro: 'DISPLAY' },
+  { id: 'controls', label: N_('操作'), micro: 'CONTROLS' },
+  { id: 'visual', label: N_('画面'), micro: 'VISUAL' },
+  { id: 'plugins', label: N_('插件'), micro: 'PLUGINS' },
+  { id: 'data', label: N_('数据'), micro: 'DATA' },
+];
+const SETTINGS_TAB_KEY = 'sp.pref.settingsTab';
+/** The remembered tab, or 音频 (the first) when storage is empty, refused, or names a tab this version dropped. */
+function storedSettingsTab() {
+  try {
+    const v = globalThis.localStorage?.getItem(SETTINGS_TAB_KEY);
+    return SETTINGS_TABS.some((x) => x.id === v) ? v : 'audio';
+  } catch { return 'audio'; }
+}
+/** Best effort: a browser in private mode refuses localStorage; the modal still works, it just forgets. */
+function saveSettingsTab(id) {
+  try { globalThis.localStorage?.setItem(SETTINGS_TAB_KEY, id); } catch { /* storage refused (private mode) */ }
+}
 
 /**
  * 设置 →「文字大小」: put the step on <html data-text> — css/theme.css turns it into the text root `--t`
@@ -528,6 +555,15 @@ export function SettingsModal({ open, onClose }) {
   const s = useSettings();
   const [tested, setTested] = useState(false);
   const [touchUi] = useState(() => detectFeatures().coarse && !detectFeatures().fine);
+  const [tab, setTab] = useState(() => storedSettingsTab());
+  const pickTab = (id) => { setTab(id); saveSettingsTab(id); };
+  // ← / → move between the tabs (the tab list is one stop in the dialog's Tab cycle, like a native tablist)
+  const onTabKey = (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const i = SETTINGS_TABS.findIndex((x) => x.id === tab);
+    pickTab(SETTINGS_TABS[(i + (e.key === 'ArrowRight' ? 1 : SETTINGS_TABS.length - 1)) % SETTINGS_TABS.length].id);
+  };
   const mtNote = machineTranslationNote(); // a pack marked as machine translation says so under the switch
   const [fxOk, setFxOk] = useState(false);  // effects extracted from the local client: the 官方特效 row shows
   // only while it is open (the title page keeps the modal mounted, closed), and from the effects' own file list: the
@@ -545,97 +581,125 @@ export function SettingsModal({ open, onClose }) {
   return html`<${Modal} open=${open} onClose=${onClose} title=${t('设置')} micro="SETTINGS" width="7.4rem"
                         actions=${html`<${Button} variant="secondary" icon="book" class="set-guide" onClick=${() => openGuide(0)}>${t('玩法说明')}<//>
                         <${Button} variant="primary" icon="check" onClick=${onClose}>${t('完成')}<//>`}>
-    <div class="set-list">
-      <div class="set-row">
-        <span class="set-row__label">${t('语言')}<${MicroLabel}>LANGUAGE<//></span>
-        <${LangToggle} class="set-lang" />
-      </div>
-      ${mtNote ? html`<p class="set-hint set-lang-note" data-testid="lang-mt-note">${mtNote}</p>` : null}
-      <${Slider} label=${t('背景音乐')} micro="BGM" icon="play" value=${s.bgm} onInput=${(v) => updateSettings({ bgm: v })} />
-      <${Slider} label=${t('干员语音')} micro="VOICE" icon="mic" value=${s.voice} onInput=${(v) => updateSettings({ voice: v })} />
-      <div class="set-row">
-        <span class="set-row__label">${t('语音语言')}<${MicroLabel}>VOICE LANGUAGE<//></span>
-        <div class="set-voice">
-          <div class="set-seg" role="radiogroup" aria-label=${t('语音语言')} data-testid="voice-lang">
-            ${VOICE_LANGS.map((id) => html`<button key=${id} type="button" role="radio" aria-checked=${s.voiceLang === id ? 'true' : 'false'}
-              lang=${VOICE_LANG_TAGS[id]} class=${s.voiceLang === id ? 'is-on' : ''} onClick=${() => updateSettings({ voiceLang: id })}>${VOICE_LANG_NAMES[id]}</button>`)}
+    <div class="set-tabs" role="tablist" aria-label=${t('设置分类')} data-testid="settings-tabs" onKeyDown=${onTabKey}>
+      ${SETTINGS_TABS.map((x) => html`<button key=${x.id} type="button" role="tab" id=${`set-tab-${x.id}`} data-tab=${x.id}
+        aria-selected=${tab === x.id ? 'true' : 'false'} aria-controls=${`set-panel-${x.id}`}
+        class=${cx('set-tab', tab === x.id && 'is-on')} onClick=${() => pickTab(x.id)}>
+        ${t(x.label)}<${MicroLabel}>${x.micro}<//></button>`)}
+    </div>
+    <div class="set-panel" role="tabpanel" id="set-panel-audio" data-tab-panel="audio" aria-labelledby="set-tab-audio" hidden=${tab !== 'audio'}>
+      <div class="set-list">
+        <${Slider} label=${t('背景音乐')} micro="BGM" icon="play" value=${s.bgm} onInput=${(v) => updateSettings({ bgm: v })} />
+        <${Slider} label=${t('干员语音')} micro="VOICE" icon="mic" value=${s.voice} onInput=${(v) => updateSettings({ voice: v })} />
+        <div class="set-row">
+          <span class="set-row__label">${t('语音语言')}<${MicroLabel}>VOICE LANGUAGE<//></span>
+          <div class="set-voice">
+            <div class="set-seg" role="radiogroup" aria-label=${t('语音语言')} data-testid="voice-lang">
+              ${VOICE_LANGS.map((id) => html`<button key=${id} type="button" role="radio" aria-checked=${s.voiceLang === id ? 'true' : 'false'}
+                lang=${VOICE_LANG_TAGS[id]} class=${s.voiceLang === id ? 'is-on' : ''} onClick=${() => updateSettings({ voiceLang: id })}>${VOICE_LANG_NAMES[id]}</button>`)}
+            </div>
+            <button type="button" class=${s.voiceNative ? 'set-native is-on' : 'set-native'} data-testid="voice-native" aria-pressed=${s.voiceNative ? 'true' : 'false'}
+              title=${t('有本土语言配音时使用')} onClick=${() => updateSettings({ voiceNative: !s.voiceNative })}>${tc('voice-lang', '本土语言')}</button>
           </div>
-          <button type="button" class=${s.voiceNative ? 'set-native is-on' : 'set-native'} data-testid="voice-native" aria-pressed=${s.voiceNative ? 'true' : 'false'}
-            title=${t('有本土语言配音时使用')} onClick=${() => updateSettings({ voiceNative: !s.voiceNative })}>${tc('voice-lang', '本土语言')}</button>
         </div>
+        <${Slider} label=${t('音效')} micro="SFX" icon="signal" value=${s.sfx}
+                   onInput=${(v) => { updateSettings({ sfx: v }); if (!tested) { setTested(true); setTimeout(() => setTested(false), 400); audio.sfx('click'); } }} />
+        <${Toggle} label=${t('静音')} micro="MUTE" value=${s.muted} onChange=${(v) => updateSettings({ muted: v })} />
+        <${MatchMusicSection} />
       </div>
-      <${Slider} label=${t('音效')} micro="SFX" icon="signal" value=${s.sfx}
-                 onInput=${(v) => { updateSettings({ sfx: v }); if (!tested) { setTested(true); setTimeout(() => setTested(false), 400); audio.sfx('click'); } }} />
-      <${Toggle} label=${t('静音')} micro="MUTE" value=${s.muted} onChange=${(v) => updateSettings({ muted: v })} />
-      <${MatchMusicSection} />
-      <${Toggle} label=${t('显示伤害数字')} micro="DAMAGE NUMBERS" value=${s.damageNumbers} onChange=${(v) => updateSettings({ damageNumbers: v })} />
-      <${Toggle} label=${t('官方伤害数字')} micro="OFFICIAL NUMBERS" value=${s.officialDamageNumbers} onChange=${(v) => updateSettings({ officialDamageNumbers: v })} />
-      <p class="set-hint">${t('只显示达到官方暴击条件的红色数字。关闭时仍显示每一次命中。')}</p>
-      <${Toggle} label=${t('显示弹药与能量数量')} micro="AMMO & ENERGY" value=${s.ammoEnergyCount} onChange=${(v) => updateSettings({ ammoEnergyCount: v })} />
-      <p class="set-hint">${t('弹药类技能开启时，在弹药条下方显示剩余弹药 / 总弹药数（如 13/14）；秘术师的血条下方显示储存的攻击能量 / 上限（如 2/3）。官方界面没有这些数字。')}</p>
-      <${Toggle} label=${t('盟约效果剩余时间')} micro="BOND TIMERS" value=${s.bondTimers} onChange=${(v) => updateSettings({ bondTimers: v })} />
-      <p class="set-hint">${t('在选中单位的详情中显示叙拉古、萨尔贡效果的剩余时间；萨尔贡显示层数与下一层到期时间。官方界面没有这些数字。')}</p>
-      <${Toggle} label=${t('作战统计')} micro="COMBAT STATS" value=${s.combatMetrics} onChange=${(v) => updateSettings({ combatMetrics: v })} />
-      <p class="set-hint">${t('打开后，对局左下角可以查看自己干员的伤害、治疗和 DPS / HPS。官方界面没有这个窗口。改变玩法的插件对局在 Worker 里演算，统计不到，按钮不显示。')}</p>
-      <div class="set-row">
-        <span class="set-row__label">${t('部署时收起商店')}<${MicroLabel}>DEPLOY FOLD<//></span>
-        <div class="set-seg" role="group" aria-label=${t('部署时收起商店')} data-testid="deploy-fold-level">
-          ${DEPLOY_FOLD.map(([value, label]) => html`<button type="button" class=${s.prepDeployFold === value ? 'is-on' : ''}
-            aria-pressed=${s.prepDeployFold === value ? 'true' : 'false'} onClick=${() => updateSettings({ prepDeployFold: value })}>${t(label)}</button>`)}
+    </div>
+    <div class="set-panel" role="tabpanel" id="set-panel-display" data-tab-panel="display" aria-labelledby="set-tab-display" hidden=${tab !== 'display'}>
+      <div class="set-list">
+        <div class="set-row">
+          <span class="set-row__label">${t('语言')}<${MicroLabel}>LANGUAGE<//></span>
+          <${LangToggle} class="set-lang" />
         </div>
-      </div>
-      <p class="set-hint">${t('拖动及选择朝向时：关闭保持原视角；适度缩小保留七成大小的商店，镜头适度放大；完全收起使用原有放大视角。结束后恢复原状。')}</p>
-      <${Toggle} label=${t('部署时按格子吸附')} micro="SNAP TO TILE" value=${s.deploySnap} onChange=${(v) => updateSettings({ deploySnap: v })} />
-      <p class="set-hint">${t('拖动干员时，干员站在目标格子上逐格移动，松手就落在这一格。关闭时干员跟随手指或鼠标自由移动。')}</p>
-      <${ResourceRow} enabled=${s.preload} onChange=${(v) => updateSettings({ preload: v })} />
-      <${Toggle} label=${t('全屏时保持屏幕常亮')} micro="SCREEN WAKE LOCK" value=${s.fullscreenWakeLock} onChange=${(v) => updateSettings({ fullscreenWakeLock: v })} />
-      <p class="set-hint" data-testid="wake-lock-hint">${tParts(isIOS()
-        ? N_('全屏期间始终保持屏幕常亮（{support}）；iOS低电量模式下可能不生效。')
-        : N_('全屏期间始终保持屏幕常亮（{support}）。'), {
-        support: html`<${Tooltip} tap=${true} id="wake-lock-requirements" placement="bottom"
-          text=${t('需要 HTTPS 或可信的本地地址（如 localhost），浏览器支持 Screen Wake Lock API，且页面保持在前台。系统设置仍可能限制生效。')}>
-          <button type="button" class="set-hint__help" aria-describedby="wake-lock-requirements">${t('需要环境支持')}<${Icon} name="info" /></button>
-        <//>`,
-      })}</p>
-      <div class="set-row">
-        <span class="set-row__label">${t('画面质量')}<${MicroLabel}>QUALITY<//></span>
-        <div class="set-seg" role="radiogroup">
-          ${QUALITY.map(([id, label]) => html`<button key=${id} type="button" role="radio" aria-checked=${s.quality === id ? 'true' : 'false'}
-            class=${s.quality === id ? 'is-on' : ''} onClick=${() => updateSettings({ quality: id })}>${t(label)}</button>`)}
+        ${mtNote ? html`<p class="set-hint set-lang-note" data-testid="lang-mt-note">${mtNote}</p>` : null}
+        <div class="set-row">
+          <span class="set-row__label">${t('文字大小')}<${MicroLabel}>TEXT SIZE<//></span>
+          <div class="set-seg set-textsize" role="radiogroup" aria-label=${t('文字大小')} data-testid="text-size">
+            ${TEXT_SCALES.map(([id, label]) => html`<button key=${id} type="button" role="radio" aria-checked=${s.textSize === id ? 'true' : 'false'}
+              class=${s.textSize === id ? 'is-on' : ''} onClick=${() => updateSettings({ textSize: id })}>${t(label)}</button>`)}
+          </div>
         </div>
+        <p class="set-hint set-textsize-note">${t('调整界面文字大小，棋盘保持原比例。')}</p>
+        <${Toggle} label=${t('显示伤害数字')} micro="DAMAGE NUMBERS" value=${s.damageNumbers} onChange=${(v) => updateSettings({ damageNumbers: v })} />
+        <${Toggle} label=${t('官方伤害数字')} micro="OFFICIAL NUMBERS" value=${s.officialDamageNumbers} onChange=${(v) => updateSettings({ officialDamageNumbers: v })} />
+        <p class="set-hint">${t('只显示达到官方暴击条件的红色数字。关闭时仍显示每一次命中。')}</p>
+        <${Toggle} label=${t('显示弹药与能量数量')} micro="AMMO & ENERGY" value=${s.ammoEnergyCount} onChange=${(v) => updateSettings({ ammoEnergyCount: v })} />
+        <p class="set-hint">${t('弹药类技能开启时，在弹药条下方显示剩余弹药 / 总弹药数（如 13/14）；秘术师的血条下方显示储存的攻击能量 / 上限（如 2/3）。官方界面没有这些数字。')}</p>
+        <${Toggle} label=${t('盟约效果剩余时间')} micro="BOND TIMERS" value=${s.bondTimers} onChange=${(v) => updateSettings({ bondTimers: v })} />
+        <p class="set-hint">${t('在选中单位的详情中显示叙拉古、萨尔贡效果的剩余时间；萨尔贡显示层数与下一层到期时间。官方界面没有这些数字。')}</p>
+        <${Toggle} label=${t('作战统计')} micro="COMBAT STATS" value=${s.combatMetrics} onChange=${(v) => updateSettings({ combatMetrics: v })} />
+        <p class="set-hint">${t('打开后，对局左下角可以查看自己干员的伤害、治疗和 DPS / HPS。官方界面没有这个窗口。改变玩法的插件对局在 Worker 里演算，统计不到，按钮不显示。')}</p>
       </div>
-      <div class="set-row" data-testid="fps-limit">
-        <span class="set-row__label">${t('帧率上限')}<${MicroLabel}>FRAME RATE<//></span>
-        <div class="set-seg" role="radiogroup" aria-label=${t('帧率上限')}>
-          ${FRAME_RATES.map((limit) => html`<button key=${limit} type="button" role="radio" aria-checked=${s.fpsLimit === limit ? 'true' : 'false'}
-            aria-label=${limit ? `${limit} FPS` : t('不限帧率')} class=${s.fpsLimit === limit ? 'is-on' : ''}
-            onClick=${() => updateSettings({ fpsLimit: limit })}>${limit || t('不限')}</button>`)}
+    </div>
+    <div class="set-panel" role="tabpanel" id="set-panel-controls" data-tab-panel="controls" aria-labelledby="set-tab-controls" hidden=${tab !== 'controls'}>
+      <div class="set-list">
+        <div class="set-row">
+          <span class="set-row__label">${t('部署时收起商店')}<${MicroLabel}>DEPLOY FOLD<//></span>
+          <div class="set-seg" role="group" aria-label=${t('部署时收起商店')} data-testid="deploy-fold-level">
+            ${DEPLOY_FOLD.map(([value, label]) => html`<button type="button" class=${s.prepDeployFold === value ? 'is-on' : ''}
+              aria-pressed=${s.prepDeployFold === value ? 'true' : 'false'} onClick=${() => updateSettings({ prepDeployFold: value })}>${t(label)}</button>`)}
+          </div>
         </div>
+        <p class="set-hint">${t('拖动及选择朝向时：关闭保持原视角；适度缩小保留七成大小的商店，镜头适度放大；完全收起使用原有放大视角。结束后恢复原状。')}</p>
+        <${Toggle} label=${t('部署时按格子吸附')} micro="SNAP TO TILE" value=${s.deploySnap} onChange=${(v) => updateSettings({ deploySnap: v })} />
+        <p class="set-hint">${t('拖动干员时，干员站在目标格子上逐格移动，松手就落在这一格。关闭时干员跟随手指或鼠标自由移动。')}</p>
+        <${HotkeySection} keys=${s.keys} touchUi=${touchUi} />
+        <p class="set-hint">${touchUi ? t('触屏操作：点击单位选中（撤退 / 出售）· 长按单位或卡牌查看详情 · 拖动部署后滑动选择朝向') : t('右键查看详情')}</p>
       </div>
-      ${fxOk ? html`<div class="set-row" data-testid="official-fx">
-        <span class="set-row__label">${t('官方特效')}<${MicroLabel}>OFFICIAL FX<//></span>
-        <div class="set-seg" role="radiogroup" aria-label=${t('官方特效')}>
-          ${OFFICIAL_FX.map(([id, label]) => html`<button key=${id} type="button" role="radio" aria-checked=${fxTier === id ? 'true' : 'false'}
-            class=${fxTier === id ? 'is-on' : ''} onClick=${() => updateSettings({ officialFx: id })}>${t(label)}</button>`)}
+    </div>
+    <div class="set-panel" role="tabpanel" id="set-panel-visual" data-tab-panel="visual" aria-labelledby="set-tab-visual" hidden=${tab !== 'visual'}>
+      <div class="set-list">
+        <div class="set-row">
+          <span class="set-row__label">${t('画面质量')}<${MicroLabel}>QUALITY<//></span>
+          <div class="set-seg" role="radiogroup">
+            ${QUALITY.map(([id, label]) => html`<button key=${id} type="button" role="radio" aria-checked=${s.quality === id ? 'true' : 'false'}
+              class=${s.quality === id ? 'is-on' : ''} onClick=${() => updateSettings({ quality: id })}>${t(label)}</button>`)}
+          </div>
         </div>
-      </div>
-      <p class="set-hint">${t('使用服主从自己的游戏客户端提取的官方战斗特效（普攻、弹道、命中、状态、阵亡、部署，干员、召唤物和敌人的技能与天赋，以及秘术师储存的能量），连到这台服务器的玩家看到的都是服主提取的这一份；提取里没有的或对战中没有时机的（如只在游戏内部条件下触发的天赋效果）仍为本作的特效。精简：半分辨率贴图、粒子减半，适合手机。只在 3D 棋盘上显示。')}</p>` : null}
-      <div class="set-row">
-        <span class="set-row__label">${t('文字大小')}<${MicroLabel}>TEXT SIZE<//></span>
-        <div class="set-seg set-textsize" role="radiogroup" aria-label=${t('文字大小')} data-testid="text-size">
-          ${TEXT_SCALES.map(([id, label]) => html`<button key=${id} type="button" role="radio" aria-checked=${s.textSize === id ? 'true' : 'false'}
-            class=${s.textSize === id ? 'is-on' : ''} onClick=${() => updateSettings({ textSize: id })}>${t(label)}</button>`)}
+        <div class="set-row" data-testid="fps-limit">
+          <span class="set-row__label">${t('帧率上限')}<${MicroLabel}>FRAME RATE<//></span>
+          <div class="set-seg" role="radiogroup" aria-label=${t('帧率上限')}>
+            ${FRAME_RATES.map((limit) => html`<button key=${limit} type="button" role="radio" aria-checked=${s.fpsLimit === limit ? 'true' : 'false'}
+              aria-label=${limit ? `${limit} FPS` : t('不限帧率')} class=${s.fpsLimit === limit ? 'is-on' : ''}
+              onClick=${() => updateSettings({ fpsLimit: limit })}>${limit || t('不限')}</button>`)}
+          </div>
         </div>
+        ${fxOk ? html`<div class="set-row" data-testid="official-fx">
+          <span class="set-row__label">${t('官方特效')}<${MicroLabel}>OFFICIAL FX<//></span>
+          <div class="set-seg" role="radiogroup" aria-label=${t('官方特效')}>
+            ${OFFICIAL_FX.map(([id, label]) => html`<button key=${id} type="button" role="radio" aria-checked=${fxTier === id ? 'true' : 'false'}
+              class=${fxTier === id ? 'is-on' : ''} onClick=${() => updateSettings({ officialFx: id })}>${t(label)}</button>`)}
+          </div>
+        </div>
+        <p class="set-hint">${t('使用服主从自己的游戏客户端提取的官方战斗特效（普攻、弹道、命中、状态、阵亡、部署，干员、召唤物和敌人的技能与天赋，以及秘术师储存的能量），连到这台服务器的玩家看到的都是服主提取的这一份；提取里没有的或对战中没有时机的（如只在游戏内部条件下触发的天赋效果）仍为本作的特效。精简：半分辨率贴图、粒子减半，适合手机。只在 3D 棋盘上显示。')}</p>` : null}
+        <${ResourceRow} enabled=${s.preload} onChange=${(v) => updateSettings({ preload: v })} />
+        <${Toggle} label=${t('全屏时保持屏幕常亮')} micro="SCREEN WAKE LOCK" value=${s.fullscreenWakeLock} onChange=${(v) => updateSettings({ fullscreenWakeLock: v })} />
+        <p class="set-hint" data-testid="wake-lock-hint">${tParts(isIOS()
+          ? N_('全屏期间始终保持屏幕常亮（{support}）；iOS低电量模式下可能不生效。')
+          : N_('全屏期间始终保持屏幕常亮（{support}）。'), {
+          support: html`<${Tooltip} tap=${true} id="wake-lock-requirements" placement="bottom"
+            text=${t('需要 HTTPS 或可信的本地地址（如 localhost），浏览器支持 Screen Wake Lock API，且页面保持在前台。系统设置仍可能限制生效。')}>
+            <button type="button" class="set-hint__help" aria-describedby="wake-lock-requirements">${t('需要环境支持')}<${Icon} name="info" /></button>
+          <//>`,
+        })}</p>
+        <${ScreenFitSection} />
       </div>
-      <p class="set-hint set-textsize-note">${t('调整界面文字大小，棋盘保持原比例。')}</p>
-      <${ScreenFitSection} />
-      <${HotkeySection} keys=${s.keys} touchUi=${touchUi} />
-      <${CosmeticSection} />
-      <${UiPluginSection} />
-      <${ConfigTransferSection} />
-      <${StorageSection} />
-      <${DiagSection} />
-      <p class="set-hint">${touchUi ? t('触屏操作：点击单位选中（撤退 / 出售）· 长按单位或卡牌查看详情 · 拖动部署后滑动选择朝向') : t('右键查看详情')}</p>
+    </div>
+    <div class="set-panel" role="tabpanel" id="set-panel-plugins" data-tab-panel="plugins" aria-labelledby="set-tab-plugins" hidden=${tab !== 'plugins'}>
+      <div class="set-list">
+        <${CosmeticSection} />
+        <${UiPluginSection} />
+      </div>
+    </div>
+    <div class="set-panel" role="tabpanel" id="set-panel-data" data-tab-panel="data" aria-labelledby="set-tab-data" hidden=${tab !== 'data'}>
+      <div class="set-list">
+        <${ConfigTransferSection} />
+        <${StorageSection} />
+        <${DiagSection} />
+      </div>
     </div>
   <//>`;
 }

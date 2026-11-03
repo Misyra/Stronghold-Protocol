@@ -36,11 +36,11 @@
 
 import { progressLabel } from '../itemProgress.js';
 import { BondTimers } from './bondTimers.js';
-import { useEffect } from '../../vendor/hooks.module.js';
-import { html, Icon, TierChip, MicroLabel, Button, confirmDialog, useTicker } from './components.js';
+import { useEffect, useState } from '../../vendor/hooks.module.js';
+import { html, Icon, TierChip, MicroLabel, Button, confirmDialog, useTicker, Modal, Fragment } from './components.js';
 import { OperatorImage, Img, RichText, UnitThumb, BondGlyph, GIcon, diyToken, TokenAvatar } from './gameComponents.js';
 import { attackInterval, rangeGridBox, fmtNum, tileKey, chessLoadout, nextThreshold, bondTier, briefingBondTip, pieceBondIds, grantedBonds, morphPairings, ownStandIn, standInOf, standInLoadout, standInLabel, standInTip, standInForText, ownDiyRecord, ownDiyPick, diyRecordFor, pickGetter, unitPick, unitCultivation } from './gameLogic.js';
-import { skillIconUrl, skillRecordIconUrl, profIconUrl, subProfIconUrl, itemIconUrl, enemyIconUrl, tokenAvatarUrl, factionIconUrl, uiUrl, moduleTypeIconUrl } from './assetUrls.js';
+import { skillIconUrl, skillRecordIconUrl, profIconUrl, subProfIconUrl, itemIconUrl, enemyIconUrl, tokenAvatarUrl, factionIconUrl, uiUrl, moduleTypeIconUrl, chessPortraitUrl } from './assetUrls.js';
 import { abilityRows } from './abilityLines.js';
 import { data } from '../data.js';
 import { attackRangeGrid } from '../../../shared/loadoutRecord.js';
@@ -50,6 +50,8 @@ import { t, tc, N_ } from '../../../shared/i18n.js';
 import { morphSlotPolicy } from '../../../shared/plugins/rules.js';
 import { audio } from '../audio.js';
 import { tokenVariantFor } from './gameLogic/loadout.js';
+import { appearanceDynamic, appearanceEntry, appearanceStaticSrc } from './skinAssets.js';
+import { DynamicIllustration } from './dynamicIllustration.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -395,6 +397,30 @@ function ItemProgress({ progress }) {
   return label ? html`<p class="ditem__progress">${t('出售干员')} <strong>${label}</strong></p>` : null;
 }
 
+/**
+ * 动态立绘 entry on an operator's detail head. A component of its own so `ChessDetail` stays a plain function (tests
+ * call it without a renderer) and the modal's state belongs to the one control that owns it. Mounted only when the
+ * manifest record actually carries a dynamic illustration; the component itself loads Pixi on open, not on render.
+ */
+export function ChessIllustration({ record, staticSrc = null, title = '' }) {
+  const [open, setOpen] = useState(false);
+  const [dynamicOn, setDynamicOn] = useState(true);
+  const dynamic = appearanceDynamic(record);
+  if (!dynamic) return null;
+  return html`<${Fragment}>
+    <button type="button" class="dhead__illust" data-testid="chess-illustration" title=${t('查看立绘')} aria-label=${t('查看立绘')} onClick=${() => setOpen(true)}>${t('立绘')}</button>
+    ${open ? html`<${Modal} open=${true} onClose=${() => setOpen(false)} title=${title} micro="OPERATOR ARTWORK"
+        actions=${html`<${Button} variant="secondary" onClick=${() => setOpen(false)}>${t('关闭')}<//>`}>
+      <div class="lo-dynamic-switch"><${Button} variant="ghost" size="sm" data-testid="detail-dynamic-toggle"
+          onClick=${() => setDynamicOn(!dynamicOn)}>${dynamicOn ? t('切换静态立绘') : t('切换动态立绘')}<//></div>
+      ${dynamicOn
+        ? html`<${DynamicIllustration} entry=${dynamic} staticSrc=${staticSrc} alt=${title} />`
+        : html`<div class="lo-skin-preview"><${Img} src=${staticSrc} alt=${title}
+            fallback=${html`<p class="lo-skin__error">${t('立绘暂时无法载入')}</p>`} /></div>`}
+    <//>` : null}
+  <//>`;
+}
+
 export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bonds, offBonds = null, loadout, onBond, live = null, hint = null, unitItems = null, unitItemProgress = null, standIn = null, diy = null, cultOpts = null, morphMode = 'official', onUnequip = null, ownerId, skin = null }) {
   const m = data.get('assets');
   const hp = hpOf(live, snapHp);
@@ -407,6 +433,11 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
   // still apply (the owner's recall of the official mode, 2026-10-06)
   const si = standIn && standIn.standInFor ? standIn : null;
   const body = si || chess;
+  // 动态立绘 (docs/OPERATOR-SKINS.md): the effective body's outfit may carry a layered illustration. The record is
+  // resolved from the manifest the same way the picker does; a missing one simply leaves the static portrait.
+  const artRecord = appearanceEntry(m, body?.charId || body?.assets?.spine, skin);
+  const artDynamic = appearanceDynamic(artRecord);
+  const artSrc = appearanceStaticSrc(artRecord) || chessPortraitUrl(m, body, { skin });
   // 0.2.2: at the operator's 潜能 / 练度 — the player's settings (`cultOpts.ops`) or a teammate's unit's own
   // (`cultOpts.cultivation`); a stand-in has neither
   const lo = si ? standInLoadout(si, getChess, data.get('backups')) : chessLoadout(chess, loadout, getChess, { ...(cultOpts || {}), effects: data.get('effects') });
@@ -435,6 +466,7 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
     <div key="head" class="dhead">
       <div class=${cx('dhead__art', golden && 'is-golden', `dhead__art--t${c.tier}`)}>
         <${OperatorImage} m=${m} chess=${body} portrait ownerId=${ownerId} skin=${skin} fallback=${html`<${UnitThumb} kind="chess" id=${c.chessId} size="lg" rec=${body} ownerId=${ownerId} skin=${skin} />`} />
+        ${artDynamic ? html`<${ChessIllustration} record=${artRecord} staticSrc=${artSrc} title=${si ? si.name : c.name} />` : null}
       </div>
       <div class="dhead__info">
         <div class="dhead__chips">

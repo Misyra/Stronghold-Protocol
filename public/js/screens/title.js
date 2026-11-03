@@ -270,7 +270,6 @@ export function TitleScreen() {
           <span class=${`status-dot ${dotClass}`}></span>
           <span>${STATUS_TEXT[conn.status] ? t(STATUS_TEXT[conn.status]) : conn.status}</span>
           ${conn.status === 'online' ? html`<${PingPill} ms=${conn.ping} />` : null}
-          <${GuideButton} class="title-guide" label=${t('玩法说明')} />
           <button type="button" class="title-settings fsbtn tapx" aria-label=${t('设置')} title=${t('设置')}
             onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
           <${FullscreenButton} class="title-fs" />
@@ -289,6 +288,7 @@ export function TitleScreen() {
         <${PwaInstallButton} />
         <${NoticesButton} />
         <div class="title-foot__links">
+          <${GuideButton} class="title-guide" />
           <${AnnouncementButton} class="title-announce" />
           <${Button} class="title-about" variant="ghost" size="sm" icon="info" onClick=${() => setAboutOpen(true)}>${t('关于')}<//>
         </div>

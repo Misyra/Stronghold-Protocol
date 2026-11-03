@@ -269,6 +269,12 @@ export function PwaInstallButton({ class: cls = '', size = 'sm', square = false 
 export function updateRotateHintPwaI18n(doc = globalThis.document) {
   const btn = doc?.getElementById?.('rotate-hint-pwa');
   if (btn) btn.textContent = t('添加到桌面');
+  // Static markup that shows before the app mounts (index.html's rotate hint) carries its msgid in
+  // data-i18n; the language may change later, so re-translate those nodes whenever the language does.
+  for (const el of doc?.querySelectorAll?.('[data-i18n]') || []) {
+    const key = el.getAttribute('data-i18n');
+    if (key) el.textContent = t(key);
+  }
 }
 
 // ---- boot-time installation ----------------------------------------------------------------------------------------

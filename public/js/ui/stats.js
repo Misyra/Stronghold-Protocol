@@ -59,7 +59,7 @@ import { sanitizeName } from './playerName.js';
 import { DEFAULT_VERSION, versionById } from '../../../shared/versions.js';
 
 /** Current record-envelope version (bump + add a MIGRATIONS step when the record shape changes). */
-export const STATS_VERSION = 3;
+export const STATS_VERSION = 4;
 /** localStorage key under the app's `sp.pref.` prefix (store.js loadPref). */
 export const STATS_PREF_KEY = 'stats';
 /** Oldest records are dropped beyond this many matches. */
@@ -136,6 +136,8 @@ const num = (v) => (Number.isFinite(v) ? v : null);
 const bool = (v, d = false) => (typeof v === 'boolean' ? v : d);
 /** A non-empty string, cut to `max` characters. */
 const str = (v, max = 64) => (typeof v === 'string' && v.length ? v.slice(0, max) : null);
+/** A damage / healing amount: a finite non-negative number, rounded; anything else 0 (never fabricate). */
+const amt = (v) => (Number.isFinite(v) && v >= 0 ? Math.round(v) : 0);
 
 // per-record bounds (an imported file is foreign data: nothing a row holds may grow without limit)
 const MAX_PLAYERS = 6; // the game seats 4
@@ -144,6 +146,7 @@ const MAX_ITEMS = 4;
 const MAX_BONDS = 24;
 const MAX_STAT_KEYS = 24;
 const MAX_NAME = 24;
+const MAX_DAMAGE_OPS = 32; // server/match/damageBoard.js OPS_CAP
 
 /**
  * Copy only the finite numeric keys of a stats block (the settlement's numbers; a numeric field this build does not
@@ -197,6 +200,40 @@ export function recordId(res, myId) {
   // normal id stays byte-identical.
   if (r.test === true) parts.push('test');
   return `r1.${fnv1a(parts.join('|'))}`;
+}
+
+/**
+ * The boss rounds' per-player / per-operator damage, in the shape `m.result.bossDamage` carries it
+ * (`{ boss, hidden }`, each `{ round, phase, players: [m.damage owner rows] }` — server/match/damageBoard.js
+ * bossRounds()). Bounded hard: seats are ≤ MAX_PLAYERS, operators the pieces a seat fielded (the server caps them at
+ * 32). Null when neither scope was fought — a client-authoritative match never gets operator rows (the server does
+ * not trust submitted operator stats). 'boss' / 'hidden' is the only meaning of `phase`; anything else reads as the
+ * Final Assault.
+ * @param {any} raw
+ * @returns {{ boss: any, hidden: any }|null}
+ */
+function normalizeBossDamage(raw) {
+  if (!isObj(raw)) return null;
+  const scope = (s, phase) => {
+    if (!isObj(s) || !Array.isArray(s.players)) return null;
+    const players = s.players.filter(isObj).slice(0, MAX_PLAYERS).map((o) => {
+      const operators = (Array.isArray(o.operators) ? o.operators : []).filter(isObj).slice(0, MAX_DAMAGE_OPS).map((op) => ({
+        key: str(op.key, 64),
+        uid: Number.isSafeInteger(op.uid) && op.uid > 0 ? op.uid : null,
+        defId: str(op.defId),
+        kind: op.kind === 'token' ? 'token' : 'op',
+        name: str(op.name, MAX_NAME),
+        damage: amt(op.damage),
+        healing: amt(op.healing),
+      })).filter((op) => op.key);
+      return { playerId: str(o.playerId), damage: amt(o.damage), healing: amt(o.healing), operators };
+    }).filter((o) => o.playerId);
+    if (!players.length) return null;
+    return { round: num(s.round), phase, players };
+  };
+  const boss = scope(raw.boss, 'boss');
+  const hidden = scope(raw.hidden, 'hidden');
+  return boss || hidden ? { boss, hidden } : null;
 }
 
 /**
@@ -290,6 +327,10 @@ export function normalizeRecord(raw) {
     vs: vsOf(r.vs),
     // the room's gameplay plugins (see the header): its content set, null for the original game
     content: contentOf(r.content),
+    // a local 收藏 mark (a bookmark in the record, so it exports / imports and survives compaction)
+    fav: bool(r.fav),
+    // the boss rounds' per-player / per-operator damage (0.3.4 §37.77, from the Stardust fork's PR5)
+    bossDamage: normalizeBossDamage(r.bossDamage),
     // the official version it played (see the header): a registry id other than 第二期下半, else left out
     ...(versionOf(r.version) ? { version: versionOf(r.version) } : {}),
     players,
@@ -319,6 +360,9 @@ export const MIGRATIONS = {
   // 2 → 3 (0.3.2, DESIGN §35.23): records name another official version (`version`); one without played 第二期下半 —
   // nothing to rewrite, the version keeps an older build from stripping the field
   2: (stats) => ({ v: 3, records: Array.isArray(stats.records) ? stats.records : [] }),
+  // 3 → 4 (0.3.4 §37.77, ported from the Stardust fork's PR5): records may carry the boss rounds' per-player /
+  // per-operator damage (`bossDamage`) and a local 收藏 mark (`fav`). A v3 record has neither — default it off.
+  3: (stats) => ({ v: 4, records: (Array.isArray(stats.records) ? stats.records : []).map((r) => (isObj(r) ? { ...r, fav: r.fav === true } : r)) }),
 };
 
 /** Newest first (the stored order): by time, then id. */
@@ -364,6 +408,9 @@ function readRaw() {
   try { return globalThis.localStorage?.getItem(FULL_KEY) ?? null; } catch { return null; }
 }
 
+/** The raw stored value: a poll compares this string and skips parsing/sorting an unchanged history (ui/cloudStats.js). */
+export function statsRevision() { return readRaw(); }
+
 /**
  * Read + migrate the persisted envelope; self-heals older shapes back to storage. An unreadable value (not JSON, or
  * not an envelope) is moved to `sp.pref.stats.damaged` — kept for a manual recovery — and the history starts again.
@@ -402,7 +449,7 @@ export function peekStatsRecords() {
 // ---- compaction + the storage budget ---------------------------------------------------------------------------
 
 const COMPACT_FRAME = ['id', 'v', 't', 'end', 'victory', 'roundsPassed', 'lastRound', 'hiddenReached', 'hiddenCleared', 'reason', 'modeId',
-  'difficulty', 'roomMode', 'durationMs', 'selfId', 'vs', 'content', 'version', 'test', 'testActions'];
+  'difficulty', 'roomMode', 'durationMs', 'selfId', 'vs', 'content', 'version', 'fav', 'test', 'testActions'];
 
 /**
  * The compact form of a record: the frame and the player's OWN row without lineup, bonds and name — everything the
@@ -440,7 +487,9 @@ export function fitToBudget(records, maxChars = MAX_CHARS) {
   let used = 40; // the envelope itself
   const peakId = highestBondRecord(records.slice(0, MAX_RECORDS))?.record.id;
   records.slice(0, MAX_RECORDS).forEach((r, i) => {
-    const rec = i < FULL_KEEP || r.id === peakId ? r : compactRecord(r);
+    // a 收藏 record keeps its full detail (the boss-round damage included) however old it is; the budget still bounds
+    // the envelope, and saveStats retries with half the history if the browser refuses the write
+    const rec = i < FULL_KEEP || r.id === peakId || r.fav === true ? r : compactRecord(r);
     const n = JSON.stringify(rec).length + 1;
     if (kept.length && used + n > maxChars) return;
     used += n;
@@ -544,6 +593,8 @@ export function buildRecord(res, ctx = {}) {
     vs: vsOf(ctx.vs),
     content: contentOf(ctx.content),
     version: ctx.version ?? null,
+    // the boss rounds' per-player / per-operator damage, straight from the settlement payload (§37.77)
+    bossDamage: r.bossDamage,
     players: r.players,
   });
 }
@@ -685,11 +736,33 @@ export function recordToResult(rec) {
     durationMs: r.durationMs,
     teamLp: r.teamLp,
     players: r.players,
+    // the replayed settlement shows the same boss-round damage the live one did (§37.77)
+    bossDamage: r.bossDamage ?? null,
   };
   if (Number.isFinite(r.lastRound)) res.lastRound = r.lastRound;
   if (r.test === true) res.test = true;
   if (Number.isInteger(r.testActions)) res.testActions = r.testActions;
   return res;
+}
+
+/**
+ * Flip one record's 收藏 mark. Returns the next envelope (the caller saves it), or the same one when the id is
+ * unknown — the mark lives in the record, so it travels with export / import and survives compaction.
+ * @param {{ v: number, records: any[] }} stats
+ * @param {string} id
+ * @param {boolean} fav
+ * @returns {{ v: number, records: any[] }}
+ */
+export function withFavorite(stats, id, fav) {
+  const key = str(id);
+  if (!key) return stats;
+  let hit = false;
+  const records = (Array.isArray(stats.records) ? stats.records : []).map((r) => {
+    if (!isObj(r) || r.id !== key) return r;
+    hit = true;
+    return { ...r, fav: fav === true };
+  });
+  return hit ? { ...stats, records } : stats;
 }
 
 /**

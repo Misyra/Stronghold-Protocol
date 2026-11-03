@@ -4,6 +4,7 @@
 //
 // Expected m.result (free-form in DESIGN §8.2; fields read tolerantly, see gameLogic.normalizeResult):
 //   { victory, roundsPassed, lastRound?, hiddenCleared?, bossId?, hiddenBossId?, difficulty?, modeId?, durationMs?,
+//     bossDamage?: { boss: { round, phase: 'boss', players }, hidden: { round, phase: 'hidden', players } } | null,
 //     players: [{ playerId, seat, name, isBot, alive, lp, bandId, roundsPassed?,
 //                 title: 'comment_1' | { id, name? } | null,
 //                 lineup: [{ id /* chessId, golden id if elite */, golden?, tier?, items?: [itemId],
@@ -28,6 +29,17 @@ import { TestMark } from '../ui/testConsole.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
+
+// 0.3.4 §37.77 (from the Stardust fork's PR5): the boss ledger's operator rows may carry a charId
+// (`char_290_vigna`) rather than a chess id (`chess_char_290_vigna_a`) — resolve either to the chess record, so the
+// name and the avatar are found (any tier variant answers). Not cached: a replay may load another official version.
+const chessRecordOf = (gd, defId) => {
+  if (!defId) return null;
+  const hit = gd?.chess?.(defId);
+  if (hit) return hit;
+  for (const c of Object.values(data.get('chess') || {})) if (c?.charId === defId) return c;
+  return null;
+};
 
 // The first seven present are shown (+ remaining LP = a 4×2 grid); the title (评语) stats come first.
 // `gold` is the funds a player SPENT (server/match/player/economy.js spend(); the 挥金如土 title stat).
@@ -140,6 +152,47 @@ function DamageBoardView({ pub, players, myId }) {
 }
 
 /**
+ * The boss rounds' per-player / per-operator damage ledger (`m.result.bossDamage`, 0.3.4 §37.77, ported from the
+ * Stardust fork's PR5): server/match/damageBoard.js `bossRounds()` keeps the Final Assault ('boss') and the Hidden
+ * Core ('hidden') scopes separately. One block per scope, one group per seat, one row per operator that actually dealt
+ * damage or healed (the same filter the damage board uses). A client-authoritative match records no operator rows
+ * (`players[].operators` empty) — the seat totals still show. Absent for a match that never reached the boss rounds.
+ * @param {{ ledger: any, gd: any, names: Map<string, string>, myId?: string|null }} props
+ */
+function BossDamageLedger({ ledger, gd, names, myId = null }) {
+  const blocks = [['boss', t('最终攻势')], ['hidden', t('隐秘核心')]]
+    .map(([key, label]) => ({ key, label, scope: ledger?.[key] }))
+    .filter((b) => b.scope && Array.isArray(b.scope.players) && b.scope.players.length);
+  if (!blocks.length) return null;
+  return html`<section class="result__boss" data-testid="result-boss-damage">
+    <h2 class="brief-h"><span>${t('Boss 关伤害')}</span><${MicroLabel}>BOSS DAMAGE</${MicroLabel}></h2>
+    ${blocks.map((b) => html`<div key=${b.key} class="result__bossround">
+      <p class="result__bossphase t-lo">${t('第 {round} 回合 · {1}', { round: b.scope.round ?? '?', 1: b.label })}</p>
+      ${b.scope.players.map((o) => {
+        const rows = (Array.isArray(o.operators) ? o.operators : []).filter((op) => op && (op.damage > 0 || op.healing > 0));
+        return html`<div key=${o.playerId} class=${cx('result__bossowner', o.playerId === myId && 'is-self')}>
+          <div class="result__bosshead">
+            <span class="result__bossname">${names.get(o.playerId) || t('队友')}</span>
+            <b class="num">${fmtNum(o.damage)}</b>
+          </div>
+          <div class="result__bossrows">
+            ${rows.length ? rows.map((op) => {
+              const chess = chessRecordOf(gd, op.defId);
+              return html`<div key=${op.key} class="result__bossop">
+                ${op.defId ? html`<${UnitThumb} kind=${op.kind === 'token' ? 'token' : 'chess'} id=${op.defId} rec=${chess} size="sm" />` : null}
+                <span class="result__bossopname">${op.name || chess?.name || op.defId || t('干员')}</span>
+                <b class="num">${fmtNum(op.damage)}</b>
+                ${op.healing ? html`<span class="result__bossheal t-lo num">${t('治疗')} ${fmtNum(op.healing)}</span>` : null}
+              </div>`;
+            }) : html`<p class="t-dim">${t('暂无结算数据')}</p>`}
+          </div>
+        </div>`;
+      })}
+    </div>`)}
+  </section>`;
+}
+
+/**
  * The settlement view of one m.result payload — the live flow's 数据详情 (screens/settle.js), and the stats page's
  * re-view of a stored match (screens/stats.js, which hands it the payload recordToResult rebuilt; `quiet`: no settlement
  * jingle). `content`: the room's content (room.state.content, or a stats record's) — gameplay plugins mark the result
@@ -200,6 +253,7 @@ export function ResultView({ res, pub = null, myId = null, backLabel, onBack, qu
         <h2 class="brief-h"><span>${t('同盟成员')}</span><${MicroLabel}>ALLIANCE REPORT</${MicroLabel}></h2>
         ${r.players.length ? r.players.map((p) => html`<${PlayerCard} key=${p.playerId} p=${p} skinOwnerId=${pub ? p.playerId : null} myId=${myId} titles=${titles} best=${best} solo=${r.players.length < 2} />`)
           : html`<p class="t-dim">${t('暂无结算数据')}</p>`}
+        <${BossDamageLedger} ledger=${res?.bossDamage} gd=${gd} names=${new Map(r.players.map((p) => [p.playerId, p.name]))} myId=${myId} />
       </section>
       <${DamageBoardView} pub=${pub} players=${r.players} myId=${myId} />
       ${slot ? html`<div class="ui-slot" data-ui-slot="result.tab" aria-label=${t('界面插件')} dangerouslySetInnerHTML=${{ __html: '' }}></div>` : null}

@@ -83,6 +83,20 @@
 .brief-banned__n { margin-left: auto; font-size: calc(.22 * var(--t)); color: var(--red-premium); }
 .brief-banned__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(.6rem, 1fr)); gap: .08rem; }
 .brief-banned__grid .uthumb { --ut: .6rem; }
+/* 本局禁用干员, grouped by bond (Stardust PR4): one row per bond. The rows share one grid whose FIRST column holds the
+   disc / name / count and is as wide as the widest bond, so every bond's avatar grid starts at the same x — the
+   misalignment a flex row gives (the name's own width decides where the avatars begin). A name too long for the column
+   is ellipsised rather than allowed to push the avatars; `.brief-banned__group` is display: contents, so its head and
+   grid land in that shared grid. */
+.brief-banned__groups { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .14rem .16rem; }
+.brief-banned__group { display: contents; }
+.brief-banned__ghead { display: flex; align-items: center; gap: .1rem; min-width: 0; }
+.brief-banned__ghead > :first-child { flex: none; }
+/* the disc's own label is dropped here: the row names the bond once, in the fixed column */
+.brief-banned__ghead .bond__name { display: none; }
+.brief-banned__gname { flex: none; max-width: 1.9rem; overflow: hidden; font-size: calc(.2 * var(--t)); color: var(--text-md); white-space: nowrap; text-overflow: ellipsis; }
+.brief-banned__gcount { flex: none; font-size: calc(.18 * var(--t)); color: var(--red-premium); }
+.brief-banned__grid .uthumb.is-banned { position: relative; box-shadow: inset 0 0 0 1.5px var(--red-premium); }
 /* who each bond lost (Stardust fork 7d2351fd, #68, ui/matchInfo.js BannedByBond) */
 .brief-banlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(3.6rem, 100%), 1fr)); gap: .02rem .24rem; margin: .1rem 0 0; padding: 0; list-style: none;
   font-size: max(calc(.15 * var(--t)), 10px); line-height: 1.5; color: var(--text-lo); }
@@ -172,8 +186,10 @@
 .brief .brief-bond .bond__name { font-size: calc(.22 * var(--t)); color: #d6dada; }
 .brief .brief-bond__ban { font-size: calc(.14 * var(--t)); right: .1rem; }
 .brief .brief-legend { margin: -.1rem .4rem .22rem .78rem; font-size: calc(.16 * var(--t)); }
-.brief .brief-banned__grid { grid-template-columns: repeat(auto-fill, minmax(1.2rem, 1fr)); gap: .14rem; padding: .28rem .4rem .3rem .78rem; }
-.brief .brief-banned__grid .uthumb { --ut: 1.2rem; }
+.brief .brief-banned__groups { padding: .28rem .4rem .3rem .78rem; gap: .16rem; }
+.brief .brief-banned__grid { grid-template-columns: repeat(auto-fill, minmax(.74rem, 1fr)); gap: .12rem; }
+.brief .brief-banned__grid .uthumb { --ut: .74rem; }
+.brief .brief-banned__gname { font-size: calc(.22 * var(--t)); }
 .brief .brief-banned > .t-dim, .brief .brief-banned__diy { margin: .2rem .4rem .26rem .78rem; }
 
 /* 已就绪 x/N over the bracketed pips, 准备就绪 */
@@ -269,7 +285,8 @@
   .brief .brief-bond .bond { --disc: 1rem; }
   .brief .brief-bond .bond__name { font-size: calc(.2 * var(--t)); }
   .brief .brief-legend { margin: -.08rem .32rem .18rem .64rem; font-size: calc(.15 * var(--t)); }
-  .brief .brief-banned__grid { grid-template-columns: repeat(auto-fill, minmax(1.05rem, 1fr)); gap: .12rem; padding: .24rem .32rem .26rem .64rem; }
+  .brief .brief-banned__groups { gap: .12rem; padding: .24rem .32rem .26rem .64rem; }
+  .brief .brief-banned__grid { grid-template-columns: repeat(auto-fill, minmax(1.05rem, 1fr)); gap: .12rem; }
   .brief .brief-banned__grid .uthumb { --ut: 1.05rem; }
   .brief .brief-banned > .t-dim, .brief .brief-banned__diy { margin: .16rem .32rem .2rem .64rem; }
   .brief__foot { padding: .24rem .32rem .2rem; gap: .3rem; }

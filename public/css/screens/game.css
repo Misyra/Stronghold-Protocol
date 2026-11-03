@@ -46,6 +46,15 @@
     radial-gradient(120% 90% at 45% 50%, transparent 60%, rgba(0, 0, 0, .5) 100%);
 }
 .gm__loading { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; pointer-events: none; }
+/* 战斗模拟未能载入 (runner.retry): one retryable prompt over the field, the b.start stays queued */
+.gm__loadfail {
+  position: absolute; inset: 0; z-index: 4; display: grid; align-content: center; justify-items: center; gap: .14rem;
+  background: rgba(6, 9, 8, .72); pointer-events: auto;
+}
+.gm__loadfail p { margin: 0; color: var(--text-md); font-size: calc(.17 * var(--t)); }
+.gm__loadfail__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: .1rem; }
+.gm__loadfail .btn { min-height: max(.4rem, 32px, calc(40px * var(--sp-ui, 1))); padding-inline: .18rem; font-size: calc(.15 * var(--t)); }
+@media (pointer: coarse) { .gm__loadfail .btn { min-height: max(.44rem, 32px, calc(44px * var(--sp-ui, 1))); } }
 .gm__hud { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .gm__hud > * { pointer-events: auto; }
 .gload { align-items: center; justify-content: center; gap: .2rem; overflow-y: auto; padding-block: .16rem; }
@@ -293,6 +302,11 @@
 @keyframes ot-pulse { 0%, 100% { box-shadow: 0 0 .12rem rgba(255, 36, 36, .3); } 50% { box-shadow: 0 0 .32rem rgba(255, 36, 36, .75); border-color: #ff6a6a; } }
 @keyframes ot-tick { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-.3rem); } }
 @media (prefers-reduced-motion: reduce) { .otwarn, .otwarn--drain, .otwarn__tick, .otwarn--pending .otwarn__icon { animation: none; } }
+
+/* 挂机移出 warning (ui/hud.js AfkWarning, 移植自用户分支): the overtime banner's look in amber */
+.otwarn--afk { background: linear-gradient(90deg, rgba(120, 72, 6, .92), rgba(40, 24, 4, .88)); border-color: rgba(246, 163, 41, .75); color: #ffeccc; box-shadow: 0 0 .18rem rgba(246, 163, 41, .3); }
+.otwarn--afk .otwarn__icon { color: #f6a329; }
+.otwarn--afk .otwarn__tag { background: #c97b10; }
 
 .roundbox { display: flex; align-items: center; gap: .08rem; }
 .roundbox__label { font-size: .16rem; color: var(--text-lo); letter-spacing: .08em; }
@@ -687,18 +701,31 @@
 
 .gm__metrics[aria-expanded="true"] { color: var(--mint-400); border-color: var(--mint-700); background: var(--mint-900); }
 
-/* Local combat meter, docked above the corner's actual height (including mobile wrapped rows). */
+/* Local combat meter, docked above the corner's actual height (including mobile wrapped rows). ui/combatMetrics.js
+   measures the room really left above the corner (--combat-available-height) and the visible viewport
+   (--combat-viewport-*); the vh / dvh arithmetic stays only as the pre-measure fallback. A short landscape phone's
+   corner wraps into several rows, and the old corner-height subtraction left less than the panel's own header — the
+   ranking was clipped away entirely (「作战统计打不开」). */
 .combat-metrics {
   --bk-c: var(--mint-500);
   position: absolute; left: 0; bottom: calc(100% + max(.1rem, calc(8px * var(--sp-ui, 1)))); z-index: 12;
   width: min(max(5.2rem, 32px, calc(340px * var(--sp-ui, 1))), calc(100vw - var(--sa-l, 0px) - var(--sa-r, 0px) - .48rem));
-  max-height: min(max(6.6rem, calc(280px * var(--sp-ui, 1))), calc(100vh - var(--combat-corner-height, 110px) - max(.9rem, calc(48px * var(--sp-ui, 1))) - .34rem - var(--sa-t, 0px) - var(--sa-b, 0px)));
-  max-height: min(max(6.6rem, calc(280px * var(--sp-ui, 1))), calc(100dvh - var(--combat-corner-height, 110px) - max(.9rem, calc(48px * var(--sp-ui, 1))) - .34rem - var(--sa-t, 0px) - var(--sa-b, 0px)));
+  max-height: min(max(6.6rem, 32px, calc(280px * var(--sp-ui, 1))), var(--combat-available-height, calc(100vh - var(--combat-corner-height, 110px) - max(.9rem, calc(48px * var(--sp-ui, 1))) - .34rem - var(--sa-t, 0px) - var(--sa-b, 0px))));
+  max-height: min(max(6.6rem, 32px, calc(280px * var(--sp-ui, 1))), var(--combat-available-height, calc(100dvh - var(--combat-corner-height, 110px) - max(.9rem, calc(48px * var(--sp-ui, 1))) - .34rem - var(--sa-t, 0px) - var(--sa-b, 0px))));
   display: flex; flex-direction: column; overflow: hidden;
   background: linear-gradient(180deg, rgba(28, 35, 32, .98), rgba(17, 21, 19, .98));
   border: 1px solid var(--line-2); border-top: 2px solid var(--mint-700);
   box-shadow: 0 .12rem .4rem rgba(0, 0, 0, .6); color: var(--text-md);
   font-size: max(calc(.14 * var(--t)), 12px); line-height: 1.35; text-align: left;
+}
+/* CombatMetricsPanel sets data-viewport-docked when the corner no longer fits above the visible viewport (a wrapped
+   corner on a short phone, the browser bars / keyboard over it): the panel then floats inside the viewport instead of
+   hanging above a corner that is partly off-screen. Its body keeps the measured height, so the ranking stays usable. */
+.combat-metrics[data-viewport-docked="true"] {
+  position: fixed; left: calc(var(--sa-l, 0px) + .24rem);
+  top: var(--combat-viewport-top, calc(var(--sa-t, 0px) + 6px)); bottom: auto;
+  height: min(max(6.6rem, 32px, calc(280px * var(--sp-ui, 1))), var(--combat-viewport-height, calc(100dvh - var(--sa-t, 0px) - var(--sa-b, 0px) - 12px)));
+  max-height: min(max(6.6rem, 32px, calc(280px * var(--sp-ui, 1))), var(--combat-viewport-height, calc(100dvh - var(--sa-t, 0px) - var(--sa-b, 0px) - 12px)));
 }
 .combat-metrics__head { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; padding: max(.1rem, calc(8px * var(--sp-ui, 1))) max(.14rem, calc(10px * var(--sp-ui, 1))) 0; }
 .combat-metrics__micro { font-family: var(--font-display); font-size: max(calc(.1 * var(--t)), 10px); letter-spacing: .12em; color: var(--mint-500); }
@@ -766,7 +793,13 @@
     font-size: max(calc(.2 * var(--t)), 9px);
     line-height: 1.3;
   }
-  .combat-metrics__head { padding: max(.06rem, calc(6px * var(--sp-ui, 1))) max(.12rem, calc(8px * var(--sp-ui, 1))) 0; gap: 0 6px; }
+  /* The corner wraps on a short landscape phone, so the head must not spend a second row on the scope tabs: title,
+     tabs and ✕ sit on one line (✕ last), leaving the measured height to the totals and the ranking. */
+  .combat-metrics__head { flex-wrap: nowrap; padding: max(.06rem, calc(6px * var(--sp-ui, 1))) max(.12rem, calc(8px * var(--sp-ui, 1))) 0; gap: 0 6px; }
+  .combat-metrics__head > div:first-child { min-width: 0; }
+  .combat-metrics__close { order: 1; }
+  .combat-metrics__head > .combat-metrics__tools { flex: 1 1 0; min-width: 0; padding: 0; }
+  .combat-metrics__scopes button { white-space: normal; overflow-wrap: anywhere; }
   .combat-metrics__micro { font-size: max(calc(.12 * var(--t)), 8px); }
   .combat-metrics__head h2 { font-size: max(calc(.3 * var(--t)), 12px); }
   .combat-metrics__close { width: max(.3rem, 32px, calc(36px * var(--sp-ui, 1))); height: max(.3rem, 32px, calc(36px * var(--sp-ui, 1))); min-width: 36px; min-height: 36px; }
@@ -925,6 +958,17 @@
 /* square (the lobby's gear alone): the label box drops out so the gear sizes and centres against the button, like an `icon` */
 .settings-btn.btn--square .btn__label { display: contents; }
 .settings-btn.btn--square .btn__icon { width: 62%; height: 62%; } /* the gear glyph is drawn smaller in its box than the book */
+/* 设置页签 (ui/settings.js, 2026-11-03): the 27 rows split into six tabs; the bar sticks to the top of the scrolling modal
+   body and scrolls sideways on a phone (no visible scrollbar); the active panel keeps the list layout. */
+.set-tabs { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: nowrap; gap: .04rem; margin: -.02rem 0 .12rem; padding: .06rem 0; overflow-x: auto; overscroll-behavior-x: contain; background: #151b18; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.set-tabs::-webkit-scrollbar { display: none; }
+.set-tab { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: .02rem; min-height: .44rem; padding: .08rem .16rem; border: 1px solid transparent; background: transparent; color: var(--text-lo); font: inherit; font-size: calc(.18 * var(--t)); line-height: 1.2; cursor: pointer; }
+.set-tab .micro { font-size: calc(.09 * var(--t)); letter-spacing: .08em; }
+.set-tab.is-on { color: var(--text-on-mint); background: var(--mint-500); border-color: var(--mint-500); font-weight: 700; }
+.set-tab.is-on .micro { color: inherit; opacity: .7; }
+.set-tab:hover:not(.is-on), .set-tab:focus-visible:not(.is-on) { border-color: var(--line-2); color: var(--text-hi); }
+.set-panel[hidden] { display: none; }
+@media (max-width: 767px) { .set-tab { padding: .08rem .1rem; font-size: calc(.17 * var(--t)); } .set-tab .micro { font-size: calc(.08 * var(--t)); } }
 .set-list { display: flex; flex-direction: column; gap: .16rem; padding-top: .06rem; }
 .set-row { display: grid; grid-template-columns: minmax(0, 3.3rem) minmax(0, 1fr) auto; align-items: center; gap: .18rem; min-height: .44rem; }
 /* The label column may shrink (the label wraps) instead of pushing its control out of the modal: at 设置 →「文字大小」
@@ -1257,7 +1301,7 @@
   pointer-events: auto; touch-action: pan-x; scrollbar-width: thin; }
 .bstrip-scroll .bslot { flex: none; }
 .gm__bonds .bstrip-scroll__arrow { flex: none; width: 44px; height: 44px; padding: 0;
-  background: rgba(8, 11, 10, .7); color: var(--mint); border: 1px solid var(--line-2); cursor: pointer; pointer-events: auto; }
+  background: rgba(8, 11, 10, .7); color: var(--mint-400); border: 1px solid var(--line-2); cursor: pointer; pointer-events: auto; }
 .bstrip-scroll__arrow:disabled { opacity: .3; cursor: default; }
 .gm.is-pen .gm__bonds .bstrip-scroll *, .gm.has-sp .gm__bonds .bstrip-scroll * { pointer-events: none; }
 

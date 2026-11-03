@@ -93,7 +93,7 @@ export const actions = {
   reward: (idx) => act('g.reward', { idx }),
   offer: (offer, idx, refresh = false, cardId, variantId) => act(refresh ? 'g.offerRefresh' : 'g.offer', { offerId: offer.id, pluginId: offer.pluginId, seq: offer.seq, idx, cardId, ...(!refresh && variantId !== undefined ? { variantId } : {}) }),
   choice: (idx, choiceId) => act('g.choice', choiceId === undefined ? { idx } : { idx, choiceId }),
-  // 战斗 2 倍速投票（speedVote.js）：on = 是否赞成；全员赞成 → 下一回合生效
+  // 战斗 2 倍速投票（speedVote.js）：on = 是否赞成；全员赞成 → 下一场战斗开始时生效
   speedVote: (on) => act('g.speedVote', { on: !!on }, { sfx: 'confirm' }),
   ready: (ready) => act('g.ready', { ready }, { sfx: ready ? 'ready' : 'back' }),
   chat: (text) => act('g.chat', { text }),

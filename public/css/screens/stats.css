@@ -284,6 +284,19 @@
 .st-go .icon { width: max(.18rem, 12px); height: max(.18rem, 12px); }
 .st-table tr.is-clickable:hover .st-go { color: var(--mint-400); }
 .st-more { display: flex; justify-content: center; margin: .14rem 0 0; }
+/* 0.3.4 §37.77 (from the Stardust fork's PR5): 收藏 (★) 与单局导出 (每条记录两个小按钮) + 只看收藏过滤 */
+.st-histbar { display: flex; justify-content: flex-end; margin: .08rem 0 0; }
+.st-favfilter { display: inline-flex; align-items: center; gap: .06em; padding: .04rem .14rem; background: none; border: 1px solid var(--line); color: var(--text-lo); font: inherit; font-size: max(.13rem, 10px); letter-spacing: .06em; cursor: pointer; }
+.st-favfilter:hover { color: var(--text-hi); border-color: var(--line-3); }
+.st-favfilter.is-on { color: var(--gold); border-color: var(--gold); }
+.st-favfilter b { color: inherit; }
+.st-acts { white-space: nowrap; text-align: right; }
+.st-favbtn, .st-dlbtn { padding: 0 .04rem; background: none; border: 0; color: var(--text-lo); font: inherit; font-size: max(.16rem, 12px); line-height: 1; cursor: pointer; }
+.st-favbtn:hover, .st-dlbtn:hover { color: var(--mint-400); }
+.st-favbtn.is-on { color: var(--gold); }
+.st-dlbtn .icon { width: max(.16rem, 12px); height: max(.16rem, 12px); vertical-align: -.02rem; }
+.st-table tr.is-clickable:hover .st-dlbtn, .st-table tr.is-clickable:hover .st-favbtn { color: var(--text-md); }
+.st-table tr.is-clickable:hover .st-favbtn.is-on { color: var(--gold); }
 .st-hint { margin: .1rem 0 0; font-size: max(.13rem, 10px); line-height: 1.6; color: var(--text-lo); letter-spacing: .04em; }
 
 /* Official statistics artwork and per-wedge texture; assets remain in the ignored asset tree. */

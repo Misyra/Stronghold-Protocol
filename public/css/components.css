@@ -1517,9 +1517,14 @@
 
 /* #603: release notes keep the shared Modal's focus/scroll behaviour. */
 .release-notes-entry { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
-.release-notes-body { font-size: var(--fs-body); line-height: 1.7; overflow-wrap: anywhere; }
+.release-notes-body { font-size: max(calc(.16 * var(--t)), 12px); line-height: 1.7; overflow-wrap: anywhere; }
 .release-notes-body p, .release-notes-body ul { margin: .12rem 0; }
 .release-notes-body ul { padding-left: .24rem; }
 .release-notes-body h3, .release-notes-body h4 { margin: .18rem 0 .08rem; }
 .release-notes-body code { white-space: pre-wrap; }
-.release-notes-body a { color: var(--mint); text-decoration: underline; }
+.release-notes-body a { color: var(--mint-400); text-decoration: underline; }
+
+
+/* 联动干员 (shared/diy.js isCollabPick): the picker card's 联动 tag. UI only. Sized like the neighbours' tags
+   (.diy-opt__class / .diy-opt__taken): rem/--fs-tiny do not exist as a global here, so they would blow up with the root font. */
+.diy-opt__collab { margin-left: .25em; padding: 0 .3em; border-radius: 2px; font-size: max(calc(.1 * var(--t)), 8px); line-height: 1.5; vertical-align: 1px; color: var(--warn, #d9a441); border: 1px solid currentColor; }

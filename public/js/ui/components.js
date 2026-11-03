@@ -45,6 +45,8 @@ export const ICONS = {
   check: { d: 'M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7z' },
   close: { d: 'M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6z' },
   exit: { d: 'M20 3H10v2h8v14h-8v2h10zM8.4 7.4 7 6l-6 6 6 6 1.4-1.4L4.8 13H15v-2H4.8z' },
+  // 导出/下载 (0.3.4 §37.77, from the Stardust fork's PR5): an arrow dropping into a tray
+  download: { d: 'M11 3h2v8h3.2L12 17.4 7.8 11H11zM3 15h2v3.5h14V15h2v5H3z' },
   crown: { d: 'M3 7l4.6 4.2L12 4l4.4 7.2L21 7l-1.8 10H4.8zM5 19h14v2H5z' },
   robot: { d: 'M11 2h2v3h4a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3h4zM8.5 9.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zm7 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5zM9 15v1.6h6V15zM1 10h2v5H1zm20 0h2v5h-2z', eo: true },
   copy: { d: 'M8 3h11v13h-2V5H8zM5 7h10v14H5zm2 2v10h6V9z', eo: true },

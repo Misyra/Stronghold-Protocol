@@ -32,7 +32,7 @@ import { ResultView } from './result.js';
 import { toast, toastError } from '../ui/toasts.js';
 import {
   loadStats, saveStats, subscribeStats, emptyStats, importStats, exportStats, aggregateStats, countsTowardStats, selfRowOf, roundsOf, isModdedRecord,
-  recordToResult, recordVersion, MAX_RECORDS, FULL_KEEP, IMPORT_MAX_CHARS,
+  recordToResult, recordVersion, MAX_RECORDS, FULL_KEEP, IMPORT_MAX_CHARS, withFavorite,
   trophyMedalOf, strategyBadgeIds, bondMemberChess, highestBondRecord,
 } from '../ui/stats.js';
 import { migrateHistory } from '../history/migration.js';
@@ -112,6 +112,18 @@ function readFileText(file) {
 function exportFilename(now = new Date()) {
   const p = (n) => String(n).padStart(2, '0');
   return `stronghold-stats-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}.json`;
+}
+
+/**
+ * 0.3.4 §37.77 (from the Stardust fork's PR5): `stronghold-record-20261016-2130-<id>.json` — one match, in the same
+ * envelope as the full export, so the file imports back through 导入 (ui/stats.js importStats merges by record id).
+ * @param {any} rec @param {Date} [now]
+ */
+function recordFilename(rec, now = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}`;
+  const id = String(rec?.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 16);
+  return `stronghold-record-${stamp}${id ? `-${id}` : ''}.json`;
 }
 
 /** One labelled number card. */
@@ -443,8 +455,9 @@ function CombatSums({ agg }) {
   <//>`;
 }
 
-/** One 对局记录 row: what it was, who won, whether it counted and whether the settlement can be re-viewed. */
-function HistoryRow({ rec, gd, onOpen }) {
+/** One 对局记录 row: what it was, who won, whether it counted and whether the settlement can be re-viewed.
+ *  §37.77: the star toggles the local 收藏 mark; the download icon exports this one match. */
+function HistoryRow({ rec, gd, onOpen, onFav, onExport }) {
   const self = selfRowOf(rec);
   const quit = rec.end === 'quit';
   const counted = countsTowardStats(rec);
@@ -466,22 +479,37 @@ function HistoryRow({ rec, gd, onOpen }) {
       ${!counted ? html`<em class="st-chip">${t('不计入统计')}</em>` : null}
       ${isModdedRecord(rec) ? html`<em class="st-chip is-modded" title=${(rec.content.plugins || []).join(', ')}>${t('非官方')}</em>` : null}</td>
     <td class="num">${known ? fmtNum(rounds) : '—'}</td>
+    <td class="st-acts">
+      <button type="button" class=${cx('st-favbtn', rec.fav && 'is-on')} aria-pressed=${rec.fav ? 'true' : 'false'}
+        title=${rec.fav ? t('取消收藏') : t('收藏')} aria-label=${rec.fav ? t('取消收藏') : t('收藏')}
+        onClick=${(e) => { e.stopPropagation(); onFav?.(rec); }}>${rec.fav ? '★' : '☆'}</button>
+      <button type="button" class="st-dlbtn" title=${t('导出这一局')} aria-label=${t('导出这一局')}
+        onClick=${(e) => { e.stopPropagation(); onExport?.(rec); }}><${Icon} name="download" /></button>
+    </td>
     <td class="st-go" aria-hidden="true">${view ? html`<${Icon} name="chevronRight" />` : null}</td>
   </tr>`;
 }
 
-/** 对局记录: every stored match, newest first, HISTORY_PAGE rows at a time. */
-function History({ records, gd, onOpen }) {
+/** 对局记录: every stored match, newest first, HISTORY_PAGE rows at a time. §37.77: 收藏 filters the list. */
+function History({ records, gd, onOpen, onFav, onExport }) {
   const [shown, setShown] = useState(HISTORY_PAGE);
-  const rows = records.slice(0, shown);
+  const [favOnly, setFavOnly] = useState(false);
+  const favCount = records.filter((r) => r.fav).length;
+  const list = favOnly ? records.filter((r) => r.fav) : records;
+  const rows = list.slice(0, shown);
   return html`<${Section} title=${t('对局记录')} micro=${`HISTORY · ${records.length}`}>
+    ${favCount || favOnly ? html`<div class="st-histbar">
+      <button type="button" class=${cx('st-favfilter', favOnly && 'is-on')} aria-pressed=${favOnly ? 'true' : 'false'}
+        data-testid="stats-fav-filter" onClick=${() => { setFavOnly(!favOnly); setShown(HISTORY_PAGE); }}>
+        ${favOnly ? '★' : '☆'} ${t('只看收藏')} <b class="num">${favCount}</b></button>
+    </div>` : null}
     ${rows.length ? html`<div class="st-tablewrap"><table class="st-table st-table--history">
-      <thead><tr><th>${t('时间')}</th><th>${t('难度')}</th><th>${t('模式')}</th><th>${t('策略')}</th><th>${t('结果')}</th><th class="num">${t('回合')}</th><th aria-hidden="true"></th></tr></thead>
-      <tbody>${rows.map((r) => html`<${HistoryRow} key=${r.id} rec=${r} gd=${gd} onOpen=${onOpen} />`)}</tbody>
+      <thead><tr><th>${t('时间')}</th><th>${t('难度')}</th><th>${t('模式')}</th><th>${t('策略')}</th><th>${t('结果')}</th><th class="num">${t('回合')}</th><th aria-hidden="true"></th><th aria-hidden="true"></th></tr></thead>
+      <tbody>${rows.map((r) => html`<${HistoryRow} key=${r.id} rec=${r} gd=${gd} onOpen=${onOpen} onFav=${onFav} onExport=${onExport} />`)}</tbody>
     </table></div>
-    ${records.length > shown ? html`<div class="st-more"><${Button} size="sm" variant="secondary" onClick=${() => setShown(shown + HISTORY_PAGE)}>${t('显示更多（还有 {n} 局）', { n: records.length - shown })}<//></div>` : null}
+    ${list.length > shown ? html`<div class="st-more"><${Button} size="sm" variant="secondary" onClick=${() => setShown(shown + HISTORY_PAGE)}>${t('显示更多（还有 {n} 局）', { n: list.length - shown })}<//></div>` : null}
     <p class="st-hint">${t('点击一行，回看该局结算；中途退出的对局只留记录。')} ${t('最多保留最近 {max} 局，最新的 {full} 局及盟约最高叠加战绩能回看结算。', { max: MAX_RECORDS, full: FULL_KEEP })}</p>`
-      : html`<p class="st-empty">${t('还没有记录 —— 完成一局对局后，这里会开始积累。')}</p>`}
+      : html`<p class="st-empty">${favOnly ? t('还没有收藏的对局 —— 点记录行里的星号收藏。') : t('还没有记录 —— 完成一局对局后，这里会开始积累。')}</p>`}
   <//>`;
 }
 
@@ -584,6 +612,23 @@ function StatsScreen({ tab }) {
       toastError(err);
     }
   };
+  // §37.77: 收藏 (a bookmark inside the record, so it exports / imports with it)
+  const doFav = (rec) => {
+    const next = withFavorite(stats, rec.id, !rec.fav);
+    if (next === stats) return;
+    if (!saveStats(next)) { toast(t('无法写入本机存储，可能已满'), 'error'); return; }
+    setStats(next);
+  };
+  /** §37.77: export ONE match — the same envelope as the full export, so 导入 takes it back. */
+  const doExportOne = (rec) => {
+    try {
+      const payload = exportStats({ records: [rec] });
+      downloadText(recordFilename(rec), JSON.stringify(payload));
+      toast(t('已导出该局记录'), 'success');
+    } catch (err) {
+      toastError(err);
+    }
+  };
   const doFile = async (e) => {
     const file = e.currentTarget.files?.[0];
     e.currentTarget.value = ''; // allow re-picking the same file
@@ -652,7 +697,7 @@ function StatsScreen({ tab }) {
           : empty ? html`<p class="st-empty">${t('还没有记录 —— 完成一局对局后，这里会开始积累。')}</p>`
             : tab === 'bands' ? html`<${Bands} agg=${agg} gd=${gd} records=${stats.records} />`
               : tab === 'totals' ? html`<${CombatSums} agg=${agg} />`
-                : tab === 'history' ? html`<${History} records=${stats.records} gd=${gd} onOpen=${(rec) => { clearReplayVersion(); setReplay(rec); }} />`
+                : tab === 'history' ? html`<${History} records=${stats.records} gd=${gd} onOpen=${(rec) => { clearReplayVersion(); setReplay(rec); }} onFav=${doFav} onExport=${doExportOne} />`
                   : html`<${Overview} agg=${agg} gd=${gd} nickname=${nickname} records=${stats.records} />`}
     </main>
   </div>`;

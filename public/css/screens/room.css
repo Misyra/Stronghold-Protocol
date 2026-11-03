@@ -123,7 +123,7 @@
 .rs .rs-loadout .btn__label { font-weight: 900; color: #111816; }
 /* the mock's slim chips on the room's button too: count = mint, 自选 = mint outline, right after the label */
 .rs .rs-loadout .lo-entry__n, .rs .rs-loadout .lo-entry__own { height: 1.4em; font-size: calc(.13 * var(--t)); }
-.rs .rs-loadout .lo-entry__own { color: var(--mint-400); background: transparent; border: 1px solid var(--mint-a45); }
+.rs .rs-loadout .lo-entry__own { color: var(--mint-400); background: transparent; border: 1px solid var(--mint-a45, rgba(78, 216, 175, .45)); }
 .rs-key {
   display: flex;
   align-items: center;
@@ -561,6 +561,75 @@
 .cardpick__look.is-on { border-color: var(--mint-400); box-shadow: 0 0 0 1px var(--mint-400); color: var(--text-hi); }
 .cardpick__look.is-tall .cardpick__img { aspect-ratio: 3 / 4; }
 .cardpick__look.is-tall .cardpick__img img { object-position: 50% 8%; }
+
+/* ---- 名片底图 (ui/namecards.js, 移植自 Stardust fork) ------------------------------------------------------------
+   A picture behind a `.has-nc` plate (the room's seat plate, the 成就统计 card), darker on the left where the name sits.
+   The picture is a CSS background, so a missing file is simply no picture: the layer never renders without a URL
+   (namecardSrc), and the plate keeps its own background. The picker and the framing controls follow below. */
+.has-nc { position: relative; isolation: isolate; }
+.nc-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--nc-shade, linear-gradient(90deg, rgba(8, 11, 11, .9), rgba(8, 11, 11, .62) 50%, rgba(8, 11, 11, .2))),
+    var(--nc) center var(--nc-y, 50%) / cover no-repeat, #101514;
+}
+.rseat__plate.has-nc { overflow: hidden; --nc-shade: linear-gradient(90deg, rgba(8, 11, 11, .86), rgba(8, 11, 11, .5) 55%, rgba(8, 11, 11, .12)); }
+.rseat__plate.has-nc > :not(.nc-layer) { z-index: 1; }
+/* a faction / organisation emblem sits at the right on the faction's colour, not cropped like a scene */
+.nc-layer--camp {
+  background: var(--nc-shade, linear-gradient(90deg, rgba(8, 11, 11, .86), rgba(8, 11, 11, .5) 55%, rgba(8, 11, 11, .12))),
+    var(--nc) right 6% center / auto 150% no-repeat, var(--nc-tint, #1d2624);
+}
+/* 头像: one's own plate avatar opens the 名片头像 picker */
+.rseat__ava { grid-row: 1 / 3; position: relative; z-index: 1; display: block; padding: 0; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.rseat__ava:hover .avatar, .rseat__ava:focus-visible .avatar { filter: brightness(1.15); }
+.rseat__ava .avatar__badge--self { display: none; }
+.rseat__ava-pen { position: absolute; right: -3px; bottom: -3px; display: grid; place-items: center; width: max(.18rem, 11px); height: max(.18rem, 11px);
+  color: #08221b; background: #4fe8c0; border-radius: 2px; opacity: .85; }
+.rseat__ava:hover .rseat__ava-pen, .rseat__ava:focus-visible .rseat__ava-pen { opacity: 1; }
+.rseat__ava-pen .icon { width: 75%; height: 75%; }
+/* 更换名片底图 */
+.rseat__bg { position: absolute; right: .04rem; top: .04rem; z-index: 1; display: grid; place-items: center; width: max(.3rem, 22px); height: max(.3rem, 22px); padding: 0;
+  color: #eef0ef; background: rgba(0, 0, 0, .45); border: 1px solid rgba(255, 255, 255, .25); border-radius: 3px; cursor: pointer; opacity: .7; }
+.rseat__bg:hover, .rseat__bg:focus-visible { opacity: 1; border-color: #5df0c6; }
+.rseat__bg .icon { width: 70%; height: 70%; }
+
+.nc-pick { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center; padding: .12rem; background: rgba(3, 8, 6, .6); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.nc-pick__panel { width: min(7.8rem, 100%); max-height: min(6.2rem, calc(var(--sp-vh, 1vh) * 100 - .24rem)); display: flex; flex-direction: column; color: #e6ecea;
+  background: #0d1211; border: 1px solid rgba(78, 216, 175, .35); box-shadow: 0 .12rem .4rem rgba(0, 0, 0, .6); }
+.nc-pick__head { display: flex; align-items: center; gap: .1rem; padding: .1rem .14rem; border-bottom: 1px solid rgba(255, 255, 255, .08); }
+.nc-pick__head strong { font-family: var(--font-display); letter-spacing: .12em; color: var(--mint-400); font-size: calc(.12 * var(--t)); }
+.nc-pick__title { font-size: calc(.16 * var(--t)); font-weight: 700; }
+.nc-pick__x { margin-left: auto; width: max(.32rem, 32px); height: max(.32rem, 32px); padding: 0; border: 0; background: none; color: #cfd8d5; cursor: pointer; }
+.nc-pick__x:hover { color: var(--mint-400); }
+.nc-pick__x .icon { width: 65%; height: 65%; }
+.nc-pick__grid { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: repeat(auto-fill, minmax(1.68rem, 1fr));
+  gap: .08rem; padding: .12rem .14rem; }
+.nc-pick__theme { grid-column: 1 / -1; margin: .08rem 0 0; font-size: calc(.13 * var(--t)); font-weight: 700; color: #b9c2bf; }
+.nc-pick__theme:first-child { margin-top: 0; }
+.nc-pick__card { position: relative; padding: 0; border: 2px solid transparent; border-radius: 4px; background: #101514; cursor: pointer; text-align: left; }
+.nc-pick__card:hover, .nc-pick__card:focus-visible { border-color: rgba(78, 216, 175, .6); outline: none; }
+.nc-pick__card.is-on { border-color: var(--mint-400); }
+.nc-pick__art { position: relative; display: flex; align-items: center; gap: .08rem; width: 100%; aspect-ratio: 600 / 186; padding: 0 .12rem; border-radius: 2px; overflow: hidden;
+  color: #eef3f1; font-size: calc(.13 * var(--t)); font-weight: 700; background: #101514; }
+.nc-pick__card--none .nc-pick__art { justify-content: center; color: #9aa6a2; border: 1px dashed rgba(255, 255, 255, .18); }
+.nc-pick__card--none .icon { width: 18px; height: 18px; }
+.nc-pick__name { position: relative; z-index: 1; }
+.nc-pick__on { position: absolute; right: 4px; bottom: 4px; padding: 1px 6px; font-size: calc(.11 * var(--t)); font-weight: 700; color: #06231b; background: var(--mint-400); border-radius: 2px; }
+.nc-pick__foot { display: flex; align-items: center; gap: .1rem; padding: .1rem .14rem; border-top: 1px solid rgba(255, 255, 255, .08); }
+.nc-pick__foot small { flex: 1; min-width: 0; color: #8c9894; font-size: calc(.12 * var(--t)); }
+/* 调整显示范围 (feedback #61): the plate follows the pointer; the shape of a room seat's name plate */
+.nc-adjust { display: flex; flex-direction: column; gap: .1rem; padding: .12rem; overflow: auto; }
+.nc-adjust__plate { position: relative; width: min(100%, 6rem); aspect-ratio: 9 / 2; margin: 0 auto; border-radius: 2px; overflow: hidden; background: #101514; cursor: ns-resize; touch-action: none; user-select: none; -webkit-user-select: none; }
+.nc-adjust__hint { position: absolute; left: .1rem; bottom: .08rem; z-index: 1; display: inline-flex; align-items: center; gap: .04rem; padding: 2px 8px; font-size: calc(.13 * var(--t)); color: #e6ecea; background: rgba(0, 0, 0, .5); border-radius: 2px; pointer-events: none; }
+.nc-adjust__range { width: min(100%, 6rem); margin: 0 auto; accent-color: #4fe8c0; }
+.nc-adjust__foot { display: flex; justify-content: center; gap: .1rem; }
+.nc-adjust__btn { min-height: max(.34rem, 30px); padding: .04rem .14rem; font: inherit; font-size: calc(.14 * var(--t)); color: #e6ecea; background: rgba(0, 0, 0, .4); border: 1px solid rgba(255, 255, 255, .25); border-radius: 2px; cursor: pointer; }
+.nc-adjust__btn:hover, .nc-adjust__btn:focus-visible { border-color: #4fe8c0; }
+.nc-adjust__btn--go { color: #08221b; background: #4fe8c0; border-color: #4fe8c0; }
 
 /* ---- bottom: status, the difficulty pill with ⚙, the big button ------------------------------------------------ */
 .rs-foot {

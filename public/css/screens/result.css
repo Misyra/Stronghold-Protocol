@@ -75,6 +75,22 @@
 .rstat { display: flex; align-items: baseline; justify-content: space-between; gap: .06rem; padding: .05rem .1rem; background: #0e1210; box-shadow: 0 0 0 1px var(--line); font-size: calc(.13 * var(--t)); color: var(--text-lo); white-space: nowrap; min-width: 0; }
 .rstat b { font-size: calc(.18 * var(--t)); color: #fff; }
 .rstat.is-best b { color: var(--gold); }
+/* 0.3.4 §37.77 (from the Stardust fork's PR5): boss 关的分玩家/分干员伤害台账 — js/screens/result.js BossDamageLedger (m.result.bossDamage) */
+.result__boss { display: flex; flex-direction: column; gap: .08rem; padding: .12rem .18rem .14rem; background: rgba(11, 15, 13, .9); border: 1px solid var(--line); }
+.result__bossround { display: flex; flex-direction: column; gap: .06rem; }
+.result__bossround + .result__bossround { margin-top: .04rem; padding-top: .08rem; border-top: 1px solid var(--line); }
+.result__bossphase { margin: 0; color: var(--text-md); }
+.result__bossowner { display: flex; flex-direction: column; gap: .04rem; }
+.result__bossowner + .result__bossowner { margin-top: .06rem; }
+.result__bosshead { display: flex; align-items: baseline; gap: .08rem; }
+.result__bossname { font-weight: 700; }
+.result__bosshead > b { margin-left: auto; color: var(--mint-500); }
+.result__bossrows { display: flex; flex-direction: column; gap: .03rem; padding-left: .06rem; }
+.result__bossop { display: flex; align-items: center; gap: .06rem; }
+.result__bossop .uthumb { --ut: .34rem; }
+.result__bossopname { min-width: 1.1rem; }
+.result__bossop > b { margin-left: auto; }
+.result__bossheal { color: var(--text-md); font-size: .82em; }
 .result__foot { flex: 0 0 auto; margin-top: auto; padding-top: .2rem; display: flex; }
 .result__foot .btn { min-width: 3.4rem; }
 

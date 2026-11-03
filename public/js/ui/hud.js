@@ -437,6 +437,21 @@ export function OvertimeWarning({ ot }) {
   </div>`;
 }
 
+/**
+ * 挂机移出 warning (server Match afkRemoveRounds; m.private afkWarn, 移植自用户分支): the player made no substantive move
+ * last round, so one more idle prep removes them from the match. Shown through 机变 and 休整期 until any real action
+ * clears it.
+ * @param {{ pub: any, priv: any }} props
+ */
+export function AfkWarning({ pub, priv }) {
+  if (!priv?.afkWarn || (pub?.phase !== PHASE.PREP && pub?.phase !== PHASE.SP_DRAFT)) return null;
+  return html`<div class="otwarn otwarn--afk" role="alert" data-state="afk">
+    <${Icon} name="warn" class="otwarn__icon" />
+    <span class="otwarn__tag">AFK</span>
+    <span class="otwarn__txt">${t('本回合仍无操作将被移出对局')}</span>
+  </div>`;
+}
+
 /** Two-bar pause glyph (the official battle pause button). */
 function PauseGlyph() {
   return html`<svg class="pausebtn__glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4.5v16H6zm7.5 0H18v16h-4.5z" /></svg>`;
@@ -466,18 +481,18 @@ function SpeedGlyph() {
  * 战斗 2 倍速投票（g.speedVote，准备就绪旁的 2X 控件）：官方战斗 2X 的样子——快进双箭头 + 斜体 2X。
  * 点击投赞成、再点取消（2 倍速进行中则投「恢复原速」，同样可取消）。状态：
  *   未投灰；is-voted 已投薄荷高亮；is-nudge 其他人已投、你没投 → 慢呼吸提醒；
- *   is-pending 全员已赞成 → 快脉冲（下一回合换档，再点可撤）；is-active 2 倍速进行中 → 薄荷实心。
+ *   is-pending 全员已赞成 → 快脉冲（下一场战斗开始时换档，再点可撤）；is-active 2 倍速进行中 → 薄荷实心。
  * 计数 n/need 在投票进行中显示（need 在线人类席位）。
  * @param {{ voted?: boolean, count?: number, need?: number, pending?: boolean, on?: boolean, onToggle?: (on:boolean)=>void }} props
  */
 export function SpeedButton({ voted = false, count = 0, need = 0, pending = false, on = false, onToggle }) {
   const nudge = !voted && !pending && count > 0;
   const tip = pending
-    ? t('全员同意，下一回合生效')
+    ? t('全员同意，下一场战斗生效')
     : on ? (voted ? t('已投恢复原速：点击取消（{count}/{need}）', { count, need })
-      : t('战斗 2 倍速进行中：全员赞成后下一回合恢复原速（{count}/{need}）', { count, need }))
+      : t('战斗 2 倍速进行中：全员赞成后下一场战斗恢复原速（{count}/{need}）', { count, need }))
       : (voted ? t('已投赞成：点击取消（{count}/{need}）', { count, need })
-        : t('战斗 2 倍速：全员同意后，下一回合开始生效（{count}/{need}）', { count, need }));
+        : t('战斗 2 倍速：全员同意后，下一场战斗开始生效（{count}/{need}）', { count, need }));
   return html`<${Tooltip} text=${tip} placement="bottom">
     <button type="button" class=${cx('speedbtn', 'tapx', on && 'is-active', voted && 'is-voted', pending && 'is-pending', nudge && 'is-nudge')}
       aria-pressed=${voted ? 'true' : 'false'} data-testid="speed-vote" onClick=${() => onToggle?.(!voted)}>
@@ -526,7 +541,8 @@ export function TopBar({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, 
   const otLive = boss && Number(pub?.overtimeAt) > 0;
   useTicker(otLive && frozenAt == null ? 250 : 0);
   const now = Number.isFinite(frozenAt) ? frozenAt : serverNow();
-  const ot = otLive ? overtimeState(pub, now, { perSec: overtimeDrainPerSec(config) }) : null;
+  // 战斗 2 倍速: the server drains the team LP per game second, so a sped-up battle loses perSec × the speed scale
+  const ot = otLive ? overtimeState(pub, now, { perSec: overtimeDrainPerSec(config, pub) }) : null;
   const draining = ot?.state === 'drain';
   const lowLp = (Number.isFinite(lp) && lp - pending <= 5) || draining;
   const cap = Number(config?.lpCapPerRound) > 0 ? Number(config.lpCapPerRound) : 10;
@@ -595,6 +611,7 @@ export function TopBar({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, 
         ${pause && (pause.show || pause.paused) ? html`<${PauseButton} paused=${!!pause.paused} busy=${pause.busy} onToggle=${pause.onToggle} />` : null}
       </div>
       <${OvertimeWarning} ot=${ot} />
+      <${AfkWarning} pub=${pub} priv=${priv} />
       ${showReady || (speed && speed.show) ? html`<div class="gtop__readyrow">
         ${showReady ? html`<${ReadyToggle} priv=${priv} onToggle=${onReady} busy=${readyBusy} readyCount=${readyCount} total=${playerCount} />` : null}
         ${speed && speed.show ? html`<${SpeedButton} voted=${!!speed.voted} count=${speed.count ?? 0} need=${speed.need ?? 0}

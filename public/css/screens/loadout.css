@@ -691,6 +691,32 @@
 /* the enlarged view: the 立绘 (whole, not the cropped tile), as large as the modal allows */
 .lo-skin-preview { display: flex; align-items: center; justify-content: center; }
 .lo-skin-preview img { display: block; max-width: 100%; max-height: 65dvh; object-fit: contain; }
+.lo-skin__tools { display: flex; flex-wrap: wrap; gap: .08rem; margin-top: .08rem; }
+.lo-skin__error { margin: .2rem 0; color: var(--red-400, #ef8f8f); font-size: max(.16rem, 12px); text-align: center; }
+/* 动态立绘 (docs/OPERATOR-SKINS.md): the layered Spine model is mounted into `.lo-dynamic__canvas` only while the
+   preview modal is open. The stage keeps a stable portrait box, so the static illustration that stands in while the
+   model loads (or after it fails) occupies exactly the same space. */
+.lo-dynamic { display: flex; flex-direction: column; min-width: 0; }
+.lo-dynamic__stage {
+  position: relative; width: 100%; height: min(60dvh, 560px); min-height: max(10rem, 32px, calc(200px * var(--sp-ui, 1))); overflow: hidden;
+  background: radial-gradient(ellipse at 50% 35%, rgba(78, 216, 175, .07), transparent 62%), rgba(0, 0, 0, .4);
+  border: 1px solid var(--line);
+}
+.lo-dynamic__canvas { position: absolute; inset: 0; }
+.lo-dynamic__canvas[hidden] { display: none; }
+.lo-dynamic__canvas canvas { display: block; max-width: 100%; }
+.lo-dynamic__fallback { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center bottom; }
+.lo-dynamic__missing { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-lo); font-size: max(.16rem, 12px); padding: .2rem; text-align: center; }
+.lo-dynamic__controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .1rem; margin-top: .12rem;
+  color: var(--text-lo); font-size: max(.14rem, 12px);
+}
+.lo-dynamic__controls select {
+  max-width: 100%; min-height: 36px; background: var(--bg-1); color: var(--text-hi); border: 1px solid var(--line);
+}
+.lo-dynamic__clip { display: inline-flex; align-items: center; gap: .06rem; }
+.lo-dynamic-switch { display: flex; justify-content: flex-end; margin-bottom: .08rem; }
+@media (prefers-reduced-motion: reduce) { .lo-dynamic__canvas canvas { transition: none; } }
 @media (max-width: 900px) { .lo-skins { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 /* phones in landscape (a narrow viewport that is also short: the detail panel is the whole width and ~200 px tall): the
    1:2 tile is taller than that panel, so the five-to-a-row 1:1 avatar takes over — `min-height: 0` because the panel,
@@ -716,6 +742,7 @@
   --rail: max(.44rem, 22px);          /* its left rail: tier, levels */
   --qw: max(.9rem, 32px, calc(48px * var(--sp-ui, 1)));             /* the 快速配置 column (skills / modules) */
   --qcw: max(1.56rem, 32px, calc(104px * var(--sp-ui, 1)));         /* the 快速配置 column (潜能 · 练度) */
+  --itw: max(4.3rem, 32px, calc(230px * var(--sp-ui, 1)));          /* an equipment tile */
 }
 .lo--deck .lo__bg {
   background:
@@ -817,7 +844,8 @@
 /* The square sprite needs the rail's full height too: width alone leaves an overflowing grid image (#811). */
 .lo-op__tier.tier { --tier-h: var(--rail); width: var(--tier-h); height: var(--tier-h); }
 .lo-op__tier img { min-width: 0; min-height: 0; }
-.lo-op__lv { display: flex; flex-direction: column; align-items: center; gap: max(.05rem, calc(3px * var(--sp-ui, 1))); width: 86%; padding: max(.06rem, calc(3px * var(--sp-ui, 1))) 0;
+.lo-op__lv { display: flex; flex-direction: column; align-items: center; gap: max(.05rem, calc(3px * var(--sp-ui, 1))); width: 86%; margin-top: max(.16rem, calc(13px * var(--sp-ui, 1)));
+  padding: max(.06rem, calc(3px * var(--sp-ui, 1))) 0;
   background: rgba(0, 0, 0, .45); border: 1px solid rgba(255, 255, 255, .14); border-radius: 999px; }
 .lo-op__lvrow { display: flex; flex-direction: column; align-items: center; gap: max(.02rem, calc(1px * var(--sp-ui, 1))); line-height: 1; }
 .lo-op__lvrow b { font-size: max(calc(.15 * var(--t)), 10px); color: var(--text-md); }
@@ -985,7 +1013,7 @@
 .lo-skin.is-on { color: var(--text-hi); background: linear-gradient(90deg, rgba(78, 216, 175, .14), rgba(78, 216, 175, .02) 75%); border-color: rgba(78, 216, 175, .7); }
 .lo-skin:disabled { cursor: default; opacity: .45; }
 .lo-skin--missing:not(:disabled) { opacity: .62; }
-.lo-skin--missing .lo-skin__group { color: var(--mint-300); }
+.lo-skin--missing .lo-skin__group { color: var(--mint-300, var(--mint-400)); }
 .lo-skin__art { flex: 0 0 auto; width: .46rem; height: .46rem; display: grid; place-items: center; overflow: hidden; background: rgba(0, 0, 0, .35); border: 1px solid var(--line); }
 .lo-skin__art img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
 .lo-skin__art--none { width: 100%; height: 100%; background: repeating-linear-gradient(45deg, rgba(255, 255, 255, .06) 0 3px, transparent 3px 7px); }
@@ -1053,8 +1081,11 @@
 .lo-op__lvrow { display: flex; flex-direction: column; align-items: center; line-height: 1; }
 .lo-op__lvrow b { font-size: max(calc(.15 * var(--utility-text, var(--t))), 10px); color: var(--text-md); }
 .lo-op__lvrow.is-elite b { color: var(--gold-2); }
+/* 精一 = 1 个箭头，精二 = 2 个。数量跟记录自己的 `status.phase`（1 = 精一，2 = 精二）走，不看 tier：tier 1/2 干员的
+   精锐行是精二（50 / 55 级），所以显示两个箭头。 */
 .lo-op__chev { width: max(.18rem, 11px); height: max(.12rem, 7px); background: currentColor; color: var(--text-lo);
-  clip-path: polygon(0 40%, 50% 0, 100% 40%, 100% 62%, 50% 22%, 0 62%, 0 100%, 50% 60%, 100% 100%, 100% 78%, 50% 38%, 0 78%); }
+  clip-path: polygon(0 40%, 50% 0, 100% 40%, 100% 62%, 50% 22%, 0 62%); }
+.lo-op__lvrow[data-phase="2"] .lo-op__chev { clip-path: polygon(0 40%, 50% 0, 100% 40%, 100% 62%, 50% 22%, 0 62%, 0 100%, 50% 60%, 100% 100%, 100% 78%, 50% 38%, 0 78%); }
 .lo-op__lvrow.is-elite .lo-op__chev { color: var(--gold-2); }
 .lo-igrid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, minmax(0, 1fr)); grid-auto-columns: var(--itw); gap: .14rem .16rem; min-height: 0; }
 .lo-item { position: relative; display: grid; grid-template-columns: min(1.45rem, 40%) minmax(0, 1fr); align-items: start; gap: .14rem; min-height: 0; padding: .14rem .12rem .1rem .2rem; font: inherit;

@@ -157,7 +157,7 @@ function preloadCapsuleArt() {
   capsuleArt = false;
   const assets = data.get('assets');
   const urls = CAP_ART.map((k) => uiUrl(assets, k));
-  if (!urls.every(Boolean)) return;
+  if (!urls.every(Boolean)) { capsuleArt = null; return; }   // the manifest is not here yet: again when it arrives
   let left = urls.length;
   for (const src of urls) {
     const img = new Image();
@@ -550,7 +550,12 @@ function TopBarView({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, onR
   const frozenSecs = Number.isFinite(frozenAt) ? remainAt(pub?.deadline, frozenAt) : null;
   const btn = checkButtons({ pen, penAvail, infoOpen: !!drawer });
   const fx = useCapsuleFx(phase, pub?.round, held);
-  useEffect(() => { preloadCapsuleArt(); }, []);
+  useEffect(() => {
+    preloadCapsuleArt();
+    // a first call without the art manifest (a slow /data/assets.json) must not keep the scenes off for the match:
+    // the fetch is attempted again when the manifest arrives
+    return data.subscribe((name) => { if (name === 'assets') preloadCapsuleArt(); });
+  }, []);
   const onLeft = () => (pen ? onPen(false) : onDrawer('info'));
   const onRight = () => (pen ? onPen(false) : penAvail ? onPen(true) : null);
   return html`<header class=${cx('gtop', pen && 'is-pen')}>

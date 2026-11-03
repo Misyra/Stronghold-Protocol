@@ -37,12 +37,13 @@ test('the scenes draw the official hudPanel/trans_* sprites, all in the asset li
   assert.match(js, /capsuleArt !== true \? 'enter' : kind/, 'without the loaded art every change only rises in');
 });
 
-test('TopBar: the capsule in its scene box, re-keyed per change; the sprites fetched when the match screen opens', () => {
+test('TopBar: the capsule in its scene box, re-keyed per change; the sprites fetched when the match screen opens, again when the art manifest arrives', () => {
   const js = read('public/js/ui/hud.js');
-  assert.match(js, /const fx = useCapsuleFx\(phase, pub\?\.round, held\);\n\s+useEffect\(\(\) => \{ preloadCapsuleArt\(\); \}, \[\]\);/);
+  assert.match(js, /const fx = useCapsuleFx\(phase, pub\?\.round, held\);\n\s+useEffect\(\(\) => \{\n\s+preloadCapsuleArt\(\);\n\s+\/\/ a first call without the art manifest \(a slow \/data\/assets\.json\) must not keep the scenes off for the match:\n\s+\/\/ the fetch is attempted again when the manifest arrives\n\s+return data\.subscribe\(\(name\) => \{ if \(name === 'assets'\) preloadCapsuleArt\(\); \}\);\n\s+\}, \[\]\);/);
   assert.match(js, /<div class=\$\{cx\('gtop__cap', fx\.kind && `is-fx-\$\{fx\.kind\}`\)\} key=\$\{`cap\$\{fx\.seq\}`\}>\n\s+<\$\{PhaseCapsule\}/);
   assert.match(js, /\$\{fx\.kind && fx\.kind !== 'enter' \? html`<\$\{CapsuleScene\} kind=\$\{fx\.kind\} \/>` : null\}/);
   assert.match(js, /s\.key === null \|\| reducedMotion\(\) \? null/, 'nothing on the first render or with reduced motion');
+  assert.match(js, /if \(!urls\.every\(Boolean\)\) \{ capsuleArt = null; return; \}/, 'a missing manifest does not latch the scenes off');
 });
 
 test('the stylesheet: every keyframe it uses is defined, reduced motion turns the scenes off, the project\'s rules', () => {

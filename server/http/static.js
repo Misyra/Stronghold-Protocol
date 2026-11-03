@@ -244,8 +244,9 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       // Art has no executable import chain to save, but an old page still has the old tag on screen for a couple of
       // minutes after a deploy: answering 404 there means broken images until the page reloads. Serve the current
       // bytes with no-cache instead (the code branch does the same for its unknowns), so the browser revalidates
-      // rather than pinning new bytes to an old immutable URL.
-      const legacyArt = /^\/(?:assets|fonts|media)\//.test(match[2]);
+      // rather than pinning new bytes to an old immutable URL. Audio (/media/) is not an image: a stale tag is a 404
+      // there (test/media-route.test.js), and the player picks its URLs up again on the next load.
+      const legacyArt = /^\/(?:assets|fonts)\//.test(match[2]);
       const current = match[1] === release.expectedTag(match[2]);
       if (!current && !(legacyCode && match[1] === release.tag) && !legacyArt) {
         // 其余（js/data/css 等）的旧 tag 一律 404（新字节不挂旧 URL）。但发版后 immutable 缓存的旧入口模块不被普通刷新

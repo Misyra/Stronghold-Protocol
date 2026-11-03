@@ -154,6 +154,9 @@ export class PlayerState {
     this.offlineRounds = 0;
     /** true while the AI plays this seat because its player is offline (released by onReconnect, never by setAutoplay). */
     this.offlineAutoplay = false;
+    /** 挂机移出 (Match afkRemoveRounds): a substantive intent was accepted since the last prep end; the idle rounds in a row */
+    this.afkActed = false;
+    this.afkRounds = 0;
     // 开发者控制台配额(移植自用户分支): each grant is one use, both per player (MatchIntents.consoleGrant)
     this.consoleRoundUses = 0;
     this.consoleTotalUses = 0;
@@ -195,7 +198,8 @@ export class PlayerState {
     // A modded room's content list (Match.diyKitted) is what the lobby already accepted. Without it setDiy
     // keeps the vanilla kit list and drops a plugin operator with no error (checkDiyPicks is lenient).
     // Bots never slot 自选; they read the human's composed records once this succeeds (bot.js chessRec).
-    if (!this.isBot && seat.diy) this.setDiy(seat.diy, this.m.diyKitted ? { kitted: this.m.diyKitted } : undefined);
+    // 联动干员 (2026-11-03): the collab 6★ are ordinary picks, no match switch involved.
+    if (!this.isBot && seat.diy) this.setDiy(seat.diy, this.m.diyKitted ? { kitted: this.m.diyKitted } : {});
     /** 皮肤 (docs/SKINS.md): frozen `{ [charId]: skinId }`, {} = every operator on its default model. Unlike the
      * loadout these are PUBLIC (a teammate sees your skin), so they travel in Match.publicView().players[]. */
     this.skins = Object.freeze({});

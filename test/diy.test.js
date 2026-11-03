@@ -8,7 +8,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { diyPool, diySlot, diySlotIds, checkDiyPick, diyRecord, diyRecordOf, validateDiyPicks, lockedSelection, diyTokenOwner, isDiyModule, DIY_TIERS } from '../shared/diy.js';
+import { diyPool, diySlot, diySlotIds, checkDiyPick, diyRecord, diyRecordOf, validateDiyPicks, lockedSelection, diyTokenOwner, isDiyModule, isCollabPick, DIY_TIERS } from '../shared/diy.js';
+import { cultivationCharIds, checkLoadoutOps } from '../shared/protocol.js';
+import { sanitizeOps } from '../public/js/ui/loadoutModel.js';
+import { makeMatch } from './match/harness.js';
 import { unitForm, composeUnitRecord } from '../shared/standIn.js';
 import { composeStats, composeTalents } from '../shared/loadoutRecord.js';
 import { normalizeChess, resolveLoadout, loadoutRecord } from '../server/sim/simdata.js';
@@ -21,7 +24,7 @@ const DATA = { chess, backups };
 const { ownedPool, prototypes } = backups.diy;
 const ELITES = ['char_608_acpion', 'char_609_acguad', 'char_610_acfend', 'char_611_acnipe', 'char_612_accast', 'char_613_acmedc', 'char_614_acsupo', 'char_615_acspec', 'char_617_sharp2'];
 const RESERVES5 = ['char_601_cguard', 'char_602_cdfend', 'char_603_csnipe', 'char_604_ccast', 'char_605_cmedic', 'char_606_csuppo'];
-const COLLAB = ['char_456_ash', 'char_1029_yato2', 'char_4123_ela', 'char_4141_marcil', 'char_4182_oblvns', 'char_4217_makoto'];
+const COLLAB = ['char_456_ash', 'char_1029_yato2', 'char_1048_orchd2', 'char_4123_ela', 'char_4141_marcil', 'char_4182_oblvns', 'char_4217_makoto'];
 const SIEGE = 'char_112_siege';
 const T5 = 'chess_char_5_diy1_a', T5B = 'chess_char_5_diy2_a', T6 = 'chess_char_6_diy1_a', T6B = 'chess_char_6_diy2_a';
 
@@ -35,20 +38,23 @@ test('slots: two per tier (5, 6), each with its elite twin', () => {
   assert.equal(diyTokenOwner(SIEGE, chess.chess_char_6_diy1_b.status), 'char_112_siege@2/60/7/3');
 });
 
-test('diyPool: tier 5 = 15 prototypes + 72 owned 6★, tier 6 = 9 + 72; no preset, no collab; with the kit registry only kitted operators', () => {
+test('diyPool: tier 5 = 15 prototypes + 75 owned 6★ + the 7 collab 6★, tier 6 = 9 + 75 + 7; no preset; with the kit registry only kitted operators', () => {
   const p5 = diyPool(5, { data: DATA }), p6 = diyPool(6, { data: DATA });
-  assert.deepEqual(p5, [...RESERVES5, ...ELITES, ...ownedPool]);
-  assert.deepEqual(p6, [...ELITES, ...ownedPool]);
-  assert.deepEqual([p5.length, p6.length], [87, 81]);
+  assert.deepEqual(p5, [...RESERVES5, ...ELITES, ...ownedPool, ...COLLAB]);
+  assert.deepEqual(p6, [...ELITES, ...ownedPool, ...COLLAB]);
+  assert.deepEqual([p5.length, p6.length], [97, 91]);
   const roster = new Set(Object.values(chess).map((c) => c.charId).filter(Boolean));
-  for (const id of p5) assert.ok(!roster.has(id) && !COLLAB.includes(id), id);
+  for (const id of p5) assert.ok(!roster.has(id), id);
+  assert.deepEqual(diyPool(5, { data: DATA }).slice(-7), COLLAB, 'the collab 6★ are ordinary picks now (2026-11-03)');
+  assert.deepEqual(diyPool(6, { data: DATA }).slice(-7), COLLAB);
   assert.deepEqual(diyPool(4, { data: DATA }), [], 'no 自选 slot at tier 4');
   // the kit registry: the 预备干员 run the generic kit (exact for their skills), the nine elites their stand-in kits, the
   // owned 6★ only with an operator kit file (kits/index.js OPERATOR_KIT_FILES), in pool order
   assert.deepEqual(GENERIC_KIT_CHARS.filter((id) => prototypes['5'].includes(id)), RESERVES5);
   for (const id of ELITES) assert.equal(typeof STANDIN_KITS[id], 'function', `${id}: stand-in kit`);
-  const ops = ownedPool.filter((id) => typeof OPERATOR_KITS[id] === 'function');
-  assert.deepEqual([...ops].sort(), Object.keys(OPERATOR_KITS).sort(), 'every operator kit is an owned-6★ pick');
+  const picks = [...ownedPool, ...backups.diy.excluded];
+  const ops = picks.filter((id) => typeof OPERATOR_KITS[id] === 'function');
+  assert.deepEqual([...ops].sort(), Object.keys(OPERATOR_KITS).sort(), 'every operator kit is a 自选 pick (owned or collab)');
   assert.deepEqual(diyPool(5, { data: DATA, kitted: KITTED_CHARS }), [...RESERVES5, ...ELITES, ...ops]);
   assert.deepEqual(diyPool(6, { data: DATA, kitted: KITTED_CHARS }), [...ELITES, ...ops]);
   assert.deepEqual(diyPool(6, { data: DATA, kitted: (id) => id === SIEGE }), [SIEGE], 'a predicate works too');
@@ -95,12 +101,14 @@ test('checkDiyPick: an owned 6★ chooses any of its 3 skills and any module of 
     [T5, { charId: 'char_607_cspec' }, /not a tier-5/],
     [T5, { charId: 'char_102_texas', skillIndex: 0 }, /not a tier-5/],
     [T6, { charId: 'char_1012_skadi2', skillIndex: 0 }, /not a tier-6/],
-    [T5, { charId: 'char_456_ash', skillIndex: 0 }, /not a tier-5/],
     [T5, null, /bad pick/],
     [T5, { charId: 42 }, /bad pick/],
     ['chess_char_5_01_a', { charId: SIEGE, skillIndex: 0 }, /not a 自选 slot/],
   ];
   for (const [slot, pick, re] of bad) assert.match(checkDiyPick(slot, pick, DATA).error, re, JSON.stringify(pick));
+  // a collab 6★ composes like any owned pick, in a plain room too (2026-11-03)
+  assert.equal(checkDiyPick(T5, { charId: COLLAB[0], skillIndex: 0 }, DATA).ok, true);
+  assert.equal(validateDiyPicks({ [T5]: { charId: COLLAB[0], skillIndex: 0 } }, { data: DATA }).ok, true);
 });
 
 test('validateDiyPicks: a roster never carries a module of another game mode — 集成战略 ISW-A / SO-A / SO-B, 生息演算 RA-A [ASSUMED, the owner\'s decision of 2026-10-05 for ISW-A]; the record still composes it', () => {
@@ -192,4 +200,31 @@ test('validateDiyPicks: a prototype may fill a tier-5 and a tier-6 slot, an owne
   assert.match(err({ [T5]: { charId: 'char_609_acguad', skillIndex: 0 } }).detail, /prototype carries skill 2/);
   assert.deepEqual(err('x'), { error: 'BAD_MSG', detail: 'bad 自选 picks' });
   assert.equal(err([sharp]).error, 'BAD_MSG');
+});
+
+test('联动干员 (diy.excluded): potential / 练度 pass the wire check and reach PlayerState', () => {
+  // 2026-11-03: the collab 6★ are ordinary 自选 picks, so cultivationCharIds must list them. Missing them meant the diy
+  // screen drew the values, the client's sanitizeOps dropped them and the match fielded 潜能 6 / E2 Lv60.
+  const ids = cultivationCharIds(chess, backups);
+  for (const id of COLLAB) assert.ok(ids.has(id), `${id}: a cultivation target`);
+  const ops = { [COLLAB[0]]: { potential: 2, cultivate: 1 } };
+  const isOperator = (id) => ids.has(id);
+  assert.deepEqual(checkLoadoutOps(ops, isOperator), { ok: true, ops }, 'the server check keeps it');
+  assert.deepEqual(sanitizeOps(ops, isOperator), ops, 'the client sanitize keeps it too');
+  // and the match's own re-check (PlayerState.setLoadout) turns the seat's ops into ps.ops
+  const h = makeMatch({ mode: 'solo', seats: [{ seat: 0, playerId: 'p_0', name: 'P', isBot: false, connected: true, ops }] });
+  try {
+    assert.deepEqual(h.ps('p_0').ops[COLLAB[0]], { potential: 2, cultivate: 1 });
+  } finally { h.m.dispose(); }
+});
+
+test('data invariant: diy.excluded is disjoint from ownedPool and prototypes; isCollabPick is false for both', () => {
+  const excluded = backups.diy.excluded;
+  const protoAll = Object.values(prototypes).flat();
+  assert.ok(Array.isArray(excluded) && excluded.length > 0, 'the collab list exists');
+  assert.deepEqual(excluded.filter((id) => ownedPool.includes(id)), [], 'excluded ∩ ownedPool');
+  assert.deepEqual(excluded.filter((id) => protoAll.includes(id)), [], 'excluded ∩ prototypes');
+  for (const id of ownedPool) assert.equal(isCollabPick(DATA, id), false, `${id}: an owned pick is not a collab pick`);
+  for (const id of protoAll) assert.equal(isCollabPick(DATA, id), false, `${id}: a prototype is not a collab pick`);
+  for (const id of excluded) assert.equal(isCollabPick(DATA, id), true, `${id}: a collab pick`);
 });

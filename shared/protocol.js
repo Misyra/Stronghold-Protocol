@@ -3,18 +3,20 @@
 
 import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, EMOTES, GEO } from './constants.js';
 import { isDroppableChess } from './standIn.js';
-import { diySlotIds, validateDiyPicks } from './diy.js';
+import { diySlotIds, validateDiyPicks, ID_CHARS } from './diy.js';
 import { cultivatedStats, isPotential, isCultivate, POTENTIAL_DEFAULT, CULTIVATE_DEFAULT, hasPotentialData } from './potential.js';
 import { isContentHash } from './plugins/identity.js';
 import { isPluginId } from './plugins/manifest.js';
 import { isTestCommand } from './testMode.js';
+import { isExperimental } from './experimental.js';
 import { PLUGIN_OFFER_SLOTS } from './plugins/limits.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
 const isStr = (v, max = 64) => typeof v === 'string' && v.length <= max;
 const isBool = (v) => typeof v === 'boolean';
-const isId = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64 && /^[A-Za-z0-9_\-.:]+$/.test(v);
+const ID_RE = new RegExp(`^${ID_CHARS}+$`);
+const isId = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64 && ID_RE.test(v);
 const isUid = (v) => isInt(v, 1, 2 ** 31);
 const isNum = (v, lo = -Infinity, hi = Infinity) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 const isPlain = (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
@@ -202,9 +204,10 @@ export const isLoadoutOps = (v) => isMap(v, LOADOUT_LIMITS.ops, isId, isOpsEntry
 
 /**
  * The operators a player sets a potential / 练度 for (0.2.2): the charIds of the 干员调配 roster — the visible normal chess
- * (checkLoadout's targets; a hidden chess shares its visible twin's charId: 锡人, 耶拉 …) — and the owned 6★ 自选 picks
- * (data/backups.json `diy.ownedPool`). A PRESET (特许) operator the player does not own is set by hand (潜能 1, 未精英化:
- * the official 「未持有的特许按1潜」 and +0 %); a 补位 stand-in or a prototype pick takes neither.
+ * (checkLoadout's targets; a hidden chess shares its visible twin's charId: 锡人, 耶拉 …) — and the 6★ 自选 picks
+ * (data/backups.json `diy.ownedPool`, and the collab 6★ `diy.excluded`: ordinary picks since 2026-11-03). A PRESET
+ * (特许) operator the player does not own is set by hand (潜能 1, 未精英化: the official 「未持有的特许按1潜」 and +0 %);
+ * a 补位 stand-in or a prototype pick takes neither.
  * @param {Record<string, any>|null|undefined} chess data/chess.json
  * @param {any} [backups] data/backups.json
  * @returns {Set<string>}
@@ -215,6 +218,10 @@ export function cultivationCharIds(chess, backups = null) {
     if (c && !c.isGolden && !c.isDiy && c.visible !== false && !c.isHidden && (!c.baseId || c.baseId === c.chessId) && isId(c.charId)) out.add(c.charId);
   }
   for (const id of Array.isArray(backups?.diy?.ownedPool) ? backups.diy.ownedPool : []) if (isId(id)) out.add(id);
+  // 联动干员 (2026-11-03): the collab 6★ left out of `ownedPool` for copyright are ordinary 自选 picks, so they carry a
+  // potential / 练度 like any other. Without them the diy screen showed the values, the wire sanitised them away and the
+  // match fielded them at 潜能 6 / E2 Lv60.
+  for (const id of Array.isArray(backups?.diy?.excluded) ? backups.diy.excluded : []) if (isId(id)) out.add(id);
   return out;
 }
 
@@ -304,6 +311,18 @@ export const isCharId = (v) => typeof v === 'string' && v.length <= SKIN_LIMITS.
  * as a whole (BAD_MSG). The room's own operator list is not known here.
  */
 export const isSkinSelection = (v) => isMap(v, SKIN_LIMITS.entries, isCharId, isSkinId);
+
+// ---- 名片 (room.card; PR #643 split 6 + Stardust PR2 2026-10-16) ------------------------------------------------
+/** The card's field ceilings: an operator id and a background id fit `idLength`. */
+export const CARD_LIMITS = Object.freeze({ idLength: 48 });
+/**
+ * A card art variant (Stardust PR2): '' and 'e2' are the default (elite) art, 'e1' the base art, `skin:<id>` one of the
+ * operator's own skins — the id is a catalogue id (shared/skins.js), whose characters are `[A-Za-z0-9_]`.
+ */
+export const isCardVariant = (v) => v === '' || v === 'e1' || v === 'e2'
+  || (isStr(v, CARD_LIMITS.idLength + 5) && /^skin:[A-Za-z0-9_]+$/.test(v));
+/** A namecard background id (`loading:core`, `camp:rhodes`; '' clears): format only, the client maps ids to art. */
+export const isCardBg = (v) => v === '' || (isStr(v, CARD_LIMITS.idLength) && /^[a-z0-9][a-z0-9_:\-\/]*$/i.test(v));
 
 const SKIN_OPS = new WeakMap();
 /**
@@ -540,6 +559,9 @@ export const C2S = {
   // 「不限时」 (DESIGN §35.23.10; host, before the match, a solo room of a version whose solo is timed): the match's
   // preparation and 机变 stay untimed (Match opts.soloUnlimited). Off by default; room.state omits the key unless it is on.
   'room.setSoloUnlimited': { on: isBool },
+  // Room-owned experimental rules (shared/experimental.js; host, before the match): the whole option set, so any
+  // optional flag travels with it. 联动干员 is no longer one of them — the collab 6★ are ordinary 自选 picks (2026-11-03).
+  'room.setExperimental': { experimental: isExperimental },
 
   // Remake-only spectator handover: host opt-in before play, default off (§35.100).
   'room.setAiTakeover': { on: isBool },
@@ -580,8 +602,15 @@ export const C2S = {
   // any room phase (the loadout locks at INFO_CHECK because it changes what a unit does; a skin changes only the model)
   'room.skins': { skins: isSkinSelection },
   // 名片干员 (PR #643 split 6): the operator whose portrait fills the player's seat card in the waiting room — an
-  // operator charId ('' for none; the server keeps only a visible charId of the room's chess.json); cosmetic, any room phase
-  'room.card': { charId: (v) => v === '' || isCharId(v) },
+  // operator charId ('' for none; the server keeps only a visible charId of the room's chess.json). `avatar` is the
+  // operator whose official avatar stands on the plate; `art` / `face` (Stardust PR2, 2026-10-16) choose which art of
+  // those operators is drawn — '' or 'e2' the default (elite), 'e1' the base, `skin:<id>` one of that operator's own
+  // skins (the server also checks the skin belongs to the operator the field paints and drops only that field on a
+  // mismatch). `bg` / `bgY`: the namecard background id and its vertical framing (0–100, -1 = the card's default).
+  // Cosmetic, any room phase.
+  'room.card': { charId: (v) => v === '' || isCharId(v), avatar: (v) => v === '' || isCharId(v), art: isCardVariant,
+    face: isCardVariant, bg: isCardBg, bgY: (v) => isInt(v, -1, 100),
+    $optional: ['charId', 'avatar', 'art', 'face', 'bg', 'bgY'] },
   // operator ownership (干员持有, 0.2.0 补位): stored per session / seat; a match takes the list its seat had when it
   // started (an out-of-match setting — during a match it is stored for the next one: ROOM_STARTED)
   'room.ownership': { notOwned: isNotOwnedList },
@@ -724,7 +753,15 @@ export const S2C = [
   // queue.state { state: 'idle' | 'queued' | 'offered' | 'matched', ticketId?, difficulty?, party?, offerId?, roomCode?,
   // waitingCount?, reason? } — 一张票的完整快照,不含其他成员的身份
   'queue.state',
+  // m.result — the free-form settlement (server/match/results.js). Since 0.3.4 §37.77 it also carries
+  // `bossDamage: { boss, hidden } | null` (the boss rounds' per-player / per-operator ledgers) for the local match
+  // record; an older build simply records no boss breakdown.
   'm.public', 'm.private', 'm.field', 'm.toast', 'm.ticker', 'm.emote', 'm.result',
+  // a human removed from the match for good (挂机移出 移植自用户分支, MatchPlatform._removeIdle): m.removed
+  // { reason: 'afk' | 'kicked', rounds } — to the removed seat, whose client returns to the lobby (removed while
+  // offline: room.closed { reason } on its next resume instead) · m.notice { kind: 'afkRemoved', playerId, name,
+  // rounds } — to everyone else in the match (players and spectator seats); the kick vote's kinds ride the same frame
+  'm.removed', 'm.notice',
   // 局内聊天 (合并自用户分支): m.chat { id, playerId, name, text, at } — one room broadcast; m.chatState
   // { enabled, mutedUntil, serverTime, messages? } — the sender's own moderation state after a refusal, and the
   // recent history on (re)entry. Ephemeral: never replayed by the resync replay buffer.

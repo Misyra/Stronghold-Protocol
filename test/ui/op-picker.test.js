@@ -139,7 +139,7 @@ describe('both entries are wired to the picker (source assertions; the module is
   test('opPicker.js: one OperatorPicker for both, the first tile clears, the LookBar only when there is a choice', () => {
     assert.match(PICKER_SRC, /export function OperatorPicker/);
     assert.match(PICKER_SRC, /export function AvatarPicker/);
-    assert.match(PICKER_SRC, /import \{ cardAvatarUrl, lookOptions, lookUrl, officialAvatars \} from '\.\/seatArt\.js';/);
+    assert.match(PICKER_SRC, /import \{ cardAvatarUrl, lookOptions, lookUrl, officialAvatars, cardArtStored \} from '\.\/seatArt\.js';/);
     // 清除格: the auto tile carries data-char="" and picks ''
     assert.match(PICKER_SRC, /data-char="" data-autofocus=\$\{known \? undefined : ''\} title=\$\{autoTitle\} onClick=\$\{\(\) => onPick\(''\)\}/);
     assert.match(PICKER_SRC, /opts\.length < 2\) return null/, 'the look row hides when the operator has one option');
@@ -148,16 +148,22 @@ describe('both entries are wired to the picker (source assertions; the module is
   });
 
   test('screens/room.js: 更换立绘 renders OperatorPicker, keeps the look row, and the seat prefers the look', () => {
-    assert.match(ROOM_SRC, /import \{ OperatorPicker \} from '\.\.\/ui\/opPicker\.js';/);
+    assert.match(ROOM_SRC, /import \{ OperatorPicker, CardAvatarPicker \} from '\.\.\/ui\/opPicker\.js';/);
     assert.doesNotMatch(ROOM_SRC, /function CardPicker\(/, 'the room\'s own picker is gone');
     assert.match(ROOM_SRC, /<\$\{OperatorPicker\} title=\$\{t\('名片干员'\)\}/);
     assert.match(ROOM_SRC, /looks=\$\{\{ kind: 'portrait', current: myLook, onLook: pickLook \}\}/);
-    assert.match(ROOM_SRC, /const pickLook = \(look\) => \{ setCardLook\(look\); setPicking\(false\); \};/);
+    assert.match(ROOM_SRC, /const pickLook = \(look\) => \{ setCardLook\(look\); setPicking\(null\); \};/);
     // an operator with 外观 keeps the picker open; 默认 or a look closes it
-    assert.match(ROOM_SRC, /lookOptions\(data\.get\('assets'\), charId, 'portrait'\)\.length < 2\) setPicking\(false\);/);
-    // one's own seat card wears the local look before the outfit / default art
-    assert.match(ROOM_SRC, /const lookSrc = op && look \? lookUrl\(data\.get\('assets'\), op\.chess\.charId, look, 'portrait'\) : null;/);
+    assert.match(ROOM_SRC, /lookOptions\(data\.get\('assets'\), charId, 'portrait'\)\.length < 2\) setPicking\(null\);/);
+    // one's own seat card wears the local look before the outfit / default art; a teammate's wears the art their seat
+    // published (room.card art, seatCardView)
+    assert.match(ROOM_SRC, /const view = s && s\.playerId === me\.playerId\s*\n\s*\? \{ charId: myCard, art: myLook, avatar: myAvatar, face: myFace, bg: myBg, bgY: myBgY \}\s*\n\s*: seatCardView\(s\);/);
+    assert.match(ROOM_SRC, /const lookSrc = op && view\.art \? lookUrl\(data\.get\('assets'\), op\.chess\.charId, view\.art, 'portrait'\) : null;/);
     assert.match(ROOM_SRC, /lookSrc \|\| chessPortraitUrl\(data\.get\('assets'\), op\.chess, \{ skin \}\)/);
+    // the 名片头像 and the 名片底图 pickers join it (Stardust PR2 / namecards)
+    assert.match(ROOM_SRC, /<\$\{CardAvatarPicker\} current=\$\{myAvatar\} face=\$\{myFace\}/);
+    assert.match(ROOM_SRC, /<\$\{NameCardPicker\} current=\$\{myBg\} y=\$\{myBgY\}/);
+    assert.match(ROOM_SRC, /onPickAvatar=\$\{\(\) => setPicking\('avatar'\)\} onPickBg=\$\{\(\) => setPicking\('bg'\)\}/);
     // the pick's store and the room.card upload are unchanged (ui/seatArt.js setCard → installCardSync)
     assert.match(ROOM_SRC, /const pickCard = \(charId\) => \{\s*\n\s*setCard\(charId\);/);
   });

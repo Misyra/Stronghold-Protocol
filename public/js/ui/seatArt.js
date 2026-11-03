@@ -11,8 +11,9 @@
 
 import { createStore, loadPref, savePref } from '../store.js';
 import { ownerSkin } from './skins.js';
-import { manifestSkinKey } from '../../../shared/skins.js';
+import { manifestSkinKey, skinById } from '../../../shared/skins.js';
 import { N_ } from '../../../shared/i18n.js';
+import { NAMECARD_PREF, NAMECARD_Y_PREF, namecardOf, namecardY } from './namecards.js';
 
 /** 名片干员: the player's own pick (a localStorage pref, sent as room.card). */
 export const CARD_PREF = 'room.card';
@@ -26,13 +27,13 @@ export function parseStoredCard(v) {
   return typeof v === 'string' ? v : '';
 }
 
-// ---- 名片外观与头像 (移植自用户分支 ui/seatArt.js, feedback #9 / #24 / #100; B 适配) --------------------------
-// B 的 room.card 只携带 charId (shared/protocol.js 不含 look / avatar 字段, 线协议不动), 所以外观只在本地展示与
-// 存储: CARD_LOOK 留在 localStorage, 只换自己坐席卡的画; 官方玩家头像页在资产清单没有 playerAvatar 资源时优雅
-// 降级为不显示 (ui/opPicker.js)。
+// ---- 名片外观与头像 (移植自用户分支 ui/seatArt.js, feedback #9 / #24 / #100; Stardust PR2 同步) ----------------
+// The look pick (精一 / 精二 / a skin) is stored here and travels with room.card art (ui/loadoutSync.js installCardSync),
+// so the room draws the same art; the official player avatars of the local account (ui/accounts.js) still degrade to
+// nothing when the manifest has no playerAvatar art (ui/opPicker.js 的官方头像页).
 /**
- * 名片展示外观: the player's own look pick (a local pref; 同盟看不到它, [ASSUMED] B 的适配: fork 把 look 放进
- * room.card, B 的线协议不含它).
+ * 名片展示外观: the player's own look pick — 默认 / 精二 / 精一 / a skin of the picked operator — stored locally and sent
+ * as room.card art (Stardust PR2).
  */
 export const CARD_LOOK_PREF = 'room.card.look';
 
@@ -44,10 +45,67 @@ export function parseStoredLook(v) {
   return typeof v === 'string' ? v : '';
 }
 
+// ---- 名片外观的同步 (Stardust PR2, 2026-10-16; B 适配) ------------------------------------------------------
+// The art variant travels with room.card (`art` / `face`) so teammates see the same 精一 / 精二 / skin the picker chose;
+// the skin id on the wire is the catalogue id (`skin:<id>`, shared/skins.js), while the local prefs keep the manifest's
+// own key — ui/opPicker.js lookOptions hands those out and ui/assetUrls.js resolves them. `''` and `'e2'` both mean the
+// default (elite) art on the wire; `'e1'` the base art.
+/** The 名片头像: the operator whose avatar stands on one's seat plate ('' = the frame's glyph). */
+export const CARD_AVATAR_PREF = 'room.card.avatar';
+/** The 名片头像's art variant ('' = the default, 'e1', 'e2', or a skin id). */
+export const CARD_FACE_PREF = 'room.card.face';
+/** The 名片底图 (ui/namecards.js NAMECARD_PREF, re-exported for the room screen). */
+export const CARD_BG_PREF = NAMECARD_PREF;
+/** The 名片底图's vertical framing (ui/namecards.js NAMECARD_Y_PREF). */
+export const CARD_BG_Y_PREF = NAMECARD_Y_PREF;
+
+export const CARD_AVATAR_KEY = 'cardAvatar';
+export const CARD_FACE_KEY = 'cardFace';
+export const CARD_BG_KEY = 'cardBg';
+export const CARD_BG_Y_KEY = 'cardBgY';
+
+const SKIN_WIRE = /^skin:([A-Za-z0-9_]+)$/;
+
+/** Whether a value is a wire art variant: '' / 'e1' / 'e2' / 'skin:<catalogue id>' (shared/protocol.js isCardVariant). */
+export const isCardVariant = (v) => v === '' || v === 'e1' || v === 'e2'
+  || (typeof v === 'string' && SKIN_WIRE.test(v));
+
+/**
+ * A local look (ui/opPicker.js lookOptions: '' / 'e2' / 'e1' / a manifest skin key) as the wire's variant; unknown
+ * skins and junk become '' (nothing is sent, so the seat keeps the default art).
+ * @param {unknown} look @returns {''|'e1'|'e2'|string}
+ */
+export function cardArtWire(look) {
+  if (look === '' || look === 'e1' || look === 'e2') return look;
+  const skin = typeof look === 'string' ? skinById(look) : null;
+  return skin ? `skin:${skin.id}` : '';
+}
+
+/** A wire variant (room.card art / face) as the stored local look: `skin:<id>` → the manifest's own key. */
+export function cardArtStored(v) {
+  if (v === '' || v === 'e1' || v === 'e2') return v;
+  const m = typeof v === 'string' ? SKIN_WIRE.exec(v) : null;
+  if (!m) return '';
+  return manifestSkinKey(m[1]) ?? m[1];
+}
+
+/** A stored avatar pick: a charId string, '' for none. */
+export const parseStoredAvatar = (v) => (typeof v === 'string' ? v : '');
+/** A stored art variant: a string, '' when the pref was junk. */
+export const parseStoredVariant = (v) => (typeof v === 'string' ? v : '');
+/** A stored 名片底图: a known namecard id, else ''. */
+export const parseStoredBg = (v) => (namecardOf(v) ? v : '');
+/** A stored framing: an integer 0–100, else null. */
+export const parseStoredBgY = (v) => namecardY(v);
+
 /** This browser's pick, its look and its sync state (survives room / match resets like ui/skins.js' store). */
 export const cardStore = createStore({
   [CARD_KEY]: parseStoredCard(loadPref(CARD_PREF, '')),
   [CARD_LOOK_KEY]: parseStoredLook(loadPref(CARD_LOOK_PREF, '')),
+  [CARD_AVATAR_KEY]: parseStoredAvatar(loadPref(CARD_AVATAR_PREF, '')),
+  [CARD_FACE_KEY]: parseStoredVariant(loadPref(CARD_FACE_PREF, '')),
+  [CARD_BG_KEY]: parseStoredBg(loadPref(CARD_BG_PREF, '')),
+  [CARD_BG_Y_KEY]: parseStoredBgY(loadPref(CARD_BG_Y_PREF, null)),
   [CARD_SYNC_KEY]: 'idle',
 });
 
@@ -71,6 +129,35 @@ export function setCardLook(look) {
   cardStore.set({ [CARD_LOOK_KEY]: next });
 }
 
+/** Pick the 名片头像 operator ('' = none): persisted at once, sent as room.card avatar. @param {string} charId */
+export function setCardAvatar(charId) {
+  const next = parseStoredAvatar(charId);
+  try { savePref(CARD_AVATAR_PREF, next); } catch { /* private mode: the session keeps it */ }
+  cardStore.set({ [CARD_AVATAR_KEY]: next });
+}
+
+/** Pick the 名片头像's art variant ('' = default): persisted at once, sent as room.card face. @param {string} look */
+export function setCardFace(look) {
+  const next = parseStoredVariant(look);
+  try { savePref(CARD_FACE_PREF, next); } catch { /* private mode: the session keeps it */ }
+  cardStore.set({ [CARD_FACE_KEY]: next });
+}
+
+/** Pick the 名片底图 ('' = none; another background starts at its default framing). @param {string} bg */
+export function setCardBackground(bg) {
+  const next = parseStoredBg(bg);
+  if (next !== cardStore.get()[CARD_BG_KEY]) setCardBackgroundY(null);
+  try { savePref(CARD_BG_PREF, next); } catch { /* private mode: the session keeps it */ }
+  cardStore.set({ [CARD_BG_KEY]: next });
+}
+
+/** Pick the 名片底图's vertical framing (null = the card's default). @param {unknown} y */
+export function setCardBackgroundY(y) {
+  const next = parseStoredBgY(y);
+  try { savePref(CARD_BG_Y_PREF, next); } catch { /* private mode: the session keeps it */ }
+  cardStore.set({ [CARD_BG_Y_KEY]: next });
+}
+
 /** FNV-1a of a string (the default portrait: the same operator for a player on every client). */
 function hash32(s) {
   let h = 0x811c9dc5;
@@ -81,8 +168,8 @@ function hash32(s) {
 /**
  * The operators a seat card can show — the server's room.card whitelist (server/lobby.js cardCharIds): one record per
  * charId of the visible, non-自选 chess records (the elite form, for its E2 art), then the 自选编队 pool
- * (`backups.diy.ownedPool`, named and rated by `backups.diy.operators` — those operators have no chess record of their
- * own), 6★ first, then by name.
+ * (`backups.diy.ownedPool`, and the collab 6★ `backups.diy.excluded` — named and rated by `backups.diy.operators` —
+ * those operators have no chess record of their own), 6★ first, then by name.
  * @param {any[]} chessList chess.json records
  * @param {any} [backups] backups.json (its 自选编队 pool joins the list)
  * @returns {any[]}
@@ -96,8 +183,9 @@ export function cardOperators(chessList, backups = null) {
   }
   const diy = backups && typeof backups === 'object' ? backups.diy : null;
   const pool = diy && Array.isArray(diy.ownedPool) ? diy.ownedPool : [];
+  const collab = diy && Array.isArray(diy.excluded) ? diy.excluded : [];
   const ops = diy && diy.operators && typeof diy.operators === 'object' ? diy.operators : {};
-  for (const id of pool) {
+  for (const id of [...pool, ...collab]) {
     if (typeof id !== 'string' || !id || by.has(id)) continue;
     const rec = ops[id];
     by.set(id, { charId: id, name: rec && typeof rec.name === 'string' ? rec.name : id, rarity: rec && Number.isFinite(rec.rarity) ? rec.rarity : 0 });
@@ -121,6 +209,27 @@ export function cardContext(list, { pending = false } = {}) {
 }
 
 /**
+ * A seat's display card as one object: `charId` (seats[].card — a bare string from an older server too), and the
+ * appearance fields the server mirrors beside it (`cardAvatar` / `cardArt` / `cardFace` / `cardBg` / `cardBgY`; a newer
+ * server may nest them in seats[].card, which is read first). Missing fields are '' / null, never undefined.
+ * @param {any} seat room.state seat
+ * @returns {{ charId: string, avatar: string, art: string, face: string, bg: string, bgY: number|null }}
+ */
+export function seatCardView(seat) {
+  const c = seat?.card;
+  const nested = c && typeof c === 'object' ? c : {};
+  const plain = typeof c === 'string' ? c : '';
+  return {
+    charId: str(nested.charId) || plain || '',
+    avatar: str(nested.avatar) || str(seat?.cardAvatar) || '',
+    art: str(nested.art) || str(seat?.cardArt) || '',
+    face: str(nested.face) || str(seat?.cardFace) || '',
+    bg: str(nested.bg) || str(seat?.cardBg) || '',
+    bgY: namecardY(nested.bgY) ?? namecardY(seat?.cardBgY),
+  };
+}
+
+/**
  * The operator on a seat card: the player's pick (one's own seat shows the local pick at once, the others the server's
  * seats[].card), else one of the pool chosen by the player id [ASSUMED, see the header]. null for an empty seat, a bot,
  * or before the data loads.
@@ -131,7 +240,7 @@ export function cardContext(list, { pending = false } = {}) {
  */
 export function seatOperator(seat, { byChar, pool, pending = false }, { myId, myCard } = {}) {
   if (!seat || seat.playerId == null || seat.isBot) return null;
-  const pick = (seat.playerId === myId ? myCard : seat.card) || '';
+  const pick = (seat.playerId === myId ? myCard : seatCardView(seat).charId) || '';
   const rec = pick && byChar ? byChar.get(pick) : null;
   if (rec) return { chess: rec, picked: true };
   if (pick && pending) return null;
@@ -185,12 +294,15 @@ const manifestChars = (m) => (m && typeof m.chars === 'object' ? m.chars : null)
  */
 export function lookUrl(m, charId, look = '', kind = 'avatar') {
   if (typeof charId !== 'string' || !m || !look) return null;
+  // a wire variant (`skin:<catalogue id>`, room.card art / face) names the same skin as the stored manifest key
+  const skin = SKIN_WIRE.exec(look);
+  const want = skin ? skin[1] : look;
   const c = str(charId) && manifestChars(m)?.[charId];
   if (!c) return null;
-  if (look === 'e2') return str(c[`${kind}E2`]) || str(c[kind]);
-  if (look === 'e1') return str(c[kind]);
+  if (want === 'e2') return str(c[`${kind}E2`]) || str(c[kind]);
+  if (want === 'e1') return str(c[kind]);
   // lookOptions hands out the manifest's own keys (official ids); a skin the catalogue does not list yet still resolves
-  const s = typeof c.skins === 'object' && c.skins ? c.skins[manifestSkinKey(look) ?? look] : null;
+  const s = typeof c.skins === 'object' && c.skins ? c.skins[manifestSkinKey(want) ?? want] : null;
   return str(s?.[kind]) || str(s?.[`${kind}E2`]);
 }
 

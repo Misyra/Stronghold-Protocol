@@ -8,10 +8,29 @@
 // B 适配 (与 fork 的差异): 记录名不经过 tName (B 的 chess 记录名即所用语言的名字), 稀有度档位从列表推导
 // (自选编队池的干员没有 6★), 头像页把选择解析成图片 URL 交给调用方 (B 的头像 pref 存的是 URL 字符串), 挑选一个
 // 有外观可选的干员后选择器保持打开以便选外观, 选了外观即关闭.
-import { useState } from '../../vendor/hooks.module.js';
+import { useMemo, useState } from '../../vendor/hooks.module.js';
 import { html, Icon, Modal, TextField } from './components.js';
-import { cardAvatarUrl, lookOptions, lookUrl, officialAvatars } from './seatArt.js';
+import { cardAvatarUrl, lookOptions, lookUrl, officialAvatars, cardArtStored } from './seatArt.js';
 import { t } from '../../../shared/i18n.js';
+
+/**
+ * The roster entry's lower-cased search keys (name, appellation), kept per entry object: the grid filters on **every
+ * keystroke** over the whole roster (300+ operators), and `String(v || '').toLowerCase()` twice per entry was the bulk
+ * of that per-key work (≈22 of the 27 µs measured over 320 entries; the grid's own vnode diff is the render's cost, not
+ * this filter's). The raw strings are kept beside the keys and compared, so an entry renamed in place (a language switch
+ * that reuses the objects) is re-keyed instead of searching its old name; a new roster (new objects) is simply absent
+ * here and gets keyed on its first keystroke.
+ */
+const SEARCH_KEYS = new WeakMap();
+function searchKeys(c) {
+  const name = String(c.name || '');
+  const app = String(c.appellation || '');
+  const hit = SEARCH_KEYS.get(c);
+  if (hit && hit.name === name && hit.app === app) return hit;
+  const keys = { name, app, keyName: name.toLowerCase(), keyApp: app.toLowerCase() };
+  SEARCH_KEYS.set(c, keys);
+  return keys;
+}
 
 /** A picker tile's picture; the name's first character when the art pack has none or it fails to load. */
 function Tile({ src, name, class: cls }) {
@@ -34,11 +53,17 @@ export function OperatorPicker({ title, micro, current, list, m, faceOf = (c) =>
   autoTitle, autoIcon = 'refresh', note = null, onPick, onClose, looks = null, tabs = null, body = null }) {
   const [q, setQ] = useState('');
   const [star, setStar] = useState(0);
-  const stars = [...new Set(list.map((c) => c.rarity).filter((r) => r > 0))].sort((a, b) => b - a);
-  const known = !!current && list.some((c) => c.charId === current);
+  // the roster is stable while one types (screens/room.js, ui/accounts.js memoize it), so the rarity filter — which only
+  // depends on the list — is derived once per list, not once per keystroke
+  const stars = useMemo(() => [...new Set(list.map((c) => c.rarity).filter((r) => r > 0))].sort((a, b) => b - a), [list]);
+  const known = useMemo(() => !!current && list.some((c) => c.charId === current), [list, current]);
   const needle = q.trim().toLowerCase();
-  const shown = list.filter((c) => (!star || c.rarity === star)
-    && (!needle || [c.name, c.appellation].some((v) => String(v || '').toLowerCase().includes(needle))));
+  const shown = useMemo(() => list.filter((c) => {
+    if (star && c.rarity !== star) return false;
+    if (!needle) return true;
+    const k = searchKeys(c); // lower-cased once per entry (see SEARCH_KEYS), not once per entry per keystroke
+    return k.keyName.includes(needle) || k.keyApp.includes(needle);
+  }), [list, star, needle]);
   return html`<${Modal} open=${true} class="cardpick" micro=${micro} title=${title} width="min(10.4rem, 96vw)"
       onClose=${onClose}>
     ${tabs}
@@ -121,5 +146,31 @@ export function AvatarPicker({ current, list, m, local, onPick, onClose }) {
     tabs=${tabs} body=${body}
     autoLabel=${t('默认')} autoTitle=${t('不使用头像：显示名字首字')} autoIcon="user"
     note=${t('头像保存在这台设备的浏览器里，不上传服务器；同盟里的博士看不到它。')}
+    onPick=${pickOperator} onClose=${onClose} />`;
+}
+
+/**
+ * The 名片头像 picker (Stardust PR2, 2026-10-16): the operator whose official avatar stands on one's seat plate, and —
+ * through the same 外观 row — which 精一 / 精二 / skin art of that operator is drawn (room.card avatar + face). The first
+ * tile clears the pick; picking an operator commits it at once and keeps the picker open while it offers variants;
+ * picking a variant commits it and closes.
+ * @param {{ current: string, face?: string, list: any[], m: any, onPick: (charId: string, face?: string) => void, onClose: Function }} props
+ */
+export function CardAvatarPicker({ current, face = '', list, m, onPick, onClose }) {
+  const [charId, setCharId] = useState(current || '');
+  // the wire's `skin:<catalogue id>` back to the manifest key lookOptions uses
+  const faceLook = charId === (current || '') ? cardArtStored(face) : '';
+  const pickOperator = (id) => {
+    setCharId(id);
+    onPick(id, '');
+    // 有外观可选 (精二 / 精一 / 皮肤): 留在外观行挑; 没有则到此为止
+    if (!id || lookOptions(m, id, 'avatar').length < 2) onClose();
+  };
+  const pickLook = (look) => { onPick(charId, look); onClose(); };
+  return html`<${OperatorPicker} title=${t('名片头像')} micro="CARD AVATAR" current=${charId} list=${list} m=${m}
+    faceOf=${(c) => cardAvatarUrl(c.charId, m, c.charId === charId ? faceLook : '') || cardAvatarUrl(c.charId, m)}
+    looks=${charId ? { kind: 'avatar', current: faceLook, onLook: pickLook } : null}
+    autoLabel=${t('默认')} autoTitle=${t('不使用头像：显示名字首字')} autoIcon="user"
+    note=${t('选择后，同盟里的博士都会看到这个头像')}
     onPick=${pickOperator} onClose=${onClose} />`;
 }

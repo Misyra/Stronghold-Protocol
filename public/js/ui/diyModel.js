@@ -17,7 +17,7 @@
 // version (`version`, only a non-default one).
 
 import { DIY_LIMITS, checkDiyPicks } from '../../../shared/protocol.js';
-import { diySlotIds, diySlot, diyPool, isPrototypePick, lockedSelection, isDiyModule, diyRecord } from '../../../shared/diy.js';
+import { diySlotIds, diySlot, diyPool, isPrototypePick, isCollabPick, lockedSelection, isDiyModule, diyRecord } from '../../../shared/diy.js';
 import { unitForm } from '../../../shared/standIn.js';
 import { N_ } from '../../../shared/i18n.js';
 import { DEFAULT_VERSION, versionById, versionSlug } from '../../../shared/versions.js';
@@ -131,11 +131,11 @@ export function defaultPick(charId, slotId, data) {
 
 /**
  * The operators a slot lists (shared/diy.js diyPool of its tier with the kit list — prototypes first, then the owned
- * 6★), each with what the picker card shows and whether another slot holds it: `taken` names that slot (an owned
- * operator fills one slot; the two picks of a tier differ).
+ * 6★, then the collab 6★ marked `collab`), each with what the picker card shows and whether another slot holds it:
+ * `taken` names that slot (an owned operator fills one slot; the two picks of a tier differ).
  * @param {string} slotId @param {Record<string, any>} picks the current roster @param {any} data
  * @param {Iterable<string>|null} kitted
- * @returns {Array<{ charId: string, unit: any, bonds: string[], proto: boolean, taken: string|null }>}
+ * @returns {Array<{ charId: string, unit: any, bonds: string[], proto: boolean, collab: boolean, taken: string|null }>}
  */
 export function pickOptions(slotId, picks, data, kitted) {
   const slot = diySlot(slotId, data);
@@ -152,7 +152,7 @@ export function pickOptions(slotId, picks, data, kitted) {
       // the same tier: never twice; another tier: an owned operator only once (a prototype may repeat across tiers)
       if (tierOf(other) === slot.tier || !isPrototypePick(data, tierOf(other), charId)) { taken = other; break; }
     }
-    return { charId, unit: backups.units?.[charId] ?? null, bonds: backups.diy?.operators?.[charId]?.bonds ?? [], proto, taken };
+    return { charId, unit: backups.units?.[charId] ?? null, bonds: backups.diy?.operators?.[charId]?.bonds ?? [], proto, collab: isCollabPick(data, charId), taken };
   });
 }
 

@@ -112,6 +112,30 @@ Ready requires no pending offer as well as an empty temp area. The co-op prep de
 before resolving temp and setting Ready; untimed solo / single-human prep does not schedule a separate choice timer.
 The offer is recipient-private, including after reconnect, and never enters `m.public.sp` or a teammate's scout view.
 
+### 6.2a 挂机移出 (AFK removal, remake)
+
+A match that started with two or more humans removes a human seat that sends no **accepted substantive intent** for
+`afkRemoveRounds` rounds in a row (default 2; the lobby option `afkRemoveRounds`, 0 = off — `server/match/match/common.js
+AFK_ACTIONS`: shop, board, equip / unequip, destroy, 机变 / 教鞭 choices, rewards, and the strategy draft; ready,
+the briefing confirmation, emotes, watching, stat previews, pause, the reroll / speed votes, AI 托管 itself, `g.art`,
+`g.bondPlan` and the battle reports do not count). The check runs as each PREP ends, before that round's battle exists
+(`MatchPrep.endPrep` → `MatchPlatform._checkIdle`), so a removed seat never enters the round's fields, the Final Assault
+pairing or the boss pool. An accepted intent since the previous check resets the count, and so does a seat the AI plays
+at that moment (AI 托管, including 掉线由 AI 接管). One round short of the limit the seat gets a warn toast and
+`m.private.afkWarn`, which the client shows through 机变 / 休整期 until a real action clears it.
+
+Removal is exactly a 中途退出 (`_removeIdle`): `m.removed { reason: 'afk', rounds }` to the seat, `m.notice { kind:
+'afkRemoved', playerId, name, rounds }` to the other players and spectator seats, then the platform detaches it
+(`Match opts.onRemove` → `Lobby.matchRemoved` = `removeMember`, the same path as a leave; a seat removed while offline
+is told `room.closed { reason: 'afk' }` on its next resume). Solo and single-human (loneHuman) matches are exempt.
+
+Precedence with the other remake rules: **掉线由 AI 接管 wins at equal limits** — the offline seat becomes
+`botControlled` at its second offline prep end (`_checkOffline` runs first), and the AFK rule never counts a
+`botControlled` seat; an offline seat is removed by the rule only when `afkRemoveRounds` is below the takeover count, or
+when it went idle before dropping. `投票移出` reuses the same `_removeIdle` with reason `'kicked'`. 房间回收 never
+removes seats and only disposes rooms whose every member is offline, so it cannot interleave with an AFK removal; the AFK
+rule disposes no room except through `removeMember` emptying it (`room.closed { reason: 'empty' }`).
+
 ### 6.3 Bonds & layers (bondsMeta.js)
 
 - `count` = number of **distinct base chess** on the board carrying the bond (`BOARD`); `BOARD_AND_DECK` bonds also count the hand; 绝技 counts elites on board; 调和 adds +1 to each core bond count that has a real member on the board (the views mark such an entry `harmony: 1`, §21.26), etc. (research 02).
@@ -332,6 +356,8 @@ adjusted count and reset scope stay limited to its own operators; the DIY export
 
 **干员持有 (0.2.0 补位):** the overlay's second tab marks operators as not owned (the 55 NORMAL chess; per-browser `sp.pref.ownership` = `{ v, notOwned }`, synced as `room.ownership { notOwned }` by the same sync engine as the loadout, `ui/loadoutSync.js installPrefSync`; 导出 / 导入 as `{ kind: 'stronghold.ownership', v, exportedAt, count, notOwned }`). A not-owned chess fights as its official stand-in with the backup skill / module — the loadout never applies to it ("对于补位干员其技能不可更改") — and is shown as the stand-in wherever the player's copy appears (shop / reward cards, hand and 临时整备区, board, detail card, result lineup, a teammate's scouting and bond popups: portrait, name, model, with a small 「替补」 mark; the owner's recall of the official mode, 2026-10-06), while its bonds, 特质, tier, price and merge stay the chess's; the 0.2.0 补位 design subsections have the rules and sources.
 **自选编队 (0.2.0):** the overlay's third tab fills the four DIY slots (5阶 ×2, 6阶 ×2) with an owned 6★ outside the chess pool (any of its three skills, any module of its elite form but a 集成战略 one) or a prototype (its locked skill / module); only operators with a kit are offered (`welcome.diyKitted`). Per-browser `sp.pref.diy` = `{ v, picks }`, synced as `room.diy { picks }` by the same sync engine; 导出 / 导入 as `{ kind: 'stronghold.diy', v, exportedAt, count, picks }` (`ui/diyModel.js`, `screens/diy.js`). **UI:** the picker is the roster's own screen (the UI paragraph above) with the picker's own **draft** and its own filter row: the 原型 / 已持有 chips and the search it has always had, plus the roster's 职业 chips (`loadoutSections.js ProfFilter`, one markup for both screens — no 盟约 select and no 仅看已调整, neither of which means anything for a slot's pick). The row's quick skill / module choices write the draft (确认 saves it, 取消 / Esc drop it, a saved pick is never touched) while 潜能 / 练度 writes stay immediate; a taken option (another slot holds the operator) disables its row and names that slot, and a prototype's locked skill / module are static cells. Two 自选 facts differ from the roster's list: the modules come from `pickChoices().modules` (集成战略 / 生息演算 ones excluded, 不装备 first) with the 默认 badge suppressed (on a composed slot record `isDefault` marks the current pick, not an official default), and a 自选 record carries `garrisonIds: []`, so the pane has no 特质 section. Below 1000 px wide the pane slides over the list with a 「干员列表」 back button, and a row's first tap only selects it (the next tap opens the pane). Every row's choices are memoized per loaded backups.json (`pickChoices` behind `screens/diy.js rowChoices`): the tier-6 list holds ~81 operators, so a search keystroke never recomposes them all. In the match a slotted piece is the operator for its player (name, art, class, bonds from its factions, no 特质, the pick's skill and module; the slot's tier, price and merge), sold only in that player's shop from the slot's 调度中心 level with its own stock; the shop / reward / detail cards and the own pieces carry a 「自选」 badge (`ui/gameLogic/diy.js`); the 0.2.0 自选编队 design subsection has the rules and sources.
+
+**联动干员 (the owner's decision of 2026-11-02; ordinary picks since 2026-11-03):** the seven collab 6★ of `diy.excluded` stay out of `diy.ownedPool` but `diyPool` offers them after it, like any other 6★ — every 自选 slot may pick them in any room, matchmade or private, with no switch (`shared/diy.js` / `shared/protocol.js`). Their art / voices / official effects load from the separate `data/assets-collab.json` pack under `/assets/collab/`, fetched once per page (public/js/content.js) and laid over the manifest add-only. The old `experimental.collabOps` switch and its room toggle are gone; `room.setExperimental` keeps the other room rules only.
 
 ---
 

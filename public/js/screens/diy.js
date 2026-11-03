@@ -205,7 +205,7 @@ function DiyRow({ m, slot, opt, ch, takenTier, draft, selected, ops, onOps, onSe
         title=${note || name} onClick=${() => onSel(opt.charId)}>
       <span class="lo-card__art"><${OperatorImage} m=${m} chess=${avatarRecord(u)} fallback=${html`<span class="lo-card__glyph">${[...name][0]}</span>`} /></span>
       <span class="lo-card__id">
-        <span class="lo-card__name">${name}</span>
+        <span class="lo-card__name">${name}${opt.collab ? html`<span class="diy-opt__collab" data-testid="diy-collab-tag">${t('联动')}</span>` : null}</span>
         <span class="lo-card__bonds">${(opt.bonds || []).map((b) => html`<${Img} key=${b} src=${bondIconUrl(m, b)} class="lo-card__bond" alt=${bondName(b)}
           fallback=${html`<i class="lo-bond__dot" title=${bondName(b)}></i>`} />`)}</span>
         <span class="diy-opt__sub"><${KindTag} proto=${opt.proto} /><span class="diy-opt__class"><${Img} src=${profIconUrl(m, u?.profession)} class="diy-opt__prof" />${classLine(u)}</span>

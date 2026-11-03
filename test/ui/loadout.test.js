@@ -530,3 +530,25 @@ test('entry badge (review fix): counts like the screen once chess.json is loaded
   assert.equal(badgeCount(entries, get), changedCount(entries, get));
   assert.equal(badgeCount({}, get), 0);
 });
+
+// 等级药丸的箭头数跟记录自己的 `status.phase` 走（精一 1 个、精二 2 个），不看 tier：tier 1/2 干员的精锐行
+// 是精二（50 / 55 级），所以显示两个。
+test('level pill: the chevron count follows status.phase (精一 one, 精二 two), not the tier', () => {
+  // data/chess.json 是准绳：tier 1/2 的 base 行是精一，它们的 `_b` 精锐行是精二；tier 3+ 都是精二
+  for (const [id, rec] of Object.entries(CHESS)) {
+    const base = /_a$/.test(id);
+    if (!base && !/_b$/.test(id)) continue;
+    const phase = rec && rec.status && rec.status.phase;
+    if (!phase) continue;
+    const want = base && rec.tier <= 2 ? 1 : 2;
+    assert.equal(phase, want, `${id} (tier ${rec.tier}, ${base ? 'base' : 'elite'}) carries phase ${want}`);
+  }
+  const src = readFileSync(path.join(ROOT, 'public/js/screens/loadout.js'), 'utf8');
+  const css = readFileSync(path.join(ROOT, 'public/css/screens/loadout.css'), 'utf8');
+  // 药丸的两行各自带记录的 phase（精锐行兜底精二）
+  assert.match(src, /class="lo-op__lvrow" data-phase=\$\{chess\.status\?\.phase \?\? \(chess\.tier <= 2 \? 1 : 2\)\}/);
+  assert.match(src, /class="lo-op__lvrow is-elite" data-phase=\$\{golden\.status\?\.phase \?\? 2\}/);
+  // 默认 1 个箭头，phase 2 两个；金色是独立规则
+  assert.match(css, /\.lo-op__lvrow\[data-phase="2"\] \.lo-op__chev \{ clip-path: polygon\(0 40%, 50% 0, 100% 40%, 100% 62%, 50% 22%, 0 62%, 0 100%, 50% 60%, 100% 100%, 100% 78%, 50% 38%, 0 78%\); \}/);
+  assert.match(css, /\.lo-op__lvrow\.is-elite \.lo-op__chev \{ color: var\(--gold-2\); \}/);
+});

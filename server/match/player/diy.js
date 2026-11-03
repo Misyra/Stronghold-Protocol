@@ -144,8 +144,8 @@ export class PlayerDiy {
    * Fix the 自选 picks for the match (see the header): the seat's picks re-checked against this match's data and kits;
    * a slot whose record cannot be composed is left empty. With picks, `this.gd` becomes the player's data view.
    * @param {any} picks `{ [slotBaseId]: { charId, skillIndex?, uniEquipId? } | null }`
-   * @param {{ kitted?: Iterable<string> }} [opts] the operators with a kit (default: the registry's KITTED_CHARS; tests may
-   *   widen it to slot an operator whose kit is still being written)
+   * @param {{ kitted?: Iterable<string> }} [opts] the operators with a kit (default: the registry's
+   *   KITTED_CHARS; tests may widen it to slot an operator whose kit is still being written)
    * @returns {boolean} false when the picks are malformed (nothing changes) or the player is a bot
    */
   setDiy(picks, { kitted = KITTED_CHARS } = {}) {
@@ -157,6 +157,9 @@ export class PlayerDiy {
       this.m.log?.warn?.(`[match ${this.m.roomCode}] 自选 picks of ${this.playerId} ignored: ${res && res.detail}`);
       return false;
     }
+    // A lenient check keeps the legal picks and drops the rest without failing; say so rather than fielding a silently
+    // different roster from the one the page showed.
+    if (res.dropped > 0) this.m.log?.warn?.(`[match ${this.m.roomCode}] 自选 picks of ${this.playerId}: ${res.dropped} dropped`);
     const kept = {};
     const records = new Map();
     for (const [slotId, pick] of Object.entries(res.picks)) {

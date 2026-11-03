@@ -8,9 +8,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStore } from '../../public/js/store.js';
 import { installCardSync, SYNC_DEBOUNCE_MS, RETRY_MS } from '../../public/js/ui/loadoutSync.js';
-import { CARD_KEY, CARD_SYNC_KEY } from '../../public/js/ui/seatArt.js';
+import { CARD_KEY, CARD_SYNC_KEY, CARD_LOOK_KEY, CARD_AVATAR_KEY, CARD_FACE_KEY, CARD_BG_KEY, CARD_BG_Y_KEY } from '../../public/js/ui/seatArt.js';
 
 const ticks = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+/** The message ui/loadoutSync.js sends for a card: every appearance field goes out ('' / -1 clears). */
+const msg = (charId, extra = {}) => ({ t: 'room.card', charId, avatar: '', art: '', face: '', bg: '', bgY: -1, ...extra });
 const CHESS = [
   { chessId: 'chess_a', charId: 'char_1_a', rarity: 6, name: 'A' },
   { chessId: 'chess_b', charId: 'char_2_b', rarity: 5, name: 'B' },
@@ -59,11 +61,11 @@ test('card sync: a pick goes out after the debounce; a welcome sends it again', 
   t.after(h.dispose);
   h.target.set({ [CARD_KEY]: 'char_1_a' });
   await h.timers.advance(SYNC_DEBOUNCE_MS);
-  assert.deepEqual(h.net.sent, [{ t: 'room.card', charId: 'char_1_a' }]);
+  assert.deepEqual(h.net.sent, [msg('char_1_a')]);
   assert.equal(h.target.get()[CARD_SYNC_KEY], 'synced');
   h.net.emit('welcome');
   await h.timers.advance(50);
-  assert.deepEqual(h.net.sent.at(-1), { t: 'room.card', charId: 'char_1_a' }, 'a new or resumed session gets it again');
+  assert.deepEqual(h.net.sent.at(-1), msg('char_1_a'), 'a new or resumed session gets it again');
   assert.equal(h.net.sent.length, 2);
 });
 
@@ -97,17 +99,17 @@ test('card sync: a pick the shown data does not list goes out as 默认 (\'\'), 
   const h = harness({ card: 'char_x_plugin' });
   t.after(h.dispose);
   await h.flush();
-  assert.deepEqual(h.net.sent, [{ t: 'room.card', charId: '' }], 'unknown here: one\'s own card draws the default too');
+  assert.deepEqual(h.net.sent, [msg('')], 'unknown here: one\'s own card draws the default too');
   assert.equal(h.target.get()[CARD_KEY], 'char_x_plugin', 'the pref keeps the pick');
   // the room's content set arrives with the operator: sent again
   h.setList([...CHESS, { chessId: 'chess_x', charId: 'char_x_plugin', rarity: 6, name: 'X' }]);
   h.content.set({ cs: 'c'.repeat(64), status: 'ready' });
   await h.timers.advance(50);
-  assert.deepEqual(h.net.sent.at(-1), { t: 'room.card', charId: 'char_x_plugin' });
+  assert.deepEqual(h.net.sent.at(-1), msg('char_x_plugin'));
   // a hidden preset is no seat card either (the server's whitelist: visible, non-自选)
   h.target.set({ [CARD_KEY]: 'char_3_h' });
   await h.timers.advance(SYNC_DEBOUNCE_MS);
-  assert.deepEqual(h.net.sent.at(-1), { t: 'room.card', charId: '' });
+  assert.deepEqual(h.net.sent.at(-1), msg(''));
   // 默认 needs no data at all
   h.target.set({ [CARD_KEY]: '' });
   await h.timers.advance(SYNC_DEBOUNCE_MS);
@@ -124,7 +126,7 @@ test('card sync: offline it waits for the next welcome (no request)', async (t) 
   h.net.status = 'online';
   h.net.emit('welcome');
   await h.timers.advance(50);
-  assert.deepEqual(h.net.sent, [{ t: 'room.card', charId: 'char_1_a' }]);
+  assert.deepEqual(h.net.sent, [msg('char_1_a')]);
 });
 
 test('card sync: a content change (a version switch, a room\'s set) with the same payload sends nothing — the session keeps the card (DESIGN §35.23)', async (t) => {
@@ -143,7 +145,7 @@ test('card sync: a content change (a version switch, a room\'s set) with the sam
   h.setList(CHESS.filter((c) => c.charId !== 'char_1_a'));
   h.content.set({ cs: 'e'.repeat(64), status: 'ready' });
   await h.timers.advance(50);
-  assert.deepEqual(h.net.sent.at(-1), { t: 'room.card', charId: '' });
+  assert.deepEqual(h.net.sent.at(-1), msg(''));
 });
 
 // ---- #877 (review of PR #894): a 自选编队 operator is a card like any other --------------------------------
@@ -151,7 +153,7 @@ test('card sync: a 自选编队 pick with no chess record goes out as itself, no
   const h = harness({ card: 'char_9_pool' });
   t.after(h.dispose);
   await h.flush();
-  assert.deepEqual(h.net.sent, [{ t: 'room.card', charId: 'char_9_pool' }], 'the teammates and the draft see the pool operator');
+  assert.deepEqual(h.net.sent, [msg('char_9_pool')], 'the teammates and the draft see the pool operator');
   assert.equal(h.target.get()[CARD_SYNC_KEY], 'synced');
   assert.equal(h.target.get()[CARD_KEY], 'char_9_pool', 'the pref keeps it');
 });
@@ -162,13 +164,12 @@ test('card sync: an id outside the chess list and outside the pool still goes ou
     const h = harness({ card });
     t.after(h.dispose);
     await h.flush();
-    assert.deepEqual(h.net.sent, [{ t: 'room.card', charId: '' }], card);
+    assert.deepEqual(h.net.sent, [msg('')], card);
     assert.equal(h.target.get()[CARD_KEY], card, 'the pref keeps the pick');
   }
 });
 
-test('card sync: a pool pick waits for backups.json; a chess pick needs no backups at all (#877)', async (t) => {
-  // backups missing: the pool list is unknown, so a pool pick is never sent as 默认 (that would clear the seat card)
+test('card sync: a pool pick waits for backups.json; a chess pick needs no backups at all (#877)', async (t) => {  // backups missing: the pool list is unknown, so a pool pick is never sent as 默认 (that would clear the seat card)
   const pool = harness({ card: 'char_9_pool', backups: null });
   t.after(pool.dispose);
   await pool.flush();
@@ -177,10 +178,41 @@ test('card sync: a pool pick waits for backups.json; a chess pick needs no backu
   // once backups arrives it goes out
   pool.setBackups(BACKUPS);
   await pool.flush();
-  assert.deepEqual(pool.net.sent.at(-1), { t: 'room.card', charId: 'char_9_pool' });
+  assert.deepEqual(pool.net.sent.at(-1), msg('char_9_pool'));
   // a chess operator is the common case and must not wait on backups
   const chess = harness({ card: 'char_1_a', backups: null });
   t.after(chess.dispose);
   await chess.flush();
-  assert.deepEqual(chess.net.sent, [{ t: 'room.card', charId: 'char_1_a' }], 'no backups.json download for a chess pick');
+  assert.deepEqual(chess.net.sent, [msg('char_1_a')], 'no backups.json download for a chess pick');
+});
+
+// ---- Stardust PR2 (2026-10-16) + 名片底图: the appearance rides with room.card --------------------------------
+test('card sync: the 名片外观 — art, avatar/face, background and framing — goes with the card', async (t) => {
+  const h = harness({ card: 'char_1_a' });
+  t.after(h.dispose);
+  await h.flush();
+  assert.deepEqual(h.net.sent.at(-1), msg('char_1_a'));
+  h.target.set({
+    [CARD_LOOK_KEY]: 'e1', [CARD_AVATAR_KEY]: 'char_2_b', [CARD_FACE_KEY]: 'e2',
+    [CARD_BG_KEY]: 'loading:core', [CARD_BG_Y_KEY]: 70,
+  });
+  await h.timers.advance(SYNC_DEBOUNCE_MS);
+  assert.deepEqual(h.net.sent.at(-1), msg('char_1_a', { art: 'e1', avatar: 'char_2_b', face: 'e2', bg: 'loading:core', bgY: 70 }));
+  // a variant-only change is a change (it is compared by the engine's store keys)
+  const before = h.net.sent.length;
+  h.target.set({ [CARD_LOOK_KEY]: 'e2' });
+  await h.timers.advance(SYNC_DEBOUNCE_MS);
+  assert.equal(h.net.sent.length, before + 1);
+  // an avatar this page does not list is sent as none, and its face goes with it
+  h.target.set({ [CARD_AVATAR_KEY]: 'char_9_nope' });
+  await h.timers.advance(SYNC_DEBOUNCE_MS);
+  assert.deepEqual(h.net.sent.at(-1), msg('char_1_a', { art: 'e2', bg: 'loading:core', bgY: 70 }));
+  // '' clears the background, and its framing goes back to -1
+  h.target.set({ [CARD_BG_KEY]: '', [CARD_BG_Y_KEY]: null });
+  await h.timers.advance(SYNC_DEBOUNCE_MS);
+  assert.deepEqual(h.net.sent.at(-1), msg('char_1_a', { art: 'e2' }));
+  // an unknown card id is no background at all (ui/namecards.js namecardOf)
+  h.target.set({ [CARD_BG_KEY]: 'not:a:card' });
+  await h.timers.advance(SYNC_DEBOUNCE_MS);
+  assert.deepEqual(h.net.sent.at(-1), msg('char_1_a', { art: 'e2' }));
 });

@@ -60,7 +60,9 @@
 //     `maxRooms` or keep hundreds of unattended matches simulating for the whole reconnect window.
 //   * Permanent departure during a match (room.leave, g.leave, reconnect window expired): the seat is
 //     marked departed (shown as connected=false), match.onLeave(playerId) is called, and the seat is freed
-//     when the match ends. 'g.leave' is handled here and never reaches match.handle().
+//     when the match ends. 'g.leave' is handled here and never reaches match.handle(). A human the match removes
+//     (opts.onRemove: the AFK rule, option `afkRemoveRounds`, default 2, 0 = off) departs the same way (matchRemoved):
+//     the match already sent it m.removed; one removed while offline gets room.closed {reason:'afk'} on its next resume.
 //   * All other 'g.*' messages go to room.match.handle(playerId, msg); its {ok}/{error} becomes the reply.
 //   * Match lifecycle: room.start → new Match({...}) → room.state (inMatch=true) → match.start(). The match gets
 //     `matchNo` = the room's match number (1, 2, …): with the seed it keeps battleIds unique across the room's
@@ -68,7 +70,7 @@
 //     onEnd(summary) → room back to LOBBY (departed seats freed, humans un-readied, disconnected humans
 //     get the lobby grace), dispose() on the next macrotask. Players can start again.
 //   * room.closed reasons: 'timeout' (removed after lobby grace), 'kicked' (room.kick, room.removeSpectator), 'empty' (a
-//     spectator whose room lost its last player), 'shutdown' (server stopping).
+//     spectator whose room lost its last player), 'afk' (removed by the match while offline), 'shutdown' (server stopping).
 //   * Operator loadout (DESIGN §16): room.loadout { entries } is checked strictly against the game data
 //     (shared/protocol.js checkLoadout: known visible chess, a skill index legal for the normal AND the elite status, a
 //     module of the elite or 'none'; any bad entry rejects the whole message, nothing is stored). ▸ It is stored on the
@@ -111,16 +113,19 @@
 //     the room waits; during a match its m.public carries it, and the room.state at the match's end. [ASSUMED] The whole
 //     map rides in room.state, not one skinId per card: a seat without a pick shows an operator its clients choose by
 //     player id (ui/seatArt.js seatOperator), which the server does not compute.
-//   * 名片干员 (PR #643 split 6): room.card { charId } — the operator whose portrait fills the player's seat card in the
-//     waiting room, '' for none — is kept only when it is a visible charId of the room's chess.json (another id, a hidden
-//     preset, a stand-in body or a 自选-only operator: BAD_MSG, the stored one stays). Stored on the session (it follows the player into
-//     the next room) and the seat; the room's members see it as room.state seats[].card (human seats with a card only,
-//     so a room without one sends what it sent before). Checked again when the player takes a seat (humanSeat): a card
-//     the room's content does not have (a plugin operator picked in a room with gameplay plugins) is left off that seat
-//     — the session keeps it, and the player's page sends the card it can show for the room (ui/loadoutSync.js
-//     installCardSync). Cosmetic: no phase gate, never handed to a match. [ASSUMED] A card picked in this browser stands
-//     in for the event's account assistant (名片形象, display_meta_table avatarTypeData ASSISTANT); the client's default
-//     for a seat without one is ui/seatArt.js'.
+//   * 名片干员 (PR #643 split 6; Stardust PR2, 2026-10-16): room.card { charId, avatar?, art?, face?, bg?, bgY? } — the
+//     operator whose portrait fills the player's seat card in the waiting room ('' for none), the operator whose avatar
+//     stands on its plate, the art variants of both ('' / 'e1' / 'e2' / `skin:<id>`; a skin that is not that operator's
+//     own is dropped alone) and the namecard background with its framing. `charId` / `avatar` are kept only when they are
+//     visible charIds of the room's chess.json (another id, a hidden preset, a stand-in body or a 自选-only operator:
+//     BAD_MSG, the stored card stays). Stored on the session (it follows the player into the next room) and the seat; the
+//     room's members see the operator as room.state seats[].card and the appearance beside it (cardAvatar / cardArt /
+//     cardFace / cardBg / cardBgY; human seats with a card only, so a room without one sends what it sent before).
+//     Checked again when the player takes a seat (humanSeat) and on a version switch (seatCardFor): an operator the
+//     room's content does not have is left off that seat — the session keeps it, and the player's page sends the card it
+//     can show for the room (ui/loadoutSync.js installCardSync). Cosmetic: no phase gate, never handed to a match.
+//     [ASSUMED] A card picked in this browser stands in for the event's account assistant (名片形象, display_meta_table
+//     avatarTypeData ASSISTANT); the client's default for a seat without one is ui/seatArt.js'.
 //   * Content identity (DESIGN §32, the plugin system's first step): the lobby is given the server's vanilla content
 //     (server/plugins/identity.js; none in unit tests that build a Lobby without it). Every `welcome` carries
 //     `content: { vanilla: <cs> }` — and `plugins: <n>` when this server has n > 0 unofficial plugins (every class but a
@@ -231,9 +236,12 @@ import { aiTakeover, resetAiTakeover, reconcileAiTakeover } from './aiTakeover.j
 import { randomBytes, randomInt } from 'node:crypto';
 import { DIFFICULTIES, ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks, charPotentialChanges, checkSkinSelection, operatorCharIds } from '../shared/protocol.js';
+import { skinFor } from '../shared/skins.js';
+import { EXPERIMENTAL_DEFAULTS, experimentalOptions, isExperimental, sameExperimental } from '../shared/experimental.js';
+import { roomCapacity } from '../shared/playerCapacity.js';
 import { encode, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
-import { Match as DefaultMatch } from './match/Match.js';
+import { Match as DefaultMatch, AFK_REMOVE_ROUNDS } from './match/Match.js';
 import { Matchmaking } from './matchmaking.js';
 import { RoomActionLimiter } from './roomProtection.js';
 import { RoomReclamation } from './roomReclamation.js';
@@ -271,6 +279,7 @@ export const LOBBY_DEFAULTS = Object.freeze({
   versionRetryMs: 5_000,  // no new version proposal this long after a declined or expired vote [ASSUMED]
   versionProposeGapMs: 300, // nor this soon after the last proposal (重刷's debounce)
   roomCode: null,         // --room-code / roomCode: a fixed alliance key for every new room (null = random per room)
+  afkRemoveRounds: AFK_REMOVE_ROUNDS, // 挂机移出 (移植自用户分支): the match removes a human idle this many rounds in a row (0 = off)
 });
 
 /** The stamp of a setting a version room's page sent before it reported the room's content ready (header). */
@@ -336,8 +345,9 @@ function opsCharIds(data) {
 }
 
 /** The operator charIds a seat card may show (room.card's whitelist, the client's picker list): the visible, non-自选
- * chess records (no hidden preset) plus the 自选编队 pool (`backups.diy.ownedPool` — operators outside the chess pool with
- * no chess record of their own; a seat card shows their portrait like any other, the roster rules of the room unchanged). */
+ * chess records (no hidden preset) plus the 自选编队 pool (`backups.diy.ownedPool`, and the collab 6★ `diy.excluded` —
+ * operators outside the chess pool with no chess record of their own; a seat card shows their portrait like any other,
+ * the roster rules of the room unchanged). */
 const CARD_IDS = new WeakMap();
 function cardCharIds(data) {
   if (!data || typeof data !== 'object') return new Set();
@@ -346,12 +356,52 @@ function cardCharIds(data) {
   ids = new Set();
   const chess = data.chess && typeof data.chess === 'object' ? data.chess : null;
   if (chess) for (const c of Object.values(chess)) if (c && !c.isDiy && c.visible !== false && typeof c.charId === 'string') ids.add(c.charId);
-  const pool = data.backups && typeof data.backups === 'object' && data.backups.diy && typeof data.backups.diy === 'object'
-    ? data.backups.diy.ownedPool : null;
-  if (Array.isArray(pool)) for (const id of pool) if (typeof id === 'string' && id) ids.add(id);
+  const diy = data.backups && typeof data.backups === 'object' && data.backups.diy && typeof data.backups.diy === 'object'
+    ? data.backups.diy : null;
+  if (Array.isArray(diy?.ownedPool)) for (const id of diy.ownedPool) if (typeof id === 'string' && id) ids.add(id);
+  for (const id of Array.isArray(diy?.excluded) ? diy.excluded : []) if (typeof id === 'string' && id) ids.add(id);
   CARD_IDS.set(data, ids);
   return ids;
 }
+
+/**
+ * Whether a card art variant ('' / 'e1' / 'e2' / `skin:<id>`) may paint `charId`: an elite choice always, a skin only
+ * when it is that operator's own (shared/skins.js skinFor). A variant with no operator is never kept.
+ * @param {string} charId @param {string} art
+ */
+const cardArtFits = (charId, art) => !art || art === 'e1' || art === 'e2'
+  || (!!charId && !!skinFor(charId, art.startsWith('skin:') ? art.slice(5) : ''));
+
+/**
+ * A display card checked against a room's operator list (header 名片干员): an operator the room's content lacks is left
+ * off the card, and with it that field's art variant; a background is content-independent. Frozen, null when nothing
+ * remains. The session's own card is never rewritten by this — only what a seat shows.
+ * @param {any} data the room's data @param {{ charId?: string, avatar?: string, art?: string, face?: string, bg?: string, bgY?: number }|null} card
+ * @returns {Readonly<Record<string, any>>|null}
+ */
+function seatCardFor(data, card) {
+  if (!card || typeof card !== 'object') return null;
+  const known = cardCharIds(data);
+  const out = {};
+  const charId = typeof card.charId === 'string' && known.has(card.charId) ? card.charId : '';
+  const avatar = typeof card.avatar === 'string' && known.has(card.avatar) ? card.avatar : '';
+  if (charId) out.charId = charId;
+  if (avatar) out.avatar = avatar;
+  const art = typeof card.art === 'string' ? card.art : '';
+  const face = typeof card.face === 'string' ? card.face : '';
+  if (art && cardArtFits(charId, art)) out.art = art;
+  if (face && cardArtFits(avatar, face)) out.face = face;
+  if (typeof card.bg === 'string' && card.bg) {
+    out.bg = card.bg;
+    if (Number.isInteger(card.bgY) && card.bgY >= 0 && card.bgY <= 100) out.bgY = card.bgY;
+  }
+  return Object.keys(out).length ? Object.freeze(out) : null;
+}
+
+/** Whether two display cards say the same thing (an absent card and an empty one are equal). */
+const sameCard = (a, b) => (a?.charId ?? '') === (b?.charId ?? '') && (a?.avatar ?? '') === (b?.avatar ?? '')
+  && (a?.art ?? '') === (b?.art ?? '') && (a?.face ?? '') === (b?.face ?? '')
+  && (a?.bg ?? '') === (b?.bg ?? '') && (a?.bgY ?? -1) === (b?.bgY ?? -1);
 
 /** Deep-frozen copy of checked 自选 picks (shared by the session, the seat and the match's PlayerState). */
 function freezeDiy(picks) {
@@ -394,6 +444,14 @@ export class Room {
     this.difficulty = difficulty;
     /** the official version the room plays (shared/versions.js id; header "Official versions") */
     this.version = version;
+    /**
+     * The room's experimental options (shared/experimental.js): off by default — an ordinary room's room.state omits the
+     * key. 联动干员 is not one of them any more (2026-11-03): the collab 6★ are ordinary 自选 picks.
+     * @type {Readonly<{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean }>}
+     */
+    this.experimental = EXPERIMENTAL_DEFAULTS;
+    /** 'private' (room.create) or 'matchmaking' (a queue allocation). */
+    this.source = 'private';
     /**
      * the open version vote, else null: `{ id, proposerId, version, voters, agreed, expiresAt, timer }`
      * @type {{ id: number, proposerId: string, version: string, voters: string[], agreed: Set<string>, expiresAt: number, timer: any } | null}
@@ -511,6 +569,11 @@ export class Room {
       difficulty: this.difficulty,
       aiPicksLast: this.aiPicksLast,
       bandDupes: this.bandDupes === true,
+      // 联动干员 / experimental rules (server/lobby.js setExperimental): omitted while the room is standard, so a default
+      // room.state stays identical
+      ...(sameExperimental(this.experimental, EXPERIMENTAL_DEFAULTS) ? {} : { experimental: this.experimental }),
+      // a room the queue allocated: omitted for an ordinary (private) room, whose state stays identical
+      ...(this.source !== 'private' ? { source: this.source } : {}),
       inMatch: !!this.match,
       matchmaking: !!this.matchmaking,
       seats: this.seats.map((s) => (s
@@ -519,8 +582,17 @@ export class Room {
           ...(s.isBot ? { band: s.band ?? null } : {}),
           // a room with gameplay plugins (header "Gameplay plugins"): has this player's page loaded and checked its content?
           ...(this.needsContent && !s.isBot ? { content: s.content || 'loading' } : {}),
-          // 名片干员 (room.card): only a human seat with a card carries the key
-          ...(!s.isBot && s.card ? { card: s.card } : {}),
+          // 名片干员 (room.card): only a human seat with a card carries the key. `card` stays the bare operator id
+          // (older clients read it); the appearance the Stardust PR2 card adds rides beside it — cardAvatar / cardArt /
+          // cardFace (room.card avatars and their 精一 / 精二 / skin variants) and cardBg / cardBgY (the namecard and
+          // its framing). Each is present only when set, so a plain card still sends what it sent before.
+          ...(!s.isBot && s.card ? {
+            card: s.card.charId || '',
+            ...(s.card.avatar ? { cardAvatar: s.card.avatar } : {}),
+            ...(s.card.art ? { cardArt: s.card.art } : {}),
+            ...(s.card.face ? { cardFace: s.card.face } : {}),
+            ...(s.card.bg ? { cardBg: s.card.bg, cardBgY: Number.isInteger(s.card.bgY) ? s.card.bgY : -1 } : {}),
+          } : {}),
           // 干员皮肤 (room.skins, PUBLIC like Match.publicView().players[].skins): the seat card's outfit (header);
           // only a human seat with a non-empty map carries the key
           ...(!s.isBot && s.skins && Object.keys(s.skins).length ? { skins: s.skins } : {}) }
@@ -944,6 +1016,7 @@ export class Lobby {
       case 'room.setBotBand': return this.setBotBand(session, msg);
       case 'room.setBandDupes': return this.setBandDupes(session, msg);
       case 'room.setSoloUnlimited': return this.setSoloUnlimited(session, msg);
+      case 'room.setExperimental': return this.setExperimental(session, msg);
       case 'room.console.enable': return this.enableConsole(session);
       case 'room.console.disable': return this.disableConsole(session);
       case 'room.setAiTakeover': return this.setAiTakeover(session, msg);
@@ -1066,9 +1139,11 @@ export class Lobby {
   // room.* handlers
   // ---------------------------------------------------------------------------------------------------
 
-  create(session, { mode, difficulty: asked, test, version: askedVersion, soloUnlimited } = {}) {
+  create(session, { mode, difficulty: asked, test, version: askedVersion, soloUnlimited, experimental } = {}) {
     // A test room exists only when the process switch allowed it. The check runs before the room is built.
     if (test === true && this.testEnabled !== true) return fail(ERR.TEST_DISABLED);
+    // room-owned experimental rules (shared/experimental.js): absent = a standard room
+    if (experimental !== undefined && !isExperimental(experimental)) return fail(ERR.BAD_MSG, 'invalid experimental options');
     // the official version (header "Official versions"): left out, the server's default
     const version = askedVersion ?? this.defaultVersion();
     if (!this.versionEnabled(version)) return fail(ERR.VERSION_UNKNOWN);
@@ -1129,6 +1204,8 @@ export class Lobby {
     this.leaveQueue(session, 'cancelled');
     if (cur) this.removeMember(cur, session.playerId);
     const room = new Room(code, mode, difficulty, this.now(), version);
+    room.source = 'private';
+    if (experimental !== undefined) room.experimental = experimentalOptions(experimental);
     room.test = test === true;
     // 「不限时」 only on a solo room of a version whose solo is timed (header). Anywhere else the key is ignored, so a
     // stray true cannot change a default or co-op create.
@@ -1434,6 +1511,33 @@ export class Lobby {
       room.soloUnlimited = next;
       this.broadcastState(room);
     }
+    return OK;
+  }
+
+  /**
+   * The room's experimental rules (shared/experimental.js): host-only, before the match, private rooms only (a matchmade
+   * room never: BAD_MSG). Changing a rule un-readies the other humans, as every room option does.
+   * 联动干员 is no longer a rule here — the collab 6★ are ordinary 自选 picks (2026-11-03).
+   */
+  setExperimental(session, { experimental }) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
+    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    if (!isExperimental(experimental)) return fail(ERR.BAD_MSG);
+    // 本服固定四席 (docs/PLUGIN-GUIDE.md): an experimental room may not widen the seat count, or the queue's
+    // cohort (allocateCohort) would never be able to fill it.
+    if (roomCapacity('coop', experimental) !== MAX_SEATS) return fail(ERR.BAD_MSG, 'experimental player capacity is fixed at four');
+    if (room.source !== 'private') return fail(ERR.BAD_MSG, 'experimental rules: private rooms only');
+    const next = experimentalOptions(experimental);
+    if (sameExperimental(room.experimental, next)) return OK;
+    // a queued alliance would enter the queue with rules it no longer has: withdraw it first
+    this.leaveQueue(session, 'cancelled');
+    this.dropReplay(room, session.playerId);
+    room.experimental = next;
+    for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
+    this.broadcastState(room);
     return OK;
   }
 
@@ -1863,7 +1967,6 @@ export class Lobby {
     room.pluginNoticeKeys = {};
     room.replay = null;
     const data = this.dataFor(room);
-    const operators = cardCharIds(data);
     for (const s of [...room.seats, ...room.spectators]) {
       if (!s || /** @type {any} */ (s).isBot) continue;
       const seat = /** @type {Seat} */ (s);
@@ -1875,7 +1978,7 @@ export class Lobby {
       if (s.playerId !== room.hostId) s.ready = false;
       s.loadout = null; s.ops = null; s.notOwned = null; s.diy = null;
       s.loadoutCs = null; s.notOwnedCs = null; s.diyCs = null;
-      if (s.card && !operators.has(s.card)) s.card = null;
+      s.card = seatCardFor(data, s.card);
     }
     this.log.info(`[lobby] ${room.code} version → ${version} (${how})`);
     this.broadcastState(room);
@@ -2052,14 +2155,19 @@ export class Lobby {
     const res = checkDiyPicks(picks, { data: this.dataFor(room), kitted: this.kittedFor(room) });
     if (!res || !('ok' in res)) return fail(ERR.BAD_MSG, res && res.detail);
     const kept = freezeDiy(res.picks);
+    // checkDiyPicks is lenient: an illegal pick is dropped, not an error. Say so, or the page keeps showing a piece
+    // the match will never field.
+    if (res.dropped > 0) this.log.warn(`[lobby] ${room?.code ?? '----'} 自选 picks of ${session.playerId}: ${res.dropped} dropped`); // i18n-ignore: developer log
     const cs = this.settingsCs(room, session.playerId);
     session.diy = kept;
     session.diyCs = cs;
-    if (!room) return OK;
+    if (!room) return { ok: true, picks: kept };
     const seat = room.seatOf(session.playerId);
     if (seat) { seat.diy = kept; seat.diyCs = cs; }
     if (room.match && seat) return fail(ERR.ROOM_STARTED, 'stored for the next match');
-    return OK;
+    // The kept roster travels back with the acknowledgement, so a page that sent a pick the server dropped can correct
+    // its surface instead of waiting for the next match.
+    return { ok: true, picks: kept };
   }
 
   /**
@@ -2092,16 +2200,42 @@ export class Lobby {
 
   /**
    * 名片干员 (room.card): the operator whose portrait fills the player's seat card — a visible charId of the room's
-   * chess.json (the server's outside a room), '' for none. Kept on the session and the seat; a change is broadcast to the room.
-   * Cosmetic: accepted in any phase, never touches a match.
+   * chess.json (the server's outside a room); `avatar`, the operator avatar on the plate; `art` / `face`, which art of
+   * those two is drawn ('', 'e1', 'e2' or `skin:<id>`, the skin checked against the operator it paints); `bg` / `bgY`,
+   * the namecard background and its framing. '' clears a field; a field the message leaves out keeps its value. A skin
+   * that is not that operator's own is dropped while the rest of the card lands. Kept on the session and the seat; a
+   * change is broadcast to the room. Cosmetic: accepted in any phase, never touches a match.
    */
-  card(session, { charId }) {
+  card(session, { charId, avatar, art, face, bg, bgY }) {
+    if ([charId, avatar, art, face, bg, bgY].every((v) => v === undefined)) return fail(ERR.BAD_MSG, 'empty card');
     const room = this.roomOf(session);
-    if (charId && !cardCharIds(this.dataFor(room)).has(charId)) return fail(ERR.BAD_MSG, 'unknown operator');
-    session.card = charId || null;
+    const known = cardCharIds(this.dataFor(room));
+    if ((charId && !known.has(charId)) || (avatar && !known.has(avatar))) return fail(ERR.BAD_MSG, 'unknown operator');
+    const prev = session.card && typeof session.card === 'object' ? session.card : {};
+    const next = {};
+    const id = charId === undefined ? prev.charId : charId;
+    const faceId = avatar === undefined ? prev.avatar : avatar;
+    const back = bg === undefined ? prev.bg : bg;
+    const paint = (value, keep, who) => {
+      const v = value === undefined ? keep ?? '' : value;
+      return v && cardArtFits(who, v) ? v : '';
+    };
+    if (id) next.charId = id;
+    if (faceId) next.avatar = faceId;
+    const artV = paint(art, prev.art, id);
+    const faceV = paint(face, prev.face, faceId);
+    if (artV) next.art = artV;
+    if (faceV) next.face = faceV;
+    if (back) next.bg = back;
+    if (back) {
+      const y = bgY === undefined ? prev.bgY : bgY;
+      if (Number.isInteger(y) && y >= 0) next.bgY = y;
+    }
+    const card = Object.keys(next).length ? Object.freeze(next) : null;
+    session.card = card;
     const seat = room ? room.seatOf(session.playerId) : null;
-    if (seat && seat.card !== session.card) {
-      seat.card = session.card;
+    if (seat && !sameCard(seat.card, card)) {
+      seat.card = card;
       this.broadcastState(room);
     }
     return OK;
@@ -2342,6 +2476,9 @@ export class Lobby {
         aiPicksLast: room.mode !== 'solo' && room.aiPicksLast === true,
         // 「允许重复策略」 (room.setBandDupes, 本仓新设): fixed for the match
         bandDupes: room.mode !== 'solo' && room.bandDupes === true,
+        // room-owned experimental rules (shared/experimental.js): fixed for the match; a standard room's opts keep
+        // their keys
+        ...(sameExperimental(room.experimental, EXPERIMENTAL_DEFAULTS) ? {} : { experimental: room.experimental }),
         seats,
         // the spectator seats (header): watched like eliminated players, never players
         spectators: room.spectators.map((s) => s.playerId),
@@ -2380,6 +2517,13 @@ export class Lobby {
         send: (playerId, msg, encoded) => (ctx.live ? this.matchSend(room, ctx, playerId, msg, encoded) : false),
         broadcast: (msg, encoded) => { if (ctx.live) this.matchBroadcast(room, ctx, msg, encoded); },
         onEnd: (summary) => this.onMatchEnd(room, ctx, summary),
+        // 挂机移出 (移植自用户分支): the idle rounds after which the match removes a human seat (0 = off)
+        afkRemoveRounds: this.opts.afkRemoveRounds,
+        // the match removed a human (the AFK rule): its seat departs like a g.leave
+        onRemove: (playerId, removal) => {
+          if (!ctx.live || room.matchCtx !== ctx) return;
+          this.matchRemoved(room, playerId, typeof removal?.reason === 'string' ? removal.reason : 'removed');
+        },
       };
       // a room with gameplay plugins plays in its content set's match host, a room of another official version in that
       // version's; every other room here, as always
@@ -2706,7 +2850,7 @@ export class Lobby {
    * @returns {Seat}
    */
   humanSeat(idx, session, room) {
-    const card = session.card && cardCharIds(this.dataFor(room)).has(session.card) ? session.card : null;
+    const card = seatCardFor(this.dataFor(room), session.card);
     return {
       seat: idx, playerId: session.playerId, name: session.name, isBot: false, ready: false, connected: session.connected, left: false,
       loadout: session.loadout || null,
@@ -2753,6 +2897,21 @@ export class Lobby {
     if (room.hostId === playerId) this.migrateHost(room);
     if (room.activeHumans().length === 0) this.disposeRoom(room, 'empty');
     else this.broadcastState(room);
+  }
+
+  /**
+   * A match removed one of its humans (Match opts.onRemove: the AFK rule, 移植自用户分支; reason 'afk' — it already
+   * sent the player m.removed): the seat departs exactly like a g.leave (removeMember → match.onLeave; freed when the
+   * match ends). A player removed while offline is told on its next resume: room.closed { reason }.
+   * @param {Room} room @param {string} playerId @param {string} reason
+   */
+  matchRemoved(room, playerId, reason) {
+    const seat = room.seatOf(playerId);
+    if (!seat || seat.isBot || seat.left || room.disposed) return;
+    const session = this.registry.byId(playerId);
+    const offline = !!session && session.roomCode === room.code && !session.connected;
+    this.removeMember(room, playerId);
+    if (offline) session.notice = reason;
   }
 
   /**
@@ -2977,8 +3136,12 @@ export class Lobby {
     if (!seat || seat.isBot || seat.left) return false;
     const session = this.registry.byId(playerId);
     if (!session || session.roomCode !== room.code) return false;
+    // Encoding can fail (a circular payload): drop the frame as a broadcast does, before stampPublic — its
+    // stampPublicBytes would dereference the null bytes.
+    const data = encoded ?? encode(msg);
+    if (data == null) { this.log.error(`[lobby] ${room.code} unserializable unicast ${msg && msg.t}`); return false; }
     // A unicast m.public joins the room's delivery stream too (its stamps order it against peer frames).
-    const stamped = this.stampPublic(room, msg, encoded ?? encode(msg));
+    const stamped = this.stampPublic(room, msg, data);
     return sendSession(session, stamped.msg, stamped.bytes);
   }
 }

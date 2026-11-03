@@ -24,6 +24,9 @@
 //   pick has neither (`diyProto` on its composed record).
 // Which operators have a kit (a pick without one is not offered) is the sim's kit registry
 // (server/sim/content/kits/index.js KITTED_CHARS), passed in as `kitted`.
+// 联动干员 (the owner's decision of 2026-11-03): the collab 6★ (`diy.excluded`, left out of `ownedPool` for copyright) are
+// built in the data and offered like any other 6★ — diyPool appends them, checkDiyPick / diyRecordOf compose a collab
+// pick like an owned one. No room switch and no different rule (they used to need `experimental.collabOps`).
 
 import { composeUnitRecord, unitForm, statusKey } from './standIn.js';
 import { atPotential } from './potential.js';
@@ -60,7 +63,12 @@ export function isDiyModule(mod) {
  */
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
-const ID = /^[A-Za-z0-9_-]{1,64}$/;
+/**
+ * The character class of an id, shared with the wire validator (shared/protocol.js `isId`): the two used to disagree
+ * (`isId` allowed `.` and `:` — a battleId is `<seq>.<fieldId>` — while a semantic 自选 id did not).
+ */
+export const ID_CHARS = '[A-Za-z0-9_\\-.:]';
+const ID = new RegExp(`^${ID_CHARS}{1,64}$`);
 const own = (o, k) => isObj(o) && Object.prototype.hasOwnProperty.call(o, k);
 
 /** data/backups.json of `data`, or null. @param {DiyData|null|undefined} data */
@@ -116,6 +124,15 @@ export function isPrototypePick(data, tier, charId) {
 }
 
 /**
+ * Whether `charId` is a collab 6★ (`diy.excluded`) — a normal 自选 pick, tagged 联动 in the picker.
+ * @param {DiyData} data @param {string} charId
+ */
+export function isCollabPick(data, charId) {
+  const list = diyOf(data)?.excluded;
+  return Array.isArray(list) && list.includes(charId);
+}
+
+/**
  * The skill / module a prototype carries in a slot of `tier` (`diy.locked`), or null for anyone else.
  * @param {DiyData} data @param {number} tier @param {string} charId
  * @returns {{ skillIndex: number, uniEquipId: string|null }|null}
@@ -134,8 +151,9 @@ function kittedTest(kitted) {
 }
 
 /**
- * The legal picks of a tier: its prototypes (`diy.prototypes[tier]`), then the owned 6★ (`diy.ownedPool`), in data
- * order. With `kitted`, only the operators that have a kit (a pick without one is not offered).
+ * The legal picks of a tier: its prototypes (`diy.prototypes[tier]`), then the owned 6★ (`diy.ownedPool`), then the
+ * collab 6★ (`diy.excluded`), in data order. With `kitted`, only the operators that have a kit (a pick without one is
+ * not offered).
  * @param {number} tier 5 or 6
  * @param {{ data: DiyData, kitted?: Kitted }} opts
  * @returns {string[]}
@@ -144,7 +162,8 @@ export function diyPool(tier, { data, kitted = null } = { data: null }) {
   const diy = diyOf(data);
   if (!diy || !DIY_TIERS.includes(tier)) return [];
   const ok = kittedTest(kitted);
-  return [...new Set([...(diy.prototypes?.[tier] ?? []), ...(diy.ownedPool ?? [])])].filter(ok);
+  const extra = Array.isArray(diy.excluded) ? diy.excluded : [];
+  return [...new Set([...(diy.prototypes?.[tier] ?? []), ...(diy.ownedPool ?? []), ...extra])].filter(ok);
 }
 
 /**
@@ -163,7 +182,7 @@ export function checkDiyPick(slotId, pick, data) {
   const { charId } = pick;
   const diy = diyOf(data);
   const proto = isPrototypePick(data, slot.tier, charId);
-  if (!proto && !(diy.ownedPool ?? []).includes(charId)) return { error: `${charId} is not a tier-${slot.tier} 自选 pick` }; // i18n-ignore: developer detail
+  if (!proto && !(diy.ownedPool ?? []).includes(charId) && !isCollabPick(data, charId)) return { error: `${charId} is not a tier-${slot.tier} 自选 pick` }; // i18n-ignore: developer detail
   const want = pick.skillIndex ?? null;
   const wantMod = pick.uniEquipId === undefined || pick.uniEquipId === 'none' ? null : pick.uniEquipId;
   if (want !== null && !(Number.isInteger(want) && want >= 0 && want <= 9)) return { error: `${charId}: bad skill index ${want}` };
@@ -249,8 +268,8 @@ export function diyModuleOf(slotId, charId, uniEquipId, data) {
 /**
  * Check a whole 自选 roster: `picks` maps slot base ids to a pick (absent / null = an empty slot). Strict: an unknown
  * slot, an illegal pick (checkDiyPick), a module of another game mode (isDiyModule: 集成战略 / 生息演算), an operator without a kit (when `kitted` is
- * given), the same operator twice in one tier, or an owned operator in two slots rejects the roster; a prototype may fill
- * a tier-5 and a tier-6 slot.
+ * given), the same operator twice in one tier, or an owned operator in two slots rejects the roster; a prototype may
+ * fill a tier-5 and a tier-6 slot.
  * @param {any} picks
  * @param {{ data: DiyData, kitted?: Kitted }} opts
  * @returns {{ ok: true, picks: Record<string, DiyLoadout> } | { error: 'BAD_MSG'|'BAD_TARGET', detail: string }}

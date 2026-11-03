@@ -217,6 +217,7 @@ export function persistVersion(m) {
   for (const ps of m.order) {
     parts.push(ps.playerId, ps.funds | 0, ps.pendingFunds | 0, ps.lp, ps.alive ? 1 : 0, ps.ready ? 1 : 0,
       ps.infoReady ? 1 : 0, ps.autoplay ? 1 : 0, ps.connected ? 1 : 0, ps.left ? 1 : 0, ps.prepsEnded ? 1 : 0,
+      ps.afkActed ? 1 : 0, ps.afkRounds | 0,
       ps.shop.level | 0, ps.shop.freeRefreshes | 0, ps.shop.frozen ? 1 : 0, ps.personalChoice ? 1 : 0,
       ps.deployCount, ps.board.size, filled(ps.hand), filled(ps.temp), ps.bandId, ps.round | 0,
       ps.bondCountBonus | 0, ps.deployCapBonus | 0, ps.deployCapMin | 0, ps.eliminatedRound | 0, ps.lastEmoteAt | 0);
@@ -232,14 +233,14 @@ export const MATCH_FIELDS = Object.freeze([
   'roomCode', 'mode', 'difficulty', 'modeId', 'seed', 'isSolo', 'aiPicksLast', 'consoleEnabled', 'battlePrefix', 'timerScale', 'gameSpeed',
   'botRehearsal', 'clientCombat', 'verifyMode', 'headlessSliceMs', 'verifyStats', '_battleSeq', 'pausedMs',
   'stageId', 'factions', 'bossId', 'hiddenBossId', 'disabledBonds', 'staticInactiveBonds', 'bannedChess',
-  'round', 'uidSeq', 'loneHuman', 'botBands', 'bandDupes', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
+  'round', 'uidSeq', 'loneHuman', 'botBands', 'bandDupes', 'afkRemoveRounds', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
   'simErrorLog', 'draft', 'sp', 'wave', 'bossWaves', 'setupRevision', 'setupVote', '_setupVoteSeq', '_botEmotesSettledRound', '_botEmotesMerges',
   'speedVotes', // 战斗 2 倍速投票（speedVote.js）：已投换档赞成的席位
 ]);
 
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */
 export const PLAYER_FIELDS = Object.freeze([
-  'playerId', 'seat', 'name', 'isBot', 'connected', 'left', 'autoplay', 'offlineRounds', 'offlineAutoplay',
+  'playerId', 'seat', 'name', 'isBot', 'connected', 'left', 'autoplay', 'offlineRounds', 'offlineAutoplay', 'afkActed', 'afkRounds',
   'consoleRoundUses', 'consoleTotalUses', 'alive', 'lp', 'bandId', 'funds',
   'pendingFunds', 'ready', 'infoReady', 'lastEmoteAt', 'bondPlan', 'loadout', 'ops', 'personalChoice', 'shop', 'offers', 'hand', 'temp', 'prepsEnded',
   '_tempDue', 'board', 'layers', 'pendingLayerGains', 'bondCountBonus', 'effects', 'bounties', 'counters', 'round',
@@ -474,7 +475,12 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
     for (const k of PLAYER_FIELDS) {
       if (k === 'playerId' || !Object.hasOwn(p, k)) continue;
       const value = decodeState(p[k]);
-      if (k === 'diy') { ps.setDiy(value); continue; }
+      if (k === 'diy') {
+        // The seat's picks were checked with the room's own kit list (Match.diyKitted). Re-checking them without it
+        // would drop a plugin operator a modded room had accepted (checkDiyPicks is lenient).
+        ps.setDiy(value, m.diyKitted ? { kitted: m.diyKitted } : {});
+        continue;
+      }
       if (k === 'diyStock') {
         // Keep the DiyStock methods; only its copy counts belong in the checkpoint.
         if (value?.entries instanceof Map) ps.diyStock.entries = value.entries;

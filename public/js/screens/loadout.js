@@ -351,8 +351,8 @@ export function DeckCard({ m, chess, golden, entries, ops = {}, selected = false
       <div class="lo-op__rail">
         <${TierChip} tier=${chess.tier} size="sm" class="lo-op__tier" />
         <span class="lo-op__lv" title=${t('普通 / 精锐等级')}>
-          <span class="lo-op__lvrow"><i class="lo-op__chev"></i><b class="num">${chess.status?.level ?? '—'}</b></span>
-          ${golden ? html`<span class="lo-op__lvrow is-elite"><i class="lo-op__chev"></i><b class="num">${golden.status?.level ?? '—'}</b></span>` : null}
+          <span class="lo-op__lvrow" data-phase=${chess.status?.phase ?? (chess.tier <= 2 ? 1 : 2)}><i class="lo-op__chev"></i><b class="num">${chess.status?.level ?? '—'}</b></span>
+          ${golden ? html`<span class="lo-op__lvrow is-elite" data-phase=${golden.status?.phase ?? 2}><i class="lo-op__chev"></i><b class="num">${golden.status?.level ?? '—'}</b></span>` : null}
         </span>
         ${changed ? html`<span class="lo-op__mark" title=${t('已调整')} aria-label=${t('已调整')}></span>` : null}
       </div>
@@ -754,9 +754,10 @@ function LoadoutScreen({ st }) {
   const lost = ready ? missingGameData(tab) : [];
   const ownRoster = useOwnershipRoster(ready);
   const nNotOwned = notOwnedCount(st.notOwned, ownRoster);
-  // 自选编队 (0.2.0 DIY): the stored picks, those the server would keep (the kit list of the last welcome)
+  // 自选编队 (0.2.0 DIY): the stored picks, those the server would keep (the kit list of the last welcome). `null` =
+  // the server named no list (an older welcome / no limit): `[]` would mean nobody is kitted and wipe every pick.
   const nDiy = diyCount(st.diy);
-  const diyLegal = ready ? sanitizeDiyPicks(st.diy, diyData(), st.diyKitted || []) : {};
+  const diyLegal = ready ? sanitizeDiyPicks(st.diy, diyData(), st.diyKitted ?? null) : {};
   // A re-pick to a different operator (or clearing the slot) drops that slot's 皮肤 / 商店立绘 choices: they name a
   // skin of the operator that was picked, and a stale id would quietly fall back to the default model (移植自用户分支).
   const setDiySlot = (slotId, pick) => {
@@ -881,7 +882,8 @@ function LoadoutScreen({ st }) {
       const r = parseDiyImport(ioText);
       if (!r.ok) { toast(t('导入失败：{error}', { error: t(r.error, r.params) }), 'error'); return; }
       const oldPicks = loadoutStore.get().diy;
-      const { applied, dropped } = applyDiyImport(r.picks, diyData(), loadoutStore.get().diyKitted || []);
+      // an import drops a slot whose operator is unknown; the warning says so instead of silently rewriting the roster
+      const { applied, dropped } = applyDiyImport(r.picks, diyData(), loadoutStore.get().diyKitted ?? null);
       // a re-pick (or a dropped one) drops the slot's 皮肤 / 商店立绘 choice: it names a skin of the OLD operator
       syncDiySkins(oldPicks, loadoutStore.get().diy);
       // and the file's own choices apply to the slots whose pick survived — the file's state for those slots, other

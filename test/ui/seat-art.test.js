@@ -12,8 +12,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CARD_PREF, CARD_KEY, cardStore, setCard, parseStoredCard, cardOperators, cardContext, seatOperator, seatCardSkin, seatArtSrc } from '../../public/js/ui/seatArt.js';
+import { CARD_PREF, CARD_KEY, cardStore, setCard, parseStoredCard, cardOperators, cardContext, seatOperator, seatCardSkin, seatArtSrc, seatCardView, cardAvatarUrl, cardArtWire, cardArtStored, isCardVariant } from '../../public/js/ui/seatArt.js';
 import { chessPortraitUrl } from '../../public/js/ui/assetUrls.js';
+import { SKIN_CATALOGUE as OPERATOR_SKINS } from '../../shared/skin-catalogue.js';
+import { manifestSkinKey } from '../../shared/skins.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CHESS = Object.values(JSON.parse(readFileSync(path.join(ROOT, 'data/chess.json'), 'utf8')));
@@ -271,8 +273,7 @@ test('room.css: the seat cards and the picker follow 文字大小, no !important
   assert.match(block, /\.rs-clock \.room-mode \{[^}]*border: 1px solid[^}]*text-overflow: ellipsis/);
 });
 
-test('an AI teammate\'s name split for the plate: 「AI·」 + the rest; a number-only name and a human seat unsplit (botNameParts)', async () => {
-  const { botNameParts } = await import('../../public/js/screens/room.js');
+test('an AI teammate\'s name split for the plate: 「AI·」 + the rest; a number-only name and a human seat unsplit (botNameParts)', async () => {  const { botNameParts } = await import('../../public/js/screens/room.js');
   assert.deepEqual(botNameParts({ isBot: true, name: 'AI·华法琳' }), ['AI·', '华法琳']);
   assert.deepEqual(botNameParts({ isBot: true, name: 'AI · Warfarin' }), ['AI · ', 'Warfarin']);
   assert.deepEqual(botNameParts({ isBot: true, name: 'AI·Kal\'tsit\nx' }), ['AI·', 'Kal\'tsit\nx']);
@@ -283,4 +284,56 @@ test('an AI teammate\'s name split for the plate: 「AI·」 + the rest; a numbe
   assert.equal(botNameParts({ isBot: false, name: 'AI·x' }), null, 'a doctor named 「AI·x」 keeps the whole name');
   assert.equal(botNameParts({ name: 'AI·x' }), null);
   assert.equal(botNameParts(null), null);
+});
+
+// ---- Stardust PR2 (2026-10-16): the card's art variants and the 名片头像 ------------------------------------
+test('the wire variant grammar: "" / e1 / e2 and skin:<catalogue id>; the skin maps both ways', () => {
+  assert.equal(isCardVariant(''), true);
+  assert.equal(isCardVariant('e1'), true);
+  assert.equal(isCardVariant('e2'), true);
+  assert.equal(isCardVariant('skin:char_498_inside_kitchen_2'), true);
+  for (const v of ['E1', 'elite', 'skin:', 'skin:has-dash', 'skin:char_498_inside@kitchen#2', null, 7]) assert.equal(isCardVariant(v), false, String(v));
+  const skin = OPERATOR_SKINS.find((s) => s.charId === 'char_498_inside');
+  // a local look (the manifest's own key) → the wire (the catalogue id), and back
+  assert.equal(cardArtWire(''), '');
+  assert.equal(cardArtWire('e1'), 'e1');
+  assert.equal(cardArtWire('e2'), 'e2');
+  assert.equal(cardArtWire(skin.officialId), `skin:${skin.id}`);
+  assert.equal(cardArtWire(skin.id), `skin:${skin.id}`, 'a catalogue id is accepted too');
+  assert.equal(cardArtWire('nonsense'), '', 'junk is never sent');
+  assert.equal(cardArtStored(`skin:${skin.id}`), manifestSkinKey(skin.id));
+  assert.equal(cardArtStored('e1'), 'e1');
+  assert.equal(cardArtStored('e2'), 'e2');
+  assert.equal(cardArtStored(''), '');
+  assert.equal(cardArtStored('skin:not_a_skin'), 'not_a_skin', 'a skin this build does not know keeps its id (the renderer falls back)');
+});
+
+test('cardAvatarUrl: 默认 = the elite avatar, e1 the base, e2 the elite, a skin of that operator', () => {
+  const OP = 'char_498_inside';
+  const skin = OPERATOR_SKINS.find((s) => s.charId === OP);
+  const key = manifestSkinKey(skin.id);
+  const m = { chars: { [OP]: { avatar: '/a/base.png', avatarE2: '/a/elite.png', portrait: '/p/base.png', portraitE2: '/p/elite.png', skins: { [key]: { avatar: '/a/skin.png', portrait: '/p/skin.png' } } } } };
+  assert.equal(cardAvatarUrl(OP, m), '/a/elite.png');
+  assert.equal(cardAvatarUrl(OP, m, 'e1'), '/a/base.png');
+  assert.equal(cardAvatarUrl(OP, m, 'e2'), '/a/elite.png');
+  assert.equal(cardAvatarUrl(OP, m, `skin:${skin.id}`), '/a/skin.png');
+  assert.equal(cardAvatarUrl(OP, m, `skin:${skin.id}`), cardAvatarUrl(OP, m, skin.officialId), 'the wire and the manifest id agree');
+  assert.equal(cardAvatarUrl('char_999_ghost', m, 'e2'), null);
+  assert.equal(cardAvatarUrl(null, m), null);
+});
+
+test('seatCardView: seats[].card stays the operator id; the appearance sits beside it (and a nested object reads too)', () => {
+  assert.deepEqual(seatCardView(null), { charId: '', avatar: '', art: '', face: '', bg: '', bgY: null });
+  // the server's current form: a bare id + the appearance siblings
+  assert.deepEqual(seatCardView({ card: 'char_1_a', cardAvatar: 'char_2_b', cardArt: 'e1', cardFace: 'e2', cardBg: 'loading:core', cardBgY: 70 }),
+    { charId: 'char_1_a', avatar: 'char_2_b', art: 'e1', face: 'e2', bg: 'loading:core', bgY: 70 });
+  // a newer server that nests the card still works
+  assert.deepEqual(seatCardView({ card: { charId: 'char_1_a', avatar: 'char_2_b', art: 'e1', face: 'e2', bg: 'camp:rhodes', bgY: 20 } }),
+    { charId: 'char_1_a', avatar: 'char_2_b', art: 'e1', face: 'e2', bg: 'camp:rhodes', bgY: 20 });
+  // an older server's bare string: no appearance, never a crash
+  assert.deepEqual(seatCardView({ card: 'char_1_a' }), { charId: 'char_1_a', avatar: '', art: '', face: '', bg: '', bgY: null });
+  assert.equal(seatCardView({ card: 'char_1_a', cardBgY: 200 }).bgY, null, 'a bad framing is the default');
+  // the operator the seat draws comes from the same view
+  const ctx = cardContext(cardOperators(CHESS));
+  assert.equal(seatOperator({ playerId: 'p_x', card: { charId: 'char_498_inside' } }, ctx).chess.charId, 'char_498_inside');
 });

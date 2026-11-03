@@ -358,6 +358,12 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
   }
   for (const [rel, body] of bodies) files[rel] = { sha256: nodeSha256(body), bytes: body.length };
   const vanilla = plugins.length === 0;
+  // A plugin-added operator is a 自选 candidate only when one of its forms declares a kit — an official kitRef (KITS,
+  // resolved by officialKit), a JSON SkillSpec or a DSL. A unit that would fall back to the generic kit is not offered:
+  // before this filter every new unit was listed as kitted, and checkDiyPicks accepted a pick the sim could only run
+  // generically.
+  const hasDeclaredKit = (unit) => Object.values(unit?.forms ?? {}).some((f) => f && typeof f === 'object'
+    && ((typeof f.kitRef === 'string' && !!officialKit(f.kitRef)) || f.skillSpec != null || f.dsl != null));
   // The interaction windows of the set (PLUGIN API v2, docs/PLUGINS.md §10b): the registry already checked each
   // file, including transitive option sources in content.files: every offer byte participates in cs.
   const offers = plugins.flatMap(p => (p.offers || []).map(o => ({ pluginId: p.id, ...o })));
@@ -369,7 +375,7 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
   }
   const set = deepFreeze({ cs, vanilla, plugins: plugins.map(p => ({ id: p.id, version: p.manifest.version, hash: p.content.hash })),
     data, files, ...(scripts.length ? {scripts, execution} : {}), ...(rules ? { rules } : {}), modes: Object.values(data.config.modes), problems: [], warnings, index, settings, bounds: boundsSnap,
-    kitted: [...KITTED_CHARS, ...Object.keys(data.backups.units).filter(id => !own(base.data.backups.units, id))],
+    kitted: [...KITTED_CHARS, ...Object.keys(data.backups.units).filter(id => !own(base.data.backups.units, id) && hasDeclaredKit(data.backups.units[id]))],
     // PLUGIN API v2 (docs/PLUGINS.md §10b): the interaction windows the set declares, tagged with their plugin. Data
     // only and already checked by the registry; a set without one omits the field, so nothing downstream changes.
     ...(offers.length ? { offers } : {}) });

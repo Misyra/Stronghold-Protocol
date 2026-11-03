@@ -50,7 +50,7 @@ import { parseStoredDiy, toStoredDiy, cleanPicks, sanitizeDiyPicks, diyPrefKey }
 import { skinsStore, SKINS_KEY, SKINS_SYNC_KEY, parseStoredSkins, setSkins, setPortraits, syncDiySkins, setDiyPicksProvider } from './skins.js';
 import { prepareOperatorPreset } from './operatorPresetModel.js';
 import { diySlotIds } from '../../../shared/diy.js';
-import { cardStore, CARD_KEY, CARD_SYNC_KEY, cardOperators } from './seatArt.js';
+import { cardStore, CARD_KEY, CARD_SYNC_KEY, CARD_LOOK_KEY, CARD_AVATAR_KEY, CARD_FACE_KEY, CARD_BG_KEY, CARD_BG_Y_KEY, cardOperators, cardArtWire, parseStoredBg, parseStoredBgY } from './seatArt.js';
 import { needsContent, serverDefaultVersion } from '../versions.js';
 import { DEFAULT_VERSION } from '../../../shared/versions.js';
 import { toast } from './toasts.js';
@@ -731,14 +731,16 @@ export function installSkinsSync({ net, timers, target = skinsStore, notify, con
 }
 
 /**
- * Wire the 名片干员 sync once (PR #643 split 6, ui/seatArt.js): `room.card { charId }` after every welcome, every pick
- * and whenever the room's content set arrives or goes — the server keeps it on the session, so it follows the player
- * into every room (server/lobby.js card / humanSeat), and the room sees it as room.state seats[].card. The list is the
- * room's picker's (ui/seatArt.js cardOperators): the visible chess operators plus the room version's 自选编队 pool (#877).
- * A pick the data shown now does not list (a plugin operator, the room left) goes out as '' (默认), as one's own card
- * draws it; the pref
- * keeps it. The engine retries RATE / TIMEOUT / OFFLINE (review fix of PR #813: the room's own effect gave up after
- * them, so teammates kept the old card); BAD_MSG is final ('error', logged).
+ * Wire the 名片干员 sync once (PR #643 split 6, ui/seatArt.js): `room.card` after every welcome, every pick and whenever
+ * the room's content set arrives or goes — the server keeps it on the session, so it follows the player into every room
+ * (server/lobby.js card / humanSeat), and the room sees it as room.state seats[].card plus the appearance beside it
+ * (Stardust PR2, 2026-10-16): `avatar` (the 名片头像) and `art` / `face` (which 精一 / 精二 / skin art of the 名片干员 and
+ * the avatar is drawn), `bg` / `bgY` (the 名片底图 and its framing). The list is the room's picker's (ui/seatArt.js
+ * cardOperators): the visible chess operators plus the room version's 自选编队 pool (#877). A pick the data shown now
+ * does not list (a plugin operator, the room left) goes out as '' (默认), as one's own card draws it; the pref keeps it.
+ * Every appearance field goes out every time (`''` / `-1` clears), because the server merges an omitted field. The engine
+ * retries RATE / TIMEOUT / OFFLINE (review fix of PR #813: the room's own effect gave up after them, so teammates kept
+ * the old card); BAD_MSG is final ('error', logged).
  * @param {{ net: any, timers?: { setTimeout: Function, clearTimeout: Function }, target?: ReturnType<typeof createStore>,
  *   getChessReady?: () => Promise<any>, getBackupsReady?: () => Promise<any>, listChess?: () => any[],
  *   listBackups?: () => any, notify?: (text: string) => void, content?: any }} deps
@@ -749,19 +751,51 @@ export function installCardSync({ net, timers, target = cardStore, getChessReady
   const list = listChess || (() => data.list('chess'));
   const backupsOf = listBackups || (() => data.get('backups'));
   return installPrefSync({
-    net, timers, target, notify, key: CARD_KEY, stateKey: CARD_SYNC_KEY, msgType: 'room.card', field: null, tag: 'card',
+    net, timers, target, notify,
+    key: [CARD_KEY, CARD_LOOK_KEY, CARD_AVATAR_KEY, CARD_FACE_KEY, CARD_BG_KEY, CARD_BG_Y_KEY],
+    stateKey: CARD_SYNC_KEY, msgType: 'room.card', field: null, tag: 'card',
     lockedText: null, // room.card has no phase gate: never WRONG_PHASE / ROOM_STARTED
     content, app, gate, seatBound: false,
     async prepare() {
       const want = target.get()[CARD_KEY];
-      if (!want) return { charId: '' };
-      if (await ready() == null) return null;
-      // a chess operator needs nothing more: the common pick goes out before backups.json is asked for
-      if (cardOperators(list()).some((c) => c.charId === want)) return { charId: want };
-      // 自选编队 operator (#877): no chess record of its own, listed only through backups.diy.ownedPool — the same list
-      // the room's picker draws (cardOperators(chess, backups)), so a pool pick goes out as itself, never as 默认
-      if ((await readyBackups()) == null) return null;
-      return { charId: cardOperators(list(), backupsOf()).some((c) => c.charId === want) ? want : '' };
+      const avatarWanted = target.get()[CARD_AVATAR_KEY];
+      // the operator of each pick: both need the list, so one load serves a card with a portrait and an avatar
+      let chars = null;
+      if (want || avatarWanted) {
+        if (await ready() == null) return null;
+        chars = cardOperators(list());
+      }
+      const listed = (id) => !id || chars.some((c) => c.charId === id);
+      // 自选编队 operators (#877): no chess record of their own, listed only through backups.diy.ownedPool — the same
+      // list the room's picker draws (cardOperators(chess, backups)), so a pool pick goes out as itself, never as 默认.
+      // Until backups.json is on the page neither pick can be judged: nothing is sent (a wrong '' would clear the seat).
+      const poolListed = async (id) => {
+        if ((await readyBackups()) == null) return null;
+        chars = cardOperators(list(), backupsOf());
+        return chars.some((c) => c.charId === id);
+      };
+      let id = want || '';
+      if (id && !listed(id)) {
+        const pool = await poolListed(id);
+        if (pool == null) return null;
+        id = pool ? id : '';
+      }
+      let avatar = avatarWanted || '';
+      if (avatar && !listed(avatar)) {
+        const pool = await poolListed(avatar);
+        if (pool == null) return null;
+        avatar = pool ? avatar : '';
+      }
+      const bg = parseStoredBg(target.get()[CARD_BG_KEY]);
+      const bgY = bg ? (parseStoredBgY(target.get()[CARD_BG_Y_KEY]) ?? -1) : -1;
+      return {
+        charId: id,
+        avatar,
+        art: cardArtWire(target.get()[CARD_LOOK_KEY]),
+        face: avatar ? cardArtWire(target.get()[CARD_FACE_KEY]) : '',
+        bg,
+        bgY,
+      };
     },
   });
 }

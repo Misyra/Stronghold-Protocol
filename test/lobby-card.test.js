@@ -133,3 +133,70 @@ describe('room.card (lobby, stub match)', () => {
     assert.equal(st.inMatch, true);
   });
 });
+
+// Stardust PR2 (2026-10-16): room.card carries the appearance — the 名片头像, the 精一 / 精二 / skin art of the portrait
+// and the avatar, and the 名片底图 with its framing. The seat keeps the bare operator id in `card` (older clients read it)
+// and the rest beside it (cardAvatar / cardArt / cardFace / cardBg / cardBgY).
+describe('room.card appearance (art / face / avatar / background)', () => {
+  let srv;
+  let pool;
+  const ART_OP = 'char_498_inside';
+  const ART_SKIN = 'char_498_inside_kitchen_2';
+  const AVATAR_OP = 'char_1012_skadi2';
+  const AVATAR_SKIN = 'char_1012_skadi2_boc_4';
+  before(async () => {
+    srv = await startServer({ port: 0, host: '127.0.0.1', log: quietLog(), MatchClass: StubMatch, heavyBurst: 400, heavyPerSec: 4, rateBurst: 400 });
+    pool = clientPool(() => `ws://127.0.0.1:${srv.port}/ws`);
+  });
+  afterEach(async () => { await pool.closeAll(); });
+  after(async () => { await srv?.close(); });
+
+  test('the wire check: art / face are "" or e1 / e2 / skin:<catalogue id>; bg is a namecard id; bgY is -1–100', async () => {
+    const c = await pool.player('Wire');
+    await ok(c, { t: 'room.card', charId: ART_OP, art: 'e1', face: 'e2', avatar: AVATAR_OP, bg: 'loading:core', bgY: 70 });
+    await ok(c, { t: 'room.card', charId: ART_OP, art: '', face: '', bg: '', bgY: -1 });
+    for (const [field, value] of [
+      ['art', 'E1'], ['art', 'elite'], ['art', 'skin:'], ['art', 'skin:has-dash'], ['art', `skin:${'a'.repeat(60)}`],
+      ['face', 'e3'], ['bg', 'bad bg'], ['bg', 'x'.repeat(60)], ['bgY', 101], ['bgY', -2], ['bgY', 1.5],
+    ]) await err(c, { t: 'room.card', charId: ART_OP, [field]: value }, ERR.BAD_MSG);
+    await err(c, { t: 'room.card', charId: ART_OP, avatar: 'chess_char_1_01_a' }, ERR.BAD_MSG);
+  });
+
+  test('the seat carries the appearance; a skin only when it is that operator\'s own, the rest still lands', async () => {
+    const host = await pool.player('Host');
+    const guest = await pool.player('Guest');
+    const st0 = await createRoom(host);
+    await ok(guest, { t: 'room.join', code: st0.code });
+    await guest.waitFor('room.state', (s) => !!seatOf(s, guest.id));
+    await ok(host, {
+      t: 'room.card', charId: ART_OP, art: 'e1', avatar: AVATAR_OP, face: 'e2', bg: 'loading:core', bgY: 70,
+    });
+    let sea = await guest.waitFor('room.state', (s) => seatOf(s, host.id)?.cardArt === 'e1');
+    sea = seatOf(sea, host.id);
+    assert.deepEqual({
+      card: sea.card, cardAvatar: sea.cardAvatar, cardArt: sea.cardArt, cardFace: sea.cardFace, cardBg: sea.cardBg, cardBgY: sea.cardBgY,
+    }, { card: ART_OP, cardAvatar: AVATAR_OP, cardArt: 'e1', cardFace: 'e2', cardBg: 'loading:core', cardBgY: 70 });
+
+    // the operators' own skins pass (the catalogue ids, not the manifest keys)
+    await ok(host, { t: 'room.card', art: `skin:${ART_SKIN}`, face: `skin:${AVATAR_SKIN}` });
+    sea = await guest.waitFor('room.state', (s) => seatOf(s, host.id)?.cardArt === `skin:${ART_SKIN}`);
+    assert.equal(seatOf(sea, host.id).cardFace, `skin:${AVATAR_SKIN}`);
+
+    // a made-up skin, or one belonging to the other operator, is dropped on its own; the rest of the card lands
+    await ok(host, { t: 'room.card', art: 'skin:not_a_real_skin', face: `skin:${ART_SKIN}`, bg: 'camp:rhodes', bgY: 20 });
+    sea = await guest.waitFor('room.state', (s) => seatOf(s, host.id)?.cardBg === 'camp:rhodes');
+    sea = seatOf(sea, host.id);
+    assert.equal(sea.cardArt, undefined, 'the made-up skin dropped');
+    assert.equal(sea.cardFace, undefined, 'the avatar skin of the portrait operator dropped');
+    assert.equal(sea.cardAvatar, AVATAR_OP, 'the rest of the card stood');
+    assert.equal(sea.cardBgY, 20);
+    assert.equal(host.card && host.card.art, undefined, 'the session card dropped it too');
+
+    // '' clears a field; clearing the background clears its framing
+    await ok(host, { t: 'room.card', avatar: '', face: '', bg: '' });
+    sea = await guest.waitFor('room.state', (s) => !('cardAvatar' in seatOf(s, host.id)) && !('cardBg' in seatOf(s, host.id)));
+    sea = seatOf(sea, host.id);
+    assert.equal(sea.card, ART_OP);
+    assert.equal(sea.cardArt, undefined);
+  });
+});

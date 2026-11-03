@@ -186,6 +186,49 @@ function sourceOf(rel) {
 }
 
 /**
+ * Add the operators newer than the pinned tables (profile `lateOperators`): only their own character, skill, range and
+ * module records come from the later commit, so every other operator keeps the pinned numbers. Refuses an operator the
+ * pinned tables already have.
+ * @param {{ sha: string, charIds: readonly string[] }} late
+ * @param {{ charTable: any, skillTable: any, rangeTable: any, uniequip: any, battleEquip: any }} tables mutated in place
+ */
+async function mergeLateOperators({ sha, charIds }, { charTable, skillTable, rangeTable, uniequip, battleEquip }) {
+  const src = { cacheDir: `${CACHE_DIR}@${sha}`, baseUrl: pinnedUrl(sha) };
+  const read = async (rel) => JSON.parse(await readFile(await ensureGamedata(rel, src), 'utf8'));
+  const [chars, skills, ranges, equips] = await Promise.all(['character', 'skill', 'range', 'uniequip'].map((t) => read(`excel/${t}_table.json`)));
+  const battleEquips = charIds.some((id) => equips.charEquip?.[id]?.length) ? await read('excel/battle_equip_table.json') : null;
+  for (const id of charIds) {
+    const ch = chars[id];
+    if (!ch) throw new Error(`lateOperators: ${id} is not in the tables of ${sha}`);
+    if (charTable[id]) throw new Error(`lateOperators: ${id} is already in the pinned tables`);
+    charTable[id] = ch;
+    const rangeIds = (ch.phases || []).map((p) => p.rangeId);
+    for (const { skillId } of ch.skills || []) {
+      if (!skillId) continue;
+      if (!skills[skillId]) throw new Error(`lateOperators: ${id}: no skill ${skillId} in the tables of ${sha}`);
+      skillTable[skillId] = skills[skillId];
+      rangeIds.push(...skills[skillId].levels.map((l) => l.rangeId));
+    }
+    const sub = ch.subProfessionId;
+    if (sub && !uniequip.subProfDict?.[sub] && equips.subProfDict?.[sub]) uniequip.subProfDict[sub] = equips.subProfDict[sub];
+    const mods = equips.charEquip?.[id] || [];
+    if (mods.length) {
+      if (uniequip.charEquip?.[id]) throw new Error(`lateOperators: ${id} already has modules in the pinned tables`);
+      uniequip.charEquip[id] = [...mods];
+      for (const m of mods) {
+        const meta = equips.equipDict?.[m];
+        if (!meta) throw new Error(`lateOperators: ${id}: no module ${m} in the tables of ${sha}`);
+        uniequip.equipDict[m] = meta;
+        // the INITIAL module (证章, "no module") has no battle record
+        if (battleEquips[m]) battleEquip[m] = battleEquips[m];
+        else if (meta.type !== 'INITIAL') throw new Error(`lateOperators: ${id}: module ${m} has no battle record in ${sha}`);
+      }
+    }
+    for (const r of rangeIds) if (r && !rangeTable[r] && ranges[r]) rangeTable[r] = ranges[r];
+  }
+}
+
+/**
  * Load an optional research JSON (docs/research/<name>); returns null when absent/unreadable. A non-default version reads
  * its own copy from its profile's research directory when there is one, else docs/research/ [ASSUMED] with a warning.
  */
@@ -239,6 +282,7 @@ async function loadContext() {
     loadGamedata('excel/enemy_handbook_table.json'),
     loadGamedata('levels/enemydata/enemy_database.json'),
   ]);
+  if (PROFILE.lateOperators) await mergeLateOperators(PROFILE.lateOperators, { charTable, skillTable, rangeTable, uniequip, battleEquip });
   const act = activity?.activity?.AUTOCHESS_SEASON?.[PROFILE.season];
   const ac = activity?.autoChessData;
   if (!act || !ac) throw new Error(`activity_table has no ${PROFILE.season} / autoChessData section`);
@@ -575,6 +619,31 @@ const DIY_EXCLUDED_TEAMS = Object.freeze(['rainbow', 'action4', 'mujica', 'sees'
  * Dungeon Meshi); every other prefix in the pool is a faction (LM, NM, RE, RL, …).
  */
 const DIY_EXCLUDED_NUMBER_PREFIXES = Object.freeze(['MH', 'RS', 'AM', 'PS', 'DD']);
+/**
+ * Bonds added after an operator's derived ones: 定位 bonds for the 乌萨斯 operators of 2026-11-01, who are 协防 by the
+ * official fallback (乌萨斯 names no core bond). A deliberate deviation, the owner's decisions of 2026-11-02 (the 自选
+ * operators of the official mode carry no 定位 bond; the official mode never fielded these): 塔露拉 奥术 + 不屈; 冻河
+ * 灵巧 (as 淬羽赫默, 灵巧 + 协防) + 迅捷; 国度 独行 (as 水月, the 6★ 伏击客).
+ */
+const DIY_EXTRA_BONDS = Object.freeze({
+  char_4244_tocka: Object.freeze(['skillfulShip', 'swiftShip']),
+  char_4246_dminon: Object.freeze(['soloShip']),
+  char_4247_oxi: Object.freeze(['arcaneShip', 'indomShip']),
+  // the collab picks (`excluded`) are ordinary 自选 picks since 2026-11-03, by the same rule (2026-11-02): one 定位 bond
+  // each after the official 6★ of their branch
+  char_456_ash: Object.freeze(['preciShip']), // 速射手: 寒芒克洛丝, 梅
+  char_4123_ela: Object.freeze(['indomShip']), // no official 陷阱师: the most common 特种 bond
+  char_1029_yato2: Object.freeze(['indomShip']), // 处决者: 砾, 槐琥
+  char_1048_orchd2: Object.freeze(['preciShip']), // 狙击
+  char_4141_marcil: Object.freeze(['arcaneShip']), // 扩散术师: 莫斯提马, 夕
+  char_4182_oblvns: Object.freeze(['skillfulShip']), // 领主: 断崖
+  char_4217_makoto: Object.freeze(['indomShip']), // 拉特兰 by the subPower; 傀儡师: 归溟幽灵鲨
+});
+/**
+ * A line added to the first talent's text of every form: a rule of this game, not of the official tables (the owner's
+ * decision of 2026-11-02; the kit op-oxi.js carries it out).
+ */
+const DIY_TALENT_NOTES = Object.freeze({ char_4247_oxi: '技能持续期间我方干员阵亡时，【奥术】和【不屈】层数+1' });
 
 /**
  * The skill a prototype carries in a 自选 slot when no 补位 row of the slot's tier names it (only 预备干员-医疗 at tier 5:
@@ -668,27 +737,33 @@ function buildBackups(ctx, chess) {
   const excluded = legal6.filter((id) => teamsOf(charTable[id]).some((t) => excludedTeams.has(t)) || collabNumber(charTable[id]));
   for (const t of DIY_EXCLUDED_TEAMS) if (!excluded.some((id) => teamsOf(charTable[id]).includes(t))) warn(`DIY_EXCLUDED_TEAMS: no owned-6★ pick of team ${t}`);
   const ownedPool = legal6.filter((id) => !excluded.includes(id));
-  for (const id of ownedPool) for (const st of diyStatuses.values()) addNeed(id, st);
+  // the collab picks (`excluded`) are built too: they are ordinary 自选 picks since 2026-11-03 (shared/diy.js)
+  for (const id of [...ownedPool, ...excluded]) for (const st of diyStatuses.values()) addNeed(id, st);
 
   const units = {};
-  for (const id of [...standInIds, ...ownedPool]) {
+  for (const id of [...standInIds, ...ownedPool, ...excluded]) {
     const unit = buildUnitHead(ctx, id);
     unit.standsIn = (standsIn.get(id) || []).sort(naturalCmp);
     unit.forms = {};
     for (const st of [...need.get(id).values()].sort(statusCmp)) {
       const form = buildUnitForm(ctx, id, st);
+      if (DIY_TALENT_NOTES[id]) {
+        const t = form.talents[0];
+        t.desc += `\n${DIY_TALENT_NOTES[id]}`;
+        t.descRaw += `\n${DIY_TALENT_NOTES[id]}`;
+      }
       if (form.tokens.length && unit.standsIn.length) warn(`unit ${id}@${statusKey(st)}: summons ${form.tokens.join(', ')} have no tokens.json variant for a stand-in owner`);
       unit.forms[statusKey(st)] = form;
     }
     units[id] = unit;
   }
   for (const id of need.keys()) if (!units[id]) warn(`unit ${id}: needed but neither a stand-in nor an owned pick`);
-  const tokens = buildDiyTokens(ctx, units, ownedPool);
+  const tokens = buildDiyTokens(ctx, units, [...ownedPool, ...excluded]);
 
   const coreBonds = Object.values(ac.bondInfoDict || {}).filter((b) => b.isPower && (b.powerIdList || []).length);
   const fallback = act.constData.fallbackBondId;
   const operators = {};
-  for (const id of [...new Set([...ownedPool, ...Object.values(prototypes).flat()])].sort(naturalCmp)) {
+  for (const id of [...new Set([...ownedPool, ...excluded, ...Object.values(prototypes).flat()])].sort(naturalCmp)) {
     const ch = charTable[id];
     const powers = [];
     for (const p of [ch.mainPower ?? { nationId: ch.nationId, groupId: ch.groupId, teamId: ch.teamId }, ...(ch.subPower || [])]) {
@@ -697,7 +772,7 @@ function buildBackups(ctx, chess) {
     const hit = coreBonds.filter((b) => b.powerIdList.some((x) => powers.includes(x))).map((b) => b.bondId);
     operators[id] = {
       name: ch.name, rarity: rarityOf(ch), profession: ch.profession, subProfessionId: ch.subProfessionId,
-      obtainable: !ch.isNotObtainable, powers, bonds: hit.length ? hit : [fallback],
+      obtainable: !ch.isNotObtainable, powers, bonds: [...(hit.length ? hit : [fallback]), ...(DIY_EXTRA_BONDS[id] ?? [])],
     };
   }
   return { units, tokens, diy: { slots, prototypes, locked, ownedPool, excluded, operators } };

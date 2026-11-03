@@ -13,11 +13,17 @@
 //
 // Keys are lower case (§33.1). Built-in Unity meshes ('builtin:Quad', 'builtin:Plane', 'builtin:Cube',
 // 'builtin:Sphere') are generated here.
+//
+// 联动干员 (shared/collabAssets.js): while the page's collab layer is on (cosmetics.js `collab`, a room with the switch on)
+// the collab pack's effects — /data/local-fx-collab.json, its index.json and textures.json — are merged in, add-only (a key
+// both have stays the normal set's); every lookup follows the layer (_syncCollab), so off again drops them.
 
 import { compileEffect } from './effect.js';
 import { FX_LIST_URL, loadFxList } from './available.js';
 import { setIndexVersion } from './mounts.js';
 import { mergePluginFx } from './pluginLibrary.js';
+import { cosmetics } from '../../cosmetics.js';
+import { COLLAB_FX_LIST_URL, collabFxListProblems, mergeFxIndex } from '../../../../shared/collabAssets.js';
 const MAX_PARALLEL = 8;
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -80,7 +86,9 @@ export function normalizeMesh(m) {
 
 export class FxLibrary {
   /**
-   * @param {{ assets?: any, fetch?: typeof fetch, listUrl?: string, list?: any, decode?: (blob: Blob) => Promise<any> }} [opts]
+   * @param {{ assets?: any, fetch?: typeof fetch, listUrl?: string, list?: any, decode?: (blob: Blob) => Promise<any>,
+   *   layers?: { collab: any } | null, collabListUrl?: string }} [opts] `layers`: the cosmetic layers whose `collab` turns the
+   *   collab effects on (default the page's; null: never)
    */
   constructor(opts = {}) {
     this.assets = opts.assets || null;
@@ -103,7 +111,69 @@ export class FxLibrary {
     this.active = 0;
     this.failed = new Set();
     this.listeners = new Set();
+    // 联动干员 (see the header)
+    this.layers = opts.layers === undefined ? cosmetics : opts.layers;
+    this.collabListUrl = opts.collabListUrl || COLLAB_FX_LIST_URL;
+    this.collab = null;          // { groups, index, textures } while merged
+    this._collabOn = false;
+    this._collabLoad = null;     // the collab effects, loaded once per library
+    this._collabPending = null;  // resolves once the current state is merged
   }
+
+  /**
+   * Follow the collab layer (cheap: every lookup calls it). On: the collab effects are loaded (once) and merged, and the
+   * keys they add are forgotten where a lookup came back empty before; off: they are dropped. Returns a promise that
+   * resolves once the current state holds (null when nothing is pending).
+   */
+  _syncCollab() {
+    const on = !!this.layers?.collab;
+    if (on === this._collabOn) return this._collabPending;
+    this._collabOn = on;
+    this._index = null; this._texInfo = null;
+    if (!on) { this._forgetCollab(this.collab); this.collab = null; this._collabPending = null; this._notify(); return null; }
+    this._collabLoad ||= this._loadCollab();
+    const pending = this._collabPending = this._collabLoad.then((c) => {
+      if (!this._collabOn || this._collabPending !== pending || !c) return c;
+      this._forgetCollab(c);
+      this.collab = c;
+      this._index = null; this._texInfo = null;
+      if (Object.keys(c.groups['fx/prefabs'] || {}).length) this._available = true;
+      this._notify();
+      return c;
+    });
+    return pending;
+  }
+
+  /** The collab effects' file list, index and texture info (null when there are none or the list breaks the pack's rules). */
+  async _loadCollab() {
+    if (!this.fetch) return null;
+    try {
+      const res = await this.fetch(this.collabListUrl);
+      if (!res || !res.ok) return null;
+      const list = await res.json();
+      const bad = collabFxListProblems(list);
+      if (bad.length) { console.warn('[fx] collab effects list refused:', bad.slice(0, 3).join('; ')); return null; }
+      const g = list.groups;
+      const [index, tex] = await Promise.all([g.fx?.index?.path, g.fx?.textures?.path].map((u) => (u ? this._json(u).catch(() => null) : null)));
+      return { groups: g, index: isObj(index) ? index : null, textures: isObj(tex?.textures) ? tex.textures : null };
+    } catch { return null; }
+  }
+
+  /** Drop what is cached of the collab-only keys of `c` (a load that came back empty, or the pack going away). */
+  _forgetCollab(c) {
+    if (!c) return;
+    const only = (group) => Object.keys(c.groups?.[group] || {}).filter((k) => !isObj(this.groups?.[group]?.[k]));
+    for (const k of only('fx/prefabs')) { this.descs.delete(k); this.defs.delete(k); }
+    for (const k of only('fx/mesh')) { this.meshes.delete(k); this.meshLoads.delete(k); }
+    for (const k of only('fx/tex')) for (const h of [0, 1]) {
+      const id = `${k}|${h}`;
+      this.images.get(id)?.image?.close?.();
+      this.images.delete(id); this.imageLoads.delete(id);
+    }
+  }
+
+  /** The file list and, while the collab layer is on, the collab effects: what a load waits for. */
+  _ready() { return Promise.all([this.init(), this._syncCollab()]); }
 
   /** Load the file list (once). Resolves to `available`. */
   init() {
@@ -168,10 +238,19 @@ export class FxLibrary {
     return this.init();
   }
 
+  /** A file-list entry: the normal list's, else (collab layer on) the collab list's. */
+  entry(group, key) {
+    this._syncCollab();
+    const e = this.groups?.[group]?.[key];
+    if (isObj(e)) return e;
+    const c = this.collab?.groups?.[group]?.[key];
+    return isObj(c) ? c : null;
+  }
+
   /** URL of a file-list entry. */
   url(group, key) {
-    const e = this.groups?.[group]?.[key];
-    return isObj(e) && typeof e.path === 'string' ? e.path : null;
+    const e = this.entry(group, key);
+    return e && typeof e.path === 'string' ? e.path : null;
   }
 
   has(key) { return this.pluginFx?.descriptors.has(String(key || '').toLowerCase()) || !!this.url('fx/prefabs', String(key || '').toLowerCase()); }
@@ -185,8 +264,11 @@ export class FxLibrary {
 
   /** index.json (null without one); its version tells mounts.js whether skins still need skinShift. */
   index() {
+    this._syncCollab();
     if (this._index) return this._index;
-    this._index = this.init().then(() => this._json(this.url('fx', 'index')).catch(() => null)).then((j) => {
+    this._index = this._ready().then(() => this._json(this.url('fx', 'index')).catch(() => null)).then((normal) => {
+      // the collab effects' units, projectiles, skills, skins and prefabs, where the normal index has none
+      const j = this.collab?.index ? mergeFxIndex(normal, this.collab.index) : normal;
       setIndexVersion(j?.version);
       if (Object.keys(this.assets?.manifest?.fx || {}).length) { this.pluginFx = mergePluginFx(j, this.assets.manifest.fx); return this.pluginFx.index; }
       return j;
@@ -196,8 +278,10 @@ export class FxLibrary {
 
   /** textures.json entries (wrap / filter / mips by texture key). */
   texInfo() {
+    this._syncCollab();
     if (this._texInfo) return this._texInfo;
-    this._texInfo = this.init().then(() => this._json(this.url('fx', 'textures'))).then((j) => (isObj(j?.textures) ? j.textures : {})).catch(() => ({}));
+    this._texInfo = this._ready().then(() => this._json(this.url('fx', 'textures'))).then((j) => (isObj(j?.textures) ? j.textures : {})).catch(() => ({}))
+      .then((t) => (this.collab?.textures ? { ...this.collab.textures, ...t } : t));
     return this._texInfo;
   }
 
@@ -215,9 +299,10 @@ export class FxLibrary {
   /** The descriptor of a prefab key (null when absent / failed). */
   descriptor(key) {
     const k = String(key || '').toLowerCase();
+    this._syncCollab();
     let p = this.descs.get(k);
     if (!p) {
-      p = this.init().then(() => {
+      p = this._ready().then(() => {
         if (this.pluginFx?.descriptors.has(k)) return this.pluginFx.descriptors.get(k);
         const url = this.url('fx/prefabs', k);
         return url ? this._limit(() => this._json(url)) : null;
@@ -257,11 +342,12 @@ export class FxLibrary {
 
   loadMesh(key) {
     if (!key) return Promise.resolve(null);
+    this._syncCollab();
     if (this.meshes.has(key)) return Promise.resolve(this.meshes.get(key));
     if (key.startsWith('builtin:')) return Promise.resolve(this.mesh(key));
     let p = this.meshLoads.get(key);
     if (!p) {
-      p = this.init().then(() => {
+      p = this._ready().then(() => {
         const url = this.url('fx/mesh', key);
         return url ? this._limit(() => this._json(url)) : null;
       }).then((m) => { const d = normalizeMesh(m); this.meshes.set(key, d); return d; }, () => { this.meshes.set(key, null); return null; });
@@ -287,8 +373,8 @@ export class FxLibrary {
     if (this.onGpu.has(id)) return Promise.resolve(null);
     let p = this.imageLoads.get(id);
     if (!p) {
-      p = Promise.all([this.init(), this.texInfo()]).then(async ([, infos]) => {
-        const e = this.groups?.['fx/tex']?.[key];
+      p = Promise.all([this._ready(), this.texInfo()]).then(async ([, infos]) => {
+        const e = this.entry('fx/tex', key);
         const url = isObj(e) ? (half && typeof e.half === 'string' ? e.half : e.path) : null;
         if (!url) return null;
         const img = await this._limit(() => this._image(url));

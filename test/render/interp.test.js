@@ -3,7 +3,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { SnapshotBuffer, normalizeSnapshot, isCosmeticEvent, frameTime } from '../../public/js/render/interp.js';
+import { SnapshotBuffer, normalizeSnapshot, isCosmeticEvent, frameTime, percentile95 } from '../../public/js/render/interp.js';
 
 const fxFormOf = (e) => (e && e[0] === 'fx' && e[4] && Object.hasOwn(e[4], 'form') ? e[4].form : undefined);
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
@@ -185,6 +185,80 @@ describe('SnapshotBuffer', () => {
     }
   });
 
+  test('setNominalRate: a 2× battle clock starts at 4× (no half-speed first quarter second)', () => {
+    // What a reset buffer does now: the arrival estimate is not trusted yet, so the clock runs at the old nominal rate.
+    const slow = new SnapshotBuffer({ delay: 0.034, rate: 2 });
+    slow.defaultRate = 4; // setLocalFeed's old assignment only
+    // What setLocalFeed does now: the nominal rate moves the clock at once.
+    const fast = new SnapshotBuffer({ delay: 0.034, rate: 2 });
+    fast.setNominalRate(4);
+    assert.equal(fast.defaultRate, 4);
+    assert.equal(fast.rate, 4);
+    assert.equal(fast.arrivals.length, 0);
+    const run = (b) => {
+      let now = 0, gt = 0;
+      for (let i = 0; i < 20; i++) { // 60 fps, 4 game s per real s
+        now += 1 / 60; gt += 4 / 60;
+        b.push(snap(gt, [U(1, 0, 0)]), now);
+        b.update(now);
+      }
+      return b.newestT - b.renderT;
+    };
+    assert.ok(run(fast) < 0.15, 'the clock trails by the local delay × 4 from the first frame');
+    assert.ok(run(slow) > 0.28, 'without it the clock falls behind while the estimate catches up');
+    // a repeat is a no-op (the arrival estimate keeps its window), and reset keeps the nominal rate
+    fast.push(snap(10, [U(1, 0, 0)]), 3);
+    const arrivals = fast.arrivals.length;
+    fast.setNominalRate(4);
+    assert.equal(fast.arrivals.length, arrivals);
+    fast.reset();
+    assert.equal(fast.rate, 4);
+    fast.setNominalRate(2);
+    assert.equal(fast.rate, 2);
+  });
+
+  test('adaptive delay: follows the stream\'s measured jitter, clamped, and the local feed keeps its own', () => {
+    // a steady 2× stream (one snapshot each 0.05 real s): the p95 lateness is 0, so the delay settles on the minimum
+    const steady = new SnapshotBuffer({ delay: 0.1, rate: 2, adaptive: true, minDelay: 0.05, maxDelay: 0.5, delayEase: 1, jitterMargin: 0 });
+    let now = 0, t = 0;
+    for (let i = 0; i < 40; i++) { now += 0.05; t += 0.1; steady.push(snap(t, [U(1, 0, 0)]), now); }
+    assert.ok(steady.delay < 0.06, `steady delay ${steady.delay}`);
+    assert.ok(steady.lateness.length > 0);
+    // the same average cadence in alternating late / early arrivals (a 40 ms jitter): the window's p95 lifts the delay
+    const jittery = new SnapshotBuffer({ delay: 0.05, rate: 2, adaptive: true, minDelay: 0.05, maxDelay: 0.5, delayEase: 1, jitterMargin: 0 });
+    now = 0; t = 0;
+    for (let i = 0; i < 40; i++) {
+      now += i % 2 ? 0.01 : 0.09; t += 0.1;
+      jittery.push(snap(t, [U(1, 0, 0)]), now);
+    }
+    assert.ok(jittery.delay > 0.08, `jitter delay ${jittery.delay}`);
+    assert.ok(jittery.delay <= 0.5, 'clamped to maxDelay');
+    // one long gap (under jitterGap) lifts the p95 far past maxDelay: the delay stops at maxDelay
+    const capped = new SnapshotBuffer({ delay: 0.1, rate: 2, adaptive: true, minDelay: 0.05, maxDelay: 0.3 });
+    now = 0; t = 0;
+    for (let i = 0; i < 30; i++) {
+      now += i === 20 ? 0.9 : 0.05; t += 0.1;
+      capped.push(snap(t, [U(1, 0, 0)]), now);
+    }
+    assert.ok(capped.delay > 0.2 && capped.delay <= 0.3, `capped ${capped.delay}`);
+    // a new nominal rate makes the old lateness samples incomparable: the window starts over
+    capped.setNominalRate(4);
+    assert.equal(capped.lateness.length, 0);
+    assert.ok(Number.isNaN(capped.lastArrival));
+  });
+
+  test('drain: a finished feed runs its clock up to the newest snapshot (the tail is not held behind the jitter delay)', () => {
+    const b = new SnapshotBuffer({ delay: 0.4, rate: 2, adaptive: true, minDelay: 0.4, maxDelay: 0.6 });
+    let now = 0, t = 0;
+    for (let i = 0; i < 20; i++) { now += 0.05; t += 0.1; b.push(snap(t, [U(1, 0, 0)]), now); }
+    b.update(now);
+    assert.ok(b.newestT - b.renderT > 0.5, `held behind the delay: ${b.newestT - b.renderT}`);
+    b.drain();
+    for (let i = 1; i <= 30; i++) b.update(now + i * 0.016);
+    assert.ok(b.renderT >= b.newestT - 1e-6, `reached the end: ${b.renderT} / ${b.newestT}`);
+    b.reset();
+    assert.equal(b.draining, false, 'reset clears it for the next battle');
+  });
   test('old snapshots are trimmed even without frames (hidden tab); events queue is bounded', () => {
     const b = new SnapshotBuffer({ keep: 1 });
     for (let i = 0; i < 200; i++) {
@@ -273,5 +347,75 @@ describe('SnapshotBuffer', () => {
       b.sample(undefined, out);
       for (const s of out.values()) for (const k of ['x', 'y', 'hp', 'sp', 'vx', 'vy']) assert.ok(Number.isFinite(s[k]), k);
     }
+  });
+
+  test('adaptive delay: a constant 1.9× stream with no jitter keeps the floor delay and never climbs', () => {
+    // the arrival cadence is 5% faster than the nominal 2× (one snapshot every 0.1 game s arrives every 52.6 ms):
+    // the old lateness baseline treated that constant error as jitter and pinned the delay to maxDelay
+    const b = new SnapshotBuffer({ delay: 0.1, rate: 2, adaptive: true });
+    let now = 0, t = 0, peak = 0;
+    for (let i = 0; i < 600; i++) {
+      now += 0.1 / 1.9;
+      t += 0.1;
+      b.push(snap(t, [U(1, 0, 0)]), now);
+      peak = Math.max(peak, b.delay);
+    }
+    assert.ok(near(b.rate, 1.9, 0.01), `rate estimate ${b.rate}`);
+    assert.ok(b.delay >= 0.1 && b.delay <= 0.15, `delay ${b.delay}`);
+    assert.ok(peak <= 0.15, `never rose past the floor (${peak})`);
+  });
+
+  test('adaptive delay: real jitter (a periodic 120 ms spike) raises it, and it eases back once the jitter stops', () => {
+    const b = new SnapshotBuffer({ delay: 0.1, rate: 2, adaptive: true, minDelay: 0.1, maxDelay: 0.6, jitterWindow: 4 });
+    let now = 0, t = 0;
+    for (let i = 0; i < 300; i++) { // one arrival in five is 120 ms late
+      now += i % 5 === 4 ? 0.17 : 0.05;
+      t += 0.1;
+      b.push(snap(t, [U(1, 0, 0)]), now);
+    }
+    const raised = b.delay;
+    assert.ok(raised > 0.15, `raised by the jitter (${raised})`);
+    for (let i = 0; i < 300; i++) { // 15 s of a steady stream again
+      now += 0.05;
+      t += 0.1;
+      b.push(snap(t, [U(1, 0, 0)]), now);
+    }
+    assert.ok(b.delay < raised - 0.05, `eased back from ${raised} to ${b.delay}`);
+    assert.ok(b.delay <= 0.15, `back at the floor (${b.delay})`);
+  });
+
+  test('percentile95 is not the maximum at n = 6, and a six-sample window raises the delay by one step at most', () => {
+    // nearest rank (ceil(n × 0.95) − 1) still lands on the maximum for every n ≤ 19 — the case a single spike makes
+    assert.equal(percentile95([0, 0, 0, 0, 0, 0.5]), 0.375);
+    assert.ok(percentile95([...Array(19).fill(0), 0.5]) < 0.5);
+    const b = new SnapshotBuffer({ delay: 0.1, rate: 2, adaptive: true, minDelay: 0.1, maxDelay: 0.6, jitterMargin: 0 });
+    let now = 0, t = 0;
+    for (let i = 0; i < 6; i++) { // one 0.5 s spike in a six-sample window
+      now += i === 5 ? 0.55 : 0.05;
+      t += 0.1;
+      b.push(snap(t, [U(1, 0, 0)]), now);
+    }
+    assert.ok(b.delay <= 0.2 + 1e-9, `raised by at most one DELAY_RAISE (${b.delay})`);
+    assert.ok(b.delay < 0.6, 'not lifted to maxDelay');
+  });
+
+  test('draining ends when the feed moves past the drained snapshot or a new nominal rate arrives, never on update()', () => {
+    const b = new SnapshotBuffer({ delay: 0.4, rate: 2 });
+    let now = 0, t = 0;
+    for (let i = 0; i < 10; i++) { now += 0.05; t += 0.1; b.push(snap(t, [U(1, 0, 0)]), now); }
+    b.drain();
+    b.update(now + 0.2);
+    assert.equal(b.draining, true, 'update() alone does not end the drain');
+    const drained = b.drainEndT;
+    now += 0.05; t += 0.1; b.push(snap(t, [U(1, 0, 0)]), now);
+    assert.equal(b.draining, true, 'one interval past the drained snapshot is still draining');
+    while (!(t > drained + 2 * b.interval + 1e-9)) { now += 0.05; t += 0.1; b.push(snap(t, [U(1, 0, 0)]), now); }
+    assert.equal(b.draining, false, 'two intervals past it: the stream is live again');
+    b.drain();
+    b.setNominalRate(b.rate); // a repeat is still a new feed
+    assert.equal(b.draining, false);
+    b.drain();
+    b.setNominalRate(4);
+    assert.equal(b.draining, false);
   });
 });

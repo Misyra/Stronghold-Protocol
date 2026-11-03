@@ -84,13 +84,15 @@ export class MatchViews {
       // 投票移出(移植自用户分支): an offline AI-托管 teammate (kickVote.js): null or { id, proposerId, targetId,
       // voters, agreed, rejected, need, deadline }
       kickVote: this.kickVoteView(),
-      // 战斗 2 倍速投票（speedVote.js，右上角 2X 按钮）：count/need 已投/需投（在线人类席位），
-      // pending 全员已赞成（下一回合换档，实时计算——撤回立即消失），on 已在 2 倍速
+      // 战斗 2 倍速投票（speedVote.js，右上角 2X 按钮）：count/need 已投/需投（在线人类席位，离线席位的旧票
+      // 不计），pending 全员已赞成（下一场战斗开始时换档，实时计算——撤回立即消失），on 当前速度档是 2 倍，
+      // speed 当前 gameSpeed（客户端按时钟倍率缩放战斗倒计时与加时预估）
       speedVote: {
-        count: this.speedVotes.length,
+        count: this._speedAgreed().length,
         need: this._speedVoters().length,
         pending: this._unanimous(),
         on: this.gameSpeed > GAME_SPEED,
+        speed: this.gameSpeed,
       },
       // a non-default official version's match (DESIGN §35.23): its registry id, so a page that never saw the room (a
       // reload after it closed: the lobby's result replay) reads the frames with that version's data; absent for the

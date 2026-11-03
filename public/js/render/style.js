@@ -72,6 +72,9 @@ export const COLORS = Object.freeze({
   // 秘术师's stored attack energies (b.snap `energy`): a violet no other HUD state uses — the purse's gold coin and its
   // count are told apart from the orb and its count at a glance
   energy: 0xb07dff,
+  // 丰川祥子's Fever gauge (b.snap `fever`): rose while it fills, a brighter pulsing pink while Fever runs — no other bar's hue
+  fever: 0xff6fae,
+  feverOn: 0xffc6e6,
   shield: 0xdfe8ff,
 });
 

@@ -303,6 +303,13 @@ export function headTilesForUnit(o) {
  */
 export const AMMO_BAR = Object.freeze({ height: 0.85, minCell: 2 });
 export const WOLF_PIPS = Object.freeze({ size: 0.1, min: 5, max: 9, gap: 2, pad: 1.5, dim: 0.25 });
+/**
+ * FEVER_BAR — 丰川祥子's Fever gauge (b.snap `fever`) as a thin bar `height` of the SP bar's under the rows above, `pad` px
+ * below them: rose while it fills (a full one pulses at `readyHz`: her next skill starts Fever), a brighter pink draining
+ * over the 20 s while Fever runs (pulsing at `onHz`, never below `pulse` alpha). [ASSUMED] the look: the official Fever
+ * meter is a battle-wide HUD panel.
+ */
+export const FEVER_BAR = Object.freeze({ height: 1, pad: 1.5, readyHz: 1.5, onHz: 3, pulse: 0.9 });
 
 /**
  * Enemy modes drawn with another clip set of the same skeleton (the `form` of a sim fx — shared/protocol.js fxForm —
@@ -707,6 +714,8 @@ export class UnitView {
     this.neg = 0;                 // the share of its cap a negative-HP pool holds, 0 = none (sync; b.snap `neg`, 斩业星熊's 我执)
     this.motes = null;            // 魔王's orbiting 「微尘」: { n, wide } | null (sync; b.snap `motes`, render/motes.js)
     this.moteRing = null;
+    this.fever = null;            // [fill, on] of 丰川祥子's Fever gauge (sync; b.snap `fever`)
+    this._feverBar = null;        // { root, bg, fill } sprites of the Fever bar, built on first use
     this.layers = 0;              // hit-negating 护盾 layers (sync; b.snap `layers`: the official layer effect, vfx/talentfx.js)
     this.charges = null;          // [stored, maximum] of a charge skill (sync; b.snap `charges`: vfx/skillfx.js)
     this.flags = 0; this.anim = ANIM.IDLE;
@@ -1208,6 +1217,7 @@ export class UnitView {
     this.sp = s.sp; this.spMax = s.spMax;
     this.ammo = s.ammo || null; this.wolves = s.wolves || null; this.neg = s.neg > 0 ? Math.min(1, s.neg) : 0;
     this.motes = s.motes && s.motes.n > 0 ? s.motes : null;
+    this.fever = s.fever || null;
     this.coins = s.coins || null;
     this.energy = s.energy || null;
     this.layers = s.layers > 0 ? s.layers | 0 : 0; this.charges = s.charges || null;
@@ -2111,7 +2121,8 @@ export class UnitView {
     const wolfH = this._updateWolfPips(showBars && !this.isEnemy && !!this.wolves, x0, rowsTop, s);
     const coinH = this._updateCoins(showBars && !this.isEnemy && !!this.coins, x0, rowsTop + wolfH, s);
     const energyH = this._updateEnergy(showBars && !this.isEnemy && !!this.energy && this.ctx.settings?.ammoEnergyCount === true, x0, rowsTop + wolfH + coinH, s);
-    this._updateElementBar(showBars && !!this.el, x0, bw, rowsTop + wolfH + coinH + energyH + 1, spH, s, t);
+    const feverH = this._updateFeverBar(showBars && !this.isEnemy && !!this.fever, x0, bw, rowsTop + wolfH + coinH + energyH, Math.max(2, bh * 0.6), t);
+    this._updateElementBar(showBars && !!this.el, x0, bw, rowsTop + wolfH + coinH + energyH + feverH + 1, spH, s, t);
     this._updateDownRing(!prep && !!this.down && !this.alive, x, this.screen.y - DOWN_LOOK.height * s, s, t);
     // blocked marker at the feet (enemies held by a blocker)
     const blocked = !prep && this.alive && this.isEnemy && (this.flags & UF.BLOCKED);
@@ -2281,6 +2292,34 @@ export class UnitView {
     if (!this.el) return 0;
     if (this.elementCooling()) return clamp(1 - (this.elUntil - this.gameT) / this.elDur, 0, 1);
     return clamp(1 - this.elFill, 0, 1);
+  }
+
+  /**
+   * 丰川祥子's Fever gauge (b.snap `fever`, [fill, on]; FEVER_BAR): a bar the HP bar's width, its top at `top`, `h` px
+   * thick. Returns the height it takes (0 when hidden).
+   */
+  _updateFeverBar(show, x0, bw, top, h, t = 0) {
+    let r = this._feverBar;
+    if (!show) { if (r) r.root.visible = false; return 0; }
+    if (!r) {
+      const P = this.P;
+      const root = new P.Container();
+      const bg = bar(P, root, COLORS.hpBack, 0.85);
+      const fill = bar(P, root, COLORS.fever);
+      r = this._feverBar = { root, bg, fill };
+      this.hud.addChild(root);
+    }
+    const [k, on] = this.fever;
+    const hh = Math.max(1.5, h * FEVER_BAR.height);
+    const cy = top + FEVER_BAR.pad + hh / 2 + 1;
+    r.bg.position.set(x0 - 1, cy); r.bg.width = bw + 2; r.bg.height = hh + 2;
+    r.fill.visible = k > 0;
+    r.fill.position.set(x0, cy); r.fill.width = bw * clamp(k, 0, 1); r.fill.height = hh;
+    r.fill.tint = on ? COLORS.feverOn : COLORS.fever;
+    const hz = on ? FEVER_BAR.onHz : k >= 0.999 ? FEVER_BAR.readyHz : 0;
+    r.fill.alpha = hz ? FEVER_BAR.pulse + (1 - FEVER_BAR.pulse) * (0.5 + 0.5 * Math.cos(t * Math.PI * 2 * hz)) : 1;
+    r.root.visible = true;
+    return FEVER_BAR.pad + hh + 2;
   }
 
   /**

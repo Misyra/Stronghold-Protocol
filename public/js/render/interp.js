@@ -7,6 +7,18 @@
 //   * runs a render clock `renderT` that trails the newest snapshot by `delay` real seconds (default 100 ms),
 //     advancing at `rate` and gently steered back when network jitter pushes it off target (hard snap when it
 //     is more than `snapAfter` real seconds off),
+//   * `adaptive`: sizes that delay from the stream itself — one snapshot interval plus the 95th percentile of the
+//     per-interval arrival deviation of the last `jitterWindow` real seconds plus `jitterMargin`, within
+//     [minDelay, maxDelay]. The deviation of an arrival is measured against the previous one,
+//     `d = (now − prevNow) − (t − prevT) / rate`, so a constant rate error cancels instead of piling up as jitter.
+//     A raise is capped at `DELAY_RAISE` per arrival and never happens before half the window's samples are in (the
+//     first frames after a restart), so one small spike cannot inflate the delay; a steadier stream lowers it by
+//     `delayEase` real s per real s. A gap in the stream longer than `jitterGap` (or four snapshot intervals, for a
+//     stream slower than one frame a second) starts the window over. Streamed fields use it; the local feed (a frame
+//     every animation frame) turns it off (render/app.js setLocalFeed),
+//   * drain(): the feed ended (a finished battle), the clock runs up to the newest snapshot, whatever `delay` was, so
+//     its last events are handed out and BattlePresentation can start the tail. Only reset(), setNominalRate() and a
+//     stream that moves two snapshot intervals past the drained one clear it again — update() never does,
 //   * extrapolation guard: renderT never runs more than `maxExtrapolate` real seconds past the newest snapshot;
 //     positions are extrapolated along the last velocity for at most that long, then freeze — never for a unit the
 //     newest snapshot shows dead, stunned (frozen, asleep) or blocked, nor for an enemy it shows standing (`stand`),
@@ -62,8 +74,23 @@ const redeployed = (a, b) => b[8] === ANIM.DEPLOY && a[8] !== ANIM.DEPLOY;
 const ELEMENT_KEYS = new Set(['neural', 'erosion', 'burn', 'apoptosis', 'necrosis']);
 
 const MAX_EVENTS = 6000;
+/** Largest raise of the adaptive delay per arrival (real s): a single spike must not jump it to maxDelay at once. */
+const DELAY_RAISE = 0.1;
 const finite = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+
+/**
+ * The 95th percentile of `values`, linearly interpolated over the rank position `0.95 × (n − 1)`. Nearest rank
+ * (`ceil(n × 0.95) − 1`) still lands on the maximum for every n ≤ 19 — the exact case a single jitter spike makes —
+ * so the interpolated quantile is used instead.
+ */
+export function percentile95(values) {
+  const s = values.slice().sort((a, b) => a - b);
+  if (!s.length) return 0;
+  const rank = 0.95 * (s.length - 1);
+  const lo = Math.floor(rank), hi = Math.min(s.length - 1, lo + 1);
+  return s[lo] + (s[hi] - s[lo]) * (rank - lo);
+}
 
 /**
  * Game time unit `id` starts moving between snapshot `a` and the newer `b` (interpolation and extrapolation share it):
@@ -148,6 +175,13 @@ export function normalizeSnapshot(snap) {
       if (n > 0) (motes || (motes = new Map())).set(e[0], { n, wide: e[2] ? 1 : 0 });
     }
   }
+  let fever = null;
+  if (Array.isArray(snap.fever)) {
+    for (const e of snap.fever) {
+      if (!Array.isArray(e) || !units.has(e[0]) || !(typeof e[1] === 'number' && Number.isFinite(e[1]))) continue;
+      (fever || (fever = new Map())).set(e[0], [clamp(e[1], 0, 1), e[2] ? 1 : 0]);
+    }
+  }
   let down = null;
   if (Array.isArray(snap.down)) {
     for (const d of snap.down) {
@@ -178,7 +212,7 @@ export function normalizeSnapshot(snap) {
       (face || (face = new Map())).set(e[0], e[1]);
     }
   }
-  return { t, units, down, ammo, wolves, coins, energy, charges, layers, neg, motes, stand, standCut, face, raw: snap };
+  return { t, units, down, ammo, wolves, coins, energy, charges, layers, neg, motes, fever, stand, standCut, face, raw: snap };
 }
 
 /**
@@ -199,7 +233,9 @@ function countList(list, units) {
 export class SnapshotBuffer {
   /**
    * @param {{ delay?: number, rate?: number, maxExtrapolate?: number, keep?: number, teleport?: number,
-   *           snapAfter?: number, minRate?: number, maxRate?: number }} [opts]
+   *           snapAfter?: number, minRate?: number, maxRate?: number, adaptive?: boolean, minDelay?: number,
+   *           maxDelay?: number, jitterWindow?: number, jitterMargin?: number, jitterGap?: number,
+   *           delayEase?: number }} [opts]
    *   delay / maxExtrapolate / snapAfter / keep are REAL seconds.
    */
   constructor(options) {
@@ -212,6 +248,13 @@ export class SnapshotBuffer {
     this.keep = Math.max(0.5, finite(opts.keep, 2.5));
     this.teleport = Math.max(0.5, finite(opts.teleport, 2.5));
     this.snapAfter = Math.max(0.2, finite(opts.snapAfter, 0.75));
+    this.adaptive = opts.adaptive === true;
+    this.minDelay = Math.max(0, finite(opts.minDelay, 0.1));
+    this.maxDelay = Math.max(this.minDelay, finite(opts.maxDelay, 0.6));
+    this.jitterWindow = Math.max(1, finite(opts.jitterWindow, 8));
+    this.jitterMargin = Math.max(0, finite(opts.jitterMargin, 0.02));
+    this.jitterGap = Math.max(0.2, finite(opts.jitterGap, 1));
+    this.delayEase = Math.max(0, finite(opts.delayEase, 0.05));
     this.reset();
   }
 
@@ -224,11 +267,20 @@ export class SnapshotBuffer {
     this.renderT = NaN;
     this.lastNow = NaN;
     this.interval = 0.1 * this.defaultRate / 2; // game s between snapshots (estimated)
+    /** @type {[number, number][]} adaptive: [arrival, running backlog of the per-interval arrival deviations] */
+    this.lateness = [];
+    /** The previous accepted snapshot's `{ now, t }` for the per-interval deviation (null: no predecessor yet). */
+    this.lastSample = null;
+    /** Most samples the adaptive window has held: a raise needs half of it (see _adapt). */
+    this.windowPeak = 0;
+    this.lastArrival = NaN; // (a new battle's clock is not comparable: the learned `delay` stays, its window starts over)
     /** @type {{t:number, ev:any}[]} */
     this.events = [];
     /** @type {Map<number|string, number[]>} Parasite attachment blink times, retained after cosmetic fx is consumed. */
     this.parasiteBlinkTimes = new Map();
     this.meta = null; // latest snapshot's extra fields (dp, killed, total, boss…)
+    this.draining = false;
+    this.drainEndT = NaN; // newest snapshot when drain() was called (push clears draining once the stream moves past it)
     return this;
   }
 
@@ -251,6 +303,10 @@ export class SnapshotBuffer {
       else if (s.t <= newest) return false;
     }
     s.at = now;
+    // the feed came back after drain(): two intervals past the newest snapshot it drained, the clock waits for the
+    // delay again (drain() is only auto-cleared here and by setNominalRate / reset — never by update())
+    if (this.draining && Number.isFinite(this.drainEndT) && s.t > this.drainEndT + 2 * this.interval) this.draining = false;
+    if (this.adaptive) this._adapt(s.t, now);
     const prev = this.snaps[this.snaps.length - 1];
     if (prev) {
       const dt = s.t - prev.t;
@@ -281,6 +337,70 @@ export class SnapshotBuffer {
   }
 
   /**
+   * Set the nominal clock (game seconds per real second) — the battle speed this feed runs at — and restart the
+   * arrival-rate estimate from it. A new battle speed is a step, not a drift: without this the estimate spends its
+   * first ~0.25 s at the old rate (a 2× battle renders at half the clock until four arrivals have been seen). The local
+   * feed (setLocalFeed) and a streamed field's b.start speed (setStreamSpeed) both call it.
+   * @param {number} rate
+   * @returns {this}
+   */
+  setNominalRate(rate) {
+    const r = clamp(finite(rate, this.defaultRate), 0.05, 20);
+    // a new rate is also a new feed: a drained buffer must not keep running past the newest snapshot
+    this.draining = false;
+    if (r === this.defaultRate && r === this.rate) return this;
+    this.defaultRate = r;
+    this.rate = r;
+    this.arrivals.length = 0;
+    this.interval = 0.1 * r / 2;
+    // the adaptive window reads deviations against the estimated rate: a new rate makes the old samples incomparable
+    this.lateness.length = 0;
+    this.lastSample = null;
+    this.windowPeak = 0;
+    this.lastArrival = NaN;
+    return this;
+  }
+
+  /**
+   * Adaptive delay (see header): the stream's own jitter, measured from consecutive arrival gaps. Each arrival's
+   * deviation is `(now − prevNow) − (t − prevT) / rate` — the excess of the real gap over the game time it delivered at
+   * the estimated clock rate — so a constant rate error cancels instead of accumulating as lateness.
+   */
+  _adapt(t, now) {
+    const prev = this.lastSample;
+    this.lastSample = { now, t };
+    const w = this.lateness;
+    const last = this.lastArrival;
+    this.lastArrival = now;
+    const gap = Number.isFinite(last) ? now - last : Infinity;
+    // a gap longer than the stream's own cadence (a pause, a hidden tab, a new battle) starts the window over; the
+    // four-interval floor keeps a stream slower than one frame a second from looking like a pause
+    const gapLimit = Math.max(this.jitterGap, 4 * this.interval / Math.max(this.rate, 1e-6));
+    if (!(gap >= 0 && gap <= gapLimit)) { w.length = 0; return; }
+    // the first sample has no predecessor, and a frame whose game time did not advance carries no timing information
+    if (!prev || !(t > prev.t)) return;
+    // the excess of this arrival gap over the game time it delivered, at the estimated clock rate: a constant rate
+    // error cancels out here, only the per-interval deviation (jitter) remains. The window keeps the running backlog,
+    // so a stall stays visible for as long as the stream is still behind, while a constant slow stream does not climb.
+    const d = gap - (t - prev.t) / Math.max(this.rate, 1e-6);
+    const backlog = Math.max(0, (w.length ? w[w.length - 1][1] : 0) + d);
+    w.push([now, backlog]);
+    while (w.length > 1 && now - w[0][0] > this.jitterWindow) w.shift();
+    if (w.length > this.windowPeak) this.windowPeak = w.length;
+    if (w.length < 3) return;
+    const p95 = Math.max(0, percentile95(w.map((e) => e[1])));
+    const want = clamp(this.interval / this.defaultRate + p95 + this.jitterMargin, this.minDelay, this.maxDelay);
+    if (want > this.delay) {
+      // less than half the window seen (the first frames after a restart): too small a sample to raise on
+      if (w.length < Math.max(3, Math.ceil(this.windowPeak / 2))) return;
+      // one small spike raises the delay by at most DELAY_RAISE, not straight to `want`
+      this.delay = Math.min(want, this.delay + DELAY_RAISE);
+    } else {
+      this.delay = Math.max(want, this.delay - this.delayEase * gap);
+    }
+  }
+
+  /**
    * Queue a b.ev batch. `t` (game s, the frame's `gt`) when the server stamps it; otherwise the batch is placed
    * inside the latest snapshot interval (see header).
    */
@@ -291,9 +411,13 @@ export class SnapshotBuffer {
       const n = this.newestT;
       stamp = Number.isFinite(n) ? n - this.interval * 0.5 : (Number.isFinite(this.renderT) ? this.renderT : 0);
     }
-    let added = 0;
+    // the last queued event's stamp before this batch: after the capped queue has been rebuilt below, indices no longer
+    // point at it (`length - 1 - added` was the old, broken way to find the batch's first element)
+    const lastBefore = this.events.length ? this.events[this.events.length - 1].t : -Infinity;
+    let firstT = NaN, added = 0;
     for (const ev of evs) {
       if (!Array.isArray(ev) || typeof ev[0] !== 'string') continue;
+      if (Number.isNaN(firstT)) firstT = stamp;
       this.events.push({ t: stamp, ev });
       if (ev[0] === 'fx' && ev[1] === 'teleport' && ev[4]?.kind === 'parasite') {
         const id = ev[4]?.id;
@@ -317,10 +441,8 @@ export class SnapshotBuffer {
       }
       this.events = keep.length > MAX_EVENTS * 2 ? keep.slice(keep.length - MAX_EVENTS * 2) : keep;
     }
-    // keep sorted (batches normally arrive in order; a server stamp may be older)
-    if (this.events.length > 1 && this.events[this.events.length - 1].t < this.events[this.events.length - 1 - added]?.t) {
-      this.events.sort((a, b) => a.t - b.t);
-    }
+    // keep sorted (batches normally arrive in order; a server stamp may be older than the queue's tail)
+    if (Number.isFinite(firstT) && firstT < lastBefore) this.events.sort((a, b) => a.t - b.t);
     return added;
   }
 
@@ -333,7 +455,9 @@ export class SnapshotBuffer {
     const dt = Number.isFinite(this.lastNow) ? clamp(now - this.lastNow, 0, 1) : 0;
     this.lastNow = now;
     const newest = this.newestT;
-    const target = newest - this.delay * this.rate;
+    // the feed is over: nothing is left to wait for, so the clock runs up to the newest snapshot (behind it a jitter delay
+    // over 1/3 s would hold it for good: the pull towards the target outweighs the clock at that distance)
+    const target = this.draining ? newest : newest - this.delay * this.rate;
     if (!Number.isFinite(this.renderT)) this.renderT = target;
     this.renderT += dt * this.rate;
     const err = target - this.renderT;
@@ -344,6 +468,9 @@ export class SnapshotBuffer {
     if (this.renderT < this.snaps[0].t) this.renderT = this.snaps[0].t;
     return this.renderT;
   }
+
+  /** The feed ended (a finished battle): drop the jitter delay until reset(), setNominalRate() or a stream that moves on. */
+  drain() { this.draining = true; this.drainEndT = this.newestT; }
 
   /** Jump the render clock to the newest snapshot (scrubbing / first frame after a reset). */
   snapToNewest() {
@@ -363,8 +490,15 @@ export class SnapshotBuffer {
   }
 
   _parasiteBlinkAt(id, from, to) {
+    // sample() asks this for every unit and every interval; the list is normally absent, and `?? []` would allocate an
+    // empty array (plus an iterator) per call — the miss returns first
+    const times = this.parasiteBlinkTimes.get(id);
+    if (times === undefined) return Infinity;
     let first = Infinity;
-    for (const t of this.parasiteBlinkTimes.get(id) ?? []) if (t > from && t <= to && t < first) first = t;
+    for (let i = 0; i < times.length; i++) {
+      const t = times[i];
+      if (t > from && t <= to && t < first) first = t;
+    }
     return first;
   }
 
@@ -407,14 +541,19 @@ export class SnapshotBuffer {
     const P = !B && ia > 0 ? s[ia - 1] : null; // for extrapolation
     const ext = !B ? clamp(time - A.t, 0, this.maxExtrapolate * this.rate) : 0;
     const stamp = A.t;
+    // the optionally listed readouts, read once per sample instead of once per unit (see the header)
+    const ammoList = A.ammo, wolvesList = A.wolves, coinsList = A.coins, energyList = A.energy;
+    const chargesList = A.charges, layersList = A.layers, negList = A.neg, motesList = A.motes;
+    const feverList = A.fever, faceList = A.face;
+    const blinks = this.parasiteBlinkTimes.size !== 0; // no parasite blink in play: skip the per-unit lookup
     for (const [id, a] of A.units) {
       let o = out.get(id);
-      if (!o) { o = { id, x: 0, y: 0, hp: 0, maxHp: 0, sp: 0, spMax: 0, flags: 0, anim: 0, vx: 0, vy: 0, seen: 0, el: null, elFill: 0, elUntil: 0, elDur: 0, ammo: null, wolves: null, neg: 0, motes: null, face: null }; out.set(id, o); }
+      if (!o) { o = { id, x: 0, y: 0, hp: 0, maxHp: 0, sp: 0, spMax: 0, flags: 0, anim: 0, vx: 0, vy: 0, seen: 0, el: null, elFill: 0, elUntil: 0, elDur: 0, ammo: null, wolves: null, neg: 0, motes: null, fever: null, face: null }; out.set(id, o); }
       const b = B ? B.units.get(id) : null;
       if (b) {
         const dx = b[1] - a[1], dy = b[2] - a[2];
         // (a deployment in between — the newer snapshot starts its deploy animation — lands on its tile, no slide)
-        const jumpAt = this._parasiteBlinkAt(id, A.t, B.t);
+        const jumpAt = blinks ? this._parasiteBlinkAt(id, A.t, B.t) : Infinity;
         const tele = dx * dx + dy * dy > this.teleport * this.teleport || redeployed(a, b) || jumpAt < Infinity;
         const afterJump = alpha >= 1 || time >= jumpAt;
         const start = movementStart(A, B, id);
@@ -439,7 +578,7 @@ export class SnapshotBuffer {
           if (p && dtp > 0 && moveSpan > 0) {
             const dx = a[1] - p[1], dy = a[2] - p[2];
             if (dx * dx + dy * dy <= this.teleport * this.teleport && !redeployed(p, a)
-              && this._parasiteBlinkAt(id, P.t, A.t) === Infinity) {
+              && (!blinks || this._parasiteBlinkAt(id, P.t, A.t) === Infinity)) {
               vx = dx / moveSpan; vy = dy / moveSpan;
             }
           }
@@ -456,15 +595,16 @@ export class SnapshotBuffer {
       o.anim = a[8];
       if (a.length > 9) { o.el = a[9]; o.elFill = a[10]; o.elUntil = a[11]; o.elDur = a[12]; } else if (o.el !== null) { o.el = null; o.elFill = 0; o.elUntil = 0; o.elDur = 0; }
       // the HP-bar readouts come with the older snapshot, like flags (whole rounds step with the skill flag)
-      o.ammo = A.ammo ? A.ammo.get(id) || null : null;
-      o.wolves = A.wolves ? A.wolves.get(id) || null : null;
-      o.coins = A.coins?.get(id) ?? null;
-      o.energy = A.energy?.get(id) ?? null;
-      o.charges = A.charges?.get(id) ?? null;
-      o.layers = A.layers?.get(id) ?? 0;
-      o.neg = A.neg ? A.neg.get(id) || 0 : 0;
-      o.motes = A.motes ? A.motes.get(id) || null : null;
-      o.face = A.face ? A.face.get(id) ?? null : null;
+      o.ammo = ammoList ? ammoList.get(id) || null : null;
+      o.wolves = wolvesList ? wolvesList.get(id) || null : null;
+      o.coins = coinsList?.get(id) ?? null;
+      o.energy = energyList?.get(id) ?? null;
+      o.charges = chargesList?.get(id) ?? null;
+      o.layers = layersList?.get(id) ?? 0;
+      o.neg = negList ? negList.get(id) || 0 : 0;
+      o.motes = motesList ? motesList.get(id) || null : null;
+      o.fever = feverList?.get(id) ?? null;
+      o.face = faceList ? faceList.get(id) ?? null : null;
       o.seen = stamp;
     }
     for (const id of out.keys()) if (!A.units.has(id)) out.delete(id);

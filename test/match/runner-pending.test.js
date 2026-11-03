@@ -46,7 +46,7 @@ function realBossStart() {
 /** A display replica of another field (a teammate's battle). */
 const watched = () => ({ ...START, battleId: `${START.battleId}w`, fieldId: 'n:p_9', spec: { ...START.spec, fieldId: 'n:p_9' }, authoritative: false, watch: true, elapsed: 0 });
 
-function rig() {
+function rig({ loadSim = null, wait = null, loadRetryDelays = null } = {}) {
   let t = 1000;
   let frames = [];
   const handlers = new Map();
@@ -63,12 +63,15 @@ function rig() {
     request(type, fields) { const msg = { ...fields, t: type, rid: 1 }; assert.equal(validateC2S(msg), null, `invalid ${type}`); sent.push(msg); return Promise.resolve({ t: 'ok' }); },
   };
   const store = createStore(initialState);
-  const runner = createBattleRunner({
+  const deps = {
     net, store, doc: { hidden: false, addEventListener() {} }, now: () => t,
     raf: (fn) => { frames.push(fn); return frames.length; }, caf: () => {},
     setInterval: () => 1, clearInterval: () => {},
-    loadSim: () => loaded, logger: QUIET,
-  });
+    loadSim: loadSim || (() => loaded), logger: QUIET,
+  };
+  if (wait) deps.wait = wait;
+  if (loadRetryDelays) deps.loadRetryDelays = loadRetryDelays;
+  const runner = createBattleRunner(deps);
   runner.on('field', (f) => shown.push(f.battleId));
   store.patch('match', { public: { phase: PHASE.COMBAT } });
   return {
@@ -269,5 +272,86 @@ test('b.pool during the catch-up of a boss field reaches its Battle at once', as
   assert.ok(Math.abs(pool.hp - hp) < 1e-6, 'the server hp when everything is acknowledged');
   await r.frames(3);
   assert.equal(r.runner._entries.get(start.battleId).battle, r.built[0]);
+  r.runner.dispose();
+});
+
+/** A loader that counts calls, rejects the first `failures` and then builds the same one-Battle sim. */
+function countingSim() {
+  const builds = [];
+  const sim = { ds: DS, spec: { ...specMod, createBattleFromSpec: (...a) => { const b = specMod.createBattleFromSpec(...a); builds.push(b); return b; } } };
+  return { builds, sim };
+}
+
+test('a transient simulation load failure is retried for the same b.start — one Battle, shown once', async () => {
+  let calls = 0;
+  const { builds, sim } = countingSim();
+  const r = rig({ loadRetryDelays: [0, 0], wait: () => Promise.resolve(),
+    loadSim: () => (++calls === 1 ? Promise.reject(new Error('sim unavailable')) : Promise.resolve(sim)) });
+  r.net.emit('b.start', { ...START, elapsed: 0 });
+  await tick(); await tick();
+  assert.equal(calls, 2, 'the queued b.start asked for the simulation again (no second start needed)');
+  await r.frames(3);
+  assert.equal(builds.length, 1);
+  assert.equal(r.shown.length, 1, 'the battle is shown once, never restarted by the retry');
+  assert.equal(r.runner.state().error, false);
+  r.runner.dispose();
+});
+
+test('a load that keeps failing keeps the b.start queued with one error; a resend retries the same entry', async () => {
+  let calls = 0;
+  const { builds, sim } = countingSim();
+  const r = rig({ loadRetryDelays: [], loadSim: () => (++calls === 1 ? Promise.reject(new Error('sim unavailable')) : Promise.resolve(sim)) });
+  r.net.emit('b.start', { ...START, elapsed: 0 });
+  await tick(); await tick();
+  assert.equal(r.runner.state().loading, true, 'still the loading battle (not dropped)');
+  assert.equal(r.runner.state().error, true, 'the prompt has something to retry');
+  assert.equal(r.runner._entries.size, 0);
+  r.net.emit('b.start', { ...START, elapsed: 0 }); // a reconnect / resync resend
+  await tick();
+  await r.frames(3);
+  assert.equal(builds.length, 1, 'the resend prepared the same b.start, never a second Battle');
+  assert.deepEqual(r.shown, [START.battleId]);
+  r.runner.dispose();
+});
+
+test('the loading prompt retries through runner.retry(); a b.start during that retry joins it', async () => {
+  let calls = 0;
+  let release;
+  const { builds, sim } = countingSim();
+  const r = rig({ loadRetryDelays: [],
+    loadSim: () => {
+      calls++;
+      if (calls === 1) return Promise.reject(new Error('sim unavailable'));
+      return new Promise((resolve) => { release = () => resolve(sim); });
+    } });
+  r.net.emit('b.start', { ...START, elapsed: 0 });
+  await tick(); await tick();
+  assert.equal(r.runner.state().error, true);
+  assert.equal(r.runner.retry(), true, 'the prompt starts the retry');
+  assert.equal(r.runner.state().error, false);
+  r.net.emit('b.start', { ...START, elapsed: 0 }); // a resend while the retry is loading
+  await tick();
+  assert.equal(calls, 2, 'the resend joined the retry instead of loading again');
+  release();
+  await r.frames(3);
+  assert.equal(builds.length, 1);
+  assert.equal(r.shown.length, 1);
+  r.runner.dispose();
+});
+
+test('the connection coming back retries a battle whose simulation could not load', async () => {
+  let calls = 0;
+  const { builds, sim } = countingSim();
+  const r = rig({ loadRetryDelays: [],
+    loadSim: () => (++calls === 1 ? Promise.reject(new Error('offline')) : Promise.resolve(sim)) });
+  r.net.emit('b.start', { ...START, elapsed: 0 });
+  await tick(); await tick();
+  assert.equal(r.runner.state().error, true);
+  r.net.emit('status', { status: 'online' });
+  await tick();
+  await r.frames(3);
+  assert.equal(calls, 2);
+  assert.equal(builds.length, 1);
+  assert.equal(r.shown.length, 1);
   r.runner.dispose();
 });

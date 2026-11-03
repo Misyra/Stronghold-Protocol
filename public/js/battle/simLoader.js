@@ -19,7 +19,9 @@ function deepFreeze(root) {
  * (DESIGN §32.6): the files of a room's content set the page checked (public/js/content.js) instead of fetching
  * /data/; `cs` names what was loaded; `bounds` its official-bounds snapshot (installSimBounds). `reuse(name)`: a file
  * of the original content the page already parsed (public/js/data.js `getRaw` — the match UI has ten of the eleven),
- * adopted instead of fetched and parsed again. `reuseOwner()` says what the page's store holds right now (data.js
+ * adopted instead of fetched and parsed again. `reuseLoad(name)`: that store's own load (data.js `load`) — awaited when
+ * the page does not hold the file yet, so the first battle waits for the match UI's in-flight files (retries included)
+ * instead of racing them with a second request. `reuseOwner()` says what the page's store holds right now (data.js
  * `contentId`: null = the original): files are adopted only while it is null, so a content set that is already in the
  * store, or adopted while this load is in flight, is never handed to a simulation of the original content — the loader
  * fetches instead, exactly as before.
@@ -27,7 +29,7 @@ function deepFreeze(root) {
 let loadedScripts = false, loadedTraits = false, traitInstaller = null;
 export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetchFn = (...a) => globalThis.fetch(...a), data = null, cs = null, bounds = null,
   scripts = [], hashInput = null, nativeVerified = false, deferScripts = false, traitRuntimeVerified = null, reuse = null,
-  reuseOwner = null } = {}) {
+  reuseOwner = null, reuseLoad = null } = {}) {
   // The page's store holds the original content only while `reuseOwner()` returns null: a room's content set may
   // already be in it when a vanilla simulation starts, or be adopted while this load is in flight (content.js).
   // `original()` is checked around every retrieval, so either case falls back to fetching — the behaviour before reuse.
@@ -51,6 +53,12 @@ export async function loadBrowserSim({ base = '/sim/', dataBase = '/data/', fetc
       // Checked before and after the retrieval: the store can change hands while the load is in flight, or during the
       // retrieval itself — an object from a content set is thrown away and the file fetched instead.
       let local = original && original() ? reuse(n) : null;
+      // The page is still downloading this file (or its earlier attempt failed and it is retrying): wait for the store
+      // instead of opening a second request that has none of its retries — the battle then starts on the page's copy.
+      if (!local && reuseLoad && original && original()) {
+        try { await reuseLoad(n); } catch { /* the fetch below is still the fallback */ }
+        local = original && original() ? reuse(n) : null;
+      }
       if (local && original && !original()) local = null;
       if (local && typeof local === 'object') return local;
       return (await fetchOnce(n)) ?? fetchOnce(n);

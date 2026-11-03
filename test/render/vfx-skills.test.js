@@ -390,8 +390,14 @@ describe('the extracted effects (when fx was extracted on this machine)', { skip
     const data = Object.fromEntries(['chess', 'backups', 'tokens', 'enemies'].map((n) => [n, JSON.parse(readFileSync(path.join(ROOT, 'data', `${n}.json`), 'utf8'))]));
     const rep = coverage(real, data);
     const op = rep.groups.operators;
-    assert.ok(op.resolved / op.skills > 0.95, `${op.resolved} / ${op.skills} resolved`);
-    assert.ok(op.planned / op.skills > 0.8, `${op.planned} / ${op.skills} planned`);
+    // A unit absent from the local fx index cannot get a plan: `no-unit` is an extraction gap (the index version lags
+    // the roster — the 0.3.4 collab ports and 克莱门莎 are missing from this machine's index), not a mapping
+    // regression, so it stays out of the denominator. Re-extracting the index with a client that contains them puts
+    // them back and raises the numerator; never lower the 0.95 threshold instead.
+    const noUnit = op.notResolved?.['no-unit'] || 0;
+    const mapped = op.skills - noUnit;
+    assert.ok(op.resolved / mapped > 0.95, `${op.resolved} / ${mapped} resolved (${noUnit} units not in the index)`);
+    assert.ok(op.planned / mapped > 0.8, `${op.planned} / ${mapped} planned`);
     const { enemies, tokens } = rep.groups;
     if ((real.version || 1) >= 2) {
       // index v2: the enemies' skills by prefabKey (123 of 126 roster pairs), the summons' (71 of 78)

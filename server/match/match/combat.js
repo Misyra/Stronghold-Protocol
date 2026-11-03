@@ -78,6 +78,7 @@ export class MatchCombat {
   }
 
   startCombat() {
+    this._applySpeedVote(); // 已全员赞成的 2 倍速投票在这场战斗建立前生效（match/speedVote.js）
     if (this.clientCombat) { this._startCombatClient(); return; }
     this.phase = PHASE.COMBAT;
     const alive = this.alivePlayers();

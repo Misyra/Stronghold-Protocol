@@ -38,6 +38,7 @@
 //                                               model to that clip set (render/units.js FORMS)
 //   view.setLocalFeed({ on, speed })            frames come from the local sim every frame (client-side combat):
 //                                               ~2-frame buffer at the battle's game speed
+//   view.setStreamSpeed(speed)                  a streamed battle's game speed (0: the normal 2×), 战斗 2 倍速
 //   view.highlightTiles(tiles, style)           [[r,c]] | [{row,col}]; style 'legal'|'illegal'|'range'|'rangeStand'|
 //                                               'hover'|'target'|{color,fill,line,group}; highlightTiles(null) clears all
 //   view.on(name, fn) → unsubscribe ; view.off(name, fn)
@@ -337,7 +338,11 @@ export async function createFieldView(host, options = {}) {
   // dead units for DIE_ANIM_TIME), which must not bring the view back; a spawn / deploy / live sample clears it
   const gone = new Set();
   const woundUp = new WeakSet(); // atk event tuples whose attack wind-up already started
-  const interp = new SnapshotBuffer({ delay: 0.1, rate: 2 });
+  // streamed fields (a spectator seat, a replica that went back to the stream): the delay follows the network's jitter
+  const interp = new SnapshotBuffer({ delay: 0.1, rate: 2, adaptive: true });
+  let streamDelay = interp.delay;
+  /** game seconds per real second of a streamed battle (setStreamSpeed); the local feed uses its b.start speed */
+  let streamRate = 2;
   const presentation = new BattlePresentation();
   const sample = new Map();
   const meleePending = new Map(); // target id → { src, t }
@@ -2177,7 +2182,7 @@ export async function createFieldView(host, options = {}) {
     /** Enemy preview pen: a list in m.private.nextEnemies shape, or null to empty it (setPrep does this itself). */
     setPen(list) { if (destroyed) return false; setPenList(Array.isArray(list) ? list : null); return true; },
     enterBattle,
-    finishBattle() { if (!destroyed && mode === 'battle') presentation.finish(); },
+    finishBattle() { if (!destroyed && mode === 'battle') { presentation.finish(); interp.drain(); } },
     pushSnapshot,
     pushEvents,
     /**
@@ -2188,9 +2193,23 @@ export async function createFieldView(host, options = {}) {
     setLocalFeed(o) {
       const on = !!(o && o.on);
       const speed = Number(o && o.speed) > 0 ? Number(o.speed) : 2;
-      interp.delay = on ? 0.034 : 0.1;
-      interp.defaultRate = on ? Math.min(20, speed) : 2;
+      // the stream's learned delay is kept for the next streamed field; the local feed runs a ~2-frame buffer instead
+      const was = interp.adaptive;
+      if (on && was) streamDelay = interp.delay;
+      interp.adaptive = !on;
+      interp.delay = on ? 0.034 : was ? interp.delay : streamDelay;
+      // a drained buffer (the previous battle's tail) must not stay drained across the feed switch
+      interp.draining = false;
       interp.maxRate = on ? Math.max(8, speed * 1.5) : 8;
+      // a 2× battle starts on its own clock: the buffer was reset at the old nominal rate (enterBattle), and letting the
+      // arrival estimate catch up would show its first quarter second at half speed and then jump
+      interp.setNominalRate(on ? Math.min(20, speed) : streamRate);
+      return true;
+    },
+    /** A streamed field's game speed (战斗 2 倍速; 0 / absent = the normal 2×) — the clock starts at it, not at 2×. */
+    setStreamSpeed(speed) {
+      streamRate = Number(speed) > 0 ? Math.min(20, Number(speed)) : 2;
+      if (interp.adaptive) interp.setNominalRate(streamRate);
       return true;
     },
     highlightTiles(tilesList, style) {

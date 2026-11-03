@@ -54,6 +54,11 @@ export const FX_KINDS = Object.freeze({
   taunt: { a: 'mark', c: 0xff9c33 }, palsy: { a: 'mark', c: 0xc77dff }, emergency: { a: 'mark', c: 0xff5a4a },
   lock: { a: 'reticle', c: 0xff5a4a }, droneLock: { a: 'reticle', c: 0x8fe6ff }, wanted: { a: 'reticle', c: 0xffc600 }, expose: { a: 'reticle', c: 0xff7b8a },
   reveal: { a: 'reticle', c: 0x9fd4ff }, anchor: { a: 'reticle', c: 0x9fd4ff },
+  heatwave: { a: 'move', c: 0xff8a3c }, heatwaveHit: { a: 'blast', c: 0xff8a3c, r: 1.5 },
+  oblvnsNote: { a: 'move', c: 0xd9c2ff }, oblvnsS1: { a: 'move', c: 0xd9c2ff }, oblvnsOrgan: { a: 'move', c: 0xb08cff },
+  // 灰烬 (op-ash.js) / 艾拉 (op-ela.js) without the collab pack's official effects: the shots fly, the hits burst
+  ashFlashDash: { a: 'move', c: 0xfff0c0 }, ashShellDash: { a: 'move', c: 0xffb347 },
+  ashFlashBlast: { a: 'blast', c: 0xfff0c0, r: 1 }, ashShellBlast: { a: 'blast', c: 0xff9c33, r: 1.5 }, elaMineBlast: { a: 'blast', c: 0x9fd4ff, r: 1 },
   // buffs
   buff: { a: 'buff', c: 0xffd45a }, overload: { a: 'buff', c: 0xff7a33 }, overclock: { a: 'buff', c: 0xff9c33 }, talent: { a: 'buff', c: 0xffd45a },
   knack: { a: 'buff', c: 0xffd45a }, bloodBattle: { a: 'buff', c: 0xff4b3e }, sword: { a: 'buff', c: 0xdfe8ff }, equip: { a: 'buff', c: 0x4ed8af },

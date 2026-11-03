@@ -898,8 +898,23 @@ export const DIR_YAW = Object.freeze([Math.PI / 2, 0, -Math.PI / 2, Math.PI]);
 /** Battle seconds a stopped effect takes at most to fade out (see _lifecycle). */
 export const STOP_FADE = 0.6;
 
+/** Draw-entry free list: gather() hands one out per visible renderer every frame, and system.js's _prepare returns the
+ * last frame's when it clears its sort lists — an entry lives exactly one frame (sorted, built, drawn; FxGL.draw keeps
+ * none). Fields are always assigned in this order so every pooled entry keeps one hidden class. */
+const ENTRY_POOL = [];
+
 function entry(part, node, submesh, mat, ov, order, layer, dist, ground, effect, meshKey) {
-  return { part, node, submesh, mat, ov, order, layer, queue: mat.queue, dist, ground, effect, meshKey, kind: null, first: 0, count: 0, seq: 0 };
+  const e = ENTRY_POOL.pop() || {};
+  e.part = part; e.node = node; e.submesh = submesh; e.mat = mat; e.ov = ov; e.order = order; e.layer = layer;
+  e.queue = mat.queue; e.dist = dist; e.ground = ground; e.effect = effect; e.meshKey = meshKey;
+  e.kind = null; e.first = 0; e.count = 0; e.seq = 0;
+  return e;
+}
+
+/** Return a frame's draw entries to the free list and empty the list (where _prepare drops the last frame's). */
+export function recycleEntries(list) {
+  for (let i = 0; i < list.length; i++) ENTRY_POOL.push(list[i]);
+  list.length = 0;
 }
 
 /**

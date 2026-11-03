@@ -20,7 +20,7 @@
 
 import { FxLibrary } from './library.js';
 import { FxGL } from './gl.js';
-import { Effect } from './effect.js';
+import { Effect, recycleEntries } from './effect.js';
 import { FrameData, cameraBasis } from './geom.js';
 import { mat4, mat4Mul } from './math.js';
 
@@ -344,7 +344,8 @@ export class OfficialFx {
     const fd = this.fd;
     fd.reset();
     const g = this.items.ground, o = this.items.over;
-    g.length = 0; o.length = 0;
+    // the last frame's draw entries are dead now (both passes drew them): back to effect.js's free list
+    recycleEntries(g); recycleEntries(o);
     let seq = 0, depth = false;
     const sink = (e) => {
       e.seq = seq++;

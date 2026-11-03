@@ -869,8 +869,8 @@ export class AudioManager {
             const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
             let timer = null;
             const timedOut = new Promise((resolve) => { timer = setTimeout(() => { ctrl?.abort(); resolve(null); }, this.bufferFetchTimeoutMs); });
-            let res = null;
-            let ab = null;
+            let res;
+            let ab;
             try {
               res = await Promise.race([fetch(u, { signal: ctrl?.signal }), timedOut]);
               if (res && res.ok) ab = await Promise.race([res.arrayBuffer(), timedOut]);

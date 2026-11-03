@@ -370,7 +370,7 @@ export function entryProblems(pkg, files) {
   for (const name of PLAYER_NPM_SCRIPTS) {
     const cmd = pkg?.scripts?.[name];
     if (!cmd) { out.push(`npm script "${name}" is missing`); continue; }
-    for (const m of cmd.matchAll(/\bnode\s+(?:--[\w-]+\s+)*([\w./-]+\.m?js)\b/g)) {
+    for (const m of cmd.matchAll(NODE_TARGET)) {
       if (!shipped.has(m[1])) out.push(`npm run ${name}: ${m[1]} is not shipped`);
     }
   }
@@ -380,9 +380,15 @@ export function entryProblems(pkg, files) {
 const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|svg)$/i;
 const ABSOLUTE_OR_ANCHOR = /^(?:[a-z][a-z0-9+.-]*:|#)/i;
 
+/**
+ * `node [flags] <file>`: a flag may carry a value with `=` (`--watch-path=public`) or as the next word
+ * (`--inspect 9230`). A bare `node --test` names no file.
+ */
+const NODE_TARGET = /\bnode\s+(?:--[\w-]+(?:=\S+)?\s+)*([\w./-]+\.m?js)\b/g;
+
 /** `node <file>` paths a script names. A bare `node --test` names none. */
 export function playerScriptTargets(cmd) {
-  return [...String(cmd ?? '').matchAll(/\bnode\s+(?:--[\w-]+\s+)*([\w./-]+\.m?js)\b/g)].map((m) => m[1]);
+  return [...String(cmd ?? '').matchAll(NODE_TARGET)].map((m) => m[1]);
 }
 
 /**

@@ -31,7 +31,7 @@ import { CONTENT_HASH_VERSION, contentHashOf, simHashOf } from '../../shared/plu
  *  per-file art hashes and skin selection — the latter three are build inputs the tools and server/resources.js
  *  read from disk (合并自用户分支; the resource round's data files would otherwise ride into the manifest and the
  *  content hash of every machine that happens to hold them). */
-export const PRESENTATION_DATA = Object.freeze(['assets', 'local-assets', 'local-fx', 'emotes', 'resource-packs', 'asset-hashes', 'skins-installed']);
+export const PRESENTATION_DATA = Object.freeze(['assets', 'local-assets', 'local-fx', 'emotes', 'resource-packs', 'asset-hashes', 'skins-installed', 'assets-collab', 'local-fx-collab']);
 /** server/sim files that are never served (lower-case; static.js SIM_PRIVATE). */
 const SIM_PRIVATE = new Set(['nodedata.js']);
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };

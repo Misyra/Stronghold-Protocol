@@ -77,6 +77,12 @@ export class PlayerViews {
     return out;
   }
 
+  /** Whether the AFK rule removes this seat at the end of its next prep without a substantive intent before it. */
+  afkWarned() {
+    const limit = this.m.afkRemoveRounds;
+    return limit > 1 && !this.isBot && !this.left && !this.botControlled && !this.afkActed && this.afkRounds >= limit - 1;
+  }
+
   privateView() {
     const slots = this.shop.slots.map((s) => (s ? { kind: s.kind, id: s.id, price: this.priceOf(s), basePrice: s.basePrice, sold: !!s.sold, frozen: !!s.frozen } : null));
     const offer = this.offers[0] || null;
@@ -109,6 +115,8 @@ export class PlayerViews {
       },
       ready: this.ready,
       canReady: this.alive && this.tempEmpty && !this.personalChoice && this.m.phase === PHASE.PREP,
+      // 挂机移出 (移植自用户分支): one more idle prep removes this seat (Match _checkIdle) — until a substantive intent clears it
+      ...(this.afkWarned() ? { afkWarn: true } : {}),
       personalChoice: this.personalChoice ? {
         id: this.personalChoice.id,
         round: this.personalChoice.round,

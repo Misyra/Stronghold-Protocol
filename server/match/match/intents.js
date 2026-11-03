@@ -24,7 +24,7 @@ export class MatchIntents {
       // 投票移出(移植自用户分支): an offline seat under AI takeover (kickVote.js)
       case 'g.kickVote': return this.requestKickVote(ps, msg.targetId);
       case 'g.kickBallot': return this.answerKickVote(ps, msg.voteId, msg.agree);
-      // 战斗 2 倍速投票（speedVote.js，右上角 ×2 按钮）: 全员赞成 → 下一回合生效
+      // 战斗 2 倍速投票（speedVote.js，右上角 ×2 按钮）: 全员赞成 → 下一场战斗开始时生效
       case 'g.speedVote': return this.speedVote(ps, msg.on === true);
       case 'g.band': return this.pickBand(ps, msg.bandId);
       case 'g.bandSkip': return this.skipBand(ps);

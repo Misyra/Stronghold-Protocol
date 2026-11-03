@@ -48,6 +48,9 @@ export function validHostMessage(m) {
       && (m.result.error === undefined || str(m.result.error, 80))
       && (m.result.ok === undefined || typeof m.result.ok === 'boolean') && boundedJson(m, HOST_IPC_LIMITS.reply);
     case 'end': return (m.summary == null || object(m.summary)) && boundedJson(m, HOST_IPC_LIMITS.reply);
+    // 挂机移出 (移植自用户分支): the match removed a human (opts.onRemove) — the lobby detaches the seat
+    case 'remove': return str(m.playerId, 128) && !!m.playerId && object(m.removal)
+      && str(m.removal.reason, 40) && Number.isSafeInteger(m.removal.rounds) && boundedJson(m, HOST_IPC_LIMITS.reply);
     case 'failed': return str(m.error, HOST_IPC_LIMITS.error) && boundedJson(m, HOST_IPC_LIMITS.error + 512);
     default: return false;
   }

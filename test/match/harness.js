@@ -8,7 +8,9 @@
 // fake (true → test/match/fakeBattle.js as BattleClass), script (FakeBattle.script), registry, instant (virtual
 // scheduler runs battles synchronously; default true), timerScale, battleContent, botRehearsal (default 0),
 // botSliceMs (bot rehearsal slice budget; default: unbounded in virtual time), aiPicksLast (the room option
-// AI 队友最后选择: the drafts order every human seat before every AI seat), test (DESIGN §34.8; hostId then
+// AI 队友最后选择: the drafts order every human seat before every AI seat), afkRemoveRounds (the AFK rule; default 0
+// here — the suites script humans that only confirm and ready — production default 2: test/match/afk.test.js), test
+// (DESIGN §34.8; hostId then
 // defaults to the first human), hostId / botRehearsalDelegate /
 // botRehearsalDelegateMs (the delegated bot rehearsal, DESIGN §14: test/match/rehearsal-delegate.test.js),
 // cs / vs / requireCs (a gameplay-plugin room: host rehearsal stays off), rules (DESIGN §34.15; omitted unless set).
@@ -82,6 +84,7 @@ export function makeMatch(o = {}) {
     botStrategy: o.botStrategy,
     bandDupes: o.bandDupes,
     aiPicksLast: o.aiPicksLast,
+    afkRemoveRounds: o.afkRemoveRounds ?? 0,
     botStrategySeats: o.botStrategySeats,
     externalAI: o.externalAI,
     externalReplay: o.externalReplay,
@@ -106,6 +109,7 @@ export function makeMatch(o = {}) {
     // still has no kitted key.
     ...(o.kitted !== undefined ? { kitted: o.kitted } : {}),
     ...(o.rules !== undefined ? { rules: o.rules } : {}),
+    ...(o.experimental !== undefined ? { experimental: o.experimental } : {}),
   });
   const m = h.m;
   if (m.clientCombat && o.clients !== false) {

@@ -15,8 +15,12 @@
 //
 // Recording points (server/match/match/): combat.js _finishCombat (normal fields, both modes), settle.js (the 联防
 // field's result, both modes — the one place the UNITE result exists), bossRounds.js _finishFinal (boss / hidden
-// fields). The board is pure additional metadata: nothing in the sim, the settlement or the golden results reads it;
-// views.js exposes it as `m.public.damage`, which reconnects and spectator seats receive like any public view.
+// fields, which pass the scope 'boss' / 'hidden' along). The board is pure additional metadata: nothing in the sim,
+// the settlement or the golden results reads it; views.js exposes it as `m.public.damage`, which reconnects and
+// spectator seats receive like any public view. The settlement (results.js buildResult) additionally reads
+// `bossRounds()` — the boss scopes' own per-player / per-operator ledgers — as `m.result.bossDamage` for the local
+// match records (0.3.4 §37.77, ported from the Stardust fork's PR5: there the whole board was per-round packets; here
+// the m.public board stays match-cumulative and only the record's breakdown is scoped).
 //
 // Design decisions against the fork's live implementation (Stardust-minus review), which sampled live battles at 1 Hz
 // and refused client-derived rows in clientCombat (`available: false`):
@@ -47,21 +51,46 @@ export class DamageBoard {
     this.players = new Map();
     /** The last round a field was recorded for (informational, m.public.damage.round). */
     this.round = 0;
+    /**
+     * The boss scopes' own cumulative ledgers (最终攻势 'boss' / 隐秘核心 'hidden'), kept beside the match-cumulative
+     * board for the settlement record (`bossRounds()` → m.result.bossDamage): the m.public board deliberately stays
+     * match-cumulative (header), so the per-round breakdown is a second fold of the same results, not a view of it.
+     * A scope ledger is only appended to and never cleared: each boss phase is fought once, and a later normal round
+     * must not disturb the record. Not persisted in match checkpoints (like the board itself).
+     * @type {Map<string, { round: number, phase: string, players: Map<string, object> }>}
+     */
+    this.scopes = new Map();
   }
 
   /**
    * Fold one finished field's result into the ledger. `result` is a BattleResult / validated client result (its
    * perPlayer as built by lifecycle._buildResult / validateClientResult); bad shapes are ignored, never thrown —
-   * a bookkeeping failure must not touch the match flow.
-   * @param {number} round @param {any} result
+   * a bookkeeping failure must not touch the match flow. `phase`: the boss rounds' scope ('boss' | 'hidden'), passed
+   * by bossRounds.js _finishFinal — the same result additionally folds into that scope's ledger (bossRounds()).
+   * @param {number} round @param {any} result @param {string} [phase]
    */
-  record(round, result) {
+  record(round, result, phase = null) {
     const per = result && typeof result === 'object' ? result.perPlayer : null;
     if (!per || typeof per !== 'object') return;
     if (Number.isInteger(round) && round > this.round) this.round = round;
+    this._fold(this.players, per);
+    if (phase === 'boss' || phase === 'hidden') {
+      let scope = this.scopes.get(phase);
+      if (!scope) { scope = { round: 0, phase, players: new Map() }; this.scopes.set(phase, scope); }
+      if (Number.isInteger(round) && round > scope.round) scope.round = round;
+      this._fold(scope.players, per);
+    }
+  }
+
+  /** Fold one result's perPlayer block into a ledger's player rows (the main board's or a boss scope's). */
+  _fold(players, per) {
     for (const [playerId, pp] of Object.entries(per)) {
       if (!pp || typeof pp !== 'object') continue;
-      const row = this._rowOf(playerId);
+      let row = players.get(playerId);
+      if (!row) {
+        row = { playerId, damage: 0, healing: 0, operators: new Map() };
+        players.set(playerId, row);
+      }
       row.damage += amount(pp.damageDealt);
       row.healing += amount(pp.healingDone);
       for (const u of Array.isArray(pp.unitStats) ? pp.unitStats : []) {
@@ -83,15 +112,6 @@ export class DamageBoard {
     }
   }
 
-  _rowOf(playerId) {
-    let row = this.players.get(playerId);
-    if (!row) {
-      row = { playerId, damage: 0, healing: 0, operators: new Map() };
-      this.players.set(playerId, row);
-    }
-    return row;
-  }
-
   /** True until the first field result arrived: the view stays OFF m.public entirely before that (no empty noise). */
   get empty() { return this.players.size === 0; }
 
@@ -101,17 +121,37 @@ export class DamageBoard {
    * safe to hand to a broadcast / a reconnect resync.
    */
   view() {
-    return {
-      round: this.round,
-      players: [...this.players.values()].map((row) => ({
-        playerId: row.playerId,
-        damage: row.damage,
-        healing: row.healing,
-        operators: [...row.operators.values()]
-          .sort((a, b) => b.damage - a.damage || b.healing - a.healing || (a.key < b.key ? -1 : 1))
-          .slice(0, OPS_CAP)
-          .map((op) => ({ key: op.key, uid: op.uid, defId: op.defId, kind: op.kind, ...(op.name ? { name: op.name } : {}), damage: op.damage, healing: op.healing })),
-      })),
+    return { round: this.round, players: this._rows(this.players) };
+  }
+
+  /**
+   * The boss scopes' per-player / per-operator damage for the settlement record (results.js buildResult →
+   * `m.result.bossDamage`): `{ boss, hidden }`, each `{ round, phase, players }` in the same row shape as the
+   * m.public board, or null when neither boss scope was fought (a match that never reached round 14, or an abandoned
+   * one whose boss fields never finished). The match is over when this is read, so no live-view fence applies.
+   * @returns {{ boss: any, hidden: any }|null}
+   */
+  bossRounds() {
+    if (!this.scopes.size) return null;
+    const pick = (phase) => {
+      const scope = this.scopes.get(phase);
+      return scope ? { round: scope.round, phase: scope.phase, players: this._rows(scope.players) } : null;
     };
+    const boss = pick('boss');
+    const hidden = pick('hidden');
+    return boss || hidden ? { boss, hidden } : null;
+  }
+
+  /** Plain player rows of a ledger map (fresh objects, operators by damage then healing, capped at OPS_CAP). */
+  _rows(players) {
+    return [...players.values()].map((row) => ({
+      playerId: row.playerId,
+      damage: row.damage,
+      healing: row.healing,
+      operators: [...row.operators.values()]
+        .sort((a, b) => b.damage - a.damage || b.healing - a.healing || (a.key < b.key ? -1 : 1))
+        .slice(0, OPS_CAP)
+        .map((op) => ({ key: op.key, uid: op.uid, defId: op.defId, kind: op.kind, ...(op.name ? { name: op.name } : {}), damage: op.damage, healing: op.healing })),
+    }));
   }
 }

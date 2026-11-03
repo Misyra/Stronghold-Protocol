@@ -69,6 +69,10 @@
 //                                              sent. The platform then (synchronously) returns the room to
 //                                              LOBBY and (asynchronously, next macrotask) calls dispose().
 //                                              `summary` is free-form JSON (kept as room.lastSummary).
+//   opts.onRemove(playerId, { reason, rounds }) → void   (optional) the match removed a human for good (the AFK rule,
+//                                              reason 'afk', right after it sent the player m.removed): the platform
+//                                              detaches the seat exactly like a g.leave, whose onLeave(playerId) follows
+//                                              at once or later (the match quits the seat itself either way)
 //
 // start()                   Called once, right after construction. Must broadcast the first m.public and send
 //                           each human its m.private. May call onEnd synchronously (the platform copes).
@@ -143,6 +147,7 @@
 // phase outside its battles (soloUntimed); the co-op strategy draft has ONE countdown — BAND_TURN_SECONDS per turn,
 // published as m.public.deadline — AI seats pick at once and a turn that runs out takes the highlighted strategy
 // (g.bandFocus → timeoutBand); g.unitStats answers m.unitStats: the stats the board's units start their next battle with.
+//   opts.afkRemoveRounds  integer ≥ 0 (default AFK_REMOVE_ROUNDS = 2; 0 = off): the AFK rule — see the leave policy below
 //   opts.clientCombat  default true (env SP_COMBAT=server → false: the legacy server-run + snapshot streaming mode)
 //   opts.verify        'off' | 'sample' | 'all' (env SP_VERIFY, default 'off'): re-simulate accepted client results
 //                      ('sample': ~1 in 8, in later slices, mismatches logged; 'all': before accepting — the
@@ -183,12 +188,20 @@
 //     copy the seat holds returns to the shared pool at once, the seat leaves the round loop, the Final Assault
 //     pairing and the boss pool; its own running normal battle is force-ended. The seat shows status 'left'. When no
 //     human is left at all the match ends ('abandoned'); when nobody alive is left it ends as 'eliminated'.
+//   * idle human (挂机移出, opts.afkRemoveRounds; matches that started with ≥ 2 humans): as each round's PREP ends, before
+//     its battle, an alive human seat without an accepted substantive intent (common.js AFK_ACTIONS) since the previous
+//     check gains an idle round, one with such an intent — or under AI 托管 at that moment — resets to 0 (the first
+//     check counts from the match start: strategy draft, 机变). At afkRemoveRounds the seat is removed like a departed
+//     human: m.removed { reason: 'afk', rounds } to it, m.notice { kind: 'afkRemoved', playerId, name, rounds } to
+//     everyone else in the match (spectator seats included), opts.onRemove, onLeave (MatchPlatform._checkIdle). One idle
+//     round short of it the seat gets a warn toast and m.private afkWarn through its next prep.
 //
 // Code layout: this file keeps the constructor (options, seats, the per-match setup, the state fields); the methods
 // live in server/match/match/, one module per concern, and are installed on Match.prototype below in a fixed order,
 // with the descriptors of class methods (non-enumerable; `this` is the match, subclasses and `super` calls work as
 // before):
-//   platform.js      the interface above: start, handle, setLoadout, disconnect / reconnect / resync, leave, dispose
+//   platform.js      the interface above: start, handle, setLoadout, disconnect / reconnect / resync, leave, the AFK
+//                    rule's removal, dispose
 //   infra.js         error isolation, timers and the phase deadline, player lists, bonds in the pool, deploy field,
 //                    meta dispatch
 //   messaging.js     send / broadcast / toasts / tickers, dirty marks, flush (m.private per player, m.public throttled)
@@ -247,13 +260,14 @@ import { MatchReports } from './match/reports.js';
 import { MatchUnite } from './match/unitePhase.js';
 import { MatchBoss } from './match/bossRounds.js';
 import { MatchSettle } from './match/settle.js';
+import { AFK_REMOVE_ROUNDS } from './match/common.js';
 import { installTestTrace } from './testTrace.js';
 import { MatchTestCommands } from './match/testCommands.js';
 import { MatchOffers } from './match/offers.js';
 import { createExternalAI } from './llmGate.js';
 import { DamageBoard } from './damageBoard.js';
 
-export { FLOW_TICKER_PRIORITY, DELAYS, BAND_TURN_SECONDS } from './match/common.js';
+export { FLOW_TICKER_PRIORITY, DELAYS, BAND_TURN_SECONDS, AFK_REMOVE_ROUNDS } from './match/common.js';
 
 /**
  * §37.47 [ASSUMED]: 6 (was 3) — every distinct layout variant of a normal round (the positional plan and the five
@@ -267,7 +281,12 @@ const BOT_SLICE_MS = 8;
 const env = (k) => (typeof process !== 'undefined' && process.env ? process.env[k] : undefined);
 /** Default combat mode: client-side unless SP_COMBAT=server. */
 const envClientCombat = () => String(env('SP_COMBAT') || '').toLowerCase() !== 'server';
-/** SP_VERIFY → 'off' | 'sample' | 'all'. */
+/**
+ * SP_VERIFY → 'off' | 'sample' | 'all'. `off` (the default) accepts any result that is plausible for its spec;
+ * `sample` is a diagnostic canary, not a guard — about one result in eight is re-simulated AFTER it was accepted and
+ * a difference is only logged (`verifyStats.mismatches`), which is what catches a client whose data or code drifted
+ * from the server's; `all` re-simulates before accepting and the server's result wins on a mismatch.
+ */
 export function parseVerify(v) {
   const s = String(v ?? '').trim().toLowerCase();
   return s === 'all' || s === 'sample' ? s : 'off';
@@ -319,6 +338,14 @@ export class Match {
     // The room's rule switches (DESIGN §34.15). Omitted on a vanilla match, so its own keys stay the same.
     if (opts.rules && typeof opts.rules === 'object' && !Array.isArray(opts.rules)) this.rules = Object.freeze({ ...opts.rules });
     /**
+     * The room-owned experimental options this match started with (server/lobby.js startMatchWith; shared/experimental.js):
+     * fixed for the match. 联动干员 is no longer one of them — the collab 6★ are ordinary 自选 picks (2026-11-03).
+     * Absent = a standard match.
+     */
+    if (opts.experimental && typeof opts.experimental === 'object' && !Array.isArray(opts.experimental)) {
+      this.experimental = Object.freeze({ ...opts.experimental });
+    }
+    /**
      * The interaction windows this match's content set declares (PLUGIN API v2, docs/PLUGINS.md §10b): the normalized
      * `offers` of the plugins the host installed, handed in as `opts.offers` before construction so test journals
      * and both host transports capture the same declaration snapshot. `[]` for every match whose set declares none, and then
@@ -341,6 +368,8 @@ export class Match {
     this.aiPicksLast = !this.isSolo && opts.aiPicksLast === true;
     /** 「允许重复策略」 (opts.bandDupes, 本仓新设): the strategy draft lets several doctors hold the same strategy */
     this.bandDupes = !this.isSolo && opts.bandDupes === true;
+    /** 挂机移出 (opts.afkRemoveRounds): idle rounds in a row that remove a human seat; 0 = off (MatchPlatform._checkIdle) */
+    this.afkRemoveRounds = Number.isInteger(opts.afkRemoveRounds) && opts.afkRemoveRounds >= 0 ? Math.min(opts.afkRemoveRounds, 100) : AFK_REMOVE_ROUNDS;
     this.ownsScheduler = !opts.scheduler;
     this.sched = opts.scheduler || new RealScheduler({ now: opts.now || Date.now, onError: (e) => this.reportError('timer', e) });
     this.registry = opts.registry || getDefaultRegistry();
@@ -349,7 +378,7 @@ export class Match {
     this.battleContent = opts.battleContent || 'full';
     this.timerScale = Number.isFinite(opts.timerScale) && opts.timerScale >= 0 ? opts.timerScale : 1;
     this.gameSpeed = Number.isFinite(opts.combatSpeed) && opts.combatSpeed > 0 ? Math.min(opts.combatSpeed, 200) : GAME_SPEED;
-    /** 战斗 2 倍速投票（g.speedVote，match/speedVote.js）：已投换档赞成的 playerId；全员赞成 → 下一回合换档 */
+    /** 战斗 2 倍速投票（g.speedVote，match/speedVote.js）：已投换档赞成的 playerId；全员赞成 → 下一场战斗开始前换档 */
     this.speedVotes = [];
     /** layouts a bot rehearses per prep with the real simulation (bot.js; 0 = heuristic placement only) */
     this.botRehearsal = Number.isInteger(opts.botRehearsal) && opts.botRehearsal >= 0 ? Math.min(opts.botRehearsal, 8) : BOT_REHEARSAL_DEFAULT;

@@ -17,6 +17,7 @@
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
 
 import { PHASE, ERR } from '../../../shared/constants.js';
+import { msg } from '../../../shared/i18n.js';
 import { OK, fail } from './common.js';
 
 /** How long a kick vote stays open (ms, × timerScale). */
@@ -104,9 +105,11 @@ export class MatchKickVote {
     if (vote.agreed.size >= vote.need) {
       this._endKickVote();
       this.log.info?.(`[match ${this.roomCode}] seat ${target.seat} removed by a vote ${vote.agreed.size}/${vote.voters.length} (R${this.round})`);
-      // exactly a 中途退出: m.removed to the seat, the lobby detaches it (reason 'kicked'), onLeave quits it
-      this._removeIdle(target, 'kicked', { t: 'm.notice', kind: 'kickPassed', voteId: vote.id, targetId: vote.targetId,
-        name: target.name, agreed: vote.agreed.size, need: vote.need });
+      // exactly a 中途退出: m.removed to the seat, the outcome to the others, the lobby detaches it (reason 'kicked'),
+      // onLeave quits it
+      this._removeIdle(target, { reason: 'kicked', frame: { t: 'm.notice', kind: 'kickPassed', voteId: vote.id,
+        targetId: vote.targetId, name: target.name, agreed: vote.agreed.size, need: vote.need },
+      text: msg('{name} 掉线期间被队友投票移出了对局', { name: target.name }) });
       return OK;
     }
     if (vote.voters.length - vote.rejected.size < vote.need) { this._failKickVote('rejected'); return OK; }

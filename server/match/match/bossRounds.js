@@ -38,6 +38,7 @@ const BOSS_LP_PER_GS = 1;
 
 export class MatchBoss {
   startFinalAssault(hidden) {
+    this._applySpeedVote(); // 最终攻势 / 隐秘核心也是一场战斗：换档在建立场地前生效（match/speedVote.js）
     const alive = this.alivePlayers();
     if (!alive.length) { this.finish({ victory: false, reason: 'eliminated' }); return; }
     this.phase = hidden ? PHASE.HIDDEN_CORE : PHASE.FINAL_ASSAULT;
@@ -529,8 +530,9 @@ export class MatchBoss {
     for (const f of this.fields) {
       const res = resultOf(f);
       this._collectSimErrors(f, res);
-      // 伤害/治疗结算板 (server/match/damageBoard.js): the boss / hidden field's final result, both combat modes
-      this.damageBoard.record(this.round, res);
+      // 伤害/治疗结算板 (server/match/damageBoard.js): the boss / hidden field's final result, both combat modes —
+      // with the scope, so the settlement record's per-round ledger (m.result.bossDamage) keeps this phase's own rows
+      this.damageBoard.record(this.round, res, hidden ? 'hidden' : 'boss');
       f.live = false;
       for (const pid of f.players) {
         const pp = res.perPlayer && res.perPlayer[pid];

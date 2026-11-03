@@ -84,7 +84,7 @@ export class MatchRehearsal {
    * where the CPU is spent, never what is compared — the worker builds each candidate Battle from the very options
    * `candidateOpts` produced, runs the same `RehearsalRun` (server/workers/simulation.js) and returns the winning index.
    *
-   * The pool is optional and may be busy: an unset SP_WORKERS means no pool at all, and an overloaded one answers
+   * The pool is optional and may be busy: SP_WORKERS=0 means no pool at all (the default is 4 threads), and an overloaded one answers
    * POOL_FULL rather than starting another thread. Every such answer — a refusal, a failed task, or a pool that went
    * away — makes the server run the candidates itself (`job.takeOver()`, exactly the delegated path's fallback), so the
    * prep costs latency when the pool is busy, never a different layout.

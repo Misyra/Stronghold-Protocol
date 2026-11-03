@@ -1,5 +1,6 @@
 // server/match/match/common.js — constants and small helpers shared by the Match method modules
-// (server/match/match/*.js); server/match/Match.js re-exports FLOW_TICKER_PRIORITY, DELAYS and BAND_TURN_SECONDS.
+// (server/match/match/*.js); server/match/Match.js re-exports FLOW_TICKER_PRIORITY, DELAYS, BAND_TURN_SECONDS and
+// AFK_REMOVE_ROUNDS.
 
 /**
  * Ticker priority of the remake's match-flow notices (隐秘核心已解锁, 联防阶段, a player out or gone): the official lines
@@ -9,6 +10,18 @@
 export const FLOW_TICKER_PRIORITY = 25;
 /** 掉线由 AI 接管: prep ends a seat spends offline before the AI plays it (MatchPlatform._checkOffline). */
 export const OFFLINE_TAKEOVER_ROUNDS = 2;
+/**
+ * 挂机移出 (移植自用户分支; Match opts.afkRemoveRounds, 0 = off): the rounds in a row without a substantive intent after
+ * which a human seat of a match that started with ≥ 2 humans is removed like a g.leave (MatchPlatform._checkIdle).
+ */
+export const AFK_REMOVE_ROUNDS = 2;
+/**
+ * The intents that count as playing for that rule — accepted ones only. g.ready, g.infoReady, g.emote, g.watch,
+ * g.unitStats, g.pause, g.art, g.bandFocus, g.autoplay, g.rerollVote, g.bondPlan, the battle reports and anything else
+ * do not.
+ */
+export const AFK_ACTIONS = new Set(['g.buy', 'g.sell', 'g.move', 'g.refresh', 'g.levelUp', 'g.freeze', 'g.equip', 'g.unequip',
+  'g.destroy', 'g.choice', 'g.reward', 'g.band', 'g.bandSkip']);
 /** Boss clock period (overtime drain, end checks, silence watchdog) in real ms. */
 export const BOSS_CLOCK_MS = 250;
 export const OK = Object.freeze({ ok: true });

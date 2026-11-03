@@ -1,13 +1,13 @@
 // server/match/match/platform.js — Match methods: the platform interface of the server/match/Match.js header
 // (server/lobby.js ⇄ Match) — start, handle (validation, error isolation, flush; the intents themselves: intents.js
 // _handle), setLoadout (INFO_CHECK; rule-enabled PREP), onDisconnect / onReconnect and the full resync of one human, onLeave and 中途退出
-// = elimination (_quit), dispose.
+// = elimination (_quit), the AFK rule (挂机移出: _checkIdle at each prep end, _removeIdle), dispose.
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
 
 import { C2S } from '../../../shared/protocol.js';
 import { PHASE, ERR } from '../../../shared/constants.js';
 import { syntheticResult } from '../fields.js';
-import { FLOW_TICKER_PRIORITY, OFFLINE_TAKEOVER_ROUNDS, OK, fail } from './common.js';
+import { FLOW_TICKER_PRIORITY, OFFLINE_TAKEOVER_ROUNDS, OK, fail, AFK_ACTIONS } from './common.js';
 import { msg } from '../../../shared/i18n.js';
 import { ruleOption } from '../../../shared/plugins/rules.js';
 
@@ -69,6 +69,8 @@ export class MatchPlatform {
       this.reportError(`handle ${msg.t}`, e);
       res = fail(ERR.INTERNAL);
     }
+    // the AFK rule counts accepted substantive intents only (a spectator's g.watch never is one)
+    if (!ps.spectator && !(res && res.error) && AFK_ACTIONS.has(msg.t)) ps.afkActed = true;
     // A phase / round / ended change in the handler is a structural event: the new views go out now. b.result too
     // (the force list: the field's final progress and, once the last field closes, the next phase's views). Every
     // other intent — the g.* prep churn and b.progress — coalesces (flushSoon): under a 4-human prep each intent
@@ -210,18 +212,63 @@ export class MatchPlatform {
   }
 
   /**
-   * Remove a human exactly like a g.leave — one voted out (reason 'kicked', kickVote.js, 移植自用户分支). The player is
-   * told first (m.removed: its client leaves the room), everyone else still in the match gets the outcome as an m.toast,
-   * then onLeave quits the seat here (中途退出 = elimination).
-   * @param {any} ps @param {string} reason @param {{ text: any } | null} [notice]
+   * 挂机移出 (afkRemoveRounds, the header's leave policy, 移植自用户分支): called as a PREP ends, before its battle / boss
+   * fight is built (MatchPrep.endPrep). Every alive human of a match that started with ≥ 2 humans (never solo or
+   * soloUntimed) is counted: an accepted AFK_ACTIONS intent since the previous check — or the AI playing the seat now
+   * (AI 托管) — resets its idle rounds, else they grow by one. A seat reaching afkRemoveRounds is removed (_removeIdle);
+   * may end the match. One round short of it, the seat is warned: a toast now and m.private afkWarn through its next
+   * prep (PlayerViews.afkWarned).
    */
-  _removeIdle(ps, reason = 'afk', notice = null) {
-    const rounds = Math.min(100, Math.max(1, ps.offlineRounds | 0));
+  _checkIdle() {
+    const limit = this.afkRemoveRounds;
+    if (!(limit > 0) || this.soloUntimed) return;
+    const humans = this.order.filter((p) => !p.isBot && !p.left && p.alive);
+    for (const ps of humans) {
+      ps.afkRounds = ps.afkActed || ps.botControlled ? 0 : ps.afkRounds + 1;
+      ps.afkActed = false;
+    }
+    for (const ps of humans) {
+      if (this.ended || this.disposed) return;
+      if (!ps.left && ps.afkRounds >= limit) {
+        this._removeIdle(ps, { frame: { t: 'm.notice', kind: 'afkRemoved', playerId: ps.playerId, name: ps.name, rounds: limit } });
+      } else if (limit > 1 && ps.afkRounds === limit - 1) {
+        this.toast(ps, 'warn', msg('你本回合没有任何操作，下回合备战仍无操作将被移出对局'));
+        this.markPrivate(ps);
+      }
+    }
+  }
+
+  /**
+   * Remove a human exactly like a g.leave: the player is told first (m.removed — its client shows it and returns to the
+   * lobby), everyone else still in the match gets `how` (the AFK rule's m.notice afkRemoved, spectator seats included),
+   * then the platform detaches the seat (opts.onRemove: the lobby's removeMember, whose onLeave quits it here). A platform
+   * without the hook leaves the quit to onLeave below. Also the shared removal path of a passed 投票移出 (reason
+   * 'kicked', kickVote.js), which tells the others with a toast instead.
+   * @param {any} ps
+   * @param {{ reason?: string, rounds?: number, frame?: object|null, text?: any|null }} [how]
+   *   reason: 'afk' (the idle rule) or 'kicked' (a passed vote); rounds: m.removed's count (default: the idle limit for
+   *   'afk', else the seat's offline rounds); frame: the m.notice for the others; text: the toast for them instead
+   */
+  _removeIdle(ps, how = {}) {
+    const reason = typeof how.reason === 'string' ? how.reason : 'afk';
+    const fallback = reason === 'afk' ? Math.max(1, this.afkRemoveRounds | 0) : Math.min(100, Math.max(1, ps.offlineRounds | 0));
+    const rounds = Number.isInteger(how.rounds) && how.rounds > 0 ? how.rounds : fallback;
+    this.log.info?.(`[match ${this.roomCode}] seat ${ps.seat} removed (${reason}) after ${rounds} rounds (R${this.round})`);
     this.sendTo(ps.playerId, { t: 'm.removed', reason, rounds });
-    const text = notice?.text || msg('{name} 掉线期间被队友投票移出了对局', { name: ps.name });
-    for (const p of this.order) if (p !== ps && !p.isBot && !p.left) this.toast(p, 'info', text);
-    for (const id of this.spectators.keys()) this.toast({ playerId: id }, 'info', text);
-    this.onLeave(ps.playerId);
+    const others = this.order.filter((p) => p !== ps && !p.isBot && !p.left);
+    if (how.frame && typeof how.frame === 'object') {
+      for (const p of others) this.sendTo(p.playerId, how.frame);
+      for (const id of this.spectators.keys()) this.sendTo(id, how.frame);
+    }
+    if (how.text || !how.frame) {
+      const text = how.text || msg('{name} 掉线期间被队友投票移出了对局', { name: ps.name });
+      for (const p of others) this.toast(p, 'info', text);
+      for (const id of this.spectators.keys()) this.toast({ playerId: id }, 'info', text);
+    }
+    if (typeof this.opts.onRemove === 'function') {
+      try { this.opts.onRemove(ps.playerId, { reason, rounds }); } catch (e) { this.reportError('onRemove', e); }
+    }
+    if (!ps.left) this.onLeave(ps.playerId);
   }
 
   /**

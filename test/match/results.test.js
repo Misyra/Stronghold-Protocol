@@ -1,7 +1,7 @@
 // RESULT: titles (评语) assignment, per-player rows, trophies, rewards.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assignTitles } from '../../server/match/results.js';
+import { assignTitles, buildResult } from '../../server/match/results.js';
 import { GameData } from '../../server/match/gamedata.js';
 import { PHASE } from '../../shared/constants.js';
 import { DATA, makeMatch } from './harness.js';
@@ -124,5 +124,40 @@ test('co-op trophies / victory follow each player\'s OWN rounds passed: a teamma
   assert.notEqual(row('p_1').trophies, tr.hiddenCore.HARD);
   assert.equal(row('p_1').victory, false, 'eliminated before the boss round: the clear is not its own');
   assert.equal(res.victory, true, 'the team result is still a win');
+  m.dispose();
+});
+
+test('m.result carries the boss rounds\' damage ledger for the record (0.3.4 §37.77); a match that fought none carries null', () => {
+  const h = makeMatch({ mode: 'solo', difficulty: 'NORMAL', humans: 1, seed: 7, fake: true }).start();
+  h.toPrep(14);
+  const m = h.m;
+  assert.equal(buildResult(m, { victory: true, hiddenReached: false, hiddenCleared: false, reason: 'victory' }).bossDamage, null);
+  // a Final Assault field result: the per-player / per-operator rows the settlement board folds in
+  m.damageBoard.record(14, {
+    perPlayer: {
+      p_0: {
+        damageDealt: 42, healingDone: 5, unitStats: [
+          { uid: 1, defId: 'chess_a', name: '阿米娅', kind: 'op', dmg: 40, heal: 5 },
+          { uid: null, defId: 'token_medic', name: '医疗探机', kind: 'token', dmg: 2, heal: 0 },
+        ],
+      },
+    },
+  }, 'boss');
+  const boss = buildResult(m, { victory: true, hiddenReached: false, hiddenCleared: false, reason: 'victory' }).bossDamage;
+  assert.ok(boss);
+  assert.equal(boss.boss.round, 14);
+  assert.equal(boss.boss.phase, 'boss');
+  assert.equal(boss.hidden, null);
+  assert.equal(boss.boss.players[0].playerId, 'p_0');
+  assert.equal(boss.boss.players[0].damage, 42);
+  assert.equal(boss.boss.players[0].healing, 5);
+  assert.equal(boss.boss.players[0].operators[0].defId, 'chess_a');
+  assert.equal(boss.boss.players[0].operators[0].damage, 40);
+  // the Hidden Core keeps its own scope and never disturbs the Final Assault's
+  m.damageBoard.record(15, { perPlayer: { p_0: { damageDealt: 7, healingDone: 0, unitStats: [] } } }, 'hidden');
+  const both = buildResult(m, { victory: true, hiddenReached: true, hiddenCleared: true, reason: 'hidden_cleared' }).bossDamage;
+  assert.equal(both.boss.players[0].damage, 42);
+  assert.equal(both.hidden.round, 15);
+  assert.equal(both.hidden.players[0].damage, 7);
   m.dispose();
 });

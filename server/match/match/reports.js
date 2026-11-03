@@ -25,7 +25,10 @@ export class MatchReports {
     p.gt = Math.max(p.gt, Math.min(Number(msg.gt) || 0, HARD_CAP_SECONDS));
     // the latest total (spawns never reached before the limit leave it at the end)
     p.total = Math.min(maxTotal, Math.max(0, msg.total | 0));
-    p.killed = Math.min(p.total, Math.max(p.killed, msg.killed | 0));
+    // A knock-out counter never goes backwards. `total` legitimately shrinks on the final report (never-spawned
+    // enemies leave it), and `killed` may exceed it anyway: it counts every counted knock-out — runtime splits and
+    // summons included — while `total` counts only the round's own scheduled enemies (PR #157 capsule semantics).
+    p.killed = Math.max(p.killed, Math.min(maxTotal, msg.killed | 0));
     // the HUD capsule's numerator as the authority reported it (shared/protocol.js b.progress `resolved`). Only a real
     // integer is adopted — an absent field leaves the null placeholder alone, so "not reported" and a reported 0 differ
     // (a `Number(null) === 0` here would defeat every `resolved ?? killed` fallback); a lower value is kept (the final

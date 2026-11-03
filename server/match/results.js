@@ -161,6 +161,10 @@ export function buildResult(m, outcome) {
     hiddenBossId: m.hiddenBossId,
     seed: m.seed,
     durationMs: Math.max(0, m.sched.now() - m.startedAt),
+    // 对局记录 (0.3.4 §37.77, ported from the Stardust fork's PR5): the boss rounds' per-player / per-operator damage
+    // (server/match/damageBoard.js bossRounds), kept by the local record for the settlement re-view. Null when neither
+    // boss scope was fought. Defensive read: a hand-built match in the tests may carry no board.
+    bossDamage: typeof m.damageBoard?.bossRounds === 'function' ? m.damageBoard.bossRounds() : null,
     players: rows,
   };
   // A test match is marked on the settlement the replay stores. The keys are absent otherwise, so a normal

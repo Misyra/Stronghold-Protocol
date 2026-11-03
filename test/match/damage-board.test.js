@@ -204,5 +204,45 @@ test('最终攻势: the boss fields fold in too (the fight happens in a boss rou
   // a boss field's FakeBattle reports damageDealt for both players of the pair
   assert.ok(board.players.length >= 2, 'both seats recorded');
   assert.ok(board.players.every((p) => p.damage > 0), 'boss damage counted');
+  // 0.3.4 §37.77: the Final Assault also folded into the boss scope the settlement record reads (m.result.bossDamage)
+  const boss = m.damageBoard.bossRounds().boss;
+  assert.ok(boss, 'the Final Assault\'s scope ledger');
+  assert.equal(boss.round, 14);
+  assert.equal(boss.phase, 'boss');
+  assert.ok(boss.players.length >= 2, 'both seats recorded in the scope too');
+  assert.ok(boss.players.every((p) => p.damage > 0), 'the scope counts the boss damage');
   m.dispose();
+});
+
+test('bossRounds archives the Final Assault and Hidden Core scopes for the settlement record (0.3.4 §37.77)', () => {
+  const b = new DamageBoard();
+  assert.equal(b.bossRounds(), null, 'nothing fought yet');
+  b.record(1, { perPlayer: { p_0: { damageDealt: 11, healingDone: 0, unitStats: [] } } });
+  assert.equal(b.bossRounds(), null, 'a normal round is not part of the boss ledger');
+  b.record(14, {
+    perPlayer: {
+      p_0: { damageDealt: 200, healingDone: 0, unitStats: [{ uid: 7, defId: 'chess_a', name: '阿米娅', kind: 'op', dmg: 200, heal: 0 }] },
+      p_1: { damageDealt: 300, healingDone: 0, unitStats: [] },
+    },
+  }, 'boss');
+  const afterBoss = b.bossRounds();
+  assert.equal(afterBoss.boss.round, 14);
+  assert.equal(afterBoss.boss.phase, 'boss');
+  assert.equal(afterBoss.boss.players.reduce((n, o) => n + o.damage, 0), 500);
+  assert.equal(afterBoss.hidden, null);
+  // the Hidden Core adds its own scope without disturbing the Final Assault's
+  b.record(15, { perPlayer: { p_0: { damageDealt: 7, healingDone: 0, unitStats: [] } } }, 'hidden');
+  const both = b.bossRounds();
+  assert.equal(both.hidden.round, 15);
+  assert.equal(both.hidden.phase, 'hidden');
+  assert.equal(both.hidden.players.find((o) => o.playerId === 'p_0').damage, 7);
+  assert.equal(both.boss.players.reduce((n, o) => n + o.damage, 0), 500);
+  // per-operator rows ride along, and the archive is a snapshot of its own: a later normal round's record leaves it alone
+  const op = both.boss.players.find((o) => o.playerId === 'p_0').operators[0];
+  assert.equal(op.key, 'u:7');
+  assert.equal(op.damage, 200);
+  b.record(16, { perPlayer: { p_0: { damageDealt: 50, healingDone: 0, unitStats: [] } } });
+  assert.equal(b.bossRounds().boss.round, 14, 'a later normal round does not touch the scopes');
+  assert.equal(b.bossRounds().hidden.round, 15);
+  assert.equal(b.view().players[0].damage, 268, 'the match-cumulative board is unchanged by the scoping');
 });

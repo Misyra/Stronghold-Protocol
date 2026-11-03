@@ -12,7 +12,7 @@
 //   diag()                                   → Promise of the match's diagnostics (verifyStats, errors, fields — tests,
 //                                            /healthz never)
 // The worker's messages drive the lobby's callbacks in the order they arrive: `send` (opts.send), `broadcast`
-// (opts.broadcast), `end` (opts.onEnd, once), `reply` (a pending request). One message queue per match: the worker
+// (opts.broadcast), `remove` (opts.onRemove, the AFK rule), `end` (opts.onEnd, once), `reply` (a pending request). One message queue per match: the worker
 // handles them in the order they were posted (a MessagePort keeps the order), so a player's g.buy is always handled
 // before the g.sell that follows it.
 // When the worker stops — it crashed, ran out of memory, or the watchdog terminated it after its heartbeats stopped
@@ -48,7 +48,7 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 /** The lobby options a worker can take (JSON-safe: no callbacks, no data, no class). */
 export function wireOptions(opts) {
   const out = {};
-  for (const k of ['roomCode', 'mode', 'difficulty', 'modeId', 'aiPicksLast', 'soloUnlimited', 'seats', 'spectators', 'seed', 'matchNo', 'cs', 'vs', 'requireCs', 'kitted', 'version']) {
+  for (const k of ['roomCode', 'mode', 'difficulty', 'modeId', 'aiPicksLast', 'soloUnlimited', 'seats', 'spectators', 'seed', 'matchNo', 'cs', 'vs', 'requireCs', 'kitted', 'version', 'afkRemoveRounds']) {
     if (opts[k] !== undefined) out[k] = opts[k];
   }
   // A test room must arrive as a test match. Forwarding these only when the flag is set keeps every other
@@ -65,7 +65,7 @@ export function wireOptions(opts) {
 export class MatchProxy {
   /**
    * @param {{ host: { post: (m: object) => void }, matchId: string, opts: any, log?: object, requestTimeoutMs?: number }} o
-   *   host: the worker host (index.js) it posts through; opts: the lobby's Match options (send / broadcast / onEnd used here)
+   *   host: the worker host (index.js) it posts through; opts: the lobby's Match options (send / broadcast / onRemove / onEnd used here)
    */
   constructor({ host, matchId, opts, log = noopLog, requestTimeoutMs = REQUEST_TIMEOUT_MS }) {
     /** a match in a match host: its answers are Promises, its room's messages go through the room's queue (lobby.js) */
@@ -185,6 +185,8 @@ export class MatchProxy {
     if (this.disposed) return;
     if (m.type === 'send') { try { this.opts.send(m.playerId, m.msg); } catch (e) { this.log.error?.(`[match ${this.roomCode}] send failed`, e); } return; }
     if (m.type === 'broadcast') { try { this.opts.broadcast(m.msg); } catch (e) { this.log.error?.(`[match ${this.roomCode}] broadcast failed`, e); } return; }
+    // 挂机移出 (移植自用户分支): the match removed a human — the lobby detaches the seat (opts.onRemove)
+    if (m.type === 'remove') { try { this.opts.onRemove?.(m.playerId, m.removal); } catch (e) { this.log.error?.(`[match ${this.roomCode}] onRemove failed`, e); } return; }
     if (m.type === 'end') { this._end(m.summary ?? null); return; }
     if (m.type === 'failed') { this.crash(/** @type {any} */ (this.host).kind === 'version' ? 'version-start' : 'plugin-start', m.error); }
   }

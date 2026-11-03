@@ -14,6 +14,7 @@ import { onStartUnite } from '../botEmotes.js';
 
 export class MatchUnite {
   startUnite(plan) {
+    this._applySpeedVote(); // 联防也是一场战斗：已全员赞成的换档在这里生效（match/speedVote.js）
     if (this.clientCombat) { this._startUniteClient(plan); return; }
     this.phase = PHASE.UNITE;
     this.unitePlan = plan;

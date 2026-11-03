@@ -21,10 +21,11 @@
 //      wrapped so each player receives those grants, 'ready'.
 // Messages (from index.js / proxy.js; queued until booted, then handled in order):
 //   { type: 'create', matchId, opts }       new Match({ ...options.matchOptions, ...opts, data, log, now, send, broadcast,
-//                                           onEnd }) and start() — send / broadcast / onEnd post 'send' / 'broadcast' /
-//                                           'end' back; a match that cannot be created posts 'failed', and so does one whose
-//                                           opts.version (absent: act2autochess) is not the installed data's version
-//                                           (shared/versions.js versionOfData; DESIGN §35.23 — an official version's host)
+//                                           onEnd, onRemove }) and start() — send / broadcast / onRemove / onEnd post
+//                                           'send' / 'broadcast' / 'remove' / 'end' back; a match that cannot be created
+//                                           posts 'failed', and so does one whose opts.version (absent: act2autochess) is
+//                                           not the installed data's version (shared/versions.js versionOfData;
+//                                           DESIGN §35.23 — an official version's host)
 //   { type: 'call', matchId, method, args, id? }   one MATCH INTERFACE call; with `id` its answer is posted as 'reply'
 //   { type: 'dispose', matchId }            the match is disposed and forgotten
 // Logs go to the main process ('log': its logger prefixes them with the set's `[cs:<8 hex>]`).
@@ -234,6 +235,8 @@ function create(matchId, opts) {
       send: (playerId, msg) => { post({ type: 'send', matchId, playerId, msg }); return true; },
       broadcast: (msg) => post({ type: 'broadcast', matchId, msg }),
       onEnd: (summary) => post({ type: 'end', matchId, summary: plain(summary) }),
+      // 挂机移出 (移植自用户分支): the AFK rule removed a human — the lobby detaches the seat (proxy onRemove)
+      onRemove: (playerId, removal) => post({ type: 'remove', matchId, playerId, removal: plain(removal) }),
       ...(sched ? { scheduler: sched } : {}),
     });
   } catch (e) {

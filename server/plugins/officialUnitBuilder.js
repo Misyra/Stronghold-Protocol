@@ -639,6 +639,8 @@ function mergeTalentChanges(base, changes) {
 
 /** Melee sub-professions whose normal attack is a ranged attack (can hit FLY). */
 const MELEE_RANGED_SUBPROFS = new Set(['lord', 'fortress', 'shotprotector', 'agent', 'hookmaster']);
+/** A normal attack made arts by a talent, not by the trait (塔露拉 绝不妥协 "攻击造成法术伤害；…"). */
+const talentArtsAttack = (char) => (char.talents ?? []).some((t) => /^攻击造成法术伤害/.test(String(t.candidates?.at(-1)?.description ?? '').replace(/<[^>]*>/g, '')));
 /** Sub-professions whose normal state is "no attack" (buff aura / skill-only attackers). */
 const NO_ATTACK_SUBPROFS = new Set(['bard', 'phalanx', 'librator']);
 
@@ -656,7 +658,7 @@ function classifyAttack(char, traitText) {
   const skillOnArts = /技能开启时[^，。；]*法术伤害/.test(trait);
   let dmgType;
   if ((prof === 'MEDIC' && sub !== 'incantationmedic') || sub === 'bard') dmgType = 'heal';
-  else if ((/法术伤害/.test(trait) && !skillOnArts) || prof === 'CASTER') dmgType = 'arts';
+  else if ((/法术伤害/.test(trait) && !skillOnArts) || prof === 'CASTER' || talentArtsAttack(char)) dmgType = 'arts';
   else dmgType = 'phys';
 
   let attackKind;

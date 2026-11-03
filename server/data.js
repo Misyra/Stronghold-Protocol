@@ -56,8 +56,9 @@ export function deepFreeze(root) {
 }
 
 /** data/*.json files the server never reads, so never loads: the official effects' file list (data/local-fx.json, written
- * by tools/local-extract/fx.py, DESIGN §33 — ~1 MB the browser alone fetches, through its served view). */
-export const UNLOADED_DATA = Object.freeze(['local-fx.json']);
+ * by tools/local-extract/fx.py, DESIGN §33 — ~1 MB the browser alone fetches, through its served view), and the collab
+ * pack's (data/local-fx-collab.json, shared/collabAssets.js). */
+export const UNLOADED_DATA = Object.freeze(['local-fx.json', 'local-fx-collab.json']);
 
 /**
  * Read every `*.json` in `dir` into `{ [basename]: parsed }`, deep-frozen (but UNLOADED_DATA).

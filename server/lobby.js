@@ -3080,15 +3080,15 @@ export class Lobby {
    * Append the room's delivery stamps to bytes a caller already produced (a lane Worker's m.public). Splicing them
    * into the finished JSON keeps the pass-through: the public view is still serialized exactly once per broadcast.
    * Bytes that are not a JSON object come back unchanged — that frame carries no cross-transport order to honour.
+   * The bytes come from this process's own stringify (encode, or the match's pre-encoded frames), so the object
+   * check is the first character; the full JSON.parse this spot once ran cost every P2P broadcast a parse of the
+   * frame it had just serialized.
    * @param {string} bytes @param {string} epoch @param {number} seq
    * @returns {string}
    */
   stampPublicBytes(bytes, epoch, seq) {
     const end = bytes.lastIndexOf('}');
-    if (end < 0) return bytes;
-    let view;
-    try { view = JSON.parse(bytes); } catch { return bytes; }
-    if (!view || typeof view !== 'object' || Array.isArray(view)) return bytes;
+    if (end < 0 || bytes.charCodeAt(0) !== 0x7b /* { */) return bytes;
     return `${bytes.slice(0, end)},"deliveryEpoch":${JSON.stringify(epoch)},"deliverySeq":${seq}}`;
   }
 

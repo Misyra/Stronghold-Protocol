@@ -501,9 +501,11 @@ export function canSendSettings({ store: app = store, content = appContentSet, c
  * change sends it again; false (skins, the card: their payload follows the data on screen — the skins filtered to its
  * operators, the card '' when it lacks the operator — so it changes whenever what the server keeps would) sends it on a
  * content change only when the payload changed (a version switch or a room's arrival then spends no heavy-message budget
- * on them).
+ * on them). `adopt` (optional) reads the ok reply's copy of what the server stored (room.diy answers the kept picks):
+ * a payload different from the one sent is written back into `target[key]`, so the surface follows the server's legal
+ * copy instead of re-sending refused entries on the next edit.
  */
-function installPrefSync({ net, timers, target, notify, key, stateKey, msgType, field, prepare, lockedText, tag, content = appContentSet, gate = null, app = store, seatBound = true }) {
+function installPrefSync({ net, timers, target, notify, key, stateKey, msgType, field, prepare, lockedText, tag, content = appContentSet, gate = null, app = store, seatBound = true, adopt = null }) {
   const T = timers || { setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: (id) => globalThis.clearTimeout(id) };
   // (`lockedText` is a msgid: the toast is translated when it shows — docs/I18N.md)
   const tell = notify || ((text) => toast(t(text), 'warn'));
@@ -551,9 +553,19 @@ function installPrefSync({ net, timers, target, notify, key, stateKey, msgType, 
       pendingJson = json;
       setState('sending');
       try {
-        await net.request(msgType, field ? { [field]: payload } : payload);
+        const reply = await net.request(msgType, field ? { [field]: payload } : payload);
         if (my !== seq) return;
         pendingJson = null;
+        // The server answers what it actually kept (`adopt`, room.diy's kept picks): adopting it makes the surface
+        // self-correct instead of re-sending entries the server drops on every edit. `lastSent` is set first so the
+        // write-back's own flush converges (the resent payload equals it) instead of looping.
+        const corrected = reply && adopt ? adopt(reply) : null;
+        if (corrected != null && JSON.stringify(corrected) !== json) {
+          lastSent = JSON.stringify(corrected);
+          target.set({ [key]: corrected });
+          setState('synced');
+          return;
+        }
         lastSent = json;
         setState('synced');
       } catch (err) {
@@ -826,6 +838,8 @@ export function installDiySync({ net, timers, target = loadoutStore, notify, con
   const sync = installPrefSync({
     net, timers, target, notify, content, app, gate, key: 'diy', stateKey: 'diySync', msgType: 'room.diy', field: 'picks', tag: 'diy',
     lockedText: N_('自选编队是局外设置，修改将在下一局生效'),
+    // the ok carries the picks the server kept (checkDiyPicks drops the illegal ones): adopt the legal copy
+    adopt: (reply) => (reply && Object.hasOwn(reply, 'picks') ? cleanPicks(reply.picks) : null),
     async prepare() {
       if (target === loadoutStore) refreshViews(); // the picks of the version on screen
       return cleanPicks(target.get().diy);

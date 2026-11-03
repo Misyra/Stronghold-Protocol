@@ -144,6 +144,19 @@ test('an unowned looping effect ends after LOOP_TTL; an OnPlayEmitter loop is ow
   assert.ok(child.stopped, 'stopped with it');
 });
 
+test('contextLost: a safe no-op before init, and it drops the GL side without destroying it', () => {
+  const dropped = [];
+  const lib = { available: true, defs: new Map(), has: () => false, def: () => null, load: async () => null, dropImages: () => dropped.push(dropped.length + 1) };
+  const ofx = new OfficialFx({ P: { Container: class {} }, renderer: null, cam: () => null, lib, tier: 'full' });
+  ofx.contextLost();                          // never initialized: nothing to drop, no throw
+  assert.equal(ofx.glr, null);
+  assert.deepEqual(dropped, [1], 'the decoded images are re-decodable');
+  ofx.glr = { destroy() { throw new Error('a context loss must not destroy through the dead context'); } };
+  ofx.contextLost();
+  assert.equal(ofx.glr, null, 'renderPass rebuilds it lazily on the restored context');
+  assert.deepEqual(dropped, [1, 2]);
+});
+
 describe('placement and direction', () => {
   test('the anchor moves the root; mirror reflects x about the anchor', () => {
     const d = desc([root([pe({})]), { ...psNode(1, 0), pos: [0.5, 0, 0] }]);

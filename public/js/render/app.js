@@ -422,6 +422,11 @@ export async function createFieldView(host, options = {}) {
   // procedural fx), on the battle clock; their files load on demand (data/local-fx.json)
   const ofx = new OfficialFx({ P, renderer: app.renderer, assets, cam: () => cam, heightAt, fieldRect: fx.ctx.fieldRect });
   setupCleanup.push(() => ofx.destroy());
+  // WebGL context loss of the Pixi canvas: the official-fx layer drops its GL objects (renderPass rebuilds the FxGL
+  // lazily once the context is back), the same recovery the 3D board does for itself (board3d/scene.js _onLost)
+  const onOfxContextLost = (e) => { e.preventDefault?.(); ofx.contextLost(); };
+  canvas.addEventListener?.('webglcontextlost', onOfxContextLost);
+  setupCleanup.push(() => canvas.removeEventListener?.('webglcontextlost', onOfxContextLost));
   layers.vfxGround.addChild(ofx.ground);
   layers.vfxOver.addChild(ofx.over);
   const wiring = new FxWiring(ofx, {

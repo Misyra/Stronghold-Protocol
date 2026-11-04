@@ -652,6 +652,10 @@ async function boot() {
     splash.classList.add('is-done');
     setTimeout(() => splash.remove(), 300);
   }
+  // 卫戍协议：盟约 的开场动画（ui/entryFilm.js），标题页之前；恢复进房间 / 对局的页面不播
+  import('./ui/entryFilm.js')
+    .then((m) => m.playEntryFilm({ skip: () => selectRoute(store.get()) === 'game' }))
+    .catch((err) => console.warn('[app] entry film unavailable', err));
   globalThis.__SP__ = { store, net, data, version: 1 };
   // A page keeps the modules it imported at load time for its whole lifetime, so a deploy cannot reach an open tab
   // (ui/buildGuard.js): watch `/healthz.build`. Outside a match the page reloads itself; during a match the guard says

@@ -437,6 +437,8 @@
   "赏金 {coin}": "Bounty {coin}",
   "{name} 已选择": "Selected by {name}",
   "再次点击": "Tap again",
+  "点击进入": "Tap to start",
+  "点击跳过": "Tap to skip",
   "选择中": "Selecting",
   "队友作战进度": "Teammate battle progress",
   "作战结束": "Battle over",

@@ -31,10 +31,10 @@ import { useEffect, useState } from '../../vendor/hooks.module.js';
 import { memo } from './memo.js';
 import { html, Icon, HexBadge, TierChip, Tooltip, MicroLabel } from './components.js';
 import { OperatorImage, Img, BondGlyph, CoinGlyph, GIcon, RichText } from './gameComponents.js';
-import { priceTone, mergeProgress, mergeTarget, shopBlockReason, chessLoadout, offerHeader, briefingBondTip, ownStandIn, standInLoadout, standInLabel, standInTip, standInForText, ownDiyRecord, diyGetter } from './gameLogic.js';
+import { priceTone, mergeProgress, mergeTarget, shopBlockReason, chessLoadout, offerHeader, briefingBondTip, ownStandIn, standInLoadout, standInLabel, standInTip, standInForText, ownDiyRecord, diyGetter, hotkeyLabel } from './gameLogic.js';
 import { itemIconUrl, profIconUrl, uiUrl, skillIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from './assetUrls.js';
 import { data } from '../data.js';
-import { hotkeyLabelOf } from './settings.js';
+import { hotkeyLabelOf, useSettings } from './settings.js';
 import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -96,11 +96,13 @@ function cardPropsEqual(a, b) {
 }
 
 /**
- * Operator card (shop and merge reward). `armed`: first tap done (second tap = `onBuy(idx)`).
+ * Operator card (shop and merge reward). `armed`: first tap done (second tap = `onBuy(idx)`). `keyLabel`: the buy
+ * key's label from the bar (a prop so the memo compare sees a rebind; null = read the settings store directly).
  * @param {{ slot:any, idx:number, priv:any, frozen?:boolean, reason?:string|null, free?:boolean, armed?:boolean,
- *   onTap?:(idx:number)=>void, onBuy:Function, onDetail:Function }} props
+ *   onTap?:(idx:number)=>void, onBuy:Function, onDetail:Function, keyLabel?:string|null }} props
  */
-function ChessCardView({ slot, idx, priv, frozen = false, reason = null, free = false, armed = false, onTap = null, onBuy, onDetail, offBonds = null }) {
+function ChessCardView({ slot, idx, priv, frozen = false, reason = null, free = false, armed = false, onTap = null, onBuy, onDetail, offBonds = null, keyLabel = null }) {
+  const buyKey = keyLabel ?? hotkeyLabelOf('buy');
   const c0 = data.lookup('chess', slot.id);
   // 0.2.0 自选编队: a DIY slot the player filled is its operator (shared/diy.js, the pick of m.private.diy)
   const diyData = { chess: data.get('chess'), backups: data.get('backups') };
@@ -120,8 +122,8 @@ function ChessCardView({ slot, idx, priv, frozen = false, reason = null, free = 
   const tap = () => { if (onTap) onTap(idx); else if (!disabled) onBuy(idx); else onDetail(slot.id, 'chess', hint); };
   const name = `${c?.name || t('干员')}${si ? t('（{note}）', { note: standInForText(c0.name) }) : ''}`;
   const card = html`<button type="button" class=${cx('scard', `scard--t${tier}`, frozen && 'is-frozen', disabled && 'is-disabled', willMerge && 'is-merge', armed && 'is-armed', si && 'is-standin')}
-      data-shop-slot=${free ? undefined : idx} aria-keyshortcuts=${free ? undefined : hotkeyLabelOf('buy')}
-      title=${free || reason ? undefined : t('购买鼠标指向的商品 · {key}', { key: hotkeyLabelOf('buy') })}
+      data-shop-slot=${free ? undefined : idx} aria-keyshortcuts=${free ? undefined : buyKey}
+      title=${free || reason ? undefined : t('购买鼠标指向的商品 · {key}', { key: buyKey })}
       onClick=${tap} onContextMenu=${(e) => { e.preventDefault(); onDetail(slot.id, 'chess', hint); }}
       aria-label=${`${t('{name}，价格 {price}', { name, price: slot.price })}${armed ? (disabled ? t('，无法购买') : t('，再次点击确认')) : ''}`} aria-pressed=${onTap ? String(!!armed) : undefined}>
     <span class="scard__bg" aria-hidden="true"></span>
@@ -175,18 +177,19 @@ function SkillBadge({ chess, lo, standIn = false }) {
 }
 
 /**
- * Item card (the bar's item slot): the same two taps as an operator card.
+ * Item card (the bar's item slot): the same two taps as an operator card (`keyLabel` as on ChessCardView).
  * @param {{ slot:any, idx:number, frozen?:boolean, reason?:string|null, armed?:boolean, onTap?:(idx:number)=>void,
- *   onBuy:Function, onDetail:Function }} props
+ *   onBuy:Function, onDetail:Function, keyLabel?:string|null }} props
  */
-function ItemCardView({ slot, idx, frozen = false, reason = null, free = false, armed = false, onTap = null, onBuy, onDetail }) {
+function ItemCardView({ slot, idx, frozen = false, reason = null, free = false, armed = false, onTap = null, onBuy, onDetail, keyLabel = null }) {
+  const buyKey = keyLabel ?? hotkeyLabelOf('buy');
   const it = data.lookup('items', slot.id);
   const m = data.get('assets');
   const disabled = !!reason;
   const tap = () => { if (onTap) onTap(idx); else if (!disabled) onBuy(idx); else onDetail(slot.id, 'item'); };
   const card = html`<button type="button" class=${cx('scard', 'scard--item', frozen && 'is-frozen', disabled && 'is-disabled', armed && 'is-armed')}
-      data-shop-slot=${free ? undefined : idx} aria-keyshortcuts=${free ? undefined : hotkeyLabelOf('buy')}
-      title=${free || reason ? undefined : t('购买鼠标指向的商品 · {key}', { key: hotkeyLabelOf('buy') })}
+      data-shop-slot=${free ? undefined : idx} aria-keyshortcuts=${free ? undefined : buyKey}
+      title=${free || reason ? undefined : t('购买鼠标指向的商品 · {key}', { key: buyKey })}
       onClick=${tap} onContextMenu=${(e) => { e.preventDefault(); onDetail(slot.id, 'item'); }}
       aria-label=${`${t('{name}，价格 {price}', { name: it?.name || t('装备'), price: slot.price })}${armed ? (disabled ? t('，无法购买') : t('，再次点击确认')) : ''}`}
       aria-pressed=${onTap ? String(!!armed) : undefined}>
@@ -325,6 +328,11 @@ export const RewardCards = memo(RewardCardsView, cardPropsEqual);
  */
 function ShopBarView({ priv, editable, collapsed, refreshBusy = false, onCollapse, onBuy, onLevel, onRefresh, onFreeze, onDetail, onDetailClose, onRefuse, barRef,
   reward = null, onReward, onRewardLater, onArm = null, offBonds = null }) {
+  // A rebind must reach the memoized cards (ui/memo.js): subscribing to the settings store here re-renders this bar on
+  // a settings change even while the memo skips the parent's render, and `keyLabel` then busts the cards' own compare
+  // (their aria-keyshortcuts / title). The other key hints below re-read hotkeyLabelOf on that render.
+  const { keys: prefKeys } = useSettings();
+  const buyKey = hotkeyLabel(prefKeys?.buy);
   const shop = priv?.shop || {};
   const slots = Array.isArray(shop.slots) ? shop.slots : [];
   // Empty slots have no kind. In 第一期 the first equipment slot opens empty at level 5; use the server's layout
@@ -408,7 +416,7 @@ function ShopBarView({ priv, editable, collapsed, refreshBusy = false, onCollaps
           if (s.sold) return html`<${SoldCard} key=${`s${i}`} />`;
           const reason = shopBlockReason('buy', { priv, editable, slot: s, ...LOOKUPS });
           return html`<${ChessCard} key=${`c${i}:${s.id}`} slot=${s} idx=${i} priv=${priv} frozen=${slotFrozen(s, frozen)} onBuy=${onBuy} onDetail=${onDetail} offBonds=${offBonds}
-              reason=${reason} armed=${armed === armKey('c', i, s)} onTap=${editable ? (idx) => tapCard('c', idx, s, 'chess', reason, onBuy) : null} />`;
+              keyLabel=${buyKey} reason=${reason} armed=${armed === armKey('c', i, s)} onTap=${editable ? (idx) => tapCard('c', idx, s, 'chess', reason, onBuy) : null} />`;
         })}
       </div>`}
       ${showReward ? null : html`<div class="shopbar__item">
@@ -417,7 +425,7 @@ function ShopBarView({ priv, editable, collapsed, refreshBusy = false, onCollaps
             if (!s) return html`<${EmptyCard} key=${`ie${i}`} item=${true} />`;
             if (s.sold) return html`<${SoldCard} key=${`is${i}`} item=${true} />`;
             const reason = shopBlockReason('buy', { priv, editable, slot: s, ...LOOKUPS });
-            return html`<${ItemCard} key=${`i${i}:${s.id}`} slot=${s} idx=${i} frozen=${slotFrozen(s, frozen)} onBuy=${onBuy} onDetail=${onDetail} reason=${reason}
+            return html`<${ItemCard} key=${`i${i}:${s.id}`} slot=${s} idx=${i} frozen=${slotFrozen(s, frozen)} onBuy=${onBuy} onDetail=${onDetail} keyLabel=${buyKey} reason=${reason}
               armed=${armed === armKey('i', i, s)} onTap=${editable ? (idx) => tapCard('i', idx, s, 'item', reason, onBuy) : null} />`;
           })
           : layout?.item === 0 ? null : html`<${EmptyCard} item=${true} />`}

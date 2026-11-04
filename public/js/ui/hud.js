@@ -38,7 +38,7 @@ import { reducedMotion } from './device.js';
 import { serverNow } from '../store.js';
 import { isCombatPhase, isBossPhase, prepCapsuleLabel, bossFrac, bossPctText, fmtNum, shopBlockReason } from './gameLogic.js';
 import { overtimeState, overtimeDrainPerSec, remainAt } from './matchStatus.js';
-import { hotkeyLabelOf } from './settings.js';
+import { hotkeyLabelOf, useSettings } from './settings.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 import { UnofficialMark, ruleLine } from './pluginTag.js';
 import { TestMark } from './testConsole.js';
@@ -529,6 +529,9 @@ export function SpeedButton({ voted = false, count = 0, need = 0, pending = fals
 function TopBarView({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, onReady, readyBusy, readyCount, playerCount, pen = false, penAvail = false, onPen = () => {},
   config = null, frozenAt = null, pause = null, speed = null, live = null, spectator = false,
   spectators = null, myId = null, isHost = false, onRemoveSpectator = null, room = null, held = false }) {
+  // a rebind must reach the memoized TopBar (ui/memo.js): subscribing here re-renders it on a settings change, so the
+  // ready / pause key hints (ReadyToggle, PauseButton) re-read hotkeyLabelOf instead of keeping the old key
+  useSettings();
   const phase = pub?.phase;
   const boss = isBossPhase(phase);
   const lp = boss && Number.isFinite(pub?.teamLp) ? pub.teamLp : Number.isFinite(priv?.lp) ? priv.lp : null;

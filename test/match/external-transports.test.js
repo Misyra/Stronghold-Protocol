@@ -169,6 +169,9 @@ test('stdio timeout cancels a slow request while the child answers others, and k
   const c = new StdioAI({ ...stdioConfig([process.execPath, '-e', ECHO]), timeoutMs: 1000 });
   t.after(() => c.close());
   const child = c.child ?? (c.start(), c.child);
+  // a running child first (no timer): on a Windows runner node's own start alone outlasted the timeout, so the first
+  // request's timer read the start-up as a hang and broke the child
+  assert.equal((await c.request({ ...observation, id: 'warm' }, new AbortController().signal, { timeoutMs: 0 })).id, 'warm');
   // slow is expected to reject, but under full-suite load its rejection can land after the test ended: mark it
   // handled up front (assert.rejects below still observes the rejection itself).
   const slow = c.request({ ...observation, id: 'slow', delay: 1500 }, new AbortController().signal);

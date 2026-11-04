@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { makeMatch } from './harness.js';
 import { externalConfig } from '../../server/match/externalConfig.js';
 import { StdioAI } from '../../server/ai/transport.js';
-import { actionReply, writeJSON, readJSON } from '../../tools/ai/manual-files.mjs';
+import { actionReply, writeJSON, readJSON, replaceFile } from '../../tools/ai/manual-files.mjs';
 
 const pending = m => [...m.externalAI.jobs.values()][0];
 const seats = Array.from({ length: 4 }, (_, seat) => ({ seat, playerId: `manual_${seat}`, name: `Seat ${seat}`, isBot: true, connected: true }));
@@ -18,8 +18,9 @@ const seats = Array.from({ length: 4 }, (_, seat) => ({ seat, playerId: `manual_
 const WIN = process.platform === 'win32';
 const stopped = async (exit, msg) => { const [code, signal] = await exit; if (WIN) assert.equal(signal, 'SIGTERM', msg); else assert.equal(code, 1, msg); };
 function temp(t) { const dir = mkdtempSync(path.join(os.tmpdir(), 'sp-manual-test-')); t.after(() => rmSync(dir, { recursive: true, force: true })); return dir; }
-async function until(fn) {
-  for (let i = 0; i < 2000; i++) { const v = fn(); if (v) return v; await delay(10); }
+// by the clock, not a count: a loaded Windows runner needed more than 30 s of 10 ms polls to start the launcher
+async function until(fn, ms = 100_000) {
+  for (const end = Date.now() + ms; Date.now() < end;) { const v = fn(); if (v) return v; await delay(10); } // loop-cap: the deadline
   throw new Error('Timed out waiting for manual files');
 }
 
@@ -199,7 +200,25 @@ test('manual-act is atomic, refuses duplicates and expired observations; done me
   assert.equal(spawnSync(process.execPath, ['tools/ai/manual-act.mjs', dir, '["a5"]', '--obs'], { encoding: 'utf8' }).status, 1);
 });
 
-test('four-seat co-op launcher reaches concurrent prep with live wall-clock deadlines', { timeout: 30000 }, async t => {
+test('publishing over a page a reader holds open retries on Windows only (EPERM / EACCES / EBUSY), for about a second', () => {
+  const busy = (code, times) => { const calls = []; let left = times;
+    return { calls, rename: (a, b) => { calls.push([a, b]); if (left-- > 0) throw Object.assign(new Error(code), { code }); } }; };
+  for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
+    const r = busy(code, 3), waits = [];
+    replaceFile('t', 'f', { rename: r.rename, platform: 'win32', sleep: ms => waits.push(ms) });
+    assert.deepEqual([r.calls.length, waits], [4, [1, 2, 4]], code);
+  }
+  const stuck = busy('EPERM', Infinity), waits = [];
+  assert.throws(() => replaceFile('t', 'f', { rename: stuck.rename, platform: 'win32', sleep: ms => waits.push(ms) }), /EPERM/);
+  assert.equal(waits.reduce((a, b) => a + b, 0), 1023);
+  for (const [code, platform] of [['EPERM', 'linux'], ['EPERM', 'darwin'], ['ENOENT', 'win32']]) {
+    const r = busy(code, 1);
+    assert.throws(() => replaceFile('t', 'f', { rename: r.rename, platform, sleep: () => assert.fail('no retry') }), new RegExp(code));
+    assert.equal(r.calls.length, 1);
+  }
+});
+
+test('four-seat co-op launcher reaches concurrent prep with live wall-clock deadlines', { timeout: 120_000 }, async t => {
   const dir = temp(t), child = spawn(process.execPath, ['tools/ai/manual-match.mjs', '--dir', dir, '--mode', 'coop', '--seats', '0,1,2,3', '--seed', '7'], { stdio: ['ignore', 'pipe', 'pipe'] });
   const exit = once(child, 'exit');
   t.after(() => child.kill('SIGKILL'));
@@ -227,7 +246,7 @@ test('four-seat co-op launcher reaches concurrent prep with live wall-clock dead
   if (!WIN) for (let seat = 0; seat < 4; seat++) assert.equal(readJSON(path.join(dir, `seat-${seat}`, 'status.json')).state, 'stopped');
 });
 
-test('historical solo selects its data and existing unlimited option; unavailable difficulties fail before creating a session', { timeout: 30000 }, async t => {
+test('historical solo selects its data and existing unlimited option; unavailable difficulties fail before creating a session', { timeout: 120_000 }, async t => {
   const dir = temp(t);
   const bad = spawnSync(process.execPath, ['tools/ai/manual-match.mjs', '--dir', dir, '--version', 'act1autochess'], { encoding: 'utf8' });
   assert.equal(bad.status, 1); assert.match(bad.stderr, /ABYSS is unavailable/); assert.deepEqual(readdirSync(dir), []);

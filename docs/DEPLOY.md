@@ -655,6 +655,38 @@ node --expose-gc tools/memorybench.mjs
 | `SP_ANNOUNCEMENT_FILE` | `config/announcements.json` | 公告排程文件（单源，热加载；`announcementFile: null` 关闭公告） |
 | `SP_ANNOUNCEMENT_POLL_MS` | 10000 | 排程文件的热加载轮询间隔（ms） |
 
+### 部署包必须携带的本机文件（2026-11-04 事故后固化）
+
+用 `git archive` 打包时，下面这些文件**被 `.gitignore` 排除、不会进包**，必须从上一版 release（或本机）复制进去，否则上线后功能静默退化：
+
+| 文件 | 丢了会怎样 |
+| --- | --- |
+| `data/resource-packs.json` | 预载**不再走 ModelScope 分包**，退化成逐文件下载（2026-11-04 实际发生：新 release 漏带，`/data/resource-packs.json` 404、manifest 的 `packs` 消失） |
+| `.assets-manifest.json` | 素材 URL 失去逐文件 `?v=` 指纹，CDN 缓存无法按内容失效 |
+| `data/asset-hashes.json` | 预载清单缺哈希，客户端无法跳过已缓存文件 |
+| `data/local-fx.json` | 官方特效分组与文件清单缺失 |
+| `data/local-assets.json` | 本地客户端素材清单缺失 |
+| `data/skins-installed.json` | 已安装动态立绘记录丢失 |
+| `public/fonts/` | 自托管字体缺失，页面回退系统字体 |
+
+**打包后自检**（在解压出的 release 目录里跑，任何一行是 `MISS` 就不要切换）：
+
+```sh
+for f in data/resource-packs.json .assets-manifest.json data/asset-hashes.json \
+         data/local-fx.json data/local-assets.json data/skins-installed.json public/fonts/fonts.css; do
+  [ -e "$f" ] && echo "OK   $f" || echo "MISS $f"
+done
+```
+
+切换后立刻验证分包还在（`packs` 非空、首个包的 `urls` 首选 ModelScope）：
+
+```sh
+curl -s http://127.0.0.1:3000/data/resource-packs.json -o /dev/null -w 'index %{http_code}\n'
+curl -s http://127.0.0.1:3000/data/resource-manifest.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const m=JSON.parse(s);console.log("packs",(m.packs||[]).length)})'
+```
+
+补文件**不需要重启**：`createResourceIndex` 每次请求都 stat 索引，放进去下一次请求就生效。
+
 ### 局内聊天（合并自用户分支）
 
 局内聊天（交流面板的文字消息、敏感词过滤、违规禁言）**默认关闭**。打开后服务器在启动期就要求一套可用的

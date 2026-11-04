@@ -15,7 +15,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { fingerprintPublishedAsset, publishedAssetsManifest } from './published-assets.mjs';
 import { prepareResourcePackUpload } from './resource-pack-publish.mjs';
@@ -162,11 +162,31 @@ await Promise.all(Array.from({ length: 8 }, async () => {
 }));
 
 const manifest = publishedAssetsManifest(files);
+/**
+ * The resume state, written atomically (temp file + rename): a crash or power loss mid-write must never leave a
+ * truncated `.assets-manifest.json` behind — an unparsable one makes the next run see no previous manifest and
+ * re-upload the whole bucket. The rename is atomic on the same filesystem, which is why the temp lives beside it.
+ * @param {object} doc
+ */
+function writeManifest(doc) {
+  const temp = `${MANIFEST_FILE}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temp, JSON.stringify(doc) + '\n', { flag: 'wx' });
+    fs.renameSync(temp, MANIFEST_FILE);
+  } finally {
+    try { fs.rmSync(temp, { force: true }); } catch { /* already renamed */ }
+  }
+}
 let previous = null;
 try {
   const doc = JSON.parse(fs.readFileSync(MANIFEST_FILE, 'utf8'));
   if (doc && /^[a-f0-9]{16}$/.test(doc.tag) && doc.hashes && typeof doc.hashes === 'object') previous = doc;
-} catch {}
+  else if (fs.existsSync(MANIFEST_FILE)) console.warn('Manifest has an unexpected shape; every object will be re-uploaded.');
+} catch (err) {
+  // A damaged resume state is recoverable (everything gets re-hashed and re-diffed), but a silent full re-upload is
+  // the expensive surprise this warning exists to explain.
+  if (fs.existsSync(MANIFEST_FILE)) console.warn(`Manifest unreadable (${err.message}); every object will be re-uploaded.`);
+}
 
 const jobs = (previous ? files.filter((f) => previous.hashes[`/${f.key}`] !== f.hash) : files)
   .map((f) => ({ key: f.key, abs: f.abs, cc: 'public, max-age=3600' }));
@@ -181,7 +201,7 @@ if (DRY) {
   process.exit(jobs.length ? 0 : 1);
 }
 if (!jobs.length) {
-  fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest) + '\n');
+  writeManifest(manifest);
   await packUpload.commit();
   console.log('Nothing to upload; manifest refreshed.');
   process.exit(0);
@@ -211,6 +231,6 @@ if (failed) {
   console.error(`${failed} upload(s) failed; manifest NOT rewritten so the next run re-diffs the same set.`);
   process.exit(2);
 }
-fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest) + '\n');
+writeManifest(manifest);
 await packUpload.commit();
 console.log(`Uploaded ${done} object(s) in ${((Date.now() - started) / 1000).toFixed(1)}s; manifest -> ${manifest.tag}`);

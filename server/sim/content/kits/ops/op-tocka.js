@@ -26,7 +26,13 @@
 //   effect nor its attack-speed window — whose skill is not running first, then the latest deployed, not herself (PRTS
 //   备注); herself only when nobody else qualifies (the skill's second selector). The effect flies to it
 //   (projectile_chr_tocka_s2, speed 10) and is put on at the landing. It fires when the holder starts a skill, or at its
-//   0.2 s check once the holder's skill is ready, its holder able to act and not silenced (PRTS 备注; "不考虑是否真的可开启");
+//   0.2 s check once the holder's skill can open (PRTS 备注: "技力充足、未持有阻止能力类异常效果、不需要目标/满足目标条件" —
+//   SP ready, able to act, not silenced, and `targetMet`: the target condition the engine asks of that skill's automatic
+//   cast — the range rules' own range, DEFAULT's initial range or a blocked enemy, a heal skill's injured ally [ASSUMED:
+//   the 技能策略's condition stands for the skill's own target need]; the rules with no target of their own (SP_FULL /
+//   NEVER / TAKE_DAMAGE, PRTS's "不需要目标") wait for an enemy in the holder's attack or skill range, or one it blocks
+//   (`enemyInReach`) — the owner's test of 2026-11-03: "干员技力一满并且技能/攻击范围内有敌人就自动放，没敌人不会放"; the
+//   cast stays the engine's);
 //   then attack_speed for buff_duration s (EXTEND) and, while that lasts, every 0.2 s a MANUAL skill of the holder that
 //   is ready opens (tocka_s2[auto_skill] TriggerSkill: "每6帧尝试触发…不会改变其手动触发性质") — [ASSUMED] not held back by
 //   the mode's 3 s automatic-operation cooldown: it is the skill's own effect, not the mode's operation. Every 冻河's
@@ -76,6 +82,35 @@ const fieldOps = (battle, by) => battle.allyUnits.filter((a) => a.alive && a.dep
 /** The holder's skill can be opened now (PRTS 备注: SP enough, no ability-stopping status, not running). */
 const openable = (a) => up(a) && activeSkill(a) && a.skill.ready && !(a.skill.active && a.skill.isTimed) && !a.skill.pending
   && a.canAct && !a.s.flags.silence;
+/** Trigger rules whose cast asks no target of its own ("不需要目标"): at full SP, a kit's own cast, a hit taken. */
+const NO_TARGET_RULES = new Set(['SP_FULL', 'NEVER', 'TAKE_DAMAGE']);
+/** The rules the engine checks on their own range every tick (skills.js TICK_RULES but SP_FULL). */
+const RANGE_RULES = new Set(['SEARCH', 'CUSTOM_RANGE', 'SKILL_RANGE', 'ACTIVE_RANGE', 'GDGLOW_SKILL_2']);
+/**
+ * "满足目标条件" (PRTS S2 备注): the target condition the engine asks of an automatic cast of `u`'s skill — the range rules'
+ * own check (skills.js `_tickRuleSatisfied`), else DEFAULT's: an enemy in the initial range or one it blocks, a heal skill
+ * an injured ally (`_defaultCondition`; a DEFAULT cast bound to an ally: `_allyTriggerSatisfied`); the NO_TARGET_RULES an
+ * enemy within reach (`enemyInReach`, the owner's test). The cast itself stays the engine's.
+ */
+function targetMet(u) {
+  const sk = u.skill;
+  if (NO_TARGET_RULES.has(sk.rule)) return enemyInReach(u);
+  if (RANGE_RULES.has(sk.rule)) return !!sk._tickRuleSatisfied();
+  return sk.triggerAllies ? !!sk._allyTriggerSatisfied() : !!sk._defaultCondition();
+}
+
+/**
+ * "技能/攻击范围内有敌人" (the owner's test, 2026-11-03): an enemy `u` can target in its initial range or in its skill's own
+ * trigger range, or one it blocks — DEFAULT's enemy part (skills.js `_defaultCondition`), a heal skill's too.
+ */
+function enemyInReach(u) {
+  const sk = u.skill, b = sk.battle;
+  if (b.rangeChanged(u)) b._refreshRange(u);
+  const keys = u.baseRangeKeys || u.rangeKeys;
+  if (keys && b.enemiesInKeys(keys, u, u.profile).length > 0) return true;
+  if (sk.triggerGrid && b.anyEnemyInKeys(sk._triggerKeys(), u)) return true;
+  return u.blocking.length > 0 && b.blockedTargets(u, u.profile).length > 0;
+}
 
 /** 夜的哑然: a firing of one of her effects. */
 function onFire(battle, unit, t0) {
@@ -179,7 +214,8 @@ function putS2(battle, unit, holder, b2, t0) {
   };
   battle.addBuff(holder, {
     key: S2_KEY, source: unit, visible: true, tags: [S2_TAG], interval: CHECK, data: { fire },
-    onTick({ unit: h }) { if (openable(h)) fire(); },
+    // 技能可开启时: SP ready, able to act, not silenced, and its own target condition met (PRTS 备注) — checked every 0.2 s
+    onTick({ unit: h }) { if (openable(h) && targetMet(h)) fire(); },
   });
   // "技能开启时" (and a toggle's switch): one handler per holder, owned by the holder (it outlives her)
   const m = stateOf(unit);

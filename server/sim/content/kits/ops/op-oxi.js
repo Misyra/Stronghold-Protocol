@@ -17,7 +17,9 @@
 // - S1 照霎白夜 (AUTO): at once, every ground enemy on her target's tile takes atk_scale arts and 恐惧 [ASSUMED: no attack is
 //   replaced].
 // - S2 阂断骤雪 (AUTO, 5 charges, trigger NEVER: the kit casts it): ready and with no effect running, the first damage from an
-//   enemy source (PRTS: not a DoT, priority +1000) casts it. That hit, if physical or arts, falls to damage_remaining_scale.
+//   enemy source (PRTS: not a DoT, priority +1000, "且未被成功闪避" — her 闪避 (dodgePhys / dodgeArts of the buffs that come
+//   later in the injury pass) is rolled for that instance at the guard, with the pass's own roll and in its order, and not
+//   again where those buffs come; a dodged hit casts nothing) casts it. That hit, if physical or arts, falls to damage_remaining_scale.
 //   庇护 damage_resistance holds shelter_hold_duration, then fades linearly to 0 at skill_duration. The damage source, else a
 //   blocked unit, else a ground enemy of her range takes retaliate_atk_scale arts around it (ability_range_radius, the
 //   official blackboard; PRTS's 0.9 is the same circle by collider), healing her heal_ratio of the sum. Each cast adds one
@@ -40,7 +42,7 @@ import { num, talentBb, skillRec, up, posKey, holdProtect, byEnemyDamage, enemie
 import { canTargetEnemy } from '../../../targeting.js';
 import { dirVec } from '../../../dir.js';
 import { COLS } from '../../../constants.js';
-import { hasHp } from '../../../attack.js';
+import { hasHp, damageDodgeMode } from '../../../attack.js';
 
 const S1 = 'skchr_oxi_1', S2 = 'skchr_oxi_2', S3 = 'skchr_oxi_3';
 const GROUND = Object.freeze({ canHitFly: false, groundOnly: true });
@@ -147,6 +149,26 @@ function installShelter(battle, unit, b2) {
       const sk = unit.skill;
       if (!sk?.ready || battle.time < m.castAt + life - 1e-9 || !unit.canAct || unit.s.flags.silence) return;
       if (!byEnemyDamage(ev) || isDot(ev.dmg)) return;
+      // PRTS "且未被成功闪避": her 闪避 (dodgePhys / dodgeArts of her buffs that come later in this pass) is rolled for
+      // this hit now, with the pass's own roll (ev.dodge: battle.rng, the MISS, the dodge hook) in the pass's order —
+      // a dodged hit casts nothing; one that is not dodged is not rolled again where those buffs come
+      const key = ev.type === 'phys' ? 'dodgePhys' : ev.type === 'arts' ? 'dodgeArts' : null, own = ev.buff;
+      const later = (b) => (b.injuryPriority ?? 0) < own.injuryPriority || ((b.injuryPriority ?? 0) === own.injuryPriority && b.seq > own.seq);
+      const held = key ? unit.buffs.filter((b) => b !== own && b.mods && b.mods[key] > 0 && later(b))
+        .sort((a, b) => (b.injuryPriority ?? 0) - (a.injuryPriority ?? 0) || a.seq - b.seq) : [];
+      const cancels = damageDodgeMode(ev.dmg) !== 'uncancellable';
+      for (const b of held) {
+        for (let i = 0; i < b.stacks; i++) {   // one roll per stack until one succeeds (attack/effects.js)
+          if (!ev.dodge(b.mods[key])) continue;
+          if (cancels) return;
+          break;
+        }
+      }
+      for (const b of held) {
+        const mods = b.mods, once = { ...mods, [key]: 0 };
+        b.mods = once;
+        ev.defer(() => { if (b.mods === once) b.mods = mods; unit.markDirty(); });
+      }
       m.castAt = battle.time;
       if (ev.type === 'phys' || ev.type === 'arts') ev.amount *= num(b2.damage_remaining_scale, 0.1);
       const source = ev.source;

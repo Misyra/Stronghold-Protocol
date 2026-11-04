@@ -217,6 +217,48 @@ test('S2: no second cast while the effect runs; 庇护 holds, then fades to 0 at
   done(h);
 });
 
+test('S2: a dodged hit casts nothing (PRTS 未被成功闪避) — her 闪避 is rolled for it once, at the guard; a hit not dodged casts as before and is not rolled again', () => {
+  const bb = bbOf(true, S2);
+  const taggedAll = (h, tag) => h.hooksOf('damaged').filter((c) => c.dmg?.tags?.includes(tag));
+  for (const [type, mod] of [['phys', 'dodgePhys'], ['arts', 'dodgeArts']]) {
+    // a certain dodge: no charge, no window, no 庇护, no layer, no retaliation
+    const { h, u } = field({ skill: 1 });
+    fillSp(u);
+    h.b.addBuff(u, { key: 'test:dodge', mods: { [mod]: 1 } });
+    const src = h.spawn('enemy_dummy', { pos: [10, 7] });
+    const hp0 = u.hp;
+    const dodges = () => h.eventsOf('fx').filter((e) => e[1] === 'dodge').length;
+    h.b.dealDamage(src, u, { amount: 2000, type });
+    assert.deepEqual([u.hp, dodges(), u.skill.charges, u.skill.activations], [hp0, 1, u.skill.maxCharges, 0], `${type}: one MISS, every charge kept`);
+    h.run(0.2);
+    assert.deepEqual([!!u.findBuff('protect'), u.mem.oxi.layers, taggedAll(h, 'oxi:s2').length], [false, 0, 0], `${type}: nothing of the cast`);
+    // an undodgeable hit still casts it (no roll; base DEF / RES: the cast's layer would raise s.def)
+    const i = h.hooksOf('damaged').length;
+    h.b.dealDamage(src, u, { amount: 2000, type, canDodge: false });
+    const dmg = h.hooksOf('damaged').slice(i).find((c) => c.target === u);
+    approx(dmg.amount, (type === 'phys' ? 2000 - u.base.def : 2000 * (1 - u.base.res / 100)) * bb.damage_remaining_scale, `${type}: undodgeable, ×0.1`, 1e-3);
+    assert.equal(u.skill.activations, 1, `${type}: cast`);
+    done(h);
+  }
+  // a 50 % dodge that fails: the hit is rolled exactly once (at the guard), casts, and the buff's 闪避 comes back afterwards
+  const { h, u } = field({ skill: 1 });
+  fillSp(u);
+  h.b.addBuff(u, { key: 'test:dodge', mods: { dodgePhys: 0.5 } });
+  const src = h.spawn('enemy_dummy', { pos: [10, 7] });
+  let draws = 0;
+  h.b.rng = Object.assign(() => { draws++; return 0.7; }, h.b.rng);
+  const def0 = u.s.def;
+  const i = h.hooksOf('damaged').length;
+  h.b.dealDamage(src, u, { amount: 2000, type: 'phys' });
+  const dmg = h.hooksOf('damaged').slice(i).find((c) => c.target === u);
+  approx(dmg.amount, (2000 - def0) * bb.damage_remaining_scale, 'not dodged: ×0.1', 1e-3);
+  assert.deepEqual([draws, u.skill.activations, u.findBuff('test:dodge').mods.dodgePhys], [1, 1, 0.5], 'one roll, cast, the 闪避 restored');
+  draws = 0;
+  h.b.dealDamage(src, u, { amount: 2000, type: 'phys' });
+  assert.deepEqual([draws, u.skill.activations], [1, 1], 'inside the window: the pass rolls it itself, once, and nothing casts');
+  done(h);
+});
+
 test('S2 layers: ATK / DEF per layer up to 5; expiry takes one and restarts the time', () => {
   const { h, u } = field({ skill: 1, enemies: [{ key: 'enemy_dummy', pos: [10, 6] }] });
   const bb = bbOf(true, S2), m = u.mem.oxi, e = h.enemies()[0], base = u.s.atk;

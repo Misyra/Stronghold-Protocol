@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { makeBattle, enemyRec, checkInvariants } from '../helpers/battleHarness.js';
+import { makeBattle, chessRec, enemyRec, checkInvariants } from '../helpers/battleHarness.js';
 import { KITTED_CHARS, OPERATOR_KITS, KITS } from '../../server/sim/content/kits/index.js';
 import { diyPool } from '../../shared/diy.js';
 
@@ -28,10 +28,10 @@ const ALL_FORMS = [[5, false], [6, false], [5, true], [6, true]];
 const YINXIAN = (uid, row, col) => ({ uid, chessId: 'chess_char_1_01_a', row, col });
 const JIAOFENG = (uid, row, col) => ({ uid, chessId: 'chess_char_1_02_a', row, col });
 
-function field({ tier = 5, elite = true, skill = 0, row = 10, col = 5, enemies = [], others = [], seed = 5 } = {}) {
+function field({ tier = 5, elite = true, skill = 0, row = 10, col = 5, enemies = [], others = [], seed = 5, ops = null, flags = null } = {}) {
   const h = makeBattle({
-    defs: { enemies: ENEMIES }, timeLimit: 600, autoFinish: false, seed, enemies,
-    flags: { dpPerSec: 0, dpMax: 999 }, hooks: ['damaged', 'skillStart', 'skillEnd', 'statusApplied', 'heal'], captureNoisy: true,
+    defs: { ...(ops ? { chess: ops } : {}), enemies: ENEMIES }, timeLimit: 600, autoFinish: false, seed, enemies,
+    flags: { dpPerSec: 0, dpMax: 999, ...(flags || {}) }, hooks: ['damaged', 'skillStart', 'skillEnd', 'statusApplied', 'heal'], captureNoisy: true,
     units: [{ uid: 1, diy: { slot: SLOT[tier], charId: TOCKA, skillIndex: skill, uniEquipId: null }, elite, row, col }, ...others],
   });
   h.step();
@@ -149,10 +149,12 @@ test('S1 again on a 屏障 of hers: the old one goes and the new one is the larg
   done(h);
 });
 
-test('S2 意欲呼啸之心: one operator of the field, the latest deployed whose skill is off; it flies there; it fires once the skill is ready: attack_speed for buff_duration and its MANUAL skill opens', () => {
+test('S2 意欲呼啸之心: one operator of the field, the latest deployed whose skill is off; it flies there; it fires once the holder\'s skill can open — SP ready and an enemy in its reach (满足目标条件): attack_speed for buff_duration and its MANUAL skill opens', () => {
   for (const elite of [false, true]) {
     const b2 = bbOf(elite, S2), t0 = talent(0);
-    const { h, u } = field({ elite, skill: 1, others: [JIAOFENG(2, 10, 6), YINXIAN(3, 4, 1)] });
+    // the enemy stands on 角峰's tile (the latest deployed, so the holder) and he blocks it — his TAKE_DAMAGE skill is
+    // ready but for the target condition ("不需要目标" rules wait for an enemy within reach: blocked counts)
+    const { h, u } = field({ elite, skill: 1, others: [JIAOFENG(2, 10, 6), YINXIAN(3, 4, 1)], enemies: [{ key: 'enemy_dummy', pos: [10, 6] }] });
     const [late, early] = [h.unit(2), h.unit(3)].sort((a, b) => b.deploySeq - a.deploySeq);
     const [near, far] = [early, late];
     emptySp(near); emptySp(far);
@@ -173,7 +175,7 @@ test('S2 意欲呼啸之心: one operator of the field, the latest deployed whos
     approx(win.timeLeft, b2.buff_duration, 'buff_duration', 0.02);
     approx(far.s.aspd - aspd0, b2.attack_speed, 'attack_speed');
     h.run(0.25);
-    assert.ok(far.skill.active, 'its MANUAL skill opened with no enemy around');
+    assert.ok(far.skill.active, 'its MANUAL skill opened');
     assert.ok(h.hooksOf('heal').some((c) => c.source === u) || u.skill.sp >= 0, '夜的哑然 ran');
     void t0;
     done(h);
@@ -195,6 +197,49 @@ test('S2: a skill start of the holder fires it too; nobody else ⇒ herself', ()
   solo.h.run(0.5);
   assert.ok(solo.u.findBuff('tocka:s2') || solo.u.findBuff(`tocka:s2auto:${solo.u.id}`), 'alone: on herself');
   done(h); done(solo.h);
+});
+
+test('S2 effect: "不需要目标/满足目标条件" by its holder skill\'s rule — SKILL_RANGE / ACTIVE_RANGE an enemy on their own range, DEFAULT on its attack range, and the rules with no target of their own (SP_FULL, TAKE_DAMAGE) an enemy on its attack range too (the owner\'s test of 2026-11-03: "技能/攻击范围内有敌人就自动放，没敌人不会放"); the 0.2 s check fires the effect while the battle-start operation cooldown still holds the skill, and the window opens it', () => {
+  const ally = (id, skill) => chessRec({ id, stats: { def: 0, res: 0 }, skill });
+  const ROW_AHEAD = (n) => Array.from({ length: n }, (_, i) => [0, i]);
+  const OPS = {
+    ally_c: ally('ally_c', { spCost: 10, initSp: 0, duration: 0, maxChargeTime: 3 }),
+    ally_k: ally('ally_k', { spCost: 10, initSp: 0, duration: 5, trigger: { rule: 'SKILL_RANGE', customRangeGrid: ROW_AHEAD(5) } }),
+    ally_r: ally('ally_r', { spCost: 10, initSp: 0, duration: 5, trigger: { rule: 'ACTIVE_RANGE', customRangeGrid: ROW_AHEAD(4) } }),
+    ally_f: ally('ally_f', { spCost: 10, initSp: 0, duration: 5, trigger: { rule: 'SP_FULL' } }),
+    ally_t: ally('ally_t', { spCost: 10, initSp: 0, duration: 5, trigger: { rule: 'TAKE_DAMAGE' } }),
+  };
+  const holders = [
+    // [rule, record, the holder's tile, an enemy tile outside its condition, one inside]
+    ['DEFAULT', 'ally_c', [11, 6], [11, 9], [11, 7]],
+    ['SKILL_RANGE', 'ally_k', [12, 3], [10, 9], [12, 7]],
+    ['ACTIVE_RANGE', 'ally_r', [9, 3], [10, 9], [9, 6]],
+    ['SP_FULL', 'ally_f', [11, 6], [11, 9], [11, 7]],
+    ['TAKE_DAMAGE', 'ally_t', [11, 6], [11, 9], [11, 7]],
+  ];
+  for (const [rule, id, [row, col], out, inside] of holders) {
+    const { h, u } = field({ skill: 1, flags: { startOpCooldown: 30 }, others: [{ uid: 2, chessId: id, row, col }], ops: OPS });
+    const m = h.unit(2);
+    assert.deepEqual([m.skill.rule, m.skill.manual], [rule, true]);
+    fillSp(u);
+    h.run(1);
+    assert.ok(m.findBuff('tocka:s2'), `${rule}: the effect is on the holder`);
+    h.b.retreat(u);
+    m.skill.gainSp(10);
+    h.run(1);
+    assert.ok(m.skill.ready && m.findBuff('tocka:s2'), `${rule}: ready, no enemy: it waits`);
+    h.spawn('enemy_dummy', { pos: out });
+    h.run(1);
+    assert.ok(m.skill.ready && m.findBuff('tocka:s2'), `${rule}: ready, the enemy outside its condition: it waits`);
+    h.spawn('enemy_dummy', { pos: inside });
+    assert.ok(h.runUntil(() => !m.findBuff('tocka:s2'), 0.2 + 1e-6), `${rule}: fired within 0.2 s`);
+    assert.ok(m.findBuff(`tocka:s2auto:${u.id}`), `${rule}: the ASPD window`);
+    // this remake's window opens the holder's MANUAL skill itself every 0.2 s (its own reading of "期间技能变为自动开启"):
+    // a TAKE_DAMAGE skill opens with it too, without a hit
+    assert.ok(h.runUntil(() => m.skill.activations === 1, 1.5), `${rule}: cast once the operation cooldown is lifted`);
+    assert.ok(h.b.time < 30, `${rule}: within the 30 s battle-start operation cooldown`);
+    done(h);
+  }
 });
 
 test('S3 踽踽独行之春: attack_speed, attack@max_target targets at attack@atk_scale physical with an attack@stun 晕眩; at its start the effect goes on the highest SP ratio operator of her range', () => {

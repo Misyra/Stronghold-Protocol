@@ -38,13 +38,16 @@ test('CDN settings validate public bases and rewrite art without leaking the gam
   assert.equal(assetSiteUrl('/assets/x.skel', cdn), '', 'a local path has no twin');
 });
 
-test('a per-file manifest turns art into immutable ?v= URLs and falls back to bare for unlisted files', () => {
+test('a per-file manifest turns art into immutable ?v= URLs; the fallbacks pin the release tag, never a bare URL', () => {
   const cdn = { base: 'https://cdn.example/static', version: '', manifest: '/assets-manifest.json?v=1234567890abcdef', hashes: { '/assets/x.skel': 'aaaaaaaaaaaaaaaa', '/assets/[opt]x.png': 'bbbbbbbbbbbbbbbb' } };
+  const tagged = { ...cdn, version: '1234567890abcdef' };
   assert.equal(assetCdnUrl('/assets/x.skel', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa');
   assert.equal(assetCdnUrl('/assets/x.skel?v=2#f', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa', 'the per-file hash replaces any caller query');
-  assert.equal(assetCdnUrl('/assets/other.png', cdn), 'https://cdn.example/static/assets/other.png', 'an unlisted file falls back to bare');
+  assert.equal(assetCdnUrl('/assets/other.png', cdn), 'https://cdn.example/static/assets/other.png', 'a version-less client keeps the bare fallback');
+  assert.equal(assetCdnUrl('/assets/other.png', tagged), 'https://cdn.example/static/assets/other.png?v=1234567890abcdef', 'an unlisted file is pinned with the release tag (immutable objects need it)');
   assert.equal(assetCdnUrl('/_v/deadbeefdeadbeef/assets/x.skel', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa', 'the game-host namespace is stripped first');
-  assert.equal(assetCdnUrl('/assets/x.skel', { ...cdn, hashes: null }), 'https://cdn.example/static/assets/x.skel', 'before the manifest loads, bare URLs answer');
+  assert.equal(assetCdnUrl('/assets/x.skel', { ...cdn, hashes: null }), 'https://cdn.example/static/assets/x.skel', 'before the manifest loads, a version-less client keeps bare URLs');
+  assert.equal(assetCdnUrl('/assets/x.skel', { ...tagged, hashes: null }), 'https://cdn.example/static/assets/x.skel?v=1234567890abcdef', 'before the manifest loads, the release tag pins the URL');
   assert.equal(assetCdnUrl('/assets/x.skel', { ...cdn, manifest: '', version: '1234567890abcdef', hashes: null }), 'https://cdn.example/static/_v/1234567890abcdef/assets/x.skel', 'no manifest: the legacy release prefix');
   assert.equal(assetCdnUrl('https://cdn.example/static/assets/x.skel', cdn), 'https://cdn.example/static/assets/x.skel?v=aaaaaaaaaaaaaaaa', 'derived absolute CDN URLs gain their own hash');
   assert.equal(assetCdnUrl('https://cdn.example/static/assets/%5Bopt%5Dx.png', cdn), 'https://cdn.example/static/assets/%5Bopt%5Dx.png?v=bbbbbbbbbbbbbbbb', 'encoded filenames match the manifest key');

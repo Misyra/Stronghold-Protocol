@@ -121,6 +121,7 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
   write('public/assets/x.atlas', 'x.png\nsize: 1,1\n');
   write('public/assets/x.png', 'texture');
   write('public/assets/audio/a.mp3', '0123456789');
+  write('public/build/assets/nearl2-Bh3kX2mQ.webp', 'hashed webp');
   write('data/assets.json', JSON.stringify({ spine: { skel: '/assets/x.skel', atlas: '/assets/x.atlas', textures: ['/assets/x.png'], anims: {} }, remote: 'https://cdn.example/x.png' }));
   const dirs = { publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'), simDir: path.join(root, 'sim') };
   const handler = createStaticHandler(dirs);
@@ -142,6 +143,8 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
     const script = await get(prefix + '/js/main.js');
     assert.match(script.headers.get('cache-control'), /31536000, immutable/);
     assert.ok((await script.text()).includes(`import '${codePrefix}/js/child.js'`), 'relative imports retain the runtime namespace');
+    const hashedArt = await get('/build/assets/nearl2-Bh3kX2mQ.webp');
+    assert.match(hashedArt.headers.get('cache-control'), /31536000, immutable/, 'a Vite-hashed image name pins its bytes (webp included)');
     assert.equal((await get(prefix + '/js/child.js')).status, 200);
     const css = await (await get(prefix + '/css/a.css')).text();
     assert.ok(css.includes(`url('${artPrefix}/assets/p.png')`));

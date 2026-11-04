@@ -19,13 +19,15 @@ export function assetCdnSettings(base, version) {
   return { base: normalized, version: tag };
 }
 
-/** Strip the game host's version and address the CDN copy. Three shapes, first match wins:
+/** Strip the game host's version and address the CDN copy. Every URL this returns is content-pinned, so the
+ *  bucket may serve them `immutable` for a year (tools/r2-s3-upload.mjs sets the object metadata). Three shapes,
+ *  first match wins:
  *  - per-file manifest mode (`hashes`): `<base><path>?v=<file hash>` — a query the CDN's cache keys
  *    on, so a release re-busts only the files it changed and every URL is immutable;
- *  - release-prefix mode (`version`): `<base>/_v/<tag><path>` — the whole-tree snapshot layout of
+ *  - release-prefix mode (`version`, no manifest): `<base>/_v/<tag><path>` — the whole-tree snapshot layout of
  *    pre-manifest buckets;
- *  - bare: `<base><path>` — a CDN without any release route (or a manifest-mode URL whose file the
- *    manifest does not list). */
+ *  - bare: `<base><path>` — a CDN without any release route, or the same two modes before a version is known
+ *    (the client always knows its release tag, so bare is effectively only a static host without one). */
 export function assetCdnUrl(url, { base = '', version = '', manifest = '', hashes = null } = {}) {
   if (!base || typeof url !== 'string') return url;
   const own = url.startsWith(base + '/');
@@ -43,6 +45,12 @@ export function assetCdnUrl(url, { base = '', version = '', manifest = '', hashe
   try { key = decodeURI(path); } catch { /* malformed escaping keeps the ordinary fallback */ }
   const hash = hashes?.[key];
   if (hash) return `${base}${path}?v=${hash}`;
+  // A file the manifest does not list (or the window before the manifest lands): pin the URL with the release
+  // tag instead of asking the CDN bare. The tag digests the art tree (server/assetVersion.js), so the bytes
+  // behind `?v=<tag>` cannot change while the tag stands — the one property immutable object metadata needs.
+  // A bare URL would be served with that year-long TTL and freeze the file across publishes for whoever
+  // requested it (a failed manifest fetch is a whole session of these).
+  if (manifest && version) return `${base}${path}?v=${version}${match[2] || ''}`;
   if (manifest) return `${base}${path}`;
   return `${base}${version ? '/_v/' + version : ''}${path}${match[2] || ''}`;
 }

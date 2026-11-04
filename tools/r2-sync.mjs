@@ -220,9 +220,13 @@ try {
   const doc = JSON.parse(fs.readFileSync(MANIFEST_FILE, 'utf8'));
   if (doc && /^[a-f0-9]{16}$/.test(doc.tag) && doc.hashes && typeof doc.hashes === 'object') previous = doc;
 } catch {}
+// Content-pinned URLs only (per-file `?v=<hash>`, or the release tag on the fallbacks): immutable for a year,
+// like resource-pack-publish.mjs already sets. The hourly TTL it replaces re-missed every active URL at the
+// CDN edge once an hour.
+const ART_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const jobs = previous
-  ? files.filter((f) => previous.hashes[`/${f.key}`] !== f.hash).map((f) => ({ key: f.key, abs: f.abs, cc: 'public, max-age=3600' }))
-  : files.map((f) => ({ key: f.key, abs: f.abs, cc: 'public, max-age=3600' }));
+  ? files.filter((f) => previous.hashes[`/${f.key}`] !== f.hash).map((f) => ({ key: f.key, abs: f.abs, cc: ART_CACHE_CONTROL }))
+  : files.map((f) => ({ key: f.key, abs: f.abs, cc: ART_CACHE_CONTROL }));
 const packUpload = args.includes('--metadata-only') ? { jobs: [], commit: async () => {} } : await prepareResourcePackUpload(ROOT);
 jobs.push(...packUpload.jobs);
 

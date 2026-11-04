@@ -188,8 +188,13 @@ try {
   if (fs.existsSync(MANIFEST_FILE)) console.warn(`Manifest unreadable (${err.message}); every object will be re-uploaded.`);
 }
 
+// Every URL the client generates for these objects is content-pinned (per-file `?v=<hash>`, or the release tag
+// on the fallbacks — shared/assetCdn.js never asks bare), so the objects may serve immutable for a year. The
+// pack uploader (resource-pack-publish.mjs) already used this policy; the hourly TTL it replaces re-missed
+// every active URL at the CDN edge once an hour.
+const ART_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const jobs = (previous ? files.filter((f) => previous.hashes[`/${f.key}`] !== f.hash) : files)
-  .map((f) => ({ key: f.key, abs: f.abs, cc: 'public, max-age=3600' }));
+  .map((f) => ({ key: f.key, abs: f.abs, cc: ART_CACHE_CONTROL }));
 const packUpload = WITH_PACKS ? await prepareResourcePackUpload(ROOT) : { jobs: [], commit: async () => {} };
 jobs.push(...packUpload.jobs);
 const bytes = jobs.reduce((s, j) => s + fs.statSync(j.abs).size, 0);

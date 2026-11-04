@@ -73,9 +73,12 @@ export function ConsoleModal({ open, priv, onClose }) {
   const grant = async (grantKind, id, amount = null) => {
     if (busy || roundUses >= roundLimit || totalUses >= totalLimit) return false;
     setBusy(id);
-    const ok = await actions.console(grantKind, id, amount);
-    setBusy(null);
-    return ok;
+    try {
+      return await actions.console(grantKind, id, amount);
+    } finally {
+      // clear even when the send throws — otherwise the row stays on 「发放中…」 forever
+      setBusy(null);
+    }
   };
   const openBond = (bond) => {
     setBondAmountText('10');

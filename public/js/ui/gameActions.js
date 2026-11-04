@@ -10,6 +10,7 @@ import { audio } from '../audio.js';
 const SUCCESS_SFX = {
   'g.buy': 'buy', 'g.sell': 'sell', 'g.refresh': 'refresh', 'g.freeze': 'freeze', 'g.levelUp': 'levelup',
   'g.move': 'drop', 'g.equip': 'equip', 'g.art': 'artPlace', 'g.reward': 'pick', 'g.choice': 'pick',
+  'g.console': 'pick',
   'g.band': 'confirm', 'g.bandSkip': 'back', 'g.infoReady': 'ready', 'g.emote': 'emote', 'g.destroy': 'back', 'g.unequip': 'back',
   'g.speedVote': 'confirm',
 };
@@ -93,6 +94,9 @@ export const actions = {
   reward: (idx) => act('g.reward', { idx }),
   offer: (offer, idx, refresh = false, cardId, variantId) => act(refresh ? 'g.offerRefresh' : 'g.offer', { offerId: offer.id, pluginId: offer.pluginId, seq: offer.seq, idx, cardId, ...(!refresh && variantId !== undefined ? { variantId } : {}) }),
   choice: (idx, choiceId) => act('g.choice', choiceId === undefined ? { idx } : { idx, choiceId }),
+  // 开发者控制台 (ui/console.js): one grant — `amount` is the bond layer count and travels only when given
+  // (protocol `$optional: ['amount']`); the server owns the room opt-in, the ids and the round/total quota
+  console: (kind, id, amount = null) => act('g.console', amount == null ? { kind, id } : { kind, id, amount }),
   // 战斗 2 倍速投票（speedVote.js）：on = 是否赞成；全员赞成 → 下一场战斗开始时生效
   speedVote: (on) => act('g.speedVote', { on: !!on }, { sfx: 'confirm' }),
   ready: (ready) => act('g.ready', { ready }, { sfx: ready ? 'ready' : 'back' }),

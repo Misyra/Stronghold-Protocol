@@ -767,7 +767,11 @@ test('parallel index checkpoints never overlap and the final index contains ever
   };
   assert.equal((await importResourceZip(target.store, blob)).imported, files.length);
   assert.equal(maxActive, 1);
-  assert.ok(counts.length >= 3);
+  // A checkpoint during the import plus the final write. The exact number is not part of the contract: flushIndexes
+  // skips a state that is already clean, so a queued checkpoint can coalesce with the final write — 140 files with
+  // INDEX_FLUSH_EVERY = 64 observed [64, 140] here, and a count pinned to 3 failed on machines that finish sooner.
+  assert.ok(counts.length >= 2, `index checkpoint writes: ${counts.join(', ')}`);
+  assert.ok(counts.slice(0, -1).some((n) => n < files.length), 'a checkpoint was taken before the final write');
   assert.deepEqual(counts, counts.toSorted((a, b) => a - b));
   assert.equal(counts.at(-1), files.length);
   assert.equal((await target.store.status()).count, files.length);

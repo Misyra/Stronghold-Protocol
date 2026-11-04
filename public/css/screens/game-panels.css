@@ -851,3 +851,84 @@ button.bpop__harmony:hover { border-style: solid; color: #fff; }
 .bplan-card__mine .icon { width: .16rem; height: .16rem; }
 .bplan-card.is-sel { border-color: var(--mint-400); background: linear-gradient(180deg, rgba(78, 216, 175, .18), rgba(12, 15, 14, .85)); }
 .bplan-card.is-off .bglyph { opacity: .6; }
+
+/* ---- developer console (ui/console.js, room.console.enable) ---------------------------------------
+   The in-match 控制台 modal: warning, tabs + quota, search, and a two-column grant list. The component
+   shipped without any rules until 2026-11-04 — its <button> entries flowed inline, so each row's second
+   entry started after the first one's text (ragged columns, clipped ids, the 发放中 chip overlapping). */
+.console-ui { display: flex; flex-direction: column; gap: .1rem; min-height: 0; }
+.console-ui__warning {
+  display: flex; align-items: center; gap: .05rem;
+  font-size: max(calc(.13 * var(--t)), 11px);
+  line-height: 1.4; color: var(--amber);
+}
+.console-ui__warning .icon { flex: none; width: .15rem; height: .15rem; }
+.console-ui__tabs { display: flex; align-items: center; gap: .07rem; flex-wrap: wrap; }
+.console-ui__quota {
+  margin-left: auto; white-space: nowrap;
+  font-size: max(calc(.12 * var(--t)), 10px);
+  color: var(--text-lo);
+}
+.console-ui__list {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start;
+  gap: .05rem .07rem;
+  max-height: min(4.4rem, 52vh); overflow: auto; overscroll-behavior: contain;
+  padding-right: .05rem;
+}
+.console-ui__entry {
+  display: flex; align-items: center; gap: .07rem; min-width: 0; width: 100%;
+  padding: .045rem .07rem; text-align: left; font: inherit;
+  background: rgba(255, 255, 255, .025); border: 1px solid var(--line); color: var(--text-md);
+  cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.console-ui__entry:hover:not(:disabled) { border-color: var(--line-3); background: rgba(255, 255, 255, .06); }
+.console-ui__entry:disabled { opacity: .55; cursor: default; }
+.console-ui__entry > .uthumb { flex: none; }
+.console-ui__entry-text { display: flex; flex-direction: column; gap: .01rem; flex: 1 1 auto; min-width: 0; }
+.console-ui__entry-text b {
+  font-size: max(calc(.15 * var(--t)), 12px);
+  font-weight: 600; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.console-ui__entry-text .micro {
+  font-size: max(calc(.1 * var(--t)), 9px);
+  letter-spacing: .08em; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.console-ui__entry > .icon { flex: none; width: .14rem; height: .14rem; color: var(--text-dim); }
+.console-ui__entry:hover:not(:disabled) > .icon { color: var(--mint-400); }
+.console-ui__entry-busy {
+  flex: none; white-space: nowrap; letter-spacing: .04em;
+  font-size: max(calc(.11 * var(--t)), 10px);
+  color: var(--amber);
+}
+.console-ui__bond-icon {
+  display: grid; place-items: center; flex: none; width: .54rem; height: .54rem;
+  background: rgba(255, 255, 255, .04); border: 1px solid var(--line-2); color: var(--mint-400);
+}
+.console-ui__bond-icon .icon { width: 60%; height: 60%; }
+.console-ui__empty {
+  grid-column: 1 / -1; margin: 0; padding: .3rem 0; text-align: center;
+  font-size: max(calc(.15 * var(--t)), 12px);
+  color: var(--text-lo);
+}
+.console-bond-modal { display: flex; flex-direction: column; gap: .12rem; }
+.console-ui__amount {
+  display: flex; flex-direction: column; gap: .06rem;
+  font-size: max(calc(.14 * var(--t)), 11px);
+  color: var(--text-lo);
+}
+.console-ui__amount input {
+  width: 100%; padding: .07rem .1rem; font: inherit;
+  color: var(--text-md); background: var(--bg-1); border: 1px solid var(--line-2);
+}
+.console-ui__amount input:focus { border-color: var(--mint-700); outline: none; }
+.console-ui__presets { display: flex; gap: .08rem; flex-wrap: wrap; }
+.console-bond-modal .t-lo {
+  margin: 0; color: var(--text-lo); line-height: 1.5;
+  font-size: max(calc(.12 * var(--t)), 10px);
+}
+@media (max-width: 720px) {
+  .console-ui__list { grid-template-columns: minmax(0, 1fr); }
+}

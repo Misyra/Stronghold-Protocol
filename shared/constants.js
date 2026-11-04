@@ -36,6 +36,12 @@ export const MAX_SEATS = 4;
  * server/match/match/watch.js addSpectator).
  */
 export const MAX_SPECTATORS = 2;
+/**
+ * The most candidate layouts one bot prep rehearses (server/match/bot.js arrangeSteps, stardust 46b5c55d): up to 8 of
+ * its own plus the other lineups' (Final Assault damage lineups and spaced plans, co-op alternatives); a delegated
+ * rehearsal's answer names one of them (protocol 'b.rehearsalResult').
+ */
+export const REHEARSAL_MAX_CANDIDATES = 16;
 export const ROOM_CODE_LEN = 4;
 export const NAME_MAX_LEN = 12;
 /** In-match developer console quotas: a grant is one use, and both limits are per player (server/match/match/intents.js). */

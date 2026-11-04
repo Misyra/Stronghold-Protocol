@@ -104,7 +104,8 @@ Co-op: random order (all seats, bots included), one pick per turn, ONE countdown
 published as `m.public.deadline` (= `draft.turnDeadline`; `draft.turnSeconds` its length) — no step cap; AI seats pick
 at once. A turn that runs out takes the strategy the player highlights in the draft screen (`g.bandFocus {bandId?}`,
 `Match.timeoutBand`) while it is allowed and no teammate holds it, else `bandDraft.timeoutBandId` 华法琳, else the first
-free strategy by sortId (`defaultBand`; a departing seat gets `defaultBand` too). One skip per player (`g.bandSkip`: the
+free strategy by sortId (`defaultBand`; a departing seat keeps its place and the AI drafts for it at its turn — Touch
+while nobody else holds it, never 歌利亚). One skip per player (`g.bandSkip`: the
 player moves to the end of the order; refused when nobody is left to pass to). The draft screen disables skip when
 no other unpicked player remains; finished players stay in the published order but are not skip targets. A strategy a teammate already took is
 refused (队友已选); band must list the mode type in `modeTypeList`. A single human (co-op with AI teammates only):
@@ -197,7 +198,7 @@ A `choice:<effectId>` registry handler overrides the default application (§2.4)
   Assault pairing (re-planned when it quits before the boss fight) and the boss pool (bloodPoint per player alive when
   the fight starts — a departed seat no longer counts, DESIGN §25.13.4); its
   running normal battle is force-ended; a pending band pick
-  becomes the default band, a 机变 turn passes on and an open 教鞭 choice goes with the seat (`eliminate`). Status `left`, LP 0, rounds passed = the rounds it had survived.
+  is the AI's at the seat's turn (Touch while nobody else holds it, never 歌利亚), a 机变 turn passes on and an open 教鞭 choice goes with the seat (`eliminate`). Status `left`, LP 0, rounds passed = the rounds it had survived.
   When no human is left at all the match ends immediately (`reason: 'abandoned'`); when only eliminated spectators are
   left it ends as `'eliminated'`.
 

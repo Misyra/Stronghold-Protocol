@@ -264,8 +264,13 @@ placement and cleanup sequencing. Overrides are synchronous functions or synchro
 operation they replace. Each iterator yields only between complete actions. Per-seat state belongs to the player
 or match, never the shared action definition. The default adapter retains the original action references, refresh
 limit, yield boundaries, delegated job and Ready path. Purchase scoring remains inside the bound economy actions.
-With an advisor plan (`economyPlan`), prep begin spends expiring funds after the spare level-up and prep end rechecks
-them before Ready (§35.13–35.14); without one these steps do nothing.
+§37.106: the plan's fields apply wherever the prep reads them — a `planProtected` piece (an explicit `buy` target
+bought this prep, an exact `keep` id, a member whose removal lowers an active plan-bond tier) survives the shed,
+junk sales, board withdrawal and temp resolution, and the plan's own spending pass (`planSpendSteps`, at most 16
+actions) runs once after the spare level-up. Nothing spends or re-arranges after the rehearsed layout is final —
+the former end-prep recheck of §35.13–35.14, which bought with untested default placements, is gone. Without a
+plan, or without the fields a step reads, the steps play the bot unchanged; absent, empty and fields-empty plans
+produce identical state and RNG.
 
 An opt-in `createContactPrepSteps()` adapter uses `contactCandidatePlansSteps` for final ordinary-round layouts.
 It derives contacts from current routes and resolved ranges, retaining existing damage activity, air exposure,
@@ -472,11 +477,13 @@ economy or placement rule. [ASSUMED] Schema, scores, cache policy, shortcuts and
 [External AI API](EXTERNAL_AI.md). `tools/ai/run-match.mjs` waits for bounded external IO in both benchmark tools;
 `tools/ai/llm-agent.mjs` is an environment-configured, mock-tested compatible chat adapter with no default provider.
 
-Advisor execution (§35.14, maintainer 2026-10-20) applies only when `aiEconomy.economyPlan` is non-null:
-merge completion precedes an affordable level floor, which precedes filling. Exact keep/sell forms, merge-aware
-buy/bond weights, explicit-target freezing, `items.buy`, bounded `freezeSearch` and shared cleanup protection
-are specified in [EXTERNAL_AI](EXTERNAL_AI.md#advisor-mode-and-readable-observations-359). Cleanup compares
-actual bond thresholds through `computeBonds`; successful purchases track UIDs for this prep only. These are
+Plan execution (§37.106, the executor unification ported 2026-11-05 — it replaces the §35.14 advisor execution
+of 2026-10-20) reads plan fields per point of use, for every seat: merge completion precedes an affordable level
+floor (capped at the bots' level 5), which precedes filling. Exact keep/sell forms, merge-aware buy/bond weights,
+explicit-target freezing, `items.buy`, bounded `freezeSearch` and the field-based protection (`planProtected`;
+bond tiers compared through `computeBonds`, membership through `pieceBonds`) are specified in
+[EXTERNAL_AI](EXTERNAL_AI.md#advisor-mode-and-readable-observations-359). Successful purchases track UIDs for this
+prep only (the protection's bought-this-prep condition). These are
 [ASSUMED] executor choices; ordinary PlayerState handlers and official economy/hand/merge rules are unchanged.
 
 See [Adding an AI strategy](BOT_STRATEGIES.md) for signatures, examples, state ownership and the validation workflow.

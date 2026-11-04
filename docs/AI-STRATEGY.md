@@ -514,7 +514,7 @@ Mechanical sources are the local official `activity_table.json`:
 - Freeze is free, preserves unsold offers at the next round roll and is then consumed. Manual refresh
   replaces those offers and cancels freeze (maintainer's official play observation, §32.14.7 / #584).
   A full regular hand blocks purchases even if they would merge (PRTS 帮助, §6.2 / #82). Existing displayed
-  offer overdraw remains legal (§29.8); speculative bank buys additionally require available stock.
+  offer overdraw remains legal (§29.8).
 
 **[ASSUMED] recommendations:** ordinary builds aim for access to T2/3/4/5/6 around R3/5/7/10/13. The
 `recommendedSchedule` simulates current-mode income, upgrade prices and discounts, without sales, gifts or
@@ -530,11 +530,22 @@ The spending policy is also **[ASSUMED]**: buy/keep targets and prioritized-bond
 (except explicit sell targets; bond-member acquisition stops after owning its elite). Existing lineup gain
 >2, completing merges and filling the deploy cap count as useful. Buy those first; freeze unaffordable
 wanted offers before another roll; refresh only with remaining eligible stock, bench room and funds for
-an effective-price purchase; then bank cheapest distinct spare singles with positive sale value. Leave one
-bench slot. Mark banks by UID; do not liquidate deployed, equipped, newly wanted or merge-completing copies,
-and only sell when their base refunds can fund the purchase. Each extra pass is bounded to 64 actions to
-contain free/effect cycles. Unspendable residuals can remain. Carry bands retain interest logic. Empty/absent
-plans retain legacy decisions and RNG; no official gameplay rule changes.
+an effective-price purchase. §37.106 (the executor unification, ported 2026-11-05) replaced the §35.14 executor
+semantics of 2026-10-20: every rule above holds for every seat, and a plan changes only the fields it names.
+Protection comes from the plan's fields alone (`planProtected`): an explicit `buy` target actually purchased
+this prep, an exact `keep` id (from R9 with at most one free hand slot, a benched normal `keep` of tier ≤ 4
+that completes no merge is not protected, §35.63), or a member whose removal lowers an active plan-bond tier —
+the real distinct/hand/morph counting rules, and only a true member of the bond (缪尔赛思's harmony +1 holds a
+tier without being one, §37.42 still sells her). The 2026-10-20 classes (every elite and tier ≥4 piece of an
+advisor seat) and the §35.13 banks — cheap spare singles bought for their sale value, marked by UID and
+liquidated to fund a purchase — are gone; a bot's own seat instead names its focus as its plan's main at
+priority 5 at each prep start (§37.106). After the ordinary buy loop, the plan's own spending pass
+(`planSpendSteps`, bounded to 16 actions to contain free/effect cycles) buys only what the plan asks for — an
+`items.buy` item with room, an explicit `buy` target with a free hand slot, both above the seat's reserve;
+with `freezeSearch` a search refresh that freezes an unaffordable found target — and the legacy spend-down
+buys an explicit target its refreshes show and never refreshes such a target away. Unspendable residuals can
+remain. Carry bands retain interest logic. Absent, empty and fields-empty plans produce identical state and
+RNG; no official gameplay rule changes.
 
 Offline measurement, 2026-10-19, vanilla 1ca3921c baseline, seeds 1–3, rehearsal 0, one worker:
 

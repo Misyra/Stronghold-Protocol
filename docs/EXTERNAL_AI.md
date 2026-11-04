@@ -318,18 +318,24 @@ Answer with this envelope (no `intents` or `done`):
 ```
 
 IDs in this example illustrate the schema, not a recommended build. Use the actual knowledge/digest IDs.
-Every plan field is optional; `{}` executes unchanged legacy. The schema and scoring choices below are
-**[ASSUMED] engineering policy**, not official strategy advice:
+Every plan field is optional; a field the plan omits leaves that part of the built-in bot's play as it is, and `{}` plays
+exactly the bot. §37.106: the seat's own main bond — the bot's `digest.bot.focus` for the round — stands in whenever the
+plan names no `bonds`, on external seats and on pure bot seats alike, so an empty plan still plays the bot. The schema and
+scoring choices below are **[ASSUMED] engineering policy**, not official strategy advice:
 
 - `bonds`: at most 8 `{id, priority: 1..5}` entries; +6 points per priority to useful member purchase/lineup values.
-  Normal copies of an owned elite receive no bond priority bonus; the elite retains its lineup bonus.
+  Normal copies of an owned elite receive no bond priority bonus; the elite retains its lineup bonus. The bot's own main
+  plays at priority 5 (its members weigh +30 to buy and +7.5 in the lineup and stay while they hold its active tier); a
+  plan's own `bonds` replace it. The example adapter raises the plan's main — its highest-priority core bond — to
+  priority 5 before validation (`mainAtFive`, §37.106).
 - `buy`, `keep`, `sell`: at most 32 operator IDs each. `keep` and `sell` match **exact IDs**: a normal `_a`
   means normal copies only, `_b` means the elite only. Keep +18 and sell −24 remain scoring preferences;
   `keep` protects owned pieces and does not itself request another copy. `buy` accepts either form, adding
   +24 only to normal copies that progress a merge toward an unowned elite (the first copy starts progress),
   or add a distinct plan-bond member. Neither explicit buys nor incidental prioritized bonds request copies
   of an already owned elite. Unknown/unavailable IDs have no effect.
-- `economy`: `level` 0..6 is a minimum target for this prep, subject to funds; 0 adds no minimum. Affordable
+- `economy`: `level` 0..6 is a minimum target for this prep, subject to funds and capped at the bots' own level cap 5
+  (§37.38); 0 adds no minimum. Affordable
   floor upgrades precede fill-only purchases, but completing a merge comes first. Once reached,
   the bot resumes its legacy upgrade curve. Only `holdLevel:true` plus `level` 1..6 and a nonblank `why`
   (at most 360 characters, inside `economy`) caps upgrades, including free upgrades. Example:
@@ -338,33 +344,37 @@ Every plan field is optional; `{}` executes unchanged legacy. The schema and sco
   `maxRefreshes` 0..16 and `refreshAbove` 0..100 are first-pass preferences. Expiring funds override them in
   the final spending pass. `reserve` 0..100 overrides discretionary
   savings **only for a carry-over band**. `saveForInterest:false` releases its normal interest reserve.
-  Board filling/merges can spend the reserve. Carry bands keep their existing interest logic. Non-carry seats
-  buy wanted/useful operators, freeze unaffordable explicit `buy` targets or merge completions, refresh while
-  a stocked purchase can still be afforded, then buy cheap spare operators for later sale. Incidental bond
-  members, `keep` entries and copies of owned elites never trigger freezing.
+  Board filling/merges can spend the reserve. Carry bands keep their existing interest logic. After the ordinary
+  buy loop, §37.106: expiring funds first buy what the plan itself asks for — an `items.buy` item with room, an
+  explicit `buy` target with a free hand slot, both above the seat's reserve; with `freezeSearch` a refresh to look
+  for an absent target it could not pay, then freeze it — and only then the bot's own spend-down runs: it buys an
+  explicit target the refreshes show, never refreshes such a target away, and no longer buys cheap spare operators
+  for later sale (the §35.13 banks are gone, §37.106). Freeze triggers are unchanged: only an unaffordable explicit
+  `buy` target or a merge completion freezes (incidental bond members, `keep` entries and copies of owned elites
+  never trigger freezing).
   `freezeSearch` is an optional boolean (default false): when an eligible explicit buy target is absent and
   unaffordable after a refresh, still search while funds cover the effective refresh cost, then freeze it if
   found unaffordable. This extra search respects `maxRefreshes` across the entire prep (default 16, including
   free refreshes and previous ordinary refreshes); it cannot exceed the cap through repeated spending passes.
   Ordinary affordable-purchase searches retain §35.13's expiring-funds override. A manual refresh would discard frozen
-  offers, so those offers block further searching. Only these marked, still-disposable bench operators are
-  sold to fund a wanted purchase; deployed/equipped/now-wanted operators and merge pairs are protected.
-  Empty plans and seats without a plan retain the original legacy execution.
+  offers, so those offers block further searching. Empty plans and seats without a plan play exactly the bot
+  (whose own main bond stands in, §37.106).
 
-The §35.13 spending order is maintainer guidance (2026-10-19), not official strategy text. **[ASSUMED]**
+The spending order is maintainer guidance (2026-10-19; the banks were removed with the executor unification, §37.106),
+not official strategy text. **[ASSUMED]**
 implementation choices: existing lineup gain >2 defines usefulness; explicit buys or prioritized-bond
-members define wanted operators under the copy rules above (except exact sell targets),
-bank cheapest distinct singles with positive sale value and available shared stock, keep one free bench
-slot, and bound each extra pass to 64 actions for free-refresh/effect loops. Sale-value estimates exclude
-unexecuted sale hooks. Bank ownership is internal policy memory, reconstructed by offline replay. No hidden
-pool counts are sent to the model. Unsuitable/unaffordable offers, a full bench, preserving a freeze or the
+members define wanted operators under the copy rules above (except exact sell targets); the plan's own
+spending pass (§37.106) is bounded to 16 actions for free-refresh/effect loops. No hidden
+pool counts are sent to the model. Unsuitable/unaffordable offers, a full hand, preserving a freeze or the
 action bound can leave unusable funds; there is no gratuitous refresh solely to drive the loss metric to zero.
 
 - `items`: `buy` contains up to **8 item IDs** to purchase from the shop when affordable and room remains;
   `keep` contains item IDs (32 max); `equip` contains `{id: itemId, target: operatorId}` (16 max; either
-  operator form matches its base). Purchases use the usual handlers, followed by planned or legacy equipment selection. Explicit
-  requests may leave one free hand slot; an incidental item that cannot be equipped immediately must leave
-  at least two. Equipment is attempted between purchases so carrier slots are not promised twice.
+  operator form matches its base). Purchases use the usual handlers, followed by planned or legacy equipment selection.
+  §37.106: the hand-room margin applies only to an item the plan names (`items.buy`) that the bot's own equipment
+  rules do not already want — it needs an immediate carrier or two free hand slots; equipment the bot wants by its own
+  rules (§37.39/§37.41) is bought under those rules unchanged. Equipment is attempted between purchases so carrier
+  slots are not promised twice.
   Existing inventory, slot and effect validators remain authoritative; invalid targets revert to ordinary selection.
 - `placements`: up to 16 `{id, row, col, dir?}` preferences, rows 0..12, columns 0..10, four uppercase cardinal
   directions. A legal matching tile/direction adds 0.05 to the exposure score; normal terrain/role preferences
@@ -374,18 +384,22 @@ action bound can leave unusable funds; there is no gratuitous refresh solely to 
 - Optional `usage` works in **both modes**: nonnegative integer `inputTokens`, `outputTokens`, `cachedTokens`,
   each at most 1 billion. Missing usage means unknown, not a claim of zero provider consumption.
 
-**Advisor hand-room protection (§35.14).** Only a nonempty advisor plan enables this policy; legacy and
-AI takeover without an advisor retain their original execution (maintainer decision **2026-10-20**).
-An elite, tier ≥4, exact `keep` piece, explicit buy target actually purchased this prep, or member whose
-removal drops an active plan-bond threshold is protected. The last check uses the real distinct/hand/morph
-bond counting rules. For room, sell unprotected copies of owned elites first, then bank operators, then
-low-tier off-plan singles, then other unprotected pieces; within each class use lowest piece value and UID.
-Next destroy the cheapest unequipped hand item costing at most 2 (UID breaks ties); only then fall back to
-legacy cleanup if every remaining option is protected. The protection applies to bench shedding, junk sales,
-board withdrawal, end-prep room and overflow resolution. A protected piece can still be benched.
-These priorities, the cheap-item cutoff, item space margins and 32-action cleanup bound are **[ASSUMED]**
-executor policy from the maintainer's seed-11 replay, not official strategy. Prices, merge forms, bond thresholds
-and hand/overflow/freeze mechanics retain their official `activity_table.json` / PRTS sources (§6.2–6.3).
+**Advisor hand-room protection (§35.14 semantics replaced by §37.106; the maintainer's 2026-11-05 port decision
+accepts the replacement).** A plan protects pieces only through its fields: an explicit `buy` target actually
+purchased this prep, an exact `keep` id (from R9 with at most one free hand slot, a benched normal `keep` of
+tier ≤ 4 that completes no merge is not protected, §35.63), or a member whose removal lowers an active plan-bond
+tier (the real distinct/hand/morph bond counting rules — and only a true member of the bond: 缪尔赛思's harmony +1
+holds a tier without being one, and §37.42 still sells her). The 2026-10-20 classes (every elite and tier ≥4 piece
+of an advisor seat) and the bank operators are gone; the bot's own guards (live pairs, pieces gained since the
+bot's last prep, item carriers, merge pieces) hold for every seat, and `sell` ids go first. The protection applies
+to bench shedding, junk sales, board withdrawal, the temp row, 缪尔赛思 sold on arrival and overflow resolution.
+When a protected piece must leave the board or the temp row and no operator can be sold, a bot's own seat (not AI
+托管) destroys its cheapest hand item costing at most 2 that is not a 突变细胞 and not in `items.keep`. A protected
+piece can still be benched. These priorities and the cheap-item cutoff are **[ASSUMED]** executor policy, not
+official strategy. Prices, merge forms, bond thresholds and hand/overflow/freeze mechanics retain their official
+`activity_table.json` / PRTS sources (§6.2–6.3). A bot's own seat starts each prep with its focus as its plan's
+main at priority 5 (§37.106); an external plan's own `bonds` replace it, and a plan naming no bonds keeps the
+seat's (an empty plan still plays the bot).
 
 Malformed plans fail atomically and clear preferences before legacy. Accepted plans reset the failure streak
 and resume the #673 prep continuation, preserving slicing, rehearsal, Ready and deadline behavior. Preferences
@@ -446,8 +460,15 @@ and `context.mode`. Digest includes named shop prices/tiers, board coordinates, 
 threshold, gold and band-specific interest now/at the next threshold, level/upgrade cost and explicit `exp:null`,
 current enemy/boss previews and opponents' **public scouted boards only**. No other private view or pool counts.
 §35.13 adds `economy.expiringFunds` (0 for carry bands), effective `refreshPrice` (0 for a free charge),
-`upgradePrice` (cost to the next level), `frozenSlots` (unsold slot indices), and
-`bankOperators:[{uid,id,sellValue}]` (marked disposable bench singles; base refund before sale hooks).
+`upgradePrice` (cost to the next level) and `frozenSlots` (unsold slot indices); `bankOperators` was removed
+with the banks (§37.106).
+§37.106 adds the bot's own defaults for the seat: `digest.bot` — a band turn carries the bot's draw weights as
+shares (the six largest, plus `forced` when one band's share reaches 0.95), a prep carries the bot's `focus` and
+`second` bonds as it scores them without a plan's shared-pool terms (reach and supply: stock a player does not
+see), its `levelTarget` for the round (at most 5) and `route` (null in this repo: the fork's 杰西卡 pager route was
+not ported, §37.106); and `digest.fa` from the round before the Final
+Assault through it — `pool` (the shared leader pool by the players alive now), `alive`, `clockSec` (when the LP
+drain starts), `drainPerSec` and `teamLp`. An empty plan plays exactly these defaults.
 These fields and per-offer `frozen` survive the example's compact digest.
 §35.15 adds further optional fields, omitted when unknown: chess on the board, bench, overflow and shop
 gain `name`, `class` (the official profession) and `caps:{air,block,sustain,elementRecovery}` from
@@ -517,6 +538,10 @@ schema adherence ([official OpenAI documentation](https://developers.openai.com/
 requests (four seats plus requests the host abandoned that are still finishing). Debug lines carry the provider's
 usage, so abandoned replies still show their tokens. Catalogue effect summaries retain at most 500 characters each. Tests use a loopback mock; no real API
 is used for repository validation.
+§37.106: the strategy prompt tells the model that the bot already plays `digest.bot.focus` as a priority-5 main of
+its own plan (members +30 to buy, kept while they hold its tier; fork-measured co-op +9.4, solo +7.1 win points),
+that omitting `bonds` keeps it, and that a second bond at priority 3 measured no better on the fork; `mainAtFive`
+raises the plan's main to priority 5 before validation.
 
 #### Anthropic Messages and extra headers (§37.25, in development)
 
@@ -769,7 +794,9 @@ The model is asked for:
   requires `pivot:true` and a reason (unreachable bond, strong merge, boss/enemy needs). Adding, removing or
   reordering sub-bonds does not. Without both, retain viable old targets; removing unreachable old targets
   produces an explicit automatic pivot reason in diagnostics.
-  An explicitly empty plan remains unweighted legacy delegation, preserving §35.9's escape hatch.
+  An explicitly empty plan is delegated to the built-in bot, which now also names its own focus as the plan's
+  main at priority 5 (§37.106) — the §35.9 escape hatch plays the bot's own game, not an unweighted executor;
+  the adapter still does not refill old preferences into it.
 - The example caches the last confirmed and pending prep snapshots separately per match/player/knowledge version
   (32 seat scopes). Host acknowledgement prevents rejected/late plans being presented as accepted. Drafts and
   failed replies do not overwrite the prep direction. Each request includes the previous accepted plan and

@@ -323,6 +323,26 @@ In narrow desktop windows (width ≤ 900 px, height > 520 px), the hub's simulat
 reserves at least two lines to keep the cards aligned ([ASSUMED] layout, §35.60). Phones keep the short descriptions
 specified above.
 
+Entry film (0.3.4 §37.103): on every page load, before the Title screen, the event's opening animation plays
+(`ui/entryFilm.js` mounting `ui/allianceScene.js`) — the official recording rebuilt frame by frame (30 fps, every
+track keyed to its video second) out of the event's own sprites (`entry/*` and `prepareBkg/*`, only moved / scaled /
+faded / tinted / wiped; the transition's bars / cables / INPUT slab and the lock-on rings drawn flat [ASSUMED: no
+sprite]), in a 1280×720 DOM stage whose classes carry the `spa-` prefix. It plays once per page load (also when a
+reload lands in the lobby), and only when every sprite has loaded within 1.2 s — the Title is already on screen, so a
+film that would only cover it seconds later is skipped this time (the loaded sprites are cached for the next load);
+it never plays over a room or a match (a route turned room / game takes it down at once and hands the music back),
+never with reduced motion, and a phone held portrait at boot gets no film (a later rotation does not replay it); a
+missing sprite or pack means no film at all — the cover lifts, no blank frames. While the AudioContext is locked a
+black 点击进入 card waits for the unlocking tap (audio.js creates / resumes the context on that same gesture); once the
+film runs, a tap / click / key skips it (点击跳过, the gate's own tap excluded). The official sound is cued to the
+recording: the entry cue `act1autochess_g_ui_load` at 1.6856 s, the lobby music joining at 2.1444 s through audio.js's
+own start (its 0.8 s fade-in), volumes on the settings' sfx / bgm channels, the player's own lobby music
+(`audio.lobbyTrack`) never held; the cue's URL comes only from the manifest's `audio.sfx.ui.load` — a missing file /
+pack means no film or a silent cue, never a request that 404s. The fork's night / dusk backdrop behind the title and
+lobby was stripped by the maintainer's decision: the Title keeps its own backdrop, the Lobby keeps the hubScene scenes
+(夜巡 / 霜原 / 烬野 / 静默 unchanged), and allianceScene's lobby scene exists only as the film's final picture. i18n:
+点击进入 / 点击跳过 in all four packs.
+
 **Data readiness.** `data.js useData` subscribes and starts its loads, then schedules a render to re-read their
 statuses: a warm-up that settles between the initial render and the subscription must not leave a resumed match on
 正在载入模拟数据… (§35.59). Later settlements notify the same subscription.

@@ -741,8 +741,15 @@
 .rs-opts > :nth-child(5) { animation-delay: 160ms; }
 .rs-opts > :nth-child(6) { animation-delay: 200ms; }
 .rs-opts > :nth-child(7) { animation-delay: 240ms; }
+/* the rows are hit-testable while their first frames are still transparent (a delayed row especially), so a click
+   right after opening could land on a switch nobody can see. `pointer-events` is inherited and flips with the paint
+   (discrete at 50%); the reduced-motion block's `animation: none` keeps it auto there. The panel itself stays
+   hit-testable: its surface must swallow that early click, or the outside handler closes the menu under the pointer. */
 @keyframes rs-opts-in { from { opacity: 0; transform: translateY(.14rem) scale(.96); } }
-@keyframes rs-opts-row { from { opacity: 0; transform: translateY(.08rem); } }
+@keyframes rs-opts-row {
+  from { opacity: 0; transform: translateY(.08rem); pointer-events: none; }
+  to { pointer-events: auto; }
+}
 /* 同盟设置's 模拟难度 / 版本 rows: no leading label — each is one full-width bar like the switches below, its
    selection centred (the host's 更改 / 切换 hint rides along; the others read the same bar disabled, the reason in
    the tooltip) */

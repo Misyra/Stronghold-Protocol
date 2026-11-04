@@ -38,6 +38,8 @@ Configuration is validated before server startup; an invalid configuration fails
 | `SP_EXTERNAL_AI_MAX_BYTES` | 65536; integer 1–1048576, raw response bytes / stdio line, excluding newline |
 | `SP_EXTERNAL_AI_FAILURES` | 3; integer 1–20 consecutive failed decisions before match-long fallback (plan mode: protocol/transport errors only) |
 | `SP_EXTERNAL_AI_BACKOFF_MS` | 1000; integer 1–60000 before the next demand can restart a failed stdio child |
+| `SP_EXTERNAL_AI_RESERVE_MS` | Plan mode, timed windows (§37.102): unset uses the per-round reserve described under budgets below; an integer 0–120000 replaces it with one value for every prep and turn. Never more than half of what is left |
+| `SP_EXTERNAL_AI_RESERVE_SCALE` | Plan mode: 1; a number 0–10 that multiplies that reserve (a slower machine, or a bench whose timers are scaled) |
 
 Seat selection applies to AI teammates, opponent seats in modes that use them, and humans under AI takeover.
 Unselected seats use `legacy`. With `SP_BOT_STRATEGY_SEATS=1:external` (default strategy left unset or local),
@@ -110,7 +112,8 @@ Assign `/tmp/sp-manual-coop/seat-0` through `seat-3` to separate players/agents.
 `--seats 0,2` makes just those two manual and leaves the others on the built-in bot. Draft turns remain ordered;
 prep requests can be concurrent. The launcher uses the **real wall clock in co-op** and the normal phase timers.
 §37.30 [ASSUMED]: a manual seat is never played by the built-in bot. Each decision gets the whole remaining phase
-or turn (capped at 300000 ms), not the half other external seats leave for legacy. When it runs out, the phase timer
+or turn (capped at 300000 ms), not the share other external seats leave for legacy (half in direct mode, the §37.102
+reserve in plan mode). When it runs out, the phase timer
 decides exactly as for a human: prep readies with the current board (temp resolved, a pending personal card picked
 at random), a band turn takes the highlighted strategy (`g.bandFocus`) or the default, a card turn a random card, an
 offer its timeout pick. A late answer is ignored and the next observation shows `TIMEOUT` with `fallback: false`. An
@@ -228,14 +231,25 @@ Stdio launches argv directly, without a shell, with one long-lived child per mat
 occupies one UTF-8 JSON line. Several seats/windows may be in flight; echo IDs to correlate replies. Stdout is
 protocol-only. Stderr is discarded to avoid leaking secrets through server logs. A crash, bad/oversized line or a
 reply ID that was never sent kills the child and fails outstanding requests. A cancellation (the host dropped that
-decision) or a timeout ends only that request; its late reply is ignored by ID (history §35.62). A timeout kills the
-child only when the child wrote no line at all since that request was sent. A subsequent demand after a kill
+decision) or a timeout ends only that request; its late reply is ignored by ID (history §35.62). The exception is a
+plan-mode prep request whose budget its window cut short (§37.102): the host keeps it open and still reads its reply
+until the seat's next prep supersedes it (a cancellation), the match ends, or the transport's own `timeoutMs` ends it.
+A timeout kills the child only when the child wrote no line at all since that request was sent. A subsequent demand after a kill
 restarts it only after `backoffMs`; requests during backoff fail immediately. Shutdown uses SIGKILL to bound
 cleanup, including programs that ignore SIGTERM. The operator remains responsible for any grandchildren its
 own program starts. Match end and disposal terminate the child and cancel pending HTTP requests.
 
-A decision has one total budget across all batches: at most `timeoutMs`, further limited to half the remaining
-phase/offer time, reserving the rest for fallback. Untimed phases still use the adapter budget, except for the opt-in solo manual wait above. Existing phase
+A decision has one total budget across all batches: at most `timeoutMs`, further limited to the remaining
+phase/turn/offer time minus what is kept for the built-in fallback. A direct-mode seat keeps half. §37.102 [ASSUMED]: a
+plan-mode seat keeps only what the built-in bot needs to carry its plan out, never more than half of what is left:
+5 s of an R1–R5 prep, 9 s in R6–R8, 12 s from R9, 36 s at the Final Assault prep and 24 s at the Hidden Core prep (plus
+the host's answer window when bot rehearsals are delegated), and 1 s of a band, 机变 or offer turn. The table
+(`BOT_PREP_RESERVE_MS` in `server/match/match/prep.js`) is 1.5 × the p99 of four bot seats' summed prep wall time in a
+round-62 co-op 终极 botbench — measured on the reference machine ([ASSUMED], worth re-measuring with the local
+botbench); it depends only on the round and the configuration (`SP_EXTERNAL_AI_RESERVE_MS` /
+`SP_EXTERNAL_AI_RESERVE_SCALE`), never on a clock, so a journal replays the same deadlines. Seat 0 of a co-op prep now
+gets 59.1 s in R1–R3 (half was 32.05 s) up to 158.1 s at the Final Assault prep (was 97.05 s). Untimed phases still
+use the adapter budget, except for the opt-in solo manual wait above. Existing phase
 timers stay armed. Requests are asynchronous; no scheduler callback waits on network or child IO. No AI request
 can extend a phase. A reply after a phase/turn change, seat elimination or manual takeover cannot mutate state.
 
@@ -250,6 +264,16 @@ In plan mode (§35.62) only protocol and transport errors count: a decision whos
 A plan seat whose prep call fails or is still waiting keeps the last accepted plan's bonds, buy / keep / sell,
 items and the funds direction of its economy (`saveForInterest`, `reserve`; since §35.63 not `level`, `maxRefreshes`,
 `refreshAbove` or `freezeSearch`, and never `choice`, `placements` or a one-prep `holdLevel`).
+
+§37.102 [ASSUMED]: a plan-mode prep request whose budget its window cut short (a budget below `timeoutMs`) is not
+cancelled when the budget runs out. Its prep falls back as before; a reply that comes later is still validated. A valid
+late plan becomes the seat's accepted direction (`feedback.acceptedPlan` with `late: true`): while that prep's fallback
+is still running (the seat is not Ready yet) its remaining steps read it at once, otherwise the next prep carries it as
+above. Its `choice` is never executed. A late `{plan: null}` or transport failure only closes it; a late protocol error
+still counts toward the streak, and a valid late plan does not reset it. A request still open when the seat's next prep
+asks is superseded (cancelled; its reply is ignored by ID); elimination, manual takeover, the legacy switch and the
+match end close it as well. A reply that arrives at the deadline, before the deadline's timer ran, is such a late reply.
+The metrics `late`, `lateSteered`, `lateCarried` and `superseded` count them, also per seat.
 
 ## Journals, security and tests
 
@@ -366,8 +390,11 @@ and hand/overflow/freeze mechanics retain their official `activity_table.json` /
 Malformed plans fail atomically and clear preferences before legacy. Accepted plans reset the failure streak
 and resume the #673 prep continuation, preserving slicing, rehearsal, Ready and deadline behavior. Preferences
 expire with the round; transport/malformed failures use ordinary legacy. Limits include the hello exchange;
-there is also a wall-clock decision cap so virtual-time benchmarks cannot wait indefinitely. Journals record
-plans/short IDs/usage and mode/language/knowledge settings, without endpoints, argv, API keys or remote errors.
+there is also a wall-clock decision cap so virtual-time benchmarks cannot wait indefinitely. A late plan request
+(§37.102) no longer holds `waitForIdle`, so a benchmark never waits for it; its reply lands when the benchmark next waits
+for another request. Benchmarks serve the seats one after another and run battles in no time, so they undercount late
+plans that steer a fallback or are carried. Journals record
+plans/short IDs/usage and mode/language/knowledge/reserve settings, without endpoints, argv, API keys or remote errors.
 Replay rebuilds short IDs from the recorded state and applies the same plan with no transport IO.
 
 ### Knowledge handshake

@@ -77,6 +77,9 @@ reinforcements and band engines carry the damage: on ABYSS a winning board holds
 Put items and multiplier layers on the damage carries that fight the Final Assault, not on healers or stackers.
 Co-op: teammates[].main is each teammate's public main core bond. One seat should cover R3-R9 survival (blockers,
 healing, early elites, 3 坚守) while the others build core-bond carries; say in why which role this seat plays.
+The bot already plays digest.bot.focus as a priority-5 main of its own plan (members +30 to buy, kept while they
+hold its tier: fork-measured co-op +9.4, solo +7.1 win points); omit bonds to keep it, or name one other main at
+priority 5 (it stays until you pivot). A second bond at priority 3 on top measured no better on the fork.
 maxRefreshes/reserve are preferences: expiring funds still buy useful targets, freeze an unaffordable
 wanted offer, search while a purchase remains affordable, then buy cheap spare bank operators. economy.freezeSearch
 true means refresh to find a buy target and freeze it if it is unaffordable. Sell those banks

@@ -75,7 +75,7 @@ export function compactDigest(d, pack) {
   const options = levelOptions(d.economy, shop.filter(s => s.completesMerge).map(s => s.cost));
   const coreIds = new Set((pack.bonds || []).filter(b => b.core).map(b => b.id));
   return { ...pick(d, ['round', 'phase', 'lp', 'deployCap', 'factions']), band: d.band?.id,
-    economy: { ...pick(d.economy, ['gold', 'interest', 'level', 'upgradePrice', 'refreshPrice', 'expiringFunds', 'frozenSlots', 'bankOperators']),
+    economy: { ...pick(d.economy, ['gold', 'interest', 'level', 'upgradePrice', 'refreshPrice', 'expiringFunds', 'frozenSlots']),
       ...(options ? { levelOptions: options } : {}) },
     ...(scale ? { enemyScale: pick(scale, ['atk', 'hp']) } : {}),
     board, bench, overflow, shop, bonds,

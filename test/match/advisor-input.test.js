@@ -9,7 +9,7 @@ import { aiDigest } from '../../server/match/aiDigest.js';
 import { advisorSystem, STRATEGY_PROMPT } from '../../tools/ai/llm-agent.mjs';
 import { slimKnowledge } from '../../tools/ai/llm-knowledge.mjs';
 import { compactDigest, compactChoices, focusPlan } from '../../tools/ai/llm-context.mjs';
-import { repairPlan } from '../../tools/ai/llm-plan.mjs';
+import { repairPlan, mainAtFive } from '../../tools/ai/llm-plan.mjs';
 import { validPlan } from '../../server/match/aiPlan.js';
 
 const hard = knowledgePack(DATA, { modeId: 'mode_multi_hard' });
@@ -186,4 +186,31 @@ test('repair keeps the advisor plan fields items.buy and economy.freezeSearch (ย
   assert.equal(bad.plan.economy.freezeSearch, undefined);
   assert.equal(bad.plan.economy.reserve, 1);
   assert.ok(bad.repairs.some(r => r.path === 'economy.freezeSearch' && r.reason === 'unknown ID or invalid value'));
+});
+
+test('ยง37.75: the plan\'s main (its highest-priority core bond) plays at priority 5; subs and class bonds keep theirs', () => {
+  const solo = structuredClone(fixture.knowledge);
+  solo.bonds = solo.bonds.map((b, i) => ({ ...b, core: i === 0 }));
+  const core = solo.bonds.filter(b => b.core).map(b => b.id), cls = solo.bonds.find(b => !b.core).id;
+  const repairs = [];
+  const plan = { bonds: [{ id: cls, priority: 3 }, { id: core[0], priority: 1 }, { id: core[1], priority: 1 }] };
+  mainAtFive(plan, solo, repairs);
+  const main = [core[0], core[1]].sort()[0], other = main === core[0] ? core[1] : core[0];
+  assert.deepEqual(plan.bonds.map(b => [b.id, b.priority]).sort(), [[cls, 3], [main, 5], [other, 1]].sort());
+  assert.equal(repairs.length, 1); assert.equal(repairs[0].id, main);
+  const same = { bonds: [{ id: core[0], priority: 5 }, { id: core[1], priority: 2 }] };
+  mainAtFive(same, solo, repairs);
+  assert.deepEqual(same.bonds, [{ id: core[0], priority: 5 }, { id: core[1], priority: 2 }]);
+  const none = { bonds: [{ id: cls, priority: 2 }] };
+  mainAtFive(none, solo, repairs);
+  assert.deepEqual(none.bonds, [{ id: cls, priority: 2 }]);
+  assert.equal(repairs.length, 1);
+  const empty = {};
+  mainAtFive(empty, solo, repairs);
+  assert.deepEqual(empty, {});
+  // repairPlan performs it (the fork calls it from the adapter after focusPlan)
+  const repaired = repairPlan({ bonds: [{ id: core[0], priority: 1 }, { id: cls, priority: 4 }] }, solo,
+    { round: 4, board: [], bench: [], overflow: [], shop: [] }, []);
+  assert.deepEqual(repaired.plan.bonds, [{ id: core[0], priority: 5 }, { id: cls, priority: 4 }]);
+  assert.ok(repaired.repairs.some(r => r.path === 'bonds.priority' && r.id === core[0]));
 });

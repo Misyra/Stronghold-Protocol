@@ -10,6 +10,19 @@ export const shortText = (s, max = 360) => typeof s === 'string' ? s.replace(/\s
 // R11 dealt about 40 % more Final Assault damage).
 export const holdFloor = round => round >= 11 ? 6 : round >= 9 ? 5 : round >= 7 ? 4 : round >= 5 ? 3 : round >= 4 ? 2 : 1;
 
+// §37.75 (stardust 60d1c73c): the plan's main (its highest-priority core bond) plays at priority 5, the weight the bot
+// gives its own focus through selfPlan; cycle-5 / v2 mains came at priority 1-3 and would replace the bot's main with a
+// weaker one. Subs keep their priority. [ASSUMED] The fork calls this from the adapter after focusPlan
+// (tools/ai/llm-agent.mjs, out of this batch's file set): here repairPlan performs it, so focusPlan sees the raised
+// main — with at most the three bonds the prompt asks for the surviving set is unchanged.
+export function mainAtFive(plan, pack, repairs) {
+  const core = new Set((pack.bonds || []).filter(b => b.core).map(b => b.id));
+  const main = (plan.bonds || []).filter(b => core.has(b.id)).sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id))[0];
+  if (!main || main.priority >= 5) return;
+  repairs.push({ path: 'bonds.priority', id: main.id, reason: `main raised from ${main.priority} to 5 (the bot's own main weight)` });
+  plan.bonds = plan.bonds.map(b => (b === main ? { ...b, priority: 5 } : b));
+}
+
 export function repairPlan(input, pack, digest, choices, { holds = [] } = {}) {
   if (!object(input)) throw new Error('plan');
   const repairs = [], plan = {};
@@ -112,6 +125,7 @@ export function repairPlan(input, pack, digest, choices, { holds = [] } = {}) {
     if (choices.some(c => c.id === input.choice)) plan.choice = input.choice;
     else drop('choice', input.choice);
   }
+  mainAtFive(plan, pack, repairs);
   if (!validPlan(plan)) throw new Error('plan');
   return { plan, repairs };
 }

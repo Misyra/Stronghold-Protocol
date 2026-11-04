@@ -35,10 +35,36 @@ export function validUsage(u) {
     && Object.values(u).every(v => integer(v, 1e9)));
 }
 
-export const advisorPlan = (m, ps) => m.externalAI?.planFor(ps) ?? null;
+/**
+ * §37.75 [ASSUMED] (stardust 2a2beff8/3ba13fe1): a bot's own seat's bonds for the round (bot.js selfPlan, set as its
+ * prep starts) stand in for an absent external plan or one that names no bonds, so an empty plan still plays the bot;
+ * a plan's own bonds replace them.
+ */
+export function advisorPlan(m, ps) {
+  const ext = m.externalAI?.planFor(ps) ?? null;
+  const own = ps?._botSelf;
+  if (!own || own.round !== m.round || ext?.bonds?.length) return ext;
+  if (!ext) return own.plan;
+  if (own.from !== ext) { own.from = ext; own.merged = { ...ext, bonds: own.plan.bonds }; }
+  return own.merged;
+}
+const NO_PLAN = Object.freeze({});
+// §37.71 (stardust addadad6): the executor reads plan fields, never "is there a plan": an absent field leaves the legacy
+// rule as it is.
+export const planOf = (m, ps) => advisorPlan(m, ps) ?? NO_PLAN;
 const matches = (m, id, want) => id === want || m.gd.baseIdOf(id) === m.gd.baseIdOf(want);
 // Maintainer 2026-10-20 / §35.14: keep/sell refer to the exact normal or elite form.
 export const planContains = (_m, list, id) => !!list?.includes(id);
+export const planSells = (m, ps, id) => planContains(m, planOf(m, ps).sell, id);
+export const planItemWanted = (m, ps, id) => !!planOf(m, ps).items?.buy?.includes(id);
+export const planEquips = (m, ps, itemId) => !!planOf(m, ps).items?.equip?.some(e => e.id === itemId);
+
+/** §35.62: the plan's main — its highest-priority core bond the mode keeps on (null: the plan names none). */
+export function planMain(m, ps) {
+  const gd = ps?.gd || m.gd;
+  return (planOf(m, ps).bonds || []).slice().sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id))
+    .map(b => b.id).find(id => gd.bond(id)?.isCore && !gd.modeInactiveBonds.has(id)) ?? null;
+}
 
 export function ownsElite(m, ps, id) {
   const gd = ps.gd || m.gd, base = gd.baseIdOf(id);

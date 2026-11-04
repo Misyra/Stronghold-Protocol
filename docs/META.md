@@ -277,12 +277,19 @@ Boss/hidden rounds, missing geometry and duplicate repairs retain the original c
 still uses the legacy prep adapter; a trusted strategy must explicitly select these hooks.
 
 
-**Strategy** (`botPickBand`): weighted by starting LP among the offered bands (alone, 老鲤's withheld first-round funds
+**Strategy** (`botPickBand`): weighted by starting LP (on 终极 cubed, `(LP − 18)³`) among the offered bands (alone, 老鲤's withheld first-round funds
 × 0.02), on 终极 also by the bots' measured strength with each band (`bandStrength`:
 80 forced games per band, shrunk toward the mean, to the 6th power; §37.46); a band whose mechanic rides on a bond the mode switches off weighs 0 — `GameData.bandBondIds` (bands.json
 `bondIds`, built by shared/bandBonds.js: the bond names in <…> of its text, the bond ids / bond pools of its blackboards)
 ∩ `modeInactiveBonds`: 标准's 潘格尼尼, 克莱门莎, 玛恩纳 — and with every offered band excluded it takes the default band;
 one rng draw per pick (DESIGN §21.26). The strategy draft marks the same bands 本局禁用 for humans (still selectable).
+In a co-op 终极 draft a seat the AI drafts for takes Touch (外勤医疗: a reserve medic on every player's field, kept after
+its holder falls, §30.14) × 1000 once another player holds 歌利亚 and nobody else holds Touch (§37.104; a plugin strategy
+built on either counts by its effectRef) — not while a departed seat is still to pick: that seat takes it. A co-op seat
+gone before its pick (a human who left before the draft or during it: eliminated, its turn stays in the order and the AI
+drafts for it) has no field, so the LP, strength and other own-seat weights do not apply: it takes Touch while nobody
+else holds it, else any offered band alike (a switched-off bond's band still never), never 歌利亚, on every difficulty
+(§37.105).
 Buys toward a full board first (the cap is 8 from R1; leftover funds are lost), completes the merges it can afford,
 then levels on a curve (L2 ≈ R3, L3 ≈ R5, L4 ≈ R7, L5 ≈ R10, L6 ≈ R12 — the competent curve of docs/BALANCE.md; free
 levels always), then spends the rest (a band that keeps its leftover funds — 坎诺特 利滚利 — holds its interest capital
@@ -345,6 +352,25 @@ their 5 × 3 body, sim body.js) also gets one candidate on the **body model** (`
 leader is the tiles of its body, its route is dropped, and every damage dealer whose range touches the body adds
 0.005 × its DPS to the layout value (linear — the default model's 10 × 40 000 HP leader saturates, and most dealers
 went to the escorts' road). The candidate goes in right after the default plan; the default candidates stay.
+The Final Assault's lineup is also re-chosen for damage (§37.104, `faDamageLineups`): `chooseLineup` once per
+`FA_DAMAGE_WEIGHTS` weight W (1, 3) with every unit valued + W × its DPS against the boss field's armour / 100 and
+without the blocker and solo healer composition terms (that fight seldom leaks; it is lost to the overtime drain with
+the pool unfinished). Each lineup that differs from the default one is planned with the default parameters plus the body
+plan (a self-bound leader) or the leader chain (a walking one), after the usual candidates, whose places do not change.
+The rehearsed winner's incoming pieces take the tiles of the pieces they replace (`plan.swaps`, also §37.37's single
+swaps); a swap the replaced piece's tile refuses (a melee piece in for one on a 高台) first moves the replaced piece onto
+the incoming piece's planned tile, or into the hand. Against a plus-shaped area strike (content/bosses.js `PLUS_STRIKE`:
+阿利斯泰尔's 【王权号令】, a random operator within its rangeRadius and the four tiles beside it) the body model also marks
+the own tiles where the strike may pick its target (`lead.strike`), and the default lineup and each damage lineup get one
+more body plan spaced against it: two units side by side, at least one of them there, cost 1 × 0.005 × their mean DPS
+(each at least 150), a non-blocker there 0.5 × 0.005 × its DPS (also at least 150). These plans go after every other
+candidate. In co-op normal rounds R5–R13 the rehearsal also tries lineup alternatives (§37.104, `coopAltLineups`; a
+perfect seat cleans its teammates' leaks through 联防, so a lineup that leaks less is worth more than in solo):
+`chooseLineup` once per `COOP_ALT_WEIGHTS` weight W (1, 3) with + W × the DPS against the round's armour / 100 (the
+composition terms kept), and the two best single bench swaps by lineup score (`benchSwaps`, never a bench copy with the
+same items for its deployed twin). Each lineup that differs by chess and items gets one default plan after the usual
+candidates. A prep rehearses at most `REHEARSAL_MAX_CANDIDATES` (16) candidates, which also bounds a delegated
+rehearsal's answer (`b.rehearsalResult`, choice 0–15).
 After placing the whole formation, the planner checks isolated self-range guards as specified in DESIGN §6.6.
 [ASSUMED] A blocking medic prefers an off-road tile, then a supported road tile, then a legal fallback (#577/#315).
 `supportedContact` is shared with the guard repair: each incoming ground route needs one damage
@@ -387,7 +413,8 @@ spend a different budget. The server rehearses those rooms itself.
 
 The interface a later local or external compute can plug into — this version makes no external network call — is:
 the server offers one task (`b.rehearsal`: task id, the AI seat, the tick cap, the candidate specs); the executor
-answers with the winning index or `error: true`; a timeout (`botRehearsalDelegateMs`, default 3 s), a missing host,
+answers with the winning candidate index (0 to `REHEARSAL_MAX_CANDIDATES` − 1) or `error: true`; a timeout
+(`botRehearsalDelegateMs`, default 3 s), a missing host,
 a host change, a disconnect, an invalid index or an error makes the server run the same candidates; prep ending
 cancels the task and keeps the default layout. The deadline never moves. Only the connected human host may answer,
 and only while the task is still waiting. Late, repeated and forged answers are ignored.

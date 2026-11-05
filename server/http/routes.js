@@ -135,6 +135,11 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
       hosts: versionHosts ? versionHosts.stats() : { workers: 0, matches: 0, transport: 'process' } };
   }
   if (withTraffic && traffic) report.traffic = traffic.snapshot();
+  // the bot rehearsal counters over the live matches (DESIGN §14, lobby.rehearsalStats): how the delegated rehearsals
+  // ended (delegated/answered/takeovers) and how their simulation-pool hand-offs did (pooled/accepted/fallbacks) —
+  // the tuning pair for the host answer window. Same loopback / private gate as the traffic family: read-only
+  // aggregates, but they stay out of the public /healthz a tunnel probe sees.
+  if (withTraffic && lobby?.rehearsalStats) report.rehearsal = lobby.rehearsalStats();
   // the static layer's response caches (files.js CompressCache / TransformCache): bytes held, entries, budget —
   // an operator sees what a hot page load keeps in memory and when a budget starts churning (entries evicted)
   if (withTraffic && serveStatic?.cacheStats) report.staticCache = serveStatic.cacheStats();

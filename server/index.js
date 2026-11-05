@@ -300,7 +300,9 @@ export async function startServer(opts = {}) {
         rehearsals += room.match?._rehearsalTasks?.size || 0;
       }
       return { rooms: s.rooms, matches: s.matches, humans: s.humans, spectators: s.spectators,
-        phase: [...phases].sort().join('+') || 'idle', rehearsals };
+        phase: [...phases].sort().join('+') || 'idle', rehearsals,
+        // the hall's delegated-rehearsal counters (lobby.rehearsalStats): the [loop] line's `rehe=d/a/t pool=p/a/f`
+        rehearsal: lobby.rehearsalStats?.() || null };
     },
   });
   // 资源 CDN 与分包预载（移植自用户分支，xinhai 系 static.js 的配套接线）：

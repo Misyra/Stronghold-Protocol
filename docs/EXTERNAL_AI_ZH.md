@@ -139,11 +139,11 @@ PowerShell 用 `$env:SP_BOT_STRATEGY = 'external'` 的形式逐个设置同名�
 `profession`、`subProfessionId`），物品追加 `name`。悬赏卡在席位策略的 `bountyKillChance` 返回有限数时
 追加 `killChance`（沿用原 AI 的暴露估算，不是新的战斗规则），并附目录敌人的
 `hp`、`def`、`res`、`motion`、`fly` 和短效果。这些字段可缺省，不改变 `sp-ai/1` 的原有字段。
-§37.106 另加人机自己的默认打法 `digest.bot`（选策略回合：抽取权重前 6 名带份额 `share`、一条份额 ≥ 0.95 时标 `forced`；
-休整回合：主盟约 `focus`、副盟约 `second`——按人机打分、不含共享卡池剩余数这类玩家看不到的项——本回合目标等级
-`levelTarget` ≤ 5，`route`）与 `digest.fa`（最终攻势前一回合起：血池 `pool`、存活席位 `alive`、开始扣血的秒数
-`clockSec`、每秒扣血 `drainPerSec`、全队生命 `teamLp`）；空计划就按这些默认打。`route` 在本仓恒为 null
-（fork 的杰西卡寻呼路线未移植，§37.106）。
+§37.106 另加人机自己的默认打法 `digest.bot`（选策略回合：抽取权重前 6 名带份额 `share`、一条份额 ≥ 0.95 或一条规则
+直接取胜时标 `forced`——后者是杰西卡席位，§37.113；休整回合：主盟约 `focus`、副盟约 `second`——按人机打分、不含共享
+卡池剩余数这类玩家看不到的项——本回合目标等级 `levelTarget` ≤ 5，`route` 在 solo 终极的杰西卡席位为 `'pager'`、
+其余为 null，§37.113）与 `digest.fa`（最终攻势前一回合起：血池 `pool`、存活席位 `alive`、开始扣血的秒数
+`clockSec`、每秒扣血 `drainPerSec`、全队生命 `teamLp`）；空计划就按这些默认打。
 直接模式可回复 `"intents":["a1","a3"]`，顾问选卡可写 `"plan":{"choice":"a2"}`；编号只在当前
 请求有效，服务端仍重新校验，不能假定一批中的前一步执行后后一步仍合法。快捷列表保守列出能
 无副作用判断的操作；交换、法术、依赖效果的消耗品、策略高亮和选项刷新继续支持原始 intent。

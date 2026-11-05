@@ -343,7 +343,7 @@ Deployment details: [DEPLOY.md](../../DEPLOY.md#26-p2p-公共状态转发).
 
 **Host rehearsal (online rooms default on, `Match.botRehearsalDelegate`; `SP_BOT_REHEARSAL=server|off|0|false` turns it off).** The room host's
 browser can test **AI teammates'** layouts during prep (META §1.5). `server/lobby.js` passes the flag into every online
-room (`hostRehearsalDefault`, maintainer decision 2026-11-05) — unset or `SP_BOT_REHEARSAL=host` keeps it on, and the
+room (`hostRehearsalDefault`, maintainer decision 2026-11-05, [§37.107](../history/0.3.4.md)) — unset or `SP_BOT_REHEARSAL=host` keeps it on, and the
 four off values are case-insensitive — while a Match constructed directly (botbench, golden results, replay decoding,
 the studio) keeps the engine default: off. Human seats under AI 托管 still use the server.
 The server builds the candidate list from the 0.3.0 preview inputs (normal field seed, start effects, layer gains,

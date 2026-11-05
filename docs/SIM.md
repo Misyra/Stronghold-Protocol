@@ -256,7 +256,10 @@ clear from a tile centre, so an enemy re-planning off-centre first steps back to
 to its first waypoint would cut a tile it cannot walk or a crate (a pushed enemy never clips a fence corner or breaks
 the decorative crate on it — act1 m03 (11,5); test/sim/pathing.test.js). If crates cut every path the enemy walks through them, gets blocked by the crate
 and destroys it. FLY legs fly straight between checkpoints. `disappear` hides
-the enemy (untargetable, not in snapshots), `wait` pauses, `appear` teleports.
+the enemy (untargetable, not in snapshots), `wait` pauses, `appear` teleports. A 持续施法 (`ab:channel`, ai.js) holds
+only the walking, like an attack clip's stand — a route WAIT / portal, DISAPPEAR / APPEAR and the leak keep running
+and a 恐惧 carries the caster off — and its skill's cooldown restarts at the channel's end (PRTS 「同一技能的冷却时间于
+该技能结束时开始计时」; §37.109).
 
 **恐惧 movement** (`fear.js`, user playtest #6; PRTS 诱发移动 §恐惧): a feared enemy leaves its route. Each application
 (`Battle.applyStatus` stamps it on the buff) lists the 恐惧可达地块 — tile centres within 10 of where it was hit, inside the
@@ -760,7 +763,9 @@ application competes with instead of its `value`, which stays its effect (Raidia
 catalogue status the same rule (one invisible buff `key` per target whatever applies it — no immunity, 抵抗, status hooks
 or icon): the engine default for two same-named buffs (PRTS 作战机制 "同名buff的默认叠加策略buff只能表现出一个"). 奥术 uses
 it, so the two players of a pair field compete for one instance instead of multiplying, and so do 灵知's 坚冰 and the
-莱恩哈特 / 缄默德克萨斯 RES cuts, once keyed per unit (DESIGN §20.10). 庇护 (gamedata_const ba.protect "受到的物理和法术伤害降低相应比例（同名效果取最高）") is one such effect whoever grants it: every kit holds it under the shared key (`kits/shared/tier1.js` `PROTECT` / `holdProtect`, mods phys / artsTakenMul ×(1 − v)) — 宴, 余, 缪尔赛思, 赫拉格, 左乐 and 赫德雷 since 0.2.0 (they used private multipliers that multiplied with each other) —, except 遥's bubbles (the client's damage_resistance[bonus], which multiplies with the common damage_resistance[inf]). "Strongest" = the largest |value|. PRTS 盟约记录's
+莱恩哈特 / 缄默德克萨斯 RES cuts, once keyed per unit (DESIGN §20.10). 庇护 (gamedata_const ba.protect "受到的物理和法术伤害降低相应比例（同名效果取最高）") is one such effect whoever grants it: every kit holds it under the shared key (`kits/shared/tier1.js` `PROTECT` / `holdProtect`, mods phys / artsTakenMul ×(1 − v)) — 宴, 余, 缪尔赛思, 赫拉格, 左乐 and 赫德雷 since 0.2.0 (they used private multipliers that multiplied with each other) —, except 遥's bubbles (the client's damage_resistance[bonus], which multiplies with the common damage_resistance[inf]). 术法充盈
+(gamedata_const ba.magicarcane "造成的法术伤害提升（同名效果取最高）", first granted by 溯光星源's DEC-X, §37.114) is one
+too: `MAGIC_ARCANE` / `holdArcane`, arts damage dealt ×(1 + v), one instance per unit. "Strongest" = the largest |value|. PRTS 盟约记录's
 奥术 note "※同一单位仅可对同一目标同时施加1个该盟约法术伤害提升效果" limits each unit to one instance per target; read with
 the engine default — a newer same-named buff waits inert until the earlier ones end (PRTS 常见同名状态 "默认叠加方式") — and
 巴哈姆特 12316 ("共享型buff會跟對面搶"), one instance is effective at a time, which is what applyStrongest keeps; strongest
@@ -1670,7 +1675,9 @@ Unknown subprofessions fall back to the profession default (test `professions.te
   `['engage', id]` (an ally's first attack that hits an enemy — the client's 行动开始 voice, DESIGN §21.30), `['die', id,
   reason]`, `['leak', id]`, `['status', id, key, 1|0]`, `['fx', kind, x, y, extra]` (`hitCap` `{ id, n }`: a leader's
   hit cancelled by 限伤 — the renderer draws nothing; `extra.form` = the unit's model form from then on — an enemy's
-  `content/enemies/helpers.js setForm`, a 傀儡师's 替身 — `shared/protocol.js fxForm`), `['layer', playerId, bondId, n]` (n =
+  `content/enemies/helpers.js setForm`, a 傀儡师's 替身 — `shared/protocol.js fxForm`; `extra.key` / `extra.tiles` = 国度's
+  darkened tile field, re-sent every pulse and updated in place by key — the `domain` fx, render/fx/zones.js domainField,
+  §37.112), `['layer', playerId, bondId, n]` (n =
   the layers actually added, capped at 999), `['bounty', playerId, coins]`, `['cast', id, slot, dur?, clip?]` (display only,
   0.3.0: an enemy uses the skill of index `slot` of its data record's `skills[]` — data/enemies.json, the order the
   client resolves its `prefabKey` by —, `dur` its blackboard `duration` when it has one; `content/enemies/helpers.js

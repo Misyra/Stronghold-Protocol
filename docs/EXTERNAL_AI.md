@@ -463,10 +463,11 @@ current enemy/boss previews and opponents' **public scouted boards only**. No ot
 `upgradePrice` (cost to the next level) and `frozenSlots` (unsold slot indices); `bankOperators` was removed
 with the banks (§37.106).
 §37.106 adds the bot's own defaults for the seat: `digest.bot` — a band turn carries the bot's draw weights as
-shares (the six largest, plus `forced` when one band's share reaches 0.95), a prep carries the bot's `focus` and
+shares (the six largest, plus `forced` when a rule takes one outright — the 杰西卡 seat, §37.113 — or one band's
+share reaches 0.95), a prep carries the bot's `focus` and
 `second` bonds as it scores them without a plan's shared-pool terms (reach and supply: stock a player does not
-see), its `levelTarget` for the round (at most 5) and `route` (null in this repo: the fork's 杰西卡 pager route was
-not ported, §37.106); and `digest.fa` from the round before the Final
+see), its `levelTarget` for the round (at most 5) and `route` (`'pager'` on the solo 终极 杰西卡 seat, §37.113;
+null elsewhere); and `digest.fa` from the round before the Final
 Assault through it — `pool` (the shared leader pool by the players alive now), `alive`, `clockSec` (when the LP
 drain starts), `drainPerSec` and `teamLp`. An empty plan plays exactly these defaults.
 These fields and per-offer `frozen` survive the example's compact digest.

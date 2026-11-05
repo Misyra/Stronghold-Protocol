@@ -328,7 +328,7 @@ hand slot the same way, a bench operator sold for it; only a hand of nothing but
 deadline would; the operator a transformation gains waits on the bench and the next prep's lineup step deploys it
 like any owned unit — AI 托管 too; the buy loop's bench shed, which sells by piece value while the bench is crowded,
 never sells a piece gained since the bot's last prep ended, `rememberOwned`), 身份牌 / 通讯机 / 寻呼模块 on a focus
-member; 画卷 copies the most
+member (the 杰西卡 seat's 寻呼模块 goes on the member most likely to bring a missing 谢拉格 member, §37.113); 画卷 copies the most
 valuable deployed operator; 教鞭 / “神秘顾客” are used after a perfect battle and otherwise kept in the hand — a bot drops
 a kept one only when it needs the hand slot (“神秘顾客” then pays its fund), a human's seat under AI 托管 never; 教鞭's three
 cards are scored like a 机变 bounty draft (§2.5). 机变: a
@@ -376,6 +376,28 @@ composition terms kept), and the two best single bench swaps by lineup score (`b
 same items for its deployed twin). Each lineup that differs by chess and items gets one default plan after the usual
 candidates. A prep rehearses at most `REHEARSAL_MAX_CANDIDATES` (16) candidates, which also bounds a delegated
 rehearsal's answer (`b.rehearsalResult`, choice 0–15).
+**§37.113 solo 终极的杰西卡席:** the solo AI seat drafts 杰西卡 whenever the shared pool can still supply 6 distinct
+谢拉格 members of tier ≤ 5 (`pagerPick`, one `rngBots` draw like the weighted pick; a 杰西卡 drawn when it cannot plays
+as before), builds 谢拉格 as its main bond from R1, equips each 寻呼模块 on the member most likely to bring a missing
+member and takes that member from the offer, buys missing members (highest tier first, keeping the planned level-up's
+funds), freezes an unaffordable one for the next round, refreshes up to 4 extra times for one, and never sells or drops
+its last copy of a member. The rule is the maintainer's prior (2026-11-03), not an official rule; `botIntent().route`
+is `'pager'` and `botBandWeights().forced` names the band on that seat. Fork-measured, not reproduced here: 480 solo
+终极 seeds 105 → 149 wins (paired +9.2 ± 2.4 points), pool completion +5.2 ± 1.7.
+**§37.115 the Final Assault's leader route:** a walking leader's checkpoints are joined by the sim's own ground path
+(`Grid.findPath` over the stage's active crates / platforms / mounds, cached per stage) instead of straight lines, and a
+`patrol` loop closes from the last checkpoint back to the first. Against a leader whose data carries a blink skill
+(卢西恩) the final prep adds hold candidates — the lineup's blockers on the melee path tiles nearest the loop's dead end
+(packed, or every other path tile), the rest covering those tiles — after every other candidate, for the default lineup
+and each damage lineup; the rehearsal picks the winner. Only the Final Assault boss round, with a rehearsal budget.
+**§37.116 the Final Assault's damage items:** after the rehearsed layout is on the board the bench is sold (keeping the
+members of hand-counting bonds, the pieces with items and the recurring 特质 — and the pager seat's last copy of a 谢拉格
+member) and the funds refresh the shop for damage items, valued from each equipment record's buff blackboards rather than
+from item ids (`faItemMods`, so an id another version reuses reads as that version's item). A damage item obtained before
+the hunt waits for it; each is equipped on the operator whose rehearsed leader damage × its relative DPS gain is largest
+(维多利亚 / lending members first, the most DPS gained without counts), bought only while a deployed carrier gains and
+equipped at once. 坎诺特 keeps its interest capital, a full hand neither buys nor refreshes, and the rest of the prep
+sells none of the kept bench. A seat under AI 托管 or with an external advisor plan does not hunt.
 After placing the whole formation, the planner checks isolated self-range guards as specified in DESIGN §6.6.
 [ASSUMED] A blocking medic prefers an off-road tile, then a supported road tile, then a legal fallback (#577/#315).
 `supportedContact` is shared with the guard repair: each incoming ground route needs one damage
@@ -410,7 +432,7 @@ rehearsal to 0 (`test/match/harness.js`); `tools/matchrun.mjs --rehearsal N` set
 
 **Host rehearsal (online rooms default on, `Match.botRehearsalDelegate`; `SP_BOT_REHEARSAL=server|off|0|false` turns it off):**
 the room host's browser can test AI teammates' layouts. `server/lobby.js` passes the flag into every online room
-(`hostRehearsalDefault`, maintainer decision 2026-11-05); unset or `SP_BOT_REHEARSAL=host` keeps it on, and the four
+(`hostRehearsalDefault`, maintainer decision 2026-11-05, §37.107); unset or `SP_BOT_REHEARSAL=host` keeps it on, and the four
 off values are case-insensitive. A Match constructed directly (botbench, golden results, replay decoding, the studio)
 keeps the engine default — off, unless `SP_BOT_REHEARSAL=host`. The server still handles the shop, builds the candidate
 list from the preview inputs above (same seed, same scoring) and applies the chosen layout. Both sides use
@@ -550,7 +572,10 @@ Every handler method is `(ctx, ev)`; `ev` is shared by all handlers of one dispa
 | `onMerge` | chess or item merge | `{ kind, piece, baseId|itemId, consumed:[uid], area? }` — a chess merge's `area` is where its elite went: 'board' (a consumed copy's tile) \| 'hand' \| 'temp' |
 | `onLevelUp` | shop level up | `{ level, price }` |
 | `onSpend` | a payment's action is complete (buy / refresh / levelUp / reward / effect) | `{ amount, reason, total }` (`total` = funds spent this match) |
-| `onBattleStart` | a battle input is built (normal / unite / boss / hidden); also for the stats preview (`g.unitStats`, DESIGN §18.5) and bot rehearsals | `{ input: PlayerBattleInput, kind, round, spawns?, waveSpawns?, routes?, side?, preview? }` — mutate/replace `ev.input`; `ev.spawns` (the field's spawn list, shared by a boss field's players) may be edited in place; `ev.waveSpawns` (normal / boss / hidden) is a copy of the round's own wave before the player's bounty units, for a draw every player shares (鸭爵, GitHub #839). Boss / hidden fields also carry the wave's `routes` and the player's `side` ('L' / 'R' on a pair field — its half is the routes ending left / right of the middle column — null on a one-player field), so a handler can edit only the player's own enemies (鸭爵's swap). With `ev.preview` true the dispatcher isolates the event and context: copied reads, no-op state writers (also on teammates/player), an independent RNG and script budget, no match error logging. Handlers may edit the detached input and spawns; stats previews omit spawns. Normal starts retain their live context and RNG |
+| `onBattleStart` | a battle input is built (normal / unite / boss / hidden); also for the stats preview (`g.unitStats`, DESIGN §18.5) and bot rehearsals | `{ input: PlayerBattleInput, kind, round, spawns?, waveSpawns?, routes?, side?, preview? }` — mutate/replace `ev.input`; `ev.spawns` (the field's spawn list, shared by a boss field's players) may be edited in place; `ev.waveSpawns` (normal / boss / hidden) is a copy of the round's own wave before the player's bounty units, for a draw every player shares (鸭爵, GitHub #839). Every field also carries the wave's `routes` (`ev.routes`, the lanes
+鸭爵's lower-lane rule reads, §37.108), and boss / hidden fields the player's `side` ('L' / 'R' on a pair field — its
+half is the routes ending left / right of the middle column — null on a one-player field), so a handler can edit only the
+player's own enemies (鸭爵's swap). With `ev.preview` true the dispatcher isolates the event and context: copied reads, no-op state writers (also on teammates/player), an independent RNG and script budget, no match error logging. Handlers may edit the detached input and spawns; stats previews omit spawns. Normal starts retain their live context and RNG |
 | `onBattleResult` | SETTLE (normal rounds) and after boss fields | `{ result, lpLoss, perfect, unite?|boss? }` |
 | `onChoicePick` | a 机变 card was applied (the card's own `choice:` handler runs first, then every source observes) | `{ card, family, picker, forTeammate }` |
 | `onEquip` | `g.equip` (item handler only) | `{ item, target, golden, consumed, keep, error }` — see §2.5 |
@@ -601,7 +626,8 @@ registry.garrison('SERVER_ADD_BOND_METHOD', {
 Reads: `playerId seat name round phase modeId difficulty isSolo isCoop data (frozen raw data) gd (GameData) rng`
 (`rng()`, `rng.int(n)`, `rng.pick(a)`, `rng.chance(p)`, `rng.shuffle(a)` — the match's meta stream, never
 `Math.random`), `seedFor(salt)` (a uint32 from the match seed and `salt`, the same for every player, dispatch and preview:
-`createRng(ctx.seedFor('duck:' + round))` gives every player of a round the same draw, GitHub #839), `funds() lp() alive() bandId() shopLevel() bond(id) bonds() bondActive(id) bondCount(id) layers(id)
+`createRng(ctx.seedFor('duck:' + round))` gives every player of a round the same draw, GitHub #839, while
+`ctx.seedFor('duck:' + round + ':' + playerId)` is the player's own kind stream, §37.108), `funds() lp() alive() bandId() shopLevel() bond(id) bonds() bondActive(id) bondCount(id) layers(id)
 board() hand() temp() piece(uid) pieceAt(row, col) pieceBonds(uid) garrisonsOf(uid) chessRecord(id) stats() roundStats()
 shopSlots() effect(id)` (`piece(uid)` adds `area`, `holderUid`, `idx`; "身前一格" of (r, c) is (r, c + 1)),
 counters `counter(k) setCounter(k, v) incCounter(k, n)` (player scope, persistent; prefix keys with your module) and

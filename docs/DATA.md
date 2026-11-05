@@ -821,7 +821,7 @@ index; M1 reads `shared/versions.js`), and a version's directory is named by its
 every file system and URL).
 
 **Profiles** (`tools/versions/<slug>.mjs`, loaded by `tools/versions/profiles.mjs loadProfile`, which checks `id` and
-`season` against the registry): `{ id, season, pins, lateOperators?, adapters, research, tables, config: { hiddenCore, rules? }, expect }`.
+`season` against the registry): `{ id, season, pins, lateOperators?, lateModules?, adapters, research, tables, config: { hiddenCore, rules? }, expect }`.
 
 - **`pins`**: the Kengxxiao/ArknightsGameData commit each file group is read from (`pins[group] ?? pins.default`;
   `null` = master, today's build). Groups: `activity` (`excel/activity_table.json`), `character` (character / skill /
@@ -832,10 +832,15 @@ every file system and URL).
   module records (nothing else) are merged from `sha` before the build. The default 第二期下半 profile pins `17759cc8`
   (the commit its data was built from) and takes 冻河, 国度 and 塔露拉 from `08ba2aea`, because Kengxxiao dropped the
   `AUTOCHESS_SEASON` section from `activity_table` with client 2.7.91.
+- **`lateModules`**: `{ sha, uniequipIds }` — modules of operators the pinned tables already have: only their uniequip
+  metadata, their place in the owner's `charEquip` list and their `battle_equip` record come from `sha` (appended in the
+  list's order), so every other module and every other operator keeps the pinned numbers. The default 第二期下半 profile
+  takes the four CN 2.7.91 modules (号角 ISW-A, 凛御银灰 CSR-X, 缪尔赛思 TAC-D, 溯光星源 DEC-X) from `08ba2aea`; it
+  deliberately does not pin the whole tables, which would move records of operators the update does not touch.
 
   | version | default pin | other pins | why |
   |---|---|---|---|
-  | `act2autochess` | `17759cc8` (2026-10-08, the commit the current data was built from; lateOperators `08ba2aea` for 冻河 / 国度 / 塔露拉) | none | the owner's decision of 2026-11-02: keep the current build (克莱门莎 S3's `projectile_life_time` stays 5) and add the 11-01 operators only |
+  | `act2autochess` | `17759cc8` (2026-10-08, the commit the current data was built from; lateOperators `08ba2aea` for 冻河 / 国度 / 塔露拉, lateModules `08ba2aea` for the four 2.7.91 modules) | none | the owner's decisions of 2026-11-02 and 2026-11-05: keep the current build (克莱门莎 S3's `projectile_life_time` stays 5), add the 11-01 operators and the four 2.7.91 modules only |
   | `act1autochess` | `21b1f240` (2025-12-05, 上半 final; its autochess sections equal `fdf34ff5` … `3421eaff`, its levels equal the V1_2 update `23c99d5d`, its range table equals `dcc057f6`) | `enemy: ee2cabff` (the last enemy change inside the season, 12-05) | 第一期下半 is V1_2's final state (DESIGN §35.22): V1_2 opened on 11-25 with `23c99d5d`, and the 12-05 commit added 莎草's module `uniequip_002_papyrs` (elite ATK 412 → 450, DEF 150 → 173), 娜斯提 `char_4212_nasti` to the owned 自选 pool (71 → 72, with 3 tokens), the 自选 modules `uniequip_003_ray` and Mon3tr's `uniequip_001_monstr` / `_002_monstr`, and 10 bond texts. The commit also changed three 上半 battle templates, which the build does not read (灵巧's range check `x-1` → `x-4`, 回收利用's 地面 check, 迅捷作战粮's `_forceFlag`). Whether 11-25 → 12-05 is a sub-version of its own is open for the maintainer |
   | `act1autochess@V1_1` | `8303c922` (2025-11-14, launch: range, enemies, levels) | `activity` and `character: ea164ef7` (the 11-18 hotfix); no enemy pin: `enemy_database` changed again at `23c99d5d`, so V1_2's `ee2cabff` would leak V1_2 enemies | the maintainer's decision of 2026-10-22: V1_1 includes the hotfix (see below). V1_1's levels are the launch's; the V1_2 update `23c99d5d` changed only the three solo hidden-core levels `h08_0X_s`, whose routes end at the 传送 entrance (1,3) instead of the protection point (2,2) (`waves.json` `routes[].end`, 22 values) |
   | `act2autochess@V2_1` | `1457587e` (2026-03-14, the 下半 launch) | none: no file the build reads changed before V2_2 (`86b6e749`; GitHub history per path), the levels changed next at `a24a8ad1` (04-08) | `987b4cd5` (2026-03-17) changed only the battle templates (`battle/buff_template_data.json`, not a build input; among them 精准's ATK, which the sim already gives as the text says), so the directory is the same with or without it: 第二期上半 stands for V2_1 with the 03-17 fix [ASSUMED], as V1_1 includes its hotfix; whether 03-17 is the maintainer's 「第一次改动」 is open (DESIGN §35.22) |

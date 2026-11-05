@@ -135,6 +135,24 @@ test('four humans must agree; rerolls the entire official setup and stock, prese
   assert.equal(m.phase, PHASE.BAND_DRAFT);
 });
 
+test('the same ballot cast again settles nothing and broadcasts nothing (no forced m.public)', (t) => {
+  const h = makeMatch({ humans: 3 }).start();
+  t.after(() => h.m.dispose());
+  const m = h.m;
+  assert.deepEqual(m.requestSetupReroll('p_0', 0), { ok: true });
+  assert.ok(m.setupVote);
+  assert.deepEqual(approve(m, 'p_1'), { ok: true }, 'p_1\'s one real ballot');
+  const pubs = () => h.bc.filter((x) => x.t === 'm.public').length;
+  const before = pubs();
+  for (let i = 0; i < 10; i++) assert.deepEqual(approve(m, 'p_1'), { ok: true }, 'answered ok');
+  assert.equal(pubs(), before, 'ten repeated yes ballots: not one m.public frame');
+  assert.equal(m.setupVote.agreed.size, 2, 'the tally did not move');
+  assert.deepEqual(approve(m, 'p_2'), { ok: true });
+  assert.ok(pubs() > before, 'the completing ballot still settles');
+  assert.equal(m.setupVote, null, 'unanimity completed the reroll');
+  assert.equal(m.setupRevision, 1);
+});
+
 test('reject/cancel restores exact remaining countdown and keeps setup and ready flags', (t) => {
   const h = makeMatch({ humans: 2, timerScale: 0.5 }).start();
   t.after(() => h.m.dispose());

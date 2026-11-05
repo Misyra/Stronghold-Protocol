@@ -171,9 +171,15 @@ export class StateStore {
         this.loadState = doc && typeof doc === 'object' ? 'loaded' : 'invalid';
         return this.loadState === 'loaded' ? doc : null;
       } catch (e) {
-        this.loadState = e instanceof SyntaxError ? 'invalid' : 'unavailable';
+        if (e instanceof SyntaxError) {
+          this.loadState = 'invalid';
+          this.#warn('read failed', e);
+          return null; // the same bytes come back every time: retrying cannot turn them into a document
+        }
+        this.loadState = 'unavailable';
         this.#warn('read failed', e);
-        return null;
+        if (i + 1 < attempts) await new Promise((r) => setTimeout(r, retryMs).unref?.());
+        continue; // the read itself failed: try again — a Redis that comes up late still hands its state over
       }
     }
     return null;

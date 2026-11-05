@@ -69,7 +69,10 @@ export async function decodeValue(raw) {
   const b64 = raw.slice(MARK_DEFLATED.length);
   // base64 carries 3 bytes per 4 characters; refuse before inflating anything absurd
   if (b64.length > MAX_VALUE_BYTES * 1.4) throw new Error('value is larger than ' + MAX_VALUE_BYTES + ' bytes');
-  const text = (await inflateRaw(Buffer.from(b64, 'base64'))).toString('utf8');
+  // zlib 侧的保险丝: 解压输出一旦越过 2×MAX_VALUE_BYTES 就在 inflate 内部被拒(默认无上限, 一个坏键/外来键可以
+  // 把进程 inflate 到爆内存)。验收边界仍是下面那个 MAX_VALUE_BYTES 检查——留一倍余量让超限值走到我们自己的
+  // 报错文案, 也免得边界舍入把恰好达标的值误杀。
+  const text = (await inflateRaw(Buffer.from(b64, 'base64'), { maxOutputLength: MAX_VALUE_BYTES * 2 })).toString('utf8');
   if (Buffer.byteLength(text, 'utf8') > MAX_VALUE_BYTES) throw new Error('value is larger than ' + MAX_VALUE_BYTES + ' bytes');
   return text;
 }

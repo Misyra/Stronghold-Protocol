@@ -72,6 +72,8 @@ export class MatchKickVote {
     if (!ps.connected || ps.left || !vote.voters.includes(ps.playerId)) return fail(ERR.NOT_IN_ROOM);
     // the proposer saying no withdraws the proposal
     if (!agree && ps.playerId === vote.proposerId) { this.cancelKickVote('withdrawn'); return OK; }
+    // the same ballot cast again changes nothing: no settle, no forced m.public (aiTakeover.js 的同一范式)
+    if (agree ? vote.agreed.has(ps.playerId) : vote.rejected.has(ps.playerId)) return OK;
     if (agree) { vote.agreed.add(ps.playerId); vote.rejected.delete(ps.playerId); }
     else { vote.rejected.add(ps.playerId); vote.agreed.delete(ps.playerId); }
     return this._settleKickVote();

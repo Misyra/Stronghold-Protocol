@@ -3,9 +3,10 @@
 // SP_TEST_REDIS_URL 时这里只验证配置、选择逻辑、键布局、写入顺序与失效退让，不依赖外部服务。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import zlib from 'node:zlib';
 
 import { parseRedisConfig, StateStore } from '../server/redis.js';
-import { RedisStateStore, createRedisStore, encodeValue, decodeValue, DEFLATE_MIN, REDIS_LAYOUT } from '../server/redisState.js';
+import { RedisStateStore, createRedisStore, encodeValue, decodeValue, DEFLATE_MIN, REDIS_LAYOUT, MAX_VALUE_BYTES } from '../server/redisState.js';
 import { SessionRegistry } from '../server/net.js';
 import { Lobby } from '../server/lobby.js';
 import { StubMatch } from '../server/match/StubMatch.js';
@@ -171,8 +172,18 @@ test('大检查点压缩存，小值明文存，读回来一个字都不差', as
   assert.notEqual(Buffer.byteLength(packed), Buffer.byteLength(JSON.stringify(big)));
 });
 
-test('连不上 Redis 时退让：load 返回 null、save 返回 false，都不抛', async () => {
-  const store = new RedisStateStore({ url: 'redis://127.0.0.1:1', log: quietLog, connectTimeoutMs: 60, commandTimeoutMs: 60 });
+test('解压超限的值在 inflate 内部就被拒绝（maxOutputLength 保险丝）', async () => {
+  // 一个小体积高压缩比的炸弹: 解出来超过上限, zlib 在分配爆掉之前就停手
+  const packed = zlib.deflateRawSync(Buffer.alloc(MAX_VALUE_BYTES * 2 + 1, 0));
+  const raw = 'Z:' + packed.toString('base64');
+  assert.ok(raw.length < MAX_VALUE_BYTES * 1.4, '过得了 base64 体积预检, 才轮得到 inflate 侧的保险丝');
+  await assert.rejects(decodeValue(raw), (e) => /larger|too large/i.test(String(e.message || e)));
+  // 正常大小的一个字都不会差(既有契约回归)
+  const ok = await encodeValue(JSON.stringify({ blob: 'x'.repeat(DEFLATE_MIN * 8) }));
+  assert.deepEqual(JSON.parse(await decodeValue(ok)), { blob: 'x'.repeat(DEFLATE_MIN * 8) });
+});
+
+test('连不上 Redis 时退让：load 返回 null、save 返回 false，都不抛', async () => {  const store = new RedisStateStore({ url: 'redis://127.0.0.1:1', log: quietLog, connectTimeoutMs: 60, commandTimeoutMs: 60 });
   assert.equal(await store.load({ attempts: 1, retryMs: 1 }), null);
   assert.equal(store.loadState, 'unavailable');
   assert.equal(await store.save({ v: 1 }), false);
@@ -194,6 +205,35 @@ test('loadState 四态：empty / invalid 与 loaded / unavailable 分开', async
   broken.data.set('test:index', 'J:not json');
   assert.equal(await broken.store.load({ attempts: 1 }), null);
   assert.equal(broken.store.loadState, 'invalid');
+});
+
+test('load 读命令失败会按声明的意图重试（读失败 ≠ 读到空，先试完次数再放弃）', async () => {
+  const doc = JSON.stringify({ v: PERSIST_VERSION, snapshot: 1, savedAt: 1 });
+  let calls = 0;
+  const store = new StateStore({ url: 'redis://127.0.0.1:6379/9', log: quietLog });
+  store.connect = async () => ({
+    get: async () => { calls++; if (calls < 3) throw new Error('ECONNRESET'); return doc; },
+  });
+  assert.deepEqual(await store.load({ attempts: 4, retryMs: 1 }), { v: PERSIST_VERSION, snapshot: 1, savedAt: 1 });
+  assert.equal(calls, 3, '前两次读失败被重试');
+  assert.equal(store.loadState, 'loaded');
+  // 重试耗尽仍是 unavailable（不是 invalid）：boot 侧 deferLoad / retryLoad 的语义不变
+  let always = 0;
+  store.connect = async () => ({ get: async () => { always++; throw new Error('ETIMEDOUT'); } });
+  assert.equal(await store.load({ attempts: 2, retryMs: 1 }), null);
+  assert.equal(always, 2, '读失败重试到次数用尽');
+  assert.equal(store.loadState, 'unavailable');
+  await store.close();
+});
+
+test('load 读到不是 JSON 的值不重试：invalid 是终态，重试读回的也是同一批字节', async () => {
+  let calls = 0;
+  const store = new StateStore({ url: 'redis://127.0.0.1:6379/9', log: quietLog });
+  store.connect = async () => ({ get: async () => { calls++; return '{not json'; } });
+  assert.equal(await store.load({ attempts: 4, retryMs: 1 }), null);
+  assert.equal(calls, 1, 'SyntaxError 直接返回，不烧重试次数');
+  assert.equal(store.loadState, 'invalid');
+  await store.close();
 });
 
 test('整份文档的旧 API（save → load → restoreServer）在这一层也成立', async () => {

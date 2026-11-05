@@ -2,7 +2,8 @@
 // still supply 6 distinct 谢拉格 members of tier ≤ 5, builds 谢拉格 from R1, puts each 寻呼模块 on the member most likely to
 // bring a missing one and takes that one from the offer, buys a missing member the shop shows and never sells the last
 // copy of a member. Ported from Stardust fork c31da98e (the §37.71 executor shape of its addadad6); the fork's Final
-// Assault hunt (bfd2a920 / 5fc28dde) is not ported here, so no test below covers it.
+// Assault hunt (bfd2a920 / 5fc28dde) is ported as well — test/match/fa-items.test.js covers it, including the pager's
+// last-copy guard.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { botIntent, botPickBand, botPrepBegin, buyLoopSteps, itemTarget, resolveTemp, sellWeakestHand } from '../../server/match/bot.js';

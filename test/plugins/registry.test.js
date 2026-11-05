@@ -169,6 +169,37 @@ test('the registry: only a lang folder\'s named files are servable; the catalogu
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('the catalogue body is cached on the scan generation and the vanilla hash, and a fresh scan builds afresh', () => {
+  const root = exampleRoot();
+  try {
+    const reg = createPluginRegistry(dirsOf(root), { recheckMs: 0, app: '0.3.0' });
+    const vanilla = 'cd'.repeat(32);
+    const first = reg.pluginIndex();
+    assert.equal(reg.pluginIndex(), first, 'the same generation re-uses the built body (no vanilla)');
+    assert.equal(reg.pluginIndex({ vanilla }), reg.pluginIndex({ vanilla }), 'the same generation re-uses the built body (vanilla)');
+    assert.notEqual(reg.pluginIndex({ vanilla }), first, 'the two keys are cached side by side');
+    assert.deepEqual(reg.pluginIndex({ vanilla }).content, { vanilla });
+    assert.ok(!('content' in first), 'the studio read (no vanilla) carries no content hash');
+    const contents = first.plugins.filter((e) => e.class === 'content').length;
+    // an install ends the generation: the next read builds afresh and shows the plugin
+    put(root, 'plugins/later/plugin.json', content());
+    put(root, 'plugins/later/data/economy.json', { patch: 1, ops: [] });
+    const second = reg.pluginIndex();
+    assert.notEqual(second, first, 'a scan that read the folders again drops the cache');
+    assert.ok(second.plugins.some((e) => e.id === 'later'), 'appears without a restart');
+    assert.equal(second.plugins.filter((e) => e.class === 'content').length, contents + 1, 'the new content plugin is in');
+    assert.equal(reg.pluginIndex(), second, 'the new generation caches again');
+    // an edit of a manifest ends it too
+    put(root, 'plugins/marathon/plugin.json', content({ name: { zh: '马拉松2', en: 'Marathon2' } }));
+    assert.equal(reg.pluginIndex().plugins.find((e) => e.id === 'marathon')?.englishName, 'Marathon2');
+    // a removal ends it, and the cached copy of the old generation is not reused
+    fs.rmSync(path.join(root, 'plugins/later'), { recursive: true, force: true });
+    assert.ok(!reg.pluginIndex().plugins.some((e) => e.id === 'later'), 'removed');
+    // the stale cached bodies of earlier generations are not reachable through the registry
+    assert.ok(!first.plugins.some((e) => e.id === 'later'));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('links: a symbolic link inside a plugin folder keeps it out; a plugin folder that is itself a link reads normally', (t) => {
   const root = tmpdir('links');
   const outside = tmpdir('outside');

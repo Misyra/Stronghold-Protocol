@@ -210,6 +210,38 @@ describe('placement and direction', () => {
   });
 });
 
+describe('the ps build record', () => {
+  test('a static copy of the psr: meshData / tint written every frame, the psr fields kept', () => {
+    const fx = new Effect(compileEffect(desc([root([pe({})]), psNode(1, 0)])), { seed: 1 });
+    fx.update(1 / 30);
+    const cam = cameraBasis(30, [0, -5, -8], 720, 0.7);
+    fx.collect(cam, new FrameData(), () => {}, 1);
+    const r = fx.def.psr[1], info = fx.__ri;
+    assert.ok(info, 'the record exists after the first build');
+    for (const k of Object.keys(r)) assert.equal(info[k], r[k], `static field ${k} survives`);
+    assert.equal(info.meshData, null, 'no mesh key: null meshData every frame');
+    assert.equal(info.tint, fx._tint(), 'the frame tint is on the record');
+    const same = info;
+    fx.fade = 0.5;                                      // _tint() then multiplies by the stop fade
+    fx.collect(cam, new FrameData(), () => {}, 2);
+    assert.equal(fx.__ri, same, 'the static copy is reused across frames (no re-assign)');
+    assert.equal(fx.__ri.tint, fx._tint(), 'the new frame tint replaced the old one');
+    assert.equal(fx.__ri.enabled, r.enabled, 'static fields still on the record');
+  });
+
+  test('two systems in one frame: the record follows the node built last (its own psr fields)', () => {
+    const d = desc([root([pe({})]), psNode(1, 0, { order: 1 }), psNode(2, 1, { order: 2 })]);
+    const fx = new Effect(compileEffect(d), { seed: 1 });
+    fx.update(1 / 30);
+    const items = [];
+    fx.collect(cameraBasis(30, [0, -5, -8], 720, 0.7), new FrameData(), (it) => items.push(it), 1);
+    assert.equal(items.length, 2);
+    const r2 = fx.def.psr[2];
+    assert.equal(fx.__riR, r2, 'the record is keyed to the last built node');
+    assert.equal(fx.__ri.order, r2.order, 'the record carries that node\'s fields');
+  });
+});
+
 describe('materials', () => {
   test('families by shader name; an unknown shader falls back and is logged', () => {
     assert.equal(familyOf('Torappu/Particles/Ram/Disturb(CustomData)').family, 'ramDisturbCd');

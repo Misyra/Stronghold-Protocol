@@ -779,8 +779,12 @@ export class Effect {
     switch (e.part) {
       case 'ps': {
         const r = def.psr[i], s = this.sys[i];
-        const info = this.__ri || (this.__ri = {});
-        Object.assign(info, r, { meshData: e.meshKey && this.lib ? this.lib.mesh(e.meshKey) : null, tint });
+        // r (psrInfo) is shared and immutable: build the static copy once per source node and let the frame write only
+        // meshData / tint (entry pool precedent f367bd26). buildParticles reads named fields, never mutates `r`.
+        let info = this.__ri;
+        if (!info || this.__riR !== r) { info = this.__ri = Object.assign({}, r); this.__riR = r; }
+        info.meshData = e.meshKey && this.lib ? this.lib.mesh(e.meshKey) : null;
+        info.tint = tint;
         return buildParticles(s, info, cam, fd, frameNo);
       }
       case 'trailmod': {

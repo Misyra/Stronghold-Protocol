@@ -119,9 +119,9 @@ test('data/i18n/en.json: shape, the 盟约 season of the EN build, coverage and 
   assert.equal(OVERLAY.lang, 'en');
   assert.equal(OVERLAY.meta.source.season, 'act2autochess', 'built from an EN client that has 卫戍协议：盟约 下半');
   // 0.2.3 adds Clementia before her EN release: official untranslated names/skills/talents remain Chinese.
-  // Measured 2026-11-05 (rebuilt against EN data 52.2.0 and the Ciallo emotes): total 97.2%, skills 95.9%,
-  // talents 94.4% — 303 talent texts arrived with the CN 2.7.91 operators and 予愿安洁莉娜 / S.E.E.S.队长 while
-  // the EN client has 261 of them. Other category floors stay unchanged.
+  // Measured 2026-11-05 (rebuilt against EN data 52.2.0, the CN 2.7.91 operator tables and the Ciallo emotes):
+  // total 97.1%, skills 95.3% (5970 skill texts), talents 94.4% (5951 of 6307 talent texts have an EN form).
+  // Other category floors stay unchanged.
   assert.ok(OVERLAY.meta.totals.pct >= 97, `coverage ${OVERLAY.meta.totals.pct} %`);
   for (const kind of ['operators', 'skills', 'talents', 'modules', 'traits', 'enemies', 'bonds', 'items', 'effects', 'bands', 'garrisons', 'stages', 'tokens', 'choices', 'config']) {
     const c = OVERLAY.meta.coverage[kind];

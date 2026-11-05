@@ -2411,6 +2411,20 @@ export class Lobby {
   startMatch(room, key = null) { return this.startMatchWith(room, key, null); }
 
   /**
+   * Whether a room started by this lobby offers the bot layout rehearsal to its host's browser (DESIGN §14).
+   * Online rooms default ON (maintainer decision 2026-11-05): the lobby passes the flag explicitly, so a Match
+   * constructed directly (botbench, golden results, replay decoding, the studio) keeps the engine default (off —
+   * Match.envBotRehearsal). `SP_BOT_REHEARSAL=server|off|0|false` (case-insensitive) turns it off for every room this
+   * process starts; unset or `host` keeps it on. A gameplay-plugin or other-version room never delegates regardless
+   * (MatchRehearsal.delegateRehearsal gates on `requireCs`).
+   * @returns {boolean}
+   */
+  hostRehearsalDefault() {
+    const v = String(typeof process !== 'undefined' && process.env ? process.env.SP_BOT_REHEARSAL : '').trim().toLowerCase();
+    return !(v === 'server' || v === 'off' || v === '0' || v === 'false');
+  }
+
+  /**
    * Build (and start, or restore) the room's match. `checkpoint` (server/persist.js → matchRestore.js, 移植自用户分支)
    * turns this into the restore half: the seats come from the checkpoint, the match number and seed continue the
    * interrupted run, and adoptRestoredMatch applies the checkpoint instead of starting fresh.
@@ -2486,6 +2500,11 @@ export class Lobby {
         // the room's host: the current executor of a delegated bot layout rehearsal (DESIGN §14; setHost follows a
         // migration while the match runs)
         hostId: room.hostId,
+        // 房主浏览器试算 AI 布阵 (DESIGN §14): every online room offers it to its host unless the operator set
+        // SP_BOT_REHEARSAL=server|off|0|false (hostRehearsalDefault, maintainer decision 2026-11-05). Passing the flag
+        // here — not changing Match's own default — keeps botbench, golden, replay decoding and the studio on the
+        // engine's deterministic server-run default. Plugin / other-version rooms are gated by requireCs in MatchRehearsal.
+        botRehearsalDelegate: this.hostRehearsalDefault(),
         // only a room created as a test room; a normal match opts object does not grow a test key
         ...(room.test === true ? { test: true } : {}),
         seed,

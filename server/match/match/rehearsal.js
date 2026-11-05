@@ -1,5 +1,6 @@
 // server/match/match/rehearsal.js — Match methods: the bot layout rehearsal delegated to the current host's browser
-// (DESIGN §14; Match option `botRehearsalDelegate`, env SP_BOT_REHEARSAL=host, off by default). A rehearsal is a real
+// (DESIGN §14; Match option `botRehearsalDelegate` — online rooms pass true from server/lobby.js hostRehearsalDefault,
+// a direct Match defaults off, env SP_BOT_REHEARSAL=host opts in). A rehearsal is a real
 // simulation of this round's wave against each candidate layout, 0.2–1 s of CPU per bot prep — the one part of a bot's
 // play that needs no match state, so the host's browser can do it off the page's main thread instead of the server.
 // Only an AI teammate's prep is offered (`ps.isBot`): a human seat played by "AI 托管" uses the same bot routine, but

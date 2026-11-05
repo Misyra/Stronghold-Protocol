@@ -408,9 +408,12 @@ the same inputs when its turn comes, inside the slice budget. A single build can
 first drops the job (the default layout stays). Virtual time runs it in one go (same decisions). Tests default
 rehearsal to 0 (`test/match/harness.js`); `tools/matchrun.mjs --rehearsal N` sets it.
 
-**Host rehearsal (optional, `Match.botRehearsalDelegate` / `SP_BOT_REHEARSAL=host`, off unless that exact value):**
-the room host's browser can test AI teammates' layouts. The server still handles the shop, builds the candidate list
-from the preview inputs above (same seed, same scoring) and applies the chosen layout. Both sides use
+**Host rehearsal (online rooms default on, `Match.botRehearsalDelegate`; `SP_BOT_REHEARSAL=server|off|0|false` turns it off):**
+the room host's browser can test AI teammates' layouts. `server/lobby.js` passes the flag into every online room
+(`hostRehearsalDefault`, maintainer decision 2026-11-05); unset or `SP_BOT_REHEARSAL=host` keeps it on, and the four
+off values are case-insensitive. A Match constructed directly (botbench, golden results, replay decoding, the studio)
+keeps the engine default — off, unless `SP_BOT_REHEARSAL=host`. The server still handles the shop, builds the candidate
+list from the preview inputs above (same seed, same scoring) and applies the chosen layout. Both sides use
 `server/sim/rehearsal.js`. The host returns only a candidate index; an accepted choice is applied once, without
 another simulation. Actual battles and human seats under AI 托管 are unchanged. A gameplay-plugin room
 (`requireCs`) never delegates: the match runs on that content set, and the browser must not load its scripts or

@@ -129,7 +129,8 @@
 // this mode; g.watch hands out specs. battleIds are `<seed36>[-<matchNo36>].<round>.<seq>[.<fieldId>]` (≤ 64 chars):
 // unique across the matches of a room, so a report that crossed into the next match is ignored like any stale one; a
 // duplicate b.result (a browser re-sending one it believes lost) is answered ok and changes nothing.
-// Bot layout rehearsals (opts.botRehearsalDelegate, off by default): a bot prep's candidate layouts go to the current
+// Bot layout rehearsals (opts.botRehearsalDelegate, off for a directly constructed Match; online rooms pass true from
+// server/lobby.js hostRehearsalDefault): a bot prep's candidate layouts go to the current
 // host's browser as one b.rehearsal frame — its module Worker simulates them off the page's main thread with the same
 // sim, seeds and scoring and answers b.rehearsalResult with the index of its pick (server/sim/rehearsal.js). A timeout,
 // a host that changed / disconnected / left or a task this client cannot run makes the server simulate the very same
@@ -152,6 +153,12 @@
 //   opts.verify        'off' | 'sample' | 'all' (env SP_VERIFY, default 'off'): re-simulate accepted client results
 //                      ('sample': ~1 in 8, in later slices, mismatches logged; 'all': before accepting — the
 //                      server's result wins on a mismatch)
+//   opts.botRehearsalDelegate  offer each bot prep's layout rehearsal to the current host's browser instead (DESIGN §14).
+//                      The lobby passes true for every online room unless SP_BOT_REHEARSAL=server|off|0|false
+//                      (server/lobby.js hostRehearsalDefault, maintainer decision 2026-11-05); a Match constructed
+//                      directly (tests, tools, golden, replay, studio) defaults off (env SP_BOT_REHEARSAL=host opts in).
+//                      MatchRehearsal — the server simulates a rehearsal the host did not answer with the same
+//                      candidates, seeds and scoring.
 //
 // Engine-only extra options (tests / tools; the lobby never passes them):
 //   opts.scheduler     RealScheduler (default, uses opts.now) | VirtualScheduler (./scheduler.js)
@@ -167,9 +174,6 @@
 //                      SP_BOT_STRATEGY_SEATS (none); a seat not listed plays opts.botStrategy (getBotStrategySeats)
 //   opts.botSliceMs    wall-clock ms of rehearsal per scheduler callback (default 8 with a real scheduler, unbounded
 //                      with a virtual one); the rest runs in later callbacks (scheduleBotPrep)
-//   opts.botRehearsalDelegate  offer each bot prep's layout rehearsal to the current host's browser instead (DESIGN §14;
-//                      default off, env SP_BOT_REHEARSAL=host; MatchRehearsal — the server simulates a rehearsal the
-//                      host did not answer with the same candidates, seeds and scoring)
 //   opts.botRehearsalDelegateMs  wall-clock ms the host has to answer a delegated rehearsal (default 3000) — never an
 //                      extension of the phase: the prep deadline stays the phase's own (MatchPrep.endPrep)
 //   opts.headlessSliceMs  wall-clock ms per callback of a server-run normal / 联防 field (client-side combat: bots,
@@ -291,7 +295,8 @@ export function parseVerify(v) {
   const s = String(v ?? '').trim().toLowerCase();
   return s === 'all' || s === 'sample' ? s : 'off';
 }
-/** Default of the bot rehearsal delegation: off — SP_BOT_REHEARSAL=host offers it to the room's host (DESIGN §14). */
+/** Default of the bot rehearsal delegation for a directly constructed match: off — SP_BOT_REHEARSAL=host opts in.
+ *  Online rooms do not rely on this: the lobby passes an explicit true/false (hostRehearsalDefault, 2026-11-05). */
 const envBotRehearsal = () => String(env('SP_BOT_REHEARSAL') || '').trim().toLowerCase() === 'host';
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -388,8 +393,10 @@ export class Match {
     /** wall-clock budget of one rehearsal slice (scheduleBotPrep) */
     this.botSliceMs = Number.isFinite(opts.botSliceMs) && opts.botSliceMs > 0 ? opts.botSliceMs : this.sched.virtual ? Infinity : BOT_SLICE_MS;
     /**
-     * Offer a bot's layout rehearsal to the current host's browser (DESIGN §14): `opts.botRehearsalDelegate`, default
-     * off, env SP_BOT_REHEARSAL=host. The server simulates a rehearsal the host did not answer (see MatchRehearsal).
+     * Offer a bot's layout rehearsal to the current host's browser (DESIGN §14): `opts.botRehearsalDelegate`. A direct
+     * construction defaults off (env SP_BOT_REHEARSAL=host opts in); the lobby passes true for online rooms unless
+     * SP_BOT_REHEARSAL=server|off|0|false (server/lobby.js hostRehearsalDefault, 2026-11-05). The server simulates a
+     * rehearsal the host did not answer (see MatchRehearsal).
      */
     this.botRehearsalDelegate = opts.botRehearsalDelegate != null ? !!opts.botRehearsalDelegate : envBotRehearsal();
     /** wall-clock ms the host has to answer a delegated rehearsal (engine option: tests shorten it) */

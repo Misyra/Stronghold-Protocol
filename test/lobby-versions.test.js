@@ -661,8 +661,9 @@ test('startMatch: a version room plays in its version host (version + requireCs)
   ok(h.lobby.start(q));
   assert.equal(hosted.length, 1);
   const keys = Object.keys(Rec.last).sort();
-  // (合并注: bandDupes 是允许重复策略的房间开关, onCheckpoint 是持久化检查点的订阅 —— 都是本仓新增 opts。)
-  assert.deepEqual(keys, ['afkRemoveRounds', 'aiPicksLast', 'bandDupes', 'broadcast', 'cs', 'data', 'difficulty', 'hostId', 'log', 'matchNo', 'mode', 'modeId', 'now', 'onCheckpoint', 'onEnd', 'onRemove', 'roomCode', 'seats', 'seed', 'send', 'spectators']);
+  // (合并注: bandDupes 是允许重复策略的房间开关, onCheckpoint 是持久化检查点的订阅 —— 都是本仓新增 opts；
+  //  botRehearsalDelegate 是 2026-11-05 起的线上默认，见 server/lobby.js hostRehearsalDefault。)
+  assert.deepEqual(keys, ['afkRemoveRounds', 'aiPicksLast', 'bandDupes', 'botRehearsalDelegate', 'broadcast', 'cs', 'data', 'difficulty', 'hostId', 'log', 'matchNo', 'mode', 'modeId', 'now', 'onCheckpoint', 'onEnd', 'onRemove', 'roomCode', 'seats', 'seed', 'send', 'spectators']);
   // a version room without a version host, and the real Match class: never in this process
   const lone = new Lobby({ registry: new SessionRegistry(), log: quiet, content: { cs: VANILLA }, getData, versions: versionStub() });
   const s = lone.registry.create('C');

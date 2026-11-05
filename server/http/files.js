@@ -63,7 +63,8 @@ export const COMPRESSIBLE = new Set([
 /** Types brotli compresses in its text mode (the rest of COMPRESSIBLE: generic mode). */
 const TEXT_LIKE = new Set(['.html', '.htm', '.js', '.mjs', '.css', '.json', '.map', '.webmanifest', '.txt', '.md', '.csv', '.xml', '.atlas', '.svg']);
 
-const GZIP_MIN_BYTES = 512;
+/** Bodies below this go out as they are (serveFile, sendJson, static.js's JSON routes). */
+export const GZIP_MIN_BYTES = 512;
 const GZIP_CACHE_MAX_FILE = 8 << 20;      // larger files are compressed as a stream on the fly
 const GZIP_CACHE_MAX_TOTAL = 96 << 20;    // both encodings together
 const TRANSFORM_CACHE_MAX_TOTAL = 32 << 20; // rewritten bodies + their ETag hashes (files.js serveFile)
@@ -97,6 +98,11 @@ function brotliParams(ext, size) {
 /** `raw` compressed with `encoding` ('br' | 'gzip'). */
 function compress(raw, encoding, ext) {
   return encoding === 'br' ? brotliAsync(raw, brotliParams(ext, raw.length)) : gzipAsync(raw, { level: 6 });
+}
+
+/** The same synchronously, for small in-memory bodies (common.js sendJson) where an extra hop is not worth it. */
+export function compressSync(raw, encoding, ext) {
+  return encoding === 'br' ? zlib.brotliCompressSync(raw, brotliParams(ext, raw.length)) : zlib.gzipSync(raw, { level: 6 });
 }
 
 /** A streaming compressor for a file too large for the cache. */

@@ -6,6 +6,8 @@
 //     (sendJson) — both `Cache-Control: no-store`, without a body for HEAD;
 //   * the bare `400 Bad Request` for a request node:http cannot parse (answerClientError).
 
+import { pickEncoding, compressSync, GZIP_MIN_BYTES } from './files.js';
+
 /** Headers on every HTTP response. @param {import('node:http').ServerResponse} res */
 export function setSecurityHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -31,8 +33,16 @@ export function sendError(req, res, status, title, detail) {
 }
 
 export function sendJson(req, res, status, obj) {
-  const body = Buffer.from(JSON.stringify(obj));
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length, 'Cache-Control': 'no-store' });
+  const raw = Buffer.from(JSON.stringify(obj));
+  // JSON bodies from GZIP_MIN_BYTES up go out br / gzip, negotiated like files.js serveFile: the pack / plugin
+  // catalogues and a busy /healthz are text of tens of KB, while the small replies (online, announcement) stay as
+  // they are. Per request and synchronous on purpose — these endpoints are per page load / per probe poll, their
+  // bodies are bounded, and a compressed-variant cache would cost more than the few ms of zlib.
+  const encoding = raw.length >= GZIP_MIN_BYTES ? pickEncoding(req.headers['accept-encoding']) : null;
+  const body = encoding ? compressSync(raw, encoding, '.json') : raw;
+  const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length, 'Cache-Control': 'no-store' };
+  if (encoding) { headers['Content-Encoding'] = encoding; headers.Vary = 'Accept-Encoding'; }
+  res.writeHead(status, headers);
   res.end(req.method === 'HEAD' ? undefined : body);
 }
 

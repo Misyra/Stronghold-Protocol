@@ -58,7 +58,7 @@ import path from 'node:path';
 import { MEDIA_PREFIX } from '../../shared/media.js';
 import { ROOT, noopLog } from './config.js';
 import { sendError, sendJson } from './common.js';
-import { MIME, CompressCache, TransformCache, isNotModified, serveFile, acceptsGzip, IMMUTABLE_CACHE, serveBuffer as serveHashedBuffer } from './files.js';
+import { MIME, CompressCache, TransformCache, isNotModified, serveFile, acceptsGzip, pickEncoding, GZIP_MIN_BYTES, IMMUTABLE_CACHE, serveBuffer as serveHashedBuffer } from './files.js';
 import { serveMedia } from './media.js';
 import { createPluginRegistry, sameIdentity, statIdentity } from '../plugins/registry.js';
 import { computeVanillaContent } from '../plugins/identity.js';
@@ -356,12 +356,19 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         }
         const body = Buffer.from(JSON.stringify(doc));
         const st = await fsp.stat(file);
-        const etag = `"resource-packs-${createHash('sha256').update(body).digest('hex')}"`;
+        const baseTag = `"resource-packs-${createHash('sha256').update(body).digest('hex')}"`;
+        // A pack-equipped server's index runs to tens of KB of JSON — br / gzip like the rest of the JSON routes
+        // (GZIP_MIN_BYTES keeps an empty installation's 100-byte index as it is).
+        const encoding = body.length >= GZIP_MIN_BYTES ? pickEncoding(req.headers['accept-encoding']) : null;
+        const etag = encoding ? `${baseTag.slice(0, -1)}-${encoding === 'br' ? 'br' : 'gz'}"` : baseTag;
         const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': tagVerified ? IMMUTABLE_CACHE : 'no-cache',
-          ETag: etag, 'Last-Modified': st.mtime.toUTCString(), 'Content-Length': body.length };
+          ETag: etag, 'Last-Modified': st.mtime.toUTCString(), Vary: 'Accept-Encoding' };
+        if (encoding) headers['Content-Encoding'] = encoding;
         if (isNotModified(req, etag, st.mtime)) { res.writeHead(304, headers); res.end(); return; }
+        const out = encoding ? await gzipCache.compressed(`rp:${etag}`, () => Promise.resolve(body), encoding, '.json') : body;
+        headers['Content-Length'] = out.length;
         res.writeHead(200, headers);
-        res.end(req.method === 'HEAD' ? undefined : body);
+        res.end(req.method === 'HEAD' ? undefined : out);
       } catch (error) {
         if (error?.code === 'ENOENT') sendError(req, res, 404, '页面不存在 · Not found');
         else { log.error('[resources] cannot read resource pack index', error); sendError(req, res, 500, '服务器内部错误 · Internal error'); }
@@ -416,11 +423,18 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
         return;
       }
       const body = Buffer.from(JSON.stringify(c.index));
-      const tag = `"cs-${csUrlPart(c.cs)}-v${PLUGIN_INDEX_VERSION}"`;
-      const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': IMMUTABLE_JSON, ETag: tag, 'Content-Length': body.length };
-      if (isNotModified(req, tag, new Date(0))) { delete headers['Content-Length']; res.writeHead(304, headers); res.end(); return; }
+      const baseTag = `"cs-${csUrlPart(c.cs)}-v${PLUGIN_INDEX_VERSION}"`;
+      // The manifest names every code and data file with its hash — tens of KB of JSON, immutable, one fetch per
+      // client per content set: br / gzip like the rest of the JSON routes, with the encoding in the ETag.
+      const encoding = body.length >= GZIP_MIN_BYTES ? pickEncoding(req.headers['accept-encoding']) : null;
+      const tag = encoding ? `${baseTag.slice(0, -1)}-${encoding === 'br' ? 'br' : 'gz'}"` : baseTag;
+      const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': IMMUTABLE_JSON, ETag: tag, Vary: 'Accept-Encoding' };
+      if (encoding) headers['Content-Encoding'] = encoding;
+      if (isNotModified(req, tag, new Date(0))) { res.writeHead(304, headers); res.end(); return; }
+      const out = encoding ? await gzipCache.compressed(`cs-index:${tag}`, () => Promise.resolve(body), encoding, '.json') : body;
+      headers['Content-Length'] = out.length;
       res.writeHead(200, headers);
-      res.end(req.method === 'HEAD' ? undefined : body);
+      res.end(req.method === 'HEAD' ? undefined : out);
       return;
     }
     // Visual sets (server/plugins/visualSet.js): a set's composition and writes

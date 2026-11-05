@@ -86,6 +86,8 @@ test('profiles: the default stays on the commit its data was built from; pins pi
   const { profile: def } = await loadProfile(DEFAULT_VERSION);
   assert.deepEqual(def.pins, { default: '17759cc8cdf37388414145d16262a3a06f3ab25e' });
   assert.deepEqual(def.lateOperators, { sha: '08ba2aea0e8dba88eff0ec0d2c87e24b4db626f8', charIds: ['char_4244_tocka', 'char_4246_dminon', 'char_4247_oxi'] });
+  assert.deepEqual(def.lateModules, { sha: '08ba2aea0e8dba88eff0ec0d2c87e24b4db626f8',
+    uniequipIds: ['uniequip_004_horn', 'uniequip_002_svash2', 'uniequip_004_mlyss', 'uniequip_003_halo2'] });
   assert.deepEqual(def.adapters, []);
   assert.equal(def.tables, 'default');
   assert.deepEqual(def.config.hiddenCore, { single: 350, multi: 1200 });
@@ -263,15 +265,17 @@ test('data/versions/act2autochess-v2_1: the same-id records that differ from tod
     'enemy_10144_xdelk_2', 'enemy_2008_flking', 'enemy_2085_skzjxd', 'enemy_2085_skzjxd_2', 'enemy_9011_acrefr']);
   // h07_05's patrol loop (04-14)
   assert.deepEqual(changed('waves', (w) => [w.routes, w.extraRoutes]), ['act2autochess_h07_05', 'act2autochess_h07_05_s']);
-  // the modules added after 03-14: 13 elite records offer one fewer, and two summons lose their byModule entry
+  // the modules added after 03-14 (and the CN 2.7.91 four of tools/versions/act2autochess.mjs lateModules): 17 elite
+  // records offer one more, and two summons gain / lose their byModule entry
   assert.deepEqual(changed('chess', (c) => (c.modules || []).map((m) => m.uniEquipId)), ['chess_char_3_18_b', 'chess_char_4_01_b', 'chess_char_4_16_b',
-    'chess_char_5_03_b', 'chess_char_5_05_b', 'chess_char_5_07_b', 'chess_char_5_13_b', 'chess_char_5_18_b', 'chess_char_6_04_b', 'chess_char_6_08_b',
-    'chess_char_6_10_b', 'chess_char_6_15_b', 'chess_char_6_19_b']);
-  // whole modules: the 13 above plus 异客's RA-A module uniequip_004_pasngr, whose 1457587e battle_equip has only the rank-0
+    'chess_char_5_03_b', 'chess_char_5_05_b', 'chess_char_5_07_b', 'chess_char_5_08_b', 'chess_char_5_13_b', 'chess_char_5_14_b', 'chess_char_5_18_b',
+    'chess_char_6_04_b', 'chess_char_6_08_b', 'chess_char_6_10_b', 'chess_char_6_11_b', 'chess_char_6_15_b', 'chess_char_6_16_b', 'chess_char_6_19_b']);
+  // whole modules: the 17 above plus 异客's RA-A module uniequip_004_pasngr, whose 1457587e battle_equip has only the rank-0
   // 机理分析 (×1.2 at every potential; today ×1.25 from 潜能 5)
   assert.deepEqual(changed('chess', (c) => c.modules || []), ['chess_char_3_18_b', 'chess_char_4_01_b', 'chess_char_4_16_b',
-    'chess_char_5_03_b', 'chess_char_5_05_b', 'chess_char_5_07_b', 'chess_char_5_13_b', 'chess_char_5_18_b', 'chess_char_6_04_b', 'chess_char_6_05_b',
-    'chess_char_6_08_b', 'chess_char_6_10_b', 'chess_char_6_15_b', 'chess_char_6_19_b']);
+    'chess_char_5_03_b', 'chess_char_5_05_b', 'chess_char_5_07_b', 'chess_char_5_08_b', 'chess_char_5_13_b', 'chess_char_5_14_b', 'chess_char_5_18_b',
+    'chess_char_6_04_b', 'chess_char_6_05_b', 'chess_char_6_08_b', 'chess_char_6_10_b', 'chess_char_6_11_b', 'chess_char_6_15_b', 'chess_char_6_16_b',
+    'chess_char_6_19_b']);
   const v21chess = read('versions/act2autochess-v2_1', 'chess');
   const pasngr = v21chess.chess_char_6_05_b.modules.find((m) => m.uniEquipId === 'uniequip_004_pasngr');
   assert.equal(pasngr.talentChanges[1].bb['pasngr_t_1[enhance].damage_scale'], 1.2);
@@ -279,7 +283,9 @@ test('data/versions/act2autochess-v2_1: the same-id records that differ from tod
   assert.deepEqual(changed('chess', (c) => [c.skill, c.skills, c.talents, c.talentsBase]), ['chess_char_3_06_a', 'chess_char_3_06_b',
     'chess_char_3_18_a', 'chess_char_3_18_b', 'chess_char_4_10_a', 'chess_char_4_10_b', 'chess_char_5_05_a', 'chess_char_5_05_b',
     'chess_char_6_02_a', 'chess_char_6_02_b', 'chess_char_6_08_a', 'chess_char_6_08_b']);
-  assert.deepEqual(changed('tokens'), ['token_10017_skadi2_dedant', 'token_10039_ulpia_block']);
+  // the 流形 and the three 风雪之眼 tokens gain the CN 2.7.91 byModule variants (TAC-D / CSR-X)
+  assert.deepEqual(changed('tokens'), ['token_10017_skadi2_dedant', 'token_10030_mlyss_wtrman', 'token_10039_ulpia_block',
+    'token_10057_svash2_eagle1', 'token_10057_svash2_eagle2', 'token_10057_svash2_eagle3']);
   // backups.json: the 自选 operators' powers and bonds from the 03-14 character_table (鸿雪 and 真言 emptyShip, not
   // sargonShip; seven with one power fewer), and the 自选 forms without a module added after 03-14
   const today = read('', 'backups');

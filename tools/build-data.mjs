@@ -229,6 +229,42 @@ async function mergeLateOperators({ sha, charIds }, { charTable, skillTable, ran
 }
 
 /**
+ * Add modules newer than the pinned tables (profile `lateModules`): only the listed uniequip records — their
+ * uniequip_table metadata, their place in the owner's charEquip list and their battle_equip record — come from the later
+ * commit, so every other module and every other operator keeps the pinned numbers. The owner must be an operator the
+ * pinned tables already have: a late module upgrades an existing chess, it never adds an operator. Records are appended
+ * in the whitelist order (the profile lists them in the official order, so the selectable list keeps it).
+ * @param {{ sha: string, uniequipIds: readonly string[] }} late
+ * @param {{ charTable: any, uniequip: any, battleEquip: any }} tables mutated in place
+ */
+async function mergeLateModules({ sha, uniequipIds }, { charTable, uniequip, battleEquip }) {
+  if (!uniequipIds?.length) return;
+  const src = { cacheDir: `${CACHE_DIR}@${sha}`, baseUrl: pinnedUrl(sha) };
+  const read = async (rel) => JSON.parse(await readFile(await ensureGamedata(rel, src), 'utf8'));
+  const [equips, battleEquips] = await Promise.all(['excel/uniequip_table', 'excel/battle_equip_table'].map((t) => read(`${t}.json`)));
+  const pending = [];
+  for (const id of uniequipIds) {
+    const meta = equips.equipDict?.[id];
+    if (!meta) throw new Error(`lateModules: ${id} is not in the tables of ${sha}`);
+    if (meta.type === 'INITIAL') throw new Error(`lateModules: ${id} is an INITIAL module (no module: nothing to merge)`);
+    if (uniequip.equipDict?.[id]) throw new Error(`lateModules: ${id} is already in the pinned tables`);
+    const owners = Object.keys(equips.charEquip || {}).filter((cid) => equips.charEquip[cid]?.includes(id));
+    if (owners.length !== 1) throw new Error(`lateModules: ${id} has ${owners.length} owners in the tables of ${sha}`);
+    const owner = owners[0];
+    if (!charTable[owner]) throw new Error(`lateModules: ${id}: owner ${owner} is not in the pinned tables`);
+    const battle = battleEquips[id];
+    if (!battle) throw new Error(`lateModules: ${id} has no battle record in ${sha}`);
+    pending.push([id, owner, meta, battle]);
+  }
+  for (const [id, owner, meta, battle] of pending) {
+    uniequip.charEquip ??= {};
+    uniequip.charEquip[owner] = [...(uniequip.charEquip[owner] || []), id];
+    uniequip.equipDict[id] = meta;
+    battleEquip[id] = battle;
+  }
+}
+
+/**
  * Load an optional research JSON (docs/research/<name>); returns null when absent/unreadable. A non-default version reads
  * its own copy from its profile's research directory when there is one, else docs/research/ [ASSUMED] with a warning.
  */
@@ -283,6 +319,7 @@ async function loadContext() {
     loadGamedata('levels/enemydata/enemy_database.json'),
   ]);
   if (PROFILE.lateOperators) await mergeLateOperators(PROFILE.lateOperators, { charTable, skillTable, rangeTable, uniequip, battleEquip });
+  if (PROFILE.lateModules) await mergeLateModules(PROFILE.lateModules, { charTable, uniequip, battleEquip });
   const act = activity?.activity?.AUTOCHESS_SEASON?.[PROFILE.season];
   const ac = activity?.autoChessData;
   if (!act || !ac) throw new Error(`activity_table has no ${PROFILE.season} / autoChessData section`);

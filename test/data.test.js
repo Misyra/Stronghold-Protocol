@@ -578,13 +578,16 @@ test('chess: golden modules[] (+ statsBase/traitBase/talentsBase) compose back t
     }
   }
   assert.ok(nMods >= 170, `module choices: ${nMods}`);  // 184 ADVANCED modules over 129 goldens
-  // 缪尔赛思 精锐 (E2 60, module Lv3): 梳妆流形 (default) / 落叶四季
+  // 缪尔赛思 精锐 (E2 60, module Lv3): 梳妆流形 (default) / 落叶四季 / “缪尔赛思和朋友们”
   const m = chess.chess_char_6_11_b;
-  assert.deepEqual(m.modules.map((x) => [x.uniEquipId, x.typeName, x.isDefault]), [['uniequip_002_mlyss', 'TAC-X', true], ['uniequip_003_mlyss', 'TAC-Y', false]]);
+  assert.deepEqual(m.modules.map((x) => [x.uniEquipId, x.typeName, x.isDefault]),
+    [['uniequip_002_mlyss', 'TAC-X', true], ['uniequip_003_mlyss', 'TAC-Y', false], ['uniequip_004_mlyss', 'TAC-D', false]]);
   assert.deepEqual(m.modules[1].attr, { maxHp: 170, atk: 28, def: 28 });
+  assert.deepEqual(m.modules[2].attr, { maxHp: 70, atk: 90 });
   assert.deepEqual([m.statsBase.maxHp, m.statsBase.atk, m.statsBase.def], [1703, 492, 111]);   // ATK 467 + 攻击力+25 (full potential)
-  // module-less goldens: no choices, base = stats
-  assert.deepEqual(chess.chess_char_5_14_b.modules, []);
+  // 凛御银灰 CSR-X is optional: one choice, no default (the season's default stays no module)
+  assert.deepEqual(chess.chess_char_5_14_b.modules.map((x) => [x.uniEquipId, x.typeName, x.isDefault]), [['uniequip_002_svash2', 'CSR-X', false]]);
+  assert.deepEqual(chess.chess_char_5_14_b.statsBase, chess.chess_char_5_14_b.stats);
   assert.deepEqual(chess.chess_char_5_14_b.statsBase, chess.chess_char_5_14_b.stats);
 });
 
@@ -599,7 +602,11 @@ test('tokens: owner loadout variants (bySkill per non-default owner skill, byMod
         assert.ok(Array.isArray(b.sources) && b.sources.every((x) => allowed.has(x)), `${t.tokenId}@${owner}: bySkill sources`);
         assert.ok(b.count === null || isInt(b.count), `${t.tokenId}@${owner}: bySkill count`);
       }
-      const mods = o.isGolden && o.module?.active ? [...o.modules.filter((m) => !m.isDefault).map((m) => m.uniEquipId), 'none'] : [];
+      // a golden elite lists its module choices whether or not one is its default; 'none' only exists when one is
+      // (凛御银灰 CSR-X is optional: the default stays no module, so no 'none' variant)
+      const mods = o.isGolden && o.status.equipLevel > 0 && o.modules?.length
+        ? [...o.modules.filter((m) => !m.isDefault).map((m) => m.uniEquipId), ...(o.module?.id ? ['none'] : [])]
+        : [];
       assert.deepEqual(Object.keys(v.byModule || {}), mods, `${t.tokenId}@${owner}: byModule keys`);
       for (const b of Object.values(v.byModule || {})) assert.ok(b.stats && b.trait && Array.isArray(b.talents), `${t.tokenId}@${owner}: byModule shape`);
     }

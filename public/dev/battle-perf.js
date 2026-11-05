@@ -7,6 +7,8 @@
 //        &fx=off|lite|full|auto (设置「官方特效」, render/vfx: the official battle effects when extracted; default off here
 //        so the figures stay comparable with earlier runs)
 //        &board=2d|3d (render/app.js reads it)
+//        &poseSkip=<px> (app/tune.js POSE_SKIP_PX: direct-drawn units under this many on-screen px pose every other
+//        frame; measurement only — 0, the default, is off and the official look)
 // Puppeteer hook: window.__perf = { ready, error, view, runner, sample(ms) → figures over `ms` of animation frames }
 //
 // The panel must not disturb what it measures: frame times go into a ring buffer (one store per frame), the strip is
@@ -14,6 +16,7 @@
 // measurement (only a CSS progress animation runs).
 
 import { createFieldView } from '../js/render/app.js';
+import { setPoseSkipPx } from '../js/render/app/tune.js';
 import { data } from '../js/data.js';
 import { assets } from '../js/assets.js';
 import { createBattleRunner } from '../js/battle/runner.js';
@@ -232,6 +235,8 @@ async function main() {
     return r.json();
   });
   const officialFx = ['off', 'lite', 'full', 'auto'].includes(q.get('fx')) ? q.get('fx') : 'off';
+  // &poseSkip=<px> (measurement only, app/tune.js POSE_SKIP_PX): small units pose every other frame. 0 (the default) = off.
+  setPoseSkipPx(q.get('poseSkip'));
   const view = await createFieldView($('field'), { data, assets, settings: { quality, damageNumbers: true, officialFx } });
   view.setStage(data.lookup('stages', msg.spec.stageId));
   // the runner needs no server here: reports go nowhere, the battle runs from its start

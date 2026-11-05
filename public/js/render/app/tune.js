@@ -52,3 +52,17 @@ export const DRAG_FOLLOW_RATE = 22;
 export const DEPLOY_REPLAY_MS = 50;
 
 export { CAMERA_MS, BOARD3D_RETRY_MS, BOARD3D_STABLE_MS, RANGE_GROUPS, CHAIN_KINDS, DROP_PENDING_MS };
+
+/**
+ * Direct-drawn Spine units whose tile is smaller than this many screen pixels pose every other frame: the skipped
+ * frames' dt accumulates and the next pose takes it at once, so the actor's clock never drifts and the state machine
+ * (wind-up, die, a form's closing clip) sees the doubled dt on the pose frame — nothing about it changes. The skeleton
+ * still draws every frame; only the pose (spine.update: apply + computeWorldVertices) runs at 30 Hz.
+ * 0 (the default) = off: every skeleton poses at the frame rate — the official look, no visual deviation. A non-zero
+ * value is the maintainer's trade of a little crispness on small / distant models for pose headroom. [ASSUMED] the
+ * threshold's feel: no source describes a distance LOD for the official mode's chibis.
+ */
+export let POSE_SKIP_PX = 0;
+
+/** Set the pose-skip threshold in screen pixels (0 = off). The field view reads the live binding every frame. */
+export function setPoseSkipPx(px) { POSE_SKIP_PX = Math.max(0, Number(px) || 0); }

@@ -43,8 +43,10 @@
 // - Module AMB-X 空瓶罐们 (stage 1 / 3): the attributes (data), "攻击范围内所有敌人移动速度-20%" (hidden talent move_speed):
 //   every enemy of her current range, air units too, moves ×(1 + move_speed), one slow per 国度 (伏击客 X modules stack:
 //   阿斯卡纶's kit, PRTS); stage 3 changes T1 (attack_speed −20, atk_scale 0.2: the talent's own blackboard).
-// fx: 'zone' on each 国度 tile (renewed while it lasts: KINGDOM_FX_HOLD), 'aoe' on each tile S3 spreads to and each tile T2
-// strikes (FX_BINDINGS skchr_dminon_*: dminon_talent_range_01 / dminon_talent_range_hit_01).
+// fx: 'zone' on each 国度 tile (renewed while it lasts: KINGDOM_FX_HOLD) and a keyed 'domain' field with the whole of
+// her range every DOMAIN_FX_IV s (the darkened tile field of render/fx/zones.js domainField, Stardust fork b3f13f31;
+// both read 国度, neither replaces the other), 'aoe' on each tile S3 spreads to and each tile T2 strikes (FX_BINDINGS
+// skchr_dminon_*: dminon_talent_range_01 / dminon_talent_range_hit_01).
 
 import { num, talentBb, moduleBb, traitBb, skillRec, up } from '../shared/tier1.js';
 import { COLS, ROWS, TICK } from '../../../constants.js';
@@ -66,6 +68,9 @@ const X5 = Object.freeze([[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]);
 /** 'zone' fx of a 国度 tile: held this long, renewed when less than KINGDOM_FX_RENEW is left. */
 const KINGDOM_FX_HOLD = 3;
 const KINGDOM_FX_RENEW = 1;
+/** The 国度 on screen: her field's tiles in a keyed 'domain' fx this often (render/fx/zones.js domainField, as
+ *  “邪魔的利刃”'s 3×3 — Stardust fork b3f13f31). */
+const DOMAIN_FX_IV = 0.5;
 /** AMB-X slow: the kits' range-aura convention (refresh period / length). */
 const AURA_IV = 0.25;
 const AURA_DUR = 0.4;
@@ -97,6 +102,13 @@ function installUnevade(battle) {
 function installKingdom(battle, unit, t0) {
   const m = stateOf(unit);
   const scale = num(t0.atk_scale), aspd = Math.abs(num(t0.attack_speed));
+  // The field on screen (no gameplay part): her range's tiles every DOMAIN_FX_IV s, keyed by the unit so the renderer
+  // updates one field in place and fades it once she has left (render/fx/zones.js domainField). The per-tile 'zone'
+  // events in the tick below stay: both read 国度 (Stardust fork b3f13f31).
+  battle.every(DOMAIN_FX_IV, () => {
+    if (!up(unit) || !unit.rangeKeys?.length) return;
+    battle.fx('domain', { x: unit.x, y: unit.y, id: unit.id, key: `domain:${unit.id}`, tiles: unit.rangeKeys.map(tileOf), dur: 1.5 * DOMAIN_FX_IV });
+  }, { owner: unit, immediate: true });
   battle.on('deploy', ({ unit: u }) => {
     if (u !== unit) return;
     m.t1At = battle.time;

@@ -55,6 +55,8 @@ export const FX_KINDS = Object.freeze({
   lock: { a: 'reticle', c: 0xff5a4a }, droneLock: { a: 'reticle', c: 0x8fe6ff }, wanted: { a: 'reticle', c: 0xffc600 }, expose: { a: 'reticle', c: 0xff7b8a },
   reveal: { a: 'reticle', c: 0x9fd4ff }, anchor: { a: 'reticle', c: 0x9fd4ff },
   heatwave: { a: 'move', c: 0xff8a3c }, heatwaveHit: { a: 'blast', c: 0xff8a3c, r: 1.5 },
+  // 国度's darkened tile field (render/fx/zones.js domainField, Stardust fork b3f13f31): dark fill, violet edge
+  domain: { a: 'domain', c: 0x8a5cd0 },
   oblvnsNote: { a: 'move', c: 0xd9c2ff }, oblvnsS1: { a: 'move', c: 0xd9c2ff }, oblvnsOrgan: { a: 'move', c: 0xb08cff },
   // 灰烬 (op-ash.js) / 艾拉 (op-ela.js) without the collab pack's official effects: the shots fly, the hits burst
   ashFlashDash: { a: 'move', c: 0xfff0c0 }, ashShellDash: { a: 'move', c: 0xffb347 },

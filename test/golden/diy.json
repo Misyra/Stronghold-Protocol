@@ -6033,8 +6033,8 @@
       ],
       "enemies": {"enemy_1288_duskls":[27,27,0,0,224084],"enemy_1288_duskls_2":[57,57,0,0,577575],"enemy_1292_duskld":[51,51,0,3247,929502]},
       "hooks": [1,147,6121,712,712,4949,4941,82,135,135,97,94,0,39135,550,151,135,0,1,276,0,0,0],
-      "events": {"atk":1735,"deploy":12,"die":135,"dmg":4941,"engage":11,"fx":8000,"heal":8,"rate":480,"skill":191,"spawn":147,"status":1366},
-      "fx": {"aoe":117,"buff":103,"ember":141,"heal":82,"link":92,"mark":100,"revive":6,"shield":8,"zone":7351},
+      "events": {"atk":1735,"deploy":12,"die":135,"dmg":4941,"engage":11,"fx":10454,"heal":8,"rate":480,"skill":191,"spawn":147,"status":1366},
+      "fx": {"aoe":117,"buff":103,"domain":2454,"ember":141,"heal":82,"link":92,"mark":100,"revive":6,"shield":8,"zone":7351},
       "snaps": "23820ca2 5bf58427 b0f1b8d1 8e388778 d816cee6 ad964e0a e2458036 05342a90 6876dbba a5982568 27a76f9b 4a054bac 5ac5488d 69c05822 9643f383 c4011d4c cdd6783d f62cd7be 43fef2fd 42cacdce afc2c659"
     },
     "diy-139": {
@@ -6074,8 +6074,8 @@
       ],
       "enemies": {"enemy_1166_dusbr_2":[39,27,12,0,445560],"enemy_1169_duphlx_2":[57,27,30,0,717808],"enemy_1172_dugago":[21,0,21,19421,490812]},
       "hooks": [1,135,6617,666,666,9489,9453,0,62,125,28,25,0,35322,184,0,117,63,1,75,0,0,36],
-      "events": {"atk":2418,"deploy":16,"die":62,"dmg":9453,"engage":12,"fx":13434,"leak":63,"rate":249,"skill":53,"spawn":131,"status":480},
-      "fx": {"aoe":91,"dodge":36,"revive":13,"stone":13,"zone":13281},
+      "events": {"atk":2418,"deploy":16,"die":62,"dmg":9453,"engage":12,"fx":17966,"leak":63,"rate":249,"skill":53,"spawn":131,"status":480},
+      "fx": {"aoe":91,"dodge":36,"domain":4532,"revive":13,"stone":13,"zone":13281},
       "snaps": "23bf5f95 2c79bf0a 6435b2cb 08db8fa5 5efade95 634cc6f6 b67da648 78f2378a c5c54ad4 8d564489 773c7373 27c4845a c127bb38 e5eb1110 17550085 3d0e2e82 6410a557 02fb703a ef11bd6f ae512837 56cb512c e658992a"
     },
     "diy-140": {

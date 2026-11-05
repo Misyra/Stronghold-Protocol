@@ -45,7 +45,7 @@ export class FxSim {
   }
 
   /**
-   * b.ev 'fx': every kind the sim / content emits has a visual (FX_KINDS archetypes: blast, shell, zone, telegraph,
+   * b.ev 'fx': every kind the sim / content emits has a visual (FX_KINDS archetypes: blast, shell, zone, domain, telegraph,
    * heal, sp, shield, shatter, summon, vanish, blink, move, wave, mark, reticle, buff, lift, sleep, crit, dodge,
    * counter, dp, coin, crate, down, beam, bolt, strike, volley, pillar, lp, chill, element, flame, qi), except kinds whose
    * archetype is 'none' (hitCap: a leader hit cancelled by 限伤 draws nothing); unknown kinds get a generic sparkle. `extra` keys used: id (anchor unit — or the shooter of a `pt` kind), r | radius, dur | duration,
@@ -87,6 +87,9 @@ export class FxSim {
       }
       // `key`: one zone the sim re-sends as it moves / grows (an update in place, never a second layer — zones.js)
       case 'zone': this.zone(at.x, at.y, at.z, r, col, Math.max(0.6, dur || 1.5), spec.tex, false, ex.key != null ? String(ex.key) : null); break;
+      // 国度 (“邪魔的利刃”'s 3×3, the operator's range): a tile field the sim re-sends every pulse, updated in place by
+      // `key` and faded once the pulses stop (zones.js domainField; Stardust fork b3f13f31)
+      case 'domain': this.domainField(ex.key != null ? String(ex.key) : null, ex.tiles, col, Math.max(0.3, dur || 0.75)); break;
       case 'wall': {
         // a line of burning tiles through the anchor tile along `axis` ('col' | 'row', from the sim event)
         const rect = this.ctx.fieldRect ? this.ctx.fieldRect() : null;

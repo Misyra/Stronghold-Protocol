@@ -144,3 +144,38 @@ test('unavailable cards cannot be picked but can still be refreshed', () => {
   assert.equal(tree.find(n => n.type === Button).props.disabled, false);
   assert.ok(tree.some(n => n.props?.class === 'spcard__unavailable'));
 });
+
+
+test('fixed stakes cap savings and above-room multipliers are unavailable', () => {
+  const card = { available: true, quote: { fraction: 1, multiplier: 2,
+    debtCounter: 'debt', creditLimitCounter: 'credit', stakeLimit: 3, multiplierLimitCounter: 'mult' } };
+  const priv = { funds: 100, counters: { debt: 0, credit: 20, mult: 2 } };
+  assert.deepEqual(offerUI.offerCard(card, null, priv).estimate,
+    { stake: 3, requested: 3, amount: 6, stakeLimit: 3 });
+  assert.equal(offerUI.offerCard({ ...card, quote: { ...card.quote, multiplier: 3 } }, null, priv).available, false);
+  assert.equal(offerUI.offerCard(card, null, { ...priv, funds: 2 }).estimate.stake, 2);
+  assert.equal(offerUI.offerCard(card, null, { ...priv, counters: { ...priv.counters, credit: 1 } }).estimate.stake, 1);
+  for (const mult of [undefined, NaN, Infinity]) {
+    assert.equal(offerUI.offerCard(card, null, { ...priv, counters: { ...priv.counters, mult } }).available, false);
+  }
+  const slots = [{ ...card, variants: {
+    'x1:s3': { quote: { ...card.quote, multiplier: 1 } },
+    'x2:s3': { quote: { ...card.quote, multiplier: 2 } },
+    'x3:s3': { quote: { ...card.quote, multiplier: 3 } },
+  } }];
+  const w = { selectors: [{ default: 'x2', options: [{ id: 'x1' }, { id: 'x2' }, { id: 'x3' }] },
+    { default: 's3', options: [{ id: 's3' }] }] };
+  assert.equal(offerUI.offerVariantAllowed(w, { slots }, 'x3:s3', priv), false);
+  assert.equal(offerUI.offerAllowedVariant(w, { slots }, 'x2:s3', { ...priv, counters: { ...priv.counters, mult: 1 } }), 'x1:s3');
+});
+
+
+test('cash-only 5-unit quotes work without any credit counters and shrink only to available funds', () => {
+  const card = { quote: { fraction: 1, multiplier: 2, stakeLimit: 5, multiplierLimitCounter:'max' } };
+  for (const funds of [0,2,5,100]) {
+    const result = offerUI.offerCard(card,null,{ funds, counters:{ max:2 } });
+    assert.equal(result.estimate.stake, Math.min(5,funds));
+    assert.equal(result.estimate.amount, Math.min(5,funds)*2);
+    assert.equal(result.available, funds>0);
+  }
+});

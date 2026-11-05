@@ -929,6 +929,16 @@
               "pattern": "\\.js$"
             }
           ]
+        },
+        "frame": {
+          "allOf": [
+            {
+              "$ref": "overlay.schema.json#/$defs/path"
+            },
+            {
+              "pattern": "\\.html$"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -1079,7 +1089,8 @@
               "sim": false,
               "meta": false,
               "client": false,
-              "server": false
+              "server": false,
+              "frame": false
             }
           },
           "files": {
@@ -1181,7 +1192,8 @@
               "sim": false,
               "meta": false,
               "client": false,
-              "server": false
+              "server": false,
+              "frame": false
             }
           },
           "files": false,
@@ -1271,7 +1283,8 @@
               "sim": false,
               "meta": false,
               "client": false,
-              "server": false
+              "server": false,
+              "frame": false
             }
           },
           "files": false,
@@ -1388,7 +1401,8 @@
                 "sim.code",
                 "meta.code",
                 "mode.code",
-                "offers"
+                "offers",
+                "ui.frame"
               ]
             }
           },
@@ -1407,8 +1421,7 @@
           "fallback": false,
           "complete": false,
           "machineTranslated": false,
-          "numberUnits": false,
-          "slots": false
+          "numberUnits": false
         },
         "required": [
           "app",
@@ -1539,7 +1552,8 @@
               "client": {
                 "pattern": "\\.html$"
               },
-              "server": false
+              "server": false,
+              "frame": false
             }
           },
           "files": false,
@@ -1629,7 +1643,8 @@
               "client": {
                 "pattern": "\\.js$"
               },
-              "server": true
+              "server": true,
+              "frame": false
             }
           },
           "files": false,
@@ -2409,6 +2424,18 @@
                 ]
               }
             }
+          },
+          {
+            "required": [
+              "entry"
+            ],
+            "properties": {
+              "entry": {
+                "required": [
+                  "frame"
+                ]
+              }
+            }
           }
         ]
       }
@@ -2531,6 +2558,58 @@
         "required": [
           "offers"
         ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "entry"
+        ],
+        "properties": {
+          "entry": {
+            "required": [
+              "frame"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "permissions",
+          "slots"
+        ],
+        "properties": {
+          "permissions": {
+            "contains": {
+              "const": "ui.frame"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "class",
+          "slots"
+        ],
+        "properties": {
+          "class": {
+            "const": "script"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "entry"
+        ],
+        "properties": {
+          "entry": {
+            "required": [
+              "frame"
+            ]
+          }
+        }
       }
     }
   ]

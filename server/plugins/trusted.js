@@ -11,7 +11,7 @@ export const isScriptClass = cls => cls === 'script' || cls === 'trusted';
 /** Snapshot executable entry bytes even when execution is disabled, for check/catalogue. */
 export function readScripts(dir, manifest, listed) {
   const sources = {}, files = {}, problems = [];
-  for (const rel of new Set(Object.values(manifest.entry))) {
+  for (const rel of new Set(Object.entries(manifest.entry).filter(([role]) => role !== 'frame').map(([, rel]) => rel))) {
     try {
       const bytes = fs.readFileSync(path.join(dir,rel));
       sources[rel] = bytes.toString('utf8'); files[rel] = nodeSha256(bytes);

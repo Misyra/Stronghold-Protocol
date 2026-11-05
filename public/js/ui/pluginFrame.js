@@ -25,7 +25,7 @@ import { catalog, loadCatalog, installedCount, pluginName } from '../content.js'
 import { toast } from './toasts.js';
 import { getLang, t } from '../../../shared/i18n.js';
 import { PROTOCOL_VERSION } from '../../../shared/constants.js';
-import { uiPlugins, uiPluginsOff, uiPluginEntries } from './uiPlugins.js';
+import { uiPlugins, uiPluginsOff, uiPluginEntries, shouldMountUiPlugin } from './uiPlugins.js';
 import {
   UI_ERRORS, UI_LIMITS, UI_SLOTS, battlePayload, checkStorageWrite, clampHeight, clampNotice, createNoticeLimiter,
   createRateLimiter, createSlotTable, frameLoadDecision, framePageUrl, hostLimit, hostNet, hostRejected, hostResult,
@@ -580,15 +580,12 @@ function sync() {
     if (cat.status !== 'loading') loadCatalog();
     return;
   }
-  const entries = uiPluginEntries(cat.plugins);
+  const entries = uiPluginEntries(cat.plugins, true);
   const want = [];
   for (const p of entries) {
     if (want.length >= UI_LIMITS.maxPlugins) break;
     if (blocked.has(p.id)) continue;
-    // `autoWith` (DESIGN §32.8): a panel that belongs to a room plugin mounts while the room runs that plugin — unless
-    // the player switched it off here (uiPluginsOff survives the automatic mount).
-    const auto = !off.includes(p.id) && Array.isArray(p.autoWith) && p.autoWith.some((id) => roomIds.includes(id));
-    if (ids.includes(p.id) || auto) want.push(p.id);
+    if (shouldMountUiPlugin(p, { ids, off, roomIds })) want.push(p.id);
   }
   const keep = new Set(want);
   for (const id of [...frames.keys()]) if (!keep.has(id)) destroy(id);

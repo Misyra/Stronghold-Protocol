@@ -3688,5 +3688,6 @@
   "战斗模拟未能载入": "The battle simulation could not be loaded",
   "下载资源包": "Pack download",
   "解压导入": "Unpacking",
-  "资源包进度": "Resource pack progress"
+  "资源包进度": "Resource pack progress",
+  "本笔本金上限 {n}": "Principal cap for this trade: {n}"
 }

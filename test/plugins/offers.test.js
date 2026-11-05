@@ -379,3 +379,28 @@ test('when.bands references: official bands pass, own band records pass, foreign
   assert.ok(foreign.issues.some(i => i.code === 'PLUGIN_OFFER_REFERENCE'));
 });
 
+
+
+test('margin quotes accept bounded stake and multiplier controls and normal-only windows', () => {
+  const offer = read(window({ slots: 1, when: { at: 'prep', normal: true } })).offer;
+  assert.equal(offer.when.normal, true);
+  assert.ok(read(window({ when: { at: 'prep', normal: 'yes' } })).problems.length);
+  const quote = { fraction: 1, multiplier: 2, debtCounter: 'debt', creditLimitCounter: 'credit',
+    stakeLimit: 3, multiplierLimitCounter: 'mult' };
+  const cards = q => readOfferCards([{ id: 'bet', name: 'Bet', desc: 'Limit', icon: 'funds', apply: { funds: 1 }, quote: q }], offer);
+  assert.deepEqual(cards(quote).problems, []);
+  assert.equal(cards(quote).cards[0].quote.stakeLimit, 3);
+  for (const value of ['', 10, {}, 'x'.repeat(129)]) assert.ok(cards({ ...quote, multiplierLimitCounter: value }).problems.length);
+  for (const value of [0, -1, 1.5, 1001]) assert.ok(cards({ ...quote, stakeLimit: value }).problems.length);
+});
+
+
+test('cash-only quotes need no credit declarations; credit fields still require a complete valid pair', () => {
+  const offer = read(window({ slots: 1 })).offer;
+  const base = { fraction: 1, multiplier: 2, stakeLimit: 5 };
+  const parse = quote => readOfferCards([{ id:'bet',name:'Bet',desc:'Cash',icon:'funds',apply:{funds:1},quote }], offer);
+  assert.deepEqual(parse(base).problems, []);
+  for (const extra of [{ debtCounter:'d' }, { creditLimitCounter:'c' }, { debtCounter:'', creditLimitCounter:'c' }]) {
+    assert.ok(parse({ ...base, ...extra }).problems.length);
+  }
+});

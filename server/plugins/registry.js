@@ -398,7 +398,7 @@ const FRAME_EXT = new Set(['.html', '.js', '.css', '.png']);
 function readUiFrame(dir, manifest, listed, { vanilla, hashCache }) {
   const problems = [];
   const warnings = [];
-  const entry = manifest.entry?.client;
+  const entry = manifest.entry?.frame || manifest.entry?.client;
   if (!entry) return { ui: null, problems: ['"entry.client" is required for a ui plugin (an .html file)'], warnings };
   const clientDir = entry.replace(/[^/]*$/, '');
   const frameRels = listed
@@ -569,6 +569,13 @@ export function readPluginFolder(dir, { app = APP_VERSION, api = PLUGIN_API, whe
       if (!v.visual) return out(null);
       plugin.visual = v.visual;
     }
+  }
+  if (manifest.class === 'script' && manifest.entry.frame && status === 'loaded') {
+    const art = typeof vanilla === 'function' ? vanilla() : vanilla;
+    const u = readUiFrame(dir, manifest, files, { vanilla: art, hashCache });
+    list.take(u);
+    if (!u.ui) return out(null);
+    plugin.ui = u.ui;
   }
   if (['content','script','trusted'].includes(manifest.class) && status === 'loaded') {
     const c = readContentData(dir, manifest);
@@ -1038,13 +1045,13 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     pluginFile(id, rel) {
       const p = refresh().byId.get(id);
       if (!p || p.status !== 'loaded') return null;
-      if (p.visual) {
-        const f = p.visual.served.get(rel);
-        if (f) return { ...f, dir: p.visual.dir, frame: false };
-      }
       if (p.ui) {
         const f = p.ui.served.get(rel);
         if (f) return { ...f, dir: p.ui.dir, frame: true };
+      }
+      if (p.visual) {
+        const f = p.visual.served.get(rel);
+        if (f) return { ...f, dir: p.visual.dir, frame: false };
       }
       return null;
     },

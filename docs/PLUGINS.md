@@ -1139,14 +1139,25 @@ An optional card/variant `quote` is display-only:
 ```
 
 `fraction` is finite in (0,1], multiplier in [1,100], and counter names are nonempty text up to 128 characters.
+The debtCounter / creditLimitCounter pair is optional for cash-only contracts; either both are valid or neither is declared.
 The preview uses ONLY the local private funds/counters: requested principal = floor(funds × fraction), available
 credit = max(0, limit − debt), actual principal = min(requested, floor(credit/(multiplier−1))) for multiplier>1;
+without that optional pair, principal is bounded by cash/fraction and stakeLimit only;
 profit/loss = round(actual × multiplier). The actual gameplay handler remains authoritative; quote values never
 become client-submitted amounts. The native UI renders a bounded selector, live escrow/profit/loss, a credit-limit
 notice and disabled zero-principal cards. Changing either selector clears pending two-tap confirmation. Read-only
 spectators see neither another player's private quote nor active selector controls. Native controls support touch,
 keyboard focus and all bundled languages. [ASSUMED] These optional fields are experimental authoring UI conventions,
 not official game mechanics. Older hosts without this extension retain the base card behavior, without selectors.
+
+Optional `quote.stakeLimit` is an integer 1–1000: actual principal is additionally capped by that value.
+`quote.multiplierLimitCounter` names a bounded private counter like the other counter names. The host rejects a
+card/variant whose multiplier exceeds that counter (missing/nonfinite counters fail closed), before granting its effect.
+The native UI disables above-limit options and falls back to a permitted option if a room's configured limit is below
+the declared default. A quoted item's `contract` must agree on fraction, multiplier, stakeLimit and multiplierLimitCounter.
+These optional guards are [ASSUMED] plugin conventions; plugins without them retain their previous behavior.
+A window may declare `when.normal: true` to exclude the match's configured boss and hidden rounds, regardless of
+mode-specific round numbers. No extra client-submitted amount or setting is accepted.
 
 ## 12. DSL
 
@@ -1379,6 +1390,17 @@ to show it. It is unofficial. It is not a member of a room's `plugins[]` and a r
 `description` is the 简介. The `.html`, `.js`, `.css` and `.png` files must sit in the directory of `entry.client`.
 Start from `plugins/_template/ui/` (a damage tally). A folder whose name starts with `_` is a template: the registry
 never loads it.
+
+**Bundled script panels (0.3.4).** A `script` plugin can include `entry.frame: "ui/index.html"`,
+`permissions: ["meta.code", "ui.frame"]` and `slots: ["hud.right"]` alongside its normal `entry.meta`.
+[ASSUMED] This is a read-only panel owned by the room's script plugin: it mounts automatically while that loaded
+plugin is selected in the current room, and unmounts on removal or leaving. There is one catalogue entry and room
+switch; it is not listed as another personal UI plugin. Legacy standalone `ui` plugins and `autoWith` still work.
+The frame and supporting HTML/CSS/JS/PNG live under its entry directory, use the same file whitelist, per-file hashes,
+opaque-origin iframe, CSP and bounded message protocol as standalone frames, and cannot send match intents.
+The script lock covers the bundled files too; missing/stale locks or disabled scripts expose no frame files.
+Its asset `vs` remains the asset overlay identity; frame URLs use their own file hashes. `entry.frame` is never
+executed or served through the gameplay/trusted script routes. Packing/installing carries the panel in the same ZIP.
 
 **The frame.** The page runs in `<iframe sandbox="allow-scripts">` — no `allow-same-origin`, so its origin is the
 opaque string `"null"` and it cannot read this site's storage or credentials. The host iframe uses `color-scheme: dark`

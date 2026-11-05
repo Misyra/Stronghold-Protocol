@@ -56,7 +56,7 @@ export function verifyScripts(scripts, hashInput) {
     if (!pinned || sha256Hex(p.manifestSource) !== pinned.files['plugin.json']) throw new Error('plugin manifest hash mismatch');
     const m = JSON.parse(p.manifestSource);
     if ((m.class !== 'script' && m.class !== 'trusted') || m.class !== p.class || m.id !== p.id) throw new Error('not a matching script manifest');
-    for (const rel of new Set(Object.values(m.entry || {}))) {
+    for (const rel of new Set(Object.entries(m.entry || {}).filter(([role]) => role !== 'frame').map(([, rel]) => rel))) {
       if (typeof p.sources[rel] !== 'string' || sha256Hex(p.sources[rel]) !== pinned.files[rel]) throw new Error('plugin entry hash mismatch: '+rel);
     }
     if (p.browserSources && JSON.stringify(p.browserSources) !== JSON.stringify(browserScriptSources(p))) throw new Error('browser script snapshot mismatch');

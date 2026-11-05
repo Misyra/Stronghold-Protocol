@@ -4,7 +4,7 @@
 // `when.bands` narrows the participants to players of these bands; a card's `when` ({ solo: true } / { seat: k })
 // is a per-picker condition checked at open time and again at every pick — declarative data, never code.
 import { ERR, PHASE } from '../../../shared/constants.js';
-import { offerAt, offersAt, offerSelectors, offerVariantIds, offerDefaultVariant } from '../../../shared/plugins/offers.js';
+import { offerAt, offersAt, offerSelectors, offerVariantIds, offerDefaultVariant, offerQuoteAllowed } from '../../../shared/plugins/offers.js';
 import { createRng, deriveSeed } from '../../sim/rng.js';
 import { OK, fail } from './common.js';
 
@@ -63,13 +63,14 @@ export class MatchOffers {
 
   /** `when.bands`: absent or empty opens for everyone; otherwise only players of these bands. */
   _offerBandOk(ps, offer) {
+    if (offer.when?.normal && (this.round === this.gd.bossRound || this.round === this.gd.hiddenRound)) return false;
     const bands = offer.when?.bands;
     return !bands?.length || bands.includes(ps.bandId);
   }
 
   /**
    * The first card/variant whose display `quote` disagrees with the `contract` spec of the item it grants, or null.
-   * The spec (`{ fraction, multiplier }` on the item record, data plugin side) is the settlement's own table, so a
+   * The spec (fraction, multiplier and optional limits on the item record, data plugin side) is the settlement's own table, so a
    * quote can never promise an economy the handler does not pay. An item without a spec is not checked (the quote is
    * still display-only); a variant inherits the base quote when it declares none.
    */
@@ -79,8 +80,9 @@ export class MatchOffers {
       const itemId = effect && typeof effect === 'object' && typeof effect.item === 'string' ? effect.item : null;
       const spec = itemId ? this.gd.item(itemId)?.contract : null;
       if (!spec) return null;
-      if (quote.fraction === spec.fraction && quote.multiplier === spec.multiplier) return null;
-      return `${at} quote ${quote.fraction}x${quote.multiplier} != ${itemId} contract ${spec.fraction}x${spec.multiplier}`;
+      if (quote.fraction === spec.fraction && quote.multiplier === spec.multiplier
+        && quote.stakeLimit === spec.stakeLimit && quote.multiplierLimitCounter === spec.multiplierLimitCounter) return null;
+      return `${at} quote ${quote.fraction}x${quote.multiplier} != ${itemId} contract ${spec.fraction}x${spec.multiplier} (contract metadata differs)`;
     };
     for (const card of offer.cards || []) {
       const bad = check(card.effect, card.quote, card.id);
@@ -193,6 +195,7 @@ export class MatchOffers {
 
   _offerAvailable(ps, card) {
     if (card.when && !this._offerCardOk(ps, card)) return false; // the room changed since the window opened
+    if (!offerQuoteAllowed(card.quote, ps.counters)) return false;
     const effect = card.effect;
     if (effect.item) return !!ps.gd.item(effect.item) && this.itemPool.canGain(effect.item);
     if (effect.chess) {

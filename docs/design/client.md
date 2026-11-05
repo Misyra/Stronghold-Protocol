@@ -1256,3 +1256,23 @@ Only the local player's private funds/counters calculate the optional stake and 
 receive read-only controls without a private quote. Zero-principal cards are disabled; zero-refresh controls are
 omitted. Touch targets, keyboard focus, reconnect selection and all bundled language packs are supported.
 Reference: [PLUGINS.md](../PLUGINS.md#optional-native-selectors-and-stake-previews-034). [ASSUMED] Plugin UI convention.
+
+### Bundled script-plugin panels (0.3.4)
+
+[ASSUMED] A room script may declare `entry.frame` (HTML), `ui.frame` and `slots` to carry its own read-only UI.
+The existing frame host automatically mounts it only while the loaded parent plugin is selected in the current room;
+leaving/removing it tears down the frame even if a personal preference retains the id. The parent remains a single
+room-plugin entry, with no second personal switch. Standalone UI plugins keep their behavior.
+The opaque-origin iframe, CSP, frame file whitelist, rate/storage/message limits and match-intent rejection are
+unchanged. The script lock covers the bundled frame; disabled parents cannot serve its files. See PLUGINS §14.
+
+### Bounded plugin stakes (0.3.4)
+
+[ASSUMED] Optional offer quote stakeLimit caps principal; multiplierLimitCounter bounds selectable leverage against
+the local private counter and is rechecked by the server before a grant. Above-limit selector options are disabled,
+and a permitted variant replaces a default above the room limit. A spectator still receives no private estimate.
+The plugin remains responsible for settlement and must apply the same bound; contract declarations must match quotes.
+
+Cash-only quotes (0.3.4) may omit the whole debt/credit counter pair. The native preview then bounds principal by
+cash and the declared stake limit, showing a funds-only unavailable message at zero cash. Partial credit metadata
+is refused; older complete credit quotes retain their calculation. [ASSUMED] Plugin UI convention, PLUGINS §10b.

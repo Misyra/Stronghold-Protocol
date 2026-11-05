@@ -17,13 +17,14 @@ import {
   sanitizeEvent, subsetPrivate, subsetPublic, subsetResult, subsetRoom, validateHostMessage, validatePluginMessage,
 } from '../../shared/plugins/ui.js';
 import { createPluginRegistry, readPluginFolder, scanPlugins } from '../../server/plugins/registry.js';
+import { packPlugin } from '../../server/plugins/pack.js';
 import { createVisualSets } from '../../server/plugins/visualSet.js';
 import { createStaticHandler } from '../../server/http/static.js';
 import { computeVanillaContent, servedCodeFiles } from '../../server/plugins/identity.js';
 import { splitUrl } from '../../server/http/common.js';
 import { ERR } from '../../shared/constants.js';
 import { writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
-import { setUiPlugin, toggleRecommend, uiPlugins, uiRecommend, visibleRecommend } from '../../public/js/ui/uiPlugins.js';
+import { setUiPlugin, toggleRecommend, uiPlugins, uiRecommend, visibleRecommend, uiPluginEntries, shouldMountUiPlugin } from '../../public/js/ui/uiPlugins.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
@@ -330,6 +331,13 @@ describe('the registry and /p/', () => {
     writePlugin(path.join(root, 'plugins/skin'), cosmetic({
       permissions: ['assets.add'], assets: { chars: { char_102_texas: { avatar: 'art/a.png' } } },
     }), { 'art/a.png': 'png' });
+    const bundledDir = path.join(root, 'plugins/bundled-frame');
+    writePlugin(bundledDir, { manifest: 2, version: '1.0.0', app: '*', api: 2, class: 'script',
+      permissions: ['meta.code', 'ui.frame', 'assets.add'], entry: { meta: 'meta.js', frame: 'ui/index.html' },
+      slots: ['hud.right'], assets: { bands: { band_x_bundled_frame: 'art/a.png' } } }, {
+      'meta.js': 'export default function setup() {}', 'ui/index.html': html, 'ui/theme.css': 'body{}', 'art/a.png': 'png',
+    });
+    assert.equal(packPlugin(bundledDir).wrote, true);
     const bad = [
       ['plugins/no-entry', uiManifest({ entry: undefined, slots: ['hud.right'] })],
       ['plugins/bad-slot', uiManifest({ slots: ['hud.left'] })],
@@ -346,7 +354,7 @@ describe('the registry and /p/', () => {
       fs.writeFileSync(outside, 'no');
       fs.symlinkSync(outside, path.join(root, 'plugins/linked/ui/link.html'));
     } catch { /* a file system without links still has the other checks */ }
-    registry = createPluginRegistry({ ...dirs(), sharedDir: path.join(ROOT, 'shared') }, { recheckMs: 0 });
+    registry = createPluginRegistry({ ...dirs(), sharedDir: path.join(ROOT, 'shared') }, { recheckMs: 0, scriptMode: 'sandbox' });
     const sets = createVisualSets({ registry });
     const handler = createStaticHandler({
       ...dirs(), sharedDir: path.join(ROOT, 'shared'), simDir: path.join(ROOT, 'server/sim'),
@@ -436,6 +444,35 @@ describe('the registry and /p/', () => {
     assert.equal(partial.headers['content-security-policy'], UI_FRAME_CSP);
     assert.equal(registry.pluginFile('damage-meter', 'ui/index.html').frame, true);
     assert.equal(registry.pluginFile('skin', 'art/a.png').frame, false);
+  });
+
+  test('a room script carries a locked frame with the same CSP and independent art identity', async () => {
+    const p = registry.plugin('bundled-frame');
+    assert.equal(p.status, 'loaded');
+    assert.equal(p.script.sources['ui/index.html'], undefined, 'HTML must never enter the executable content-set serving path');
+    assert.equal(p.script.files['ui/index.html'], undefined);
+    const entry = registry.pluginIndex().plugins.find((p) => p.id === 'bundled-frame');
+    assert.equal(entry.bundledFrame, true);
+    assert.equal(entry.vs, p.visual.vs, 'frame identity must not replace the asset overlay identity');
+    assert.equal(uiPluginEntries([entry]).length, 0, 'no second personal plugin switch');
+    assert.deepEqual(uiPluginEntries([entry], true), [entry]);
+    assert.equal(shouldMountUiPlugin(entry, { ids: [], off: [], roomIds: [entry.id] }), true);
+    assert.equal(shouldMountUiPlugin(entry, { ids: [entry.id], off: [], roomIds: [] }), false);
+    assert.equal(shouldMountUiPlugin(entry, { ids: [], off: [entry.id], roomIds: [entry.id] }), false);
+    const file = p.ui.served.get(entry.entry);
+    const url = `/p/${p.id}/${file.sha256.slice(0, 8)}/${entry.entry}`;
+    const first = await get(url);
+    assert.equal(first.status, 200);
+    assert.equal(first.headers['content-security-policy'], UI_FRAME_CSP);
+    assert.equal((await get(url, { 'if-none-match': first.headers.etag })).headers['content-security-policy'], UI_FRAME_CSP);
+    assert.equal((await get(url, { Range: 'bytes=0-3' })).headers['content-security-policy'], UI_FRAME_CSP);
+    assert.equal(registry.pluginFile(p.id, 'meta.js'), null);
+    assert.equal(registry.pluginFile(p.id, 'plugin.json'), null);
+    assert.equal(registry.pluginFile(p.id, 'art/a.png').frame, false);
+    fs.appendFileSync(path.join(root, 'plugins/bundled-frame/ui/index.html'), '\n');
+    registry.rescan();
+    assert.equal(registry.plugin(p.id).status, 'disabled', 'editing the bundled frame invalidates the script lock');
+    assert.equal(registry.pluginFile(p.id, entry.entry), null);
   });
 
   test('a ui plugin changes vs and does not change cs, and a room cannot enable it', () => {

@@ -71,13 +71,24 @@ function readSelector(value) {
   return ids.has(value.default) ? { label: value.label, default: value.default, options: value.options.map(o => ({ id: o.id, name: o.name })) } : null;
 }
 
-// A display-only quote. The grant is always a separately validated primitive, never computed from client amounts.
+// Quotes contain metadata only; the server grants a checked primitive and the plugin settles actual amounts.
+export function offerQuoteAllowed(quote, counters) {
+  if (!quote?.multiplierLimitCounter) return true;
+  const limit = counters?.[quote.multiplierLimitCounter];
+  return Number.isFinite(limit) && quote.multiplier <= limit;
+}
 function readQuote(value) {
+  const hasCredit = isObj(value) && (value.debtCounter !== undefined || value.creditLimitCounter !== undefined);
   if (!isObj(value) || !Number.isFinite(value.fraction) || value.fraction <= 0 || value.fraction > 1
     || !Number.isFinite(value.multiplier) || value.multiplier < 1 || value.multiplier > 100
-    || !['debtCounter', 'creditLimitCounter'].every(k => typeof value[k] === 'string' && value[k].length > 0 && value[k].length <= 128)
-    || Object.keys(value).some(k => !['fraction', 'multiplier', 'debtCounter', 'creditLimitCounter'].includes(k))) return null;
-  return { fraction: value.fraction, multiplier: value.multiplier, debtCounter: value.debtCounter, creditLimitCounter: value.creditLimitCounter };
+    || (hasCredit && !['debtCounter', 'creditLimitCounter'].every(k => typeof value[k] === 'string' && value[k].length > 0 && value[k].length <= 128))
+    || (value.stakeLimit !== undefined && !int(value.stakeLimit, 1, 1000))
+    || (value.multiplierLimitCounter !== undefined && (typeof value.multiplierLimitCounter !== 'string' || !value.multiplierLimitCounter.length || value.multiplierLimitCounter.length > 128))
+    || Object.keys(value).some(k => !['fraction', 'multiplier', 'debtCounter', 'creditLimitCounter', 'stakeLimit', 'multiplierLimitCounter'].includes(k))) return null;
+  return { fraction: value.fraction, multiplier: value.multiplier,
+    ...(hasCredit ? { debtCounter: value.debtCounter, creditLimitCounter: value.creditLimitCounter } : {}),
+    ...(value.stakeLimit !== undefined ? { stakeLimit: value.stakeLimit } : {}),
+    ...(value.multiplierLimitCounter !== undefined ? { multiplierLimitCounter: value.multiplierLimitCounter } : {}) };
 }
 
 /**
@@ -269,7 +280,8 @@ export function readOfferFile(raw, { pluginId = '', rel = '' } = {}) {
       if (!list.length || list.length > 8 || badBand.length || new Set(list).size !== list.length) p('PLUGIN_OFFER_SHAPE', 'when.bands', '"when.bands" is 1–8 unique band ids (the window opens only for players of these bands)');
       else bands = list;
     }
-    for (const k of Object.keys(o.when)) if (!['at', 'rounds', 'bands'].includes(k)) w('PLUGIN_OFFER_SHAPE', `when.${k}`, `"when.${k}" is not a field of "when" (ignored)`);
+    if (o.when.normal !== undefined && typeof o.when.normal !== 'boolean') p('PLUGIN_OFFER_SHAPE', 'when.normal', 'normal is boolean');
+    for (const k of Object.keys(o.when)) if (!['at', 'rounds', 'bands', 'normal'].includes(k)) w('PLUGIN_OFFER_SHAPE', `when.${k}`, `"when.${k}" is not a field of "when" (ignored)`);
   }
   const windowSec = o.windowSec === undefined ? 0 : o.windowSec;
   if (!int(windowSec, 0, PLUGIN_OFFERS_MAX_WINDOW_SEC)) p('PLUGIN_OFFER_SHAPE', 'windowSec', `"windowSec" is 0–${PLUGIN_OFFERS_MAX_WINDOW_SEC} whole seconds (0 opens no window and holds nothing back)`);
@@ -312,7 +324,7 @@ export function readOfferFile(raw, { pluginId = '', rel = '' } = {}) {
   if (problems.length) return { offer: null, problems, warnings };
   return {
     offer: {
-      id: fileId, rel, pluginId, when: { at: at0, rounds, bands }, rounds, windowSec, quorum, onTimeout, defer, slots, refresh, shared, options,
+      id: fileId, rel, pluginId, when: { at: at0, rounds, bands, ...(o.when.normal !== undefined ? { normal: o.when.normal } : {}) }, rounds, windowSec, quorum, onTimeout, defer, slots, refresh, shared, options,
       ...(o.apply === undefined ? {} : { apply: o.apply }),
       ...(selector ? { selector } : {}),
       ...(selectors ? { selectors } : {}),

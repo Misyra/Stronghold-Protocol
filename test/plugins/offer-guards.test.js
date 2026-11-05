@@ -124,3 +124,51 @@ test('the sandbox context exposes frozen read facades and no writable rngMeta', 
     assert.ok(Object.isFrozen(ctx.player(ps.playerId)));
   } finally { h.m.dispose(); }
 });
+
+
+test('stake limits must match the contract and over-limit requests are rejected before grant', () => {
+  const data = structuredClone(getData());
+  const itemId = 'chess_item_1_03_e_a';
+  data.items[itemId] = { ...data.items[itemId], contract: { fraction: 1, multiplier: 3,
+    stakeLimit: 3, multiplierLimitCounter: 'test:mult' } };
+  for (const stakeLimit of [undefined, 10, 3]) {
+    const w = window_({ slots: 2 });
+    const quote = { fraction: 1, multiplier: 3, debtCounter: 'd', creditLimitCounter: 'c',
+      multiplierLimitCounter: 'test:mult', ...(stakeLimit === undefined ? {} : { stakeLimit }) };
+    const pool = readOfferCards([{ id: 'bet', name: 'Bet', desc: 'Limit', icon: 'item', apply: { item: itemId }, quote },
+      { id: 'skip', name: 'Skip', desc: 'Skip', icon: 'funds', apply: { funds: 0 } }], w);
+    assert.deepEqual(pool.problems, []);
+    const h = makeMatch({ mode: 'coop', humans: 2, fake: true, data, offers: [{ pluginId: 'guard', ...w, cards: pool.cards }] }).start();
+    try {
+      h.toPrep(1);
+      assert.equal(h.m.offerViews().length, stakeLimit === 3 ? 1 : 0);
+      if (stakeLimit !== 3) continue;
+      const ps = h.ps('p_0'); ps.counters['test:mult'] = 2;
+      const view = h.m.offerViews()[0], slot = view.seats.find(s => s.playerId === ps.playerId).slots.find(c => c.id === 'bet');
+      assert.equal(slot.available, false);
+      const identity = { pluginId: 'guard', seq: view.seq, cardId: 'bet' };
+      assert.ok(h.m.requestOffer(ps, view.id, slot.idx, identity).error);
+      ps.counters['test:mult'] = 3;
+      assert.equal(h.m.requestOffer(ps, view.id, slot.idx, identity).ok, true);
+    } finally { h.m.dispose(); }
+  }
+});
+
+
+test('normal-only windows follow the current mode boss and hidden schedule', () => {
+  for (const options of [{ mode: 'solo', difficulty: 'TRAINING' }, { mode: 'solo', difficulty: 'FUNNY' }, { mode: 'coop', difficulty: 'NORMAL' }]) {
+    const offer = window_({ when: { at: 'prep', rounds: 'any', normal: true } });
+    const pool = readOfferCards([{ id: 'skip', name: 'Skip', desc: 'Skip', icon: 'funds', apply: { funds: 0 } }], offer);
+    const h = makeMatch({ ...options, humans: 1, fake: true, offers: [{ pluginId: 'guard', ...offer, cards: pool.cards }] }).start();
+    try {
+      h.toPrep(1);
+      assert.equal(h.m.offerViews().length, 1);
+      h.m.offersDispose();
+      for (const round of [h.m.gd.bossRound, h.m.gd.hiddenRound].filter(Number.isFinite)) {
+        h.m.round = round;
+        h.m.openOfferWindow('prep', round);
+        assert.equal(h.m.offerViews().length, 0, `${options.mode}/${options.difficulty}/${round}`);
+      }
+    } finally { h.m.dispose(); }
+  }
+});

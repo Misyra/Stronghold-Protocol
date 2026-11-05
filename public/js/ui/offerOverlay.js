@@ -4,7 +4,7 @@ import { html, Icon, Countdown, Button } from './components.js';
 import { GIcon } from './gameComponents.js';
 import { spTap } from './choiceOverlay.js';
 import { t } from '../../../shared/i18n.js';
-import { offerSelectors, offerDefaultVariant } from '../../../shared/plugins/offers.js';
+import { offerSelectors, offerDefaultVariant, offerQuoteAllowed } from '../../../shared/plugins/offers.js';
 
 export const offerSeat = (offer, myId) => offer?.seats?.find(s => s.playerId === myId) || null;
 export const offerPickable = (offer, myId, readOnly, busy) => !readOnly && busy == null && offerSeat(offer, myId)?.picked === false;
@@ -25,12 +25,27 @@ export function offerCard(card, variantId, priv) {
   const resolved = { ...card, ...(card?.variants?.[variantId] || {}) };
   const q = resolved.quote;
   const funds = priv?.funds, debt = priv?.counters?.[q?.debtCounter], cap = priv?.counters?.[q?.creditLimitCounter];
-  if (!q || ![funds, debt ?? 0, cap].every(Number.isFinite)) return resolved;
-  const requested = Math.floor(Math.max(0, funds) * q.fraction);
+  if (!q || ![funds, ...(q.creditLimitCounter ? [debt ?? 0, cap] : [])].every(Number.isFinite)) return resolved;
+  const requested = Math.min(Math.floor(Math.max(0, funds) * q.fraction), q.stakeLimit ?? Infinity);
   const credit = Math.max(0, cap - (debt || 0));
-  const stake = q.multiplier > 1 ? Math.min(requested, Math.floor(credit / (q.multiplier - 1))) : requested;
-  return { ...resolved, available: resolved.available !== false && stake > 0,
-    estimate: { stake, requested, amount: Math.round(stake * q.multiplier) } };
+  const stake = q.creditLimitCounter && q.multiplier > 1 ? Math.min(requested, Math.floor(credit / (q.multiplier - 1))) : requested;
+  return { ...resolved, available: resolved.available !== false && stake > 0 && offerQuoteAllowed(q, priv?.counters),
+    estimate: { stake, requested, amount: Math.round(stake * q.multiplier),
+      ...(q.stakeLimit !== undefined ? { stakeLimit: q.stakeLimit } : {}) } };
+
+}
+
+export function offerVariantAllowed(offer, seat, variantId, priv) {
+  if (!priv) return true;
+  const cards = (seat?.slots || []).filter(card => card.variants);
+  return !cards.length || cards.some(card => offerQuoteAllowed(card.variants?.[variantId]?.quote || card.quote, priv.counters));
+}
+export function offerAllowedVariant(offer, seat, variantId, priv) {
+  if (!offer || offerVariantAllowed(offer, seat, variantId, priv)) return variantId;
+  const selectors = offerSelectors(offer);
+  let ids = [''];
+  for (const group of selectors) ids = ids.flatMap(id => group.options.map(o => id ? id + ':' + o.id : o.id));
+  return ids.find(id => offerVariantAllowed(offer, seat, id, priv)) ?? variantId;
 }
 
 export function OfferOverlay({ pub, priv, myId, readOnly = false, onAction }) {
@@ -42,7 +57,8 @@ export function OfferOverlay({ pub, priv, myId, readOnly = false, onAction }) {
   const root = useRef(null);
   const offers = pub?.offers || [];
   const offer = offerVisible(offers, myId, dismissed, selected);
-  const variantId = offer && variant?.seq === offer.seq ? variant.id : offerSeat(offer, myId)?.variantId ?? offerDefaultVariant(offer);
+  const requestedVariant = offer && variant?.seq === offer.seq ? variant.id : offerSeat(offer, myId)?.variantId ?? offerDefaultVariant(offer);
+  const variantId = offerAllowedVariant(offer, offerSeat(offer, myId), requestedVariant, priv);
   const open = o => { setSelected({ seq: o.seq, picked: offerSeat(o, myId)?.picked }); setArmed(null); };
   const dismissible = offer?.quorum === 'none';
   const dismiss = () => {
@@ -108,6 +124,7 @@ export function OfferView({ offer, priv, myId, readOnly = false, busy = null, ar
   const mine = offerSeat(offer, myId);
   const seat = mine || offer.seats[0];
   const can = offerPickable(offer, myId, readOnly, busy);
+  variantId = offerAllowedVariant(offer, seat, variantId, mine ? priv : null);
   return html`<header class="spov__head">
     <div><h2>${offer.title || `${t('插件选择')} · ${offer.id}`}</h2><p>${t('点击卡牌选中，再次点击确认')}</p>
       <p role="status">${readOnly || !mine ? t('观战中') : mine.picked ? t('等待队友') : t('选择一项')}
@@ -116,9 +133,10 @@ export function OfferView({ offer, priv, myId, readOnly = false, busy = null, ar
   </header>
   ${offerSelectors(offer).map((selector, index) => html`<div class="offerov__selector" role="group" aria-label=${selector.label}>
     <span>${selector.label}</span><div class="offerov__options">
-      ${selector.options.map(option => html`<button type="button" key=${option.id} disabled=${!can}
+      ${selector.options.map(option => { const ids = (variantId || offerDefaultVariant(offer)).split(':'); ids[index] = option.id;
+        return html`<button type="button" key=${option.id} disabled=${!can || !offerVariantAllowed(offer, seat, ids.join(':'), mine ? priv : null)}
         class=${variantId?.split(':')[index] === option.id ? 'is-selected' : ''} aria-pressed=${variantId?.split(':')[index] === option.id}
-        onClick=${() => { const ids = (variantId || offerDefaultVariant(offer)).split(':'); ids[index] = option.id; onVariant(ids.join(':')); }}>${option.name}</button>`)}
+        onClick=${() => { const ids = (variantId || offerDefaultVariant(offer)).split(':'); ids[index] = option.id; onVariant(ids.join(':')); }}>${option.name}</button>`; })}
     </div></div>`)}
   <div class="spov__grid" style=${`--offer-cols:${Math.max(1, (seat?.slots || []).length)}`}>
     ${(seat?.slots || []).map(source => { const card = offerCard(source, variantId, mine && !mine.picked && !readOnly ? priv : null); return html`<div class="offerov__slot" key=${card.idx}>
@@ -132,9 +150,10 @@ export function OfferView({ offer, priv, myId, readOnly = false, busy = null, ar
           <b>${t('实际本金 {n}', { n: card.estimate.stake })}</b>
           <span class="offerov__profit">${t('押对净赚 +{n}', { n: card.estimate.amount })}</span>
           <span class="offerov__loss">${t('押错净亏 −{n}', { n: card.estimate.amount })}</span>
+          ${card.estimate.stakeLimit !== undefined ? html`<small>${t('本笔本金上限 {n}', { n: card.estimate.stakeLimit })}</small>` : null}
           ${card.estimate.stake < card.estimate.requested ? html`<small>${t('受信用额度限制')}</small>` : null}
         </span>` : null}
-        ${card.available === false ? html`<span class="spcard__unavailable">${card.estimate?.stake === 0 ? t('资金或信用额度不足') : t('暂不可用')}</span>` : null}
+        ${card.available === false ? html`<span class="spcard__unavailable">${card.estimate?.stake === 0 ? card.quote?.creditLimitCounter ? t('资金或信用额度不足') : t('资金不足') : t('暂不可用')}</span>` : null}
         ${can && card.available !== false && armed === card.idx ? html`<span class="spcard__confirm"><${Icon} name="check" />${t('确认选择')}</span>` : null}
       </button>
       ${card.remaining > 0 ? html`<${Button} size="sm" icon="refresh" disabled=${!can} onClick=${() => onRefresh(card.idx)}>

@@ -40,10 +40,19 @@ uiPluginsOff.subscribe((s) => savePref(UI_OFF_PREF, s.ids));
 /**
  * Loaded interface plugins of scope `personal` in a catalogue.
  * @param {any[]} plugins
+ * @param {boolean} [includeBundled]
  */
-export function uiPluginEntries(plugins) {
-  return (Array.isArray(plugins) ? plugins : []).filter((p) => p && p.class === 'ui' && p.status === 'loaded'
-    && Array.isArray(p.scope) && p.scope.includes('personal') && isPluginId(p.id));
+export function uiPluginEntries(plugins, includeBundled = false) {
+  return (Array.isArray(plugins) ? plugins : []).filter((p) => p && p.status === 'loaded' && isPluginId(p.id)
+    && Array.isArray(p.scope) && ((p.class === 'ui' && p.scope.includes('personal'))
+      || (includeBundled && p.class === 'script' && p.scope.includes('room') && p.bundledFrame === true)));
+}
+
+/** Room-bundled frames cannot be mounted by a stale personal preference outside their room. */
+export function shouldMountUiPlugin(p, { ids, off, roomIds }) {
+  if (p.bundledFrame) return roomIds.includes(p.id) && !off.includes(p.id);
+  const auto = !off.includes(p.id) && Array.isArray(p.autoWith) && p.autoWith.some((id) => roomIds.includes(id));
+  return ids.includes(p.id) || auto;
 }
 
 /**

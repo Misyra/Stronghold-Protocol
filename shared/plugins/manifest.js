@@ -40,9 +40,10 @@
 //                a list of paths or (assets, theme) the object inline · i18n { <lang>: path } (content+) — paths are
 //                inside the folder (isPackPath) and .json, the files an inline `assets` names are art, models, audio
 //                or fonts
-//   entry        { sim, meta } (script, .js) · { client } (ui: .html, required; trusted: .js) · { server } (trusted, .js)
-//   slots        ui only: hud.right, result.tab, stats.tab, room.panel (UI_SLOT_IDS). Absent or []: a warning, the
-//                plugin still loads but the host grants no slot. A bad list, or slots on another class: a problem.
+//   entry        { sim, meta } (script, .js), optional { frame } (script, isolated .html)
+//                { client } (ui: .html, required; trusted: .js) · { server } (trusted, .js)
+//   slots        ui or script entry.frame: hud.right, result.tab, stats.tab, room.panel (UI_SLOT_IDS). Absent or []: a warning, the
+//                plugin still loads but the host grants no slot. A bad list, or slots without a frame: a problem.
 //   lang class   the language fields of manifest 1 (lang, base, fallback, complete, machineTranslated, numberUnits —
 //                shared/i18nPacks.js) and files { ui (required), data }, both .json
 //
@@ -161,7 +162,7 @@ export const PERMISSIONS = Object.freeze({
   'sim.code': ['script', 'trusted'],
   'meta.code': ['script', 'trusted'],
   'mode.code': ['script', 'trusted'],
-  'ui.frame': ['ui'],
+  'ui.frame': ['ui', 'script'],
   'trusted.page': ['trusted'],
   'trusted.server': ['trusted'],
 });
@@ -191,6 +192,7 @@ const ENTRIES = Object.freeze({
   sim: { classes: ['script', 'trusted'], ext: '.js', needs: { script: 'sim.code', trusted: 'sim.code' } },
   meta: { classes: ['script', 'trusted'], ext: '.js', needs: { script: 'meta.code', trusted: 'meta.code' } },
   client: { classes: ['ui', 'trusted'], ext: '.html', needs: { ui: 'ui.frame', trusted: 'trusted.page' } },
+  frame: { classes: ['script'], ext: '.html', needs: { script: 'ui.frame' } },
   server: { classes: ['trusted'], ext: '.js', needs: { trusted: 'trusted.server' } },
 });
 
@@ -719,15 +721,16 @@ export function readPluginManifest(raw, ctx) {
   // slots: a ui plugin asks the host for one of UI_SLOT_IDS. Absent (or []): it loads, and the host grants none.
   /** @type {string[]} */
   let slots = [];
-  if (m.slots !== undefined && cls !== 'ui') list.problem('PLUGIN_PART_CLASS', `"slots" is not something a ${cls} plugin carries (ui)`, { at: ['slots'], class: cls });
-  else if (cls === 'ui') {
+  const hasFrame = cls === 'script' && !!entry.frame;
+  if (m.slots !== undefined && cls !== 'ui' && !hasFrame) list.problem('PLUGIN_PART_CLASS', `"slots" is not something a ${cls} plugin carries (ui)`, { at: ['slots'], class: cls });
+  else if (cls === 'ui' || hasFrame) {
     if (m.slots === undefined || (Array.isArray(m.slots) && m.slots.length === 0)) list.warning('PLUGIN_UI_NO_SLOT', 'requests no slot (the host will not grant one)', { at: ['slots'] });
     else if (!Array.isArray(m.slots) || m.slots.length > UI_SLOT_IDS.length || new Set(m.slots).size !== m.slots.length
       || m.slots.some((s) => !UI_SLOT_IDS.includes(s))) {
       const text = `"slots": ${short(m.slots)} — a ui plugin lists ${UI_SLOT_IDS.join(', ')} (one each)`;
       list.problem('PLUGIN_UI_SLOTS', text, { at: ['slots'], detail: text });
     } else slots = UI_SLOT_IDS.filter((s) => m.slots.includes(s));
-    if (!entry.client) list.problem('PLUGIN_ENTRY', '"entry.client" is required for a ui plugin (an .html file)', { at: ['entry', 'client'] });
+    if (cls === 'ui' && !entry.client) list.problem('PLUGIN_ENTRY', '"entry.client" is required for a ui plugin (an .html file)', { at: ['entry', 'client'] });
   }
 
   // permissions: known, allowed for the class, one for every part and entry point
@@ -821,6 +824,7 @@ export function declaredPaths(manifest) {
 export function checkPluginFiles(manifest, files) {
   const list = issueList();
   const kind = PLUGIN_CLASSES[manifest.class] || PLUGIN_CLASSES.content;
+  const frameDir = manifest.entry?.frame?.replace(/[^/]*$/, '');
   const clientDir = manifest.class === 'ui' && manifest.entry?.client ? manifest.entry.client.replace(/[^/]*$/, '') : null;
   let bytes = 0;
   let count = 0;
@@ -834,7 +838,8 @@ export function checkPluginFiles(manifest, files) {
     if (isOwnFile(rel) || isDocument(rel)) continue;
     count++;
     const ext = extOf(rel);
-    if (!kind.ext.includes(ext)) { list.problem('PLUGIN_FILE_TYPE', `${rel}: ${ext || 'a file without an extension'} is not a file a ${manifest.class} plugin may carry (${kind.ext.join(' ')}, documents)`, { file: rel, ext, class: manifest.class }); continue; }
+    const frameFile = frameDir !== undefined && rel.startsWith(frameDir) && ['.html', '.css'].includes(ext);
+    if (!kind.ext.includes(ext) && !frameFile) { list.problem('PLUGIN_FILE_TYPE', `${rel}: ${ext || 'a file without an extension'} is not a file a ${manifest.class} plugin may carry (${kind.ext.join(' ')}, documents)`, { file: rel, ext, class: manifest.class }); continue; }
     if (clientDir !== null && ['.html', '.js', '.css', '.png'].includes(ext) && !rel.startsWith(clientDir)) list.problem('PLUGIN_FILE_FRAME', `${rel}: a frame file outside the folder of entry.client (${clientDir || 'the plugin folder'})`, { file: rel });
     if (ext === '.json' && f.bytes > PLUGIN_LIMITS.jsonBytes) list.problem('PLUGIN_FILE_SIZE', `${rel}: ${(f.bytes / 1048576).toFixed(1)} MB, larger than the ${PLUGIN_LIMITS.jsonBytes / 1048576} MB a JSON file may be`, { file: rel });
   }
@@ -946,9 +951,10 @@ export function pluginIndexEntry(p) {
   if (p.script) { e.sandboxable = p.script.sandboxable; e.execution = p.script.execution; e.hash = p.script.lockHash; }
   if (p.disabled) e.disabled = p.disabled;
   if (p.ui) {
+    if (m.class === 'script') e.bundledFrame = true;
     e.slots = [...(p.ui.slots || [])];
     if (typeof p.ui.entry === 'string') e.entry = p.ui.entry;
-    if (typeof p.ui.vs === 'string') e.vs = p.ui.vs;
+    if (m.class === 'ui' && typeof p.ui.vs === 'string') e.vs = p.ui.vs;
     if (Number.isFinite(p.ui.bytes)) e.frameBytes = p.ui.bytes;
     if (p.ui.frameFiles && typeof p.ui.frameFiles === 'object') e.frameFiles = { ...p.ui.frameFiles };
   }

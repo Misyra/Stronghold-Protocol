@@ -542,3 +542,7 @@ on selector-free windows before any grant; an omitted ID takes the declared defa
 Quotes contain metadata/counter names, not another player's balances. All effects and variant references are checked
 at discovery/composition, then current stock is checked on pick. Existing selector-free intents/snapshots keep their
 shape. See [PLUGINS.md](../PLUGINS.md#optional-native-selectors-and-stake-previews-034).
+
+Offer quote stakeLimit / multiplierLimitCounter (0.3.4) add metadata only. Requests still carry just declared
+variant IDs; current counters bound the multiplier before granting a card, and amounts never come from the client.
+`when.normal` filters using the match's boss/hidden schedule. [ASSUMED] Plugin authoring extensions; PLUGINS §10b.

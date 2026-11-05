@@ -361,6 +361,41 @@ volumes:
 
   `sudo systemctl daemon-reload && sudo systemctl enable --now stronghold`；日志 `journalctl -u stronghold -f`；防火墙 `sudo ufw allow 3000/tcp`。
 
+  **glibc 部署：malloc arena 收敛（0.3.4 起）**。裸机 / VM 上用系统 Node + glibc 跑时，稳态的 WS 帧编码（`JSON.stringify` 出 10–102 KB 字符串）与
+  permessage-deflate 的大块原生分配会撞上 glibc 的 arena 隔离：线程 A `free()` 的块线程 B 拿不到，每个 arena 各自膨胀，最后 RSS 里堆着几千个碎小的
+  匿名 `rw-p` 段（生产 8 核机上实测 7268 段 / 2.28 GB `RssAnon`，99.4% 的段 <1 MB；V8 堆反而只有 150–290 MB）。`Dockerfile` 的 `node:22-alpine` 是
+  musl，**没有 arena 概念，这个变量不生效**——只有 glibc 部署需要。
+
+  用一个独立 drop-in 设上限，别改主 unit 或 `EnvironmentFile`（发布链靠 `zzzz-0XX-release.conf` 切换 `WorkingDirectory`，allocator 配置不该跟版本回滚耦合）：
+
+  ```ini
+  # /etc/systemd/system/stronghold.service.d/zzzzz-allocator.conf
+  [Service]
+  Environment=MALLOC_ARENA_MAX=4
+  ```
+
+  **取值 `4` 是实测选的，不是照 `UV_THREADPOOL_SIZE` 凑的**（2026-11-05 在生产同款 glibc 2.41 / 8 核机上跑的独立
+  探针，8 个 `worker_threads` 各持独立 V8 堆 + 大 Buffer + 10 KB 级 JSON 字符串，交替 5 轮 × 15 s 取 min/median）：
+
+  | `MALLOC_ARENA_MAX` | `rw-p` 段 min/med | `rw-p` 总量 MB min/med | `RssAnon` MB min/med | ≥500 MB 段 |
+  | --- | --- | --- | --- | --- |
+  | `2` | 713 / 718 | 1778 / 1807 | 1587 / 1599 | **稳定 1 个** |
+  | `4` | 690 / 725 | **1606 / 1844** | **1366 / 1596** | 0 |
+  | `8` | 635 / 730 | 1781 / 1860 | 1483 / 1548 | 0 |
+  | 默认（64 上限） | 736 / 738 | 1909 / 1957 | 1445 / 1496 | 0 |
+
+  `4` 的 `rw-p` 总量与 `RssAnon` 下界都最低（总量比默认少约 16%），且不产生巨型段。`2` 虽然段数最少，但
+  glibc 会用一个 ≥500 MB 的 mmap 大段去伺候多个 V8 隔离堆——推测是早期诊断里「7 个 510 MB 段」的成因
+  （2026-11-05 这次只读采样里 ≥500 MB 段为 0，形态已是 7268 个小段；两者是不同时间点的碎片阶段）。
+  段数少了但总量和 RSS 反而更高。注意别把纯线程 `bytearray` churn 的结论外推到 Node：那份探针（Python，
+  无 V8 堆）测出「arena 越少越好、吞吐 +2.7x」，一换成 `worker_threads` 就反转了，因为每个线程有独立 V8 堆
+  和大 Buffer。
+
+  `MALLOC_TRIM_THRESHOLD_` 先不加——99% 的段 <1 MB 时 128 KB 阈值会放大 `madvise` 系统调用抖动。
+
+  环境变量在**进程启动时读取**：写 drop-in + `daemon-reload` 不断线，必须重启 `stronghold.service` 才生效（会断一次所有 WebSocket，房间从 Redis / 状态文件恢复，
+  挑凌晨低峰）。重启前后各采 30 分钟做 A/B，见 §13「allocator 调优的 A/B 观测」。回滚就是删 drop-in + `daemon-reload`，下次重启回到默认。
+
 ## 5. 排错
 
 | 现象 | 处理 |
@@ -626,6 +661,21 @@ Node 22 的 `--permission` **不限制网络**（TCP/UDP/DNS/监听均可能可�
   前者管理未开局房间中的断线成员，后者管理对局重连；不能用其中一个期限推断另一个期限或整个房间的销毁时间。
   排查「明明没人了还开不出房」时，先看房间是否仍存在、是否正在等待断线成员。
 
+### 进程级环境变量（Node / glibc，不由 `startServer()` 读）
+
+这几个变量在 **Node 或 libc 启动时**就消费，不经过 `config.js`，也不出现在启动日志的 `[http] limits:` 行里。改完必须重启进程。
+
+| 变量 | 默认 | 含义 |
+| --- | --- | --- |
+| `MALLOC_ARENA_MAX` | glibc 默认 `8 × CPU 核数` | glibc malloc arena 上限。8 核默认 64；多 arena 各自管理空闲块、互不共享，`free()` 只标记不归内核，稳态大块分配下 RSS 会碎成几千个小 `rw-p` 段。设 `4` 收敛最干净（`rw-p` 总量比默认少约 16%），设 `2` 反而让 glibc 用 ≥500 MB 的 mmap 大段伺候多个 V8 隔离堆（§4 实测表）。**仅 glibc 生效**，alpine/musl 忽略 |
+| `MALLOC_TRIM_THRESHOLD_` | glibc 默认（128 KB 量级、按 arena 动态） | 空闲块超过该阈值就 `madvise` 还给内核。默认已经够积极；小段占绝对多数时调低只会增加系统调用，**不建议随手改** |
+| `UV_THREADPOOL_SIZE` | 4 | libuv 线程池（`fs`、异步 `zlib`）。本项目的 permessage-deflate 与检查点落盘都走它；调 `MALLOC_ARENA_MAX` 时与它对齐 |
+| `NODE_OPTIONS=--max-old-space-size=…` | Node 默认 | V8 老生代上限。它管的是 JS 堆，**管不了堆外 Buffer / 原生分配**（`external` / `arrayBuffers` 在 `/healthz` 的 `performance` 块里），别拿它当 RSS 上限 |
+
+诊断口径：`/healthz?traffic=1`（仅 loopback / 私网，见 §13）的 `performance.process.rssBytes` 与 `mainThread.memory.{externalBytes,arrayBuffersBytes}`
+分开看——**heapUsed 平稳但 RSS 摆动 = 堆外 / 原生分配**。持久化检查点的 `checkpointsEncoded` 计数不能当 malloc churn 的佐证：`persist.js` 有版本脏检查
+（实测跳过是编码的 9 倍）、编码在独立 Worker 里产出 JS string、代码路径没有 `Buffer.alloc/from`；稳态 churn 来自 WS 帧链（每帧字符串 + deflate 大块）。
+
 ### 模拟线程池（`SP_WORKERS`）
 
 服务器用一个进程内的工作线程池跑 AI 布阵试算。`SP_WORKERS` 默认 **4**：`1`–`32` 取指定线程数，`0` 关闭线程池（试算回到主线程，和没有线程池时一样），留空、写错或超出范围也按 4。每个线程在第一次试算任务到来时才启动（空闲不占线程），启动时结构化克隆一份 sim 必需的数据子集（`server/data.js simWorkerData`，不含美术清单、表情、调参等 sim 路径读不到的表），开发机实测常驻内存约 **75–90 MB/线程**（全量克隆时约 130–135）。按机器调整：内存紧张的小主机设 `SP_WORKERS=0`，内存宽裕的机器可以调大。改完重启服务器后实测：
@@ -807,3 +857,36 @@ node-exporter（主机资源）、Prometheus（127.0.0.1:9090，保留 30 天 / 
 `/monitor/`，中文仪表盘「卫戍协议 · 服务器状态」）。有效指标：连接 / 会话 / 房间 / 对局 / 人数、`performance`
 窗口的延迟 / CPU / 内存、`persist` 存档计数、`traffic` 流量计数。完整起法、公开状态页、安全边界、
 `sp_*` 指标清单与「fork 集群专用、本仓拿不到的指标」见 `deploy/monitoring/README.md`。
+
+### allocator 调优的 A/B 观测（§4 / §12）
+
+`MALLOC_ARENA_MAX` 必须在重启前后各采一段才能判断值定得对不对：只看 RSS 降了不够，得确认 event loop 没被
+arena 锁拖毛。仓库自带只读脚本 `tools/allocator-observe.mjs`，在**游戏服务器本机**跑（`?traffic=1` 只对
+loopback / 私网开放）：
+
+```sh
+# 重启前：30 分钟基线
+node tools/allocator-observe.mjs --label before --minutes 30 > /tmp/alloc-before.jsonl
+
+# 挂上 drop-in（写文件 + daemon-reload，不断线）→ 凌晨低峰 restart stronghold → 再采 30 分钟
+node tools/allocator-observe.mjs --label after --minutes 30 > /tmp/alloc-after.jsonl
+
+# 本地对比（离线，不联网）
+node tools/allocator-observe.mjs --compare /tmp/alloc-before.jsonl /tmp/alloc-after.jsonl
+```
+
+脚本每 30 秒采一次：`/healthz?traffic=1` 的 `performance.process.rssBytes`、`mainThread.memory.*`、
+`eventLoopDelayMs.p95/p99`、`persist.checkpointsEncoded/Skipped`，加上 `/proc/<MainPID>/smaps` 的 `rw-p`
+段数 / 大小分布与 `/proc/<MainPID>/status` 的 `RssAnon` / `Threads`。默认从 `systemctl show -p MainPID --value
+stronghold` 取 pid（每次重取，期间重启过也能跟上）；非 systemd 部署用 `--pid <n>` 钉死、`--unit <name>` 改服务名。
+全程只读，不重启、不写服务配置。
+
+对比输出按 **min / p50 / p95 / max** 给每个指标的 before/after（本机负载噪声大，按项目惯例用 min 逼近
+无干扰下界，p95 抓毛刺）。判读：
+
+- **RSS 与 `rw-p` 段数收敛**（min…max 区间变窄、`smallSegments` / `under1MB` 下降）= arena 收敛生效；
+- **`eventLoopDelayMs.p95` 与 `cpuPercent` 不恶化** = `4` 这个值没引入明显争用；p95 明显抬头而 RSS 收益有限 → 试 `8`；
+  出现 ≥500 MB 的 `rw-p` 段 → 别再往下压（试 `8` 或回默认）。
+- **RSS 仍上蹿** → 再考虑叠加 `MALLOC_TRIM_THRESHOLD_`，并回头查 WS 帧链有没有新的堆外大块分配路径。
+
+`checkpointsEncoded` 只作上下文，**不是** malloc churn 的指标（§12 已说明脏检查与 Worker 编码）。

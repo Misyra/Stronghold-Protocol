@@ -359,6 +359,8 @@ export async function createFieldView(host, options = {}) {
   let prepXf = IDENTITY;
   let lastPrep = null;        // { ps, o } of the last setPrep (re-applied when the prep field changes)
   const hlReq = new Map();    // highlight group → { tiles (board space), style } requested through highlightTiles
+  let dragTargetHl = '';      // the dragTarget highlight already on the tiles (`row:col:legal`), so the drag's
+                              // per-pointermove restamp only redraws when the target tile / legality changed
   // enemy preview pen (render/pen.js): figure key → UnitView (own map: never touched by the battle sync)
   const penViews = new Map();
   let penSig = null;
@@ -1290,6 +1292,7 @@ export async function createFieldView(host, options = {}) {
   }
   function clearHl(group) {
     if (group) hlReq.delete(group); else hlReq.clear();
+    if (!group || group === 'dragTarget') dragTargetHl = ''; // the drag's restamp guard follows the tiles again
     tiles.clearHighlights(group);
     syncLeaderHits();
   }
@@ -1365,11 +1368,17 @@ export async function createFieldView(host, options = {}) {
       const sb = boardWorld(snap.row, snap.col, snap.bench);
       dragState.tx = sb.x; dragState.ty = sb.y; dragState.tz = sb.z;
     }
-    // the drop target (p.target, highlighted) is the tile under the pointer
+    // the drop target (p.target, highlighted) is the tile under the pointer: restamped only when it moves to another
+    // tile or its legality flips (render/tiles.js setHighlights skips the identical restamp; skipping the call also
+    // drops the per-move tile transforms). dragTargetHl is reset wherever the group is cleared (clearHl).
     if (p.target && p.target.area !== 'temp') {
       const r = p.target.area === 'board' ? p.target.row : GEO.HAND_ROW;
       const c = p.target.area === 'board' ? p.target.col : p.target.idx;
-      drawHighlight([[r, c]], p.legal ? 'target' : 'illegal', 'dragTarget');
+      const sig = `${r}:${c}:${p.legal ? 1 : 0}`;
+      if (sig !== dragTargetHl) {
+        dragTargetHl = sig;
+        drawHighlight([[r, c]], p.legal ? 'target' : 'illegal', 'dragTarget');
+      }
     } else clearHl('dragTarget');
   }
 

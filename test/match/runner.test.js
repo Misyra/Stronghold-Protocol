@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createBattleRunner, ticksPerFrameCap } from '../../public/js/battle/runner.js';
+import { createBattleRunner, ticksPerFrameCap, RESULT_RETRY_MS } from '../../public/js/battle/runner.js';
 import { buildDiagnostics } from '../../public/js/diag.js';
 import { createStore, initialState } from '../../public/js/store.js';
 import * as specMod from '../../server/sim/spec.js';
@@ -753,4 +753,114 @@ test('settings expose 作战统计 on by default and the match hides the button 
   const line = (s) => buildDiagnostics({ state, env: {}, settings: s }).split('\n').find((l) => l.startsWith('settings:'));
   assert.equal(line({ quality: 'high', damageNumbers: true, combatMetrics: true }), 'settings: quality high | damage numbers | combat metrics');
   assert.equal(line({ quality: 'high', damageNumbers: true, combatMetrics: false }), 'settings: quality high | damage numbers');
+});
+
+test('same-speed handover re-derives t0 from the b.start\'s elapsed: the new authority runs on the field clock', async () => {
+  const start = realStart(7313);
+  const r = rig();
+  // a follower caught up to elapsed 20 and has run on its own clock since (its t0 dates from its build)
+  r.net.emit('b.start', { ...start, authoritative: false, watch: false, elapsed: 20 });
+  await r.settle();
+  const e = r.runner._entries.get(start.battleId);
+  r.advance(1000);
+  const ticks = e.battle.tickCount;
+  // the partner left: same speed, but the field clock is 10 game s ahead of where the follower's clock put it
+  r.net.emit('b.start', { ...start, authoritative: true, watch: false, elapsed: 32 });
+  await r.settle();
+  assert.equal(e.authoritative, true);
+  assert.equal(r.runner._entries.get(start.battleId), e, 'no rebuild');
+  assert.ok(e.battle.tickCount >= ticks, 'the battle is never rewound');
+  assert.ok(e.battle.time >= 31, `the bounded catch-up drives it to the field clock (${e.battle.time})`);
+  const prog = r.net.sent.filter((x) => x.t === 'b.progress');
+  assert.ok(prog.length >= 1 && prog[0].gt >= 30, `the reports resume from the field clock (${prog[0] && prog[0].gt})`);
+  // an already-authoritative battle re-sent at the same speed stays on its clock (a stale elapsed must not jump it)
+  r.advance(1000);
+  const at = e.battle.time;
+  r.net.emit('b.start', { ...start, authoritative: true, watch: false, elapsed: 20 });
+  await r.settle();
+  r.advance(1000);
+  assert.ok(e.battle.time > at + 1, `no re-derivation without a speed change or a handover (${e.battle.time} > ${at})`);
+  r.runner.dispose();
+});
+
+test('resultSent only follows a result in hand: a compactResult that threw is retried on a later frame', async () => {
+  const start = realStart(7314);
+  const r = rig();
+  r.net.emit('b.start', start);
+  await r.settle();
+  const e = r.runner._entries.get(start.battleId);
+  r.advance(1000);
+  const real = e.host.compactResult.bind(e.host);
+  let fail = true;
+  e.host.compactResult = (...a) => { if (fail) throw new Error('no result yet'); return real(...a); };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    r.net.emit('b.end', { battleId: start.battleId, fieldId: start.fieldId, reason: 'forced' });
+    await r.settle();
+    assert.equal(e.resultSent, false, 'the failure did not claim a sent result');
+    assert.equal(r.net.sent.filter((x) => x.t === 'b.result').length, 0, 'and nothing was reported');
+    fail = false;
+    await new Promise((res) => setTimeout(res, RESULT_RETRY_MS + 200));
+    assert.equal(e.resultSent, true, 'the retry built the result and sent it');
+    assert.equal(r.net.sent.filter((x) => x.t === 'b.result').length, 1);
+  } finally {
+    console.warn = warn;
+  }
+  r.runner.dispose();
+});
+
+test('a round\'s clear keeps an undelivered result for the resume; a new match\'s clear drops it', async () => {
+  const start = realStart(7316);
+  const results = (r) => r.net.sent.filter((x) => x.t === 'b.result');
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const r = rig();
+    scriptResults(r, ['lost', 'lost']);
+    r.net.emit('b.start', start);
+    await r.settle();
+    r.advance(1500);
+    r.net.emit('b.end', { battleId: start.battleId, fieldId: start.fieldId, reason: 'forced' });
+    await r.settle();
+    assert.equal(results(r).length, 1);
+    assert.equal(r.runner._entries.get(start.battleId).delivery, 'undelivered');
+    // a round boundary (the next prep, same match): the result is still worth its redelivery
+    r.store.patch('match', { public: { phase: PHASE.PREP, round: 3 } });
+    r.net.emit('status', { status: 'online' });
+    await r.settle();
+    assert.equal(results(r).length, 2, 'the round\'s clear kept it in retained and the resume sent it');
+    // a new match (a lobby-like phase): nothing of the settled match is redelivered any more
+    r.store.patch('match', { public: { phase: 'LOBBY' } });
+    r.net.emit('status', { status: 'online' });
+    await r.settle();
+    assert.equal(results(r).length, 2, 'the new match\'s clear dropped what retained held');
+    r.runner.dispose();
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test('stats.catchups counts a frame whose catch-up stepped, not one that early-returned with a step in flight', async () => {
+  const start = realStart(7317);
+  const battle = specMod.createBattleFromSpec(start.spec, DS, { recordEvents: false });
+  let release = null;
+  const host = {
+    remote: true, battle, meter: { lp: 0 }, async load() {}, async start() {}, async syncPool() {}, stop() {},
+    progress: () => ({ gt: battle.time, killed: 0, total: 2, done: false, leaks: 0 }), compactResult: () => null,
+    step: () => new Promise((res) => { release = () => res({ snap: battle.snapshot(), ev: [], ticks: 0, slices: [] }); }),
+    forceEnd: () => Promise.resolve(),
+  };
+  const r = rig({ createHost: () => host });
+  r.net.emit('b.start', start);
+  await r.settle();
+  const e = r.runner._entries.get(start.battleId);
+  assert.ok(e && e.host.remote, 'the Worker-style host was prepared');
+  r.advance(2000, 50); // far behind — every frame would be a catch-up, but each step is still in flight
+  assert.equal(r.runner.stats().catchups, 0, 'a frame whose step never ran is not a catch-up');
+  release();
+  await r.settle();
+  r.advance(100, 50);
+  assert.ok(r.runner.stats().catchups >= 1, 'a catching-up frame that stepped is counted');
+  r.runner.dispose();
 });

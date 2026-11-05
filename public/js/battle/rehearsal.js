@@ -20,8 +20,11 @@
 // frame keeps a cancel from touching a task that took its place. The page drops its tasks itself when the match on
 // screen is over (`clear`, wired in main.js) and when the socket is not online — an answer could not be delivered
 // then. Both terminate the Worker only while a task is still in flight (that is the one thing worth stopping); an
-// idle Worker keeps its `ready` / data state, so the next match's first rehearsal finds it warm instead of paying the
-// module-graph load again.
+// idle Worker — and one whose task was dropped before it was even sent, its module graph still loading — keeps its
+// `ready` / data state, so the next match's first rehearsal finds it warm instead of paying the module-graph load
+// again. A Worker that fails at runtime is rebuilt with a bounded budget (MAX_WORKER_FAILURES per match): one crash
+// must not disable rehearsal for the whole page session, a Worker that dies every time must not be restarted for
+// ever.
 //
 //   installRehearsal({ net, runner, createWorker, log }) → { pending(), clear(), dispose() } | null   (wired in main.js)
 
@@ -31,6 +34,10 @@ import { battleRunner } from './runner.js';
 export const WORKER_URL = '/js/battle/rehearsalWorker.js';
 /** Tasks kept while the single worker is busy; one more may always run. */
 export const MAX_PENDING_TASKS = 3;
+/** Worker failures allowed per match (its script crashed, its module graph failed to load): past it the page stops
+ *  rebuilding until the next match's clear() hands out a fresh budget — a browser that loses its worker every time
+ *  rehearses nothing, but one crash must not disable rehearsal for the whole page session. */
+export const MAX_WORKER_FAILURES = 3;
 
 /**
  * A spec that names a content set is not this worker's job. The worker only has the page's official `/data/`
@@ -58,8 +65,13 @@ export function installRehearsal({ net, runner = battleRunner, createWorker = ()
    * fresh flags and a late callback of the old one finds itself unknown (`w !== inst`).
    */
   let w = null;
-  /** The browser cannot run a module Worker at all: every task is answered `error` at once. */
+  /**
+   * This browser cannot run the tasks at all (no module Worker, or the worker failed MAX_WORKER_FAILURES times this
+   * match): every task is answered `error` at once. Reset by clear() — a new match may try again.
+   */
   let broken = false;
+  /** Runtime failures of live workers this match; the budget behind `broken`. */
+  let failures = 0;
 
   const answer = (task, fields) => {
     if (task.settled) return;
@@ -85,12 +97,14 @@ export function installRehearsal({ net, runner = battleRunner, createWorker = ()
   };
 
   /**
-   * This browser cannot run the tasks (no module Worker, or the worker's script failed): answer the running one and
-   * everything queued `error`, so the server rehearses those candidates itself instead of waiting for its timeout.
+   * A worker failed (its script, its module graph): answer the running one and everything queued `error`, so the
+   * server rehearses those candidates itself instead of waiting for its timeout. `fatal` (no module Worker at all)
+   * breaks the page for good; a runtime failure only counts against this match's budget (failWorker is what makes
+   * `broken` bounded — one crash is rebuilt, a worker that dies every time is not).
    */
-  const failWorker = (why, err) => {
+  const failWorker = (why, err, fatal = false) => {
     log.warn?.(`[rehearsal] ${why}`, err || '');
-    broken = true;
+    if (fatal || ++failures >= MAX_WORKER_FAILURES) broken = true;
     const dead = killWorker();
     const tasks = queue.splice(0);
     if (dead && dead.task) tasks.unshift(dead.task);
@@ -104,7 +118,7 @@ export function installRehearsal({ net, runner = battleRunner, createWorker = ()
     try {
       inst.port = createWorker();
     } catch (err) {
-      failWorker('module Worker unavailable', err);
+      failWorker('module Worker unavailable', err, true);
       return null;
     }
     inst.port.onmessage = (ev) => onWorkerMessage(inst, ev && ev.data);
@@ -218,23 +232,29 @@ export function installRehearsal({ net, runner = battleRunner, createWorker = ()
     if (i >= 0) queue.splice(i, 1)[0].settled = true;
   }
 
-  /** Drop every task of the match that is over: a Worker with a task in flight is terminated (a simulation already
-   *  under way really stops — the page could not answer it any more), an idle one keeps its `ready` / data state for
-   *  the next match; the queue is emptied either way. */
+  /** Drop every task of the match that is over: a Worker with a simulation already under way (`sent`) is terminated
+   *  — the page could not answer it any more, and only a terminated Worker stops it —, one still waiting for its
+   *  module graph only loses the task (as onCancel: the next match's first rehearsal finds the Worker ready instead
+   *  of paying the load inside its 3 s answer budget), an idle one keeps its `ready` / data state; the queue is
+   *  emptied either way and the worker's failure budget starts over. */
   function clear() {
-    if (w && (w.task || w.sent)) {
+    if (w && w.sent) {
       const dead = killWorker();
       if (dead.task) dead.task.settled = true;
+    } else if (w && w.task) {
+      w.task = null;
+      warm();
     }
     for (const task of queue.splice(0)) task.settled = true;
+    failures = 0;
+    broken = false;
   }
 
   /**
    * The socket is not online (a drop, a reconnect, another page taking this session over): `net.send` refuses every
    * frame then, so this page could not answer the task any more and the `b.rehearsalCancel` that would drop it cannot
-   * arrive either — a task still running must stop (only a terminated Worker stops it), while an idle Worker has
-   * nothing in flight and keeps its warmth for the next match. main.js drops the tasks of a match that is over the
-   * same way.
+   * arrive either — a task still running must stop (only a terminated Worker stops it), while a Worker without one in
+   * flight keeps its warmth for the next match. main.js drops the tasks of a match that is over the same way.
    */
   function onStatus(snap) {
     if (!snap || snap.status !== 'online') clear();

@@ -270,7 +270,8 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
   // rehearsals (botRehearsalDelegate, _rehearsalTasks, rehearsalStats …): every one of them is rebuilt on restore —
   // server/lobby.js builds opts from room.content / room.hostId and every checkpoint goes through it — so none of
   // them belong in a checkpoint. Same reason battleContent, botRehearsalLimit, botSliceMs and _workerTasks are listed.
-  'cs', 'vs', 'requireCs', 'hostId', 'botRehearsalDelegate', 'botRehearsalDelegateMs', '_rehearsalTasks', '_rehearsalSeq', 'rehearsalStats',
+  'cs', 'vs', 'requireCs', 'hostId', 'botRehearsalDelegate', 'botRehearsalDelegateMs', 'botRehearsalColdMs', '_rehearsalHostAnswers',
+  '_rehearsalTasks', '_rehearsalSeq', 'rehearsalStats',
   'version', 'test',
   // 本仓 (0.3.3) 特有、fork 清单里没有的重建面: the bot strategy adapter and the external-AI gate (rebuilt from
   // opts/env by the constructor), the plugin-offer windows (an open window does not survive a restart — the same

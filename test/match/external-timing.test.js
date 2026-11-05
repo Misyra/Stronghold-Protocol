@@ -44,7 +44,13 @@ test('§37.102 plan reserve: the per-round table, the Final Assault and Hidden C
   assert.equal(at(14, 'prep', config({ reserveScale: 0.5 })), 18000, 'reserveScale multiplies it');
   assert.equal(at(6, 'prep', config({ reserveMs: 1000, reserveScale: 3 })), 3000);
   m.botRehearsalDelegate = true;
-  assert.equal(at(1), 5000 + m.scaled(m.botRehearsalDelegateMs), 'a rehearsal offered to the host adds its answer window');
+  assert.equal(m.botRehearsalColdMs, 7000, 'the engine cold-start window with no env');
+  assert.equal(m.delegateWindowMs(), m.botRehearsalColdMs, 'the room host has not answered one yet: the cold window');
+  assert.equal(at(1), 5000 + m.scaled(m.botRehearsalColdMs), 'a rehearsal offered to a cold host adds its cold-start window');
+  m.hostId = 'p_0';
+  m._rehearsalHostAnswers.set('p_0', 1);
+  assert.equal(m.delegateWindowMs(), m.botRehearsalDelegateMs, 'one answered task warms the host');
+  assert.equal(at(1), 5000 + m.scaled(m.botRehearsalDelegateMs), 'and the warm window is what the reserve then adds');
   assert.equal(at(1, 'band'), 1000);
 });
 
@@ -80,6 +86,20 @@ test('§37.102 plan budgets over a whole co-op match: each prep keeps its round\
   assert.deepEqual([ai.metrics.late, ai.metrics.superseded, ai.late.size], [4 * 13, 4 * 13, 0]);
   assert.ok(m.order.every(ps => ai.states.get(ps.playerId).failures === 0));
   checkInvariants(m); assert.deepEqual(h.logs.error, []);
+});
+
+test('§37.102 the delegated cold window cannot push a plan reserve past half the remaining window', t => {
+  // a first delegation waits the cold-start window (botRehearsalColdMs) — even an absurd one only lifts the reserve to
+  // the caller's remaining/2 cap (externalAI.start), so the built-in bot always keeps half the prep to carry the plan out
+  const h = coop(t, { botRehearsalDelegate: true, hostId: 'p_0', botRehearsalColdMs: 1e9 });
+  h.start();
+  const made = job => job.deadline - job.budget;
+  for (const job of prepJobs(h)) {
+    const remaining = h.m.deadline - made(job);
+    const reserve = remaining - job.budget;
+    assert.ok(reserve <= remaining / 2 + 1e-9, `reserve ${reserve} within half of the remaining ${remaining}`);
+    assert.equal(reserve, remaining / 2, 'the cold window lifts the reserve to the cap: exactly half');
+  }
 });
 
 test('§37.102 unchanged elsewhere: direct seats keep half, a short window keeps half, manual seats the whole turn, untimed solo timeoutMs', t => {

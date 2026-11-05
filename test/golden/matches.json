@@ -16,7 +16,7 @@
       "combat": "client",
       "boost": null,
       "setup": {"stageId":"act1autochess_m01","bossId":"boss_5","hiddenBossId":null,"factions":["TIMES","DOT","INVISIBLE"]},
-      "end": {"victory":true,"roundsPassed":9,"hiddenReached":false,"hiddenCleared":false,"reason":"victory","teamLp":25,"bossPoolLeft":0,"virtualMs":68100},
+      "end": {"victory":true,"roundsPassed":9,"hiddenReached":false,"hiddenCleared":false,"reason":"victory","teamLp":19,"bossPoolLeft":0,"virtualMs":68100},
       "rng": {"setup":16,"shop":151,"waves":0,"draft":0,"bots":5949,"meta":0},
       "errors": {"engine":0,"logged":0,"sim":0,"dispatcher":0},
       "rounds": [
@@ -25,9 +25,9 @@
         {"round":3,"ai_0":[1,27,6,0,0,3,6,"7a525045",3,"deputShip 1/3, preciShip 0/2, sargonShip 0/2",7,7,0,15]},
         {"round":4,"ai_0":[1,27,7,0,0,3,8,"24e37e05",16,"deputShip 2/8, preciShip 0/2, sargonShip 0/2, steadShip 1/8",10,10,0,22]},
         {"round":5,"ai_0":[1,27,8,0,0,3,8,"f2482762",41,"deputShip 2/12, kjeragShip 0/5, preciShip 0/7, sargonShip 1/12, steadShip 1/17",53,16,0,30]},
-        {"round":6,"ai_0":[1,27,9,0,0,4,8,"6a11e360",68,"deputShip 1/14, kjeragShip 1/7, preciShip 0/7, sargonShip 1/22, steadShip 1/25",28,28,0,41]},
-        {"round":7,"ai_0":[1,27,10,0,0,4,8,"36ed272f",85,"deputShip 2/18, kjeragShip 0/7, preciShip 0/7, sargonShip 1/32, steadShip 1/35",27,27,0,51]},
-        {"round":8,"ai_0":[1,27,11,0,0,4,8,"a480ad49",109,"deputShip 2/22, kjeragShip 0/7, preciShip 0/7, sargonShip 1/42, steadShip 1/45",14,14,0,62]}
+        {"round":6,"ai_0":[1,27,9,0,0,4,8,"0595a399",62,"deputShip 1/14, kjeragShip 1/7, preciShip 0/7, sargonShip 1/16, steadShip 1/25",28,28,0,41]},
+        {"round":7,"ai_0":[1,27,10,0,0,4,8,"36ed272f",79,"deputShip 2/18, kjeragShip 0/7, preciShip 0/7, sargonShip 1/26, steadShip 1/35",27,27,0,51]},
+        {"round":8,"ai_0":[1,27,11,0,0,4,8,"a480ad49",103,"deputShip 2/22, kjeragShip 0/7, preciShip 0/7, sargonShip 1/36, steadShip 1/45",14,14,0,62]}
       ],
       "players": {
         "ai_0": {
@@ -35,14 +35,14 @@
           "victory": true,
           "roundsPassed": 9,
           "eliminatedRound": null,
-          "lp": 25,
+          "lp": 19,
           "bandId": "band_ermengard",
           "title": {"id":"comment_1","name":"卫戍之星","picId":"comment_icon_1","text":"对敌方领袖造成伤害最高（仅胜利时）"},
           "trophies": 0,
           "reward": 113,
-          "stats": {"activatedLayers":93,"bossDamage":200000,"dmgDealt":736436,"gold":74,"itemsEquipped":2,"kills":166,"leaks":0,"lpLost":0,"merges":1,"perfectRounds":8,"refreshes":17},
+          "stats": {"activatedLayers":87,"bossDamage":200000,"dmgDealt":748346,"gold":74,"itemsEquipped":2,"kills":168,"leaks":0,"lpLost":0,"merges":1,"perfectRounds":8,"refreshes":17},
           "lineup": ["2_06_a@12,5","2_06_a@11,3","2_08_a@11,6[5_02_e_a]","5_11_a@11,7","4_24_a@11,8","5_02_a@10,3","1_12_b@10,4","3_06_a@9,3[3_05_e_a]"],
-          "bonds": ["deputShip 0/22","kjeragShip 0/7","preciShip 0/7","sargonShip 2/48","steadShip 1/45"]
+          "bonds": ["deputShip 0/22","kjeragShip 0/7","preciShip 0/7","sargonShip 2/40","steadShip 1/47"]
         }
       }
     },

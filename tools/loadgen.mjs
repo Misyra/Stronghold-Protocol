@@ -23,6 +23,15 @@
 //                    it; keep warmup ≥ loop-window so the counted [loop] windows are measured ones)
 //   --mode m         room mode: coop | solo | auto (default auto — a one-client room plays solo, the others coop)
 //   --difficulty d   room difficulty: FUNNY | NORMAL | HARD | ABYSS (default NORMAL)
+//   --rehearsal-answer-ms D  seed clients answer a b.rehearsal task D ms after the frame (default 0 = never answer,
+//                    the pre-observation behaviour: the delegated rehearsal times out and the server's pool takes it).
+//                    This is the measurement base for every rehearsal-window A/B: the room host answers with its seeded
+//                    pick of the candidates it was sent, like the page's Worker does, and drops a task it was told to
+//                    cancel (b.rehearsalCancel) without answering. Implies --rehearsal-bot
+//   --rehearsal-bot  the host adds one AI seat per coop room before the start (room.addBot): without a bot seat a room
+//                    has nothing to delegate, so every rehearsal measurement needs one. Summary keys `clients.rehearsal`
+//                    (frames, spec bytes, cancels, answers, per-PREP→COMBAT rotation) and `server.rehearsal` (the
+//                    healthz `rehearsal` counters' delta over the window) are the A/B's columns
 //   --seed S         seed of every client's LCG: same seed + same load ⇒ the same action sequence (default 1).
 //                    The server's own match seeds stay random (lobby seedFn), so bot decisions differ a little
 //                    per run — expect order-of-magnitude stability, not identical bytes
@@ -86,6 +95,8 @@ const O = {
   workers: Math.max(0, Math.floor(num(opt.workers, 4))),
   sampleMs: Math.max(200, Math.floor(num(opt['sample-ms'], 1000))),
   loopWindowMs: Math.max(100, Math.floor(num(opt['loop-window-ms'], 5000))),
+  rehearsalAnswerMs: Math.max(0, Math.floor(num(opt['rehearsal-answer-ms'], 0))),
+  rehearsalBot: opt['rehearsal-bot'] === true || (opt['rehearsal-answer-ms'] != null && opt['rehearsal-answer-ms'] !== true),
   json: opt.json === true ? null : opt.json,
   quiet: opt.quiet === true,
   verbose: opt.verbose === true,
@@ -107,7 +118,8 @@ function lcg(seed) {
 // Env the child must NOT inherit: dev-shell exports that would skew or break the run (an external bot strategy, an
 // access gate, a Redis/Valkey state store, shrunk caps, test mode, another loop-sample config, another port).
 const CHILD_ENV_DENY = ['PORT', 'HOST', 'SP_WORKERS', 'SP_LOOP_SAMPLE', 'SP_LOOP_WINDOW_MS', 'SP_STATE_FILE',
-  'SP_BOT_REHEARSAL', 'SP_BOT_STRATEGY', 'SP_BOT_STRATEGY_SEATS', 'SP_GATE_PASSWORD', 'SP_GATE_SECRET',
+  'SP_BOT_REHEARSAL', 'SP_BOT_REHEARSAL_ANSWER_MS', 'SP_BOT_REHEARSAL_COLD_ANSWER_MS',
+  'SP_BOT_STRATEGY', 'SP_BOT_STRATEGY_SEATS', 'SP_GATE_PASSWORD', 'SP_GATE_SECRET',
   'SP_REDIS_URL', 'REDIS_URL', 'SP_VALKEY_URL', 'SP_PERSIST_BACKEND', 'SP_MATCH_HOST', 'SP_TEST_MODE',
   'SP_MAX_ROOMS', 'SP_MAX_ROOMS_PER_ADDR', 'SP_MAX_MATCHES_PER_ADDR', 'SP_MAX_CONNECTIONS',
   'SP_MAX_CONNECTIONS_PER_ADDR', 'SP_MAX_ONLINE', 'SP_VERSIONS', 'SP_VERSION_DEFAULT', 'SP_ROOM_CREATE_BURST',
@@ -213,8 +225,15 @@ class LoadClient {
     this.infoReadySent = false;
     this.bandSent = false;
     this.spPickRound = 0;
+    // delegated rehearsal answers (--rehearsal-answer-ms D, 0 = the historical silent host): taskId → the pending
+    // reply timer, dropped again on b.rehearsalCancel like the page drops its task
+    this.rehearsalAnswerMs = O.rehearsalAnswerMs;
+    this.rehearsalTimers = new Map();
+    /** wall-clock ms of each PREP phase this client saw until the room reached COMBAT (the A/B's room-rotation metric) */
+    this.prepToCombat = [];
+    this.prepStartedAt = null;
     // counters (snapshotted at the measurement window's start)
-    this.recv = { n: 0, bytes: 0 };
+    this.recv = { n: 0, bytes: 0, rehearsalBytes: 0 };
     this.recvByType = {};
     this.sent = { n: 0, bytes: 0 };
     this.sentByType = {};
@@ -243,13 +262,13 @@ class LoadClient {
       this.recv.bytes += buf.length;
       let msg;
       try { msg = JSON.parse(buf.toString('utf8')); } catch { return; }
-      this.onFrame(msg);
+      this.onFrame(msg, buf.length);
     });
     this.ws.on('close', (code, reason) => { this.gone = true; this.closed = { code, reason: reason.toString() }; });
     this.ws.on('error', () => { /* surfaces as close */ });
   }
 
-  onFrame(msg) {
+  onFrame(msg, bytes = 0) {
     if (REPLY_TYPES.has(msg.t) && msg.rid != null && this.pending.has(msg.rid)) {
       const p = this.pending.get(msg.rid);
       this.pending.delete(msg.rid);
@@ -282,6 +301,17 @@ class LoadClient {
         this.recvByType['b.start'] = (this.recvByType['b.start'] || 0) + 1;
         this.bStart++;
         return;
+      case 'b.rehearsal':
+        this.recvByType['b.rehearsal'] = (this.recvByType['b.rehearsal'] || 0) + 1;
+        this.recv.rehearsalBytes += bytes;
+        this.answerRehearsal(msg);
+        return;
+      case 'b.rehearsalCancel':
+        this.recvByType['b.rehearsalCancel'] = (this.recvByType['b.rehearsalCancel'] || 0) + 1;
+        // the server released the task (timeout / host change / prep end): the page stops the Worker, we stop the reply
+        clearTimeout(this.rehearsalTimers.get(msg.taskId));
+        this.rehearsalTimers.delete(msg.taskId);
+        return;
       case 'error': {
         this.recvByType.error = (this.recvByType.error || 0) + 1;
         const code = msg.code || '?';
@@ -294,9 +324,36 @@ class LoadClient {
     }
   }
 
+  /**
+   * One delegated rehearsal task the room host (this client) may answer: after --rehearsal-answer-ms, send the seeded
+   * pick of the candidates it was sent — the shape the page's Worker answers, only late. The server takes the pick as
+   * it is; a task the server already released is dropped above and never answered.
+   * @param {{ taskId: string, specs?: any[] }} msg
+   */
+  answerRehearsal(msg) {
+    if (this.rehearsalAnswerMs <= 0 || this.gone) return;
+    if (this.rehearsalTimers.has(msg.taskId)) return; // a resend of the same task: the first answer stands
+    const specs = Array.isArray(msg.specs) ? msg.specs.length : 0;
+    if (specs < 1) return;
+    const choice = this.rng.int(specs);
+    const timer = setTimeout(() => {
+      this.rehearsalTimers.delete(msg.taskId);
+      if (!this.gone) this.send({ t: 'b.rehearsalResult', taskId: msg.taskId, choice });
+    }, this.rehearsalAnswerMs);
+    this.rehearsalTimers.set(msg.taskId, timer);
+  }
+
   /** The public view (plain or delta-reconstructed): the phase and the two drafts' own turns. */
   onPublic(v) {
-    if (v.phase) this.phase = v.phase;
+    if (v.phase && v.phase !== this.phase) {
+      // the room-rotation metric: wall-clock ms from a PREP's start until the room reaches COMBAT
+      if (v.phase === 'PREP') this.prepStartedAt = Date.now();
+      else if (v.phase === 'COMBAT' && this.prepStartedAt != null) {
+        this.prepToCombat.push(Date.now() - this.prepStartedAt);
+        this.prepStartedAt = null;
+      }
+      this.phase = v.phase;
+    }
     if (Number.isInteger(v.round)) this.round = v.round;
     // 机变 draft: pick the first available card on our turn (a refused pick lets the turn deadline advance)
     const sp = v.sp;
@@ -416,6 +473,8 @@ class LoadClient {
 
   close() {
     this.stopStorm();
+    for (const t of this.rehearsalTimers.values()) clearTimeout(t);
+    this.rehearsalTimers.clear();
     if (!this.ws || this.gone) return Promise.resolve();
     return new Promise((resolve) => {
       const t = setTimeout(resolve, 1000);
@@ -453,6 +512,12 @@ async function setupRoom(members, mode) {
     const r = await asReply(c.request({ t: 'room.join', code }));
     if (r.t === 'error') throw new Error(`${c.name}: room.join ${code} → ${r.code}`);
   }
+  // the rehearsal measurement needs an AI teammate: a delegated rehearsal is one bot prep's offer, and a room's bots
+  // are seats the HOST adds (room.addBot) — empty seats never fill themselves. Implied by --rehearsal-answer-ms.
+  if (O.rehearsalBot && mode === 'coop') {
+    const r = await asReply(host.request({ t: 'room.addBot' }));
+    if (r.t === 'error') throw new Error(`host ${host.name}: room.addBot → ${r.code}`);
+  }
   for (const c of members) {
     const r = await asReply(c.request({ t: 'room.ready', ready: true }));
     if (r.t === 'error') throw new Error(`${c.name}: room.ready → ${r.code}`);
@@ -466,11 +531,12 @@ async function setupRoom(members, mode) {
 }
 
 /** Per-client counters (a deep-enough copy to snapshot). */
-const snapOf = (c) => ({ recvN: c.recv.n, recvBytes: c.recv.bytes, recvByType: { ...c.recvByType },
+const snapOf = (c) => ({ recvN: c.recv.n, recvBytes: c.recv.bytes, recvRehearsalBytes: c.recv.rehearsalBytes, recvByType: { ...c.recvByType },
   sentN: c.sent.n, sentBytes: c.sent.bytes, sentByType: { ...c.sentByType },
   stormSent: c.stormSent, bStart: c.bStart, errors: { ...c.errorsByCode } });
 const diffCounters = (a, b) => ({
   recvN: b.recvN - a.recvN, recvBytes: b.recvBytes - a.recvBytes,
+  recvRehearsalBytes: b.recvRehearsalBytes - a.recvRehearsalBytes,
   recvByType: Object.fromEntries(Object.keys(b.recvByType).map((k) => [k, b.recvByType[k] - (a.recvByType[k] || 0)])),
   sentN: b.sentN - a.sentN, sentBytes: b.sentBytes - a.sentBytes,
   sentByType: Object.fromEntries(Object.keys(b.sentByType).map((k) => [k, b.sentByType[k] - (a.sentByType[k] || 0)])),
@@ -577,6 +643,7 @@ async function main() {
     // warmup: the opening phases run out; the storm is already armed (it only fires in PREP)
     await new Promise((r) => setTimeout(r, O.warmup * 1000));
     for (const c of started) c.startStorm();
+    for (const c of started) c.prepToCombat = []; // the room-rotation metric is the measurement window's own
     const measureStart = Date.now();
     const measureEnd = measureStart + O.duration * 1000;
     const snaps = new Map(started.map((c) => [c, snapOf(c)]));
@@ -629,6 +696,19 @@ async function main() {
       stormIntents: sum((d) => d.stormSent),
       errorReplies: errs,
       bStart: sum((d) => d.bStart),
+      rehearsal: {
+        // the b.rehearsal spec frames the room hosts received, and every PREP→COMBAT rotation they saw
+        framesRecv: (recvByType['b.rehearsal'] || 0),
+        specBytes: sum((d) => d.recvRehearsalBytes),
+        cancelsRecv: (recvByType['b.rehearsalCancel'] || 0),
+        answersSent: (sentByType['b.rehearsalResult'] || 0),
+        prepToCombat: (() => {
+          const vs = started.flatMap((c) => c.prepToCombat).sort((a, b) => a - b);
+          if (!vs.length) return null;
+          return { n: vs.length, min: vs[0], p50: vs[Math.floor((vs.length - 1) / 2)],
+            avg: Math.round(vs.reduce((a, b) => a + b, 0) / vs.length), max: vs[vs.length - 1] };
+        })(),
+      },
       sentByType,
       recvByType,
       perClient: deltas,
@@ -643,6 +723,8 @@ async function main() {
     };
     const sd0 = hz0.body?.stateDelta || null;
     const sd1 = hz1.body?.stateDelta || null;
+    const rh0 = hz0.body?.rehearsal || null;
+    const rh1 = hz1.body?.rehearsal || null;
     const ws0 = hz0.body?.traffic?.ws || null;
     const ws1 = hz1.body?.traffic?.ws || null;
     const deltaOf = (a, b, k) => (a && b && Number.isFinite(a[k]) && Number.isFinite(b[k]) ? b[k] - a[k] : null);
@@ -657,6 +739,13 @@ async function main() {
       stateDelta: sd0 && sd1 ? {
         frames: deltaOf(sd0, sd1, 'frames'), fullFrames: deltaOf(sd0, sd1, 'fullFrames'), deltaFrames: deltaOf(sd0, sd1, 'deltaFrames'),
         parsedBaselines: deltaOf(sd0, sd1, 'parsedBaselines'),
+      } : null,
+      // the delegated-rehearsal counters (healthz `rehearsal`) over the window: what timed out into the pool and what
+      // the pool could not take — the A/B pair of the host answer window (server/index.js, lobby.rehearsalStats)
+      rehearsal: rh0 && rh1 ? {
+        delegated: deltaOf(rh0, rh1, 'delegated'), answered: deltaOf(rh0, rh1, 'answered'),
+        takeovers: deltaOf(rh0, rh1, 'takeovers'), pooled: deltaOf(rh0, rh1, 'pooled'),
+        accepted: deltaOf(rh0, rh1, 'accepted'), fallbacks: deltaOf(rh0, rh1, 'fallbacks'),
       } : null,
       wsTraffic: ws0 && ws1 ? {
         wireOut: deltaOf(ws0, ws1, 'wireOut'), wireIn: deltaOf(ws0, ws1, 'wireIn'),

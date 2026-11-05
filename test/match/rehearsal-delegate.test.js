@@ -442,7 +442,8 @@ test('protocol rejects a forged, out-of-range or non-boolean rehearsal answer', 
   assert.equal(typeof validateC2S({ t: 'b.rehearsalResult', taskId: '', choice: 0 }), 'string');
 });
 
-/** A simulation-pool double: records what was submitted and answers with a fixed pick (or fails). */
+/** A simulation-pool double: records what was submitted and answers with the real worker contract — the resolved value
+ *  is `{ bestIndex, stats }` (server/workers/simulation.js), never a function — or fails. */
 function fakePool({ pick = 0, fail = false } = {}) {
   const submits = [];
   return {
@@ -450,7 +451,8 @@ function fakePool({ pick = 0, fail = false } = {}) {
     assign() {}, release() {},
     submit(type, payload) {
       submits.push({ type, payload });
-      const promise = fail ? Promise.reject(new Error('pool broken')) : Promise.resolve(() => pick);
+      const promise = fail ? Promise.reject(new Error('pool broken'))
+        : Promise.resolve({ bestIndex: pick, stats: { totalTicks: 1, completed: 1, considered: 1, stopReason: 'cap', choice: pick, candidates: 2 } });
       return { promise, cancel() {} };
     },
   };

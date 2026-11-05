@@ -263,7 +263,12 @@ export class MatchRehearsal {
       }
       if (job.onSettled) job.onSettled();
     };
-    handle.promise.then(settle, () => settle(null));
+    // the pool resolves with the worker's `{ bestIndex, stats }` (server/workers/simulation.js), not a function —
+    // wrap it like poolRehearsal does, so the pick applies exactly like the host's answer would have
+    handle.promise.then(
+      (value) => settle(() => { job.stats = value?.stats || null; return value?.bestIndex; }),
+      () => settle(null),
+    );
     return true;
   }
 

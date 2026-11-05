@@ -82,3 +82,56 @@ test('a directly constructed Match keeps the engine default: off (the tools and 
     m.dispose();
   });
 });
+
+/** Run `fn` with SP_BOT_REHEARSAL_COUNT set (`undefined` deletes it), restoring the process environment after. */
+function withCount(value, fn) {
+  const had = Object.hasOwn(process.env, 'SP_BOT_REHEARSAL_COUNT');
+  const before = process.env.SP_BOT_REHEARSAL_COUNT;
+  if (value === undefined) delete process.env.SP_BOT_REHEARSAL_COUNT;
+  else process.env.SP_BOT_REHEARSAL_COUNT = value;
+  try {
+    return fn();
+  } finally {
+    if (had) process.env.SP_BOT_REHEARSAL_COUNT = before;
+    else delete process.env.SP_BOT_REHEARSAL_COUNT;
+  }
+}
+
+function directMatch(opts = {}) {
+  return new Match({
+    mode: 'coop', difficulty: 'NORMAL',
+    seats: [{ seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true }],
+    send() { return true; }, broadcast() {}, onEnd() {}, ...opts,
+  });
+}
+
+test('SP_BOT_REHEARSAL_COUNT sets the candidate count; the engine default stays 6', () => {
+  withCount(undefined, () => {
+    const m = directMatch();
+    assert.equal(m.botRehearsal, 6);
+    m.dispose();
+  });
+  withCount('3', () => {
+    const m = directMatch();
+    assert.equal(m.botRehearsal, 3);
+    m.dispose();
+  });
+});
+
+test('SP_BOT_REHEARSAL_COUNT is clamped to 0–8; garbage falls back to the engine default', () => {
+  for (const [value, want] of [['8', 8], ['9', 8], ['0', 0], ['-1', 6], ['abc', 6], [' 3 ', 3]]) {
+    withCount(value, () => {
+      const m = directMatch();
+      assert.equal(m.botRehearsal, want, `SP_BOT_REHEARSAL_COUNT=${JSON.stringify(value)}`);
+      m.dispose();
+    });
+  }
+});
+
+test('an explicit opts.botRehearsal wins over SP_BOT_REHEARSAL_COUNT', () => {
+  withCount('3', () => {
+    const m = directMatch({ botRehearsal: 5 });
+    assert.equal(m.botRehearsal, 5);
+    m.dispose();
+  });
+});

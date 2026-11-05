@@ -298,6 +298,14 @@ export function parseVerify(v) {
 /** Default of the bot rehearsal delegation for a directly constructed match: off — SP_BOT_REHEARSAL=host opts in.
  *  Online rooms do not rely on this: the lobby passes an explicit true/false (hostRehearsalDefault, 2026-11-05). */
 const envBotRehearsal = () => String(env('SP_BOT_REHEARSAL') || '').trim().toLowerCase() === 'host';
+/** Candidate layouts per prep when `opts.botRehearsal` is absent: `SP_BOT_REHEARSAL_COUNT` (0–8), else the engine
+ *  default. The deployment can lower it to 3 to cut rehearsal time (docs/DEPLOY.md). */
+const envBotRehearsalCount = () => {
+  const raw = String(env('SP_BOT_REHEARSAL_COUNT') ?? '').trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? Math.min(n, 8) : null;
+};
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
 const dsCache = new WeakMap();
@@ -386,7 +394,9 @@ export class Match {
     /** 战斗 2 倍速投票（g.speedVote，match/speedVote.js）：已投换档赞成的 playerId；全员赞成 → 下一场战斗开始前换档 */
     this.speedVotes = [];
     /** layouts a bot rehearses per prep with the real simulation (bot.js; 0 = heuristic placement only) */
-    this.botRehearsal = Number.isInteger(opts.botRehearsal) && opts.botRehearsal >= 0 ? Math.min(opts.botRehearsal, 8) : BOT_REHEARSAL_DEFAULT;
+    this.botRehearsal = Number.isInteger(opts.botRehearsal) && opts.botRehearsal >= 0
+      ? Math.min(opts.botRehearsal, 8)
+      : envBotRehearsalCount() ?? BOT_REHEARSAL_DEFAULT;
     this.bot = getBotStrategy(opts.botStrategy ?? env('SP_BOT_STRATEGY'));
     /** per-seat overrides of this.bot (seat → strategy; empty by default — botFor) */
     this.seatBots = getBotStrategySeats(opts.botStrategySeats ?? env('SP_BOT_STRATEGY_SEATS'));

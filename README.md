@@ -117,6 +117,7 @@ npm start          # 启动服务器：http://localhost:3000
 | `SP_COMBAT` | `client` | `client`：各玩家浏览器模拟自己的战斗（服务器负载极低）；`server`：由服务器模拟并推流 |
 | `SP_VERIFY` | `off` | 服务器复算客户端上报的战斗结果：`off` / `sample`（约 1/8 抽查）/ `all`（全部复算，更耗 CPU） |
 | `SP_BOT_REHEARSAL` | 不设（线上房间交给房主浏览器） | 线上房间默认让房主浏览器帮 AI 队友试算布阵（同源 Worker，只回候选序号）；设为 `server` / `off` / `0` / `false` 时由服务器试算。房主无法完成时服务器用同一批候选接手。玩法插件房间始终由服务器试算。引擎层直接构造的对局（botbench、golden、回放、工作室）默认仍关。真人「AI 托管」和正式战斗不受影响 |
+| `SP_BOT_REHEARSAL_COUNT` | 6 | 每次整备 AI 布阵试算的候选数（0–8；0 = 只用启发式布阵）。房主推演与服务器试算共用这个数。线上想缩短房主 Worker 的耗时可以设 3；golden / botbench 不读它（直接构造的 Match 仍按默认 6） |
 | `SP_P2P` | 不设（关闭） | 显式设为 `1`（或 `true`）时，同盟房间通过 WebRTC 转发公共对局状态，看门狗仍从 WebSocket 补发最新快照；不设或其他值保持服务器直接分发。开启后连接失败会自动回退 WebSocket，见 [部署指南](docs/DEPLOY.md#26-p2p-公共状态转发) |
 | `SP_P2P_ICE_SERVERS` | `[]` | 可选的 STUN / TURN 配置（JSON 数组），仅在 `SP_P2P` 开启时生效，见 [部署指南](docs/DEPLOY.md#26-p2p-公共状态转发) |
 | `TRUST_PROXY` | `auto` | 是否信任 `X-Forwarded-For` 等转发头：`auto` 只信任来自本机 / 内网的代理；`1` 总是；`0` 从不 |

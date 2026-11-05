@@ -8,6 +8,7 @@
 // Usage: CHROME_PATH=<chrome> node tools/perfbench.mjs [--specs a,b] [--quality high,low] [--cpu 1,4,6] [--warm 20]
 //        [--sample 6] [--width 844] [--height 390] [--dpr 2] [--fx off,lite,full] [--profile] [--out test/e2e/out/perf] [--json]
 //   --fx       设置「官方特效」 tiers to measure (the official battle effects, render/vfx; default off; needs extracted effects)
+//   --poseSkip px  pass &poseSkip= to the page (app/tune.js POSE_SKIP_PX: small direct-drawn units pose every other frame)
 //   --specs    names of public/dev/perf/index.json (default: all)      --warm    seconds before sampling (default 20)
 //   --sample   seconds per sample (default 6)                          --profile also record and summarise a CPU profile
 // Needs the downloaded assets (public/assets: real Spine models; without them every unit is a diamond and the numbers
@@ -114,6 +115,7 @@ async function main() {
   const cpus = list('cpu', '1,4,6').map(Number);
   const warm = Number(opt('warm', 20)), sample = Number(opt('sample', 6));
   const width = Number(opt('width', 844)), height = Number(opt('height', 390)), dpr = Number(opt('dpr', 2));
+  const poseSkip = Math.max(0, Number(opt('poseSkip', 0)) || 0);   // → &poseSkip= (app/tune.js POSE_SKIP_PX)
   const profileOn = argv.includes('--profile');
   const out = path.resolve(ROOT, opt('out', 'test/e2e/out/perf'));
   const chrome = process.env.CHROME_PATH || DEFAULT_CHROME[process.platform];
@@ -132,7 +134,7 @@ async function main() {
       const errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       await page.setViewport({ width, height, deviceScaleFactor: dpr });
-      await page.goto(`http://127.0.0.1:${srv.port}/dev/battle-perf.html?spec=${encodeURIComponent(spec)}&quality=${quality}&fx=${fx}&panel=0`);
+      await page.goto(`http://127.0.0.1:${srv.port}/dev/battle-perf.html?spec=${encodeURIComponent(spec)}&quality=${quality}&fx=${fx}&panel=0${poseSkip > 0 ? `&poseSkip=${poseSkip}` : ''}`);
       await page.waitForFunction('window.__perf && (window.__perf.ready || window.__perf.error)', { timeout: 60000 });
       const err = await page.evaluate(() => globalThis.__perf.error);
       if (err) { console.log(`${spec}: ${err.split('\n')[0]}`); await page.close(); continue; }

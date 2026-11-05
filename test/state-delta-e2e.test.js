@@ -57,8 +57,9 @@ test('a negotiated client decodes m.state back into m.public, and a plain client
   const legacyPublic = await legacy.waitFor('m.public', () => true, 8000);
   assert.ok(legacyPublic, 'the plain client gets m.public as before');
 
-  // The modern client receives that same view as m.state, and decoding it must give back an ordinary m.public.
-  const modernFrame = await modern.waitFor('m.state', () => true, 5000).catch(() => null);
+  // The modern client receives that same view as m.state. Both channels use the frame type now, so pick the public
+  // one explicitly; decoding it must give back an ordinary m.public.
+  const modernFrame = await modern.waitFor('m.state', (m) => m.kind === 'm.public', 5000).catch(() => null);
   assert.ok(modernFrame, 'the negotiated client receives the public view as m.state');
   const { message } = receiver.receive(modernFrame);
   assert.ok(message, 'the decoder applied the first frame of the channel');
@@ -74,7 +75,7 @@ test('a state.resync is answered with a full frame that restores a client which 
 
   await c.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' });
   await c.request({ t: 'room.start' });
-  await c.waitFor('m.state', () => true, 5000).catch(() => null);
+  await c.waitFor('m.state', (m) => m.kind === 'm.public', 5000).catch(() => null);
 
   // The channel was blocked on the client (a lost frame). Asking for a resync must produce a FULL frame, not a delta:
   // the server drops its baseline first, so the next frame of that channel cannot be a patch.
@@ -82,7 +83,7 @@ test('a state.resync is answered with a full frame that restores a client which 
   const reply = await c.request({ t: 'state.resync' });
   assert.equal(reply.t, 'ok', JSON.stringify(reply));
 
-  const frame = await c.waitFor('m.state', () => true, 5000).catch(() => null);
+  const frame = await c.waitFor('m.state', (m) => m.kind === 'm.public', 5000).catch(() => null);
   if (frame) {
     assert.ok('full' in frame, 'the frame after a resync is a full one, which is what re-baselines the client');
     assert.ok(!('patch' in frame));
@@ -107,7 +108,7 @@ test('a repeated hello keeps the baseline, and a reconnecting socket starts a ne
   await first.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' });
   await first.request({ t: 'room.start' });
 
-  const before = await first.waitFor('m.state', () => true, 5000).catch(() => null);
+  const before = await first.waitFor('m.state', (m) => m.kind === 'm.public', 5000).catch(() => null);
   // A second hello on the same live socket (a rename) must not drop the baseline: the next frame stays a delta.
   const w2 = await first.request({ t: 'hello', name: 'Repeat2', version: 1, delta: STATE_DELTA_VERSION });
   assert.equal(w2.t, 'welcome', JSON.stringify(w2));
@@ -117,7 +118,7 @@ test('a repeated hello keeps the baseline, and a reconnecting socket starts a ne
   t.after(() => second.close().catch(() => {}));
   const w3 = await second.hello('Repeat2', w1.token, { delta: STATE_DELTA_VERSION });
   assert.equal(w3.t, 'welcome');
-  const resumed = await second.waitFor('m.state', (m) => 'full' in m, 5000).catch(() => null);
+  const resumed = await second.waitFor('m.state', (m) => m.kind === 'm.public' && 'full' in m, 5000).catch(() => null);
   if (resumed) assert.ok('full' in resumed, 'a fresh socket cannot be handed a delta');
   void before;
 });
@@ -141,12 +142,12 @@ test('a same-socket move to a new room sends a full initial match view', async (
   await client.hello('Mover', undefined, { delta: STATE_DELTA_VERSION });
   await client.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' });
   await client.request({ t: 'room.start' });
-  const previous = await client.waitFor('m.state', () => true, 5000);
+  const previous = await client.waitFor('m.state', (m) => m.kind === 'm.public', 5000);
   assert.equal((await client.request({ t: 'room.leave' })).t, 'ok');
   client.clearInbox();
   assert.equal((await client.request({ t: 'room.create', mode: 'solo', difficulty: 'NORMAL' })).t, 'ok');
   assert.equal((await client.request({ t: 'room.start' })).t, 'ok');
-  const next = await client.waitFor('m.state', () => true, 5000);
+  const next = await client.waitFor('m.state', (m) => m.kind === 'm.public', 5000);
   assert.ok(next.full);
   assert.ok(next.seq > previous.seq);
 });

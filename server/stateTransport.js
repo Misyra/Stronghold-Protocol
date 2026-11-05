@@ -20,11 +20,12 @@
 import { applyStatePatch, diffState, isStateKind, STATE_DELTA_VERSION } from '../shared/stateDelta.js';
 
 /**
- * The channels this build compresses. Only the public view for now: it is the frame every member of a room receives,
- * so a client that cannot apply one loses nothing it cannot get back from the next full frame, while m.private is per
- * player and gets its opt-in only after the round-trip is proven in a whole match.
+ * The channels this build compresses. Both state views ride the delta transport: m.public is the shared room frame,
+ * m.private is per player, and the receiver keeps a separate baseline per kind (shared/stateDelta.js), so a private
+ * patch can never be applied against a public view. The whole-match replay in test/state-delta.test.js (with
+ * SP_STATE_DELTA_VERIFY) checks every delta of both channels against the state it describes before emit.
  */
-export const DELTA_KINDS = new Set(['m.public']);
+export const DELTA_KINDS = new Set(['m.public', 'm.private']);
 
 const connections = new WeakMap();   // ws -> { roomCode, kinds: Map<kind, snapshot> }
 const snapshots = new WeakMap();     // msg -> snapshot { encoded, kind, seq, parsed, transitions, full, fullBytes, headerBytes }

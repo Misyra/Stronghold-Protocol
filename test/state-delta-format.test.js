@@ -101,17 +101,22 @@ test('a state frame older than the channel baseline is dropped, never applied as
   assert.equal(receiver.receive({ kind: 'm.public', seq: 12, full: next }).message, null);
 });
 
-test('only the public view is compressed today; a private view keeps the bytes it is given', () => {
+test('both views are delta channels: a private view gets a full baseline, then a patch', () => {
   const ws = fakeWs();
   negotiateStateDelta(ws, 1);
   const view = { t: 'm.private', playerId: 'p1', funds: 10, padding: 'q'.repeat(500) };
-  const encoded = JSON.stringify(view);
-  const first = prepareStateFrame(ws, view, encoded);
-  assert.equal(first.data, encoded, 'm.private is not a delta channel yet');
+  const first = prepareStateFrame(ws, view, JSON.stringify(view));
+  const baseline = JSON.parse(first.data);
+  assert.equal(baseline.t, 'm.state');
+  assert.equal(baseline.kind, 'm.private');
+  assert.deepEqual(baseline.full, view, 'the first private frame is a full baseline');
   first.commit();
   view.funds = 11;
   const next = JSON.stringify(view);
-  assert.equal(prepareStateFrame(ws, view, next).data, next, 'still plain on the second frame');
+  const patch = JSON.parse(prepareStateFrame(ws, view, next).data);
+  assert.equal(patch.kind, 'm.private');
+  assert.equal(patch.base, baseline.seq, 'the patch is against this connection’s private baseline');
+  assert.ok(Array.isArray(patch.patch), 'the second private frame is compressed');
 });
 
 test('a repeated hello keeps the baseline, and a reset never rewinds the sequence', () => {

@@ -1,9 +1,10 @@
 // test/state-delta.test.js — the state-delta transport end to end at the unit level: negotiation, shared transitions,
 // the process-global sequence, the counters, the SP_STATE_DELTA_VERIFY replay, the browser decoder and a whole match.
 //
-// Ported from the archive repository's test/state-delta.test.js and adapted to this repository: only m.public is a
-// delta channel here (DELTA_KINDS), the hello field is named `delta`, the browser receiver is `net._receiver`, and
-// the archive's wireStats / ENCODED accounting has no counterpart in this build, so its last test is not ported.
+// Ported from the archive repository's test/state-delta.test.js and adapted to this repository: both m.public and
+// m.private are delta channels here (DELTA_KINDS), the hello field is named `delta`, the browser receiver is
+// `net._receiver`, and the archive's wireStats / ENCODED accounting has no counterpart in this build, so its last
+// test is not ported.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -159,7 +160,7 @@ test('failed sends do not advance the baseline; reliable state retains backpress
   assert.equal(ws.readyState, 3);
 });
 
-test('public baselines are per connection and isolated; m.private keeps its plain encoding; reset uses full', () => {
+test('public baselines are per connection and isolated; m.private is a delta channel of its own; reset uses full', () => {
   const ws = socket(), other = socket();
   for (const s of [ws, other]) negotiateStateDelta(s, 1);
   send(ws, makeView());
@@ -167,8 +168,19 @@ test('public baselines are per connection and isolated; m.private keeps its plai
   send(other, makeView({ playerId: 'p2', funds: 77 }));
   assert.equal(ws.frames[1].base, ws.frames[0].seq);
   assert.equal(other.frames[0].full.funds, 77, 'a second connection starts from its own full frame');
-  assert.equal(send(ws, { t: 'm.private', playerId: 'p1', funds: 10 }), true);
-  assert.equal(ws.frames.at(-1).t, 'm.private', 'm.private is not a delta channel in this build');
+  const priv = (funds) => ({ t: 'm.private', playerId: 'p1', funds });
+  assert.equal(send(ws, priv(10)), true);
+  const p0 = ws.frames.at(-1);
+  assert.equal(p0.t, 'm.state', 'm.private rides the delta transport');
+  assert.equal(p0.kind, 'm.private');
+  assert.equal(p0.full.funds, 10);
+  assert.equal(send(ws, priv(11)), true);
+  const p1 = ws.frames.at(-1);
+  assert.ok(p1.patch, 'a changed private view is a patch against its own baseline');
+  assert.equal(p1.base, p0.seq);
+  // The private channel never borrows the public baseline (or the other socket's): a new full frame, not a public patch.
+  assert.equal(send(other, priv(77)), true);
+  assert.ok(other.frames.at(-1).full, 'each connection starts its own private baseline');
   resetStateDelta(ws);
   send(ws, makeView({ funds: 8 }));
   assert.ok(ws.frames.at(-1).full);
@@ -249,18 +261,16 @@ test('complete scripted match: every reconstructed public view equals the origin
     const { ws, rx } = peers.get(id);
     assert.equal(send(ws, msg, encoded), true);
     const sent = ws.frames.pop();
-    if (msg.t === 'm.private') {
-      assert.equal(sent.t, 'm.private', 'private views stay plain in this build');
-      return;
-    }
     if (msg.t === 'm.result') { rx.reset(); return; }
-    if (msg.t !== 'm.public') return;
+    if (msg.t !== 'm.public' && msg.t !== 'm.private') return;
     assert.equal(sent.t, 'm.state');
     const decoded = rx.receive(sent);
     assert.equal(decoded.resync, false);
-    assert.deepEqual(decoded.message, JSON.parse(encoded), `m.public R${h.m.round} ${h.m.phase}`);
-    checked++; if (sent.patch) patches++;
-    if (msg.phase) phases.add(msg.phase);
+    assert.deepEqual(decoded.message, JSON.parse(encoded), `${msg.t} R${h.m.round} ${h.m.phase}`);
+    if (msg.t === 'm.public') {
+      checked++; if (sent.patch) patches++;
+      if (msg.phase) phases.add(msg.phase);
+    }
   };
   h.onSend.push(deliver);
   h.onBroadcast.push((msg) => {

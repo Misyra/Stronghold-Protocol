@@ -14,6 +14,7 @@ import { DpCounter } from './hud.js';
 import { GIcon } from './gameComponents.js';
 import { switcherLabel, cycleField } from './gameLogic.js';
 import { t } from '../../../shared/i18n.js';
+import { memo } from './memo.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -31,11 +32,13 @@ function ProgressList({ list }) {
 }
 
 /**
+ * Memoized (ui/memo.js): the game screen calls it with stable props between the pushes / hud ticks that change them
+ * (screens/game.js builds `client` in a useMemo and passes `pub` only in the server-run legacy mode that reads it).
  * @param {{ pub:any, myId:string, watching:string|null, hud:any, myDone:boolean, onWatch:(fieldId:string)=>void, spectating?: boolean,
  *   client?: null | { progress?: any[]|null, observing?: { name: string }|null, onBack?: () => void,
  *                     layers?: Array<{ key: string, label: string, self: boolean, watch: boolean }>, layer?: string, onLayer?: (k: string) => void } }} props
  */
-export function CombatHud({ pub, myId, watching, hud, myDone, onWatch, spectating = false, spectator = false, client = null }) {
+export const CombatHud = memo(function CombatHud({ pub, myId, watching, hud, myDone, onWatch, spectating = false, spectator = false, client = null }) {
   // `spectator`: a spectator seat (community report #26) watches like an eliminated player, under its own caption
   if (client) return ClientHud({ hud, myDone, spectating, spectator, client });
   const fields = (Array.isArray(pub?.fields) ? pub.fields : []).filter((f) => f && f.live !== false);
@@ -57,7 +60,7 @@ export function CombatHud({ pub, myId, watching, hud, myDone, onWatch, spectatin
       </div>` : null}
     </div>
   </div>`;
-}
+});
 
 function ClientHud({ hud, myDone, spectating, spectator = false, client }) {
   const layers = Array.isArray(client.layers) ? client.layers : [];

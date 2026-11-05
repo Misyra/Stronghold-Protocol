@@ -114,6 +114,22 @@ describe('客户端的镜像回退', () => {
     ], 'mirrors first, the pack\'s own address last, no duplicates, no invalid entries');
   });
 
+  test('preferredRetries 只给首条线路加重试预算，默认不改行为', async () => {
+    const seen = [];
+    const fetcher = async (url) => { seen.push(url); return { ok: false, status: 503, body: { cancel: async () => {} } }; };
+    const pack = { id: 'ui-01', url: '/packs/ui-01.zip', files: [], urls: ['https://model.test/p.zip'] };
+    await assert.rejects(fetchTransportPack(pack, { fetcher, retries: 0, preferredRetries: 2, idleMs: 0, timeoutMs: 10_000 }), /资源分包 HTTP 503/);
+    assert.deepEqual(seen, [
+      'https://model.test/p.zip', 'https://model.test/p.zip', 'https://model.test/p.zip',
+      '/packs/ui-01.zip',
+    ], 'the preferred route gets 3 attempts, the fallback still only 1');
+
+    const seen2 = [];
+    const fetcher2 = async (url) => { seen2.push(url); return { ok: false, status: 503, body: { cancel: async () => {} } }; };
+    await assert.rejects(fetchTransportPack(pack, { fetcher: fetcher2, retries: 0, idleMs: 0, timeoutMs: 10_000 }), /资源分包 HTTP 503/);
+    assert.deepEqual(seen2, ['https://model.test/p.zip', '/packs/ui-01.zip'], 'no opt-in means unchanged behaviour');
+  });
+
   test('没有镜像时只试一次', async () => {
     const seen = [];
     const fetcher = async (url) => { seen.push(url); return { ok: false, status: 404, body: { cancel: async () => {} } }; };

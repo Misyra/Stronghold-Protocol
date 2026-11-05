@@ -56,8 +56,11 @@ that is why its imports are constrained. Every file is mapped in [docs/ARCHITECT
 - **Two delivery paths, fixed roles.** Per-file requests go to the R2 bucket over its S3-compatible API
   (`tools/r2-s3-upload.mjs`, SigV4, `.assets-manifest.json` as the resume state): that is a preload that fell back, and
   everything a match asks for outside the preloaded set. Preload itself prefers the ModelScope dataset
-  `Misyra/Arknight_Assets` through the category ZIPs. Do not make packs the primary R2 path, and do not serve per-file
-  art from ModelScope.
+  `Misyra/Arknight_Assets` through the category ZIPs: the client uses those packs first (a relaxed coverage
+  gate plus a bigger retry budget on the ModelScope route) and R2 covers only the remaining gap. Build
+  new packs for uncovered files with `npm run resources:packs -- --scopes gap` (append-only,
+  `tools/assets/gapPacks.mjs`); never rebuild the whole index with `--scopes all` on a live dataset.
+  Do not make packs the primary R2 path, and do not serve per-file art from ModelScope.
 - **ModelScope is append-only and incomplete.** The dataset predates the current art and does not hold all of it:
   publish only the packs built from newly added files, append their entries to `data/resource-packs.json`, and never
   rewrite, renumber, re-pack or delete an existing pack. Every ZIP an older index names must keep resolving — a client

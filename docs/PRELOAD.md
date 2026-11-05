@@ -22,8 +22,9 @@ CDN 环境变量表在 [DEPLOY.md §12](DEPLOY.md#预载--公告相关变量合�
 
 `npm run resources:packs`（= `tools/build-resource-packs.mjs`）在**装了完整素材的机器**上构建，不上传任何东西：
 
-1. `server/resources.js#createResourceIndex().get()` 生成预载清单，按 `--scopes all|fx,skin` 过滤（`fx`/`skin` 子集
-   构建会把旧索引里其它组的包原样保留，只替换本组——`build-resource-packs.mjs:56-66`）。
+1. `server/resources.js#createResourceIndex().get()` 生成预载清单，按 `--scopes all|fx,skin|gap` 过滤
+   （`fx`/`skin` 子集构建会把旧索引里其它组的包原样保留，只替换本组；`gap` 是 0.3.4 起的**增量追加**模式，
+   见下——`build-resource-packs.mjs`）。
 2. 每个文件经 `tools/resourcePackPath.mjs#resourcePackPath`（拒 `%2F`/`%5C`，`server/resources.js#localPathFor`
    拒 `..`/越界）回到 `public/` 下的真实字节重新哈希——清单里的 URL 是数据，包里的字节必须当场证明。
 3. 交给 `tools/resource_packs.py` 切包：每个分类 ZIP 上限 **16,000,000 字节**（`MAX_PACK_BYTES`，写死，
@@ -38,6 +39,14 @@ CDN 环境变量表在 [DEPLOY.md §12](DEPLOY.md#预载--公告相关变量合�
 
 构建结束的提示就是下一步：`npm run resources:publish` 发 ModelScope，然后部署 `data/resource-packs.json`。
 文件不存在会直接报错退出（`Resource missing/unreadable`）——**没有素材完整文件的机器建不出包**。
+
+**增量补包 `--scopes gap`（0.3.4）**：把「清单全集」减去「当前 `data/resource-packs.json` 里
+`packs[].files[].url` 的并集」（用 `shared/resourcePaths.js#resourceIdentity` 归一化），只给差集文件建新包。
+`tools/assets/gapPacks.mjs` 负责差集、分组预览与纯追加合并：旧 `packs` 条目**一条不改**，新包 id 统一加
+`gap-` 前缀（避开第一代遗留包的 `<组>-NN` 命名），`resourceVersion` 按合并后的全表重算。
+`--dry-run` 只打印差集规模与各 group 计数、不写 ZIP 也不写索引。`gap` 不能与 `all` 或别的 scope 混用
+（`all` 会跳过合并、整份替换索引，破坏 append-only）。这是**只做加法**的发布路径：
+新素材/新类别/开场动画等杂项资源都会按 `resource_packs.py#group()` 自动归组，不再退化成逐文件 R2。
 
 ### 1.2 ModelScope 分类 ZIP（append-only）
 
@@ -128,15 +137,22 @@ local-fx-collab` 都列为展示数据：它们不进插件内容哈希，换一
 ### 3.3 自动分包阶段（transport）
 
 `resources/index.js#preloadTransportPacks`（`index.js:488`）在逐文件下载**之前**跑，把清单里的 `packs`
-（`common.js#validateResourcePacks` 再筛一遍形状）按「当前选择覆盖 ≥25% 未缓存字节」挑出来：
+（`common.js#validateResourcePacks` 再筛一遍形状）按「当前选择缺 ≥5% 未缓存字节」挑出来（0.3.4 起从 25%
+放宽，皮肤合并包免门槛）：
 
 - 每包先整包校验再写缓存：`transport.js#requestPack` 按 `pack.urls`（镜像列表，来自
   `SP_RESOURCE_PACK_ROUTES`）→ `pack.url`（源站/CDN）逐线路下载，空闲 20 s / 总 180 s 超时、1 次重试；
   `archive.js#readTransportPack` 流式算整包 SHA-1 对着索引的 `sha1` 验（`archive.js:406`），失败弃包。
+  `startDownload` 给首条线路（ModelScope）透传 `preferredRetries: 2`——瞬时故障先在 ModelScope 重试，
+  不立刻落 R2；该参数默认 `null`，不 opt-in 时线路行为与旧版一致。
 - 两条网络 lane + 一个导入者，`packQueue.js` 用 96 MiB 字节预算排队，慢写入不拖慢下载。
 - 面板两条进度条（下载资源包 / 解压导入）逐包跟进；导入逐文件过 `integrity.js#verifyResourceBytes`
   （12 位 SHA-1，v2 包只 SHA-1、v1 旧包 SHA-1+SHA-256），已缓存的跳过，未选中的皮肤在混合包里流过不落盘。
-- 失败整体退回逐文件下载——分包只是加速，不改变正确性。
+- 返回 `{ imported, coveredKeys, failedPacks, skippedPacks }`：成功导入的文件 key 进 `coveredKeys`，
+  失败包记 `failedPacks` 并打一行日志。分包导入直接写进 Cache Storage，逐文件阶段 `status()` 已看得到，
+  不会重复下载。
+- **硬优先 ModelScope + 缺口兜底**：分包尽力覆盖全部所选范围，只有分包没覆盖/失败的文件才走逐文件 R2；
+  索引缺失或包不全时仍全量逐文件。优先是加速与流量偏好，不是正确性依赖。
 
 ### 3.4 逐文件阶段（store）
 
@@ -236,7 +252,7 @@ b21e8516 之前上传的对象带旧 `max-age=3600`，对象元数据**只跟 PU
 
 ## 6. 当前状态与缺口（截至 2026-11-05）
 
-以下都来自本仓库可直接核对的证据（git 记录、清单内容、磁盘状态）：
+以下来自本仓库可直接核对的证据（git 记录、清单内容、磁盘状态）；§6.1 的两站点与数据集数字为 2026-11-05 线上实测：
 
 - **皮肤：清单 280 套 / 176 位干员，磁盘 1 套。** 提交版 `data/assets.json` 登记 280 条 `chars[].skins`
   条目（其中 57 条带 `dynamic` 动态立绘），但本机 `data/skins-installed.json` 只装了
@@ -259,6 +275,33 @@ b21e8516 之前上传的对象带旧 `max-age=3600`，对象元数据**只跟 PU
   `python tools/modelscope-packs.py`（dry-run）与 `node tools/r2-s3-upload.mjs --dry-run --packs` 得到清单）。
 - **Cloudflare `v=` 缓存规则未建**（§5.2 标注的待办）。
 
+### 6.1 三份索引不是同一份（2026-11-05 线上实测）
+
+排查预载包数量时最容易混的一点：**「数据集里有多少 ZIP」≠「索引文件里有多少条」≠「线上用哪份索引」**。
+三者是不同对象，数字对不上是正常的，口径如下（两个站点 `GET /data/resource-packs.json` 与数据集 git 树实测）：
+
+| | 是什么 | 数 |
+| --- | --- | --- |
+| 数据集 git 树（物理 ZIP） | ModelScope `/datasets/Misyra/Arknight_Assets` 里实际存的包 | **134** |
+| 数据集里的 `resource-packs.json` | 之前 append-only 发布到 ModelScope 的**索引文件**，rv `c8f1b9c8fcf0`，fx29 + skin51 | **80 条** |
+| 线上两站 `/data/resource-packs.json` | 游戏服自己 `data/` 里的索引，rv `9bbdb783cc7a`，第一代全量切分 | **106 条** |
+
+线上两站（game.misyra.com / test.rainya.me）的 `/data/resource-packs.json` **字节级相同**，且预载清单
+`/data/resource-manifest.json` 内嵌的 `packs` 与它逐字段相等；两站是不同构建（asset/runtime/art 版本不同、
+manifest `files` 数与体积不同），但共用这一份 106 包索引。106 个包的 `urls[0]` 全部指向 ModelScope，
+2026-11-05 逐个 `resolve` 全 200、零缺失——它们都在数据集里。
+
+134 个物理 ZIP 由两份索引交叉覆盖：
+
+```
+134 = 52（线上 106 ∩ 数据集 80 索引都点名）
+    + 54（仅线上 106 点名：bgm/character/map/other/sfx/spine/ui/voice*，第一代全量分包）
+    + 28（仅数据集 80 索引点名：fx-append-01 + extra-skin-01..27）
+```
+
+即线上 106 = 52 + 54，数据集 80 索引 = 52 + 28。「数据集里索引只有 80 条」不代表「数据集里只有 80 个 ZIP」；
+判断任何包能不能删、有没有活客户端在用，要以**线上那份 106** 为准，不能只盯着数据集里那个 80 条索引文件。
+
 ## 7. 发布 SOP：新增素材 → 建包 → 传 R2 → 追加索引
 
 前提：在**装有完整素材**的发布机上做（需要 `public/assets/` 齐全 + Python 3 + `modelscope-hub==0.4.6` +
@@ -269,9 +312,11 @@ R2 凭据 `.env`）。
    `data/skins-installed.json`，重跑即续传）；联动走 `tools/collab-assets.mjs`。提交清单变更（golden 不动——
    这是展示数据，不进内容哈希）。
 2. **刷新预载指纹**：`node tools/asset-hashes.mjs` 重新生成 `data/asset-hashes.json`（`--check` 只验）。
-3. **建预载包**：`npm run resources:packs`（全量；只更新特效/皮肤组用 `-- --scopes fx` / `skin`）。产出新 ZIP
-   与**合并后**的 `data/resource-packs.json`——scoped 构建保留其它组的既有包，`resourceVersion` 随包集合重算。
-   内容变了就是新文件名（内容寻址），旧 ZIP 原样留在 `public/resource-packs/`。
+3. **建预载包**：`npm run resources:packs`（全量；只更新特效/皮肤组用 `-- --scopes fx` / `skin`；
+   只补「索引还没点名」的增量用 `-- --scopes gap [--dry-run]`，见 §1.1）。产出新 ZIP 与
+   **合并后**的 `data/resource-packs.json`——scoped / gap 构建保留其它组的既有包，
+   `resourceVersion` 随包集合重算。内容变了就是新文件名（内容寻址），旧 ZIP 原样留在
+   `public/resource-packs/`。`gap` 是纯追加，旧 `packs` 一条不改，新包 id 带 `gap-` 前缀。
 4. **追加发布到 ModelScope**：`python tools/modelscope-packs.py`（dry-run 看清单）→ `--apply`。只有当前索引
    点名的 ZIP 会上传，老 ZIP 与远端遗留文件不动；末了把新的 `data/resource-packs.json` 部署到各游戏服并重启
    （或打进更新包）。
@@ -292,7 +337,7 @@ R2 凭据 `.env`）。
 | `tools/fetch-assets.mjs` | `npm run assets` | 下载 `public/{assets,fonts}`、重建 `data/assets.json` | 官方数据更新后的全量安装（ASSETS.md 详述） |
 | `tools/install-skins.mjs` | `node tools/install-skins.mjs list / add <skinId>… / remove / add-char <charId>…` | 单套皮肤的 7+ 文件、`data/assets.json` 皮肤条目、`data/skins-installed.json` | 游戏内「安装」按钮的后端；逐套补皮肤 |
 | `tools/asset-hashes.mjs` | `node tools/asset-hashes.mjs [--check]` | 生成/校验 `data/asset-hashes.json`（12 位 SHA-1） | 每次素材变化后、构建预载清单前 |
-| `tools/build-resource-packs.mjs` | `npm run resources:packs [-- --scopes fx,skin]` | `public/resource-packs/*.zip` + `data/resource-packs.json`（经 `resource_packs.py`） | 发布机上，指纹刷新之后 |
+| `tools/build-resource-packs.mjs` | `npm run resources:packs [-- --scopes fx,skin\|gap] [--dry-run]` | `public/resource-packs/*.zip` + `data/resource-packs.json`（经 `resource_packs.py`）；`gap` 只补索引缺口、纯追加（`tools/assets/gapPacks.mjs`） | 发布机上，指纹刷新之后；新素材/新类别/杂项资源补包用 `gap` |
 | `tools/modelscope-packs.py` | `npm run resources:publish`（默认 dry-run；`--apply` 才传） | ModelScope `Misyra/Arknight_Assets`：当前索引的 ZIP + `resource-packs.json` | 建包之后；append-only |
 | `tools/r2-s3-upload.mjs` | `node tools/r2-s3-upload.mjs [--bucket weishu] [--packs] [--dry-run]` | R2 桶逐文件（SigV4）+ `.assets-manifest.json`（+ `--packs` 时的包 ZIP） | R2 主发布通道；也用于整桶重传迁移元数据 |
 | `tools/r2-sync.mjs` | `node tools/r2-sync.mjs --bucket <名> [--metadata-only] [--push]` | 同上，走 Cloudflare v4 API + wrangler OAuth | 旧通道/无 S3 凭据时；`--metadata-only` 只刷新清单 |

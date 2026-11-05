@@ -33,7 +33,7 @@ async function readPackBytes(response, pack, signal, progress) {
 
 async function requestPack(pack, { signal, onProgress, onRoute,
   fetcher = globalThis.fetch, idleMs = 20000, headerMs = 20000, timeoutMs = 180000,
-  retries = 1, retryDelayMs = 1000 } = {}, validate = null) {
+  retries = 1, preferredRetries = null, retryDelayMs = 1000 } = {}, validate = null) {
   const key = (url) => new URL(url, globalThis.location?.origin || 'https://resources.invalid').href;
   const fallback = key(pack.url);
   const seen = new Set([fallback]);
@@ -46,7 +46,12 @@ async function requestPack(pack, { signal, onProgress, onRoute,
   }), pack.url];
   let lastError, retryable = false;
   for (const [route, url] of urls.entries()) {
-    for (let attempt = 0; attempt <= retries; attempt++) {
+    // The preferred route (SP_RESOURCE_PACK_ROUTES, i.e. ModelScope) can be given
+    // a larger retry budget before we fall back to the game host / R2: "prefer
+    // ModelScope" means a transient ModelScope error should not immediately become
+    // per-file R2. Opt-in only: a caller that does not ask keeps the old behaviour.
+    const routeRetries = route === 0 && preferredRetries != null ? Math.max(retries, preferredRetries) : retries;
+    for (let attempt = 0; attempt <= routeRetries; attempt++) {
       checkAbort(signal);
       const controller = new AbortController();
       const abort = () => controller.abort(signal.reason);
@@ -58,7 +63,7 @@ async function requestPack(pack, { signal, onProgress, onRoute,
       };
       const deadline = setTimeout(() => controller.abort(new Error('资源分包线路下载超时')), timeoutMs);
       try {
-        onRoute?.({ route: route + 1, routes: urls.length, attempt: attempt + 1, attempts: retries + 1, retrying: false });
+        onRoute?.({ route: route + 1, routes: urls.length, attempt: attempt + 1, attempts: routeRetries + 1, retrying: false });
         onProgress?.(0);
         touch(headerMs);
         const response = await fetcher(url, { cache: 'no-store', signal: controller.signal });
@@ -84,14 +89,14 @@ async function requestPack(pack, { signal, onProgress, onRoute,
         const transient = controller.signal.aborted || error instanceof TypeError
           || [408, 429, 500, 502, 503, 504].includes(error?.status);
         retryable ||= transient;
-        if (!transient || attempt >= retries) break;
+        if (!transient || attempt >= routeRetries) break;
       } finally {
         clearTimeout(idleTimer);
         clearTimeout(deadline);
         signal?.removeEventListener('abort', abort);
         controller.abort();
       }
-      onRoute?.({ route: route + 1, routes: urls.length, attempt: attempt + 2, attempts: retries + 1, retrying: true });
+      onRoute?.({ route: route + 1, routes: urls.length, attempt: attempt + 2, attempts: routeRetries + 1, retrying: true });
       await waitForResource(retryDelayMs * (attempt + 1), signal);
     }
   }

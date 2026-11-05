@@ -1,5 +1,5 @@
-// test/resources/pack-preload.test.js — 分包预载的分流决策与写入：只有「已选文件缺 25% 以上」的包才整个拉，
-// 整包通过 SHA-1 后逐条交给 store.importEntries（store 用桩替代，字节与顺序都断言到）。
+// test/resources/pack-preload.test.js — 分包预载的分流决策与写入：ModelScope 分包硬优先（门槛降到 5%），
+// 整包通过 SHA-1 后逐条交给 store.importEntries（store 用桩替代，字节与顺序都断言到）；返回值带覆盖/失败集合。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { preloadTransportPacks } from '../../public/js/resources/index.js';
@@ -393,4 +393,75 @@ test('the two bars follow single packs: the wire bar refills per pack, the impor
   assert.equal(last.importNumber, 2);
   assert.equal(last.importDone, 1);
   assert.equal(last.importTotal, 1);
+});
+
+// --- hard "ModelScope first": relaxed threshold, coverage and failure report -----
+
+test('硬优先：只缺 10% 也拉整包（旧的 25% 门槛已放宽），并返回覆盖集合', async () => {
+  // 10 files, 9 cached: missing/selected = 10%, below the old 25% gate.
+  const files = Array.from({ length: 10 }, (_, i) => ({ url: `/assets/ui/f${i}.png`, tier: 1, hash: '', size: null }));
+  const { pack, zip } = await makePack(files);
+  for (let i = 0; i < files.length; i++) { files[i].hash = pack.files[i].hash; files[i].size = pack.files[i].size; }
+  const cached = files.slice(0, 9).map((f) => f.url);
+  const store = stubStore(files, cached);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(zip);
+  try {
+    const out = await preloadTransportPacks(store, [pack], [1], await store.status(), new AbortController().signal);
+    assert.equal(out.imported, 10, 'even a small gap now uses the ModelScope pack');
+    assert.equal(out.coveredKeys.size, 10);
+    assert.ok(out.coveredKeys.has('/assets/ui/f9.png'));
+    assert.deepEqual(out.failedPacks, []);
+    assert.deepEqual(out.skippedPacks, []);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('全部已缓存时仍跳过整包，并记入 skippedPacks', async () => {
+  const files = [{ url: '/assets/a.png', tier: 1, hash: '', size: null }];
+  const { pack } = await makePack(files);
+  files[0].hash = pack.files[0].hash; files[0].size = pack.files[0].size;
+  const store = stubStore(files, ['/assets/a.png']);
+  const out = await preloadTransportPacks(store, [pack], [1], await store.status(), new AbortController().signal);
+  assert.equal(out.imported, 0);
+  assert.deepEqual(out.skippedPacks, [pack.id]);
+  assert.equal(out.coveredKeys.size, 0);
+});
+
+test('下载失败的包记入 failedPacks，不阻断其他包', async () => {
+  const a = await makePack([{ url: '/assets/bad.png' }]);
+  const b = await makePack([{ url: '/assets/good.png' }]);
+  a.pack.id = 'bad'; b.pack.id = 'good';
+  a.pack.url = 'https://cdn.test/resource-packs/bad.zip';
+  b.pack.url = 'https://cdn.test/resource-packs/good.zip';
+  const store = stubStore([...a.pack.files, ...b.pack.files].map((f) => ({ ...f, tier: 1 })));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => url === a.pack.url
+    ? new Response('gone', { status: 404 }) : new Response(b.zip);
+  try {
+    const out = await preloadTransportPacks(store, [a.pack, b.pack], [1], null, new AbortController().signal);
+    assert.equal(out.imported, 1, 'the healthy pack still imports');
+    assert.ok(out.failedPacks.includes('bad'));
+    assert.ok(out.coveredKeys.has('/assets/good.png'));
+    assert.ok(!out.coveredKeys.has('/assets/bad.png'));
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('空/非法 packs 返回空诊断集合', async () => {
+  const store = stubStore([]);
+  const out = await preloadTransportPacks(store, [], [1], null, new AbortController().signal);
+  assert.equal(out.imported, 0);
+  assert.equal(out.coveredKeys.size, 0);
+  assert.deepEqual(out.failedPacks, []);
+});
+
+test('transportOptions 透传：ModelScope 首线路可用更高重试预算', async () => {
+  const { pack, zip } = await makePack([{ url: '/assets/ui/x.png' }]);
+  pack.urls = ['https://modelscope.test/p/ui-01.zip'];
+  const store = stubStore([{ ...pack.files[0], tier: 1 }]);
+  let calls = 0;
+  const out = await preloadTransportPacks(store, [pack], [1], null, new AbortController().signal, null,
+    { fetcher: async () => { calls++; return calls < 3 ? new Response('busy', { status: 503 }) : new Response(zip); },
+      retries: 0, preferredRetries: 3, retryDelayMs: 0 });
+  assert.equal(calls, 3, 'the preferred route retried before falling back');
+  assert.equal(out.imported, 1);
 });

@@ -253,7 +253,7 @@ https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://�
 
 - 只有 **HTTPS** 或 **localhost** 能预载。浏览器只在安全上下文里提供 Service Worker 和可用的 Cache Storage。`http://局域网IP:3000` 可以正常玩游戏，但不能预载；面板会说明原因，而不是报错。
 - 预载的文件进这台浏览器的分片缓存（`stronghold-resources-v1-*`），之后由可选的模块 Service Worker（`public/resource-sw.js`）就近应答 `/assets/`、`/fonts/` 和 `/media/` 的请求，未命中走网络；页面、脚本、`/data/`、`/sim/` 和 `/ws` 仍每次走网络。关闭预载即注销该 Worker，清理用面板底部的「清理可选资源 / 清理全部资源」。
-- **ZIP 资源包**：维护者用 `npm run resources:packs` 把素材打成类别 zip（`public/resource-packs/`，索引 `GET /data/resource-packs.json`，构建见 docs/ASSETS.md「Preload」）。玩家点「导入 ZIP」读自己已有的包：整包指纹校验通过后逐文件按哈希写入缓存，已有的自动跳过，整套包也不必整个读进内存；「前往下载」打开维护者发布的下载页（按钮地址写死在 `public/js/ui/resourcePanel.js`，B 站短链；`SP_RESOURCE_PACK_ROUTES` 配的是**自动分包**的镜像列表，见第 12 节），「导出已缓存资源」把一个范围的已缓存文件打包分享。导入不经过服务器逻辑，服务器日志里看不到这些文件。全链路（发布 SOP、CDN 缓存规则、状态文件、当前缺口）见 [PRELOAD.md](PRELOAD.md)。
+- **ZIP 资源包**：维护者用 `npm run resources:packs` 把素材打成类别 zip（`public/resource-packs/`，索引 `GET /data/resource-packs.json`，构建见 docs/ASSETS.md「Preload」）。0.3.4 起客户端**硬优先**走这些 ModelScope 分包（覆盖率门槛放宽、首线路加重试），R2 逐文件只补分包没覆盖或失败的缺口；新增素材/类别用 `npm run resources:packs -- --scopes gap` 只补索引缺口、纯追加，不全量重打包。玩家点「导入 ZIP」读自己已有的包：整包指纹校验通过后逐文件按哈希写入缓存，已有的自动跳过，整套包也不必整个读进内存；「前往下载」打开维护者发布的下载页（按钮地址写死在 `public/js/ui/resourcePanel.js`，B 站短链；`SP_RESOURCE_PACK_ROUTES` 配的是**自动分包**的镜像列表，见第 12 节），「导出已缓存资源」把一个范围的已缓存文件打包分享。导入不经过服务器逻辑，服务器日志里看不到这些文件。全链路（发布 SOP、CDN 缓存规则、状态文件、当前缺口）见 [PRELOAD.md](PRELOAD.md)。
 - 预载能省下的，是这些本来会从你的机器发出去的字节：整套美术约 1 GB，玩家第一局真正用到的通常约 20–50 MB。
 - 0.3.3 及更早版本的标题屏按钮「下载完整素材 / 导入素材包」已由本面板取代。更早版本导入过的素材（`sp-imported-assets-v1` 缓存）仍会被旧的 `/sw.js` 读取，「设置」→「素材存储」的「清理旧版本素材」可以清理；详见 docs/ASSETS.md「Legacy imported-asset cache」。
 

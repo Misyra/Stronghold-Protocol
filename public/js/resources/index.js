@@ -485,9 +485,10 @@ function start() {
  * @param {any} status 已知的 store.status() 结果（用它的 present 集合）
  * @param {AbortSignal} signal
  */
-export async function preloadTransportPacks(store, packs, tiers, status, signal, onProgress) {
+export async function preloadTransportPacks(store, packs, tiers, status, signal, onProgress, transportOptions = {}) {
   const list = validateResourcePacks(packs);
-  if (!list.length) return { imported: 0 };
+  const outcome = { imported: 0, coveredKeys: new Set(), failedPacks: [], skippedPacks: [] };
+  if (!list.length) return outcome;
   status ??= await store.status();
   const present = status?.present instanceof Set ? status.present : new Set(status?.present || []);
   const byKey = new Map(store.selectedFiles.map((file) => [store.keyOf(file.url), file]));
@@ -511,15 +512,17 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal,
     if (!candidates.length || !mergedSkins && pack.files.some((entry) => {
       const key = store.keyOf(entry.url);
       return catalogFiles.has(key) && !byKey.has(key);
-    })) continue;
+    })) { outcome.skippedPacks.push(pack.id); continue; }
     const selected = candidates.reduce((sum, file) => sum + (file.size || 0), 0);
     const missing = candidates.reduce((sum, file) => present.has(store.keyOf(file.url)) ? sum : sum + (file.size || 0), 0);
-    // Skin preload explicitly uses the merged ZIP even for a partially cached
-    // selection. Unselected outfits are streamed past and never imported.
-    if (!selected || !missing || !mergedSkins && missing < selected * 0.25) continue;
+    // Hard "ModelScope first": a pack is used whenever anything is missing, not only
+    // when a quarter of the selection is absent. Keep a small cost guard so a single
+    // tiny gap never pulls a whole 16 MB ZIP (skin packs stay exempt: their members
+    // are streamed past, so the merged ZIP is cheap even when partly cached).
+    if (!selected || !missing || !mergedSkins && missing < selected * 0.05) { outcome.skippedPacks.push(pack.id); continue; }
     plans.push({ pack, candidates });
   }
-  if (!plans.length) return { imported: 0 };
+  if (!plans.length) return outcome;
   plans.sort((a, b) => a.pack.tier - b.pack.tier);
   // The panel's two bars (public/js/ui/resourcePanel.js) follow single packs, not the run: the pack on the wire —
   // its bar refills for every pack, N/M counts through the plan — and the pack currently unpacked into the cache.
@@ -556,7 +559,7 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal,
       onProgress?.({ phase: 'transport', pack: pack.id, packNumber: planNumbers.get(plan) || index + 1,
         packTotal: plans.length, total: pack.size, report: transport(), ...extra });
     };
-    const bytes = await downloadTransportPack(pack, { signal,
+    const bytes = await downloadTransportPack(pack, { ...transportOptions, signal,
       onRoute: (route) => progress({ loaded: 0, ...route }),
       onProgress: (loaded) => progress({ loaded }) });
     lane.status = 'queued';
@@ -594,6 +597,7 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal,
             console.warn(`[resources] 分包 ${pack.id} 线路暂不可用，将在其他分包后重试`, error);
             continue;
           }
+          outcome.failedPacks.push(pack.id);
           console.warn(`[resources] 分包 ${pack.id} 下载或校验失败，将逐文件补齐`, error);
           continue;
         }
@@ -604,6 +608,7 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal,
           if (!file) continue;
           yielded++;
           lane.imported++;
+          outcome.coveredKeys.add(store.keyOf(row.url));
           yield { files: [file], size: bytes.byteLength, read: () => bytes };
         }
         lane.status = 'done';
@@ -612,9 +617,10 @@ export async function preloadTransportPacks(store, packs, tiers, status, signal,
     }
   };
   try {
-    const result = await store.importEntries(entries(), { signal: controller.signal, concurrency: 1,
+    const imported = await store.importEntries(entries(), { signal: controller.signal, concurrency: 1,
       onProgress: (progress) => onProgress?.({ phase: 'transport', status: progress.getStatus(), report: transport() }) });
-    return { imported: result?.imported ?? yielded };
+    outcome.imported = imported?.imported ?? yielded;
+    return outcome;
   } finally {
     signal?.removeEventListener('abort', abort);
     controller.abort();
@@ -705,8 +711,14 @@ async function startDownload(task) {
       // 清单带 packs 就优先分包；SP_RESOURCE_PACK_ROUTES 只用于可选的镜像线路。
       // Keep essential packs first in the queue, but let the free lane continue
       // into optional packs while a slow essential route is retrying.
-      await preloadTransportPacks(store, store.manifest?.packs,
-        restWanted ? [TIER_ESSENTIAL, TIER_REST] : [TIER_ESSENTIAL], before, signal, onProgress);
+      // ModelScope packs first. importEntries writes straight into Cache Storage,
+      // so store.download's status() already sees those files and does not fetch
+      // them again over R2. The returned coverage/failure sets are diagnostics
+      // only; any pack gap still falls through to the per-file stage.
+      const packResult = await preloadTransportPacks(store, store.manifest?.packs,
+        restWanted ? [TIER_ESSENTIAL, TIER_REST] : [TIER_ESSENTIAL], before, signal, onProgress,
+        { preferredRetries: 2 });
+      if (packResult.failedPacks.length) console.warn(`[resources] ${packResult.failedPacks.length} 个资源包未生效，缺口由逐文件补齐`);
       const essential = await store.download({ tiers: [TIER_ESSENTIAL], signal, onProgress });
       const rest = restWanted ? await store.download({ tiers: [TIER_REST], signal,
         onProgress: (p) => onProgress({ ...p, failed: p.failed + essential.failed, failures: [...essential.failures, ...p.failures].slice(0, 10) }) }) : { failed: 0, failures: [] };

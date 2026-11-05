@@ -598,7 +598,7 @@ test('ZIP percentages and category counters update together every 500 ms, with i
 });
 
 /** Install stubs and return the recorder of what the module did. */
-function stubEnv({ manifest = MANIFEST, fail = false, secure = true } = {}) {
+function stubEnv({ manifest = MANIFEST, fail = false, secure = true, packZips = null } = {}) {
   const calls = { fetch: [], registered: [], unregistered: 0, released: [] };
   const globals = ['fetch', 'caches', 'navigator', 'isSecureContext', 'location'];
   const saved = Object.fromEntries(globals.map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
@@ -628,6 +628,9 @@ function stubEnv({ manifest = MANIFEST, fail = false, secure = true } = {}) {
         if (fail) return new Response('nope', { status: 503 });
         return new Response(JSON.stringify(manifest), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      // A transport pack request: serve a real v2 ZIP so the pack stage can import it.
+      const zip = packZips && packZips[url];
+      if (zip) return new Response(zip, { status: 200, headers: { 'Content-Type': 'application/zip' } });
       const file = (manifest.files || FILES).find((f) => url.endsWith(f.url));
       if (!file) return new Response('missing', { status: 404 });
       if (opts?.signal?.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
@@ -852,4 +855,23 @@ test('rapid off/on during a delayed manifest starts one complete download', asyn
   assert.equal(env.calls.fetch.length, 1 + FILES.length);
   await mod.syncResources(false);
   await mod.clearResources();
+});
+
+test('编排层：manifest 带 packs 时先跑分包阶段，分包失败仍由逐文件补齐', async (t) => {
+  // A pack whose URL 404s: the pack stage fails softly and the per-file stage
+  // must still complete (the "ModelScope first, R2 covers the gap" guarantee).
+  const files = [{ url: '/assets/ui/a.png', tier: 1, size: 4, hash: 'aaaaaaaaaaaa' },
+    { url: '/assets/ui/b.png', tier: 1, size: 4, hash: 'bbbbbbbbbbbb' }];
+  const packs = [{ id: 'gap-ui-01', url: '/resource-packs/gap-ui-01-abcdef012345.zip',
+    group: 'ui', tier: 1, count: 2, bytes: 8, size: 100, sha1: 'a'.repeat(40),
+    files: files.map((f) => ({ url: f.url, size: f.size, hash: f.hash })) }];
+  const manifest = { ...MANIFEST, files, count: 2, tier1: 2, sized: 2, totalBytes: 8, packs };
+  const env = stubEnv({ manifest });
+  t.after(env.restore);
+  const mod = await import('../../public/js/resources/index.js?hard-prefer-packs');
+  await mod.syncResources(true, false);
+  const st = mod.resourceState();
+  assert.equal(st.complete, true, 'the pack failure did not break the per-file fallback');
+  // The pack URL was tried before the individual files were fetched.
+  assert.ok(env.calls.fetch.some((u) => String(u).includes('gap-ui-01')), 'the pack stage ran first');
 });

@@ -310,10 +310,75 @@ function departedWeight(m, ps, gd, ids, inactive) {
   };
 }
 /**
+ * §37.69 [ASSUMED] Solo 终极: 杰西卡 for 谢拉格. The owner (2026-11-03): 「谢拉格职业队挺弱的，谢拉格我都是玩杰西卡策略的」.
+ * Ported from Stardust fork c31da98e (adapted to this executor by its addadad6, §37.71); a maintainer's prior, not an
+ * official rule.
+ * 杰西卡's 【集结指示】 gives a 寻呼模块 at the R4 / R7 / R10 / R13 preps; equipped, it offers three operators sharing a bond
+ * with its carrier, one of them free (≤ the shop level). Under the weights above the bots drafted it in 0 of 480 solo
+ * 终极 games (22 LP against 歌利亚's 45). The solo AI seat (not 托管) now drafts it whenever the shared pool can still
+ * supply 谢拉格's top threshold (pagerPick: 6 distinct members of tier ≤ BOT_MAX_LEVEL — a drawn 本局禁用 谢拉格 removes
+ * the single-bond ones), taking the one rng draw the weighted pick takes, and builds 谢拉格 from R1 as its main bond
+ * (pagerSeat, bandMain): its 寻呼模块 go on the member most likely to bring a missing one (pagerCarrier), offers take a
+ * missing member, and the shop hunt below (pagerPlan …) buys and keeps them.
+ * Fork-measured (handoff/round64, solo 终极): 6 谢拉格 swapped in for free is worth +16.9 ± 2.8 pool completion over the
+ * same focus with random singles swapped in (CRN seeds 1–160). That route, natural seeds 1–480 against bfd2a920 + §37.68:
+ * wins 105 → 149 (21.9 → 31.0 %, paired +9.2 ± 2.4 points), pool completion +5.2 ± 1.7, died before the Final Assault
+ * 52 → 68 (it starts with 22 LP). Not reproduced here — this port ran no seed sweep.
+ */
+const PAGER_BAND = 'band_jesica';
+const PAGER_BOND = 'kjeragShip';
+const PAGER_ITEM = 'use_equip_reward_special_goods_char_chess';
+/** The top threshold of `bond` (谢拉格: 6). */
+function topThreshold(gd, bond) {
+  const th = gd.bond(bond)?.thresholds;
+  return Array.isArray(th) && th.length ? th[th.length - 1] : Infinity;
+}
+/**
+ * Distinct members of `bond` a seat can still hold: its owned ones plus the unowned ones of tier ≤ BOT_MAX_LEVEL the
+ * shared pool has copies of (banned chess are not in it).
+ */
+function bondReach(m, ps, bond, owned = null) {
+  const gd = ps?.gd || m.gd;
+  let n = owned ? owned.counts.get(bond) || 0 : 0;
+  for (const [id, e] of m.pool?.entries || []) {
+    if (!(e.left > 0) || e.tier > BOT_MAX_LEVEL || owned?.bases.has(id)) continue;
+    if ((gd.chess(id)?.bonds || []).includes(bond)) n++;
+  }
+  return n;
+}
+/** §37.69: the strategy the solo AI seat drafts for 谢拉格 (null: the weighted pick decides). */
+function pagerPick(m, ps, ids, inactive) {
+  if (!m.isSolo || m.difficulty !== 'ABYSS' || !ps || !ps.isBot || ps.autoplay) return null;
+  const gd = ps.gd || m.gd;
+  if (gd.modeInactiveBonds.has(PAGER_BOND)) return null;
+  const id = ids.find((b) => (gd.band(b)?.effectRef ?? b) === PAGER_BAND && !inactive(b));
+  return id && bondReach(m, ps, PAGER_BOND) >= topThreshold(gd, PAGER_BOND) ? id : null;
+}
+/** The solo 终极 AI seat on 杰西卡 (or a plugin band built on it), its bond on, from R1. */
+function pagerEligible(m, ps) {
+  if (!ps || !m.isSolo || m.difficulty !== 'ABYSS' || !ps.isBot || ps.autoplay || !(m.round >= 1)) return false;
+  const gd = ps.gd || m.gd;
+  return (gd.band(ps.bandId)?.effectRef ?? ps.bandId) === PAGER_BAND && !gd.modeInactiveBonds.has(PAGER_BOND);
+}
+/**
+ * §37.69: the solo AI seat that builds 谢拉格 on 杰西卡 — from R1. Decided at its first look: a 杰西卡 the weights drew
+ * where 6 members can no longer come plays as before. §37.71: an advisor plan turns it off only by naming another core
+ * bond as its main (planMain), for that prep.
+ */
+function pagerSeat(m, ps) {
+  if (!pagerEligible(m, ps) || (planMain(m, ps) ?? PAGER_BOND) !== PAGER_BOND) return false;
+  if (ps._botPager === undefined) ps._botPager = bondReach(m, ps, PAGER_BOND, ownedBonds(m, ps)) >= topThreshold(ps.gd || m.gd, PAGER_BOND);
+  return ps._botPager;
+}
+/** §37.71: pagerSeat without a plan's main, its first look not cached (botIntent). */
+function pagerSeatPeek(m, ps) {
+  if (!pagerEligible(m, ps)) return false;
+  return ps._botPager ?? bondReach(m, ps, PAGER_BOND, ownedBonds(m, ps)) >= topThreshold(ps.gd || m.gd, PAGER_BOND);
+}
+/**
  * The weights botPickBand draws from, without the draw: { forced, pairs: [[band id, weight]] } — `forced` a band a rule
- * takes outright, else null with the weights. No draw, no cache: §37.71's digest shows them to an external AI seat as
- * the bot's default. [stardust addadad6; the fork's forced 杰西卡 seat (§37.69, c31da98e) is not ported — forced stays
- * null here until a rule takes a band outright.]
+ * takes outright (§37.69 杰西卡), else null with the weights. No draw, no cache: §37.71's digest shows them to an external
+ * AI seat as the bot's default.
  */
 export function botBandWeights(m, ps) {
   const gd = ps?.gd || m.gd;
@@ -324,6 +389,9 @@ export function botBandWeights(m, ps) {
   const mates = ps && typeof m.alivePlayers === 'function' ? m.alivePlayers().filter((p) => p !== ps) : [];
   const reserved = new Set(mates.flatMap((p) => gd.bandBondIds(p.bandId)));
   const inactive = (id) => gd.bandBondIds(id).some((b) => gd.modeInactiveBonds.has(b));
+  // §37.69: 杰西卡 for 谢拉格 (solo 终极), with the draw the weighted pick takes
+  const pager = pagerPick(m, ps, ids, inactive);
+  if (pager) return { forced: pager, pairs: [] };
   const medic = teamMedicBoost(m, ps, ids);
   const gone = departed(m, ps) ? departedWeight(m, ps, gd, ids, inactive) : null;
   const pairs = ids.map((id) => {
@@ -573,7 +641,29 @@ function teammateBonds(m, ps) {
  */
 function bandMain(m, ps) {
   const gd = ps.gd || m.gd;
-  return gd.bandBondIds(ps.bandId).find((id) => gd.bond(id)?.isCore && !gd.modeInactiveBonds.has(id)) ?? null;
+  return gd.bandBondIds(ps.bandId).find((id) => gd.bond(id)?.isCore && !gd.modeInactiveBonds.has(id))
+    // §37.69: 谢拉格 for the solo 杰西卡 seat, built from 0 members like a 职业队 bond
+    ?? (pagerSeat(m, ps) ? PAGER_BOND : null);
+}
+
+/**
+ * §37.69: the 杰西卡 seat's hunt state — { bond, k, top, owned } while it owns fewer distinct 谢拉格 members than the top
+ * threshold, else null.
+ */
+function pagerPlan(m, ps, owned = null) {
+  if (!pagerSeat(m, ps)) return null;
+  const top = topThreshold(ps.gd || m.gd, PAGER_BOND);
+  const o = owned || ownedBonds(m, ps);
+  const k = o.counts.get(PAGER_BOND) || 0;
+  return k < top ? { bond: PAGER_BOND, k, top, owned: o } : null;
+}
+
+/** §37.69: the 杰西卡 seat never sells (or drops) its last copy of a 谢拉格 member. */
+function pagerKeeps(m, ps, p) {
+  if (!p || p.kind !== 'chess' || !pagerSeat(m, ps) || !(chessRec(m, p.id, ps)?.bonds || []).includes(PAGER_BOND)) return false;
+  const gd = ps.gd || m.gd;
+  const base = gd.baseIdOf(p.id);
+  return !ps.allChess().some((q) => q.uid !== p.uid && gd.baseIdOf(q.id) === base);
 }
 
 /**
@@ -649,11 +739,10 @@ function secondBond(m, owned, focus) {
 /**
  * §37.71 [ASSUMED] (stardust addadad6): the built-in bot's own defaults for an external AI seat's digest (aiDigest `bot`),
  * from seat-visible state, with no draw and no cache written. A band turn: the draft shares (botBandWeights, the six
- * largest, rounded) and the band a rule takes (a share ≥ 0.95, the co-op Touch boost of §37.63 / §37.65, counts as one).
- * A prep: the focus and second bonds as bondPlan scores them without an advisor plan and without its shared-pool terms
- * (reach and supply: stock a player does not see), the level the bot aims for this round. An empty plan plays exactly
- * these (the executor's own choices). [The fork's 杰西卡 route flag (route:'pager', §37.69/c31da98e) is not ported:
- * route is always null here.]
+ * largest, rounded) and the band a rule takes (§37.69 杰西卡; a share ≥ 0.95, the co-op Touch boost of §37.63 / §37.65,
+ * counts as one). A prep: the focus and second bonds as bondPlan scores them without an advisor plan and without its
+ * shared-pool terms (reach and supply: stock a player does not see), the level the bot aims for this round and the
+ * 杰西卡 route. An empty plan plays exactly these (the executor's own choices).
  */
 export function botIntent(m, ps, kind) {
   if (kind === 'band') {
@@ -665,10 +754,11 @@ export function botIntent(m, ps, kind) {
   }
   const gd = ps.gd || m.gd;
   const owned = ownedBonds(m, ps);
-  const main = gd.bandBondIds(ps.bandId).find((id) => gd.bond(id)?.isCore && !gd.modeInactiveBonds.has(id)) ?? null;
+  const pager = pagerSeatPeek(m, ps);
+  const main = gd.bandBondIds(ps.bandId).find((id) => gd.bond(id)?.isCore && !gd.modeInactiveBonds.has(id)) ?? (pager ? PAGER_BOND : null);
   const focus = main ?? focusBond(m, ps, owned, teammateBonds(m, ps), null);
   return { focus, second: secondBond(m, owned, focus), levelTarget: Math.min(LEVEL_TARGET[Math.min(LEVEL_TARGET.length - 1, m.round)], BOT_MAX_LEVEL),
-    route: null };
+    route: pager ? 'pager' : null };
 }
 
 /**
@@ -817,7 +907,7 @@ function tradeOnce(m, ps, ctxOf) {
   if (!buyOffer(m, ps, best)) return false;
   const fresh = keep ? null : ps.allChess().find((p) => !before.has(p.uid));
   // a unit the lineup takes stays (the buy loop would have bought it anyway)
-  if (fresh && !gd.isGolden(fresh.id) && !chooseLineup(m, ps, context(m, ps)).set.includes(fresh)) tryDo(() => ps.sell(fresh.uid));
+  if (fresh && !gd.isGolden(fresh.id) && !pagerKeeps(m, ps, fresh) && !chooseLineup(m, ps, context(m, ps)).set.includes(fresh)) tryDo(() => ps.sell(fresh.uid));
   return true;
 }
 
@@ -2087,15 +2177,18 @@ function refreshValue(m, ps, ctx) {
  * nor one gained since the bot's last prep ended (unseen, see rememberOwned: the operator a 突变细胞 transformation
  * gains joins the bench while its carrier's deployment is free — the placement step decides about it, not the shed's
  * piece value). §37.71: never a piece the seat's plan protects (planProtected); a piece the plan sells goes first,
- * weakest first.
+ * weakest first. Never the 杰西卡 seat's last copy of a 谢拉格 member (pagerKeeps, §37.69); `keepCarriers`: nor a piece
+ * carrying equipment.
  */
-export function sellWeakestHand(m, ps, { keepPairs = true, below = Infinity, handOnly = false, keepFresh = false } = {}) {
+export function sellWeakestHand(m, ps, { keepPairs = true, below = Infinity, handOnly = false, keepFresh = false, keepCarriers = false } = {}) {
   const ctx = context(m, ps);
   let worst = null;
   let worstV = Infinity;
   let worstSold = false;
   for (const p of handOnly ? ps.hand : [...ps.temp, ...ps.hand]) {
     if (!p || p.kind !== 'chess' || (p.items || []).some((it) => isMutationCell(m.gd, it.id))) continue;
+    if (pagerKeeps(m, ps, p)) continue;
+    if (keepCarriers && (p.items || []).length) continue;
     const base = m.gd.baseIdOf(p.id);
     if (keepPairs && !m.gd.isGolden(p.id) && (ctx.copies.get(base) || 0) >= 2) continue;
     if (keepFresh && (p.boughtRound === m.round || unseen(ps, p))) continue;
@@ -2142,8 +2235,9 @@ export function sellJunk(m, ps, policy = null) {
   const keep = [];
   const junk = [];
   for (const p of bench) {
-    // §37.71: a piece the plan protects is neither sold nor counted in the bench budget
-    if (planProtected(m, ps, p)) continue;
+    // §37.69: the 杰西卡 seat's last copy of a 谢拉格 member is neither sold nor counted in the bench budget; §37.71: nor
+    // a piece the plan protects
+    if (pagerKeeps(m, ps, p) || planProtected(m, ps, p)) continue;
     const c = chessRec(m, p.id, ps);
     if (!c) continue;
     const base = m.gd.baseIdOf(p.id);
@@ -2170,9 +2264,13 @@ function takeOffers(m, ps, policy = null) {
     const ctx = context(m, ps, policy);
     let best = -1;
     let bestS = -Infinity;
+    const pagerH = policy ? null : pagerPlan(m, ps);
     offer.slots.forEach((s, i) => {
       if (s.sold) return;
-      const sc = s.kind === 'item' ? (canUseItem(m, ps, s) ? 10 : 1) + gd.tierOf(s.id) * 3 : buyScore(m, ps, s.id, ctx);
+      let sc = s.kind === 'item' ? (canUseItem(m, ps, s) ? 10 : 1) + gd.tierOf(s.id) * 3 : buyScore(m, ps, s.id, ctx);
+      // §37.69: the 杰西卡 seat takes a missing 谢拉格 member first (the highest tier)
+      if (s.kind === 'chess' && pagerH && (chessRec(m, s.id, ps)?.bonds || []).includes(pagerH.bond)
+        && !pagerH.owned.bases.has(gd.baseIdOf(s.id))) sc += 1000 + gd.tierOf(s.id);
       if (sc > bestS) { bestS = sc; best = i; }
     });
     if (best < 0) break;
@@ -2188,6 +2286,47 @@ function takeOffers(m, ps, policy = null) {
       const fresh = ps.allChess().find((p) => !before.has(p.uid) && p.id === picked.id);
       if (fresh && !planProtected(m, ps, fresh)) tryDo(() => ps.sell(fresh.uid));
     }
+  }
+}
+
+/**
+ * §37.69: the 杰西卡 seat's 寻呼模块 carrier — the owned 谢拉格 member whose offer (three distinct chess sharing a bond with
+ * it as equipped, pieceBonds: copy-weighted, tier ≤ the shop level) most likely shows an unowned member: 1 − (1 − q)³,
+ * q = the unowned members' copies over the copies of every chess sharing a bond with it. Null without a member (the item
+ * waits).
+ */
+function pagerCarrier(m, ps, h) {
+  const gd = ps.gd || m.gd;
+  let best = null;
+  let bestP = -1;
+  for (const p of ps.allChess()) {
+    const bonds = pieceBonds(gd, p, m.rules);
+    if (!bonds.includes(h.bond)) continue;
+    let all = 0;
+    let miss = 0;
+    for (const [id, e] of m.pool.entries) {
+      if (!(e.left > 0) || e.tier > ps.shop.level) continue;
+      const cb = gd.chess(id)?.bonds || [];
+      if (!cb.some((b) => bonds.includes(b))) continue;
+      all += e.left;
+      if (cb.includes(h.bond) && !h.owned.bases.has(id)) miss += e.left;
+    }
+    const P = all > 0 ? 1 - (1 - miss / all) ** 3 : 0;
+    if (P > bestP + 1e-9) { bestP = P; best = p; }
+  }
+  return best;
+}
+
+/** §37.69: at the prep start the 杰西卡 seat equips a held 寻呼模块 at once and takes its offer. */
+function pagerUse(m, ps) {
+  const gd = ps.gd || m.gd;
+  for (let guard = 0; guard < 4; guard++) {
+    const h = pagerPlan(m, ps);
+    if (!h) return;
+    const item = [...ps.hand, ...ps.temp].find((q) => q && q.kind === 'item' && itemEffect(gd.item(q.id)) === PAGER_ITEM);
+    const carrier = item && pagerCarrier(m, ps, h);
+    if (!carrier || !tryDo(() => ps.equip(item.uid, carrier.uid))) return;
+    takeOffers(m, ps);
   }
 }
 
@@ -2210,6 +2349,8 @@ export function botPrepBegin(m, ps) {
 export function* botPrepBeginSteps(m, ps, options = {}) {
   // §37.75 (stardust 2a2beff8): the seat names its own focus as its plan main for this round before anything spends
   selfPlan(m, ps);
+  // §37.69: a held 寻呼模块 is equipped and its offer taken before the rest of the prep
+  pagerUse(m, ps);
   return yield* LEGACY_PREP.prepBegin(m, ps, options);
 }
 
@@ -2253,6 +2394,8 @@ export function maybeFreeze(m, ps, policy = null) {
   if (ps.shop.slots.some((s) => s && !s.sold && s.kind === 'chess' && ps.priceOf(s) > ps.funds
     && (ps.completesChessMerge(s.id) || planBuyTarget(m, ps, s.id))
     && (!policy || policy.core(m, ps, s.id) || buyScoreOf(m, ps, s.id, policy) >= 60))) tryDo(() => ps.freeze());
+  // §37.69: a missing 谢拉格 member the 杰西卡 seat could not pay stays for the next round
+  else if (!policy && pagerShowsMissing(m, ps)) tryDo(() => ps.freeze());
 }
 
 /** §35.14: the plan's explicit buy targets bought this prep (planProtected) and the prep's first refresh count. */
@@ -2375,8 +2518,11 @@ export function spendDown(m, ps) {
   if (m.gd.leftoverKeptBands.includes(ps.bandId)) return;
   const gd = ps.gd || m.gd;
   for (let guard = 0; guard < 4; guard++) {
+    // §37.69: the 杰西卡 seat buys a missing member these refreshes show; one it cannot pay stays (maybeFreeze)
+    for (let i = 0; i < 6 && pagerBuy(m, ps); i++);
     // §37.71: the seat buys an explicit plan target these refreshes show; one it cannot pay stays (maybeFreeze)
     for (let i = 0; i < 6 && planTargetBuy(m, ps); i++);
+    if (pagerShowsMissing(m, ps)) return;
     // §37.71: nor is an explicit plan target refreshed away
     if (ps.shop.frozen || ps.shop.slots.some((s) => s && !s.sold && s.kind === 'chess'
       && (ps.completesChessMerge(s.id) || planBuyTarget(m, ps, s.id)))) return;
@@ -2392,6 +2538,98 @@ function deferPolicyMerge(m, ps, purchasePrice = 0, policy = null) {
   if (!policy.canLevel(m, ps) || ps.funds < Math.max(0, ps.shop.upgradePrice) + purchasePrice) return false;
   const previous = m.lastResults.get(ps.playerId);
   return !!previous && !(previous.leaked || []).some(l => l.counted !== false);
+}
+
+/** §37.69 [ASSUMED]: at most this many extra refreshes a prep, before the level-up, for a missing 谢拉格 member. */
+const PAGER_REFRESHES = 4;
+/** §37.69 [ASSUMED]: only while one refresh shows a missing member with at least this chance. */
+const PAGER_REFRESH_CHANCE = 0.15;
+
+/** §37.69: the 杰西卡 seat's hunt refreshes this prep. */
+function pagerRefreshes(m, ps) {
+  if (!ps._botPagerHunt || ps._botPagerHunt.round !== m.round) ps._botPagerHunt = { round: m.round, refreshes: 0 };
+  return ps._botPagerHunt;
+}
+
+/**
+ * §37.69: the funds of the round's planned level-ups — every step levelUp takes toward the round's LEVEL_TARGET (a free
+ * one first, then the paid ones), 0 when none is planned.
+ */
+function plannedLevelFunds(m, ps) {
+  const gd = ps.gd || m.gd;
+  const target = Math.min(LEVEL_TARGET[Math.min(LEVEL_TARGET.length - 1, m.round)], BOT_MAX_LEVEL, gd.maxShopLevel);
+  let funds = 0;
+  for (let level = ps.shop.level; level < target; level++) {
+    funds += Math.max(0, level === ps.shop.level ? ps.shop.upgradePrice : gd.upgradeBase(level) ?? 0);
+  }
+  return funds;
+}
+
+/**
+ * §37.69: the 杰西卡 seat buys any unowned 谢拉格 member the shop shows (the highest tier first) that it can pay while keeping
+ * the funds of the round's planned level-up; a full hand first sells its weakest single (a fresh one last, never a pair
+ * or a member).
+ */
+function pagerBuy(m, ps) {
+  const h = pagerPlan(m, ps);
+  if (!h) return false;
+  const gd = ps.gd || m.gd;
+  let best = -1;
+  let bestT = -1;
+  const cap = ps.funds - plannedLevelFunds(m, ps);
+  ps.shop.slots.forEach((s, i) => {
+    if (!s || s.sold || s.kind !== 'chess' || ps.priceOf(s) > cap) return;
+    const c = chessRec(m, s.id, ps);
+    if (!c || !(c.bonds || []).includes(h.bond) || h.owned.bases.has(gd.baseIdOf(s.id))) return;
+    if (c.tier > bestT) { bestT = c.tier; best = i; }
+  });
+  if (best < 0) return false;
+  if (freeSlot(ps.hand) < 0) {
+    // never a piece carrying equipment: its items return to the hand and fill the slot again (PlayerState.sell)
+    if (!sellWeakestHand(m, ps, { handOnly: true, keepFresh: true, keepCarriers: true })) sellWeakestHand(m, ps, { handOnly: true, keepCarriers: true });
+    if (freeSlot(ps.hand) < 0) return false;
+  }
+  // a sale returns 1 fund, never less: the slot stays affordable
+  return buyOffer(m, ps, best);
+}
+
+/** §37.69: whether the shop shows an unowned 谢拉格 member the 杰西卡 seat still needs. */
+function pagerShowsMissing(m, ps, h = pagerPlan(m, ps)) {
+  if (!h) return false;
+  const gd = ps.gd || m.gd;
+  return ps.shop.slots.some((s) => s && !s.sold && s.kind === 'chess' && (chessRec(m, s.id, ps)?.bonds || []).includes(h.bond)
+    && !h.owned.bases.has(gd.baseIdOf(s.id)));
+}
+
+/**
+ * §37.69: one extra refresh in the 杰西卡 seat's fill-only pass (before the level-up) for a missing member — at most
+ * PAGER_REFRESHES a prep, only while the shop shows none, one refresh shows one with a chance of PAGER_REFRESH_CHANCE or
+ * more (the copy-weighted roll over the level's chess slots), and the funds after it still pay the planned level-up plus
+ * the cheapest missing member (and 坎诺特's interest capital).
+ */
+function pagerRefresh(m, ps) {
+  const h = pagerPlan(m, ps);
+  if (!h) return false;
+  const st = pagerRefreshes(m, ps);
+  if (st.refreshes >= PAGER_REFRESHES || pagerShowsMissing(m, ps, h)) return false;
+  const gd = ps.gd || m.gd;
+  let minPrice = Infinity;
+  let total = 0;
+  let miss = 1;
+  const slots = gd.shopSlots(ps.shop.level).chess;
+  for (const [, e] of m.pool.entries) if (e.left > 0 && e.tier <= ps.shop.level) total += e.left;
+  for (const [id, e] of m.pool.entries) {
+    if (!(e.left > 0) || e.tier > ps.shop.level || h.owned.bases.has(id)) continue;
+    if (!(gd.chess(id)?.bonds || []).includes(h.bond)) continue;
+    minPrice = Math.min(minPrice, ps.priceOf({ kind: 'chess', id, basePrice: gd.chessPrice(id) }));
+    if (total > 0) miss *= (1 - e.left / total) ** slots;
+  }
+  if (!Number.isFinite(minPrice) || 1 - miss < PAGER_REFRESH_CHANCE) return false;
+  const cost = ps.shop.freeRefreshes > 0 ? 0 : gd.refreshPrice;
+  if (ps.funds - cost < plannedLevelFunds(m, ps) + minPrice + fundsReserve(m, ps)) return false;
+  if (!tryDo(() => ps.refresh())) return false;
+  st.refreshes++;
+  return true;
 }
 
 /** Buying / rerolling toward the lineup; a step generator (yields after each purchase or reroll). */
@@ -2411,6 +2649,8 @@ export function* buyLoopSteps(m, ps, { fillOnly = false, maxRefreshes = 0, polic
   let memo = null;
   for (let guard = 0; guard < 40; guard++) {
     if (guard > 0) yield;
+    // §37.69: the 杰西卡 seat's missing 谢拉格 members come first
+    if (!policy && pagerBuy(m, ps)) { memo = null; continue; }
     if (!policy && !fillOnly && tradeOnce(m, ps, () => context(m, ps))) continue;
     if (!policy && !fillOnly && layerRefresh(m, ps)) { refreshes++; continue; }
     if (policy) takeOffers(m, ps, policy); // a merge reward can enable another merge before upgrading
@@ -2462,7 +2702,9 @@ export function* buyLoopSteps(m, ps, { fillOnly = false, maxRefreshes = 0, polic
         // §37.35: before the level-up, a new member of the opening strategy's core bond is bought like a merge
         const bandStep = fillOnly && !merges && !customPolicy && ctx.focus && ctx.focus === bandMain(m, ps)
           && !ctx.owned.bases.has(base) && countFree(ps.hand) >= 3 && (chessRec(m, s.id, ps)?.bonds || []).includes(ctx.focus)
-          && !!coreGap(m, ctx.focus, ctx.owned, ps);
+          && !!coreGap(m, ctx.focus, ctx.owned, ps)
+          // §37.69: the 杰西卡 seat's member before the level-up only with the level-up's funds kept
+          && !(pagerPlan(m, ps, ctx.owned) && ps.funds - price < plannedLevelFunds(m, ps));
         if (freeSlot(ps.hand) < 0 || (mergesOnly && !merges && !bandStep)) return;
         const core = customPolicy && policy.core(m, ps, s.id);
         if (customPolicy) {
@@ -2558,6 +2800,10 @@ export function* buyLoopSteps(m, ps, { fillOnly = false, maxRefreshes = 0, polic
       if (!tryDo(() => ps.refresh())) return;
       continue;
     }
+    // §37.69: the 杰西卡 seat's extra refreshes before the level-up; a missing member it could not buy is not refreshed
+    // away (maybeFreeze keeps it for the next round)
+    if (fillOnly && !customPolicy && pagerRefresh(m, ps)) continue;
+    if (!customPolicy && pagerShowsMissing(m, ps)) return;
     if (canRefresh) {
       // Manual g.refresh cancels freezing and replaces its cards. §37.71: save an unaffordable explicit plan target first.
       if (ps.shop.slots.some(s => s && !s.sold && s.kind === 'chess'
@@ -2748,14 +2994,15 @@ export function* arrangeSteps(m, ps, { final = false, defer = false, delegate = 
   for (const [, p] of [...ps.board]) {
     if (p.kind !== 'chess' || chosenSet.has(p.uid)) continue;
     let idx = freeSlot(ps.hand);
-    // §37.71: a piece the plan protects goes to the hand — a full hand first sells its weakest unchosen single
-    if (idx < 0 && planProtected(m, ps, p)) {
+    // §37.69: the 杰西卡 seat's last copy of a member goes to the hand — a full hand first sells its weakest unchosen single;
+    // §37.71: so does a piece the plan protects
+    if (idx < 0 && (pagerKeeps(m, ps, p) || planProtected(m, ps, p))) {
       const gd = ps.gd || m.gd;
-      const cand = ps.hand.filter((q) => q && q.kind === 'chess' && !chosenSet.has(q.uid) && !planProtected(m, ps, q)
-        && !gd.isGolden(q.id) && (ctx.copies.get(gd.baseIdOf(q.id)) || 0) < 2)
+      const cand = ps.hand.filter((q) => q && q.kind === 'chess' && !chosenSet.has(q.uid) && !pagerKeeps(m, ps, q)
+        && !planProtected(m, ps, q) && !gd.isGolden(q.id) && (ctx.copies.get(gd.baseIdOf(q.id)) || 0) < 2)
         .sort((a, b) => pieceValue(m, ps, a, ctx) - pieceValue(m, ps, b, ctx) || a.uid - b.uid)[0];
       if (cand && tryDo(() => ps.sell(cand.uid))) idx = freeSlot(ps.hand);
-      else if (planItemRoomFor(m, ps)) idx = freeSlot(ps.hand);
+      else if (planProtected(m, ps, p) && planItemRoomFor(m, ps)) idx = freeSlot(ps.hand);
     }
     if (idx >= 0) tryDo(() => ps.move(p.uid, { area: 'hand', idx }));
     else tryDo(() => ps.sell(p.uid));
@@ -3661,9 +3908,14 @@ export function itemTarget(m, ps, item, ctx = context(m, ps), usePlan = true) {
       return byVal(deployed.filter(normal))[0] || byVal(owned.filter(normal))[0] || null;
     case 'char_chess_transformation_equip':
       return cellTarget(m, ps, ctx);
+    case 'use_equip_reward_special_goods_char_chess': {
+      // §37.69: the 杰西卡 seat's 寻呼模块 goes on the member most likely to bring a missing one (none owned: it waits)
+      const h = pagerPlan(m, ps);
+      if (h) return pagerCarrier(m, ps, h);
+    }
+    // falls through
     case 'use_equip_reward_char_chess_bond_layer':
     case 'use_equip_reward_char_chess_with_same_bond':
-    case 'use_equip_reward_special_goods_char_chess':
       return owned.slice().sort((a, b) => rel(b) - rel(a) || val(b) - val(a) || a.uid - b.uid)[0] || null;
     default:
       break;
@@ -3842,7 +4094,8 @@ export function resolveTemp(m, ps) {
         const j = freeSlot(ps.hand);
         if (j >= 0 && tryDo(() => ps.move(p.uid, { area: 'hand', idx: j }))) continue;
       }
-      if (!sellWeakestHand(m, ps)) tryDo(() => ps.sell(p.uid));
+      // §37.69: the 杰西卡 seat's last copy of a member goes before a copy of a pair only when nothing else can go
+      if (!sellWeakestHand(m, ps) && !(pagerKeeps(m, ps, p) && sellWeakestHand(m, ps, { keepPairs: false }))) tryDo(() => ps.sell(p.uid));
     } else if (p.kind === 'item') {
       // 突变细胞 comes back after every transformation (昆图斯's strategy item), and a human's item under AI 托管 is theirs:
       // make room in the hand (sell a bench operator) rather than lose it — only a hand of nothing but items still drops it

@@ -145,6 +145,10 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   /** @type {Map<string, { mtimeMs: number, size: number, ctimeMs: number, ino: number, body: Buffer, hash: string }>} rewritten manifests */
   const cdnCache = new Map();
   const cdnPending = new Map();
+  /** @type {{ mtimeMs: number, size: number, ctimeMs: number, ino: number, body: Buffer, baseTag: string } | null} routed resource-pack index — one file, so one entry; rebuilt when the file's stat identity changes */
+  let packsMemo = null;
+  let packsMemoHits = 0;
+  let packsMemoBuilds = 0;
   const manifestEncoder = new BackgroundClient(new URL('../workers/manifestEncode.js', import.meta.url));
   const sets = visual || (typeof registry.pluginFile === 'function' ? createVisualSets({ registry, log }) : null);
   let vanilla = content;
@@ -350,13 +354,25 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
     if (decoded.toLowerCase() === `/data/${RESOURCE_PACK_MANIFEST_FILE}`) {
       const file = path.join(dataDir, RESOURCE_PACK_MANIFEST_FILE);
       try {
-        const doc = JSON.parse(await fsp.readFile(file, 'utf8'));
-        if (doc.format === 'stronghold-resource-pack-index' && doc.version === 1) {
-          doc.packs = routeResourcePacks(doc.packs, cdn, resourcePackRoutes);
-        }
-        const body = Buffer.from(JSON.stringify(doc));
+        // 这份清单是 MB 级:readFile → parse → 路由改写 → stringify → sha256 全是每请求重算的纯 CPU
+        // (304 重验证也要全走一遍才拿得到 ETag),阻塞事件循环。按文件的 stat 身份记忆化路由后的 body
+        // 与 baseTag(cdnCache 同型;size/ctime/ino 兜住 mtime 被原样放回的改写):身份没变直接回,
+        // 变了才重建。改写只吃 cdn 与 resourcePackRoutes,二者都是本 handler 生命周期内不变的设置,不进键。
         const st = await fsp.stat(file);
-        const baseTag = `"resource-packs-${createHash('sha256').update(body).digest('hex')}"`;
+        const memo = packsMemo && packsMemo.mtimeMs === st.mtimeMs && packsMemo.size === st.size
+          && packsMemo.ctimeMs === st.ctimeMs && packsMemo.ino === st.ino ? packsMemo : null;
+        if (memo) packsMemoHits += 1;
+        if (!memo) {
+          packsMemoBuilds += 1;
+          const doc = JSON.parse(await fsp.readFile(file, 'utf8'));
+          if (doc.format === 'stronghold-resource-pack-index' && doc.version === 1) {
+            doc.packs = routeResourcePacks(doc.packs, cdn, resourcePackRoutes);
+          }
+          const body = Buffer.from(JSON.stringify(doc));
+          packsMemo = { mtimeMs: st.mtimeMs, size: st.size, ctimeMs: st.ctimeMs, ino: st.ino, body,
+            baseTag: `"resource-packs-${createHash('sha256').update(body).digest('hex')}"` };
+        }
+        const { body, baseTag } = packsMemo;
         // A pack-equipped server's index runs to tens of KB of JSON — br / gzip like the rest of the JSON routes
         // (GZIP_MIN_BYTES keeps an empty installation's 100-byte index as it is).
         const encoding = body.length >= GZIP_MIN_BYTES ? pickEncoding(req.headers['accept-encoding']) : null;
@@ -639,7 +655,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   serveStatic.runtimeVersion = release.runtimeTag;
   serveStatic.close = () => manifestEncoder.close();
   serveStatic.cacheStats = () => ({ gzipBytes: gzipCache.total, gzipEntries: gzipCache.map.size, gzipLimitBytes: gzipCache.maxTotal, gzipInflight: gzipCache.inflight.size,
-    transformBytes: transformCache.total, transformEntries: transformCache.map.size, transformLimitBytes: transformCache.maxTotal, transformInflight: transformCache.inflight.size });
+    transformBytes: transformCache.total, transformEntries: transformCache.map.size, transformLimitBytes: transformCache.maxTotal, transformInflight: transformCache.inflight.size,
+    packsMemoHits, packsMemoBuilds });
   return serveStatic;
 }
 

@@ -84,6 +84,14 @@ export function preloadSprites(names = Object.keys(SPRITES), ms = 2500) {
   });
   return Promise.race([all, new Promise((resolve) => { timer = setTimeout(() => resolve(false), ms); })]);
 }
+/**
+ * Whether every named sprite is already on the page (a warm preload's cache): preloadSprites resolves at once then.
+ * entryFilm.js uses it to take the film as soon as it is up instead of giving a cold load another window.
+ * @param {string[]} [names]
+ */
+export function spritesReady(names = Object.keys(SPRITES)) {
+  return names.every((n) => loadedSprites.has(n));
+}
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const seg = (t, a, b) => clamp((t - a) / (b - a));

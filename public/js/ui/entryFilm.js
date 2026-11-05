@@ -12,12 +12,15 @@
 // waits or the film runs takes the overlay down at once, silences the cue and hands the music back to that screen.
 // Assets follow this repo's pipeline (docs/ASSETS.md): every sprite comes from data/assets.json `ui`, and the cue from
 // `audio.sfx.ui.load` — a missing file / pack means no film or a silent cue, never a request that 404s.
-// main.js calls playEntryFilm once at boot.
+// main.js starts this module's import at boot and calls playEntryFilm once, when the title is up. Importing it also
+// fires warmEntryFilm: the sprites are requested while the title page's own art floods the network, instead of only
+// 1.2 s before the film would start (a fix measured on this machine after the port — the old look missed on every cold
+// start, maintainer 2026-11-05).
 import { store, selectRoute } from '../store.js';
 import { audio, resolveBgm } from '../audio.js';
 import { data } from '../data.js';
 import { reducedMotion } from './device.js';
-import { mountAllianceIntro, preloadSprites, INTRO_AUDIO, INTRO_SPAN } from './allianceScene.js';
+import { mountAllianceIntro, preloadSprites, spritesReady, INTRO_AUDIO, INTRO_SPAN } from './allianceScene.js';
 import { t } from '../../../shared/i18n.js';
 import { scriptOf } from '../../../shared/i18nPacks.js';
 
@@ -47,6 +50,13 @@ const touchDevice = () => (mq('(pointer: coarse)') || mq('(any-pointer: coarse)'
 /** Phones play the opening in landscape (in portrait the game shows its rotate hint; a 16:9 film would be a strip). */
 function phoneReady() {
   return globalThis.innerWidth > globalThis.innerHeight;
+}
+/**
+ * Whether this device gets the film at all, asked once when the title is entered (a later rotation changes nothing).
+ * The warm and the play use this same gate: no sprite requests on a device that will not show the film.
+ */
+function filmPossible() {
+  return !reducedMotion() && !(touchDevice() && !phoneReady());
 }
 
 /** Decode the cue (and warm the lobby music) while the pictures load; null when nothing can be heard now. */
@@ -258,16 +268,45 @@ function run(allowed, mount) {
  */
 export async function playEntryFilm(opts = {}) {
   const { skip = () => false, mount = mountAllianceIntro } = opts;
-  if (reducedMotion()) return;
-  // once, as the title is entered — a later rotation does not get a second look
-  if (touchDevice() && !phoneReady()) return;
+  if (!filmPossible()) return;
   try { await data.load('assets'); } catch { return; }
   const allowed = () => { const r = selectRoute(store.get()); return r !== 'room' && r !== 'game' && !skip(); };
   if (!allowed()) return;
-  // a short look: the title is already on screen, so a film that would only cover it seconds later is skipped this
-  // time (the sprites it did load are cached for the next page load)
+  // the title is already on screen, so a film that would only cover it seconds later is skipped this load. The
+  // pictures were requested at import time (warmEntryFilm): a page that has them all starts the film at once, and
+  // only a genuine miss gives a cold load another window. That window is 1800 ms, not the old 1200 ms — the title
+  // screen's own art held the last sprite past 1.2 s on a cold start here; the film covers the title whenever it
+  // starts, and past this it is skipped as before.
   let pictures;
-  try { pictures = await preloadSprites(undefined, 1200); } catch { return; }
+  try { pictures = spritesReady() || await preloadSprites(undefined, 1800); } catch { return; }
   if (pictures !== true || !allowed()) return;
   run(allowed, mount);
 }
+
+const WARM_MS = 10000;
+/** @type {Promise<boolean> | null} */
+let warmTask = null;
+/**
+ * Start the film's sprite downloads ahead of the title screen. entryFilm.js calls this as it is imported, and main.js
+ * starts that import at the top of boot, so the requests run while boot still awaits fonts / the socket / the
+ * language — out of the title page's own asset peak. Fire-and-forget: the outcome only decides whether the cache is
+ * warm, and the loads keep going even after WARM_MS (preloadSprites' own race) so a slow page can still catch them.
+ * The device gate is playEntryFilm's: reduced motion or a phone in portrait asks for nothing.
+ * @param {{ force?: boolean, preload?: typeof preloadSprites }} [opts]  force: start again even after a warm (tests);
+ *   preload: a stand-in preload (tests count its calls)
+ * @returns {Promise<boolean>} true when every sprite is (or became) loaded; false on a device that skips the film,
+ *   a failed sprite, or the WARM_MS race
+ */
+export function warmEntryFilm(opts = {}) {
+  const { force = false, preload = preloadSprites } = opts;
+  if (!filmPossible()) return Promise.resolve(false);
+  if (warmTask && !force) return warmTask;
+  warmTask = data.load('assets')
+    .then(() => preload(undefined, WARM_MS))
+    .catch(() => false);
+  return warmTask;
+}
+
+// Once per module load (main.js imports this early, before it awaits fonts / the socket / the language); the result
+// is not awaited — only the requests and the cache matter.
+warmEntryFilm();

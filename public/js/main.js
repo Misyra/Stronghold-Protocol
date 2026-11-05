@@ -576,6 +576,12 @@ async function boot() {
   installTrafficMeter();
   // touch / hover / fullscreen classes, zoom-gesture blocking, rotation re-layout (ui/device.js, css/devices.css)
   installDeviceSupport();
+  // 卫戍协议：盟约 的开场动画（ui/entryFilm.js），标题页之前；恢复进房间 / 对局的页面不播。
+  // 这里就启动导入：模块一求值就 warmEntryFilm，把 8 张 sprite 的请求发出去；boot 后面还要等字体 / 连接 / 语言，
+  // 这段时间正好下载。过去等到标题页渲染后才导入，播放前那次 1.2s 的预载总是撞上标题页的素材高峰而跳过，film
+  // 一直不播（移植后在本机的实测修复，维护者 2026-11-05）。
+  const entryFilm = import('./ui/entryFilm.js')
+    .catch((err) => { console.warn('[app] entry film unavailable', err); return null; });
   // Hashed art a player imported. HTTPS or localhost only; a failure here must not stop boot.
   void registerImportedAssetWorker();
   // A page restored from the back/forward cache has a dead socket and a stale token choice: start over.
@@ -653,8 +659,8 @@ async function boot() {
     setTimeout(() => splash.remove(), 300);
   }
   // 卫戍协议：盟约 的开场动画（ui/entryFilm.js），标题页之前；恢复进房间 / 对局的页面不播
-  import('./ui/entryFilm.js')
-    .then((m) => m.playEntryFilm({ skip: () => selectRoute(store.get()) === 'game' }))
+  entryFilm
+    .then((m) => m?.playEntryFilm({ skip: () => selectRoute(store.get()) === 'game' }))
     .catch((err) => console.warn('[app] entry film unavailable', err));
   globalThis.__SP__ = { store, net, data, version: 1 };
   // A page keeps the modules it imported at load time for its whole lifetime, so a deploy cannot reach an open tab

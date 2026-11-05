@@ -6,7 +6,9 @@
 // the entry cue and hands the music back to the screen. holdBgm: with audio.lobbyTrack set nothing fades and playBgm
 // is left alone; without it the screen's music is held and released from its top; a lobbyTrack that arrives during
 // the hold is passed to the real playBgm at once. A sprite that fails to load plays no film. A phone in portrait
-// when the title is entered does not start the film after it rotates to landscape.
+// when the title is entered does not start the film after it rotates to landscape. warmEntryFilm (the boot-time
+// preload) asks for nothing under reduced motion or on a portrait phone, and a warmed page starts the film from the
+// cached sprites even when nothing else would load any more (the cold-start fix).
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -63,8 +65,8 @@ globalThis.fetch = async (url) => {
 const mem = new Map();
 globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
 
-const { playEntryFilm, holdBgm } = await import('../../public/js/ui/entryFilm.js');
-const { clearSpriteLoads } = await import('../../public/js/ui/allianceScene.js');
+const { playEntryFilm, holdBgm, warmEntryFilm } = await import('../../public/js/ui/entryFilm.js');
+const { clearSpriteLoads, spritesReady } = await import('../../public/js/ui/allianceScene.js');
 const { store, selectRoute } = await import('../../public/js/store.js');
 const { audio } = await import('../../public/js/audio.js');
 
@@ -290,5 +292,67 @@ test('a phone in portrait when the title is entered does not start the film afte
     globalThis.matchMedia = prevMedia;
     globalThis.innerWidth = prevW;
     globalThis.innerHeight = prevH;
+  }
+});
+
+test('warmEntryFilm asks for no pictures under reduced motion or on a phone in portrait', async () => {
+  const prevMedia = globalThis.matchMedia;
+  const prevW = globalThis.innerWidth, prevH = globalThis.innerHeight;
+  let calls = 0;
+  const preload = async () => { calls++; return true; };
+  try {
+    globalThis.matchMedia = (q) => ({
+      matches: String(q).includes('prefers-reduced-motion'),
+      addEventListener() {}, removeEventListener() {},
+    });
+    assert.equal(await warmEntryFilm({ force: true, preload }), false, 'reduced motion: no warm');
+    assert.equal(calls, 0, 'no sprite request');
+
+    globalThis.matchMedia = (q) => ({
+      matches: String(q) === '(pointer: coarse)' || String(q) === '(any-pointer: coarse)',
+      addEventListener() {}, removeEventListener() {},
+    });
+    globalThis.innerWidth = 400;
+    globalThis.innerHeight = 800;
+    assert.equal(await warmEntryFilm({ force: true, preload }), false, 'portrait phone: no warm');
+    assert.equal(calls, 0, 'still no sprite request');
+
+    // the gate is the play's own: landscape asks for them
+    globalThis.innerWidth = 800;
+    globalThis.innerHeight = 400;
+    assert.equal(await warmEntryFilm({ force: true, preload }), true, 'landscape phone: warmed');
+    assert.equal(calls, 1, 'one preload');
+  } finally {
+    globalThis.matchMedia = prevMedia;
+    globalThis.innerWidth = prevW;
+    globalThis.innerHeight = prevH;
+  }
+});
+
+test('a warmed page starts the film from the cached sprites even when nothing else would load', async () => {
+  const Real = globalThis.Image;
+  // the warm load itself: each picture arrives, slowly enough to be a real request
+  globalThis.Image = class {
+    set src(u) { this._src = u; setTimeout(() => this.onload?.(), 40); }
+    get src() { return this._src; }
+  };
+  try {
+    assert.equal(await warmEntryFilm({ force: true }), true, 'the warm preload finished');
+    assert.equal(spritesReady(), true, 'every sprite is cached');
+    // the title page's storm: from here on an uncached picture would never load — the play must not ask again
+    globalThis.Image = class { set src(u) { this._src = u; } get src() { return this._src; } };
+    const { ctx } = runningContext();
+    Object.assign(audio, { ctx, sfxGain: {}, _buffer: async () => ({ duration: 1 }), _fadeOutBgm() {} });
+    PROTO.playBgm = function () {};
+    const spy = sceneSpy();
+    await playEntryFilm({ mount: spy.mount });
+    for (let i = 0; i < 50 && !spy.mounted; i++) await sleep(10);
+    assert.equal(spy.mounted, 1, 'the film runs at once from the cache (no load window to miss)');
+    assert.ok(overlay() !== null, 'the overlay is up');
+    pressKey(); // skip it, so the next test starts from no film
+    await sleep(400);
+    assert.equal(overlay(), null);
+  } finally {
+    globalThis.Image = Real;
   }
 });

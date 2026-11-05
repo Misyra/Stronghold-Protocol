@@ -425,6 +425,31 @@ describe('operator battle voice', () => {
     }
   });
 
+  test('试听 of an operator without a tap slot starts no battle gap (the first battle line after it still plays)', async () => {
+    // an operator voiced only through battle slots: the preview falls back to its first slot — a non-tap line — and
+    // starting the global gap there used to swallow the first battle voice asked for after it
+    const fw = fakeWindow();
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    const tick = () => new Promise((r) => setTimeout(r, 10));
+    try {
+      const a = new AudioManager({ win: fw.win, getManifest: () => ({ audio: { sfx: { ui: {}, battle: {}, units: {} }, voice: {
+        char_a: { place: '/v/a_place.mp3' },
+        char_c: { faceEnemy: '/v/c_face.mp3' },   // no 选中/部署/行动出发: the preview falls back to a battle slot
+      } } }) });
+      a.voiceGate = new VoiceGate({ gapMs: 60_000 });
+      a.install();
+      fw.fire('pointerdown');
+      await tick();
+      assert.equal(a.previewVoice('char_c'), true, 'the fallback slot speaks');
+      await tick();
+      a._stopVoice();                              // the preview line ended
+      assert.equal(a.voice('char_a', 'place'), true, 'a battle line right after is not dropped by a gap the preview started');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
   test('AudioManager.voice: manifest slots (a drawn array), the gate, and the battle events that drive them', async () => {
     const fw = fakeWindow();
     const origFetch = globalThis.fetch;

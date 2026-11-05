@@ -6,8 +6,9 @@ import assert from 'node:assert/strict';
 
 import {
   CACHE_NAME, CACHE_PREFIX, HASH_RE, INDEX_PATH, MAX_FILE_BYTES, MEDIA_PREFIX, AUDIO_EXTS, RESOURCES_FORMAT,
-  TIER_ESSENTIAL, TIER_REST, cacheName, absoluteUrl, formatBytes, indexUrl, isQuotaError, isResourcePath, isResourceUrl,
-  mediaCandidates, RESOURCE_GROUPS, resourceGroup, resourceType, validateManifest, rangeResponse, checkAbort, abortError,
+  TIER_ESSENTIAL, TIER_REST, cacheName, absoluteUrl, formatBytes, indexUrl, isCacheQueryLimit, isQuotaError,
+  isResourcePath, isResourceUrl, mediaCandidates, RESOURCE_GROUPS, resourceGroup, resourceType, validateManifest,
+  rangeResponse, checkAbort, abortError,
 } from '../../public/js/resources/common.js';
 import { MEDIA_PREFIX as SHARED_MEDIA_PREFIX, AUDIO_EXTS as SHARED_AUDIO_EXTS } from '../../shared/media.js';
 
@@ -159,6 +160,18 @@ describe('resource manifest validation', () => {
     assert.equal(isQuotaError(null), false);
     assert.equal(TIER_ESSENTIAL, 1);
     assert.equal(TIER_REST, 2);
+  });
+
+  test('isCacheQueryLimit: only the query-budget refusal (its wording), never a plain AbortError', () => {
+    // Exactly what Chrome throws for `Cache.keys()` above its ~10 MiB query budget (store.test.js seeds the same shape).
+    assert.equal(isCacheQueryLimit(new DOMException(`Failed to execute 'keys' on 'Cache': Operation too large.`, 'AbortError')), true);
+    assert.equal(isCacheQueryLimit(new Error('… Operation too large.')), true, 'a layer may have wrapped the error');
+    // Any other AbortError is a cancellation of its own (a stopped run, a dropped request): it must surface, not be
+    // answered from the page-owned index — otherwise one abort permanently downgrades the card to that index.
+    assert.equal(isCacheQueryLimit(abortError('stopped by the player')), false);
+    assert.equal(isCacheQueryLimit(new DOMException('The user aborted a request.', 'AbortError')), false);
+    assert.equal(isCacheQueryLimit(new Error('cache keys unavailable')), false);
+    assert.equal(isCacheQueryLimit(null), false);
   });
 });
 

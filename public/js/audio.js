@@ -554,10 +554,14 @@ export class VoiceGate {
     return 'play';
   }
 
-  /** Record a line that started (call right after request() answered play / preempt). */
-  start(slot, unitKey, now) {
+  /**
+   * Record a line that started (call right after request() answered play / preempt). `gap: false` starts no global
+   * gap — a tap starts none anyway, and neither does the 试听's fallback slot: a non-tap line played outside a battle
+   * must not swallow the first battle voice that follows it.
+   */
+  start(slot, unitKey, now, gap = true) {
     this.playing = { slot, pri: VOICE_PRIORITY[slot] ?? 0 };
-    if (!VOICE_TAP_SLOTS.includes(slot)) this.lastAt = now;   // the gap is between battle lines: a tap starts none
+    if (gap && !VOICE_TAP_SLOTS.includes(slot)) this.lastAt = now;   // the gap is between battle lines: a tap starts none
     const cd = VOICE_COOLDOWN_MS[slot] ?? 0;
     if (unitKey != null && cd > 0) {
       if (this.unitUntil.size > this.maxUnits) this.unitUntil.clear();
@@ -650,6 +654,7 @@ export class AudioManager {
                                    // including the running skill's own `hits` — 赤刃明霄陈 S3's slash)
     this.consumed = new Set();     // summons used up by their own effect (香槟炸弹 exploded): no death sound
     this.installed = false;
+    this._unlockDropped = false; // the first-gesture listeners are off (the context runs): _dropUnlock / _armUnlock
     this._unlock = this._unlock.bind(this);
     this._onVis = this._onVis.bind(this);
   }
@@ -1532,7 +1537,8 @@ export class AudioManager {
       const line = voiceLine(this.getManifest()?.audio, charId, slot, resolved);
       if (!line) return false;
       this._stopVoice();
-      this.voiceGate.start(slot, null, typeof performance !== 'undefined' ? performance.now() : Date.now());
+      // `gap: false` even for the fallback slot (an operator without 选中/部署/行动出发): a 试听 starts no battle gap
+      this.voiceGate.start(slot, null, typeof performance !== 'undefined' ? performance.now() : Date.now(), false);
       const token = ++this.voiceToken;
       this._playVoice(line.url, token, 1, line.fallback);
       return true;

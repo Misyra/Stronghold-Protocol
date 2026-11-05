@@ -437,6 +437,7 @@ function SelfPage({ r, res, raw, self, gd, prog, content, onNext, version = null
   const cleared = rowCleared(raw, self, r.victory);
   const [leaving, setLeaving] = useState(false);
   const nextRef = useRef(null);
+  const leaveTimer = useRef(null);
   const rounds = useCountUp(self.roundsPassed, { ms: 700, delay: 350 });
   const boss = cleared && r.bossId ? gd.boss(r.bossId) : null;
   const hidden = cleared && r.hiddenReached && r.hiddenBossId ? gd.boss(r.hiddenBossId) : null;
@@ -447,13 +448,14 @@ function SelfPage({ r, res, raw, self, gd, prog, content, onNext, version = null
     audio.sfx(cleared ? 'settlementSucceed' : 'settlementFail');
     const sign = medals.length ? setTimeout(() => audio.sfx('settlementBossSign'), 900) : null;
     const focus = setTimeout(() => nextRef.current?.focus({ preventScroll: true }), 1800);
-    return () => { clearTimeout(sign); clearTimeout(focus); };
+    // the leave animation's own timer is started by the tap below: gone with the page too
+    return () => { clearTimeout(sign); clearTimeout(focus); clearTimeout(leaveTimer.current); };
   }, []);
   const next = () => {
     if (leaving) return;
     if (reducedMotion()) { onNext(); return; }
     setLeaving(true);
-    setTimeout(onNext, LEAVE_MS);
+    leaveTimer.current = setTimeout(onNext, LEAVE_MS);
   };
   return html`<section class=${cx('sself', cleared ? 'is-win' : 'is-lose', leaving && 'is-leaving')} data-testid="settle-self">
     <div class="settle__stage">

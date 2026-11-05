@@ -2,6 +2,8 @@
 import { ERR, PROTOCOL_VERSION } from '../shared/constants.js';
 import { DEFAULT_VERSION } from '../shared/versions.js';
 import { resetStateDelta, stateDeltaVersion } from './stateTransport.js';
+import { msg } from '../shared/i18n.js';
+import { FLOW_TICKER_PRIORITY } from './match/match/common.js';
 const fail = detail => ({ error: ERR.BAD_TARGET, detail });
 const pending = new WeakMap();
 export function resetAiTakeover(room) {
@@ -49,6 +51,19 @@ function snapshot(room, votes) {
     applicantName: v.applicantName, botId: v.botId, expiresAt: v.expiresAt, eligible: v.eligible,
     yes: [...v.yes], no: [...v.no] }));
 }
+// A passed handover can still be refused by transferAiSeat's own guards (an applicant that dropped between two
+// messages, a seat that grew a session): the ballots counted, so the room — the applicant included — learns why
+// nothing happened from one ticker line in the match's own voice (the platform.js flow notices), not from an error
+// pinned on the voter.
+function failTicker(detail, name) {
+  switch (detail) {
+    case 'AI handover is disabled': return msg('接替功能未开启，{name}博士的接替未能完成', { name });
+    case 'AI handover is unavailable in isolated plugin matches': return msg('插件对局不可接替，{name}博士的接替未能完成', { name });
+    case 'AI seat already has a session': return msg('接替的席位已有玩家加入，{name}博士的接替未能完成', { name });
+    case 'connection unavailable': return msg('{name}博士的连接已断开，接替未能完成', { name });
+    default: return msg('接替条件已不满足，{name}博士的接替未能完成', { name });
+  }
+}
 export function reconcileAiTakeover(lobby, room) {
   const votes = pending.get(room);
   if (!votes?.size) return false;
@@ -93,13 +108,18 @@ export function aiTakeover(lobby, session, msg) {
   const vote = votes.get(msg.voteId);
   if (!vote) return fail('request expired');
   if (!vote.eligible.includes(session.playerId)) return fail('only online human room teammates can vote');
+  const side = msg.approve ? vote.yes : vote.no;
+  if (side.has(session.playerId)) return { ok: true }; // the same ballot cast again: nothing changed, no broadcast
   (msg.approve ? vote.no : vote.yes).delete(session.playerId);
-  (msg.approve ? vote.yes : vote.no).add(session.playerId);
+  side.add(session.playerId);
   const required = Math.floor(vote.eligible.length / 2) + 1;
   if (vote.no.size >= required) { drop(votes, vote.id); sync(); return { ok: true }; }
   if (vote.yes.size >= required) {
     drop(votes, vote.id);
-    const result = transferAiSeat(lobby, room, vote.applicantId, vote.botId); sync(); return result;
+    // the deciding vote counted, so its voter is answered ok even when the handover itself still fails
+    const result = transferAiSeat(lobby, room, vote.applicantId, vote.botId);
+    if (result.error) m.tickerText(failTicker(result.detail, vote.applicantName), FLOW_TICKER_PRIORITY);
+    sync(); return { ok: true };
   }
   sync(); return { ok: true };
 }

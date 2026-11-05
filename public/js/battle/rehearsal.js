@@ -18,7 +18,10 @@
 // simulation already under way, a message would only be read after it —, and the next task builds a fresh Worker (its
 // `ready` / data state belongs to that instance; the data is sent again from the page's own copy). The task id in the
 // frame keeps a cancel from touching a task that took its place. The page drops its tasks itself when the match on
-// screen is over (`clear`, wired in main.js) and when the socket is not online — an answer could not be delivered then.
+// screen is over (`clear`, wired in main.js) and when the socket is not online — an answer could not be delivered
+// then. Both terminate the Worker only while a task is still in flight (that is the one thing worth stopping); an
+// idle Worker keeps its `ready` / data state, so the next match's first rehearsal finds it warm instead of paying the
+// module-graph load again.
 //
 //   installRehearsal({ net, runner, createWorker, log }) → { pending(), clear(), dispose() } | null   (wired in main.js)
 
@@ -215,19 +218,23 @@ export function installRehearsal({ net, runner = battleRunner, createWorker = ()
     if (i >= 0) queue.splice(i, 1)[0].settled = true;
   }
 
-  /** Drop every task of the match that is over: the worker is terminated (a simulation still running really stops) and
-   *  the queue emptied; the next task builds a new worker. */
+  /** Drop every task of the match that is over: a Worker with a task in flight is terminated (a simulation already
+   *  under way really stops — the page could not answer it any more), an idle one keeps its `ready` / data state for
+   *  the next match; the queue is emptied either way. */
   function clear() {
-    const dead = killWorker();
-    if (dead && dead.task) dead.task.settled = true;
+    if (w && (w.task || w.sent)) {
+      const dead = killWorker();
+      if (dead.task) dead.task.settled = true;
+    }
     for (const task of queue.splice(0)) task.settled = true;
   }
 
   /**
    * The socket is not online (a drop, a reconnect, another page taking this session over): `net.send` refuses every
    * frame then, so this page could not answer the task any more and the `b.rehearsalCancel` that would drop it cannot
-   * arrive either — nothing it computes is still worth a Worker (the server falls back to its own rehearsal). main.js
-   * drops the tasks of a match that is over the same way.
+   * arrive either — a task still running must stop (only a terminated Worker stops it), while an idle Worker has
+   * nothing in flight and keeps its warmth for the next match. main.js drops the tasks of a match that is over the
+   * same way.
    */
   function onStatus(snap) {
     if (!snap || snap.status !== 'online') clear();

@@ -262,6 +262,38 @@ test('clear drops the tasks of a match that is over and keeps the installer usab
   r.dispose();
 });
 
+test('clear keeps an idle warm worker for the next match, and still stops one with a task in flight', async () => {
+  const net = fakeNet();
+  const workers = [];
+  const runner = fakeRunner();
+  const r = installRehearsal({ net, runner, createWorker: () => { const w = fakeWorker(); workers.push(w); return w; }, log: QUIET });
+  net.push(task('t1'));
+  await flush();
+  workers[0].reply({ t: 'done', taskId: 't1', choice: 1 }); // the worker sits idle: ready, data loaded, no task
+  net.status('reconnecting'); // the match is over / the socket offline: nothing is in flight, so nothing to stop
+  assert.equal(workers[0].terminated, false, 'an idle warm worker survives the drop');
+  // back online, the next match's first rehearsal goes to the same worker: no rebuild, no second data load
+  net.status('online');
+  net.push(task('t2'));
+  await flush();
+  assert.equal(workers.length, 1, 'no second worker is built');
+  assert.equal(runner.calls, 1, 'the simulation data is not loaded again');
+  assert.deepEqual(workers[0].messages.filter((m) => m.t === 'data').length, 1, 'the data is not sent again');
+  assert.equal(workers[0].task().taskId, 't2');
+  workers[0].reply({ t: 'done', taskId: 't2', choice: 0 });
+  // a worker with a task in flight is still terminated: the page could not answer it any more
+  net.push(task('t3'));
+  await flush();
+  r.clear();
+  assert.equal(workers[0].terminated, true, 'a running simulation really stops');
+  assert.equal(r.pending(), 0);
+  assert.deepEqual(net.sent, [
+    { t: 'b.rehearsalResult', taskId: 't1', choice: 1 },
+    { t: 'b.rehearsalResult', taskId: 't2', choice: 0 },
+  ], 'the dropped task is never answered');
+  r.dispose();
+});
+
 test('an error of a worker that was already dropped cannot break the live one', async () => {
   const net = fakeNet();
   const workers = [];

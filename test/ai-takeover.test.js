@@ -161,3 +161,47 @@ for (const kind of ['plugin', 'hosted', 'historical']) {
     } finally { room.content = oldContent; room.version = oldVersion; m.hosted = false; }
   });
 }
+
+test('a passed vote that still cannot hand over tells the room why and answers its voters ok', async t => {
+  const { srv, room, m, host, mate, late } = await fixture(t), bot = m.order[2];
+  // transferAiSeat re-checks its guards when the quorum lands: a seat that grew a session behind the vote's back
+  // must refuse without blaming the deciding voter, and the room (the applicant included) learns why nothing happened.
+  srv.registry.byPlayerId.set(bot.playerId, srv.registry.byId(late.id));
+  await late.request({ t: 'room.aiRequest', botId: bot.playerId });
+  const vote = room.aiTakeoverVotes[0];
+  await host.request({ t: 'room.aiVote', voteId: vote.id, approve: true });
+  mate.clearInbox(); late.clearInbox();
+  const result = await mate.request({ t: 'room.aiVote', voteId: vote.id, approve: true });
+  assert.equal(result.t, 'ok', JSON.stringify(result));
+  const ticker = await late.waitFor('m.ticker', f => f.msgid === '接替的席位已有玩家加入，{name}博士的接替未能完成');
+  assert.equal(ticker.params.name, 'Late');
+  assert.equal(ticker.priority, 25, 'a match-flow notice, not a shop-level line');
+  assert.ok(mate.log.some(f => f.t === 'm.ticker' && f.msgid === ticker.msgid), 'the room hears the same line');
+  assert.equal(room.aiTakeoverVotes.length, 0);assert.equal(bot.isBot, true);
+  assert.equal(srv.registry.byId(late.id).playerId, late.id, 'the applicant kept its session');
+  assert.equal(room.spectatorOf(late.id)?.connected, true);
+});
+
+test('a voter repeating the ballot they already cast changes nothing and broadcasts nothing', async t => {
+  const { srv, room, m, host, mate, late } = await fixture(t), bot = m.order[2];
+  // count the lobby's real room.state broadcasts (the wrapper still sends them)
+  const real = srv.lobby.broadcastState.bind(srv.lobby);
+  let broadcasts = 0;
+  t.mock.method(srv.lobby, 'broadcastState', (room) => { broadcasts++; return real(room); });
+  await late.request({ t: 'room.aiRequest', botId: bot.playerId });
+  const vote = room.aiTakeoverVotes[0];
+  await host.request({ t: 'room.aiVote', voteId: vote.id, approve: true });
+  assert.ok(broadcasts >= 1, 'a ballot that changes the vote broadcasts to the room');
+  broadcasts = 0;
+  const again = await host.request({ t: 'room.aiVote', voteId: vote.id, approve: true });
+  assert.equal(again.t, 'ok');
+  assert.equal(broadcasts, 0, 'the same ballot cast again is a no-op: no room broadcast');
+  assert.deepEqual(room.aiTakeoverVotes.map(v => v.yes), [[host.id]], 'the ballot is still the one vote');
+  // control: a real change still broadcasts, and the same quorum completes the takeover
+  broadcasts = 0;
+  const control = await mate.request({ t: 'room.aiVote', voteId: vote.id, approve: true });
+  assert.equal(control.t, 'ok');
+  assert.ok(broadcasts >= 1, 'the quorum lands through the normal broadcast path');
+  await late.waitFor('welcome', w => w.playerId === bot.playerId);
+  assert.equal(bot.isBot, false);
+});

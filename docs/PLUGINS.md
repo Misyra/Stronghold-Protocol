@@ -99,7 +99,8 @@ What this version does with each class:
 
 Nothing of a plugin folder is served except the files a `lang` manifest names, the files a loaded `cosmetic`
 plugin's overlay names, and the frame files of a loaded `ui` plugin (`.html`, `.js`, `.css`, `.png` under its
-`entry.client`, §14) — never `plugin.json`, the lock file, a document or any other file of the folder. A ui plugin's
+`entry.client`) or of a loaded script plugin's `entry.frame` (§14) — never `plugin.json`, the lock file, a document
+or any other file of the folder. A ui plugin's
 `/p/` responses carry a frame Content-Security-Policy; cosmetic art does not. Content-set snapshots are separate:
 `/cs/<cs16>/` serves checked data/descriptors and, for native trusted sets, only the retained sim/meta/client script
 entry bytes (§13). It never serves arbitrary files from plugin folders.
@@ -138,7 +139,7 @@ classes and the content sets running at once — §11 and `docs/DEPLOY.md`.
 | `name`, `description` | a text in `sourceLang` or `{ "<lang>": "…" }`; `englishName` a text |
 | `version` | semver, required |
 | `app` | the game versions it is made for — `>=0.3.0 <0.4.0`, `0.3.x`, `^0.3.0` … (a pre-release counts as its release); required but for `lang`. Outside it: `compatible: false` and a warning (P1 refuses a gameplay plugin by default) |
-| `api` | the plugin API level, within `shared/constants.js` `PLUGIN_API` (`{ current: 2, min: 1 }`); required but for `lang`. A manifest that uses a part of level 2 (today `offers`, §10b) states `"api": 2` |
+| `api` | the plugin API level, within `shared/constants.js` `PLUGIN_API` (`{ current: 2, min: 1 }`); required but for `lang`. A manifest that uses a level-2 feature (today the `offers` part, §10b, and a script plugin's `entry.frame`, §14) states `"api": 2` |
 | `class` | §2; every part the manifest names must belong to it |
 | `scope` | `room` (the host's choice for the whole room), `personal` (the player's own setting), `server` (trusted code only), as the class allows — `cosmetic`: room and/or personal; `content`, `script`: room; `ui`, `lang`: personal; `trusted`: server or room |
 | `authors`, `credits`, `license`, `homepage` (http/https), `sourceLang` (default `zh`) | free text |
@@ -147,7 +148,7 @@ classes and the content sets running at once — §11 and `docs/DEPLOY.md`.
 | `settings` | ≤ 32 settings: `boolean`, `integer` / `number` (`min` and `max` required, `step`), `enum` (`options`) — no free text; `default` (else `false`, `min`, the first option), `label` |
 | `permissions` | what the plugin does (§4); every part needs one, every permission must fit the class |
 | parts | `assets`, `theme` (cosmetic+) · `data`, `operators`, `enemies`, `modes`, `stages`, `dsl`, `offers` (content+) — a path, a list of paths or (`assets`, `theme`) the object inline · `i18n` `{ "<lang>": path }` (content+) |
-| `entry` | `{ "sim", "meta" }` (script, `.js`) · `{ "client" }` (ui, `.html`) · `{ "server" }` (trusted, `.js`) |
+| `entry` | `{ "sim", "meta" }` (script, `.js`) · `{ "frame" }` (script, `.html`, API 2, in a folder of the plugin — §14) · `{ "client" }` (ui, `.html`) · `{ "server" }` (trusted, `.js`) |
 | `lang`, `files` … | the `lang` class only: manifest 1's language fields and `files: { ui, data }` (§7) |
 
 A **problem** keeps a plugin out (unlisted; the start log and `tools/plugin.mjs` say why); a **warning** does not.
@@ -164,7 +165,7 @@ patches, compact operator records, modes — are specified in §10.
 | `dsl` | content, script, trusted | `dsl` |
 | `offers` | content, script, trusted | `offers` (§10b; the part is data, so no code permission is needed) |
 | `sim.code`, `meta.code`, `mode.code` | script, trusted | `entry.sim`, `entry.meta` |
-| `ui.frame` | ui | `entry.client` of a ui plugin |
+| `ui.frame` | ui, script | `entry.client` of a ui plugin, `entry.frame` of a script plugin (§14) |
 | `trusted.page`, `trusted.server` | trusted | `entry.client`, `entry.server` of a trusted plugin |
 
 A permission nothing in the manifest uses is a warning.
@@ -1393,6 +1394,9 @@ never loads it.
 
 **Bundled script panels (0.3.4).** A `script` plugin can include `entry.frame: "ui/index.html"`,
 `permissions: ["meta.code", "ui.frame"]` and `slots: ["hud.right"]` alongside its normal `entry.meta`.
+`entry.frame` is an API 2 feature and must sit in a folder inside the plugin folder — a frame beside the manifest is
+refused, because its directory is the frame's whole serving surface and would be the folder itself, script sources
+included. (A standalone `ui` plugin keeps `entry.client`.)
 [ASSUMED] This is a read-only panel owned by the room's script plugin: it mounts automatically while that loaded
 plugin is selected in the current room, and unmounts on removal or leaving. There is one catalogue entry and room
 switch; it is not listed as another personal UI plugin. Legacy standalone `ui` plugins and `autoWith` still work.
@@ -1440,7 +1444,8 @@ after the first at most once a second (`netHz`) [ASSUMED]; one slot per
 plugin. The protocol table grants one plugin per slot at a time. When several ui plugins ask for the same slot, the
 match shows the first by name and the player switches with tabs in the slot (`PLUGIN_UI_SLOT_SHARED` is a warning, not
 a refusal). [ASSUMED] That name order is the initial tab, and a later sync does not override a tab the player already
-chose. At most 8 mounted. `hud.right` (`.gm__ui-slot`) sits above the hand, inset from the effects column, and its
+chose. At most 8 mounted. The room's bundled panels take the mount limit first (they mount with the room, see
+**Bundled script panels** above); the player's own switches fill the remaining places. `hud.right` (`.gm__ui-slot`) sits above the hand, inset from the effects column, and its
 height stops under the ready button, so it does not cover the shop, the hand, the ready button or funds at 1280×720
 or 1920×1080. [ASSUMED] Both viewports are 19.2×10.8rem; the hand's top is the dock clearance 4.76rem; the slot's
 bottom is 4.88rem and its right inset is 0.92rem. Engine `dmg` / `heal` tuples expose the HP at `amount` (the unit id
@@ -1877,7 +1882,7 @@ lacks). The table below is generated from it (`node tools/plugin.mjs errors --wr
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_ORDER_HINTS` | A load-order hint (loadAfter / loadBefore / priority) is not right: {where} | loadAfter and loadBefore are lists of plugin ids (never one in both, never the plugin itself); priority is an integer within ±1000, default 0. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_SETTING` | A setting is not right: {where} | Each setting is { "type": … }: boolean, integer / number (with min and max), enum (with options); its default within them; at most 32, no free text. |
 | The plugin works, with a note in the check | `PLUGIN_SETTING_FIELD` | A setting has a field it does not know, “{where}”; it is ignored | A setting knows type, default, min, max, step, options and label only. |
-| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_PART_CLASS` | “{where}” is not something a {class} plugin carries | A cosmetic plugin carries "assets" and "theme" only, a ui plugin "entry.client" and "slots"; numbers and new operators belong to a content plugin. |
+| The plugin is not listed (skipped); the start log and check say why | `PLUGIN_PART_CLASS` | “{where}” is not something a {class} plugin carries | A cosmetic plugin carries "assets" and "theme" only, a ui plugin "entry.client" and "slots" (a script plugin's "slots" need "entry.frame"); numbers and new operators belong to a content plugin. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_PART_SHAPE` | “{where}” is not written the right way | Write the path of a .json file of the plugin folder (or a list of them); "assets" and "theme" may also be the { … } object itself. |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_ASSET_FILE` | The file of “{where}” is not right: not a path inside the plugin folder, or not the kind of file this place takes | Write a path inside the plugin folder such as art/avatar.png. Pictures are .png .jpg .webp, sounds .mp3 .ogg, models .skel with .atlas (pages .png). |
 | The plugin is not listed (skipped); the start log and check say why | `PLUGIN_THEME_URL` | “{where}” names a URL | A theme variable is a colour, a time or an easing — never a URL, var() or another expression. |

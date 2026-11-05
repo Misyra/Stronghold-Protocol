@@ -58,7 +58,9 @@ export function OfferOverlay({ pub, priv, myId, readOnly = false, onAction }) {
   const offers = pub?.offers || [];
   const offer = offerVisible(offers, myId, dismissed, selected);
   const requestedVariant = offer && variant?.seq === offer.seq ? variant.id : offerSeat(offer, myId)?.variantId ?? offerDefaultVariant(offer);
-  const variantId = offerAllowedVariant(offer, offerSeat(offer, myId), requestedVariant, priv);
+  // A picked seat keeps the variant it confirmed: the post-trade balance must not reprice what the server already holds.
+  const mine = offerSeat(offer, myId);
+  const variantId = offerAllowedVariant(offer, mine, requestedVariant, mine?.picked ? null : priv);
   const open = o => { setSelected({ seq: o.seq, picked: offerSeat(o, myId)?.picked }); setArmed(null); };
   const dismissible = offer?.quorum === 'none';
   const dismiss = () => {
@@ -124,7 +126,7 @@ export function OfferView({ offer, priv, myId, readOnly = false, busy = null, ar
   const mine = offerSeat(offer, myId);
   const seat = mine || offer.seats[0];
   const can = offerPickable(offer, myId, readOnly, busy);
-  variantId = offerAllowedVariant(offer, seat, variantId, mine ? priv : null);
+  variantId = offerAllowedVariant(offer, seat, variantId, mine && !mine.picked && !readOnly ? priv : null);
   return html`<header class="spov__head">
     <div><h2>${offer.title || `${t('插件选择')} · ${offer.id}`}</h2><p>${t('点击卡牌选中，再次点击确认')}</p>
       <p role="status">${readOnly || !mine ? t('观战中') : mine.picked ? t('等待队友') : t('选择一项')}

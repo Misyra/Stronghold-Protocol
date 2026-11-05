@@ -56,6 +56,26 @@ export function shouldMountUiPlugin(p, { ids, off, roomIds }) {
 }
 
 /**
+ * The ids the frame host mounts, capped at UI_LIMITS.maxPlugins in all: a room's bundled panels first (they mount
+ * with the room, docs/PLUGINS.md §14), the personal switches filling the rest — both groups in catalogue order, so
+ * eight personal plugins cannot crowd a bundled panel out of the queue.
+ * @param {any[]} entries uiPluginEntries(plugins, true)
+ * @param {{ ids: string[], off: string[], roomIds: string[], blocked?: string[] | Set<string>, max?: number }} opts
+ * @returns {string[]}
+ */
+export function uiPluginWant(entries, { ids, off, roomIds, blocked = [], max = UI_LIMITS.maxPlugins }) {
+  const bundled = [];
+  const personal = [];
+  const isBlocked = (id) => typeof blocked?.has === 'function' ? blocked.has(id) : blocked.includes(id);
+  for (const p of Array.isArray(entries) ? entries : []) {
+    if (!p || typeof p.id !== 'string' || isBlocked(p.id)) continue;
+    if (!shouldMountUiPlugin(p, { ids, off, roomIds })) continue;
+    (p.bundledFrame ? bundled : personal).push(p.id);
+  }
+  return [...bundled, ...personal].slice(0, Math.max(0, max));
+}
+
+/**
  * Turn one interface plugin on or off in this browser. More than UI_LIMITS.maxPlugins is refused.
  * An id the server does not have is still stored (it mounts when the server has it).
  * @param {string} id @param {boolean} on

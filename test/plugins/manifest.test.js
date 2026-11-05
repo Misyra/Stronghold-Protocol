@@ -134,6 +134,30 @@ test('manifest 2: what keeps a plugin out', () => {
   assert.match(problemsOf(marathon(), 'my_plug'), /not a plugin id/, 'no underscore: it would collide in record ids');
 });
 
+test('manifest 2: a script plugin\'s entry.frame is API 2 and sits in a folder of the plugin', () => {
+  const script = (extra = {}) => ({ manifest: 2, version: '1.0.0', app: '*', api: 2, class: 'script',
+    permissions: ['meta.code', 'ui.frame'], entry: { meta: 'meta.js', frame: 'ui/index.html' }, slots: ['hud.right'], ...extra });
+  const ok = readPluginManifest(script(), ctx('script-demo'));
+  assert.deepEqual(ok.problems, []);
+  assert.deepEqual(ok.warnings, []);
+  assert.equal(ok.manifest.entry.frame, 'ui/index.html');
+  // the frame entry names the folder the frame is served from: beside the manifest that would be the plugin folder
+  // itself, the script sources included
+  const root = readPluginManifest(script({ entry: { meta: 'meta.js', frame: 'index.html' } }), ctx('script-demo'));
+  assert.equal(root.manifest, null);
+  assert.match(root.problems.join(' | '), /"entry\.frame": "index\.html" must sit in a folder inside the plugin folder/);
+  // a versioned feature like offers: an api-1 manifest declaring it is refused
+  const api1 = readPluginManifest(script({ api: 1 }), ctx('script-demo'));
+  assert.equal(api1.manifest, null);
+  assert.match(api1.problems.join(' | '), /entry\.frame requires plugin API 2/);
+  // the slots wording names what the script plugin is missing; another class keeps the plain sentence
+  const noFrame = readPluginManifest(script({ entry: { meta: 'meta.js' } }), ctx('script-demo'));
+  assert.equal(noFrame.manifest, null);
+  assert.match(noFrame.problems.join(' | '), /"slots" is not something a script plugin without "entry\.frame" carries/);
+  const cosmeticSlots = readPluginManifest({ ...marathon(), slots: ['hud.right'] }, ctx('marathon'));
+  assert.match(cosmeticSlots.problems.join(' | '), /"slots" is not something a content plugin carries \(ui, or a script plugin with "entry\.frame"\)/);
+});
+
 test('a value JSON.parse reads but JSON.stringify cannot write back (deep nesting) is quoted by its kind, never thrown', () => {
   const deep = (open, close, n = 20000) => JSON.parse(`${open.repeat(n)}${close.repeat(n)}`);
   // Node ≥ 25 writes any depth back (its JSON.stringify no longer recurses): the quote is then the value's first 40

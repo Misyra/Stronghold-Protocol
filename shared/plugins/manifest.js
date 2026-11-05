@@ -40,8 +40,9 @@
 //                a list of paths or (assets, theme) the object inline · i18n { <lang>: path } (content+) — paths are
 //                inside the folder (isPackPath) and .json, the files an inline `assets` names are art, models, audio
 //                or fonts
-//   entry        { sim, meta } (script, .js), optional { frame } (script, isolated .html)
-//                { client } (ui: .html, required; trusted: .js) · { server } (trusted, .js)
+//   entry        { sim, meta } (script, .js), optional { frame } (script, isolated .html, API 2, in a folder of the
+//                plugin — never beside the manifest) · { client } (ui: .html, required; trusted: .js) ·
+//                { server } (trusted, .js)
 //   slots        ui or script entry.frame: hud.right, result.tab, stats.tab, room.panel (UI_SLOT_IDS). Absent or []: a warning, the
 //                plugin still loads but the host grants no slot. A bad list, or slots without a frame: a problem.
 //   lang class   the language fields of manifest 1 (lang, base, fallback, complete, machineTranslated, numberUnits —
@@ -712,17 +713,25 @@ export function readPluginManifest(raw, ctx) {
         if (!e.classes.includes(cls)) { list.problem('PLUGIN_ENTRY', `"entry.${k}" is not something a ${cls} plugin has (${e.classes.join(', ')})`, { at: ['entry', k] }); continue; }
         const ext = cls === 'trusted' && k === 'client' ? '.js' : e.ext;
         if (!isPackPath(rel) || extOf(/** @type {string} */ (rel)) !== ext) { list.problem('PLUGIN_ENTRY', `"entry.${k}": ${short(rel)} is not a ${ext} file inside the plugin folder`, { at: ['entry', k] }); continue; }
+        // a script plugin's frame entry names the folder the frame is served from (docs/PLUGINS.md §14): beside the
+        // manifest that folder would be the plugin folder itself, the script sources included
+        if (k === 'frame' && !/** @type {string} */ (rel).includes('/')) { list.problem('PLUGIN_ENTRY', `"entry.${k}": ${short(rel)} must sit in a folder inside the plugin folder (for example "ui/index.html")`, { at: ['entry', k] }); continue; }
         entry[k] = /** @type {string} */ (rel);
       }
     }
   }
+  // PLUGIN API v2: the script plugin's read-only panel (docs/PLUGINS.md §14) — like `offers`, a versioned feature.
+  if (entry.frame && api !== null && api < 2) list.problem('PLUGIN_API', 'entry.frame requires plugin API 2', apiAt);
   if (!isLang) for (const k of LANG_ONLY) if (m[k] !== undefined) list.problem('PLUGIN_LANG_ONLY', `"${k}" belongs to a lang plugin, not a ${cls} one`, { at: [k], class: cls });
 
   // slots: a ui plugin asks the host for one of UI_SLOT_IDS. Absent (or []): it loads, and the host grants none.
   /** @type {string[]} */
   let slots = [];
   const hasFrame = cls === 'script' && !!entry.frame;
-  if (m.slots !== undefined && cls !== 'ui' && !hasFrame) list.problem('PLUGIN_PART_CLASS', `"slots" is not something a ${cls} plugin carries (ui)`, { at: ['slots'], class: cls });
+  if (m.slots !== undefined && cls !== 'ui' && !hasFrame) {
+    const who = cls === 'script' ? 'a script plugin without "entry.frame"' : `a ${cls} plugin`;
+    list.problem('PLUGIN_PART_CLASS', `"slots" is not something ${who} carries (ui, or a script plugin with "entry.frame")`, { at: ['slots'], class: cls });
+  }
   else if (cls === 'ui' || hasFrame) {
     if (m.slots === undefined || (Array.isArray(m.slots) && m.slots.length === 0)) list.warning('PLUGIN_UI_NO_SLOT', 'requests no slot (the host will not grant one)', { at: ['slots'] });
     else if (!Array.isArray(m.slots) || m.slots.length > UI_SLOT_IDS.length || new Set(m.slots).size !== m.slots.length

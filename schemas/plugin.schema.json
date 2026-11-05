@@ -937,6 +937,10 @@
             },
             {
               "pattern": "\\.html$"
+            },
+            {
+              "pattern": "/",
+              "description": "The frame sits in a folder inside the plugin folder — its serving surface (docs/PLUGINS.md §14) — never beside the manifest."
             }
           ]
         }
@@ -2575,10 +2579,14 @@
       },
       "then": {
         "required": [
+          "api",
           "permissions",
           "slots"
         ],
         "properties": {
+          "api": {
+            "minimum": 2
+          },
           "permissions": {
             "contains": {
               "const": "ui.frame"

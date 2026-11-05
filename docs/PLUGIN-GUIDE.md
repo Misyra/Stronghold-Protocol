@@ -419,7 +419,7 @@ unequip（official／allow）；每项下面显示作用说明。选「继承」
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_ORDER_HINTS` | 加载顺序（loadAfter / loadBefore / priority）写得不对：{where} | loadAfter 和 loadBefore 是插件 id 的列表（同一个 id 不能两边都写，也不能写自己）；priority 是 -1000 到 1000 的整数，默认 0。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_SETTING` | 设置项 "settings" 写得不对：{where} | 每个设置项写 { "type": … }：boolean（开关）、integer / number（要写 min 和 max）、enum（要写 options 列表）；默认值要在范围内；最多 32 个，不能是自由文字。 |
 | 插件能用，但检查时有提示 | `PLUGIN_SETTING_FIELD` | 设置项里有不认识的字段「{where}」，被忽略了 | 设置项只认 type、default、min、max、step、options、label 这几个字段。 |
-| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_PART_CLASS` | 「{where}」不是 {class} 插件能带的东西 | 外观插件只带 "assets"（素材）和 "theme"（主题）；界面插件带 "entry.client" 和 "slots"；改数值、加干员之类的要做成 content 插件。 |
+| 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_PART_CLASS` | 「{where}」不是 {class} 插件能带的东西 | 外观插件只带 "assets"（素材）和 "theme"（主题）；界面插件带 "entry.client" 和 "slots"（脚本插件的 "slots" 要有 "entry.frame"）；改数值、加干员之类的要做成 content 插件。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_PART_SHAPE` | 「{where}」的写法不对 | 写成插件文件夹里的一个 .json 文件路径（或这些路径的列表）；"assets" 和 "theme" 也可以直接写成 { … } 对象。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_ASSET_FILE` | 素材「{where}」写的文件不对：不是插件文件夹里的路径，或者不是这个位置要的文件类型 | 写插件文件夹里的相对路径，例如 art/avatar.png。图片位置用 .png .jpg .webp，声音位置用 .mp3 .ogg，模型用 .skel 和 .atlas（贴图 .png）。 |
 | 插件没出现在列表里（被跳过）；启动日志和 check 写着原因 | `PLUGIN_THEME_URL` | 主题「{where}」里写了网址 | 主题变量只能写颜色、时间或缓动，不能写网址、var() 或其他表达式。 |

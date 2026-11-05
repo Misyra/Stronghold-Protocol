@@ -24,7 +24,7 @@ import { computeVanillaContent, servedCodeFiles } from '../../server/plugins/ide
 import { splitUrl } from '../../server/http/common.js';
 import { ERR } from '../../shared/constants.js';
 import { writePlugin, cosmetic } from '../helpers/pluginFixtures.js';
-import { setUiPlugin, toggleRecommend, uiPlugins, uiRecommend, visibleRecommend, uiPluginEntries, shouldMountUiPlugin } from '../../public/js/ui/uiPlugins.js';
+import { setUiPlugin, toggleRecommend, uiPlugins, uiRecommend, visibleRecommend, uiPluginEntries, shouldMountUiPlugin, uiPluginWant } from '../../public/js/ui/uiPlugins.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
@@ -473,6 +473,26 @@ describe('the registry and /p/', () => {
     registry.rescan();
     assert.equal(registry.plugin(p.id).status, 'disabled', 'editing the bundled frame invalidates the script lock');
     assert.equal(registry.pluginFile(p.id, entry.entry), null);
+  });
+
+  test('bundled panels take the mount limit first and the personal switches fill the rest', () => {
+    const personal = (id) => ({ id, class: 'ui', scope: ['personal'], status: 'loaded' });
+    const bundled = (id) => ({ id, class: 'script', scope: ['room'], status: 'loaded', bundledFrame: true });
+    const ids8 = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'];
+    const eight = ids8.map(personal);
+    // the bundled panel mounts with the room even when every catalogue slot before it is a switched-on personal plugin
+    assert.deepEqual(uiPluginWant([...eight, bundled('room-panel')], { ids: ids8, off: [], roomIds: ['room-panel'] }),
+      ['room-panel', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'], 'the cap is 8 in all: the last personal plugin yields');
+    assert.deepEqual(uiPluginWant([...eight, bundled('room-panel')], { ids: ['p1'], off: [], roomIds: ['room-panel'] }),
+      ['room-panel', 'p1']);
+    // without a bundled panel nothing changes: catalogue order, capped
+    assert.deepEqual(uiPluginWant(eight, { ids: ids8, off: [], roomIds: [] }), ids8);
+    // the room's panels follow the room: absent there, or switched off here, they do not mount
+    assert.deepEqual(uiPluginWant([bundled('room-panel')], { ids: [], off: [], roomIds: [] }), []);
+    assert.deepEqual(uiPluginWant([bundled('room-panel')], { ids: [], off: ['room-panel'], roomIds: ['room-panel'] }), []);
+    // a stopped frame is not re-queued, and a personal plugin keeps its catalogue order inside its group
+    assert.deepEqual(uiPluginWant([personal('b'), bundled('room-panel'), personal('a')],
+      { ids: ['a', 'b'], off: [], roomIds: ['room-panel'], blocked: new Set(['a']) }), ['room-panel', 'b']);
   });
 
   test('a ui plugin changes vs and does not change cs, and a room cannot enable it', () => {

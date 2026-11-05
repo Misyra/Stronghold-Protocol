@@ -59,6 +59,22 @@ test('selector renders the chosen variant and quotes actual escrow and symmetric
   assert.ok(!completed.some(n => n.props?.class === 'offerov__quote'), 'a completed pick must not be repriced using its post-trade balance');
 });
 
+test('a picked seat keeps its selected variant when its counters drop after the pick', () => {
+  const selector = { label: '倍率', default: 'x20', options: [{ id: 'x10', name: '1倍' }, { id: 'x30', name: '3倍' }] };
+  const card = { ...offer.seats[0].slots[0], variants: {
+    x10: { available: true, quote: { fraction: 1, multiplier: 1, debtCounter: 'debt', creditLimitCounter: 'limit' } },
+    x30: { available: true, quote: { fraction: 1, multiplier: 3, debtCounter: 'debt', creditLimitCounter: 'limit' } },
+  } };
+  // the pick moved the counters: x30 no longer quotes against the post-trade balance
+  const priv = { funds: 5, counters: { debt: 20, limit: 20 } };
+  assert.equal(offerUI.offerCard(card, 'x30', priv).available, false, 'precondition: the picked variant no longer quotes');
+  const tree = nodes({ offer: { ...offer, selector, seats: [{ ...offer.seats[0], picked: true, variantId: 'x30', slots: [card] }] },
+    priv, variantId: 'x30' });
+  const buttons = [...walk(tree.find(n => n.props?.role === 'group'))].filter(n => n.type === 'button');
+  assert.equal(buttons[1].props['aria-pressed'], true, 'the confirmed variant stays displayed, not the first affordable one');
+  assert.equal(buttons[0].props['aria-pressed'], false);
+});
+
 test('stake and multiplier bars update independently and calculate the selected fraction', () => {
   const selectors = [
     { label: '倍率', default: 'x2', options: [{ id: 'x1', name: '1倍' }, { id: 'x2', name: '2倍' }] },

@@ -25,7 +25,7 @@ import { catalog, loadCatalog, installedCount, pluginName } from '../content.js'
 import { toast } from './toasts.js';
 import { getLang, t } from '../../../shared/i18n.js';
 import { PROTOCOL_VERSION } from '../../../shared/constants.js';
-import { uiPlugins, uiPluginsOff, uiPluginEntries, shouldMountUiPlugin } from './uiPlugins.js';
+import { uiPlugins, uiPluginsOff, uiPluginEntries, uiPluginWant } from './uiPlugins.js';
 import {
   UI_ERRORS, UI_LIMITS, UI_SLOTS, battlePayload, checkStorageWrite, clampHeight, clampNotice, createNoticeLimiter,
   createRateLimiter, createSlotTable, frameLoadDecision, framePageUrl, hostLimit, hostNet, hostRejected, hostResult,
@@ -581,12 +581,8 @@ function sync() {
     return;
   }
   const entries = uiPluginEntries(cat.plugins, true);
-  const want = [];
-  for (const p of entries) {
-    if (want.length >= UI_LIMITS.maxPlugins) break;
-    if (blocked.has(p.id)) continue;
-    if (shouldMountUiPlugin(p, { ids, off, roomIds })) want.push(p.id);
-  }
+  // bundled panels of the room's script plugins mount first (docs/PLUGINS.md §14); the personal switches fill the rest
+  const want = uiPluginWant(entries, { ids, off, roomIds, blocked });
   const keep = new Set(want);
   for (const id of [...frames.keys()]) if (!keep.has(id)) destroy(id);
   for (const id of want) {

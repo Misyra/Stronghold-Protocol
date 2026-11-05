@@ -692,6 +692,41 @@ test('a Worker host never attaches the combat meter, even when the setting is on
   r.runner.dispose();
 });
 
+test('show() re-enters the field from a fresh meta when the lean Worker packets missed a change; an unchanged fetch shows once', async () => {
+  const packet = { snap: { t: 0, units: [], dp: 0, killed: 0, total: 0, resolved: 0 }, ev: [], ticks: 0, slices: [], state: { finished: false, tickCount: 0 }, meter: { lp: 0 } };
+  const unit = { id: 7, kind: 'op', side: 'ally', ownerId: 'p_0', defId: 'chess_char_1_01_a', name: 'x', maxHp: 100, x: 1, y: 2 };
+  const spec = { fieldId: 'n:worker3', kind: 'normal', players: [{ playerId: 'p_0' }] };
+  // The host models the lean packet cache: refreshMeta() replaces what fieldMeta() reads (WorkerSimHost.refreshMeta).
+  const makeHost = (firstFetchDiffers) => {
+    let fetches = 0, cached = { units: [] };
+    const battle = {
+      finished: false, time: 0, tickCount: 0, leakedCount: 0, flags: {}, allyUnits: [],
+      snapshot: () => packet.snap, drainEvents: () => [], fieldMeta: () => cached, getPlayer: () => null, heal: () => 0,
+    };
+    return {
+      remote: true, battle, meter: { lp: 0 }, async load() {}, async start() {}, async syncPool() {}, stop() {},
+      progress: () => ({ gt: 0, killed: 0, total: 0, done: false, leaks: 0 }), compactResult: () => null,
+      step: () => Promise.resolve(packet), forceEnd: () => Promise.resolve(),
+      async refreshMeta() {
+        fetches++;
+        if (fetches === 1 && firstFetchDiffers) cached = { units: [unit] };
+        return { meta: cached };
+      },
+    };
+  };
+  const heals = rig({ createHost: () => makeHost(true) });
+  heals.net.emit('b.start', { battleId: 'worker-3', fieldId: 'n:worker3', kind: 'normal', spec, authoritative: true, speed: 2 });
+  await heals.settle();
+  assert.equal(heals.feed.fields.length, 2, 'a missed change re-enters the field once');
+  assert.deepEqual(heals.feed.fields[1].units, [unit], 'the re-entry carries the fresh meta');
+  const calm = rig({ createHost: () => makeHost(false) });
+  calm.net.emit('b.start', { battleId: 'worker-4', fieldId: 'n:worker3', kind: 'normal', spec, authoritative: true, speed: 2 });
+  await calm.settle();
+  assert.equal(calm.feed.fields.length, 1, 'an unchanged fetch never re-shows');
+  heals.runner.dispose();
+  calm.runner.dispose();
+});
+
 test('frameOf: the in-page snapshot frame is restamped in place; a Worker host packet snapshot is copied, never mutated', async () => {
   // the in-page Battle builds a fresh snapshot per call: the emitted frame is that object (one per frame, not three)
   const start = realStart();

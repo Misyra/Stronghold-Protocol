@@ -319,6 +319,35 @@ test('S3 日冕重烈: ATK +, no attacks, 5 rows every 80 frames, 13 rows and 60
   done(h);
 });
 
+test('S3 日冕重烈: the waves keep their time while she is controlled (晕眩) — she still rains, on the same cadence and overload half time', () => {
+  const runOf = (controlled) => {
+    const { h, u } = field({ skill: 2, row: 10, col: 5, enemies: [{ key: 'enemy_dummy', pos: [10, 6] }] });
+    u.mem.oxi.anger = 0; u.mem.oxi.growAt = Infinity;
+    fillSp(u);
+    assert.ok(u.skill.activate('manual'));
+    if (controlled) {
+      h.b.applyStatus(u, 'stun', { duration: u.skill.duration - 1 });
+      h.step();
+      assert.equal(u.canAct, false, 'the stun holds her');
+    }
+    const waves = [];
+    let overAt = -1;
+    for (let i = 0; i < 31 * 30 && u.skill.active; i++) {
+      h.step();
+      const f = u.mem.oxi.fire;
+      if (f?.over && overAt < 0) overAt = i;
+      waves.push(f?.wave ?? 0);
+    }
+    done(h);
+    return { waves: Math.max(...waves), overAt, at: waves.findIndex((w) => w >= 3) };
+  };
+  const free = runOf(false), held = runOf(true);
+  assert.ok(free.waves >= 12, `free: ${free.waves} waves within the window`);
+  assert.ok(held.overAt >= 0, 'the overload came while she was held');
+  assert.ok(Math.abs(held.waves - free.waves) <= 1, `held ${held.waves} vs free ${free.waves} waves`);
+  assert.ok(Math.abs(held.at - free.at) <= 2, `the third wave on time: ${held.at} vs ${free.at} ticks`);
+});
+
 test('S3 簇火: touching an enemy it blasts arts with the ATK it was created with; 元素伤害 on a burst target; 15 % on a repeat of the wave', () => {
   const { h, u } = field({ skill: 2, row: 10, col: 5, enemies: [{ key: 'enemy_dummy', pos: [10, 7] }] });
   const bb = bbOf(true, S3), sk = u.skill, e = h.enemies()[0];

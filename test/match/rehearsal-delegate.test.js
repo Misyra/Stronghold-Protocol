@@ -441,3 +441,60 @@ test('protocol rejects a forged, out-of-range or non-boolean rehearsal answer', 
   assert.equal(typeof validateC2S({ t: 'b.rehearsalResult', taskId: '../x', choice: 0 }), 'string');
   assert.equal(typeof validateC2S({ t: 'b.rehearsalResult', taskId: '', choice: 0 }), 'string');
 });
+
+/** A simulation-pool double: records what was submitted and answers with a fixed pick (or fails). */
+function fakePool({ pick = 0, fail = false } = {}) {
+  const submits = [];
+  return {
+    submits,
+    assign() {}, release() {},
+    submit(type, payload) {
+      submits.push({ type, payload });
+      const promise = fail ? Promise.reject(new Error('pool broken')) : Promise.resolve(() => pick);
+      return { promise, cancel() {} };
+    },
+  };
+}
+
+/** Drive to the first AI seat's delegation, then to its timeout, which the pool takes: the host (a human seat) never
+ *  delegates — its own autoplayed prep rehearses in the pool directly — so the counters are read as increments. */
+async function timeoutIntoPool(pool) {
+  const h = coopMatch({ botRehearsalDelegate: true, hostId: 'p_0', simPool: pool });
+  const built = recordBuilds(h);
+  attachRehearsalHost(h, { mute: true });
+  h.run(() => h.m.rehearsalStats.delegated > 0, { maxSteps: 8e6 });
+  assert.ok(h.m.rehearsalStats.delegated > 0, 'an AI seat delegation went out');
+  const pooled0 = h.m.rehearsalPoolStats.pooled;
+  const takeovers0 = h.m.rehearsalStats.takeovers;
+  h.run(() => h.m.rehearsalPoolStats.pooled > pooled0, { maxSteps: 8e6 });
+  assert.ok(h.m.rehearsalPoolStats.pooled > pooled0, 'the timed-out task went to the pool');
+  await new Promise((r) => setImmediate(r)); // the pool's answer settles on a microtask
+  return { h, built, takeovers0 };
+}
+
+test('a timed-out delegation goes to the simulation pool, never back onto this thread', async () => {
+  const pool = fakePool({ pick: 0 });
+  const { h, built, takeovers0 } = await timeoutIntoPool(pool);
+  assert.equal(pool.submits[0].type, 'rehearsal');
+  assert.ok(Array.isArray(pool.submits[0].payload.specs) && pool.submits[0].payload.specs.length >= 2, 'the same candidates');
+  assert.ok(h.m.rehearsalPoolStats.accepted > 0, 'the pool pick was applied');
+  assert.equal(h.m.rehearsalStats.takeovers, takeovers0, 'no takeover on this thread for that task');
+  assert.deepEqual(built.filter((b) => /^r:ai_/.test(b.fieldId)), [], 'the AI seat\'s candidates never ran on this thread');
+  h.m.dispose();
+});
+
+test('a pool that cannot take the task leaves the rehearsal on this thread', async () => {
+  const pool = fakePool({ fail: true });
+  const { h, built, takeovers0 } = await timeoutIntoPool(pool);
+  assert.ok(h.m.rehearsalStats.takeovers > takeovers0, 'a broken pool falls back to the server thread');
+  assert.ok(built.some((b) => /^r:ai_/.test(b.fieldId)), 'and that thread builds the AI seat\'s candidates');
+  h.m.dispose();
+});
+
+test('a pool that answers without a pick falls back to the server thread', async () => {
+  const pool = fakePool({ pick: null });
+  const { h, built, takeovers0 } = await timeoutIntoPool(pool);
+  assert.ok(h.m.rehearsalStats.takeovers > takeovers0, 'no pick means the server runs the candidates');
+  assert.ok(built.some((b) => /^r:ai_/.test(b.fieldId)), 'on this thread');
+  h.m.dispose();
+});

@@ -61,6 +61,8 @@ export class MatchRehearsal {
       // protocol ids are ≤ 64 chars (shared/protocol.js isId): prefix, round, seat and a per-match counter
       id: `${this.battlePrefix}.${this.round}.${ps.seat}.${++this._rehearsalSeq}`,
       playerId: ps.playerId, job, executor: host.playerId, timer: null,
+      // kept for the pool fallback (_rehearsalToPool): the same limits the host's specs were built with
+      limits,
     };
     // the candidates as the JSON the browser simulates — the same preview inputs the server would build, so both
     // sides compare the same battles. No `cs`: a missing hash means the official data. A spec that names a content
@@ -200,13 +202,69 @@ export class MatchRehearsal {
     }
   }
 
-  /** Run a delegated rehearsal on the server instead: the job resumes locally, the task is dead (its answers ignored). */
+  /**
+   * Run a delegated rehearsal on the server instead: the task is dead (its answers ignored). The server's own
+   * simulation pool takes the very same candidates when it can — the host's CPU was the point, and a host that did
+   * not answer must not move that work onto the main thread. Only a pool that is absent, busy, broken or pointed at
+   * another content set runs them here (the pre-pool behaviour).
+   */
   _takeOverRehearsal(task, reason) {
     this._dropRehearsalTask(task, true);
+    if (this._rehearsalToPool(task, reason)) return;
     task.job.takeOver();
     this.rehearsalStats.takeovers++;
     this.log.info?.(`[match ${this.roomCode}] bot rehearsal ← server (${reason})`);
     if (task.job.onSettled) task.job.onSettled();
+  }
+
+  /**
+   * Hand a delegated task the host could not answer (or cannot run) to the simulation pool — poolRehearsal's sibling
+   * for the delegated job: the worker compares the same candidates and its pick is applied exactly like the host's
+   * would have been. Returns false when the pool cannot take it, so `_takeOverRehearsal` falls back to this thread.
+   * @param {{ id: string, playerId: string, job: any, limits?: any }} task
+   * @param {string} reason
+   * @returns {boolean} whether the pool took the task
+   */
+  _rehearsalToPool(task, reason) {
+    const pool = this.simPool;
+    if (!pool || this.disposed || this.ended) return false;
+    // a gameplay-plugin / other-version room's content set does not reach a worker thread (same rule as poolRehearsal)
+    if (this.requireCs || (this.version && this.version !== DEFAULT_VERSION)) return false;
+    const job = task.job;
+    const inputs = job?.inputs;
+    if (!Array.isArray(inputs) || inputs.length < 2) return false;
+    let handle;
+    try {
+      const specs = inputs.map((o) => buildBattleSpec({ ...o, content: this.battleContent, ...morphBattleOpt(this.rules) }));
+      handle = pool.submit('rehearsal', { specs, playerId: task.playerId, cap: job.cap, ...(task.limits ? { limits: task.limits } : {}) });
+    } catch { return false; }
+    if (!handle || !handle.promise) return false;
+    const poolTask = {
+      id: task.id, playerId: task.playerId, job, executor: null, timer: null, kind: 'pool',
+      // a refusal or a failed task is the server's turn: the same candidates run on this thread (job.takeOver)
+      cancel: () => { try { handle.cancel(); } catch { /* already settled */ } },
+    };
+    this._rehearsalTasks.set(poolTask.id, poolTask);
+    pool.assign?.(this.roomCode);
+    this.rehearsalPoolStats.pooled++;
+    this.log.info?.(`[match ${this.roomCode}] bot rehearsal ← pool (${reason})`);
+    const settle = (wanted) => {
+      if (this._rehearsalTasks.get(poolTask.id) !== poolTask) return; // cancelled with the prep
+      this._dropRehearsalTask(poolTask);
+      if (this.disposed || this.ended || !job.pending) return;
+      const index = typeof wanted === 'function' ? wanted() : null;
+      if (Number.isInteger(index) && index >= 0 && index < inputs.length) {
+        job.accept(index);
+        this.rehearsalPoolStats.accepted++;
+      } else {
+        this.rehearsalStats.takeovers++;
+        job.takeOver();
+        this.log.info?.(`[match ${this.roomCode}] bot rehearsal ← server (pool had no pick)`);
+      }
+      if (job.onSettled) job.onSettled();
+    };
+    handle.promise.then(settle, () => settle(null));
+    return true;
   }
 
   /**

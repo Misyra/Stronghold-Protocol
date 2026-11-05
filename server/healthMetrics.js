@@ -1,10 +1,10 @@
 // server/healthMetrics.js — 只读的 /healthz 性能缓存(移植自 Stardust fork 的 server/healthMetrics.js)。
-// 每个监听服务器一个采样器;不与 Worker 通信、不查询对局进程:主线程自己的 CPU / ELU / 内存 / 事件循环延迟,
+// 每个监听服务器一个采样器;不与 Worker 通信、不查询对局进程:主线程自己的 CPU / ELU / 内存 / 事件循环延迟 / GC 停顿,
 // 每 10 s 采一次(monitorEventLoopDelay,20 ms 分辨率),/healthz 读到的是缓存的摘要而不是每次现算。
 // 可选的 phase 记录器(server/phaseMetrics.js,createPhaseMetrics)在每次采样时轮转出 `phases` 块。
 // B 的接线差异:performance 块只随 ?traffic=1 给回环/私网客户端(routes.js),不进公开的 /healthz。
 // 另见 server/health/eventLoop.js(SP_LOOP_SAMPLE=1 的本地日志采样器,刻意不进 /healthz)。
-import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
+import { monitorEventLoopDelay, performance, PerformanceObserver } from 'node:perf_hooks';
 
 const SAMPLE_MS = 10_000;
 const RESOLUTION_MS = 20;
@@ -18,6 +18,7 @@ function emptySnapshot(status) {
     mainThread: {
       eventLoopDelayMs: { p50: null, p95: null, p99: null, max: null },
       eventLoopUtilization: null,
+      gc: { pauses: null, totalMs: null, maxMs: null },
       memory: { heapUsedBytes: null, heapTotalBytes: null, externalBytes: null, arrayBuffersBytes: null },
     },
     process: { cpu: { userMs: null, systemMs: null, totalMs: null, percent: null }, rssBytes: null },
@@ -46,13 +47,22 @@ export function createHealthMetrics({
   cpuUsage = () => process.cpuUsage(), memoryUsage = () => process.memoryUsage(),
   eventLoopUtilization = () => performance.eventLoopUtilization(),
   createHistogram = monitorEventLoopDelay,
+  createPerformanceObserver = (callback) => new PerformanceObserver(callback),
   setInterval: schedule = globalThis.setInterval, clearInterval: unschedule = globalThis.clearInterval,
   phases = null,
 } = {}) {
   // 没有记录器时快照保持原形(没有 `phases` 键)。
   const withPhases = (snapshot) => (phases ? { ...snapshot, phases: null } : snapshot);
   let cached = withPhases(emptySnapshot('warming'));
-  let histogram = null, timer = null, baseline = null;
+  let histogram = null, timer = null, baseline = null, observer = null;
+  // 主线程 GC 停顿:条目由 V8 异步送进观察器回调,先攒进窗口累加器,每次采样时清空入档(与直方图的 reset 同规)。
+  let gcPending = { pauses: 0, totalMs: 0, maxMs: 0 };
+  const noteGc = (durationMs) => {
+    if (!Number.isFinite(durationMs) || durationMs < 0) return;
+    gcPending.pauses++;
+    gcPending.totalMs += durationMs;
+    gcPending.maxMs = Math.max(gcPending.maxMs, durationMs);
+  };
   let started = false, disposed = false, warned = false;
 
   function warn(error) {
@@ -71,6 +81,10 @@ export function createHealthMetrics({
       const old = histogram; histogram = null;
       try { old.disable(); } catch (e) { warn(e); }
     }
+    if (observer !== null) {
+      const old = observer; observer = null;
+      try { old.disconnect(); } catch (e) { warn(e); }
+    }
   }
 
   function unavailable(error) {
@@ -86,6 +100,8 @@ export function createHealthMetrics({
       const elapsed = delta(current.at, baseline.at);
       const windowMs = elapsed > 0 ? elapsed : null;
       const next = withPhases(emptySnapshot(windowMs === null ? 'warming' : 'ready'));
+      const gc = gcPending; // 本窗口的 GC 停顿;无论如何清空累加器,不把这段漏进下一个窗口。
+      gcPending = { pauses: 0, totalMs: 0, maxMs: 0 };
       if (windowMs !== null) {
         const memory = memoryUsage();
         next.sampledAt = nonnegative(wallNow()); // Unix epoch ms,独立于单调时钟的窗口。
@@ -95,6 +111,8 @@ export function createHealthMetrics({
           heapUsedBytes: nonnegative(memory.heapUsed), heapTotalBytes: nonnegative(memory.heapTotal),
           externalBytes: nonnegative(memory.external), arrayBuffersBytes: nonnegative(memory.arrayBuffers),
         };
+        // 没有停顿的窗口是一个真实的 0;只有最长停顿在没有条目时没有测量值。
+        next.mainThread.gc = { pauses: gc.pauses, totalMs: gc.totalMs, maxMs: gc.pauses > 0 ? gc.maxMs : null };
         const user = delta(current.cpu.user, baseline.cpu.user), system = delta(current.cpu.system, baseline.cpu.system);
         const userMs = user === null ? null : user / 1000;
         const systemMs = system === null ? null : system / 1000;
@@ -133,6 +151,10 @@ export function createHealthMetrics({
     try {
       histogram = createHistogram({ resolution: RESOLUTION_MS });
       histogram.enable();
+      observer = createPerformanceObserver((list) => {
+        try { for (const entry of list.getEntries()) noteGc(entry.duration); } catch (e) { warn(e); }
+      });
+      observer.observe({ entryTypes: ['gc'] });
       baseline = { at: now(), cpu: cpuUsage(), elu: eventLoopUtilization() };
       timer = schedule(sample, SAMPLE_MS);
       timer.unref?.();

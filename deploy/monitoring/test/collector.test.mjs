@@ -60,6 +60,8 @@ test('a healthz report becomes typed metrics in base units; counters end in _tot
   assert.ok(Math.abs(m.one('sp_event_loop_delay_seconds', { stat: 'p99' }) - 0.021102591) < 1e-12);
   assert.ok(Math.abs(m.one('sp_event_loop_delay_seconds', { stat: 'max' }) - 0.037060607) < 1e-12);
   assert.ok(Math.abs(m.one('sp_process_cpu_ratio') - 0.0774356975812106) < 1e-12);
+  assert.ok(Math.abs(m.one('sp_gc_pause_seconds') - 0.1262) < 1e-12);
+  assert.equal(m.one('sp_gc_pauses'), 3);
   assert.equal(m.one('sp_process_resident_memory_bytes'), 624517120);
   assert.equal(m.one('sp_performance_ready'), 1);
   assert.equal(m.one('sp_performance_sampled_timestamp_seconds'), 1792141846.05);
@@ -68,6 +70,10 @@ test('a healthz report becomes typed metrics in base units; counters end in _tot
   assert.equal(m.one('sp_persist_enabled'), 1);
   assert.equal(m.one('sp_http_responses_total', { class: 'assets' }), 720528);
   assert.equal(m.one('sp_http_response_bytes_total', { class: 'data' }), 2480182841);
+  assert.equal(m.one('sp_http_status_total', { status: 'ok' }), 2397734);
+  assert.equal(m.one('sp_http_status_total', { status: 'aborted' }), 314);
+  assert.equal(m.one('sp_http_status_total', { status: 'server_error' }), 204);
+  assert.equal(m.one('sp_http_status_total', { status: 'rate_limited' }), 7);
   assert.equal(m.one('sp_ws_wire_bytes_total', { direction: 'out' }), 18762156231);
   assert.equal(m.one('sp_ws_open'), 3346);
   assert.deepEqual(m.get('sp_http_responses_total', { class: 'total' }), [], 'the derivable total is not exported');
@@ -95,19 +101,26 @@ test('missing, null or wrongly typed fields are absent, not zero', () => {
   delete data.roomProtection;
   data.performance = { status: 'warming', sampledAt: null, windowMs: null,
     mainThread: { eventLoopDelayMs: { p50: null, p95: null, p99: null, max: null }, eventLoopUtilization: null,
+      gc: { pauses: null, totalMs: null, maxMs: null },
       memory: { heapUsedBytes: null, heapTotalBytes: null, externalBytes: null, arrayBuffersBytes: null } },
     process: { cpu: { userMs: null, systemMs: null, totalMs: null, percent: null }, rssBytes: null } };
   data.spectators = null;
   data.persist = { writes: 4134, failures: -3 }; // a counter is never negative; no enabled flag → the flag is absent
   const m = parse(renderMetrics(fresh(data), NOW));
-  for (const name of ['sp_http_responses_total', 'sp_ws_open', 'sp_persist_failures_total', 'sp_persist_enabled',
-    'sp_event_loop_delay_seconds', 'sp_process_cpu_ratio', 'sp_heap_used_bytes',
-    'sp_process_resident_memory_bytes', 'sp_spectators']) {
+  for (const name of ['sp_http_responses_total', 'sp_http_status_total', 'sp_ws_open', 'sp_persist_failures_total',
+    'sp_persist_enabled', 'sp_event_loop_delay_seconds', 'sp_process_cpu_ratio', 'sp_heap_used_bytes',
+    'sp_gc_pause_seconds', 'sp_gc_pauses', 'sp_process_resident_memory_bytes', 'sp_spectators']) {
     assert.equal(m.families.has(name), false, `${name} absent`);
   }
   assert.equal(m.one('sp_persist_writes_total'), 4134, 'a real value stays');
   assert.equal(m.one('sp_performance_ready'), 0);
   assert.equal(m.one('sp_sockets'), 3346);
+  // the status families are per-key: a block without `status` hides only sp_http_status_total
+  const noStatus = structuredClone(sample);
+  delete noStatus.traffic.http.status;
+  const m2 = parse(renderMetrics(fresh(noStatus), NOW));
+  assert.equal(m2.families.has('sp_http_status_total'), false, 'sp_http_status_total absent');
+  assert.equal(m2.one('sp_http_responses_total', { class: 'assets' }), 720528, 'the other traffic families stay');
 });
 
 test('label values: app / build allowlisted, escaping per the text format', () => {

@@ -6,7 +6,7 @@ import { createHealthMetrics, PERFORMANCE_UNAVAILABLE, serverLoadState } from '.
 
 function fixture(overrides = {}) {
   const calls = { now: 0, cpu: 0, elu: 0, memory: 0, create: 0, enable: 0, disable: 0, reset: 0, percentiles: [],
-    schedule: 0, clear: 0, unref: 0 };
+    schedule: 0, clear: 0, unref: 0, observer: 0, observe: 0, disconnect: 0 };
   const state = {
     at: 1000, wall: 1_800_000_000_000,
     cpu: { user: 5_000_000, system: 1_000_000 }, elu: { active: 400, idle: 600, utilization: 0.4 },
@@ -19,6 +19,12 @@ function fixture(overrides = {}) {
     percentile(p) { assert.ok(state.count > 0, 'never query an empty histogram'); calls.percentiles.push(p); return state.delays[p]; },
   };
   const timer = { unref() { calls.unref++; } };
+  /** GC entries are delivered to this captured callback; tests push durations through emitGc. */
+  let gcCallback = null;
+  const observer = {
+    observe(options) { calls.observe++; assert.deepEqual(options, { entryTypes: ['gc'] }); },
+    disconnect() { calls.disconnect++; },
+  };
   let tick;
   const metrics = createHealthMetrics({
     log: { warn: (message) => warnings.push(message) },
@@ -27,12 +33,15 @@ function fixture(overrides = {}) {
     eventLoopUtilization: () => { calls.elu++; return { ...state.elu }; },
     memoryUsage: () => { calls.memory++; return { ...state.memory }; },
     createHistogram: (opts) => { calls.create++; assert.deepEqual(opts, { resolution: 20 }); return histogram; },
+    createPerformanceObserver: (callback) => { calls.observer++; gcCallback = callback; return observer; },
     setInterval: (t, ms) => { calls.schedule++; assert.equal(ms, 10_000); tick = t; return timer; },
     clearInterval: (value) => { assert.equal(value, timer); calls.clear++; },
     ...overrides,
   });
   const warnings = [];
-  return { metrics, state, calls, histogram, timer, warnings, tick: () => tick() };
+  return { metrics, state, calls, histogram, timer, warnings, tick: () => tick(),
+    emitGc: (durations) => gcCallback({ getEntries: () => durations.map((duration) => ({ duration })) }),
+    emitGcBad: () => gcCallback({ getEntries: () => { throw new Error('injected entries failure'); } }) };
 }
 
 function assertNullMeasurements(snapshot) {
@@ -40,6 +49,7 @@ function assertNullMeasurements(snapshot) {
   assert.equal(snapshot.windowMs, null);
   for (const value of Object.values(snapshot.mainThread.eventLoopDelayMs)) assert.equal(value, null);
   assert.equal(snapshot.mainThread.eventLoopUtilization, null);
+  for (const value of Object.values(snapshot.mainThread.gc)) assert.equal(value, null);
   for (const value of Object.values(snapshot.mainThread.memory)) assert.equal(value, null);
   for (const value of Object.values(snapshot.process.cpu)) assert.equal(value, null);
   assert.equal(snapshot.process.rssBytes, null);
@@ -114,6 +124,39 @@ test('health metrics: CPU uses the real monotonic window, allows >100%, ns/us co
   assert.equal(f.calls.reset, 2, 'exactly one reset per interval');
   assert.equal(first.windowMs, 12_500, 'a later sample does not mutate the old cache');
   f.metrics.dispose();
+});
+
+test('health metrics: GC pauses accumulate per window — counts, total and max, cleared with every sample', () => {
+  const f = fixture(); f.metrics.start();
+  assert.equal(f.calls.observer, 1);
+  assert.equal(f.calls.observe, 1);
+  f.state.at += 10_000;
+  f.tick();
+  let sample = f.metrics.snapshot();
+  assert.deepEqual(sample.mainThread.gc, { pauses: 0, totalMs: 0, maxMs: null }, 'a window without pauses is a real zero');
+  f.emitGc([10, 50, 25.5]);
+  f.emitGc([50]); // another pause of the same duration: counted, the max does not move
+  f.state.at += 10_000; f.tick();
+  sample = f.metrics.snapshot();
+  assert.deepEqual(sample.mainThread.gc, { pauses: 4, totalMs: 135.5, maxMs: 50 });
+  f.emitGc([100, NaN, -3]); // an invalid duration is dropped, not accumulated
+  f.state.at += 25_000; f.tick(); // a delayed interval: entries land in the window they arrived in
+  sample = f.metrics.snapshot();
+  assert.deepEqual(sample.mainThread.gc, { pauses: 1, totalMs: 100, maxMs: 100 });
+  f.metrics.dispose();
+});
+
+test('health metrics: a failing GC observer is diagnostics only; disconnect once, no re-observe after dispose', () => {
+  const f = fixture(); f.metrics.start();
+  f.emitGcBad();
+  assert.equal(f.warnings.length, 1);
+  f.state.at += 10_000; f.tick();
+  assert.equal(f.metrics.snapshot().status, 'ready', 'the sampler keeps running');
+  assert.deepEqual(f.metrics.snapshot().mainThread.gc, { pauses: 0, totalMs: 0, maxMs: null });
+  f.metrics.dispose(); f.metrics.dispose();
+  assert.equal(f.calls.disconnect, 1);
+  f.metrics.start();
+  assert.equal(f.calls.observe, 1, 'dispose is terminal');
 });
 
 test('health metrics: empty histograms and zero ELU windows are null, never sentinels or invented zero delays', () => {
@@ -197,13 +240,14 @@ test('health metrics: separate collectors own their caches/resources and dispose
 });
 
 test('health metrics: partially failed startup releases histogram/timer and logs once without throwing', async (t) => {
-  for (const step of ['create', 'enable', 'cpu', 'elu', 'schedule', 'unref']) {
+  for (const step of ['create', 'enable', 'observe', 'cpu', 'elu', 'schedule', 'unref']) {
     await t.test(step, () => {
       const error = () => { throw new Error(`injected ${step} failure`); };
       let f;
       const overrides = {
         create: { createHistogram: error },
         enable: { createHistogram: () => ({ enable: error, disable: () => f.calls.disable++ }) },
+        observe: { createPerformanceObserver: () => ({ observe: error, disconnect: () => f.calls.disconnect++ }) },
         cpu: { cpuUsage: error }, elu: { eventLoopUtilization: error },
         schedule: { setInterval: error },
         unref: { setInterval: () => { f.timer.unref = error; return f.timer; } },

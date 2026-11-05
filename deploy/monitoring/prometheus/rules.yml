@@ -18,6 +18,15 @@ groups:
       # failed state writes per second — growing means saving is broken
       - record: sp:persist_failures:rate2m
         expr: sum(rate(sp_persist_failures_total{job="collector"}[2m]))
+      # HTTP responses per second by status family (server/http/traffic.js): the 5xx the server itself sent,
+      # the access gate's 429s, and `aborted` — connections that closed before the response finished (a proxy
+      # in front would log them as 499)
+      - record: sp:http_server_errors:rate2m
+        expr: sum(rate(sp_http_status_total{job="collector",status="server_error"}[2m]))
+      - record: sp:http_rate_limited:rate2m
+        expr: sum(rate(sp_http_status_total{job="collector",status="rate_limited"}[2m]))
+      - record: sp:http_aborted:rate2m
+        expr: sum(rate(sp_http_status_total{job="collector",status="aborted"}[2m]))
 
   - name: host
     rules:

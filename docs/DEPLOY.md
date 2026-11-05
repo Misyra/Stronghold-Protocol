@@ -409,7 +409,7 @@ volumes:
 | 本地提取失败 | 游戏照常运行，只是第 6 节表格里的几样换成替代样式。确认客户端已下载全部资源；Python 版本太新导致依赖安装失败时，安装 Python 3.12 后删除 `.venv-extract` 再运行 `node tools/setup.mjs --local` |
 | 3D 棋盘没出现 | 需要本地提取的棋盘贴图（`node tools/doctor.mjs` 会显示「3D 棋盘可用」），以及支持 WebGL2 的浏览器。没有客户端的服务器可以从同一版本的整合包复制本地素材（第 6 节） |
 | 素材地址里的 `~` 加一串字母数字 | `/assets/~<哈希>/…` 是 0.2.6 起的带版本地址（见第 0 节「网络」），浏览器可以长期缓存，属于正常现象。怀疑它导致问题时，可以用 `SP_ASSET_INDEX=0` 启动服务器临时关闭（清单改回普通地址），并请在 issue 里说明 |
-| 想知道开服电脑上传了多少流量 | 浏览器打开 `http://localhost:3000/healthz?traffic=1`（换成你的端口）：`traffic.http` 是服务器启动以来各类内容（`assets` 图片和模型、`audio` 音频、`code` 页面和脚本、`data` 游戏数据和素材清单）发出的字节数和请求数（压缩后的实际字节，`notModified` 是只回了「没变」的 304），`traffic.ws` 是 WebSocket 的线上字节（`wireOut` / `wireIn`，压缩后）和压缩前的消息字节（`payloadOut` / `payloadIn`）。数字只在内存里，重启后从 0 开始；只有本机和局域网（含虚拟局域网地址）的访问能看到，公网访问者（包括经隧道 / 反代转发来的）只拿到普通的 `/healthz`。玩家那边：设置 →「问题反馈」复制的诊断里有一行 `traffic:`，是这个页面从打开起下载的字节数（`cached` 是浏览器缓存直接给的，不占流量；`external` 是其他网站，例如 Google 字体） |
+| 想知道开服电脑上传了多少流量 | 浏览器打开 `http://localhost:3000/healthz?traffic=1`（换成你的端口）：`traffic.http` 是服务器启动以来各类内容（`assets` 图片和模型、`audio` 音频、`code` 页面和脚本、`data` 游戏数据和素材清单）发出的字节数和请求数（压缩后的实际字节，`notModified` 是只回了「没变」的 304），`traffic.http.status` 是按状态族的完成数（`ok` 2xx、`redirect` 3xx、`rate_limited` 门禁 429、`client_error` 4xx、`server_error` 5xx、`aborted` 响应没写完连接就断开——放在前面的代理会把这类请求记成 499），`traffic.ws` 是 WebSocket 的线上字节（`wireOut` / `wireIn`，压缩后）和压缩前的消息字节（`payloadOut` / `payloadIn`）。数字只在内存里，重启后从 0 开始；只有本机和局域网（含虚拟局域网地址）的访问能看到，公网访问者（包括经隧道 / 反代转发来的）只拿到普通的 `/healthz`。玩家那边：设置 →「问题反馈」复制的诊断里有一行 `traffic:`，是这个页面从打开起下载的字节数（`cached` 是浏览器缓存直接给的，不占流量；`external` 是其他网站，例如 Google 字体） |
 | 想知道静态文件缓存占了多少内存 | 同一个 `/healthz?traffic=1` 页面还有 `staticCache`：`gzip*` 是压缩结果缓存，`transform*` 是改写后响应体（页面 HTML、CSS、`/_v/<tag>/` 下的 js 与版本化 JSON）连同其 ETag 的缓存——热路径每个文件只做一次正则改写与哈希，不随请求重付；键里带文件的 size/mtime/ino/ctime，文件一变自动失效。`*Bytes` 是当前占用、`*LimitBytes` 是预算（96MB / 32MB，超限按最久未用淘汰）、`*Entries` 是条数，重启清零 |
 | 断线 | 同盟模拟 10 分钟内、独立模拟 24 小时内（`config.constants.singleReconnectTime`；第一期数据没有这项，24 小时是沿用的便利 [ASSUMED]）用同一浏览器重新打开页面，自动回到原座位。同盟掉线期间按原阵容自动作战、到时自动准备（不会代为购买；想让 AI 代打请用「离开模拟 → 暂离（AI 托管）」）；第二期独立模拟不计时，等你回来。第一期独立模拟的休整与机变按每轮计时，断线后仍可在这 24 小时内回来 |
 
@@ -838,7 +838,8 @@ npm start
 
 **性能度量（`/healthz` 的 `performance` 块）**。服务器进程自带一个只读采样器（`server/healthMetrics.js`，
 移植自 Stardust fork）：每 10 秒采一次主线程的事件循环延迟（20 ms 分辨率的 p50 / p95 / p99 / max）、事件循环
-利用率、CPU、内存，缓存在进程里，`/healthz` 读缓存而不是现算；采样器坏了只会降级成 `unavailable`，绝不会
+利用率、GC 停顿（`gc.pauses` / `gc.totalMs` / `gc.maxMs`，窗口内停顿次数与总 / 最长时长，PerformanceObserver 异步
+送来、按窗口清零）、CPU、内存，缓存在进程里，`/healthz` 读缓存而不是现算；采样器坏了只会降级成 `unavailable`，绝不会
 影响服务。这个块和 `traffic` 一样**只给回环 / 私网客户端**：浏览器打开 `http://localhost:3000/healthz?traffic=1`
 能看到，公网访问者拿到的是不含它的普通 `/healthz`。另有一个更细的本地日志采样器（`SP_LOOP_SAMPLE=1` 的
 `[loop]` 行，见 §5）与之互补：前者进面板，后者带房间 / 阶段计数落日志。

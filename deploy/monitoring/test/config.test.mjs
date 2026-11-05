@@ -76,7 +76,8 @@ test('dashboard: a public-dashboard-compatible, Chinese, dark, 1 min / 6 h board
   }
   const titles = dataPanels.map((p) => p.title);
   for (const title of ['在线连接', '进行中对局', '房间', '观战', 'AI 机器人', '会话与连接', '房间与对局', '游戏服务器', '版本', '运行时长',
-    '主线程事件循环延迟', '服务器 CPU', '服务器内存', '存档写入', '出口 / 入口带宽', 'CPU 使用率', '内存使用率']) {
+    '主线程事件循环延迟', '主线程 CPU（单核）', '服务器 CPU', '服务器内存', '请求失败趋势', '存档写入', 'GC 总耗时',
+    '出口 / 入口带宽', 'CPU 使用率', '内存使用率']) {
     assert.ok(titles.includes(title), `panel ${title}`);
   }
   const up = dataPanels.find((p) => p.title === '游戏服务器');

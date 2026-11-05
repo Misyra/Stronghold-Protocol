@@ -1,7 +1,7 @@
 # 卫戍协议 · 服务器状态监控(Prometheus + Grafana)
 
-服务器状态面板:在线连接、会话、房间 / 对局、游戏进程的事件循环延迟 / CPU / 内存、存档写入与主机(宿主机)
-资源。整套以 Docker Compose 跑在服务器本机,全部只监听 127.0.0.1;对外展示可用 Grafana 的「公开仪表盘」或
+服务器状态面板:在线连接、会话、房间 / 对局、游戏进程的事件循环延迟 / 主线程与进程 CPU / 内存 / GC、请求失败趋势
+(5xx / 429 / 客户端中断)、存档写入与主机(宿主机)资源。整套以 Docker Compose 跑在服务器本机,全部只监听 127.0.0.1;对外展示可用 Grafana 的「公开仪表盘」或
 SSH 隧道访问管理界面。
 
 本目录移植自 Stardust fork 的 `deploy/stardust/monitoring`(其改编自
@@ -116,20 +116,23 @@ collector(`collector/metrics.mjs` 有完整表格;缺失 / null / 非数字字�
 - 玩家与房间(gauge):`sp_sockets`、`sp_sessions`、`sp_rooms`、`sp_matches`、`sp_humans`、`sp_bots`、
   `sp_spectators`、`sp_uptime_seconds`、`sp_ok`、`sp_content_sets`、`sp_content_plugins`
 - 性能(healthMetrics.js 的 10 秒窗口,gauge,秒/字节/比例):`sp_event_loop_delay_seconds{stat=p50|p95|p99|max}`、
-  `sp_event_loop_utilization`、`sp_process_cpu_ratio`(1 = 一个核心)、`sp_process_resident_memory_bytes`、
+  `sp_event_loop_utilization`(主线程 CPU,1 = 一个核心)、`sp_gc_pause_seconds` / `sp_gc_pauses`(窗口内主线程
+  GC 停顿总时长 / 次数)、`sp_process_cpu_ratio`(1 = 一个核心)、`sp_process_resident_memory_bytes`、
   `sp_heap_used_bytes` 等;`performance.phases` 不导出
 - 存档(`persist` 块,server/persist.js):`sp_persist_writes_total`、`sp_persist_failures_total`、
   `sp_persist_checkpoints`、`sp_persist_last_save_seconds` 等
 - 流量(traffic 计数器):`sp_http_responses_total{class}`、`sp_http_response_bytes_total{class}`、
-  `sp_http_not_modified_total{class}`、`sp_ws_wire_bytes_total{direction}`、`sp_ws_payload_bytes_total{direction}`、
-  `sp_ws_messages_total{direction}`、`sp_ws_connections_total`、`sp_ws_open`
+  `sp_http_not_modified_total{class}`、`sp_http_status_total{status=ok|redirect|rate_limited|client_error|server_error|aborted}`
+  (`aborted` 是响应没写完连接就断开的请求——放在前面的代理会把它记成 499)、`sp_ws_wire_bytes_total{direction}`、
+  `sp_ws_payload_bytes_total{direction}`、`sp_ws_messages_total{direction}`、`sp_ws_connections_total`、`sp_ws_open`
 - **fork 集群专用、本仓拿不到**:在线人数 / 排队(`online` / `queued`)、每网络上限与拒绝(`sp_limit*`)、
   断线重连(`sp_hello_total` / `sp_match_seat_departures_total`)、backpressure / stateDelta(`sp_state_*`)、
   协调器存档仓库(`sp_store_*`)、OpenResty 边缘(`ark_edge_*`)——均不导出
 
 recording rules(`prometheus/rules.yml`,面板只读这些和少量 gauge,公开查询很便宜):`sp:server_up`、
-`sp:persist_writes:rate2m`、`sp:persist_failures:rate2m`、`host:cpu_usage:ratio`、`host:memory_usage:ratio`、
-`host:network_{transmit,receive}_bits:rate2m`。没有告警规则(没有 Alertmanager)。
+`sp:persist_writes:rate2m`、`sp:persist_failures:rate2m`、`sp:http_server_errors:rate2m`、
+`sp:http_rate_limited:rate2m`、`sp:http_aborted:rate2m`(请求失败趋势面板)、`host:cpu_usage:ratio`、
+`host:memory_usage:ratio`、`host:network_{transmit,receive}_bits:rate2m`。没有告警规则(没有 Alertmanager)。
 
 面板不显示 fork 的杭州游戏主机机器指标与入口带宽之外的东西;`device="ens3"` 按本机网卡改(见 §1)。
 

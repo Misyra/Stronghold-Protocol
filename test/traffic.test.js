@@ -1,5 +1,6 @@
 // The server's traffic counters (server/http/traffic.js, GET /healthz?traffic=1; host bandwidth layer 0): the body
-// bytes every HTTP response wrote, by category, 304s apart, and the WebSocket's wire and payload bytes both ways.
+// bytes every HTTP response wrote, by category, 304s and status family apart, and the WebSocket's wire and payload
+// bytes both ways.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -56,9 +57,13 @@ test('HTTP: body bytes by category as written (compressed), 304s counted, /healt
     assert.equal(t.http.data.requests, 1);
     assert.equal(t.http.other.requests, 2, 'the 404 page and the first /healthz');
     assert.ok(t.http.other.bytes > 0);
+    assert.deepEqual(t.http.status, { ok: 6, redirect: 1, rate_limited: 0, client_error: 1, server_error: 0, aborted: 0 },
+      'everything but the not-yet-closed traffic response itself');
     assert.equal(t.http.total.requests, 8);
     assert.equal(typeof t.since, 'string');
     assert.equal(srv.traffic.snapshot().http.total.requests, 9, 'the traffic request itself once it has finished');
+    assert.deepEqual(srv.traffic.snapshot().http.status,
+      { ok: 7, redirect: 1, rate_limited: 0, client_error: 1, server_error: 0, aborted: 0 });
   } finally {
     await srv.close();
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -102,6 +107,25 @@ test('the counter on its own: a string body in another encoding, an aborted resp
   assert.equal(ws.payloadOut, 12);
   assert.equal(ws.payloadIn, 7);
   assert.equal(tc.snapshot().seconds, 0);
+});
+
+test('status families: ok / redirect / rate_limited / client_error / server_error; aborted for a response that never finished', () => {
+  const tc = createTrafficCounter({ now: () => 1000 });
+  const metered = (statusCode, writableEnded = true) => {
+    const listeners = {};
+    const res = { statusCode, writableEnded, write() { return true; }, end() {}, once(ev, fn) { listeners[ev] = fn; } };
+    tc.meter(res, '/data/x.json');
+    res.write('x');
+    res.end();
+    listeners.close();
+  };
+  metered(200); metered(304); metered(429); metered(404); metered(500);
+  metered(200, false); // the connection died before res.end — the proxy in front logs a 499, we count aborted
+  metered(429, false); // an aborted 429 counts as aborted only, not twice
+  const s = tc.snapshot();
+  assert.deepEqual(s.http.status, { ok: 1, redirect: 1, rate_limited: 1, client_error: 1, server_error: 1, aborted: 2 });
+  assert.equal(s.http.total.requests, 7, 'the category counters are unchanged by the status split');
+  assert.equal(s.http.data.requests, 7);
 });
 
 test('/healthz?traffic=1 answers the counters to a loopback / LAN client only (maintainer, 2026-10-12)', async () => {

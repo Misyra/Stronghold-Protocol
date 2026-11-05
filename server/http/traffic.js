@@ -1,7 +1,9 @@
 // server/http/traffic.js — what this server has sent and received since it started (host bandwidth, layer 0):
 //
 //   * HTTP: per category of shared/assetPaths.js trafficCategory (assets / audio / code / data / other) the responses
-//     and the body bytes actually written (after gzip / brotli; headers not counted), and how many were 304s;
+//     and the body bytes actually written (after gzip / brotli; headers not counted), how many were 304s, and the
+//     status families the server finished (ok / redirect / rateLimited / clientError / serverError) plus `aborted` —
+//     the connections that closed before the response was finished (a proxy in front would log them as 499);
 //   * WebSocket: the connections, the bytes on the wire both ways (the sockets' own counters, after permessage-deflate,
 //     frame headers included, the HTTP upgrade not) and the message payloads before compression — their ratio is what
 //     the compression saves.
@@ -25,6 +27,19 @@ function payloadBytes(data) {
   return data && typeof data.byteLength === 'number' ? data.byteLength : typeof data === 'string' ? Buffer.byteLength(data) : 0;
 }
 
+/** The fixed status families of `record` (the collector exports exactly these as sp_http_status_total). */
+const STATUS_FAMILIES = ['ok', 'redirect', 'rate_limited', 'client_error', 'server_error', 'aborted'];
+
+/** The family of a finished response's status code (429 gets its own; 304 counts as a redirect). */
+function statusFamily(status) {
+  if (status === 429) return 'rate_limited';
+  if (status >= 200 && status < 300) return 'ok';
+  if (status >= 300 && status < 400) return 'redirect';
+  if (status >= 400 && status < 500) return 'client_error';
+  if (status >= 500 && status < 600) return 'server_error';
+  return null;
+}
+
 /**
  * A traffic counter for one server.
  * @param {{ now?: () => number }} [opts]
@@ -32,16 +47,22 @@ function payloadBytes(data) {
 export function createTrafficCounter({ now = Date.now } = {}) {
   const startedAt = now();
   const http = Object.fromEntries(TRAFFIC_CATEGORIES.map((c) => [c, { requests: 0, bytes: 0, notModified: 0 }]));
+  const status = Object.fromEntries(STATUS_FAMILIES.map((s) => [s, 0]));
   const ws = { connections: 0, wireOut: 0, wireIn: 0, payloadOut: 0, payloadIn: 0, messagesOut: 0, messagesIn: 0 };
   /** @type {Map<import('node:net').Socket, { out: number, in: number }>} live sockets and their counters at the upgrade */
   const live = new Map();
 
-  /** One finished HTTP response. */
-  function record(path, status, bytes) {
+  /** One finished (or abandoned) HTTP response; a response the client walked out on counts only as aborted. */
+  function record(path, res, bytes) {
     const c = http[trafficCategory(path)] || http.other;
     c.requests++;
     c.bytes += bytes;
-    if (status === 304) c.notModified++;
+    if (res.statusCode === 304) c.notModified++;
+    if (res.writableEnded === false) status.aborted++;
+    else {
+      const family = statusFamily(res.statusCode);
+      if (family) status[family]++;
+    }
   }
 
   return {
@@ -62,7 +83,7 @@ export function createTrafficCounter({ now = Date.now } = {}) {
         bytes += chunkBytes(chunk, encoding);
         return end.call(this, chunk, encoding, cb);
       };
-      res.once('close', () => record(path, res.statusCode, bytes));
+      res.once('close', () => record(path, res, bytes));
     },
     /** A WebSocket connection opened on `socket` (after its upgrade answer was written). */
     wsOpen(socket) {
@@ -94,7 +115,7 @@ export function createTrafficCounter({ now = Date.now } = {}) {
       return {
         since: new Date(startedAt).toISOString(),
         seconds: Math.max(0, Math.round((now() - startedAt) / 1000)),
-        http: { ...byCat, total },
+        http: { ...byCat, total, status: { ...status } },
         ws: { ...ws, open: live.size, wireOut, wireIn },
       };
     },

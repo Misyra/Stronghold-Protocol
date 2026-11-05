@@ -52,6 +52,11 @@
     "max": 37.060607
    },
    "eventLoopUtilization": 0.07108139295749012,
+   "gc": {
+    "pauses": 3,
+    "totalMs": 126.2,
+    "maxMs": 44.1
+   },
    "memory": {
     "heapUsedBytes": 277065008,
     "heapTotalBytes": 511012864,
@@ -101,6 +106,14 @@
    "total": {
     "requests": 2415926,
     "bytes": 3105273708
+   },
+   "status": {
+    "ok": 2397734,
+    "redirect": 17568,
+    "rate_limited": 7,
+    "client_error": 99,
+    "server_error": 204,
+    "aborted": 314
    }
   },
   "ws": {

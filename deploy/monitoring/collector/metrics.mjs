@@ -42,6 +42,9 @@ const SCALARS = [
   ['sp_performance_sampled_timestamp_seconds', G, 'Unix time the cached performance window ended.', 'performance.sampledAt', 1e-3],
   ['sp_event_loop_utilization', G, 'Main-thread event-loop utilization over the last window (0..1).',
     'performance.mainThread.eventLoopUtilization'],
+  ['sp_gc_pause_seconds', G, 'Main-thread GC pause time over the last window (0 = none ran).',
+    'performance.mainThread.gc.totalMs', 1e-3],
+  ['sp_gc_pauses', G, 'Main-thread GC pauses over the last window.', 'performance.mainThread.gc.pauses'],
   ['sp_heap_used_bytes', G, 'Main-thread V8 heap used.', 'performance.mainThread.memory.heapUsedBytes'],
   ['sp_heap_total_bytes', G, 'Main-thread V8 heap reserved.', 'performance.mainThread.memory.heapTotalBytes'],
   ['sp_external_memory_bytes', G, 'Main-thread memory held outside the V8 heap.', 'performance.mainThread.memory.externalBytes'],
@@ -72,6 +75,7 @@ const FAMILIES = [
   ['sp_http_response_bytes_total', C, 'HTTP body bytes the server sent (after compression), by traffic class.', 'class',
     trafficPaths('bytes')],
   ['sp_http_not_modified_total', C, 'HTTP 304 responses the server sent, by traffic class.', 'class', trafficPaths('notModified')],
+  ['sp_http_status_total', C, 'HTTP responses the server finished, by status family; `aborted` is a connection that closed before the response did (a proxy would log it 499).', 'status', statusPaths()],
   ['sp_ws_wire_bytes_total', C, 'WebSocket bytes on the wire (after permessage-deflate).', 'direction', {
     out: 'traffic.ws.wireOut', in: 'traffic.ws.wireIn' }],
   ['sp_ws_payload_bytes_total', C, 'WebSocket message payload bytes (before compression).', 'direction', {
@@ -89,6 +93,12 @@ const FLAGS = [
 /** The HTTP traffic classes of shared/assetPaths.js TRAFFIC_CATEGORIES (`total` is derivable and left out). */
 function trafficPaths(field) {
   return Object.fromEntries(['assets', 'audio', 'code', 'data', 'other'].map((c) => [c, `traffic.http.${c}.${field}`]));
+}
+
+/** The status families of server/http/traffic.js `STATUS_FAMILIES` (`traffic.http.status`), same order. */
+function statusPaths() {
+  return Object.fromEntries(['ok', 'redirect', 'rate_limited', 'client_error', 'server_error', 'aborted']
+    .map((s) => [s, `traffic.http.status.${s}`]));
 }
 
 const META = {

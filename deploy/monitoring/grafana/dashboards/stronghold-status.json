@@ -994,7 +994,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
+        "w": 6,
         "x": 0,
         "y": 21
       },
@@ -1120,18 +1120,115 @@
       }
     },
     {
-      "id": 16,
+      "id": 25,
       "type": "timeseries",
-      "title": "服务器 CPU",
-      "description": "游戏游戏服务器进程占用的 CPU，100% 等于占满一个 CPU 核心（可能超过 100%）。",
+      "title": "主线程 CPU（单核）",
+      "description": "主线程自己占用 CPU 的时间占比（事件循环利用率），100% 等于占满一个核心。只含主线程、不含 Worker 线程，与「服务器 CPU」（整个进程，可能超过 100%）对照；长时间高于 85% 说明主线程快忙不过来了。",
       "datasource": {
         "type": "prometheus",
         "uid": "sp-prometheus"
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
+        "w": 6,
+        "x": 6,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sp-prometheus"
+          },
+          "expr": "sp_event_loop_utilization{job=\"collector\"}",
+          "legendFormat": "主线程 CPU",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#d95926"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "lineInterpolation": "linear",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "axisSoftMax": 1,
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none",
+          "hideZeros": false
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "服务器 CPU",
+      "description": "游戏服务器进程占用的 CPU，100% 等于占满一个 CPU 核心（可能超过 100%）。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sp-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
         "y": 21
       },
       "targets": [
@@ -1226,8 +1323,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
+        "w": 6,
+        "x": 18,
         "y": 21
       },
       "targets": [
@@ -1352,6 +1449,169 @@
       }
     },
     {
+      "id": 26,
+      "type": "timeseries",
+      "title": "请求失败趋势",
+      "description": "游戏服务器自己完成的 HTTP 应答，每分钟计数（约 2 分钟平均）：客户端中断——响应还没写完连接就断开（放在前面的代理会把这类请求记成 499）、5xx 错误、429 限流——访问门禁的限流应答。不含代理在别处直接拒绝的请求。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sp-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 29
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sp-prometheus"
+          },
+          "expr": "sp:http_aborted:rate2m * 60",
+          "legendFormat": "客户端中断",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sp-prometheus"
+          },
+          "expr": "sp:http_server_errors:rate2m * 60",
+          "legendFormat": "5xx 错误",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sp-prometheus"
+          },
+          "expr": "sp:http_rate_limited:rate2m * 60",
+          "legendFormat": "429 限流",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: 次/分",
+          "decimals": 1,
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "lineInterpolation": "linear",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "客户端中断"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "5xx 错误"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d03b3b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "429 限流"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none",
+          "hideZeros": false
+        }
+      }
+    },
+    {
       "id": 19,
       "type": "timeseries",
       "title": "存档写入",
@@ -1362,8 +1622,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 29
       },
       "targets": [
@@ -1475,6 +1735,100 @@
       "options": {
         "legend": {
           "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none",
+          "hideZeros": false
+        }
+      }
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "GC 总耗时",
+      "description": "每 10 秒窗口内，主线程垃圾回收（GC）停顿的总时长。窗口内没有 GC 时为 0；长期居高说明内存分配压力大，会加重事件循环延迟。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sp-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 29
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sp-prometheus"
+          },
+          "expr": "sp_gc_pause_seconds{job=\"collector\"}",
+          "legendFormat": "GC 停顿",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#d95926"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "lineInterpolation": "linear",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": []

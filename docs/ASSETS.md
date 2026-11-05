@@ -836,6 +836,10 @@ ZIP card works with them three ways:
 
 A manual import of a published pack reports on the card's single bar (正在导入资源包：N %); it needs no per-pack split.
 
+The whole pipeline around these packs — where the ZIPs are published (ModelScope, append-only), how the R2
+per-file fallback relates to them, the publishing SOP, the state files and the CDN cache rules — is mapped in
+[PRELOAD.md](PRELOAD.md).
+
 ## Legacy imported-asset cache (compatibility)
 
 0.3.3's title screen had a **下载完整素材** dialog (`public/js/ui/assetDownload.js`, queue in

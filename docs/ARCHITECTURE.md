@@ -6,7 +6,8 @@ engine: [design/engine.md](design/engine.md); §6 the match: [design/match.md](d
 client-side combat: [design/network.md](design/network.md); §9 rendering: [design/client.md](design/client.md)), the
 per-release revisions and their evidence in `docs/history/`;
 the details in [SIM.md](SIM.md) (battle engine, hooks, SkillSpec), [META.md](META.md) (match engine, prep-phase
-effects), [DATA.md](DATA.md) (generated data), [ASSETS.md](ASSETS.md) (art and audio), [SKINS.md](SKINS.md) (operator
+effects), [DATA.md](DATA.md) (generated data), [ASSETS.md](ASSETS.md) (art and audio), [PRELOAD.md](PRELOAD.md)
+(the preload pipeline: ZIP packs, ModelScope, the R2 fallback, cache and CDN rules), [SKINS.md](SKINS.md) (operator
 skins: a cosmetic plugin's `chars[charId].skins`), [I18N.md](I18N.md)
 (languages) and [PLUGINS.md](PLUGINS.md) (plugins and the content hash; [PLUGIN-GUIDE.md](PLUGIN-GUIDE.md) the beginner's guide to
 making one, in Chinese). The [settlement usage guide](../server/sim/AGENTS.md) gives short examples of the public API. How to set up, test and send a change: [CONTRIBUTING.md](../CONTRIBUTING.md).

@@ -492,9 +492,23 @@ test('贾维 团伙行动: every 6 manual refreshes ⇒ a <叙拉古> operator (
   assert.equal(grants.length, 1);
   refresh(12);
   assert.equal(grants.length, 2, 'max 2 per round');
+  // feedback #151: with the round's 2 given the progress stops at 5 of 6 — more refreshes neither give nor waste it
+  assert.equal(ps.counters['band:chiave:refreshes'] % 6, 5);
+  refresh(7);
+  assert.equal(grants.length, 2, 'still max 2 per round');
+  assert.equal(ps.counters['band:chiave:refreshes'] % 6, 5, 'the progress is kept at 5');
   at(m.round + 1);
-  refresh(6);
+  refresh(1);
+  assert.equal(grants.length, 3, "the next round's first manual refresh completes the stored count");
+  refresh(5);
   assert.equal(grants.length, 3);
+  refresh(1);
+  assert.equal(grants.length, 4);
+  refresh(6);
+  assert.equal(grants.length, 4, 'max 2 per round again');
+  at(m.round + 1);
+  refresh(1);
+  assert.equal(grants.length, 5);
   for (const id of grants) assert.ok(DATA.chess[id].bonds.includes('siracusaShip') && DATA.chess[id].tier <= 4);
   cover('band_chiave');
 });

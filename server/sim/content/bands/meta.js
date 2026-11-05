@@ -29,7 +29,8 @@
 //   first_sell_char_chess_exchange_char_chess_in_shop  巫恋     first sale of a normal op per round: swapped with a random shop chess (no funds)
 //   round_start_gain_char_chess_in_shop_every_n_round  松桐     prep start, round % n = 0: a random shop chess for free (its slot empties)
 //   round_start_gain_coin_by_bond_char_chess_buy       玛恩纳   each <bond> chess bought → +count funds next round (≤ max_count / round)
-//   refresh_shop_count_gain_coin_bond_char_chess       贾维     every refresh_count manual refreshes (match total) → <bond> chess ≤ shop level (≤ max_count / round)
+//   refresh_shop_count_gain_coin_bond_char_chess       贾维     every refresh_count manual refreshes (match total) → <bond> chess ≤ shop level (≤ max_count / round);
+//                                                               with the round's grants used up the progress stops at refresh_count − 1 (feedback #151)
 //   preparation_start_add_special_goods_every_n_round  娜仁图亚 prep start, round % n = 0: pick choice_cnt of refresh_cnt items of pool (free)
 // "进入休整期时" / "休整期开始时" = onPrepStart: after the round's 机变 phase (research 01 §4.1: the 机变 choice is step 4, the
 // 「进入休整期时」 effects step 6; official 「进入此阶段时，触发<进入休整期时>的效果」 of the 休整期). The five keys above whose text or key
@@ -62,6 +63,8 @@ function roundCounter(ctx, key) {
   return ctx.counter(key);
 }
 const bumpRound = (ctx, key, n = 1) => { roundCounter(ctx, key); return ctx.incCounter(key, n); };
+/** The per-round counter's value read without roundCounter's lazy reset (0 in a round it has not counted yet). */
+const roundUsed = (ctx, key) => (ctx.counter(`${key}:r`) === ctx.round ? ctx.counter(key) : 0);
 
 /** Grant a chess or an item by id. */
 function grant(ctx, id, opts = {}) {
@@ -379,8 +382,13 @@ K.refresh_shop_count_gain_coin_bond_char_chess = (ps) => ({
     const p = ps[0];
     const every = int(p.refresh_count, 0);
     if (every <= 0) return;
+    // feedback #151 (a player's report of the official mode: 「超过两次后，是可以存五下的…下一回合d一下必定触发」): once the
+    // round's max_count operators are given, the refresh that would complete the count is not spent — the progress stays
+    // at refresh_count − 1 (5 of 6), so the next round's first manual refresh gives at once. Before, that refresh wrapped
+    // the count to 0 and its operator was lost. The counter keeps its key and meaning (count mod refresh_count is the
+    // progress): an older checkpoint and an older server read it as before.
+    if (roundUsed(ctx, 'band:chiave') >= int(p.max_count, Infinity) && (ctx.counter('band:chiave:refreshes') + 1) % every === 0) return;
     if (ctx.incCounter('band:chiave:refreshes', 1) % every !== 0) return;
-    if (roundCounter(ctx, 'band:chiave') >= int(p.max_count, Infinity)) return;
     const id = rollBond(ctx, p.bond);
     if (id && ctx.grantChess(id, { source: 'band' })) bumpRound(ctx, 'band:chiave');
   },

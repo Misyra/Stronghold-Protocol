@@ -23,13 +23,15 @@ test('Chiave shows the actual six-refresh cycle and the two-reward round cap', t
   assert.deepEqual(effect().progress, { current: 0, total: 6 });
   assert.deepEqual(effect().roundProgress, { current: 1, total: 2 });
   refresh(14);
-  assert.deepEqual(effect().progress, { current: 2, total: 6 });
+  // feedback #151: with the round's 2 given, the refreshes that would complete the count are not spent — the
+  // progress parks at 5 of 6 (the counter holds at 17) instead of wrapping to 2.
+  assert.deepEqual(effect().progress, { current: 5, total: 6 });
   assert.deepEqual(effect().roundProgress, { current: 2, total: 2 });
   const before = { ...ps.counters };
   assert.deepEqual(h.m.prepFieldMeta(ps).effects.find(e => e.id === effect().id), effect());
   assert.deepEqual(ps.battleInput().bandProgress, { progress: effect().progress, roundProgress: effect().roundProgress });
   h.m.round++;
-  assert.deepEqual(effect().progress, { current: 2, total: 6 }, 'remainder continues across rounds');
+  assert.deepEqual(effect().progress, { current: 5, total: 6 }, 'the stored remainder continues across rounds');
   assert.deepEqual(effect().roundProgress, { current: 0, total: 2 }, 'old lazily-reset rewards are not shown in a new round');
   assert.deepEqual(ps.counters, before, 'reading views never resets the game counters');
   refresh(4);

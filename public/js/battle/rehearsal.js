@@ -97,7 +97,7 @@ export function installRehearsal({ net, runner = battleRunner, createWorker = ()
   /** The live worker, created on the first task (null once this browser was found unable to run one). */
   function startWorker() {
     if (w || broken) return w;
-    const inst = { port: null, ready: false, data: false, task: null };
+    const inst = { port: null, ready: false, data: false, task: null, sent: false, wantData: false };
     try {
       inst.port = createWorker();
     } catch (err) {
@@ -111,15 +111,33 @@ export function installRehearsal({ net, runner = battleRunner, createWorker = ()
     return inst;
   }
 
+  /**
+   * Warm the worker without a task: create it and hand it the simulation data so the next task finds it ready.
+   * Called when a running task is cancelled (its worker can only be stopped by terminating it) — the replacement loads
+   * while the page waits for the next prep, instead of doing that loading inside that task's 3 s answer budget. The
+   * first task of a page cannot be warmed this way (there is no worker yet when the server offers it); it pays the
+   * module-graph load, which is why a cancelled *waiting* task keeps its worker alive instead of dropping it.
+   * A worker that has not reported `ready` yet drops anything posted to it (a module Worker is not listening until its
+   * imports are evaluated), so the data goes out from the ready handler instead.
+   */
+  function warm() {
+    const inst = startWorker();
+    if (!inst || inst.data) return;
+    if (!inst.ready) { inst.wantData = true; return; }
+    sendData(inst).catch((err) => log.warn?.('[rehearsal] simulation data unavailable', err));
+  }
+
   /** Hand one task to a worker whose script has run: the data first (once per instance), then the task itself. */
   function sendTask(inst, task) {
     Promise.resolve(inst.data ? null : sendData(inst)).then(() => {
       if (w !== inst || inst.task !== task) return;
       inst.port.postMessage({ t: 'rehearsal', taskId: task.id, playerId: task.playerId, cap: task.cap, specs: task.specs, ...(task.limits ? { limits: task.limits } : {}) });
+      inst.sent = true;
     }, (err) => {
       log.warn?.('[rehearsal] simulation data unavailable', err);
       if (w !== inst || inst.task !== task) return;
       inst.task = null;
+      inst.sent = false;
       answer(task, { error: true });
       pump();
     });
@@ -129,12 +147,17 @@ export function installRehearsal({ net, runner = battleRunner, createWorker = ()
     if (!msg || w !== inst) return; // a late message of a worker that was dropped
     if (msg.t === 'ready') { // only now can the worker receive anything: the waiting task finally goes out
       inst.ready = true;
-      if (inst.task) sendTask(inst, inst.task);
+      if (inst.task) { inst.wantData = false; sendTask(inst, inst.task); }
+      else if (inst.wantData) { // warmed with no task: load the data so the next task does not pay for it
+        inst.wantData = false;
+        sendData(inst).catch((err) => log.warn?.('[rehearsal] simulation data unavailable', err));
+      }
       return;
     }
     const task = inst.task;
     if (!task || msg.taskId !== task.id) return; // an answer to a task the server already took over
     inst.task = null;
+    inst.sent = false;
     if (msg.t === 'done' && Number.isInteger(msg.choice)) answer(task, { choice: msg.choice });
     else { log.warn?.('[rehearsal] the task failed', msg && msg.message); answer(task, { error: true }); }
     pump();
@@ -164,14 +187,27 @@ export function installRehearsal({ net, runner = battleRunner, createWorker = ()
 
   /**
    * The server dropped one task (`b.rehearsalCancel`, DESIGN §14): the page drops it too. A task still queued is simply
-   * forgotten; the running one is stopped by terminating its worker — a message would only be read after the
-   * simulation. A cancel for any other task is ignored, so it can never touch the task that replaced it.
+   * forgotten. A task the worker is still *waiting* to take (its script has not reported ready yet) only drops the
+   * task — the worker keeps loading, so the next prep finds it ready instead of paying the module-graph load inside its
+   * own 3 s answer budget (that load is what makes a page's first rehearsal time out, and terminating here made every
+   * following one start from zero again). A task the worker is running is stopped by terminating it — a message would
+   * only be read after the simulation — and a fresh one is warmed at once for the next task. A cancel for any other
+   * task is ignored, so it can never touch the task that replaced it.
    */
   function onCancel(msg) {
     if (!msg || typeof msg.taskId !== 'string') return;
     if (w && w.task && w.task.id === msg.taskId) {
-      w.task.settled = true;
-      killWorker();
+      const task = w.task;
+      task.settled = true;
+      if (w.sent) {
+        // the simulation is under way: only a terminated Worker stops it
+        killWorker();
+        warm();
+      } else {
+        // the worker is still loading; the task never reached it. Keep the loading progress and warm the data too.
+        w.task = null;
+        warm();
+      }
       pump();
       return;
     }

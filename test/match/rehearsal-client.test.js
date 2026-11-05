@@ -326,3 +326,50 @@ test('a spec that names a content set is refused without starting the worker', a
   assert.deepEqual(net.sent, [{ t: 'b.rehearsalResult', taskId: 'plugin', error: true }]);
   r.dispose();
 });
+
+test('a cancelled task the worker was still loading keeps the worker: the next prep finds it ready', async () => {
+  const net = fakeNet();
+  const worker = fakeWorker({ autoReady: false });
+  const r = installRehearsal({ net, runner: fakeRunner(), createWorker: () => worker, log: QUIET });
+  net.push(task('t1'));
+  await flush();
+  assert.deepEqual(worker.messages, [], 'the worker has not reported ready yet');
+  // the server timed the task out and cancelled it before the worker could take it
+  net.push({ t: 'b.rehearsalCancel', taskId: 't1' });
+  assert.equal(worker.terminated, false, 'the loading worker is not thrown away with the task');
+  assert.equal(r.pending(), 0);
+  // the worker finishes loading: the warmed data goes out (t1 is gone, so no task follows)
+  worker.reply({ t: 'ready' });
+  await flush();
+  assert.deepEqual(worker.messages.map((m) => m.t), ['data']);
+  // the next prep is served by the same, already-hot worker — no second module-graph load
+  net.push(task('t2'));
+  await flush();
+  assert.deepEqual(worker.messages.map((m) => m.t), ['data', 'rehearsal']);
+  assert.equal(worker.task().taskId, 't2');
+  worker.reply({ t: 'done', taskId: 't2', choice: 1 });
+  assert.deepEqual(net.sent, [{ t: 'b.rehearsalResult', taskId: 't2', choice: 1 }]);
+  r.dispose();
+});
+
+test('a cancelled running task is replaced by a warmed worker before the next prep', async () => {
+  const net = fakeNet();
+  const workers = [];
+  const r = installRehearsal({ net, runner: fakeRunner(), createWorker: () => { const w = fakeWorker(); workers.push(w); return w; }, log: QUIET });
+  net.push(task('t1'));
+  await flush();
+  assert.equal(workers[0].task().taskId, 't1');
+  net.push({ t: 'b.rehearsalCancel', taskId: 't1' });
+  assert.equal(workers[0].terminated, true, 'a running simulation is only stopped by dropping its worker');
+  assert.equal(workers.length, 2, 'a replacement is created at once');
+  await flush();
+  // the replacement is warmed with data and no task: the next prep only has to run the candidates
+  assert.deepEqual(workers[1].messages.map((m) => m.t), ['data']);
+  assert.equal(workers[1].task(), null);
+  net.push(task('t2'));
+  await flush();
+  assert.deepEqual(workers[1].messages.map((m) => m.t), ['data', 'rehearsal']);
+  workers[1].reply({ t: 'done', taskId: 't2', choice: 2 });
+  assert.deepEqual(net.sent, [{ t: 'b.rehearsalResult', taskId: 't2', choice: 2 }]);
+  r.dispose();
+});

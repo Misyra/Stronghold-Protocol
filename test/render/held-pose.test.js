@@ -71,7 +71,7 @@ describe('SpineActor.poseHeld', () => {
     finish(a);
     a.update(0);
     assert.equal(a.poseHeld(), true);
-    a.spine.tint = 0xb4b4b4;                            // the knocked-out grey, set after the frame's update
+    a.setTint(0xb4b4b4);                                // the knocked-out grey, set after the frame's update
     assert.equal(a.poseHeld(), false, 'the new tint is not on the slots yet');
     a.update(0);
     assert.equal(a.poseHeld(), true, 'shown: held again');
@@ -91,6 +91,25 @@ describe('SpineActor.poseHeld', () => {
     a.frozen = true;
     a.endClip = 'X';
     assert.equal(a.poseHeld(), false, 'frozen, but a closing clip is due');
+  });
+
+  test('the tint record (setTint) is the assigned value; poseHeld compares the record, never the pixi-spine getter', () => {
+    const a = new SpineActor(DATA, ENTRY);
+    a.setTint(0x9fd4ff);
+    assert.equal(a.tint, 0x9fd4ff, 'the record holds what the view assigned');
+    assert.equal(a.spine.tint, 0x9fd4ff, 'the skeleton carries the same value');
+    a.die();
+    finish(a);
+    a.update(0);
+    assert.equal(a._appliedTint, a.tint, 'the update recorded the assigned tint');
+    assert.equal(a.poseHeld(), true, 'held once record and assignment agree');
+    a.spine.tint = 0xff0000;                            // written behind setTint (nothing in the field view does)
+    assert.equal(a.tint, 0x9fd4ff, 'the record is untouched');
+    assert.equal(a.poseHeld(), true, 'poseHeld reads the record, not the getter');
+    a.setTint(0xb4b4b4);
+    assert.equal(a.poseHeld(), false, 'a new assignment reopens the pose');
+    a.update(0);
+    assert.equal(a.poseHeld(), true, 'shown again');
   });
 });
 
@@ -187,6 +206,7 @@ describe('UnitView: a held pose is neither re-posed nor redrawn', () => {
     step(3);
     finish(v.actor);
     step(2);
+    assert.equal(v.actor.tint, v.actor.spine.tint, 'the view\'s assignment point keeps record and skeleton in step');
     const c0 = counts();
     step(10);
     assert.equal(counts().updates, c0.updates, 'held');
@@ -194,6 +214,7 @@ describe('UnitView: a held pose is neither re-posed nor redrawn', () => {
     step(20);
     const c1 = counts();
     assert.ok(c1.updates > c0.updates, `updated while the tint changes (${c1.updates - c0.updates})`);
+    assert.equal(v.actor.tint, v.actor.spine.tint, 'still in step after the flash');
     step(10);
     assert.equal(counts().updates, c1.updates, 'held again once the tint is steady');
   });

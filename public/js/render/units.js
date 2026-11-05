@@ -2529,7 +2529,7 @@ export class UnitView {
       if (held) this.actor.clock += animDt;
       else this.actor.update(animDt);
     }
-    if (this._tint !== tint) { this._tint = tint; sp.tint = tint; }
+    if (this._tint !== tint) { this._tint = tint; this.actor.setTint(tint); }
   }
 
   _updateImpostor(sc, flip, tint, animDt, interval, held = false) {
@@ -2587,7 +2587,7 @@ export class UnitView {
     const w = Math.max(8, Math.ceil(box.w * sc)), h = Math.max(8, Math.ceil(box.h * sc * yK));
     const sp = this.actor.spine;
     sp.alpha = 1;
-    if (this._tint !== 0xffffff) { this._tint = 0xffffff; sp.tint = 0xffffff; }
+    if (this._tint !== 0xffffff) { this._tint = 0xffffff; this.actor.setTint(0xffffff); }
     const ox = -box.x0 * sc, oy = -box.y0 * sc * yK;
     if (atlas) {
       let slot = imp.slot;

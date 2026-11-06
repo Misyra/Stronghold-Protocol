@@ -46,8 +46,14 @@ self.onmessage = (ev) => {
   const msg = ev && ev.data;
   if (!msg || typeof msg !== 'object') return;
   if (msg.t === 'data') {
-    setSimData(msg.raw);
-    ds = new DataSource(msg.raw, null);
+    // a data set this worker cannot build leaves `ds` null: every task then fails with 'simulation data not loaded'
+    // — one answer per task, never an uncaught error that would take this worker (and the page's rehearsal) down
+    try {
+      setSimData(msg.raw);
+      ds = new DataSource(msg.raw, null);
+    } catch (e) {
+      console.error('[rehearsalWorker] the simulation data was rejected', e);
+    }
     return;
   }
   if (msg.t !== 'rehearsal') return;

@@ -28,6 +28,7 @@ function fxShell() {
     P: { Graphics: RecGraphics },
     domainGfx: new RecGraphics(),
     domains: new Map(),
+    domainSeq: 0,
     ctx: { cam: () => cam, heightAt: () => 0, timeScale: () => 2, view: () => null },
     _p: { x: 0, y: 0, s: 0, depth: 0 },
     _groundZ: () => 0,
@@ -97,4 +98,17 @@ test('simFx: a keyed \'domain\' event reaches the field with its tiles, its colo
   assert.equal(fx.domains.size, 1, 're-sent: still one field');
   fx.simFx('domain', 7, 10, { id: 7, key: 'domain:7', tiles: [] });
   assert.deepEqual(fx.domains.get('domain:7').tiles, [[9, 9]], 'an empty set changes nothing');
+});
+
+test('a field without a key gets a fresh sequence number: a faded field\'s slot is never reused onto a live one', () => {
+  const fx = fxShell();
+  fx.domainField(null, [[10, 6]], 0x8a5cd0, 0.3);
+  fx.domainField(null, [[12, 2]], 0x8a5cd0, 30);
+  assert.equal(fx.domains.size, 2, 'two keyless fields are two records');
+  fx._updateDomains(0.3 + DOMAIN_FADE + 0.01); // the first field fades out and is dropped
+  assert.equal(fx.domains.size, 1);
+  fx.domainField(null, [[14, 4]], 0x8a5cd0, 0.75);
+  assert.equal(fx.domains.size, 2, 'the new field is its own record, not an update to the surviving one');
+  const singles = [...fx.domains.values()].map((d) => d.tiles[0][0]).sort((a, b) => a - b);
+  assert.deepEqual(singles, [12, 14], 'the long-lived field keeps its tiles beside the new one');
 });

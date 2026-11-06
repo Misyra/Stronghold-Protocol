@@ -892,3 +892,24 @@ stronghold` 取 pid（每次重取，期间重启过也能跟上）；非 system
 - **RSS 仍上蹿** → 再考虑叠加 `MALLOC_TRIM_THRESHOLD_`，并回头查 WS 帧链有没有新的堆外大块分配路径。
 
 `checkpointsEncoded` 只作上下文，**不是** malloc churn 的指标（§12 已说明脏检查与 Worker 编码）。
+
+## 14. 主线程调度优先级（systemd `Nice=-20`）
+
+给 systemd 常驻部署（§4 的 Linux 单元，生产 `User=stronghold`、8 核、`Nice=0`）把服务进程的调度
+优先级提到 `Nice=-20`：晚高峰页面加载海啸 / 断线风暴时，主线程事件循环不再和本机其他进程平等抢
+CPU，压掉生产观测到的偶发 1.2–2.9 s 阻塞（`sp_event_loop_delay` max）。drop-in 片段在
+`deploy/main-thread-priority.conf`，应用 / 验证 / 回滚 / 收益判读（复用 §13 的
+`tools/allocator-observe.mjs` 做 before/after）的完整说明在 `deploy/README.md`，这里只写决策面：
+
+- **何时该用**：裸机 / VM 上 systemd 常驻、本机有会抢 CPU 的其他负载（备份、日志轮转、其他用户
+  进程），且 `sp_event_loop_delay` / `[loop]` 数据显示争抢时段有阻塞尖峰。
+- **何时不该用**：Docker 部署（`Nice=` 要写进 compose 的 `ulimits`/`cpus` 语境，语义不同，本仓
+  未做）；容器 / cgroup 已有 CPU 硬限额的（nice 在限额内排队，提了也白提）；机器独占、没有其他
+  负载可争时收益趋近于零。
+- **边界要知道**：只在 CPU 争抢时起作用，不增加配额、不是实时调度；`Nice=` 对整个进程生效——
+  systemd 在降权前设置负值，之后 Node 的 worker_threads 继承 -20，「主线程 -20、Worker 0」的
+  内部对比被弱化，但「赢过本机其他进程」不受影响。
+- **第二步（可选，暂缓）**：只提主线程的 root helper + watcher（Stardust fork 的
+  `deploy/stardust/MAIN-THREAD-PRIORITY.md` 方案，Worker 线程保持 0）。暂缓理由与验收标准见
+  `deploy/README.md`；等第一步的 A/B 与 `SP_LOOP_SAMPLE=1` 的 `[loop]` 数据说明残余尖峰确实
+  来自 Worker 争抢再考虑。本条规则记录在 DESIGN §37.128。

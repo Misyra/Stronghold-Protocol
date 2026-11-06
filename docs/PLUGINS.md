@@ -109,6 +109,12 @@ What rooms may use is the server owner's choice: `plugins/config.json` (optional
 choose (the default), fixes one set for every room, or keeps rooms on the original game, and limits the plugins, the
 classes and the content sets running at once — §11 and `docs/DEPLOY.md`.
 
+The complete Kurumi example is versioned under `docs/examples/fx-kurumi/` (20 initial LP, trading rules and
+an integrated margin panel). `npm run kurumi:install` packs and installs it through the checked ZIP installer;
+an existing installation is not overwritten. `npm run start:plugins` starts the server in sandbox mode.
+Availability does not select it: keep `rooms: "host"` and `default: []` in the local policy, and let the room host
+switch it on in the Plugins panel. The example references installed vanilla art; it does not carry character images.
+
 ## 3. The manifest (manifest 2)
 
 ```json

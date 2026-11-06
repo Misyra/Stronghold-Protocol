@@ -440,3 +440,12 @@ layout search inside the five-hook contract; `ioleta-adaptive` composes Russell-
 variants and contact repairs extend the list up to eight. Extension stops after a clean completed zero-leak result,
 or at a strict six-times-per-candidate total tick cap. Server and host Worker share RehearsalRun, limits and counters.
 Default legacy rules remain the baseline. See [BOT_STRATEGIES](../BOT_STRATEGIES.md).
+
+### Kurumi plugin challenge admission (0.3.4)
+
+[ASSUMED] The optional local Kurumi plugin (4.5.1) adds random challenges only for successful current-round bets.
+Observing, timeout/Skip and insufficient funds with no position add no challenge and no challenge announcement.
+A player who observes may still be sampled by another bettor; one successful bet remains effective when a teammate
+observes. Base waves and the carried-cash management fee are unaffected. Plugin details live in its own README.
+
+Kurumi 4.5.2 starts at 20 LP. Sandbox availability does not select the plugin for a room: the host opts in, and new rooms retain an empty plugin selection by default. [ASSUMED] Optional plugin policy.

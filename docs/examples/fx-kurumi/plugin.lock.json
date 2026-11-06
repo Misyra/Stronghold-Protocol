@@ -1,0 +1,85 @@
+{
+  "lock": 1,
+  "id": "fx-kurumi",
+  "version": "4.5.2",
+  "generator": "tools/plugin.mjs pack",
+  "files": {
+    "README.md": {
+      "sha256": "dc287f79e9b1aee1d1240805ccba5246a810cfda53ff7d949cba500c0441840a",
+      "bytes": 4174
+    },
+    "data/bands.json": {
+      "sha256": "4d50625a8573447541f5319ad1ca26fb5fc2ae4fd1825bdc057e7b934acebb34",
+      "bytes": 2578
+    },
+    "data/items.json": {
+      "sha256": "fb46ebbea9d7bfaeb122e239abf21b8186c13c79d87ac98d8e0c16d97118a532",
+      "bytes": 110923
+    },
+    "docs/design/enemy-grades.md": {
+      "sha256": "0915fe5a21f85c1c2f33f2fcca0e0ae675944c9a0aa8ed0ce7e2a5fa596f3127",
+      "bytes": 9400
+    },
+    "docs/history/4.3.0.md": {
+      "sha256": "f72b68ea1c65a5bd0572f4f2cc6340032be7578d3c56e00d3f44a12e600f7f94",
+      "bytes": 1540
+    },
+    "docs/history/4.3.1.md": {
+      "sha256": "bd263a3cbc756b0fad840249e67b80c490556261093b22967866c4ab3c856419",
+      "bytes": 2356
+    },
+    "docs/history/4.4.0.md": {
+      "sha256": "49e72de7db54b7350f12e9d5829d32a8fe69b832416b009b06260cef62bf4f8b",
+      "bytes": 1215
+    },
+    "docs/history/4.5.0.md": {
+      "sha256": "0ea56a8dd07b620d33a0d28aa869359b3545c59932a970eca8a0ebe55620d2dc",
+      "bytes": 1264
+    },
+    "docs/history/4.5.1.md": {
+      "sha256": "2ee09a1d15a40ca83da5bd3c8624dae98748a902e04f370e5e5797e9822b68bc",
+      "bytes": 428
+    },
+    "meta.js": {
+      "sha256": "8e925ff05b089959be523111fb735252bca845208d7a3c0259b4ed299c4e098f",
+      "bytes": 23021
+    },
+    "offers/cards.json": {
+      "sha256": "b0c244dd1f9d790392df1fef1a6e3676c97160464ab86823cb810306833ede01",
+      "bytes": 14845
+    },
+    "offers/market.json": {
+      "sha256": "77d1d0617b0592ec8fc7d6ae93c100fb20fc6d6c92accbd697b6ac6016180b8b",
+      "bytes": 1235
+    },
+    "plugin.json": {
+      "sha256": "f4fcdebcc62e7002ca95f7a30046d27e98d6f76830c6c51b7b3a81c25f77218a",
+      "bytes": 2442
+    },
+    "test/contracts.test.js": {
+      "sha256": "3b4a116346ec01b41f9f203e6e5f8eb73a075cd20aec9b3287173a969e2837b6",
+      "bytes": 1998
+    },
+    "test/guard.test.js": {
+      "sha256": "6e2fffde9354292e5f6e3db1d3cca3a83ab944389253486a0aa18c1608672c9e",
+      "bytes": 7179
+    },
+    "test/margin.test.js": {
+      "sha256": "e2520ef5e4d597861de02ed239cfbaf21c989506706f409e96da8869f68073a0",
+      "bytes": 21300
+    },
+    "test/runtime.test.js": {
+      "sha256": "c6cda23b08beca7cf89d6e4f62e828a7bc1dab14e71cf2f1d99e8407c11aee36",
+      "bytes": 636
+    },
+    "test/sandbox-smoke.js": {
+      "sha256": "975138f25ce322e3f75ce66819d016f07ed5b9974879f0434071f90ec72f09f8",
+      "bytes": 5210
+    },
+    "ui/index.html": {
+      "sha256": "c350f81346437955fb5e214e90b04342a5337cafb4198c1c5abd028c6d11b108",
+      "bytes": 3054
+    }
+  },
+  "spine": {}
+}

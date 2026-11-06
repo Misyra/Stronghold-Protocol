@@ -1,0 +1,100 @@
+{
+  "$schema": "../../../schemas/plugin.schema.json",
+  "manifest": 2,
+  "id": "fx-kurumi",
+  "name": {
+    "zh": "久留美：保证金交易",
+    "en": "Kurumi: Margin Trading"
+  },
+  "description": "新增策略「久留美」：每普通回合可选择1～5元下注或观望；仅成功下注才向随机目标追加挑战，观望不追加敌人；默认倍率上限2倍，房主可调1～3倍。挑战难度概率由实际本金×倍率及回合共同决定。留存现金每满5元收1元管理费，新回合收入不计入本次收费；交易由玩家本人结算，内置保证金面板。",
+  "version": "4.5.2",
+  "app": ">=0.3.1 <0.4.0",
+  "api": 2,
+  "class": "script",
+  "scope": [
+    "room"
+  ],
+  "sourceLang": "zh",
+  "authors": [
+    "Misyra"
+  ],
+  "license": "CC0-1.0",
+  "permissions": [
+    "data.add",
+    "offers",
+    "meta.code",
+    "assets.add",
+    "ui.frame"
+  ],
+  "settings": {
+    "weight1": {
+      "type": "integer",
+      "default": 100,
+      "min": 10,
+      "max": 300,
+      "step": 10,
+      "label": "挑战1级敌人相对权重：默认100，提高则更常见"
+    },
+    "weight2": {
+      "type": "integer",
+      "default": 100,
+      "min": 10,
+      "max": 300,
+      "step": 10,
+      "label": "挑战2级敌人相对权重：默认100，提高则更常见"
+    },
+    "weight3": {
+      "type": "integer",
+      "default": 100,
+      "min": 10,
+      "max": 300,
+      "step": 10,
+      "label": "挑战3级敌人相对权重：默认100，提高则更常见"
+    },
+    "weight4": {
+      "type": "integer",
+      "default": 100,
+      "min": 10,
+      "max": 300,
+      "step": 10,
+      "label": "挑战4级敌人相对权重：默认100，提高则更常见"
+    },
+    "weight5": {
+      "type": "integer",
+      "default": 100,
+      "min": 10,
+      "max": 300,
+      "step": 10,
+      "label": "挑战5级敌人相对权重：默认100，提高则更常见"
+    },
+    "multMax": {
+      "type": "number",
+      "default": 2,
+      "min": 1,
+      "max": 3,
+      "step": 0.5,
+      "label": "本笔倍率上限：默认2倍，可调1～3倍"
+    }
+  },
+  "data": [
+    "data/bands.json",
+    "data/items.json"
+  ],
+  "offers": [
+    "offers/market.json"
+  ],
+  "assets": {
+    "bands": {
+      "band_x_fx_kurumi_margin": {
+        "ref": "band_cannot"
+      }
+    }
+  },
+  "entry": {
+    "meta": "meta.js",
+    "frame": "ui/index.html"
+  },
+  "slots": [
+    "hud.right"
+  ]
+}

@@ -1,0 +1,595 @@
+[
+  {
+    "id": "call",
+    "name": "看涨 · 押不漏怪",
+    "desc": "押随机目标不漏怪，可能抽到自己。每普通回合可选1～5元，余额不足缩额；默认最高2倍，房主可调。实际本金×倍率越高，越偏向高等级挑战。仅成功下注才追加挑战，观望不追加敌人，交易由本人结算。",
+    "icon": "item",
+    "apply": {
+      "item": "item_x_fx_kurumi_call_s1_x20"
+    },
+    "quote": {
+      "fraction": 1,
+      "multiplier": 2,
+      "stakeLimit": 1,
+      "multiplierLimitCounter": "kurumi:multMax"
+    },
+    "variants": {
+      "x10:s1": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s1_x10"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x10:s2": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s2_x10"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x10:s3": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s3_x10"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x10:s4": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s4_x10"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x10:s5": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s5_x10"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x15:s1": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s1_x15"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x15:s2": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s2_x15"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x15:s3": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s3_x15"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x15:s4": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s4_x15"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x15:s5": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s5_x15"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x20:s1": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s1_x20"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x20:s2": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s2_x20"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x20:s3": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s3_x20"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x20:s4": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s4_x20"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x20:s5": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s5_x20"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x25:s1": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s1_x25"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x25:s2": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s2_x25"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x25:s3": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s3_x25"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x25:s4": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s4_x25"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x25:s5": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s5_x25"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x30:s1": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s1_x30"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x30:s2": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s2_x30"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x30:s3": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s3_x30"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x30:s4": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s4_x30"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x30:s5": {
+        "apply": {
+          "item": "item_x_fx_kurumi_call_s5_x30"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    }
+  },
+  {
+    "id": "put",
+    "name": "看跌 · 押漏怪",
+    "desc": "押随机目标漏怪，可能抽到自己。每普通回合可选1～5元，余额不足缩额；默认最高2倍，房主可调。实际本金×倍率越高，越偏向高等级挑战。仅成功下注才追加挑战，观望不追加敌人，交易由本人结算。",
+    "icon": "item",
+    "apply": {
+      "item": "item_x_fx_kurumi_put_s1_x20"
+    },
+    "quote": {
+      "fraction": 1,
+      "multiplier": 2,
+      "stakeLimit": 1,
+      "multiplierLimitCounter": "kurumi:multMax"
+    },
+    "variants": {
+      "x10:s1": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s1_x10"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x10:s2": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s2_x10"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x10:s3": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s3_x10"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x10:s4": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s4_x10"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x10:s5": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s5_x10"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x15:s1": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s1_x15"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x15:s2": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s2_x15"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x15:s3": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s3_x15"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x15:s4": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s4_x15"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x15:s5": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s5_x15"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x20:s1": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s1_x20"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x20:s2": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s2_x20"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x20:s3": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s3_x20"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x20:s4": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s4_x20"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x20:s5": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s5_x20"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x25:s1": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s1_x25"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x25:s2": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s2_x25"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x25:s3": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s3_x25"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x25:s4": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s4_x25"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x25:s5": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s5_x25"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x30:s1": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s1_x30"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x30:s2": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s2_x30"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x30:s3": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s3_x30"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x30:s4": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s4_x30"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      },
+      "x30:s5": {
+        "apply": {
+          "item": "item_x_fx_kurumi_put_s5_x30"
+        },
+        "quote": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    }
+  },
+  {
+    "id": "skip",
+    "name": "观望 · 本期不下注",
+    "desc": "本回合不下注，不产生交易盈亏，也不因本席位追加随机挑战敌人。留存管理费照常收取。",
+    "icon": "item",
+    "apply": {
+      "item": "item_x_fx_kurumi_skip"
+    }
+  }
+]

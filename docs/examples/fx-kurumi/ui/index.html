@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>久留美：保证金面板</title>
+<style>
+  html { color-scheme: dark; }
+  html, body { margin: 0; background: transparent; color: #e8e0d0; font: 12px/1.5 sans-serif; }
+  body { padding: 0; }
+  .panel { border-left: 3px solid #17f9b7; background: linear-gradient(180deg, rgba(8, 20, 16, .92), rgba(6, 12, 10, .88)); padding: 5px 8px 6px 9px; }
+  .hd { display: flex; justify-content: space-between; align-items: baseline; letter-spacing: .1em; font-size: 11px; font-weight: 700; color: #17f9b7; }
+  .hd .sub { font-size: 9px; letter-spacing: .12em; opacity: .6; color: #e8e0d0; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 3px; }
+  .k { opacity: .55; font-size: 10px; letter-spacing: .08em; }
+  .num { font-variant-numeric: tabular-nums; }
+  .bal { font-size: 19px; font-weight: 800; color: #17f9b7; text-shadow: 0 0 8px rgba(23, 249, 183, .35); }
+  .owed { font-size: 15px; font-weight: 700; color: #ff7d7d; }
+  .zero { opacity: .4; font-size: 12px; }
+  .pos { font-size: 12px; font-weight: 700; color: #ffd27d; }
+  .pos .side { color: #fff; }
+  .muted { opacity: .4; }
+</style>
+</head>
+<body>
+<div id="root"><div class="panel muted">—</div></div>
+<script>
+(function () {
+  var BAND = 'band_x_fx_kurumi_margin';
+  var root = document.getElementById('root');
+  function num(c, k) { var v = c ? c[k] : 0; return typeof v === 'number' && isFinite(v) ? Math.trunc(v) : 0; }
+  function render(priv) {
+    if (!priv || priv.bandId !== BAND) { root.innerHTML = '<div class="panel"><div class="hd">保证金<span class="sub">MARGIN</span></div><div class="row"><span class="muted">未启用该策略</span></div></div>'; return; }
+    var c = priv.counters || {};
+    var pos = num(c, 'kurumi:pos'), stake = num(c, 'kurumi:stake'), owed = num(c, 'kurumi:unpaidLoss');
+    var posTxt = pos === 0 ? '<span class="muted">空仓</span>'
+      : '<span class="side">' + (pos > 0 ? '看涨' : '看跌') + '</span> · <span class="pos">押 ' + stake + '</span>';
+    root.innerHTML =
+      '<div class="panel">' +
+        '<div class="hd">保证金<span class="sub">MARGIN</span></div>' +
+        '<div class="row"><span class="k">余额</span><b class="num bal">' + (priv.funds || 0) + '</b></div>' +
+        (owed > 0 ? '<div class="row"><span class="k">待补亏损</span><b class="num owed">' + owed + '</b></div>' : '') +
+        '<div class="row"><span class="k">持仓</span><span class="num pos">' + posTxt + '</span></div>' +
+      '</div>';
+  }
+  window.addEventListener('message', function (ev) {
+    var m = ev.data;
+    if (!m || m.v !== 1 || typeof m.t !== 'string') return;
+    if (m.t === 'welcome') { parent.postMessage({ v: 1, t: 'ready' }, '*'); return; }
+    if (m.t === 'state') render(m.private);
+  });
+  parent.postMessage({ v: 1, t: 'ready' }, '*');
+  parent.postMessage({ v: 1, t: 'slot', slot: 'hud.right' }, '*');
+  parent.postMessage({ v: 1, t: 'resize', height: 118 }, '*');
+})();
+</script>
+</body>
+</html>

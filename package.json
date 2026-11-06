@@ -46,7 +46,9 @@
     "ci": "node tools/ci.mjs",
     "shards": "node tools/ci-shards.mjs",
     "package": "node tools/package.mjs",
-    "package:lite": "node tools/package.mjs --lite"
+    "package:lite": "node tools/package.mjs --lite",
+    "start:plugins": "node scripts/launch.mjs --scripts sandbox",
+    "kurumi:install": "node tools/plugin.mjs pack docs/examples/fx-kurumi --zip && node tools/plugin.mjs install plugins/_dist/fx-kurumi-4.5.2.zip"
   },
   "engines": {
     "node": ">=22"

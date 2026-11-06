@@ -1,0 +1,2249 @@
+{
+  "records": 1,
+  "entries": [
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_m",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·半仓",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_m",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·半仓",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_skip",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "观望凭证",
+        "desc": "本期不建立持仓，保留余额，等待下次开市。余额仍按策略规则征收留存税。",
+        "descRaw": "本期不建立持仓，保留余额，等待下次开市。余额仍按策略规则征收留存税。",
+        "hideInShop": true,
+        "shopExcluded": true
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓·1倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓·1.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓·2倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓·2.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓·3倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_m_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·半仓·1倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_m_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·半仓·1.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_m_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·半仓·2倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_m_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·半仓·2.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_m_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·半仓·3倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓·1倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓·1.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓·2倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓·2.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓·3倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_m_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·半仓·1倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_m_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·半仓·1.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_m_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·半仓·2倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_m_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·半仓·2.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_m_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·半仓·3倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d5_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/5仓·1倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.2,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d4_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/4仓·1倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.25,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d3_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/3仓·1倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.3333333333333333,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d2_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/2仓·1倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d1_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓·1倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d5_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/5仓·1.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.2,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d4_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/4仓·1.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.25,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d3_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/3仓·1.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.3333333333333333,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d2_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/2仓·1.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d1_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓·1.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d5_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/5仓·2倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.2,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d4_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/4仓·2倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.25,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d3_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/3仓·2倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.3333333333333333,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d2_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/2仓·2倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d1_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓·2倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d5_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/5仓·2.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.2,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d4_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/4仓·2.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.25,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d3_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/3仓·2.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.3333333333333333,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d2_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/2仓·2.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d1_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓·2.5倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d5_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/5仓·3倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.2,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d4_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/4仓·3倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.25,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d3_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/3仓·3倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.3333333333333333,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d2_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1/2仓·3倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_d1_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·全仓·3倍",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d5_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/5仓·1倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.2,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d4_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/4仓·1倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.25,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d3_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/3仓·1倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.3333333333333333,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d2_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/2仓·1倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d1_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓·1倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d5_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/5仓·1.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.2,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d4_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/4仓·1.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.25,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d3_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/3仓·1.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.3333333333333333,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d2_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/2仓·1.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d1_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓·1.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d5_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/5仓·2倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.2,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d4_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/4仓·2倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.25,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d3_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/3仓·2倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.3333333333333333,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d2_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/2仓·2倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d1_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓·2倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d5_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/5仓·2.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.2,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d4_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/4仓·2.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.25,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d3_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/3仓·2.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.3333333333333333,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d2_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/2仓·2.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d1_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓·2.5倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d5_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/5仓·3倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.2,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d4_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/4仓·3倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.25,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d3_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/3仓·3倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.3333333333333333,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d2_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1/2仓·3倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 0.5,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_d1_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·全仓·3倍",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s1_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1元×1",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s1_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1元×1.5",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s1_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1元×2",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s1_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1元×2.5",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s1_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·1元×3",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s2_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·2元×1",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s2_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·2元×1.5",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s2_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·2元×2",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s2_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·2元×2.5",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s2_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·2元×3",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s3_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·3元×1",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s3_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·3元×1.5",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s3_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·3元×2",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s3_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·3元×2.5",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s3_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·3元×3",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s1_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1元×1",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s1_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1元×1.5",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s1_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1元×2",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s1_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1元×2.5",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s1_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·1元×3",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 1,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s2_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·2元×1",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s2_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·2元×1.5",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s2_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·2元×2",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s2_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·2元×2.5",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s2_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·2元×3",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 2,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s3_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·3元×1",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s3_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·3元×1.5",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s3_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·3元×2",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s3_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·3元×2.5",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s3_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·3元×3",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 3,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s4_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·4元×1",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s4_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·4元×1.5",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s4_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·4元×2",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s4_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·4元×2.5",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s4_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·4元×3",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s5_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·5元×1",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s5_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·5元×1.5",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s5_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·5元×2",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s5_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·5元×2.5",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_call_s5_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看涨合约·5元×3",
+        "desc": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标不漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s4_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·4元×1",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s4_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·4元×1.5",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s4_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·4元×2",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s4_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·4元×2.5",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s4_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·4元×3",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 4,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s5_x10",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·5元×1",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s5_x15",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·5元×1.5",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 1.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s5_x20",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·5元×2",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s5_x25",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·5元×2.5",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 2.5,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    },
+    {
+      "file": "items",
+      "id": "item_x_fx_kurumi_put_s5_x30",
+      "base": "chess_item_1_03_e_a",
+      "set": {
+        "name": "看跌合约·5元×3",
+        "desc": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "descRaw": "押随机目标漏怪。每轮本金最多5元，余额不足缩额；净盈亏为实际本金×倍率。玩家本人承担亏损，后续收入补足未付部分。挑战概率随回合与实际本金×倍率变化。",
+        "hideInShop": true,
+        "shopExcluded": true,
+        "contract": {
+          "fraction": 1,
+          "multiplier": 3,
+          "stakeLimit": 5,
+          "multiplierLimitCounter": "kurumi:multMax"
+        }
+      }
+    }
+  ]
+}

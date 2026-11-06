@@ -1,0 +1,74 @@
+{
+  "offer": 1,
+  "id": "market",
+  "when": {
+    "at": "prep",
+    "rounds": "any",
+    "bands": [
+      "band_x_fx_kurumi_margin"
+    ],
+    "normal": true
+  },
+  "windowSec": 300,
+  "quorum": "none",
+  "onTimeout": "skip",
+  "slots": 3,
+  "options": {
+    "source": "offers/cards.json"
+  },
+  "title": "久留美 · 保证金交易",
+  "selectors": [
+    {
+      "label": "本笔倍率",
+      "default": "x20",
+      "options": [
+        {
+          "id": "x10",
+          "name": "1倍"
+        },
+        {
+          "id": "x15",
+          "name": "1.5倍"
+        },
+        {
+          "id": "x20",
+          "name": "2倍"
+        },
+        {
+          "id": "x25",
+          "name": "2.5倍"
+        },
+        {
+          "id": "x30",
+          "name": "3倍"
+        }
+      ]
+    },
+    {
+      "label": "投注金额",
+      "default": "s1",
+      "options": [
+        {
+          "id": "s1",
+          "name": "1元"
+        },
+        {
+          "id": "s2",
+          "name": "2元"
+        },
+        {
+          "id": "s3",
+          "name": "3元"
+        },
+        {
+          "id": "s4",
+          "name": "4元"
+        },
+        {
+          "id": "s5",
+          "name": "5元"
+        }
+      ]
+    }
+  ]
+}

@@ -39,6 +39,24 @@ function field({ tier = 5, elite = true, skill = 0, row = 10, col = 5, enemies =
 }
 const fillSp = (u) => { u.skill.sp = u.skill.spCost; u.skill.charges = u.skill.maxCharges; };
 const hitsOf = (h, u, tag) => h.hooksOf('damaged').filter((c) => c.source === u && c.dmg?.tags?.includes(tag));
+/** A 联防 field of two players: each side fields its own 自选 塔露拉 pieces (the production path: slot + pick). */
+function coopField({ p1 = [], p2 = [], enemies = [], seed = 5 } = {}) {
+  const side = (playerId, seat, colOffset, units) => ({
+    playerId, seat, side: 'L', colOffset, bonds: {}, bandId: null, playerEffects: [],
+    units: units.map(({ uid, tier = 5, elite = true, skill = 2, row, col }) => ({
+      uid, kind: 'chess', chessId: elite ? BACKUPS.diy.slots[SLOT[tier]].goldenId : SLOT[tier],
+      diy: { charId: OXI, skillIndex: skill, uniEquipId: null }, row, col,
+    })),
+  });
+  const h = makeBattle({
+    kind: 'unite', defs: { enemies: ENEMIES }, timeLimit: 600, autoFinish: false, seed, enemies,
+    flags: { dpPerSec: 0, dpMax: 999 }, hooks: ['damaged', 'skillStart', 'skillEnd'],
+    // 联防 as server/match/unite.js fields it: two boards side by side, one player at colOffset 8
+    players: [side('p1', 0, 0, p1), side('p2', 1, 8, p2)],
+  });
+  h.step();
+  return h;
+}
 function done(h) {
   checkInvariants(h.b);
   assert.equal(h.b.errors.length, 0, JSON.stringify(h.b.errors[0]));
@@ -396,7 +414,23 @@ test('S3 簇火: touching an enemy it blasts arts with the ATK it was created wi
   done(h);
 });
 
-test('S3: one 塔露拉 channels per field', () => {
+test('S3: 塔露拉 of two players both channel on the shared field (the maintainer\'s decision of 2026-11-06)', () => {
+  const h = coopField({ p1: [{ uid: 1, row: 10, col: 5 }], p2: [{ uid: 2, row: 11, col: 5 }] });
+  const u = h.unit(1), v = h.unit(2);
+  assert.deepEqual([u.ownerId, v.ownerId], ['p1', 'p2']);
+  fillSp(u); fillSp(v);
+  assert.ok(u.skill.activate('manual'));
+  assert.ok(v.skill.activate('manual'));
+  assert.ok(u.mem.oxi.fire, 'p1\'s 塔露拉 channels');
+  assert.ok(v.mem.oxi.fire, 'p2\'s 塔露拉 channels too — the lock is per player');
+  h.run(80 / 30 + 0.05);
+  const flames = (x) => h.b.projectiles.list.filter((p) => p.data?.oxiFlame === x);
+  assert.ok(flames(u).length >= 3, `p1 rains: ${flames(u).length} 簇火`);
+  assert.ok(flames(v).length >= 3, `p2 rains: ${flames(v).length} 簇火`);
+  done(h);
+});
+
+test('S3: two 塔露拉 of one player still share one channel — the second only stands', () => {
   const { h, u } = field({ skill: 2, row: 10, col: 5, others: [{ uid: 2, diy: { slot: SLOT[6], charId: OXI, skillIndex: 2, uniEquipId: null }, elite: true, row: 11, col: 5 }] });
   const v = h.unit(2);
   fillSp(u); fillSp(v);
@@ -404,6 +438,40 @@ test('S3: one 塔露拉 channels per field', () => {
   v.skill.activate('manual');
   assert.ok(u.mem.oxi.fire);
   assert.equal(v.mem.oxi.fire, null);
+  h.run(80 / 30 + 0.05);
+  assert.ok(h.b.projectiles.list.some((p) => p.data?.oxiFlame === u), 'the holder rains');
+  assert.ok(!h.b.projectiles.list.some((p) => p.data?.oxiFlame === v), 'the second sends no 簇火');
+  done(h);
+});
+
+test('S3: a 塔露拉 frees her player\'s channel when the skill ends, the next one of that player takes it', () => {
+  const { h, u } = field({ skill: 2, row: 10, col: 5, others: [{ uid: 2, diy: { slot: SLOT[6], charId: OXI, skillIndex: 2, uniEquipId: null }, elite: true, row: 11, col: 5 }] });
+  const v = h.unit(2);
+  fillSp(u); fillSp(v);
+  u.skill.activate('manual');
+  assert.ok(u.mem.oxi.fire);
+  h.run(u.skill.timeLeft + 0.1);
+  assert.equal(u.skill.active, false);
+  assert.equal(u.mem.oxi.fire, null);
+  assert.ok(v.skill.activate('manual'));
+  assert.ok(v.mem.oxi.fire, 'the slot went to the other 塔露拉 of her player');
+  h.run(80 / 30 + 0.05);
+  assert.ok(h.b.projectiles.list.some((p) => p.data?.oxiFlame === v));
+  done(h);
+});
+
+test('S3: a 塔露拉 knocked out frees her player\'s channel', () => {
+  const { h, u } = field({ skill: 2, row: 10, col: 5, others: [{ uid: 2, diy: { slot: SLOT[6], charId: OXI, skillIndex: 2, uniEquipId: null }, elite: true, row: 11, col: 5 }] });
+  const v = h.unit(2);
+  fillSp(u); fillSp(v);
+  u.skill.activate('manual');
+  assert.ok(u.mem.oxi.fire);
+  h.b.kill(u, { reason: 'killed' });
+  h.step();
+  assert.equal(u.alive, false);
+  assert.equal(u.mem.oxi.fire, null);
+  assert.ok(v.skill.activate('manual'));
+  assert.ok(v.mem.oxi.fire, 'the surviving 塔露拉 channels');
   done(h);
 });
 

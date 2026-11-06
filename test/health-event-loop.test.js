@@ -84,3 +84,17 @@ test('a real sampler observes the loop and stays quiet when it is closed', async
   assert.equal(lines.length >= 0, true);
   assert.equal(sampler.running, false);
 });
+
+test('the line carries the hall\'s rehearsal counters when the wiring provides them, and none when it does not', () => {
+  const lines = [];
+  const sampler = createEventLoopSampler({ log: { info: (m) => lines.push(m) }, windowMs: 1000 });
+  sampler.report({ rooms: 2, rehearsals: 3, rehearsal: { delegated: 5, answered: 4, takeovers: 1, pooled: 2, accepted: 1, fallbacks: 1 } });
+  assert.match(lines[0], /rehearsals=3/);
+  assert.match(lines[0], /rehe=5\/4\/1 pool=2\/1\/1/, 'delegated/answered/takeovers, then pooled/accepted/fallbacks');
+  sampler.report({ rooms: 2, rehearsals: 0 });
+  assert.match(lines[1], /rehearsals=0/);
+  assert.doesNotMatch(lines[1], /rehe=/, 'a wiring without the aggregation prints none');
+  sampler.report({ rooms: 2, rehearsals: 0, rehearsal: {} });
+  assert.match(lines[2], /rehe=0\/0\/0 pool=0\/0\/0/, 'an empty aggregate still prints the slots');
+  sampler.close();
+});

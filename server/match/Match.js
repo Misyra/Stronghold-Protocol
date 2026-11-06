@@ -175,7 +175,9 @@
 //   opts.botSliceMs    wall-clock ms of rehearsal per scheduler callback (default 8 with a real scheduler, unbounded
 //                      with a virtual one); the rest runs in later callbacks (scheduleBotPrep)
 //   opts.botRehearsalDelegateMs  wall-clock ms the host has to answer a delegated rehearsal (default 3000) — never an
-//                      extension of the phase: the prep deadline stays the phase's own (MatchPrep.endPrep)
+//                      extension of the phase: the prep deadline stays the phase's own (MatchPrep.endPrep). Warm window
+//                      of the adaptive pair: a host that has not answered one yet gets opts.botRehearsalColdMs instead
+//                      (default 7000; SP_BOT_REHEARSAL_ANSWER_MS / SP_BOT_REHEARSAL_COLD_ANSWER_MS, 0 = fixed window)
 //   opts.headlessSliceMs  wall-clock ms per callback of a server-run normal / 联防 field (client-side combat: bots,
 //                      takeovers, result verification; default 8 with a real scheduler, at once with a virtual one)
 // Seats may be all bots (tools/matchrun.mjs); the lobby always has ≥ 1 human.
@@ -259,7 +261,7 @@ import { MatchSpDraft } from './match/spDraft.js';
 import { MatchPrep } from './match/prep.js';
 import { MatchCombat } from './match/combat.js';
 import { MatchClientCombat } from './match/clientCombat.js';
-import { MatchRehearsal, REHEARSAL_ANSWER_MS } from './match/rehearsal.js';
+import { MatchRehearsal, REHEARSAL_ANSWER_MS, REHEARSAL_COLD_ANSWER_MS } from './match/rehearsal.js';
 import { MatchReports } from './match/reports.js';
 import { MatchUnite } from './match/unitePhase.js';
 import { MatchBoss } from './match/bossRounds.js';
@@ -305,6 +307,20 @@ const envBotRehearsalCount = () => {
   if (!raw) return null;
   const n = Number(raw);
   return Number.isInteger(n) && n >= 0 ? Math.min(n, 8) : null;
+};
+/** The warm answer window when `opts.botRehearsalDelegateMs` is absent: `SP_BOT_REHEARSAL_ANSWER_MS` (integer > 0), else
+ *  REHEARSAL_ANSWER_MS. Garbage keeps the default (the deployment knob must not silently disarm the fallback). */
+const envBotRehearsalAnswerMs = () => {
+  const n = Number(String(env('SP_BOT_REHEARSAL_ANSWER_MS') ?? '').trim());
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+/** The cold-start answer window when `opts.botRehearsalColdMs` is absent: `SP_BOT_REHEARSAL_COLD_ANSWER_MS`
+ *  (integer ≥ 0; 0 pins the fixed warm window for every task), else REHEARSAL_COLD_ANSWER_MS. */
+const envBotRehearsalColdMs = () => {
+  const raw = String(env('SP_BOT_REHEARSAL_COLD_ANSWER_MS') ?? '').trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : null;
 };
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -409,8 +425,18 @@ export class Match {
      * rehearsal the host did not answer (see MatchRehearsal).
      */
     this.botRehearsalDelegate = opts.botRehearsalDelegate != null ? !!opts.botRehearsalDelegate : envBotRehearsal();
-    /** wall-clock ms the host has to answer a delegated rehearsal (engine option: tests shorten it) */
-    this.botRehearsalDelegateMs = Number.isFinite(opts.botRehearsalDelegateMs) && opts.botRehearsalDelegateMs > 0 ? opts.botRehearsalDelegateMs : REHEARSAL_ANSWER_MS;
+    /** wall-clock ms the host has to answer a delegated rehearsal (engine option: tests shorten it; the warm window of
+     *  the adaptive pair below — opts first, then SP_BOT_REHEARSAL_ANSWER_MS, then the engine default) */
+    this.botRehearsalDelegateMs = Number.isFinite(opts.botRehearsalDelegateMs) && opts.botRehearsalDelegateMs > 0 ? opts.botRehearsalDelegateMs : envBotRehearsalAnswerMs() ?? REHEARSAL_ANSWER_MS;
+    /**
+     * Wall-clock ms a host answers its FIRST delegated rehearsal in (MatchRehearsal.delegateWindowMs): the cold-start
+     * window covers a browser Worker still loading the /sim/ module graph — the eb679687 loop timed that first task
+     * into the pool and made both sides work. 0 pins the fixed window (the pre-adaptive behaviour). Engine option
+     * first (tests), then SP_BOT_REHEARSAL_COLD_ANSWER_MS, then the engine default.
+     */
+    this.botRehearsalColdMs = Number.isFinite(opts.botRehearsalColdMs) && opts.botRehearsalColdMs >= 0 ? opts.botRehearsalColdMs : envBotRehearsalColdMs() ?? REHEARSAL_COLD_ANSWER_MS;
+    /** successful delegated answers per host player id (MatchRehearsal): ≥1 makes that host warm (the warm window) */
+    this._rehearsalHostAnswers = new Map();
     /** the room's current host (opts.hostId; server/lobby.js room.hostId — setHost follows a migration) */
     this.hostId = typeof opts.hostId === 'string' ? opts.hostId : null;
     /**

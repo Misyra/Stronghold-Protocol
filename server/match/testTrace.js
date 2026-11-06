@@ -83,6 +83,7 @@ export function installTestTrace(m, opts) {
     botStrategy: m.bot.id,
     botRehearsal: m.botRehearsal, botRehearsalDelegate: m.botRehearsalDelegate,
     botRehearsalDelegateMs: m.botRehearsalDelegateMs,
+    botRehearsalColdMs: m.botRehearsalColdMs,
   });
   // Finite slice budgets must replay with the same bounded/unbounded split. Infinity is omitted:
   // JSON would turn it into null, and a virtual scheduler already defaults to unbounded.

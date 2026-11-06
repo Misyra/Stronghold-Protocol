@@ -93,11 +93,13 @@ export function makeMatch(o = {}) {
     verify: o.verify ?? 'off',
     headlessSliceMs: o.headlessSliceMs,
     // a bot prep's layout rehearsal delegated to the room's host (DESIGN §14; test/match/rehearsal-delegate.test.js):
-    // `hostId` is the executor a task is sent to, `botRehearsalDelegateMs` its answer window
+    // `hostId` is the executor a task is sent to, `botRehearsalDelegateMs` its warm answer window,
+    // `botRehearsalColdMs` the first task's cold-start window (MatchRehearsal.delegateWindowMs)
     hostId: o.hostId !== undefined ? o.hostId : (o.test === true ? (seats.find((s) => s && !s.isBot)?.playerId ?? null) : undefined),
     test: o.test === true,
     botRehearsalDelegate: o.botRehearsalDelegate,
     botRehearsalDelegateMs: o.botRehearsalDelegateMs,
+    botRehearsalColdMs: o.botRehearsalColdMs,
     // the server's own simulation pool for those rehearsals (server/workers/roomPool.js); absent unless a test passes
     // one, so a harness match keeps every rehearsal on this thread (test/workers-room.test.js covers the pooled path)
     ...(o.simPool !== undefined ? { simPool: o.simPool } : {}),

@@ -34,7 +34,30 @@ import { morphBattleOpt } from '../../../shared/plugins/rules.js';
  */
 export const REHEARSAL_ANSWER_MS = 3000;
 
+/**
+ * Wall-clock ms a host that has not answered one delegated rehearsal yet (its Worker is still loading the module graph —
+ * the eb679687 cold-start loop) gets for its first answer, before the warm REHEARSAL_ANSWER_MS applies. Long enough for
+ * a cold browser to load `/sim/` and simulate the candidates; `SP_BOT_REHEARSAL_COLD_ANSWER_MS=0` turns the adaptive
+ * window off (every task waits the fixed window, the pre-0.3.5 behaviour). Never extends a prep: the phase deadline
+ * keeps cancelling whatever is still in flight (MatchPrep.endPrep).
+ */
+export const REHEARSAL_COLD_ANSWER_MS = 7000;
+
 export class MatchRehearsal {
+  /**
+   * The wall-clock ms the next delegated rehearsal of this room would wait for its host's answer: the warm window
+   * (botRehearsalDelegateMs) once the current host has answered one task — its Worker has the `/sim/` module graph
+   * loaded, so 3 s is the settled budget — and the cold-start window (botRehearsalColdMs) before that, so a first
+   * delegation is not timed out into the pool while the host's Worker is still loading (the eb679687 loop). Pure match
+   * state, no wall clock: a replay recomputes it from the same journal. `botRehearsalColdMs` of 0 pins the fixed window.
+   * @returns {number}
+   */
+  delegateWindowMs() {
+    if (!(this.botRehearsalColdMs > 0)) return this.botRehearsalDelegateMs;
+    const answered = this.hostId ? this._rehearsalHostAnswers.get(this.hostId) || 0 : 0;
+    return answered >= 1 ? this.botRehearsalDelegateMs : this.botRehearsalColdMs;
+  }
+
   /**
    * Offer one bot prep's layout rehearsal to the current host.
    * @param {{ ps: import('../PlayerState.js').PlayerState, chosen: any[], plans: Array<Map<number, string>>,
@@ -71,7 +94,7 @@ export class MatchRehearsal {
     // registered (and timed) before the frame goes out: an answer can only name a task the server already holds, and one
     // that comes back with the frame itself cannot race the timeout being armed
     this._rehearsalTasks.set(task.id, task);
-    task.timer = this.later(this.scaled(this.botRehearsalDelegateMs), () => this._rehearsalTimeout(task));
+    task.timer = this.later(this.scaled(this.delegateWindowMs()), () => this._rehearsalTimeout(task));
     if (!this.sendTo(task.executor, { t: 'b.rehearsal', taskId: task.id, playerId: ps.playerId, cap: job.cap, specs, ...(limits ? { limits } : {}) })) {
       this._dropRehearsalTask(task);
       return null;
@@ -160,6 +183,8 @@ export class MatchRehearsal {
     this._dropRehearsalTask(task);
     task.job.accept(msg.choice);
     this.rehearsalStats.answered++;
+    // the host is warm now: its Worker simulated real candidates and answered, so the next task waits the warm window
+    this._rehearsalHostAnswers.set(task.executor, (this._rehearsalHostAnswers.get(task.executor) || 0) + 1);
     if (task.job.onSettled) task.job.onSettled();
   }
 

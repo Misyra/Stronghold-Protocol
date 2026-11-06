@@ -1200,7 +1200,11 @@ export class ResourceStore {
     if (optionalOnly) {
       const identity = (url) => new URL(url, this.origin).pathname.match(/\/(?:assets|fonts)\/.*/)?.[0];
       const optional = new Set(this.files.filter((f) => f.tier === TIER_REST).map((f) => identity(f.url)));
-      const isOptional = (url) => optional.has(identity(url)) || /\/assets\/audio\//.test(new URL(url, this.origin).pathname);
+      // The audio path rule also sweeps keys the manifest no longer lists (an older layout's files) — but only while
+      // the manifest itself keeps the audio tree optional: one TIER_ESSENTIAL entry there and the rule would delete a
+      // file the game needs. Unlisted keys then stay for `pruneStale()` instead.
+      const audioOptional = !this.files.some((f) => f.tier === TIER_ESSENTIAL && /\/assets\/audio\//.test(new URL(f.url, this.origin).pathname));
+      const isOptional = (url) => optional.has(identity(url)) || (audioOptional && /\/assets\/audio\//.test(new URL(url, this.origin).pathname));
       for (const name of await this.caches.keys()) {
         if (!name.startsWith(CACHE_PREFIX)) continue;
         const cache = await this.caches.open(name);

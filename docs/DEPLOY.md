@@ -723,13 +723,13 @@ node --expose-gc tools/memorybench.mjs
 | `data/local-fx.json` | 官方特效分组与文件清单缺失 |
 | `data/local-assets.json` | 本地客户端素材清单缺失 |
 | `data/skins-installed.json` | 已安装动态立绘记录丢失 |
-| `public/fonts/` | 自托管字体缺失，页面回退系统字体 |
+| `public/fonts/` | 自托管字体缺失，页面回退系统字体；css2 分段（Noto Sans SC / Oxanium / Rajdhani，`webfonts.css` + `google/`）缺了用 `node tools/fetch-webfonts.mjs` 重新生成 |
 
 **打包后自检**（在解压出的 release 目录里跑，任何一行是 `MISS` 就不要切换）：
 
 ```sh
 for f in data/resource-packs.json .assets-manifest.json data/asset-hashes.json \
-         data/local-fx.json data/local-assets.json data/skins-installed.json public/fonts/fonts.css; do
+         data/local-fx.json data/local-assets.json data/skins-installed.json public/fonts/fonts.css public/fonts/webfonts.css; do
   [ -e "$f" ] && echo "OK   $f" || echo "MISS $f"
 done
 ```

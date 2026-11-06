@@ -1,8 +1,10 @@
 // Self-hosted UI fonts (research 07 §8): Bender (numerals/HUD) and Novecento
 // Wide (Latin headers), from TimWangZi/The-font-of-Arknights. Downloaded next
 // to the site as public/fonts/*.{otf,ttf}, converted to .woff2 (tools/assets/
-// woff2.mjs) and exposed through public/fonts/fonts.css. Noto Sans/Serif SC are
-// NOT self-hosted (Google Fonts with system fallback, see DESIGN §10).
+// woff2.mjs) and exposed through public/fonts/fonts.css. The root page's
+// Noto Sans SC / Oxanium / Rajdhani are self-hosted css2 segments by the
+// separate tools/fetch-webfonts.mjs (public/fonts/webfonts.css) — not this
+// pipeline, so a rebuild here never needs fonts.googleapis.com.
 
 import { readFile, writeFile, mkdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';

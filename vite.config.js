@@ -51,8 +51,9 @@ export function keepNativeModules() {
         // icons, the web app manifest, the web-font links, the self-hosted fonts and the Pixi prefetches keep their
         // own URLs (vite-ignore: Vite neither copies nor rewrites them, and drops the attribute)
         out = out.replace(/<link rel="(?:manifest|icon|apple-touch-icon|prefetch)"[^>]*?(?=\s*\/?>)/g, (tag) => `${tag} vite-ignore`)
-          .replace(/<link rel="stylesheet" href="\/fonts\/fonts\.css"(?=\s*\/?>)/, (tag) => `${tag} vite-ignore`);
-        if ((out.match(/ vite-ignore/g) || []).length < 9) throw new Error('index.html: the kept links changed; update vite.config.js');
+          .replace(/<link rel="stylesheet" href="\/fonts\/fonts\.css"(?=\s*\/?>)/, (tag) => `${tag} vite-ignore`)
+          .replace(/<link rel="stylesheet" media="print" data-web-fonts href="\/fonts\/webfonts\.css"(?=\s*\/?>)/, (tag) => `${tag} vite-ignore`);
+        if ((out.match(/ vite-ignore/g) || []).length < 10) throw new Error('index.html: the kept links changed; update vite.config.js');
         return out;
       },
     },

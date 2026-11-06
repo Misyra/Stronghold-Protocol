@@ -22,13 +22,11 @@
   <link rel="icon" href="/icons/app.svg" type="image/svg+xml" sizes="any" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />
 
-  <!-- Web fonts: never render-blocking (LAN/offline play must still start); system fallbacks in theme.css. -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" media="print" data-web-fonts
-        href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Oxanium:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" />
+  <!-- Web fonts: never render-blocking (LAN/offline play must still start); system fallbacks in theme.css.
+       All self-hosted — Noto Sans SC / Oxanium / Rajdhani css2 segments (regenerate: node tools/fetch-webfonts.mjs)
+       and Bender / Novecento from the assets pipeline; no request leaves this site. -->
+  <link rel="stylesheet" media="print" data-web-fonts href="/fonts/webfonts.css" />
   <script src="/js/webFonts.js" defer></script>
-  <!-- Self-hosted Bender / Novecento (provided by the assets pipeline). -->
   <link rel="stylesheet" href="/fonts/fonts.css" />
 
   <link rel="stylesheet" href="/css/theme.css" />

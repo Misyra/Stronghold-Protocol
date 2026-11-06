@@ -1109,12 +1109,10 @@ export function createBattleRunner(deps) {
     if (keep) parkHost(keep.host, keep.sim?.cs || keep.host.cs);
     pending.clear();
     entries.clear();
-    if (!keepMetrics) {
-      forgetCombat();
-      // a new match (or the page left the game): results of a settled match are refused wherever they went, so
-      // nothing in `retained` is worth a redelivery any more — the array does not grow over the session
-      retained.length = 0;
-    }
+    if (!keepMetrics) forgetCombat();
+    // undelivered results stay in `retained`: a round's clear() must not lose an answer the server is still
+    // waiting for (#864 — redeliver() on reconnect). The new-match path below (resetMetrics) is what bounds
+    // the array across matches; clearing it here would break the round-resume contract.
     cur = null;
     lastPool = null;
     if (rafH != null) { caf(rafH); rafH = null; }

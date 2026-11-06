@@ -68,6 +68,7 @@ import { matchResourceUrls } from './resources/schedule.js';
 import { ResourceHost } from './ui/resourcePanel.js';
 import { GuideHost } from './ui/guide.js';
 import { installDeviceSupport, useFullscreen, useScreenWakeLock } from './ui/device.js';
+import { renderPrewarm } from './ui/renderPrewarm.js';
 import { isCombatPhase } from './ui/gameLogic/phases.js';
 import { registerImportedAssetWorker } from './assetCache.js';
 import { LoadoutHost } from './screens/loadout.js';
@@ -760,6 +761,10 @@ async function boot() {
   entryFilm
     .then((m) => m?.playEntryFilm({ skip: () => selectRoute(store.get()) === 'game' }))
     .catch((err) => console.warn('[app] entry film unavailable', err));
+  // 对局渲染引擎的空闲预热（ui/renderPrewarm.js）：fieldHost.js 只在挂载对局视图时动态 import
+  // render/app.js，首次进对局要串行等它的传输与编译；首屏渲染稳定后的空闲时间把它拉下来。只预热一次，
+  // 空闲时机让路给开场动画与资源预载。
+  renderPrewarm.arm();
   globalThis.__SP__ = { store, net, data, version: 1,
     preloadScreen, whenScreensReady, screensWarm: () => [...screenResolved.keys()] };
   // A page keeps the modules it imported at load time for its whole lifetime, so a deploy cannot reach an open tab

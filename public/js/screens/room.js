@@ -65,7 +65,7 @@ import { PluginTag, VersionTag, isModdedRoom } from '../ui/pluginTag.js';
 import { VersionVote, versionVoteOf } from '../ui/versionVote.js';
 import { VersionPicker } from '../ui/versionPicker.js';
 import { DEFAULT_VERSION, lobbyVersion, needsContent, offeredDifficulties, roomVersion, serverDefaultVersion, soloTimedOf, soloTimeMsgid, versionLabel } from '../versions.js';
-import { hasScriptConsent, rememberScriptConsent, pageVersion } from '../content.js';
+import { pageVersion } from '../content.js';
 import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating, serverNow, savePref } from '../store.js';
 import { data, useData, getConfig } from '../data.js';
@@ -993,45 +993,7 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
   </div>`;
 }
 
-/** Persistent across room/game routes, including spectators who never consent. */
-export function TrustedNotice() {
-  const state = useStore(s => s);
-  const room = state.room, cs = room?.content?.cs, trusted = room?.content?.trusted;
-  const seat = room?.seats?.find(s => s && s.playerId === state.me?.playerId);
-  const [dismissed,setDismissed] = useState(null);
-  const [busy,setBusy] = useState(false);
-  const [review,setReview] = useState(false);
-  const choose = async accept => {
-    setBusy(true);
-    try {
-      if (seat) await net.request('room.consent',{cs,accept});
-      rememberScriptConsent(cs,accept);
-      setDismissed(cs); setReview(false);
-      if (accept && trusted.plugins.some(p => p.permissions.includes('trusted.page'))) {
-        const url = new URL(location.href); url.searchParams.set('cs',cs); url.searchParams.set('room',room.code);
-        location.assign(url.href); return;
-      }
-      store.set({room:{...store.get().room}}); // wake the content loader after local persistence
-    } catch (e) { toastError(e); }
-    finally { setBusy(false); }
-  };
-  useEffect(() => {
-    if (trusted && seat && hasScriptConsent(cs) && !trusted.consent?.[seat.seat] && !room.inMatch) {
-      net.request('room.consent',{cs,accept:true}).catch(toastError);
-    }
-  },[cs,seat?.seat,!!trusted?.consent?.[seat?.seat]]);
-  if (!trusted) return null;
-  return html`<aside class="trusted-banner" data-testid="trusted-banner">
-    <strong>${t('受信任插件')}</strong>
-    <button onClick=${() => setReview(true)}>${t('查看风险与同意状态')}</button>
-    <${Modal} open=${review || (dismissed !== cs && !hasScriptConsent(cs))} title=${t('受信任插件')} tone="red" closeOnBackdrop=${false}
-      onClose=${() => room.inMatch ? setReview(false) : choose(false)} actions=${html`<${Button} disabled=${busy} onClick=${() => choose(false)} data-testid="script-decline">${t('拒绝')}<//>
-        <${Button} disabled=${busy} onClick=${() => choose(true)} data-testid="script-accept">${t('同意运行')}<//>`}>
-      <p>${t('它可以完全控制你的游戏页面')}</p>
-      <p>${t('仅在你信任所有作者及以下代码时同意。换了内容组合需要重新同意。')}</p>
-      <ul>${trusted.plugins.map(p => html`<li key=${p.id}><strong>${p.id} ${p.version}</strong>
-        <p>${t('作者：{authors}',{authors:(p.authors || []).join(', ') || '—'})}</p>
-        <p class="trusted-hash">SHA-256: ${p.hash}</p><p>${t('权限：{permissions}',{permissions:p.permissions.join(', ')})}</p></li>`)}</ul>
-    <//>
-  </aside>`;
-}
+// TrustedNotice is a persistent boot-time overlay (rendered above every route), so its implementation
+// lives in screens/helpers.js — keeping it here would force the main chunk to import the whole room
+// screen. Re-exported so any caller resolving it from the room module keeps working.
+export { TrustedNotice } from './helpers.js';

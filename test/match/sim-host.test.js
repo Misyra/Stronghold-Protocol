@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { InPageSimHost, WorkerSimHost } from '../../public/js/battle/simHost.js';
+import { InPageSimHost, WorkerSimHost, metaIdentity } from '../../public/js/battle/simHost.js';
 import { loadBrowserSim } from '../../public/js/battle/simLoader.js';
 import { forkSandbox } from '../../server/match/host/childHost.js';
 import { createBattleRunner } from '../../public/js/battle/runner.js';
@@ -300,8 +300,7 @@ test('#864 an undelivered result survives clear and is sent again when the sessi
   assert.deepEqual(sent[1].result, result);
 });
 
-test('data set: Worker and in-page snapshots/events/results match every batch; bounds, stats, owners', async t => {
-  const a = local(), b = remote(); t.after(() => b.stop());
+test('data set: Worker and in-page snapshots/events/results match every batch; bounds, stats, owners', async t => {  const a = local(), b = remote(); t.after(() => b.stop());
   const set = fixtureSet(), spec = fixtureSpec();
   await a.load(set.cs, set); await b.load(set.cs, set); a.start(spec); await b.start(spec);
   assert.equal(await b.rpc('bounds'), 120, 'Worker installed the official snapshot, not plugin data');
@@ -318,6 +317,106 @@ test('data set: Worker and in-page snapshots/events/results match every batch; b
   assert.deepEqual(await b.rpc('unitStats', [id]), a.unitStats(id));
   assert.equal(typeof globalThis.lockdown, 'undefined', 'data/vanilla never install SES in the main realm');
 });
+
+test('lean step packet: meta/ops ride only on identity change, the page cache stays identity-fresh at every step', async t => {
+  const a = local(), b = remote(); t.after(() => b.stop());
+  const set = fixtureSet(), spec = fixtureSpec();
+  await a.load(set.cs, set); await b.load(set.cs, set); a.start(spec); await b.start(spec);
+  assert.ok(b.packet.meta, 'the start packet carries the full meta (a page joining mid-battle starts complete)');
+  assert.deepEqual(b.battle.fieldMeta(), a.battle.fieldMeta());
+  let attached = 0, steps = 0;
+  while (!a.battle.finished) {
+    const x = a.step(2, { slice: 1 }), y = await b.step(2, { slice: 1 });
+    steps++;
+    assert.deepEqual(y.snap, x.snap); assert.deepEqual(y.ev, x.ev);
+    if ('meta' in y) attached++;
+    // the no-missed-change guarantee: the cached meta/ops match a fresh fetch's identity after every step
+    const fresh = await b.rpc('meta', []);
+    assert.equal(metaIdentity(fresh.meta), metaIdentity(b.battle.fieldMeta()), `stale meta at step ${steps}`);
+    assert.deepEqual(b.ownerOps('p1'), a.ownerOps('p1'), `stale owner ops at step ${steps}`);
+    assert.equal(metaIdentity(b.battle.fieldMeta()), metaIdentity(a.battle.fieldMeta()), `page meta diverged at step ${steps}`);
+  }
+  assert.ok(steps >= 50, 'the fixture ran a real battle');
+  assert.ok(attached >= 1, 'identity changes attach the meta');
+  assert.ok(attached < steps, `lean packets skip unchanged steps (${attached}/${steps} carried meta)`);
+  assert.deepEqual(b.compactResult(), a.compactResult({}));
+});
+
+test('lean step packet on plugin content (script operator): full-mode packets carry the same battle', async t => {
+  const lean = remote(), full = remote({ stepPacketFull: true });
+  t.after(() => { lean.stop(); full.stop(); });
+  const set = makeScriptSet(operatorScript), spec = fixtureSpec();
+  await lean.load(set.cs, set); await full.load(set.cs, set); await lean.start(spec); await full.start(spec);
+  let steps = 0;
+  while (!full.battle.finished) {
+    const x = await full.step(4), y = await lean.step(4);
+    steps++;
+    assert.equal(JSON.stringify(y.ev), JSON.stringify(x.ev));
+    assert.equal(JSON.stringify(y.snap), JSON.stringify(x.snap));
+    const fresh = await lean.rpc('meta', []);
+    assert.equal(metaIdentity(fresh.meta), metaIdentity(lean.battle.fieldMeta()), `stale meta at step ${steps}`);
+    assert.deepEqual(lean.ownerOps('p1'), full.ownerOps('p1'), `stale owner ops at step ${steps}`);
+  }
+  assert.ok(steps > 0);
+  assert.equal(JSON.stringify(lean.compactResult()), JSON.stringify(full.compactResult()), 'the plugin battle ends identically');
+});
+
+test('SP_STEP_PACKET=full puts meta/ops back into every step packet', async t => {
+  const a = local(), b = remote({ stepPacketFull: true }); t.after(() => b.stop());
+  const set = fixtureSet(), spec = fixtureSpec();
+  await a.load(set.cs, set); await b.load(set.cs, set); a.start(spec); await b.start(spec);
+  for (let n = 0; n < 3 && !a.battle.finished; n++) {
+    a.step(2, { slice: 1 });
+    await b.step(2, { slice: 1 });
+    assert.ok('meta' in b.packet, `step ${n}: the full mode attaches the meta`);
+    assert.ok('ops' in b.packet, `step ${n}: the full mode attaches the ops`);
+  }
+  assert.deepEqual(b.battle.fieldMeta(), a.battle.fieldMeta());
+});
+
+test('refreshMeta() fetches a fresh meta/ops on demand; a lean packet leaves the cache in place', async () => {
+  let port;
+  const meta = { units: [{ id: 1, defId: 'chess_a' }] };
+  const fresh = { units: [{ id: 1, defId: 'chess_a' }, { id: 2, defId: 'chess_b', form: 'crawl' }] };
+  const host = new WorkerSimHost({ timeoutMs: 20, workerFactory: () => (port = {
+    terminate() {},
+    postMessage(m) {
+      if (m.method === 'load') port.onmessage({ data: { id: m.id, value: {} } });
+      else if (m.method === 'start') port.onmessage({ data: { id: m.id, value: { ev: [], state: { finished: false, tickCount: 0 }, meter: { lp: 0 }, snap: {}, meta, players: {} } } });
+      else if (m.method === 'step') port.onmessage({ data: { id: m.id, value: { ticks: 1, slices: [], ev: [], snap: {}, state: { finished: false, tickCount: 1 } } } });
+      else if (m.method === 'meta') port.onmessage({ data: { id: m.id, value: { meta: fresh, ops: { p1: [{ kind: 'op', ownerId: 'p1', defId: 'chess_b' }] } } } });
+    },
+  }) });
+  await host.load('a', { cs: 'a', data: {} });
+  await host.start({});
+  await host.step(1);
+  assert.deepEqual(host.battle.fieldMeta(), meta, 'a lean packet leaves the last meta in place');
+  assert.deepEqual(host.ownerOps('p1'), [], 'no cached ops yet');
+  const got = await host.refreshMeta();
+  assert.equal(got.meta, fresh);
+  assert.deepEqual(host.battle.fieldMeta(), fresh, 'the cache took the fresh meta');
+  assert.deepEqual(host.ownerOps('p1'), [{ kind: 'op', ownerId: 'p1', defId: 'chess_b' }]);
+  host.stop();
+  assert.equal(await host.refreshMeta(), null, 'a stopped host answers null instead of throwing');
+});
+
+test('metaIdentity: identity fields move the signature, per-frame state does not', () => {
+  const base = { id: 3, uid: 9, kind: 'op', side: 'ally', ownerId: 'p1', defId: 'chess_a', name: 'N', spine: 's', avatar: 'a',
+    x: 1.5, y: 2.5, facing: -1, maxHp: 100, atkInterval: 1.2, form: 'crawl', items: ['i1'], diy: { charId: 'c', skillIndex: 2, uniEquipId: null } };
+  const same = (over) => metaIdentity({ units: [base] }) === metaIdentity({ units: [{ ...base, ...over }] });
+  assert.ok(same({ x: 9, y: 9, hp: 1 }), 'position/HP ride the snapshot');
+  assert.ok(same({ facing: 1, maxHp: 90, atkInterval: 2 }), 'facing/HP/attack interval ride the snapshot');
+  assert.ok(!same({ form: undefined }), 'a form change is identity');
+  assert.ok(!same({ defId: 'chess_b' }), 'a defId change is identity');
+  assert.ok(!same({ spine: 'other' }), 'a model change is identity');
+  assert.ok(!same({ items: ['i2'] }), 'an item change is identity');
+  assert.ok(!same({ diy: { charId: 'd', skillIndex: 2, uniEquipId: null } }), 'a diy change is identity');
+  assert.ok(!same({ uid: 10 }), 'a uid change is identity');
+  assert.ok(!same({ skin: 'skin_1' }), 'a skin change is identity');
+  assert.equal(metaIdentity(null), '', 'no meta: empty signature');
+  assert.equal(metaIdentity({}), '');
+});
+
 
 test('script operator: permission child and Worker have byte-identical ev/results', async t => {
   const a = new WorkerSimHost({ workerFactory: () => nodePort(true) }), b = remote(), native = remote();

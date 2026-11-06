@@ -926,7 +926,7 @@ function signature({ publicDir, dataDir, packsDir, pluginsDir }) {
 export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, app = APP_VERSION, recheckMs = 1000, scriptHost = '0.0.0.0', scriptMode = process.env.SP_PLUGIN_SCRIPTS } = {}) {
   let sig = null;
   let checkedAt = -Infinity;
-  /** @type {ReturnType<typeof scanPlugins> & { packs: Plugin[], index: ReturnType<typeof packIndexOf>, byId: Map<string, Plugin> }} */
+  /** @type {ReturnType<typeof scanPlugins> & { packs: Plugin[], index: ReturnType<typeof packIndexOf>, byId: Map<string, Plugin>, pluginIndexes: Map<string, ReturnType<typeof pluginIndexOf>> }} */
   let state = null;
   /** @type {HashCache} the file hashes of the cosmetic and ui plugins, kept across scans (an unchanged file is never read again) */
   const hashCache = new Map();
@@ -951,7 +951,10 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     for (const abs of [...hashCache.keys()]) if (!kept.some((d) => abs.startsWith(d))) hashCache.delete(abs);
     sig = s; // after the scan: a scan that throws is tried again on the next look
     const packs = scan.plugins.filter((p) => p.supported);
-    state = { ...scan, packs, index: packIndexOf(packs, { app }), byId: new Map(scan.plugins.map((p) => [p.id, p])) };
+    // pluginIndexes: the catalogue bodies of this scan generation, keyed by the vanilla content hash the caller asked
+    // with (the static route always passes it, the studio reads without) — dropped with the state, so the next scan
+    // that read the folders builds afresh (install / uninstall / rescan).
+    state = { ...scan, packs, index: packIndexOf(packs, { app }), byId: new Map(scan.plugins.map((p) => [p.id, p])), pluginIndexes: new Map() };
     const line = `[packs] ${packs.length ? packs.map((p) => `${p.type} ${p.type === 'lang' ? p.manifest.lang : p.id} (${p.manifest.name})`).join(', ') : 'none'}`;
     if (first || packs.length) tell((m) => log.info(m), line);
     const plugins = scan.plugins.filter((p) => p.source === 'plugins');
@@ -1017,10 +1020,19 @@ export function createPluginRegistry(dirs, { log = { info: noop, warn: noop }, a
     /** The language-pack index body (GET /packs/index.json). */
     index: () => refresh().index,
     /**
-     * The catalogue body (GET /plugins/index.json).
+     * The catalogue body (GET /plugins/index.json), cached on the scan generation: the body only changes when a scan
+     * read the folders again, so a request between scans re-uses the built one instead of re-sorting and re-copying
+     * every entry (the pack index above is cached the same way). The vanilla hash takes part in the key — the studio's
+     * read (none) and the static route's (the hash, in the body) are cached side by side.
      * @param {{ vanilla?: string | null }} [opts] vanilla: the server's vanilla content hash
      */
-    pluginIndex: ({ vanilla = null } = {}) => pluginIndexOf(refresh().plugins, { app, vanilla }),
+    pluginIndex: ({ vanilla = null } = {}) => {
+      const s = refresh();
+      const key = vanilla == null ? '' : String(vanilla);
+      let body = s.pluginIndexes.get(key);
+      if (!body) { body = pluginIndexOf(s.plugins, { app, vanilla }); s.pluginIndexes.set(key, body); }
+      return body;
+    },
     /** Packs and plugins that were not loaded and why, and the warnings of the loaded ones. */
     report: () => { const s = refresh(); return { skipped: s.skipped, warnings: s.warnings }; },
     /**

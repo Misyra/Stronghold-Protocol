@@ -91,7 +91,11 @@ export function createEventLoopSampler({ log = console, windowMs, keep = LOOP_LO
     log.info?.(`[loop] p50=${record.p50}ms p95=${record.p95}ms p99=${record.p99}ms max=${record.max}ms ` +
       `samples=${record.samples} cpu=${record.cpu}% mem=${record.mem}MB ` +
       `rooms=${record.rooms ?? 0} matches=${record.matches ?? 0} humans=${record.humans ?? 0} ` +
-      `spectators=${record.spectators ?? 0} phase=${record.phase ?? 'idle'} rehearsals=${record.rehearsals ?? 0}`);
+      `spectators=${record.spectators ?? 0} phase=${record.phase ?? 'idle'} rehearsals=${record.rehearsals ?? 0}` +
+      // the hall's delegated-rehearsal counters (index.js counts → lobby.rehearsalStats), when the wiring carries them:
+      // delegated/answered/takeovers of the host delegation, pooled/accepted/fallbacks of its simulation-pool hand-off
+      (record.rehearsal ? ` rehe=${record.rehearsal.delegated ?? 0}/${record.rehearsal.answered ?? 0}/${record.rehearsal.takeovers ?? 0}` +
+        ` pool=${record.rehearsal.pooled ?? 0}/${record.rehearsal.accepted ?? 0}/${record.rehearsal.fallbacks ?? 0}` : ''));
     return record;
   }
 

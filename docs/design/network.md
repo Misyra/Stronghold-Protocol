@@ -358,10 +358,20 @@ only the official data pack and must not run the room's scripts. The server rehe
 that still names a `cs` is answered `error: true` and is not simulated in the page worker.
 
 If there is no connected human host, the server runs the rehearsal. A host change, disconnect, error, invalid or
-out-of-range index, or answer timeout (`botRehearsalDelegateMs`, default 3 s) also returns the work to the server,
+out-of-range index, or answer timeout (`MatchRehearsal.delegateWindowMs`) also returns the work to the server,
 using the same candidates. The old browser task is cancelled and late, repeated or forged answers are ignored
 (an answer after the match ended is `ok` and changes nothing). If prep ends first, the task is cancelled and the
 default layout stays. Actual battles, round timing and prep deadlines are unchanged.
+
+The answer timeout is adaptive per host (`MatchRehearsal.delegateWindowMs`): a host that has not answered one task
+yet — its Worker is still loading the `/sim/` module graph, so 3 s turns its first task into a server takeover and
+makes both sides work (the eb679687 cold-start loop) — waits the cold-start window (`botRehearsalColdMs`, default
+7 s; `SP_BOT_REHEARSAL_COLD_ANSWER_MS` sets it, 0 = the fixed window), and once it has answered one its Worker is
+warm and every further task waits the settled warm window (`botRehearsalDelegateMs`, default 3 s;
+`SP_BOT_REHEARSAL_ANSWER_MS` sets it). Pure match state, so a replay recomputes every window; a restored match
+starts its host cold again, which costs one longer window at most. The window never extends a prep — the phase
+deadline keeps cancelling what is still in flight — and the §37.102 plan-mode reserve tracks the same window,
+still capped at half the remaining phase.
 
 **Plug-in point.** The task, the index answer, the timeout and the server fallback are the interface a later local
 or external compute can implement (including the existing sandboxed sim worker). This version adds no external

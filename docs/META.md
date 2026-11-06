@@ -444,9 +444,14 @@ spend a different budget. The server rehearses those rooms itself.
 The interface a later local or external compute can plug into — this version makes no external network call — is:
 the server offers one task (`b.rehearsal`: task id, the AI seat, the tick cap, the candidate specs); the executor
 answers with the winning candidate index (0 to `REHEARSAL_MAX_CANDIDATES` − 1) or `error: true`; a timeout
-(`botRehearsalDelegateMs`, default 3 s), a missing host,
+(`MatchRehearsal.delegateWindowMs`), a missing host,
 a host change, a disconnect, an invalid index or an error makes the server run the same candidates; prep ending
-cancels the task and keeps the default layout. The deadline never moves. Only the connected human host may answer,
+cancels the task and keeps the default layout. The answer window is adaptive per host: a host that has not answered one
+task yet — its Worker is still loading the `/sim/` module graph — waits the cold-start window
+(`botRehearsalColdMs`, default 7 s; `SP_BOT_REHEARSAL_COLD_ANSWER_MS`, 0 = fixed window), and every task after its first
+accepted answer waits the warm one (`botRehearsalDelegateMs`, default 3 s; `SP_BOT_REHEARSAL_ANSWER_MS`). The window
+never extends a prep: the phase deadline stays in charge. The reserve of an external-AI plan seat tracks the same
+window (§37.102), capped at half the remaining phase as before. The deadline never moves. Only the connected human host may answer,
 and only while the task is still waiting. Late, repeated and forged answers are ignored.
 
 The browser uses one same-origin module Worker (`/js/battle/rehearsalWorker.js`, no `blob:` URL and no `eval`)

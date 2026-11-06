@@ -463,10 +463,21 @@ export class SpineActor {
      */
     this.clipPerAttack = false;
     this.wound = false;           // wound up for the coming attack (windUp → attack)
+    this.tint = 0xffffff;         // the tint the view last put on the skeleton (setTint; pixi's own default)
     this._applied = false;        // an update has posed the skeleton since its clip last changed (poseHeld)
     this._posed = false;          // the skeleton was ever posed (a model frozen before that shows its clip's first frame)
-    this._appliedTint = undefined; // the tint that update put on the slots (pixi-spine applies `tint` in update)
+    this._appliedTint = undefined; // the tint the last update had on the slots (setTint's record; poseHeld compares it)
     this._play(this._idleName(), true);
+  }
+
+  /**
+   * Put `tint` on the skeleton and record it. The record is what `poseHeld` compares against — reading pixi-spine's
+   * `tint` getter instead would recompute `rgb2hex(tintRgb)` on every read, per actor per frame, for the same number
+   * this view assigned. The only writer of `spine.tint` in the field view is this method (render/units.js).
+   */
+  setTint(tint) {
+    this.tint = tint;
+    this.spine.tint = tint;
   }
 
   /** Enable / disable the skeleton's clipping masks. */
@@ -990,7 +1001,7 @@ export class SpineActor {
    * pending: those act on the clock.
    */
   poseHeld() {
-    if (!this._applied || this.spine.tint !== this._appliedTint || this.endClip || this.windUntil != null) return false;
+    if (!this._applied || this.tint !== this._appliedTint || this.endClip || this.windUntil != null) return false;
     if (this.frozen) return true;
     if (this.mode !== 'die') return false;
     const tracks = this.spine.state.tracks;
@@ -1089,7 +1100,7 @@ export class SpineActor {
     }
     if (this.clipped && !this.clipOn) this._eyeMaskFallback();
     this._applied = true;
-    this._appliedTint = this.spine.tint;
+    this._appliedTint = this.tint;   // setTint's record: what this update put on the slots (no pixi-spine getter read)
   }
 
   /**

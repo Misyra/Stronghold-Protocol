@@ -78,8 +78,9 @@ that is why its imports are constrained. Every file is mapped in [docs/ARCHITECT
   timers or the lobby stays on the main thread (docs/ARCHITECTURE.md §7).
 - **Performance changes are measured.** Before/after on the same machine, with the project's tools
   (`tools/workerbench.mjs`, `tools/memorybench.mjs`, `tools/state-sync-micro.mjs`, `tools/bench-state-delta.mjs`,
-  `tools/perfbench.mjs`, `tools/loadgen.mjs`) — and golden results must not move. A change without a verified A/B
-  win is not merged.
+  `tools/perfbench.mjs`, `tools/loadgen.mjs`, `tools/perf2-lcp.mjs`, `tools/perf2-probe.mjs`) — and golden results
+  must not move. A change without a verified A/B win is not merged. See [§ Performance acceptance](#performance-acceptance)
+  for the A/B protocol, the metrics table and the rollback rules (2026-11-06 round 2).
 - **Security-sensitive surfaces keep their guards.** The studio is local-network only and every change carries the
   studio key (`server/studio/`), plugin installs re-validate zips and hashes (`server/plugins/install.js`,
   `zip.js`), the access gate binds a cookie and rate-limits (`server/http/gate.js`), paths go through
@@ -108,3 +109,47 @@ npm run golden                              # golden results
 Browser suites are off by default and need Chrome: `SP_E2E=1` (UI), `SP_REAL_E2E=1` (real match, needs assets),
 `RENDER_E2E=1`, `SIM_E2E=1` — see CONTRIBUTING.md §2. Battle tests are easiest with the helpers described in
 docs/SIM.md (the test harness section) and the patterns in `test/content/op_siege.test.js`.
+
+## Performance acceptance
+
+Performance work is a measured change, not a cleanup. Every optimization PR states the baseline, the A/B result,
+the residual risk and the rollback; a merged change with no verified win is a bug in the process.
+
+**A/B protocol (mandatory).** Host load on the measurement machine drifts ±40–60% between sessions, so a single
+sequential before/after pair is not evidence. Interleave the two variants (`ABBA` / `ABAB`, ≥4 rounds), take the
+**minimum** per round (noise only adds, the min converges to the interference-free floor), and report every raw
+round. A/B variants differ by exactly one variable — same build, same port, same seed, same warm/cold cache state.
+Browser rendering uses `tools/perfbench.mjs --profile` with `CHROME_PATH` (Edge headless works on this machine),
+CPU-profiler self-time by function is the unit of account; cold-page loading uses Edge + CDP
+`Network.emulateNetworkConditions` (`tools/perf2-lcp.mjs`) with fresh contexts. Server endpoints use alternating
+curl batches; worker/broadcast paths use `tools/loadgen.mjs` (a `--rehearsal-answer-ms` delay knob exists for
+rehearsal A/B) and the `[loop]` / `/healthz?traffic=1` counters.
+
+**Verification bar before an optimization is accepted:**
+
+| Check | Bar |
+|---|---|
+| Golden results | `npm run golden` — all 291 scenarios match (roster 49 / bonds 46 / fields 22 / matches 21 / standins 10 / diy 143). A performance PR moves zero scenarios; a "242" count is a truncated roster line, not a pass. |
+| Full suite | `npm test` / `npm run ci` — failure set **name-by-name identical to the same-HEAD baseline**. On a machine without `public/assets` extraction, 7–8 asset-coverage failures and an occasional `test/sim/robustness.test.js` 0.5 ms threshold wobble are environmental; prove it by comparing with the baseline, never by ignoring them. |
+| Determinism | `server/sim/` unchanged by value: result payloads byte-identical; worker-pool consumer contract mirrors the real return shape; `test/workers-room.test.js` stays anchored on the real pool. |
+| Serial measurement | Never run full `npm test` from two worktrees at once — they starve each other and trigger false sim CPU-threshold failures. Full suites and golden run serially. |
+| Browser build | A `vite.config.js` change keeps the `/shared` `/sim` `/data` native-module boundary, both Workers' URLs and the `generateBundle` entry-script guard; `npm run build` + build-page probe (mount, screen switch, zero uncaught errors) before/after. |
+
+**Quantified results must name the metric and its boundary.** "app chunk lands at 213 ms instead of 4832 ms" is a
+transfer-side fact; it does **not** license "entering a match is 4.6 s faster" when the first-frame measurement is
+noise-dominated. State what was measured, what was not, and why. A negative or risk-only result is a valid
+deliverable: revert the commit and record the measurement so it is not retried (the 2026-11-04 round-1 rejected
+list lives in the project memory / `docs/`).
+
+**Rollback shape.** One topic per branch, one-line Chinese commit, no attribution trailers. Every optimization
+carries a self-contained rollback: `git revert <sha>` for single-file/stateless changes, an env switch for
+behavioural knobs (`SP_STEP_PACKET=full`, `SP_BOT_REHEARSAL_COLD_ANSWER_MS=0`, `POSE_SKIP_PX=0`), and
+`git revert <sha>` + `npm run build` for bundle changes (output is content-addressed and git-ignored). Defaults that
+affect official-mode appearance stay OFF until the maintainer decides.
+
+**Round-2 measurements (2026-11-06, master `963ea741`, `REVIEW-2026-11-06-perf2.md`):** 10 branches / 19 commits,
+baseline loadgen 232.4 msg/s · RSS 280.9 MB · loop p95 22.5 ms, golden 291/291 throughout. Representative wins:
+304 revalidation 13.5→0.20 ms (69×), plugins index p50 −57%, drag highlight redraw −92%, step packet −71% /
+tick-RPC −36%, cold-host rehearsal pool runs 8→0 (CPU 29.5→7.5%), film grain ~200× Node / ~24× page,
+entry brotli −45.1% / cold first-screen download −22.8% / LCP min −20.3%. Each branch keeps its own A/B table
+and rollback note; merging is one topic per PR.

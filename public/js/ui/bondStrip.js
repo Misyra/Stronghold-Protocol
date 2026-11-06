@@ -33,6 +33,7 @@
 import { cloneElement } from '../../vendor/preact.module.js';
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { html, BondDisc, Icon, MicroLabel, Tooltip } from './components.js';
+import { memo } from './memo.js';
 import { RichText, UnitThumb, BondGlyph, GIcon } from './gameComponents.js';
 import { sortBonds, bondMembers, nextThreshold, bondTier, harmonyMembers, HARMONY_BOND, memberHeadCount, briefingBondTip, diyGetter, diyRecordFor, memberStandIn, standInForText } from './gameLogic.js';
 import { formatBondEffect } from './richText.js';
@@ -85,10 +86,12 @@ function BondScroller({ count, children }) {
 }
 
 /**
+ * Memoized (ui/memo.js): MatchScreen re-renders on every push and local interaction; the strip sits them out while
+ * its `bonds` list (screens/game.js memoized `strip`), `openId`, `owner` and the stable `onOpen` are unchanged.
  * @param {{ bonds: any[], layersDisabled?: boolean, onOpen:(bondId:string)=>void, openId?: string|null,
  *   owner?: string|null }} props — owner: the watched teammate's name (null = your own bonds)
  */
-export function BondStrip({ bonds, layersDisabled = false, onOpen, openId = null, owner = null }) {
+export const BondStrip = memo(function BondStrip({ bonds, layersDisabled = false, onOpen, openId = null, owner = null }) {
   const sorted = sortBonds(bonds, (id) => data.lookup('bonds', id));
   if (!sorted.length) {
     return html`<div class=${cx('bstrip', 'bstrip--empty', owner && 'is-other')} data-owner=${owner || null}>
@@ -126,7 +129,7 @@ export function BondStrip({ bonds, layersDisabled = false, onOpen, openId = null
   </div>`;
   const content = html`<${BondScroller} count=${sorted.length}>${strip}<//>`;
   return layersDisabled ? html`<${Tooltip} text=${t('层数叠加已禁用')} placement="bottom">${content}<//>` : content;
-}
+});
 
 /**
  * Bond detail popup.

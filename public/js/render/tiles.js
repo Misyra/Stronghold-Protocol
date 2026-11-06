@@ -88,6 +88,16 @@ const HL_STYLES = {
   deploy: { color: 0x9fd4ff, fill: 0.12, line: 0.45 },
 };
 
+/** Whether a stored highlight group already holds exactly these tiles and the style fields _drawHighlights uses. */
+function sameHl(prev, list, st) {
+  const s = prev.style;
+  if (s.color !== st.color || s.fill !== st.fill || s.line !== st.line || !!s.stripes !== !!st.stripes) return false;
+  const a = prev.tiles;
+  if (a.length !== list.length) return false;
+  for (let i = 0; i < a.length; i++) { if (a[i][0] !== list[i][0] || a[i][1] !== list[i][1]) return false; }
+  return true;
+}
+
 const SIDE_MAT = {
   wall: 'wallSide', forbid: 'forbidSide', forbid2: 'forbidSide', sep: 'sepSide', hand: 'benchSide', temp: 'benchSideTemp',
   fence: 'fenceSide', margin: 'forbidSide',
@@ -513,6 +523,11 @@ export class TileField {
    * Set a highlight group. `tiles`: [[r,c]] or [{row,col}] (null/empty clears). `style`: 'legal' | 'illegal' |
    * 'range' | 'rangeStand' | 'hover' | 'target' | 'deploy' | { color, fill, line, group }. `opts.stripes`: light
    * diagonal stripes over the fill (the official striped range tiles; drawn under the units like every highlight).
+   *
+   * Dirty check: a group whose tiles and drawn style are unchanged leaves the map exactly as it was and skips the
+   * full redraw (~50 polygons × 4 projections, Graphics cleared and rebuilt) — the drag's per-pointermove restamp
+   * of render/app.js moveDragVisual is the hot case. The map is the drawn truth: every mutation draws here, and
+   * every geometry rebuild ends with `camVersion = -1` so the next project() repaints the map (_rebuild).
    */
   setHighlights(tiles, style = 'range', group, opts) {
     let st = typeof style === 'object' && style ? { ...HL_STYLES.range, ...style } : (HL_STYLES[style] || HL_STYLES.range);
@@ -525,13 +540,20 @@ export class TileField {
         if (Number.isInteger(r) && Number.isInteger(c) && r >= 0 && r < ROWS && c >= 0 && c < COLS) list.push([r, c]);
       }
     }
-    if (!list.length) this.highlights.delete(key);
-    else this.highlights.set(key, { tiles: list, style: st });
+    const prev = this.highlights.get(key);
+    if (!list.length) {
+      if (!prev) return; // already clear: nothing to draw
+      this.highlights.delete(key);
+    } else {
+      if (prev && sameHl(prev, list, st)) return; // unchanged group: the drawn map is already right
+      this.highlights.set(key, { tiles: list, style: st });
+    }
     this._drawHighlights();
   }
 
   clearHighlights(group) {
-    if (group) this.highlights.delete(group); else this.highlights.clear();
+    if (group ? !this.highlights.delete(group) : !this.highlights.size) return; // nothing drawn there: no redraw
+    if (!group) this.highlights.clear();
     this._drawHighlights();
   }
 

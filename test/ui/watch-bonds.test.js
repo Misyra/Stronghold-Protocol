@@ -377,13 +377,14 @@ describe('§20.15 the strip and the popup say whose bonds they show', () => {
 
 test('§20.15 wiring: the game screen feeds the strip, the popup and the detail card from screenStrip (no viewer data for a teammate)', () => {
   const src = read('public/js/screens/game.js');
-  assert.match(src, /const strip = screenStrip\(\{[^}]*field, layers, layer, who: watchWho, bondLayers:/, 'the field on screen, the ‹ › layers, the picked teammate');
+  assert.match(src, /const strip = useMemo\(\(\) => screenStrip\(\{[^}]*field, layers, layer, who: watchWho, bondLayers:/, 'the field on screen, the ‹ › layers, the picked teammate (memoized, ui/memo.js)');
   assert.match(src, /<\$\{BondStrip\} bonds=\$\{stripBonds\}[^>]*owner=\$\{strip\.name\}/);
   // the popup carries the player it was opened for: the strip's owner from the strip, the unit owner from a card's chip
   assert.match(src, /const bondPop = popupView\(\{ open: bondOpen, pub, priv, myId, field, units: popOps, live: liveLayers \}\)/);
   assert.match(src, /battleRunner\.ownerOps\(bondOpen\.ownerId, field\.fieldId\)/, 'a teammate\'s members in play: the battle on screen\'s operators');
   assert.match(src, /<\$\{BondPopup\} bondId=\$\{bondPop\.bondId\} entry=\$\{bondPop\.entry\} priv=\$\{bondPop\.priv\}[^>]*owner=\$\{bondPop\.name\}/);
-  assert.match(src, /onOpen=\$\{\(id\) => openBond\(id, strip\.ownerId, 'strip'\)\}/, 'the strip opens its owner\'s bond');
+  assert.match(src, /const openStripBond = useCallback\(\(id\) => openBond\(id, strip\.ownerId, 'strip'\), \[openBond, strip\.ownerId\]\)/, 'the strip opens its owner\'s bond (one identity per owner, ui/memo.js)');
+  assert.match(src, /onOpen=\$\{openStripBond\}/);
   assert.match(src, /const detailOwner = detailBondOwner\(detailTarget, \{ pub, myId, stripOwnerId: strip\.ownerId \}\)/);
   assert.match(src, /const detailBond = useCallback\(\(id\) => openBond\(id, detailOwner, 'detail'\), \[openBond, detailOwner\]\)/, 'a card\'s chip opens the same owner\'s bond as its chips show');
   assert.match(src, /onBond=\$\{detailBond\}/);

@@ -851,6 +851,23 @@ export class Lobby {
       matchmaking: { queued: this.matchmaking.size, offers: this.matchmaking.offers.size } };
   }
 
+  /**
+   * The bot layout rehearsal counters of every live match, summed (/healthz `rehearsal` next to the traffic family and
+   * the `[loop]` line's `rehe=` / `pool=`): how this hall's delegated rehearsals ended (Match.rehearsalStats) and how
+   * their hand-offs to the simulation pool did (Match.rehearsalPoolStats). Read-only aggregates over the same shape the
+   * matches hold; a room whose match runs elsewhere (or a stub) contributes nothing.
+   * @returns {{ delegated: number, answered: number, takeovers: number, pooled: number, accepted: number, fallbacks: number }}
+   */
+  rehearsalStats() {
+    const out = { delegated: 0, answered: 0, takeovers: 0, pooled: 0, accepted: 0, fallbacks: 0 };
+    for (const r of this.rooms.values()) {
+      const d = r.match?.rehearsalStats, p = r.match?.rehearsalPoolStats;
+      if (d) { out.delegated += d.delegated || 0; out.answered += d.answered || 0; out.takeovers += d.takeovers || 0; }
+      if (p) { out.pooled += p.pooled || 0; out.accepted += p.accepted || 0; out.fallbacks += p.fallbacks || 0; }
+    }
+    return out;
+  }
+
   /** 房间回收(移植自用户分支): pressure overrides reconnect grace, but never removes a room with an online player or spectator. */
   reclaimOfflineRooms(options) { return this.roomReclamation.reclaim(options); }
 

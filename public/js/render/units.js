@@ -91,6 +91,7 @@ import { diamondTexture, shadowTexture, fxAtlas, tierChip, statusTexture, itemTe
 import { COLORS, TIER_COLORS, ENEMY_FRAME, UNIT, PROJ, statusIconKey, statusIconSuppressed } from './style.js';
 import { drawCrate, rowDepthKey, ROW_KEY, deviceBoxOf, DEVICE_BOX } from './tiles.js';
 import { startAtkInterval, nextAtkInterval, clampAtkInterval } from './attackRate.js';
+import { POSE_SKIP_PX } from './app/tune.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const DIRS = ['UP', 'RIGHT', 'DOWN', 'LEFT'];
@@ -1949,7 +1950,12 @@ export class UnitView {
         this._updateImpostor(sc, flip, tint, animDt, interval, held);
       } else {
         if (this.imp) this._leaveImpostor();
-        this._drawDirect(sc, flip, tint, animDt, held);
+        // POSE_SKIP_PX (app/tune.js): a unit whose tile is under the threshold on screen poses every other frame —
+        // the skipped dt accumulates and the next pose takes it at once (the clock never drifts). 0 = off; the first
+        // small frame always poses, so a model's first pose is never skipped.
+        this._poseTick = !this._poseTick;
+        const skip = POSE_SKIP_PX > 0 && s < POSE_SKIP_PX && !this._poseTick;
+        this._drawDirect(sc, flip, tint, animDt, held, false, skip);
       }
     }
     // the diamond is only needed while no model shows (a cross-fade keeps whatever diamond was already up)
@@ -2520,16 +2526,21 @@ export class UnitView {
     }
   }
 
-  /** Draw the skeleton itself this frame (no impostor, or bypassing it): posed by `animDt` unless `held` / `posed`. */
-  _drawDirect(sc, flip, tint, animDt, held, posed = false) {
+  /**
+   * Draw the skeleton itself this frame (no impostor, or bypassing it): posed by `animDt` unless `held` / `posed`.
+   * `skip` (POSE_SKIP_PX, app/tune.js) defers the pose to the next frame: the dt accumulates in `_poseDebt` and the
+   * next real pose takes it at once, so the actor's clock never drifts.
+   */
+  _drawDirect(sc, flip, tint, animDt, held, posed = false, skip = false) {
     const sp = this.actor.spine;
     sp.alpha = this.swapT;
     sp.scale.set(sc * flip, sc * this.modelKY);
     if (!posed) {
       if (held) this.actor.clock += animDt;
-      else this.actor.update(animDt);
+      else if (skip) this._poseDebt = (this._poseDebt || 0) + animDt;
+      else { this.actor.update(animDt + (this._poseDebt || 0)); this._poseDebt = 0; }
     }
-    if (this._tint !== tint) { this._tint = tint; sp.tint = tint; }
+    if (this._tint !== tint) { this._tint = tint; this.actor.setTint(tint); }
   }
 
   _updateImpostor(sc, flip, tint, animDt, interval, held = false) {
@@ -2587,7 +2598,7 @@ export class UnitView {
     const w = Math.max(8, Math.ceil(box.w * sc)), h = Math.max(8, Math.ceil(box.h * sc * yK));
     const sp = this.actor.spine;
     sp.alpha = 1;
-    if (this._tint !== 0xffffff) { this._tint = 0xffffff; sp.tint = 0xffffff; }
+    if (this._tint !== 0xffffff) { this._tint = 0xffffff; this.actor.setTint(0xffffff); }
     const ox = -box.x0 * sc, oy = -box.y0 * sc * yK;
     if (atlas) {
       let slot = imp.slot;

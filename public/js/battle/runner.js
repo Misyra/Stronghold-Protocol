@@ -94,7 +94,7 @@ import { spectateEffects } from './observe.js';
 import { recordError, setBattleSource } from '../diag.js';
 import { loadBrowserSim } from './simLoader.js';
 import { data as gameData } from '../data.js';
-import { InPageSimHost, WorkerSimHost } from './simHost.js';
+import { InPageSimHost, WorkerSimHost, metaIdentity, stepPacketFull } from './simHost.js';
 import { trackCombat, combineCombat } from './metrics.js';
 import { t } from '../../../shared/i18n.js';
 export { loadBrowserSim, SIM_DATA_FILES } from './simLoader.js';
@@ -780,6 +780,19 @@ export function createBattleRunner(deps) {
     try { e.battle.drainEvents(); } catch { /* the view starts from the meta + this frame */ }
     emit('snap', frameOf(e));
     schedule();
+    // A Worker host ships fieldMeta/ownerOps in step packets only when the field's unit identity changes
+    // (simWorkerRuntime.js metaFingerprint) — the meta above came from that cache. Ask the worker for a fresh copy
+    // once the field is up: if the lean packets missed a change, the fresh meta differs in identity (metaIdentity)
+    // and the field re-enters from it — a missed change would draw stale models or lose spawns. One round trip per
+    // show; the probe is non-fatal (like unitStats) and leaves the cache as-is when it misses.
+    if (e.host?.remote && typeof e.host.refreshMeta === 'function' && !e.done) {
+      const sig = metaIdentity(meta);
+      e.host.refreshMeta().then((fresh) => {
+        if (disposed || cur !== e || e.done || e.failed || !fresh?.meta) return;
+        if (metaIdentity(fresh.meta) === sig) return;
+        show(e);
+      }, () => {});
+    }
   }
 
   function evict() {
@@ -916,7 +929,7 @@ export function createBattleRunner(deps) {
           e.host = reused;
         } else {
           e.host = deps.createHost ? deps.createHost(sim, err => failWorker(e, err)) : sim.remote
-            ? new WorkerSimHost({ onFailure: err => failWorker(e, err), timeoutMs: deps.workerTimeoutMs })
+            ? new WorkerSimHost({ onFailure: err => failWorker(e, err), timeoutMs: deps.workerTimeoutMs, stepPacketFull: stepPacketFull() })
             : new InPageSimHost();
         }
         if (e.host.remote) {

@@ -71,7 +71,7 @@ describe('SpineActor.poseHeld', () => {
     finish(a);
     a.update(0);
     assert.equal(a.poseHeld(), true);
-    a.spine.tint = 0xb4b4b4;                            // the knocked-out grey, set after the frame's update
+    a.setTint(0xb4b4b4);                                // the knocked-out grey, set after the frame's update
     assert.equal(a.poseHeld(), false, 'the new tint is not on the slots yet');
     a.update(0);
     assert.equal(a.poseHeld(), true, 'shown: held again');
@@ -91,6 +91,25 @@ describe('SpineActor.poseHeld', () => {
     a.frozen = true;
     a.endClip = 'X';
     assert.equal(a.poseHeld(), false, 'frozen, but a closing clip is due');
+  });
+
+  test('the tint record (setTint) is the assigned value; poseHeld compares the record, never the pixi-spine getter', () => {
+    const a = new SpineActor(DATA, ENTRY);
+    a.setTint(0x9fd4ff);
+    assert.equal(a.tint, 0x9fd4ff, 'the record holds what the view assigned');
+    assert.equal(a.spine.tint, 0x9fd4ff, 'the skeleton carries the same value');
+    a.die();
+    finish(a);
+    a.update(0);
+    assert.equal(a._appliedTint, a.tint, 'the update recorded the assigned tint');
+    assert.equal(a.poseHeld(), true, 'held once record and assignment agree');
+    a.spine.tint = 0xff0000;                            // written behind setTint (nothing in the field view does)
+    assert.equal(a.tint, 0x9fd4ff, 'the record is untouched');
+    assert.equal(a.poseHeld(), true, 'poseHeld reads the record, not the getter');
+    a.setTint(0xb4b4b4);
+    assert.equal(a.poseHeld(), false, 'a new assignment reopens the pose');
+    a.update(0);
+    assert.equal(a.poseHeld(), true, 'shown again');
   });
 });
 
@@ -187,6 +206,7 @@ describe('UnitView: a held pose is neither re-posed nor redrawn', () => {
     step(3);
     finish(v.actor);
     step(2);
+    assert.equal(v.actor.tint, v.actor.spine.tint, 'the view\'s assignment point keeps record and skeleton in step');
     const c0 = counts();
     step(10);
     assert.equal(counts().updates, c0.updates, 'held');
@@ -194,6 +214,7 @@ describe('UnitView: a held pose is neither re-posed nor redrawn', () => {
     step(20);
     const c1 = counts();
     assert.ok(c1.updates > c0.updates, `updated while the tint changes (${c1.updates - c0.updates})`);
+    assert.equal(v.actor.tint, v.actor.spine.tint, 'still in step after the flash');
     step(10);
     assert.equal(counts().updates, c1.updates, 'held again once the tint is steady');
   });
@@ -205,5 +226,57 @@ describe('UnitView: a held pose is neither re-posed nor redrawn', () => {
     step(20);
     const c1 = counts();
     assert.ok(c1.updates - c0.updates >= 9 && c1.draws - c0.draws >= 9, `every 2nd frame (${c1.updates - c0.updates} updates, ${c1.draws - c0.draws} draws in 20)`);
+  });
+
+  test('POSE_SKIP_PX = 0 (the default) poses every frame exactly as before', async () => {
+    const { setPoseSkipPx } = await import('../../public/js/render/app/tune.js');
+    setPoseSkipPx(0);
+    const { v, step, counts } = await operator(0);
+    step(2);
+    const c0 = counts(), clock0 = v.actor.clock;
+    step(30);
+    assert.equal(counts().updates - c0.updates, 30, '30 frames: 30 poses');
+    assert.ok(Math.abs(v.actor.clock - clock0 - 0.5) < 1e-6, 'the clock advanced by every frame\'s dt');
+  });
+
+  test('POSE_SKIP_PX above the unit\'s screen size poses every other frame without clock drift', async () => {
+    const { setPoseSkipPx } = await import('../../public/js/render/app/tune.js');
+    setPoseSkipPx(1e6);                                 // every direct-drawn unit is "small" under this
+    try {
+      const { v, step, counts } = await operator(0);
+      step(3);
+      const c0 = counts(), clock0 = v.actor.clock;
+      step(30);
+      const c1 = counts();
+      assert.ok(c1.updates - c0.updates === 15, `30 frames: 15 poses (${c1.updates - c0.updates})`);
+      assert.ok(Math.abs(v.actor.clock - clock0 - 0.5) < 1e-6, `the clock took the skipped dt at once (${v.actor.clock - clock0})`);
+      // the state machine is unaffected: a die clip plays to its held end and holds
+      knockOut(v);
+      step(8);                                          // the fall animates (only the pose frames advance the mixing)
+      finish(v.actor);
+      step(4);                                          // the held end of the clip is reached, the mix runs out
+      const c2 = counts();
+      step(30);
+      assert.equal(counts().updates, c2.updates, 'held: no poses at all, skip or no skip');
+      const clock1 = v.actor.clock;
+      step(10);
+      assert.ok(Math.abs(v.actor.clock - clock1 - 10 / 60) < 1e-6, 'the clock still runs while held');
+    } finally {
+      setPoseSkipPx(0);
+    }
+  });
+
+  test('lowering below the threshold flushes the skipped dt on the next pose (no debt left behind)', async () => {
+    const { setPoseSkipPx } = await import('../../public/js/render/app/tune.js');
+    const { v, step, counts } = await operator(0);
+    setPoseSkipPx(1e6);
+    step(3);                                            // phase: the next frame poses, the ones after skip
+    const c0 = counts(), clock0 = v.actor.clock;
+    step(4);                                            // skip, pose, skip, pose
+    setPoseSkipPx(0);
+    step(1);                                            // the next pose takes the last frame's debt
+    const c1 = counts();
+    assert.equal(c1.updates - c0.updates, 3, '2 poses + 1 flusher posed');
+    assert.ok(Math.abs(v.actor.clock - clock0 - 5 / 60) < 1e-6, `the clock holds all 5 frames' dt (${v.actor.clock - clock0})`);
   });
 });

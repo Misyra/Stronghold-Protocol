@@ -31,13 +31,16 @@
   function render(priv) {
     if (!priv || priv.bandId !== BAND) { root.innerHTML = '<div class="panel"><div class="hd">保证金<span class="sub">MARGIN</span></div><div class="row"><span class="muted">未启用该策略</span></div></div>'; return; }
     var c = priv.counters || {};
-    var pos = num(c, 'kurumi:pos'), stake = num(c, 'kurumi:stake'), owed = num(c, 'kurumi:unpaidLoss');
+    var pos = num(c, 'kurumi:pos'), stake = num(c, 'kurumi:stake'), owed = Math.max(0, num(c, 'kurumi:unpaidLoss'));
+    var cash = typeof priv.funds === 'number' && isFinite(priv.funds) ? Math.max(0, Math.trunc(priv.funds)) : 0;
+    var net = cash - owed;
     var posTxt = pos === 0 ? '<span class="muted">空仓</span>'
       : '<span class="side">' + (pos > 0 ? '看涨' : '看跌') + '</span> · <span class="pos">押 ' + stake + '</span>';
     root.innerHTML =
       '<div class="panel">' +
         '<div class="hd">保证金<span class="sub">MARGIN</span></div>' +
-        '<div class="row"><span class="k">余额</span><b class="num bal">' + (priv.funds || 0) + '</b></div>' +
+        '<div class="row"><span class="k">净余额</span><b class="num bal' + (net < 0 ? ' owed' : '') + '">' + net + '</b></div>' +
+        (owed > 0 ? '<div class="row"><span class="k">可用现金</span><b class="num">' + cash + '</b></div>' : '') +
         (owed > 0 ? '<div class="row"><span class="k">待补亏损</span><b class="num owed">' + owed + '</b></div>' : '') +
         '<div class="row"><span class="k">持仓</span><span class="num pos">' + posTxt + '</span></div>' +
       '</div>';
@@ -50,7 +53,7 @@
   });
   parent.postMessage({ v: 1, t: 'ready' }, '*');
   parent.postMessage({ v: 1, t: 'slot', slot: 'hud.right' }, '*');
-  parent.postMessage({ v: 1, t: 'resize', height: 118 }, '*');
+  parent.postMessage({ v: 1, t: 'resize', height: 148 }, '*');
 })();
 </script>
 </body>

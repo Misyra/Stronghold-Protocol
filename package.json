@@ -48,7 +48,7 @@
     "package": "node tools/package.mjs",
     "package:lite": "node tools/package.mjs --lite",
     "start:plugins": "node scripts/launch.mjs --scripts sandbox",
-    "kurumi:install": "node tools/plugin.mjs pack docs/examples/fx-kurumi --zip && node tools/plugin.mjs install plugins/_dist/fx-kurumi-4.5.2.zip",
+    "kurumi:install": "node tools/plugin.mjs pack docs/examples/fx-kurumi --zip && node tools/plugin.mjs install plugins/_dist/fx-kurumi-4.5.3.zip",
     "n18:install": "node tools/plugin.mjs pack docs/examples/n18-duel --zip && node tools/plugin.mjs install plugins/_dist/n18-duel-1.0.0.zip"
   },
   "engines": {

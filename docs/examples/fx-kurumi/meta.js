@@ -1,4 +1,4 @@
-// fx-kurumi v4.5.1 — symmetric leveraged bets on whether a seeded random player leaks.
+// fx-kurumi v4.5.3 — symmetric leveraged bets on whether a seeded random player leaks.
 // See README.md for current rules and [ASSUMED] balance tuning. Pure deterministic meta hooks only.
 // One bounty enemy is added on the sampled field; its challenge level comes from a seeded roll + round + actual stake × leverage.
 // Profit/loss = round(principal * locked multiplier). Escrow covers principal; additional losses are paid only by the bettor.
@@ -234,25 +234,32 @@ export default function setup(sp) {
 
     onIncome(ctx, ev) {
       if (ctx.bandId() !== BAND) return;
-      collectUnpaid(ctx);
+      const cashPaid = collectUnpaid(ctx);
       // [ASSUMED] Fee is charged on carried cash only, BEFORE this round’s income/pending funds and trade settlement.
       const carried = Math.max(0, Math.floor(ctx.funds()));
       const fee = Math.floor(carried / 5);
       if (fee > 0 && ctx.spendFunds(fee)) ctx.toast(`【保证金】留存管理费 ${fee}（留存资金 ${carried}）`, 'info');
       let unpaid = int(ctx.counter(K.unpaid));
+      const beforeIncome = unpaid;
       for (const key of ['income', 'pending']) {
         if (unpaid <= 0) break;
         const amount = Math.min(unpaid, Math.max(0, int(ev[key])));
         if (amount > 0) { ev[key] -= amount; unpaid -= amount; }
       }
       ctx.setCounter(K.unpaid, unpaid);
+      const paid = cashPaid + beforeIncome - unpaid;
+      if (paid > 0) ctx.toast(`【保证金】补扣待补亏损 ${paid}（尚欠 ${unpaid}）`, 'info');
     },
   });
 
   function collectUnpaid(ctx) {
     const owed = Math.max(0, int(ctx.counter(K.unpaid)));
     const paid = Math.min(owed, Math.max(0, Math.floor(ctx.funds())));
-    if (paid > 0 && ctx.spendFunds(paid)) ctx.setCounter(K.unpaid, owed - paid);
+    if (paid > 0 && ctx.spendFunds(paid)) {
+      ctx.setCounter(K.unpaid, owed - paid);
+      return paid;
+    }
+    return 0;
   }
 
   /** 结算/播报共用的确定性抽样：全房间存活玩家按座位号排序，对局种子取模（不消耗 rng 流）。 */

@@ -6,7 +6,7 @@ import { deriveSeed } from '../../../server/sim/rng.js';
 import fs from 'node:fs';
 
 const BAND = 'band_x_fx_kurumi_margin';
-function fixture({ mult = 2.5, seed = 17, funds = 10, round = 4, holders = [0], rolls = {}, weights = {}, unavailable = false, inactive = [], bountyCards, enemyDefs } = {}) {
+function fixture({ mult = 2.5, seed = 17, funds = 10, round = 4, holders = [0], rolls = {}, weights = {}, unavailable = false, inactive = [], bountyCards, enemyDefs, productionSeeds = false } = {}) {
   const handlers = new Map();
   setup({ settings: { multMax: mult, ...weights }, meta: { register: (key, h) => handlers.set(key, h) } });
   const hook = handlers.get('global:fx-kurumi:margin');
@@ -27,6 +27,7 @@ function fixture({ mult = 2.5, seed = 17, funds = 10, round = 4, holders = [0], 
       spendFunds: (n) => { if (balance < n) return false; balance -= n; return true; },
       teammates: () => players.filter((x) => x !== p),
       seedFor: (salt) => {
+        if (productionSeeds) return deriveSeed(seed, 'meta:' + salt);
         if (salt.startsWith('fx-kurumi:sample:')) return 1;
         for (const [suffix, value] of Object.entries(rolls)) if (salt.endsWith(':' + suffix)) return Math.floor(value * 4294967296);
         return deriveSeed(seed, salt);
@@ -410,4 +411,31 @@ test('one player observing does not suppress another successful bet or add a sec
   assert.equal(f.players[1].bounties.length,1);
   assert.ok(f.players[0].messages.some(m=>m.includes('追加挑战')));
   assert.ok(!f.players[2].messages.some(m=>m.includes('追加挑战')));
+});
+
+
+test('production seed salts and randomly selected targets follow the documented level distribution', () => {
+  const cases = [
+    [4, 1, [38.928571, 40, 21.071429, 0, 0]],
+    [4, 5, [30.357143, 40, 29.642857, 0, 0]],
+    [8, 5, [0, 20.357143, 40, 34.821429, 4.821429]],
+    [12, 5, [3.333333, 3.333333, 12.654762, 36, 44.678571]],
+  ];
+  for (const [round, stake, expected] of cases) {
+    const counts = [0, 0, 0, 0, 0, 0], targets = [0, 0, 0];
+    for (let seed = 1; seed <= 10000; seed++) {
+      const f = fixture({ seed, round, mult: 2, productionSeeds: true });
+      f.buy(f.players[0], `item_x_fx_kurumi_call_s${stake}_x20`); f.prep();
+      const seat = f.players[0].counter('kurumi:pick');
+      targets[seat]++;
+      counts[f.players[seat].counter('kurumi:challengeLevel')]++;
+    }
+    assert.equal(counts[0], 0, 'every successful bet creates a challenge');
+    for (let i = 0; i < 5; i++) {
+      const observed = counts[i + 1] / 100;
+      assert.ok(Math.abs(observed - expected[i]) < 2.5, `R${round} stake ${stake} level ${i + 1}: ${observed}%`);
+      if (expected[i] === 0) assert.equal(counts[i + 1], 0);
+    }
+    for (const count of targets) assert.ok(Math.abs(count / 10000 - 1 / 3) < 0.025);
+  }
 });

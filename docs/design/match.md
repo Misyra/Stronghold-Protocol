@@ -460,3 +460,7 @@ Kurumi 4.5.2 starts at 20 LP. Sandbox availability does not select the plugin fo
 领袖、机制部件、无害单位、召唤物与悬赏不加数量，悬赏奖励额度不变，联防漏怪不重复强化。
 整备开始播报，界面保留摘要；本回合配置全房间一致、断线及存档恢复不重抽，结算保存配置及逐轮记录。
 固定预设「热身演练」「加压作战」「高危战线」「N18对掏来」可改为自定义，默认采用热身演练。
+
+Kurumi 4.5.3 displays net balance as cash minus outstanding loss, which may be negative; spendable cash remains
+nonnegative. Subsequent income collection reports the amount repaid and remaining loss. The challenge probability
+curve is unchanged; with principal 5 and multiplier 2, levels 1/2/3 in rounds 1–4 are 30.36%/40%/29.64%. [ASSUMED]

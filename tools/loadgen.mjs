@@ -28,6 +28,12 @@
 //                    This is the measurement base for every rehearsal-window A/B: the room host answers with its seeded
 //                    pick of the candidates it was sent, like the page's Worker does, and drops a task it was told to
 //                    cancel (b.rehearsalCancel) without answering. Implies --rehearsal-bot
+//   --rehearsal-warm-answer-ms W  what the SAME host answers its tasks AFTER its first one (default: D — a constant
+//                    delay). A real cold host is slow only while its Worker loads the module graph, so the cold-host
+//                    A/B models it as first=D, then W: --rehearsal-answer-ms 3500 --rehearsal-warm-answer-ms 400
+//   --cold-answer-ms MS / --warm-answer-ms MS  the child server's SP_BOT_REHEARSAL_COLD_ANSWER_MS /
+//                    SP_BOT_REHEARSAL_ANSWER_MS (the answer windows under test; unset = the server's own defaults).
+//                    Deliberate overrides — the dev shell's own values are still stripped (CHILD_ENV_DENY)
 //   --rehearsal-bot  the host adds one AI seat per coop room before the start (room.addBot): without a bot seat a room
 //                    has nothing to delegate, so every rehearsal measurement needs one. Summary keys `clients.rehearsal`
 //                    (frames, spec bytes, cancels, answers, per-PREP→COMBAT rotation) and `server.rehearsal` (the
@@ -96,6 +102,9 @@ const O = {
   sampleMs: Math.max(200, Math.floor(num(opt['sample-ms'], 1000))),
   loopWindowMs: Math.max(100, Math.floor(num(opt['loop-window-ms'], 5000))),
   rehearsalAnswerMs: Math.max(0, Math.floor(num(opt['rehearsal-answer-ms'], 0))),
+  rehearsalWarmAnswerMs: Math.max(0, Math.floor(num(opt['rehearsal-warm-answer-ms'], -1))),
+  coldAnswerMs: opt['cold-answer-ms'] != null && opt['cold-answer-ms'] !== true ? Math.max(0, Math.floor(num(opt['cold-answer-ms'], 0))) : null,
+  warmAnswerMs: opt['warm-answer-ms'] != null && opt['warm-answer-ms'] !== true ? Math.max(1, Math.floor(num(opt['warm-answer-ms'], 0))) : null,
   rehearsalBot: opt['rehearsal-bot'] === true || (opt['rehearsal-answer-ms'] != null && opt['rehearsal-answer-ms'] !== true),
   json: opt.json === true ? null : opt.json,
   quiet: opt.quiet === true,
@@ -142,6 +151,9 @@ async function startServerChild(port) {
     SP_LOOP_SAMPLE: '1', SP_LOOP_WINDOW_MS: String(O.loopWindowMs),
     SP_WORKERS: String(O.workers),
     SP_STATE_FILE: 'off', // memory-only persistence: no checkpoint writes in the measurement window
+    // the rehearsal windows under test (deliberate A/B overrides; the shell's own values were stripped above)
+    ...(O.coldAnswerMs != null ? { SP_BOT_REHEARSAL_COLD_ANSWER_MS: String(O.coldAnswerMs) } : {}),
+    ...(O.warmAnswerMs != null ? { SP_BOT_REHEARSAL_ANSWER_MS: String(O.warmAnswerMs) } : {}),
   });
   const child = spawn(process.execPath, [path.join(ROOT, 'server', 'index.js')], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   const lines = [];
@@ -226,8 +238,11 @@ class LoadClient {
     this.bandSent = false;
     this.spPickRound = 0;
     // delegated rehearsal answers (--rehearsal-answer-ms D, 0 = the historical silent host): taskId → the pending
-    // reply timer, dropped again on b.rehearsalCancel like the page drops its task
+    // reply timer, dropped again on b.rehearsalCancel like the page drops its task. A real cold host is slow only on
+    // its FIRST answer (--rehearsal-warm-answer-ms W for the later ones; default: D every time)
     this.rehearsalAnswerMs = O.rehearsalAnswerMs;
+    this.rehearsalWarmAnswerMs = O.rehearsalWarmAnswerMs >= 0 ? O.rehearsalWarmAnswerMs : O.rehearsalAnswerMs;
+    this.rehearsalAnswered = 0;
     this.rehearsalTimers = new Map();
     /** wall-clock ms of each PREP phase this client saw until the room reached COMBAT (the A/B's room-rotation metric) */
     this.prepToCombat = [];
@@ -336,10 +351,11 @@ class LoadClient {
     const specs = Array.isArray(msg.specs) ? msg.specs.length : 0;
     if (specs < 1) return;
     const choice = this.rng.int(specs);
+    const delay = this.rehearsalAnswered > 0 ? this.rehearsalWarmAnswerMs : this.rehearsalAnswerMs;
     const timer = setTimeout(() => {
       this.rehearsalTimers.delete(msg.taskId);
-      if (!this.gone) this.send({ t: 'b.rehearsalResult', taskId: msg.taskId, choice });
-    }, this.rehearsalAnswerMs);
+      if (!this.gone) { this.rehearsalAnswered++; this.send({ t: 'b.rehearsalResult', taskId: msg.taskId, choice }); }
+    }, delay);
     this.rehearsalTimers.set(msg.taskId, timer);
   }
 
@@ -589,6 +605,9 @@ async function main() {
   try {
     const port = O.port > 0 ? O.port : await freePort();
     server = await startServerChild(port);
+    // the rehearsal counters' base, taken before any room exists: the delegated rehearsals of a room's FIRST prep land
+    // inside the warmup, so the measurement window's own hz0 sample would miss them — the A/B reads whole-run deltas
+    const hzBoot = await healthz(port);
     const startedAt = Date.now();
     summary.meta = { ...O, port, startedAt: new Date(startedAt).toISOString(), node: process.version, serverPid: server.child.pid };
     summary.boot = { ms: server.bootMs };
@@ -723,7 +742,7 @@ async function main() {
     };
     const sd0 = hz0.body?.stateDelta || null;
     const sd1 = hz1.body?.stateDelta || null;
-    const rh0 = hz0.body?.rehearsal || null;
+    const rh0 = hzBoot.body?.rehearsal || null;
     const rh1 = hz1.body?.rehearsal || null;
     const ws0 = hz0.body?.traffic?.ws || null;
     const ws1 = hz1.body?.traffic?.ws || null;
@@ -740,8 +759,9 @@ async function main() {
         frames: deltaOf(sd0, sd1, 'frames'), fullFrames: deltaOf(sd0, sd1, 'fullFrames'), deltaFrames: deltaOf(sd0, sd1, 'deltaFrames'),
         parsedBaselines: deltaOf(sd0, sd1, 'parsedBaselines'),
       } : null,
-      // the delegated-rehearsal counters (healthz `rehearsal`) over the window: what timed out into the pool and what
-      // the pool could not take — the A/B pair of the host answer window (server/index.js, lobby.rehearsalStats)
+      // the delegated-rehearsal counters (healthz `rehearsal`) over the WHOLE RUN (base taken at boot, before any
+      // room): what timed out into the pool and what the pool could not take — the A/B pair of the host answer window
+      // (server/index.js, lobby.rehearsalStats)
       rehearsal: rh0 && rh1 ? {
         delegated: deltaOf(rh0, rh1, 'delegated'), answered: deltaOf(rh0, rh1, 'answered'),
         takeovers: deltaOf(rh0, rh1, 'takeovers'), pooled: deltaOf(rh0, rh1, 'pooled'),

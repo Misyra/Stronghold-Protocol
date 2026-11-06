@@ -4,7 +4,8 @@
 //
 // Sources: character_table / skill_table of ArknightsGameData 08ba2aea (client 2.7.91, 2026-11-01), as built into
 // backups.json, and PRTS 塔露拉 (2026-11-02, launch-day notes). The official mode never fielded her: she went on sale after
-// its last period, so her auto-cast rule is the data's default and everything below marked [ASSUMED] is a launch-day gap.
+// its last period, so her auto-cast rules are the data's defaults except S3's trigger below (the owner's decision of
+// 2026-11-06) and everything marked [ASSUMED] is a launch-day gap.
 // - 绝不妥协: her attack deals arts damage (the record's dmgType, officialUnitBuilder talentArtsAttack). Every arts
 //   hit adds ep_damage_ratio of the damage dealt as 灼燃损伤 [ASSUMED: the base, as 克莱门莎's ep_damage_ratio; PRTS prints
 //   "于每次成功造成伤害时产生"]. 怒火 (PRTS 备注): 0 at deployment, +1 every arcane_step_interval, at most arcane_max /
@@ -25,7 +26,10 @@
 //   official blackboard; PRTS's 0.9 is the same circle by collider), healing her heal_ratio of the sum. Each cast adds one
 //   layer: ATK / DEF + per layer, her attacks strike every enemy she blocks; stack_duration refreshes on a gain, and on
 //   expiry one layer goes and the time refreshes (PRTS 备注).
-// - S3 日冕重烈 (MANUAL, data DEFAULT): ATK + for the duration, no attacks (the 怒火 fills meanwhile). Every 80 frames (PRTS:
+// - S3 日冕重烈 (MANUAL; the owner's decision of 2026-11-06 — GDGLOW_SKILL_2, "全场存在可选目标时释放技能", as
+//   荒芜拉普兰德's S3, ported from the Stardust fork 94d736da (their feedback #124): a selectable enemy anywhere on the
+//   field opens the cast, not only one reaching her — a deliberate deviation from the data's DEFAULT basic strategy,
+//   PRTS 基础策略): ATK + for the duration, no attacks (the 怒火 fills meanwhile). Every 80 frames (PRTS:
 //   the 2.67 s is a rounding) a wave of 簇火 starts on normal_half_width rows either side of hers, each from the farthest
 //   tile up to FLAME_BACK behind her still on the map, and flies wave_speed ahead to wave_exit_distance past the map's edge.
 //   At half time it overloads: 60 frames, overload_half_width rows. The waves keep their time whatever her state (PRTS 备注
@@ -273,6 +277,9 @@ export default {
         },
         [S3]: {
           kind: 'duration', mods: { atkPct: num(b3.atk) }, flags: { disarm: true },
+          // the owner's decision of 2026-11-06 (header): a selectable enemy anywhere on the field opens the cast, as
+          // 荒芜拉普兰德's S3 — the data's DEFAULT would wait for one in her range (PRTS 基础策略, a deliberate deviation)
+          trigger: { rule: 'GDGLOW_SKILL_2' },
           onStart({ battle, unit }) {
             const owner = CHANNEL.get(battle);
             if (up(owner) && owner !== unit && owner.skill?.active) return;

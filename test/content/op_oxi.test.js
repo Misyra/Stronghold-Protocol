@@ -319,6 +319,31 @@ test('S3 日冕重烈: ATK +, no attacks, 5 rows every 80 frames, 13 rows and 60
   done(h);
 });
 
+// The owner's decision of 2026-11-06 (ported from the Stardust fork 94d736da, their feedback #124): her S3 casts as
+// 荒芜拉普兰德's does — GDGLOW_SKILL_2, a selectable enemy anywhere on the field, not only one reaching her; with no
+// enemy anywhere it waits (the data's DEFAULT, a deliberate deviation from PRTS's basic strategy)
+test('S3 日冕重烈 casts like 荒芜拉普兰德\'s: a selectable enemy anywhere opens it, none on the field waits', () => {
+  for (const [tier, elite] of ALL_FORMS) {
+    const { h, u } = field({ tier, elite, skill: 2, row: 10, col: 5, enemies: [{ key: 'enemy_dummy', pos: [12, 10] }] });
+    assert.equal(u.skill.rule, 'GDGLOW_SKILL_2');
+    assert.equal(h.b.blockedTargets(u, { canHitFly: false }).length, 0, 'nothing in her reach');
+    fillSp(u);
+    h.runUntil(() => u.skill.active, 1);
+    assert.ok(u.skill.active, `tier ${tier} elite ${elite}: cast with the only enemy far outside her reach`);
+    done(h);
+  }
+  const near = field({ skill: 2, row: 10, col: 5, enemies: [{ key: 'enemy_dummy', pos: [10, 6] }] });
+  fillSp(near.u);
+  near.h.runUntil(() => near.u.skill.active, 4);
+  assert.ok(near.u.skill.active, 'an enemy in her range casts it as before');
+  done(near.h);
+  const { h, u } = field({ skill: 2, row: 10, col: 5 });
+  fillSp(u);
+  h.run(1);
+  assert.equal(u.skill.active, false, 'no enemy on the field: no cast');
+  done(h);
+});
+
 test('S3 日冕重烈: the waves keep their time while she is controlled (晕眩) — she still rains, on the same cadence and overload half time', () => {
   const runOf = (controlled) => {
     const { h, u } = field({ skill: 2, row: 10, col: 5, enemies: [{ key: 'enemy_dummy', pos: [10, 6] }] });

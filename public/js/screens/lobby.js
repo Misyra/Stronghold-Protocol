@@ -49,7 +49,7 @@ import { ResumeMatchButton } from '../ui/resumeMatch.js';
 import { AccountMeChip } from '../ui/accounts.js';
 import { useEffect, useLayoutEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, MAX_SPECTATORS, modeIdFor, ERR } from '../../../shared/constants.js';
-import { html, confirmDialog, Button, Icon, MicroLabel, Modal, PingPill, Spinner, DifficultyIcon, TextField } from '../ui/components.js';
+import { html, Button, Icon, MicroLabel, Modal, PingPill, Spinner, DifficultyIcon, TextField } from '../ui/components.js';
 import { Sprite } from '../ui/gameComponents.js';
 import { uiUrl } from '../ui/assetUrls.js';
 import { OwnBackdrop, LobbyScene, LobbyMediaButton } from '../ui/lobbyMedia.js';
@@ -176,78 +176,11 @@ export function difficultyInfo(roomMode, difficulty) {
   };
 }
 
-const CODE_RE = new RegExp(`^[A-Z0-9]{${ROOM_CODE_LEN}}$`);
-/**
- * Normalise user input into a room code: accepts a pasted invite link (`…?room=ABCD`), keeps
- * upper-cased alphanumerics and clamps to the code length.
- * @param {string} v
- * @returns {string}
- */
-export function normalizeCode(v) {
-  let s = String(v ?? '');
-  const m = s.match(/[?&]room=([A-Za-z0-9]+)/);
-  if (m) s = m[1];
-  return s.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, ROOM_CODE_LEN);
-}
-
-/**
- * A handler that Preact binds as `onClick=${fn}` receives the click EVENT as its first argument, and a default
- * parameter only applies to `undefined` — so `fn(c = code)` would normalise the event target into a nonsense code
- * (`String(el)` → `"[object HTMLElement]"` → "OBJE"). Only a string is ever a code; anything else falls back to the
- * input field. Returns null when neither yields a well-formed code.
- * @param {unknown} arg the argument a handler was called with
- * @param {string} field the current input-field value
- * @returns {string|null}
- */
-export function codeArg(arg, field) {
-  const k = normalizeCode(typeof arg === 'string' ? arg : field);
-  return CODE_RE.test(k) ? k : null;
-}
-
-/**
- * Room code from a deep link query string (`?room=CODE`), or null when absent/malformed.
- * Accepts ROOM_CODE_LEN..ROOM_CODE_LEN+2 alphanumerics (the protocol's join limit).
- * @param {string} search e.g. location.search
- * @returns {string|null}
- */
-export function parseRoomParam(search) {
-  try {
-    const raw = new URLSearchParams(search || '').get('room');
-    if (!raw) return null;
-    const code = raw.trim().toUpperCase();
-    if (!/^[A-Z0-9]+$/.test(code)) return null;
-    return code.length >= ROOM_CODE_LEN && code.length <= ROOM_CODE_LEN + 2 ? code : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Recently joined/created co-op room codes (most recent first). */
-export function recentRooms() {
-  const list = loadPref('recentRooms', []);
-  return Array.isArray(list) ? list.filter((c) => typeof c === 'string' && CODE_RE.test(c)).slice(0, 4) : [];
-}
-
-/** @param {string} code */
-export function rememberRoom(code, test = false) {
-  if (!CODE_RE.test(code)) return;
-  const recent = [code, ...recentRooms().filter((c) => c !== code)].slice(0, 4);
-  const marks = loadPref('recentTestRooms', []);
-  savePref('recentTestRooms', recent.filter(c => c === code ? test : Array.isArray(marks) && marks.includes(c)));
-  savePref('recentRooms', recent);
-}
-
-export async function joinKnown(type, key) {
-  try { return await net.request(type, { code: key }); } catch (err) {
-    if (err?.code !== ERR.TEST_CONFIRM) throw err;
-    const text = type === 'room.spectate'
-      ? t('这是测试房间，不计入任何记录。确认观战？')
-      : t('这是测试房间，不计入任何记录。确认加入？');
-    if (await confirmDialog({ title: t('测试'), text })) {
-      return net.request(type, { code: key, testAck: true });
-    }
-  }
-}
+// Room-code helpers now live in screens/helpers.js: boot needs them synchronously, and importing them
+// from a screen module used to pull the whole screen (and its transitive UI deps) into the entry chunk.
+// Re-exported here so existing callers and tests keep resolving them from the lobby module.
+import { CODE_RE, normalizeCode, codeArg, joinKnown, recentRooms } from './helpers.js';
+export { CODE_RE, normalizeCode, codeArg, parseRoomParam, recentRooms, rememberRoom, joinKnown } from './helpers.js';
 
 const FALLBACK_TIPS = [
   N_('联合模拟在选择策略时可以进行一次跳过'),

@@ -41,7 +41,7 @@
 import './ui/compat.js';
 import { ReleaseNotesHost } from './ui/releaseNotes.js';
 import { render } from '../vendor/preact.module.js';
-import { useErrorBoundary } from '../vendor/hooks.module.js';
+import { useErrorBoundary, useEffect, useState } from '../vendor/hooks.module.js';
 import { html, UiHosts, Button, MicroLabel, closeAllDialogs } from './ui/components.js';
 import { ConnectionBanner } from './ui/connBanner.js';
 import { AnnouncementBanner } from './ui/announcement.js';
@@ -51,10 +51,13 @@ import { MAX_SEATS } from '../../shared/constants.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating } from './store.js';
 import { data, getChess } from './data.js';
 import { GAME_FILES } from './ui/gameComponents.js';
-import { TitleScreen, sanitizeName } from './screens/title.js';
-import { LobbyScreen, rememberRoom, parseRoomParam, joinKnown } from './screens/lobby.js';
-import { RoomScreen, TrustedNotice } from './screens/room.js';
-import { GameScreen } from './screens/game.js';
+// The title screen is the first thing a cold visitor sees, so it stays static in the entry. The other
+// three screens (and their UI dependencies) load on demand (SCREEN_LOADERS below). Boot-time helpers
+// and the persistent TrustedNotice overlay stay in the entry via screens/helpers.js — a light module
+// that imports no screen component. Splitting only the screens the title does not need keeps the first
+// paint on one request chain: a dynamic title would add a round trip right before the LCP element.
+import { TitleScreen } from './screens/title.js';
+import { sanitizeName, parseRoomParam, rememberRoom, joinKnown, TrustedNotice } from './screens/helpers.js';
 import { preloadBootArt } from './ui/protocolBoot.js';
 import { audio, installAudio } from './audio.js';
 import { installLobbyMedia, matchMusic } from './ui/lobbyMedia.js';
@@ -104,7 +107,100 @@ const JOIN_DELAY_MS = 350;
 const TICKER_KEEP = 20;
 const EMOTE_KEEP = 20;
 
-const SCREENS = { title: TitleScreen, lobby: LobbyScreen, room: RoomScreen, game: GameScreen };
+// ---- lazy screens ------------------------------------------------------------------------------
+// Statically importing all four screens used to put the whole UI (lobby, room, game and their
+// transitive dependencies) into the entry chunk — ~1.27 MB / 332 KB brotli, most of it unused by a
+// cold visitor on the title screen. The title screen (the first paint) stays in the entry; the other
+// three are their own chunks, warmed during idle so a screen switch never waits on the network. One
+// shared promise per route: the preloader and the renderer never import a chunk twice.
+const SCREEN_LOADERS = {
+  title: () => Promise.resolve({ TitleScreen }), // already in the entry: no request before the LCP element
+  lobby: () => import('./screens/lobby.js'),
+  room: () => import('./screens/room.js'),
+  game: () => import('./screens/game.js'),
+};
+const SCREEN_EXPORTS = { title: 'TitleScreen', lobby: 'LobbyScreen', room: 'RoomScreen', game: 'GameScreen' };
+const screenPromises = new Map();  // route -> Promise<Component>
+const screenResolved = new Map([['title', TitleScreen]]); // route -> Component (synchronous render after a warm)
+
+/** @returns {string} a known route (unknown routes fall back to the lobby screen) */
+function screenKey(route) { return SCREEN_LOADERS[route] ? route : 'lobby'; }
+
+function loadScreen(route) {
+  const key = screenKey(route);
+  let p = screenPromises.get(key);
+  if (!p) {
+    p = SCREEN_LOADERS[key]()
+      .then((m) => {
+        const C = m[SCREEN_EXPORTS[key]];
+        if (typeof C !== 'function') throw new Error(`screen ${key} has no ${SCREEN_EXPORTS[key]}`);
+        screenResolved.set(key, C);
+        return C;
+      })
+      .catch((err) => { screenPromises.delete(key); throw err; }); // allow a retry after a transient failure
+    screenPromises.set(key, p);
+  }
+  return p;
+}
+
+/** Warm a screen chunk in the background. Idempotent, safe before the screen is ever rendered. */
+function preloadScreen(route) {
+  if (SCREEN_LOADERS[route]) void loadScreen(route).catch(() => {});
+}
+
+/** Resolve when every screen's chunk is warm (test hook; the idle preloader is the production path). */
+function whenScreensReady() {
+  return Promise.all(Object.keys(SCREEN_LOADERS).map((r) => loadScreen(r).catch(() => null)));
+}
+
+/** A screen-sized placeholder that continues the boot hex while a chunk loads (no layout flash). */
+function ScreenFallback() {
+  return html`<div class="screen" aria-hidden="true">
+    <div class="boot__inner" style="margin:auto"><div class="boot__hex"></div></div>
+  </div>`;
+}
+
+/** Loads (or synchronously reuses) the component for `route`. keyed by route in App so a switch remounts. */
+function LazyScreen({ route }) {
+  const key = screenKey(route);
+  const [Screen, setScreen] = useState(() => screenResolved.get(key) || null);
+  useEffect(() => {
+    if (Screen) return undefined;
+    let alive = true;
+    loadScreen(key).then((C) => { if (alive) setScreen(() => C); })
+      .catch((err) => { console.error('[app] screen chunk failed', key, err); });
+    return () => { alive = false; };
+  }, [key, Screen]);
+  return Screen ? html`<${Screen} />` : html`<${ScreenFallback} />`;
+}
+
+/**
+ * Warm the non-first screens once the title screen is stable, so the switch waterfall is masked.
+ * Chained requestIdleCallbacks: one chunk request at a time, started only after `load` + a grace
+ * window — the cold-load LCP must not compete with preload traffic. Also warms on hover / focus of
+ * any element marked `data-preload-screen="room"` (and exposes __SP__.preloadScreen for explicit use).
+ */
+function installScreenPreload() {
+  const order = ['lobby', 'room', 'game']; // title is static in the entry
+  const idle = globalThis.requestIdleCallback
+    ? (fn) => globalThis.requestIdleCallback(fn, { timeout: 4000 })
+    : (fn) => setTimeout(fn, 200);
+  const warmNext = (i) => {
+    if (i >= order.length) return;
+    idle(() => { preloadScreen(order[i]); warmNext(i + 1); });
+  };
+  const start = () => setTimeout(() => warmNext(0), 1500);
+  if (document.readyState === 'complete') start();
+  else window.addEventListener('load', start, { once: true });
+
+  const onIntent = (ev) => {
+    const el = ev.target instanceof Element ? ev.target.closest('[data-preload-screen]') : null;
+    if (el) preloadScreen(el.getAttribute('data-preload-screen'));
+  };
+  document.addEventListener('pointerover', onIntent, { passive: true });
+  document.addEventListener('focusin', onIntent, { passive: true });
+  document.addEventListener('pointerdown', onIntent, { passive: true });
+}
 
 /** Copy of a server message without transport fields. */
 function payload(msg) {
@@ -451,10 +547,9 @@ function App() {
   useScreenWakeLock(combatActive || (fullscreenWakeLock && fullscreenActive));
   useLang(); // a language switch re-renders the whole tree in place
   const [error, resetError] = useErrorBoundary((err) => console.error('[ui] screen crashed', err));
-  const Screen = SCREENS[route] || LobbyScreen;
   return html`<div class="app-root">
     <div class="app-bg" aria-hidden="true"></div>
-    ${error ? html`<${ScreenCrashed} error=${error} reset=${resetError} />` : html`<${Screen} key=${route} />`}
+    ${error ? html`<${ScreenCrashed} error=${error} reset=${resetError} />` : html`<${LazyScreen} key=${route} route=${route} />`}
     <${TrustedNotice} />
     <${ConnectionBanner} />
     <${AnnouncementBanner} />
@@ -652,6 +747,9 @@ async function boot() {
   await Promise.all([waitForFonts(1200), connectWhenReady, langReady]);
   const root = document.getElementById('app');
   render(html`<${App} />`, root);
+  // Warm the other screen chunks once this first paint is stable; the preloader deliberately waits
+  // for `load` + a grace window so its requests never compete with the cold-load LCP.
+  installScreenPreload();
 
   const splash = document.getElementById('boot');
   if (splash) {
@@ -662,7 +760,8 @@ async function boot() {
   entryFilm
     .then((m) => m?.playEntryFilm({ skip: () => selectRoute(store.get()) === 'game' }))
     .catch((err) => console.warn('[app] entry film unavailable', err));
-  globalThis.__SP__ = { store, net, data, version: 1 };
+  globalThis.__SP__ = { store, net, data, version: 1,
+    preloadScreen, whenScreensReady, screensWarm: () => [...screenResolved.keys()] };
   // A page keeps the modules it imported at load time for its whole lifetime, so a deploy cannot reach an open tab
   // (ui/buildGuard.js): watch `/healthz.build`. Outside a match the page reloads itself; during a match the guard says
   // so instead (the connection banner offers 刷新页面) and reloads once the match — settlement screen included — is over,

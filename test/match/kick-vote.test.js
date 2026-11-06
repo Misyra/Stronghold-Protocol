@@ -141,3 +141,26 @@ test('a voter who disconnects is dropped and the vote recounted', (t) => {
   assert.ok(m.kickVote);
   assert.ok(!target.left);
 });
+
+test('the same ballot cast again settles nothing and broadcasts nothing (no forced m.public)', (t) => {
+  const { h, m, target } = takenOver(5);
+  t.after(() => m.dispose());
+  // 5 humans, the last taken over: voters = 4, need = 3 — two yes votes keep the vote open
+  assert.deepEqual(m.handle('p_0', { t: 'g.kickVote', targetId: 'p_4' }), { ok: true });
+  assert.deepEqual(ballot(m, 'p_1', true), { ok: true });
+  const pubs = () => h.bc.filter((x) => x.t === 'm.public').length;
+  const before = pubs();
+  for (let i = 0; i < 10; i++) assert.deepEqual(ballot(m, 'p_1', true), { ok: true }, 'answered ok');
+  assert.equal(pubs(), before, 'ten repeated yes ballots: not one m.public frame');
+  assert.equal(m.kickVote.agreed.size, 2, 'the tally did not move');
+  assert.ok(m.kickVote);
+  // the no side: one real ballot broadcasts, its repeats do not
+  assert.deepEqual(ballot(m, 'p_1', false), { ok: true });
+  assert.ok(pubs() > before, 'a real ballot still settles and broadcasts');
+  const afterFlip = pubs();
+  for (let i = 0; i < 10; i++) assert.deepEqual(ballot(m, 'p_1', false), { ok: true }, 'answered ok');
+  assert.equal(pubs(), afterFlip, 'ten repeated no ballots: not one m.public frame');
+  assert.deepEqual([...m.kickVote.rejected], ['p_1']);
+  assert.ok(m.kickVote);
+  assert.ok(!target.left);
+});

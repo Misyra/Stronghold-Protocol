@@ -60,6 +60,8 @@ export class MatchSetupVote {
     if (vote.id !== voteId) return fail(ERR.BAD_TARGET, 'setup vote changed');
     if (!ps.connected || !vote.voters.includes(ps.playerId)) return fail(ERR.NOT_IN_ROOM);
     if (!agree) { this.cancelSetupVote(); return OK; }
+    // the same ballot cast again changes nothing: no settle, no forced m.public (aiTakeover.js 的同一范式)
+    if (vote.agreed.has(ps.playerId)) return OK;
     vote.agreed.add(ps.playerId);
     if (vote.voters.every((id) => vote.agreed.has(id))) return this.completeSetupReroll();
     this.markPublic();

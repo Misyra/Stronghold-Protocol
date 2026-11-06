@@ -92,9 +92,11 @@ export class MatchRehearsal {
     // set is refused by the page (public/js/battle/rehearsal.js); plugin rooms never get here (requireCs above).
     const specs = inputs.map((o) => buildBattleSpec({ ...o, content: this.battleContent, ...morphBattleOpt(this.rules), version: this.data.config?.version?.id }));
     // registered (and timed) before the frame goes out: an answer can only name a task the server already holds, and one
-    // that comes back with the frame itself cannot race the timeout being armed
+    // that comes back with the frame itself cannot race the timeout being armed. Real ms, NOT scaled (opts.timerScale):
+    // the answer window is a wall-clock budget for the host's browser (Match.js「wall-clock ms」, REHEARSAL_ANSWER_MS),
+    // not game time — timerScale is 1 in production anyway.
     this._rehearsalTasks.set(task.id, task);
-    task.timer = this.later(this.scaled(this.delegateWindowMs()), () => this._rehearsalTimeout(task));
+    task.timer = this.later(this.delegateWindowMs(), () => this._rehearsalTimeout(task));
     if (!this.sendTo(task.executor, { t: 'b.rehearsal', taskId: task.id, playerId: ps.playerId, cap: job.cap, specs, ...(limits ? { limits } : {}) })) {
       this._dropRehearsalTask(task);
       return null;

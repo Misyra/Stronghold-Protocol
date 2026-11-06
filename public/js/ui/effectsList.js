@@ -9,6 +9,7 @@ import { data } from '../data.js';
 import { t, tName, N_ } from '../../../shared/i18n.js';
 import { sentText } from './lang.js';
 import { StrategyProgress, strategyProgressModel } from './strategyProgress.js';
+import { memo } from './memo.js';
 
 const KIND = { band: N_('策略'), choice: N_('机变'), team: N_('团队增益'), item: N_('道具'), garrison: N_('特质') };
 
@@ -44,8 +45,10 @@ export function effectDesc(e) {
   return desc;
 }
 
-/** @param {{ effects: any[] }} props */
-export function EffectsList({ effects }) {
+/** Memoized (ui/memo.js): MatchScreen re-renders on every push and local interaction; the list sits them out while
+ * the `effects` array reference is unchanged (m.private.effects / a watched field's `effects`).
+ * @param {{ effects: any[] }} props */
+export const EffectsList = memo(function EffectsList({ effects }) {
   const list = (Array.isArray(effects) ? effects : []).filter((e) => e && (e.name || e.desc));
   if (!list.length) return null;
   const m = data.get('assets');
@@ -63,4 +66,4 @@ export function EffectsList({ effects }) {
       </span>
     <//>`)}
   </div>`;
-}
+});

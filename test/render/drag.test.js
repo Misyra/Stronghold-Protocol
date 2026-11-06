@@ -374,3 +374,127 @@ describe('snapTile (设置「部署时按格子吸附」)', () => {
     }
   });
 });
+
+// ---- the highlight dirty check (the drag's per-pointermove restamps) --------------------------------------------------
+// moveDragVisual restamps the dragTarget group on every pointermove (render/app.js). render/tiles.js setHighlights
+// must skip the full redraw (~50 polygons × 4 projections) while the group is unchanged, and only the changed
+// groups may redraw. The TileField runs against the fake PIXI (test/render/tiles.test.js's stack); _drawHighlights
+// is wrapped, not stubbed, so the assertions see real draw decisions. The app.js side of the guard (it only calls
+// drawHighlight / clearHl when the target tile or legality changed) is asserted on the source: app.js needs a full
+// renderer + camera to run in Node.
+
+describe('drag highlight dirty check', () => {
+  async function tileField() {
+    const { installFakePixi } = await import('./fakepixi.js');
+    const fake = installFakePixi();
+    const P = globalThis.PIXI;
+    P.Buffer = class { constructor(data) { this.data = data; } update() {} };
+    P.Geometry = class { addAttribute() { return this; } addIndex() { return this; } };
+    P.Shader = { from: (v, f, u) => ({ uniforms: { ...u } }) };
+    P.Mesh = class extends P.Container { constructor(g, s) { super(); this.geometry = g; this.shader = s; } };
+    P.BLEND_MODES = { ADD: 1, NORMAL: 0 };
+    const { TileField } = await import('../../public/js/render/tiles.js');
+    const { readFileSync } = await import('node:fs');
+    const stages = JSON.parse(readFileSync(new URL('../../data/stages.json', import.meta.url), 'utf8'));
+    const layers = { ground: new P.Container(), overlay: new P.Container(), props: new P.Container(), anim: new P.Container() };
+    for (const l of Object.values(layers)) l.addChild = function (...kids) { for (const k of kids) { k.parent = this; this.children.push(k); } return kids[0]; };
+    const f = new TileField(layers);
+    f.setStage(stages.act2autochess_m01);
+    let draws = 0;
+    const realDraw = f._drawHighlights;
+    f._drawHighlights = function () { draws++; return realDraw.call(this); };
+    return { f, draws: () => draws, restore: () => fake.restore() };
+  }
+
+  test('an identical restamp skips the redraw; a changed tile, style or clear redraws once', async () => {
+    const h = await tileField();
+    try {
+      const { f, draws } = h;
+      f.setHighlights([[9, 4]], 'target', 'dragTarget');
+      assert.equal(draws(), 1);
+      for (let i = 0; i < 10; i++) f.setHighlights([[9, 4]], 'target', 'dragTarget'); // the pointermove storm
+      assert.equal(draws(), 1, 'the same tile + style restamps are free');
+      assert.equal(f.highlights.get('dragTarget').tiles.length, 1);
+      f.setHighlights([[9, 5]], 'target', 'dragTarget');
+      assert.equal(draws(), 2, 'the tile moved: one redraw');
+      f.setHighlights([[9, 5]], 'illegal', 'dragTarget');
+      assert.equal(draws(), 3, 'the legality flipped: one redraw');
+      assert.equal(f.highlights.get('dragTarget').style.fill, 0.32, 'the illegal style landed (HL_STYLES.illegal)');
+      f.setHighlights([[9, 5]], 'illegal', 'dragTarget');
+      assert.equal(draws(), 3, 'still free after the flip');
+      f.clearHighlights('dragTarget');
+      assert.equal(draws(), 4);
+      f.clearHighlights('dragTarget');
+      assert.equal(draws(), 4, 'clearing an empty group is free');
+      f.setHighlights([], 'target', 'dragTarget');
+      assert.equal(draws(), 4, 'an empty request on an empty group is free');
+    } finally { h.restore(); }
+  });
+
+  test('other groups survive the redraws; the legal range set only redraws when it really changes', async () => {
+    const h = await tileField();
+    try {
+      const { f, draws } = h;
+      const legal = [[9, 4], [9, 5], [10, 4], [10, 5], [7, 3]];
+      f.setHighlights(legal, 'legal', 'legal');
+      f.setHighlights([[9, 4]], 'hover', 'dragFrom');
+      assert.equal(draws(), 2);
+      for (let i = 0; i < 20; i++) f.setHighlights([[9, 4]], 'hover', 'dragFrom');
+      assert.equal(draws(), 2, 'the per-move dragTarget restamp leaves the legal group untouched');
+      assert.equal(f.highlights.get('legal').tiles.length, legal.length, 'the legal group is intact');
+      f.setHighlights(legal.slice(), 'legal', 'legal');
+      assert.equal(draws(), 2, 'a fresh array with the same tiles in the same order is free');
+      f.setHighlights(legal.slice(0, -1), 'legal', 'legal');
+      assert.equal(draws(), 3, 'a real set change redraws');
+      assert.equal(f.highlights.get('legal').tiles.length, legal.length - 1);
+    } finally { h.restore(); }
+  });
+
+  test('custom style objects compare by their drawn fields; opts.stripes is part of the identity', async () => {
+    const h = await tileField();
+    try {
+      const { f, draws } = h;
+      const st = { color: 0x112233, fill: 0.3, line: 0.9 };
+      f.setHighlights([[10, 5]], st, 'range');
+      assert.equal(draws(), 1);
+      f.setHighlights([[10, 5]], { color: 0x112233, fill: 0.3, line: 0.9 }, 'range'); // a fresh object, same values
+      assert.equal(draws(), 1, 'equal drawn values are free (no per-call object identity)');
+      f.setHighlights([[10, 5]], { color: 0x112233, fill: 0.3, line: 0.9 }, 'range', { stripes: true });
+      assert.equal(draws(), 2, 'stripes toggled: redraw');
+      f.setHighlights([[10, 5]], { color: 0x112233, fill: 0.3, line: 0.9 }, 'range', { stripes: true });
+      assert.equal(draws(), 2);
+    } finally { h.restore(); }
+  });
+
+  test('a drag sequence restamps once per crossing, not once per pointermove (app.js moveDragVisual shape)', async () => {
+    const h = await tileField();
+    try {
+      const { f, draws } = h;
+      f.setHighlights([[9, 4]], 'hover', 'dragFrom');       // startDragVisual
+      f.setHighlights([[9, 4], [9, 5], [10, 4], [10, 5], [7, 3]], 'legal', 'legal');
+      assert.equal(draws(), 2);
+      // 60 pointermoves over three tiles (target 9,4 ×40 → 10,4 ×10 → 11,4 ×10, legality flips on the last)
+      let last = null;
+      const moves = [[9, 4, 1], [10, 4, 1], [11, 4, 0]];
+      for (let i = 0; i < 60; i++) {
+        const [r, c, legal] = moves[i < 40 ? 0 : i < 50 ? 1 : 2];
+        const sig = `${r}:${c}:${legal}`;
+        if (sig !== last) { last = sig; f.setHighlights([[r, c]], legal ? 'target' : 'illegal', 'dragTarget'); }
+      }
+      assert.equal(draws(), 5, '2 (start) + 3 target stamps (first + 2 crossings)');
+      f.clearHighlights('dragFrom'); f.clearHighlights('dragTarget'); f.clearHighlights('legal');
+      assert.equal(draws(), 8, 'each group clear redraws once (dropDragVisual clears the three)');
+      assert.equal(f.highlights.size, 0);
+    } finally { h.restore(); }
+  });
+
+  test('the app.js call site keeps its restamp guard (moveDragVisual only redraws on a target change)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../../public/js/render/app.js', import.meta.url), 'utf8');
+    const move = src.slice(src.indexOf('function moveDragVisual'), src.indexOf('function dropDragVisual'));
+    assert.ok(move.includes('dragTargetHl'), 'moveDragVisual tracks the restamped target');
+    assert.ok(move.includes('sig !== dragTargetHl'), 'an unchanged target skips drawHighlight');
+    const clear = src.slice(src.indexOf('function clearHl'), src.indexOf('function legalTiles'));
+    assert.ok(clear.includes("group === 'dragTarget'") && clear.includes('dragTargetHl'), 'clearHl resets the guard so a new drag restamps');
+  });
+});

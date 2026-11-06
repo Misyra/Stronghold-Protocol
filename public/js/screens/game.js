@@ -236,6 +236,8 @@ export function GameScreen() {
 /** A card of a unit of the battle on screen: a unit's, or a crate's / turret's (a device card with its `unitId`, #228). */
 const inBattleCard = (d) => d?.kind === 'unit' || (d?.kind === 'device' && d.device?.unitId != null);
 
+const NO_LAYERS = []; // the no ‹ › pill layers (ui/memo.js: one identity, the memoized CombatHud's client prop keeps comparing equal)
+
 function MatchScreen() {
   useDocClass('sp-in-match');
   useEffect(() => { preloadPopupArt(); }, []);
@@ -1797,19 +1799,21 @@ function MatchScreen() {
   // client-side combat: observing a teammate's battle (research 09 §3.1) and the 联防 / 最终攻势 camera halves
   // (an eliminated player auto-observes a teammate's normal field — research 09 "keep-watching" — without asking)
   const watchedFid = watchingOther ? watching : (cc && combat && !alive && battleState && battleState.watch && battleState.kind === 'normal' ? battleState.fieldId : null);
-  // the ‹ › pill: on the 联防 / 最终攻势 field on screen — also one watched with 前往查看 (a leaker, an eliminated spectator)
-  const layers = cc && combat && field && field.local && (!watchingOther || field.fieldId === watching) ? cameraLayers(field, pub, myId) : [];
-  const progress = cc && phase === PHASE.COMBAT ? teammateProgress(pub, myId) : null;
   // the bond strip follows the player on screen (DESIGN §20.15, ui/watchBonds.js): a teammate's board / battle (前往查看,
   // an eliminated player's auto-observed field) → their bonds; a 联防 / 最终攻势 field → the player on the ‹ › half (全景:
   // yours when you fight there, else the teammate picked with 前往查看 / the field's first player); in battle with the
   // live layers of the battle on screen (the runner's bondLayers)
   const settleMode = mode === 'settle';
-  const strip = screenStrip({
+  // the strip, the ‹ › layers and the CombatHud's client prop are rebuilt only when an input changed (ui/memo.js):
+  // MatchScreen re-renders on every push and local interaction, and BondStrip / CombatHud sit the untouched ones out
+  const layers = useMemo(() => (cc && combat && field && field.local && (!watchingOther || field.fieldId === watching) ? cameraLayers(field, pub, myId) : NO_LAYERS),
+    [cc, combat, field, watchingOther, watching, pub, myId]);
+  const progress = useMemo(() => (cc && phase === PHASE.COMBAT ? teammateProgress(pub, myId) : null), [cc, phase, pub, myId]);
+  const battleFieldId = cc ? (battleState?.fieldId || null) : (combat || settleMode ? lastFieldRef.current : null);
+  const strip = useMemo(() => screenStrip({
     pub, priv, myId, combat, settle: settleMode, watchingOther, watching, home,
-    battleFieldId: cc ? (battleState?.fieldId || null) : (combat || settleMode ? lastFieldRef.current : null),
-    field, layers, layer, who: watchWho, bondLayers: battleState?.bondLayers || null,
-  });
+    battleFieldId, field, layers, layer, who: watchWho, bondLayers: battleState?.bondLayers || null,
+  }), [pub, priv, myId, combat, settleMode, watchingOther, watching, home, battleFieldId, field, layers, layer, watchWho, battleState?.bondLayers]);
   const stripFid = strip.fieldId;
   const liveLayers = (combat || settleMode) && battleState?.bondLayers ? battleState.bondLayers : null;
   // the observing pill names the player whose bonds the strip shows (the same teammate as the strip's "👁 name" tag)
@@ -1831,7 +1835,15 @@ function MatchScreen() {
   const popOps = cc && battleRunner && field?.local && bondOpen && bondOpen.ownerId !== myId ? battleRunner.ownerOps(bondOpen.ownerId, field.fieldId) : null;
   const bondPop = popupView({ open: bondOpen, pub, priv, myId, field, units: popOps, live: liveLayers });
   const openBond = useCallback((id, ownerId, from) => { setBondOpen((b) => toggleBond(b, id, ownerId, from)); audio.sfx('click', { volume: 0.4 }); }, []);
+  // the strip's opener with the strip's owner bound: one identity per owner (ui/memo.js — an inline arrow would
+  // re-render the memoized BondStrip on every push even when its bonds did not change)
+  const openStripBond = useCallback((id) => openBond(id, strip.ownerId, 'strip'), [openBond, strip.ownerId]);
   const watchingNow = combat ? (watching || field?.fieldId || home) : watching;
+  // the client-side combat prop of the CombatHud (ui/combatHud.js), rebuilt only when one of its inputs changed —
+  // the server-run legacy mode passes null (its switcher reads `pub`, which arrives as the prop then)
+  const combatClient = useMemo(() => (cc ? { progress, observing: observingName ? { name: observingName } : null,
+    onBack: alive ? backHome : null, layers, layer, onLayer: setLayer } : null),
+  [cc, progress, observingName, alive, backHome, layers, layer]);
   const shopOpen = showShop && !barCollapsed;
   const ufShown = !!(selEntry && editable && !facing && !drag && showPrep && ufGeo);
   // the temp overflow row holds pieces (user playtest #3 item 3): framed and labelled on the own prep board
@@ -1892,6 +1904,10 @@ function MatchScreen() {
     live: typeof liveStats === 'function' ? liveStats() : liveStats,
     loadout: detailLoadout, getChess: gd.chess, backups: gd.backups,
   }) : null;
+  // The change key below stays a JSON.stringify: it is the fastest content digest of the grid (a concat key of the
+  // number[][] measured ~2.4× slower), it runs only while a range-bearing card is open, and any reference-keyed
+  // cache would miss per render anyway — a battle's live stats rebuild `range` per call (shared/protocol.js
+  // unitStatsEntry) — or go stale on a same-shape range swap.
   const cardRangeKey = cardRange ? JSON.stringify(cardRange) : '';
   useEffect(() => {
     if (!view) return undefined;
@@ -1952,7 +1968,7 @@ function MatchScreen() {
           }}><${Icon} name=${bondsCollapsed ? 'chevronRight' : 'chevronLeft'} /></button>
         <div id="match-bond-strip" class="gm__bond-list" hidden=${bondsCollapsed}>
           <${BondStrip} bonds=${stripBonds} layersDisabled=${layersDisabled} openId=${bondPop && bondPop.ownerId === strip.ownerId ? bondPop.bondId : null}
-            owner=${strip.name} onOpen=${(id) => openBond(id, strip.ownerId, 'strip')} />
+            owner=${strip.name} onOpen=${openStripBond} />
         </div>
       </div>
 
@@ -1982,9 +1998,9 @@ function MatchScreen() {
       ${phase === PHASE.PREP && priv?.shop?.rewardOffer ? html`<${RewardOverlay} priv=${priv} minimized=${rewardMin || barCollapsed}
         onMinimize=${(m) => { setRewardMin(m); if (!m) setCollapsed(false); }} />` : null}
 
-      ${combat || mode === 'settle' ? html`<${CombatHud} pub=${pub} myId=${myId} watching=${watchingNow} hud=${hud} myDone=${!!myDone && alive}
+      ${combat || mode === 'settle' ? html`<${CombatHud} pub=${cc ? null : pub} myId=${myId} watching=${watchingNow} hud=${hud} myDone=${!!myDone && alive}
         spectating=${!alive} spectator=${spectator} onWatch=${watchField}
-        client=${cc ? { progress, observing: observingName ? { name: observingName } : null, onBack: alive ? backHome : null, layers, layer, onLayer: setLayer } : null} />` : null}
+        client=${combatClient} />` : null}
 
       ${showDeadPill(alive, phase) ? (spectator
         ? html`<div class="gm__dead gm__dead--spectator" role="status"><${GIcon} name="eye" />${t('观战中 · 点击左侧成员头像切换查看')}</div>`

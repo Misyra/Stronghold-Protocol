@@ -11,6 +11,16 @@ function operatorOf(source) {
   return source?.side === 'ally' && source.ownerId != null && (source.kind === 'op' || source.kind === 'token') ? source : null;
 }
 
+/**
+ * The row key of an operator: static concatenation instead of a per-event JSON.stringify (the damaged hook runs it
+ * for every damage / heal event — a battle at ~50–100 events/s stringified a fresh two-element array each time).
+ * Injective: the `|` separator cannot appear in a tail (uid / id are integers, defId is an operator id) and player
+ * ids are server-assigned (`p1`…).
+ */
+function rowKeyOf(u) {
+  return `${u.ownerId}|${u.uid != null ? `uid:${u.uid}` : `unit:${u.id}:${u.defId}`}`;
+}
+
 /** Attach before the first tick, including silent catch-up. The simulation's own counters define effective HP loss. */
 export function trackCombat(battle) {
   const rows = new Map();
@@ -19,7 +29,7 @@ export function trackCombat(battle) {
   function rowOf(source) {
     const u = operatorOf(source);
     if (!u) return null;
-    const key = JSON.stringify([u.ownerId, u.uid != null ? `uid:${u.uid}` : `unit:${u.id}:${u.defId}`]);
+    const key = rowKeyOf(u);
     if (!rows.has(key)) rows.set(key, {
       key, ownerId: u.ownerId, uid: u.uid, defId: u.defId, name: u.name, kind: u.kind,
       // B6: retain the effective body just like snapshot.unitInfo; defId alone is the original chess / DIY slot.

@@ -246,6 +246,35 @@ function refs(root) {
 const show = (el, on) => { el.style.display = on ? '' : 'none'; };
 const place = (el, x, y, w, h) => { el.style.transform = `translate(${x}px,${y}px)`; el.style.width = w + 'px'; el.style.height = h + 'px'; };
 
+/* Film grain: the official recording is 30 fps, so a small bank of pre-generated noise frames rotated every
+   `everyN` calls gives the same look at 30 Hz — off the hot path that used to run ~100k Math.random calls and a
+   full-canvas putImageData on every animation frame. The context only needs createImageData/putImageData, so Node
+   can drive it with a stand-in (test/ui/film-grain.test.js); the bank is built once at mount, not per frame. */
+export const GRAIN_FRAMES = 8, GRAIN_EVERY = 2, GRAIN_W = 426, GRAIN_H = 240;
+export function createGrain(gg, opts = {}) {
+  const w = opts.width ?? GRAIN_W, h = opts.height ?? GRAIN_H;
+  const frameCount = opts.frameCount ?? GRAIN_FRAMES, everyN = opts.everyN ?? GRAIN_EVERY;
+  const bank = [];
+  if (gg && typeof gg.createImageData === 'function') {
+    for (let f = 0; f < frameCount; f++) {
+      const img = gg.createImageData(w, h), d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = Math.random() * 255;
+        d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+      }
+      bank.push(img);
+    }
+  }
+  let calls = 0, n = 0;
+  const grain = () => {
+    if (!bank.length) return;
+    calls++;
+    if (everyN > 1 && (calls - 1) % everyN !== 0) return; // 30 Hz: update on every Nth rAF
+    gg.putImageData(bank[(n++) % frameCount], 0, 0);
+  };
+  return { grain, frameCount, everyN, bank, get puts() { return n; } };
+}
+
 // ============ the recording's lobby scene: the film's final picture (3.12 s on) ============
 /* Measured on the video (lobby clock = video seconds - 3.12): a lock-on box flashes on the map's target at 4.40 s, the night
    gives way to the dusk at 5.05 s (dims to black over a dim grid while a ~970 px soft band of dusk sweeps in left to right,
@@ -499,7 +528,7 @@ function introHTML() {
  * spill past the edges rather than leaving wide black bars). Returns { stage, render(T), grain(), measure(), destroy() }:
  * render draws video second T (1.2 … 4.0), the caller drives the clock.
  */
-export function mountAllianceIntro(host) {
+export function mountAllianceIntro(host, opts = {}) {
   ensureShared();
   const stage = document.createElement('div');
   stage.className = 'spa-stage';
@@ -518,16 +547,10 @@ export function mountAllianceIntro(host) {
   fit();
   addEventListener('resize', fit);
 
-  // grain
+  // grain: a pre-generated bank rotated at 30 Hz (the recording's own frame rate); see createGrain above.
   const gc = E.grain, gg = gc.getContext('2d');
-  gc.width = 426; gc.height = 240;
-  const gimg = gg ? gg.createImageData(426, 240) : null;
-  const grain = () => {
-    if (!gimg) return;
-    const d = gimg.data;
-    for (let i = 0; i < d.length; i += 4) { const v = Math.random() * 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
-    gg.putImageData(gimg, 0, 0);
-  };
+  gc.width = GRAIN_W; gc.height = GRAIN_H;
+  const { grain } = (opts.makeGrain || createGrain)(gg);
   const GA_W = glyphSVG(E.tA, 19, 7);
   const gStops = [E.tA.querySelector('.spa-gs1'), E.tA.querySelector('.spa-gs2')];
   glyphSVG(E.cap1, 17, 11);

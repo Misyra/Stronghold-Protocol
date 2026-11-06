@@ -1,0 +1,410 @@
+{
+  "patch": 1,
+  "ops": [
+    {
+      "op": "merge",
+      "file": "config",
+      "path": [
+        "modes"
+      ],
+      "value": {
+        "mode_training_1": {
+          "enemyDifficulty": {
+            "mode": {
+              "$setting": "n18Mode"
+            },
+            "maxTerms": {
+              "$setting": "n18MaxTerms"
+            },
+            "fixed": {
+              "hp": {
+                "$setting": "fixed_hp"
+              },
+              "speed": {
+                "$setting": "fixed_speed"
+              },
+              "count": {
+                "$setting": "fixed_count"
+              },
+              "atk": {
+                "$setting": "fixed_atk"
+              },
+              "bossHp": {
+                "$setting": "fixed_bossHp"
+              }
+            },
+            "limits": {
+              "hp": {
+                "$setting": "limit_hp"
+              },
+              "speed": {
+                "$setting": "limit_speed"
+              },
+              "count": {
+                "$setting": "limit_count"
+              },
+              "atk": {
+                "$setting": "limit_atk"
+              },
+              "bossHp": {
+                "$setting": "limit_bossHp"
+              }
+            }
+          }
+        },
+        "mode_single_funny": {
+          "enemyDifficulty": {
+            "mode": {
+              "$setting": "n18Mode"
+            },
+            "maxTerms": {
+              "$setting": "n18MaxTerms"
+            },
+            "fixed": {
+              "hp": {
+                "$setting": "fixed_hp"
+              },
+              "speed": {
+                "$setting": "fixed_speed"
+              },
+              "count": {
+                "$setting": "fixed_count"
+              },
+              "atk": {
+                "$setting": "fixed_atk"
+              },
+              "bossHp": {
+                "$setting": "fixed_bossHp"
+              }
+            },
+            "limits": {
+              "hp": {
+                "$setting": "limit_hp"
+              },
+              "speed": {
+                "$setting": "limit_speed"
+              },
+              "count": {
+                "$setting": "limit_count"
+              },
+              "atk": {
+                "$setting": "limit_atk"
+              },
+              "bossHp": {
+                "$setting": "limit_bossHp"
+              }
+            }
+          }
+        },
+        "mode_single_normal": {
+          "enemyDifficulty": {
+            "mode": {
+              "$setting": "n18Mode"
+            },
+            "maxTerms": {
+              "$setting": "n18MaxTerms"
+            },
+            "fixed": {
+              "hp": {
+                "$setting": "fixed_hp"
+              },
+              "speed": {
+                "$setting": "fixed_speed"
+              },
+              "count": {
+                "$setting": "fixed_count"
+              },
+              "atk": {
+                "$setting": "fixed_atk"
+              },
+              "bossHp": {
+                "$setting": "fixed_bossHp"
+              }
+            },
+            "limits": {
+              "hp": {
+                "$setting": "limit_hp"
+              },
+              "speed": {
+                "$setting": "limit_speed"
+              },
+              "count": {
+                "$setting": "limit_count"
+              },
+              "atk": {
+                "$setting": "limit_atk"
+              },
+              "bossHp": {
+                "$setting": "limit_bossHp"
+              }
+            }
+          }
+        },
+        "mode_single_hard": {
+          "enemyDifficulty": {
+            "mode": {
+              "$setting": "n18Mode"
+            },
+            "maxTerms": {
+              "$setting": "n18MaxTerms"
+            },
+            "fixed": {
+              "hp": {
+                "$setting": "fixed_hp"
+              },
+              "speed": {
+                "$setting": "fixed_speed"
+              },
+              "count": {
+                "$setting": "fixed_count"
+              },
+              "atk": {
+                "$setting": "fixed_atk"
+              },
+              "bossHp": {
+                "$setting": "fixed_bossHp"
+              }
+            },
+            "limits": {
+              "hp": {
+                "$setting": "limit_hp"
+              },
+              "speed": {
+                "$setting": "limit_speed"
+              },
+              "count": {
+                "$setting": "limit_count"
+              },
+              "atk": {
+                "$setting": "limit_atk"
+              },
+              "bossHp": {
+                "$setting": "limit_bossHp"
+              }
+            }
+          }
+        },
+        "mode_single_abyss": {
+          "enemyDifficulty": {
+            "mode": {
+              "$setting": "n18Mode"
+            },
+            "maxTerms": {
+              "$setting": "n18MaxTerms"
+            },
+            "fixed": {
+              "hp": {
+                "$setting": "fixed_hp"
+              },
+              "speed": {
+                "$setting": "fixed_speed"
+              },
+              "count": {
+                "$setting": "fixed_count"
+              },
+              "atk": {
+                "$setting": "fixed_atk"
+              },
+              "bossHp": {
+                "$setting": "fixed_bossHp"
+              }
+            },
+            "limits": {
+              "hp": {
+                "$setting": "limit_hp"
+              },
+              "speed": {
+                "$setting": "limit_speed"
+              },
+              "count": {
+                "$setting": "limit_count"
+              },
+              "atk": {
+                "$setting": "limit_atk"
+              },
+              "bossHp": {
+                "$setting": "limit_bossHp"
+              }
+            }
+          }
+        },
+        "mode_multi_funny": {
+          "enemyDifficulty": {
+            "mode": {
+              "$setting": "n18Mode"
+            },
+            "maxTerms": {
+              "$setting": "n18MaxTerms"
+            },
+            "fixed": {
+              "hp": {
+                "$setting": "fixed_hp"
+              },
+              "speed": {
+                "$setting": "fixed_speed"
+              },
+              "count": {
+                "$setting": "fixed_count"
+              },
+              "atk": {
+                "$setting": "fixed_atk"
+              },
+              "bossHp": {
+                "$setting": "fixed_bossHp"
+              }
+            },
+            "limits": {
+              "hp": {
+                "$setting": "limit_hp"
+              },
+              "speed": {
+                "$setting": "limit_speed"
+              },
+              "count": {
+                "$setting": "limit_count"
+              },
+              "atk": {
+                "$setting": "limit_atk"
+              },
+              "bossHp": {
+                "$setting": "limit_bossHp"
+              }
+            }
+          }
+        },
+        "mode_multi_normal": {
+          "enemyDifficulty": {
+            "mode": {
+              "$setting": "n18Mode"
+            },
+            "maxTerms": {
+              "$setting": "n18MaxTerms"
+            },
+            "fixed": {
+              "hp": {
+                "$setting": "fixed_hp"
+              },
+              "speed": {
+                "$setting": "fixed_speed"
+              },
+              "count": {
+                "$setting": "fixed_count"
+              },
+              "atk": {
+                "$setting": "fixed_atk"
+              },
+              "bossHp": {
+                "$setting": "fixed_bossHp"
+              }
+            },
+            "limits": {
+              "hp": {
+                "$setting": "limit_hp"
+              },
+              "speed": {
+                "$setting": "limit_speed"
+              },
+              "count": {
+                "$setting": "limit_count"
+              },
+              "atk": {
+                "$setting": "limit_atk"
+              },
+              "bossHp": {
+                "$setting": "limit_bossHp"
+              }
+            }
+          }
+        },
+        "mode_multi_hard": {
+          "enemyDifficulty": {
+            "mode": {
+              "$setting": "n18Mode"
+            },
+            "maxTerms": {
+              "$setting": "n18MaxTerms"
+            },
+            "fixed": {
+              "hp": {
+                "$setting": "fixed_hp"
+              },
+              "speed": {
+                "$setting": "fixed_speed"
+              },
+              "count": {
+                "$setting": "fixed_count"
+              },
+              "atk": {
+                "$setting": "fixed_atk"
+              },
+              "bossHp": {
+                "$setting": "fixed_bossHp"
+              }
+            },
+            "limits": {
+              "hp": {
+                "$setting": "limit_hp"
+              },
+              "speed": {
+                "$setting": "limit_speed"
+              },
+              "count": {
+                "$setting": "limit_count"
+              },
+              "atk": {
+                "$setting": "limit_atk"
+              },
+              "bossHp": {
+                "$setting": "limit_bossHp"
+              }
+            }
+          }
+        },
+        "mode_multi_abyss": {
+          "enemyDifficulty": {
+            "mode": {
+              "$setting": "n18Mode"
+            },
+            "maxTerms": {
+              "$setting": "n18MaxTerms"
+            },
+            "fixed": {
+              "hp": {
+                "$setting": "fixed_hp"
+              },
+              "speed": {
+                "$setting": "fixed_speed"
+              },
+              "count": {
+                "$setting": "fixed_count"
+              },
+              "atk": {
+                "$setting": "fixed_atk"
+              },
+              "bossHp": {
+                "$setting": "fixed_bossHp"
+              }
+            },
+            "limits": {
+              "hp": {
+                "$setting": "limit_hp"
+              },
+              "speed": {
+                "$setting": "limit_speed"
+              },
+              "count": {
+                "$setting": "limit_count"
+              },
+              "atk": {
+                "$setting": "limit_atk"
+              },
+              "bossHp": {
+                "$setting": "limit_bossHp"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

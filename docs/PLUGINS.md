@@ -2566,3 +2566,25 @@ not inferred from effect names or prose: this API does not automatically transla
 Studio aggregate writes and staged candidates read `plugin.json` before applying the class ceiling. Replacing the manifest
 uses the incoming class; invalid JSON or an unknown class receives the 200 MB default, and a missing manifest retains the
 512 MB outer ceiling until its class is known. These are [ASSUMED] authoring limits, not game rules (§37.17).
+
+## Optional enemy difficulty (N18对掏来, §37.126)
+
+`docs/examples/n18-duel/` is a data-only content plugin (no script execution). Install with `npm run n18:install`,
+then the host enables it in the room and applies settings before starting. Existing installations are not overwritten.
+The shared settings form recognizes its `n18Mode`, `n18MaxTerms`, `fixed_*` and `limit_*` definitions and offers four
+fixed presets plus custom values, or random per-term caps. Fixed/random values are saved independently in room settings.
+
+A data patch merges `enemyDifficulty` into the selected mode: `{mode:'fixed'|'random', maxTerms:1..5,
+fixed:{hp,speed,count,atk,bossHp}, limits:{hp,speed,count,atk,bossHp}}`. All fields are required and validated.
+HP and boss HP are 1..10, speed and ATK 1..3 in increments of 0.5; count is an integer 1..3.
+Multipliers apply on top of the base mode. In random mode, cap 1 excludes a term; count draws 2..cap, others
+1.5..cap by 0.5. Draw count is uniform from 1 to min(maxTerms, eligible terms), without replacement; bossHp is
+eligible only on leader rounds. No eligible terms means no modifiers. Each round resets, never stacks.
+
+The match draws before wave planning, uses an independent seed per round, announces on prep entry and sends structured
+`m.public.enemyDifficulty` / `m.ticker` data for localization and persistent inspection. Checkpoints retain the drawn
+history; results retain both configuration and round history. Counts multiply after official substitutions, intervals
+divide by the same multiplier (including keeping bounty insertion inside its original action window); leaders,
+parts, harmless units, summons and bounties are not duplicated. Bounty rewards stay unchanged and leaked units are not
+scaled again in unite. All challenge choices are [ASSUMED] maintainer-authorized unofficial rules. Vanilla has no
+configuration, no extra public/result keys and no changed golden expectations.

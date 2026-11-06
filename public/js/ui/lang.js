@@ -21,6 +21,7 @@ import {
 import { canonicalLang, computeChain, scriptOf } from '../../../shared/i18nPacks.js';
 import { PACKS_URL, PACK_INDEX_FILE, readPackIndex, langMetaOf } from '../../../shared/packs.js';
 import { DEV_BUILD } from '../../../shared/constants.js';
+import { enemyDifficultyText } from '../../../shared/enemyDifficulty.js';
 import { loadPref, savePref } from '../store.js';
 import { data } from '../data.js';
 import { updateRotateHintPwaI18n } from './device.js';
@@ -353,6 +354,7 @@ export function sentText(sent, raw, local) {
  * @returns {string}
  */
 export function tickerText(msg) {
+  if (msg?.type === 'ENEMY_DIFFICULTY' && msg.enemyDifficulty) return enemyDifficultyText(msg.enemyDifficulty, t);
   if (getLang() !== DEFAULT_LANG && typeof msg?.id === 'string' && Array.isArray(msg.args)) {
     const list = data.get('config')?.broadcasts;
     const b = Array.isArray(list) ? list.find((x) => x && x.id === msg.id) : null;

@@ -6,6 +6,7 @@
 import { PHASE } from '../../../shared/constants.js';
 import { testSlice } from '../testTrace.js';
 import { DELAYS } from './common.js';
+import { enemyDifficultyText } from '../../../shared/enemyDifficulty.js';
 
 /**
  * §37.102 [ASSUMED] Wall-clock ms the built-in bot's prep may still need once an external plan seat's decision ends (its
@@ -29,6 +30,8 @@ export const BOT_PREP_RESERVE_MS = Object.freeze({
 export class MatchPrep {
   enterPrep() {
     this.phase = PHASE.PREP;
+    if (this.gd.roundDifficulty) this.broadcast({ t: 'm.ticker', type: 'ENEMY_DIFFICULTY', id: null,
+      round: this.round, enemyDifficulty: this.gd.roundDifficulty, text: enemyDifficultyText(this.gd.roundDifficulty), priority: 100, playerId: null });
     this.sp = null;
     const alive = this.alivePlayers();
     for (const ps of alive) {

@@ -166,6 +166,7 @@ export function buildResult(m, outcome) {
     // boss scope was fought. Defensive read: a hand-built match in the tests may carry no board.
     bossDamage: typeof m.damageBoard?.bossRounds === 'function' ? m.damageBoard.bossRounds() : null,
     players: rows,
+    ...(m.enemyDifficultyHistory ? { enemyDifficulty: { config: gd.mode.enemyDifficulty, rounds: m.enemyDifficultyHistory } } : {}),
   };
   // A test match is marked on the settlement the replay stores. The keys are absent otherwise, so a normal
   // result stays byte-identical. Test results award nothing and are never persisted by the client.

@@ -468,7 +468,8 @@ function wireNet() {
     const playerId = typeof msg.playerId === 'string' ? msg.playerId : null;
     // its broadcast priority: the strip plays the highest first (ui/ticker.js enqueueTickerLines)
     const priority = Number.isFinite(msg.priority) ? msg.priority : 0;
-    store.set((s) => ({ ticker: [...s.ticker.slice(-(TICKER_KEEP - 1)), { id: ++seq, text, at: Date.now(), type, playerId, round: s.match?.public?.round ?? null, priority }] }));
+    store.set((s) => ({ ticker: [...s.ticker.slice(-(TICKER_KEEP - 1)), { id: ++seq, text, at: Date.now(), type, playerId,
+      round: type === 'ENEMY_DIFFICULTY' && Number.isInteger(msg.round) ? msg.round : s.match?.public?.round ?? null, priority }] }));
   });
   net.on('m.emote', (msg) => {
     store.set((s) => ({ emotes: [...s.emotes.slice(-(EMOTE_KEEP - 1)), { seq: ++seq, playerId: msg.playerId, id: msg.id, at: Date.now() }] }));

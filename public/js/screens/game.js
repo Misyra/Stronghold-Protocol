@@ -85,6 +85,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from '../../vendor/
 import { PHASE, GEO } from '../../../shared/constants.js';
 import { ruleOption } from '../../../shared/plugins/rules.js';
 import { html, Spinner, PhaseBanner, ResultDialog, Icon, Button, confirmDialog, closeAllDialogs, useTicker } from '../ui/components.js';
+import { enemyDifficultyText } from '../../../shared/enemyDifficulty.js';
 import { useGameData, GIcon } from '../ui/gameComponents.js';
 import { GameLoading, missingCoreData } from '../ui/gameLoading.js';
 import { useFieldView } from '../ui/fieldHost.js';
@@ -1954,6 +1955,11 @@ function MatchScreen() {
         live=${liveLpProp} spectator=${spectator}
         spectators=${specFacts.list} myId=${myId} isHost=${specFacts.isHost} onRemoveSpectator=${removeSpectator} room=${modRoom}
         held=${hudIn === 'wait'} />
+
+      ${pub?.enemyDifficulty ? html`<details class="gm__difficulty" data-testid="enemy-difficulty">
+        <summary>${t('N18对掏来')} · ${pub.enemyDifficulty.mode === 'random' ? t('随机模式') : t('固定模式')}</summary>
+        <p>${enemyDifficultyText(pub.enemyDifficulty, t)}</p>
+      </details>` : null}
 
       <div class="gm__bonds">
         <button type="button" class="bonds-toggle" aria-expanded=${!bondsCollapsed} aria-controls="match-bond-strip"

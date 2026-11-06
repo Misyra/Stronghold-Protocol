@@ -10,6 +10,7 @@ import { pairPlayers, bossPairSalt } from '../finalAssault.js';
 import { createRng, deriveSeed } from '../../sim/rng.js';
 import { OK, fail, DELAYS, BAND_TURN_SECONDS } from './common.js';
 import { LEGACY_BOT } from '../botStrategyContract.js';
+import { rollEnemyDifficulty } from '../../../shared/enemyDifficulty.js';
 
 export class MatchPhases {
   enterInfoCheck() {
@@ -335,6 +336,13 @@ export class MatchPhases {
     // the boss pairing), so R14 → R15 never re-checks a boss-field board against the normal field (user playtest #5
     // item 7). rngWaves is used only here, so the order leaves every random stream unchanged.
     const isBoss = r === this.gd.bossRound || r === this.gd.hiddenRound;
+    if (this.gd.mode.enemyDifficulty) {
+      this.enemyDifficultyHistory ??= [];
+      const plan = this.enemyDifficultyHistory.find(p => p.round === r) ?? rollEnemyDifficulty(this.gd.mode.enemyDifficulty,
+        createRng(deriveSeed(this.seed, `enemyDifficulty:${r}`)), { round: r, boss: isBoss });
+      this.gd.roundDifficulty = plan;
+      if (plan && !this.enemyDifficultyHistory.some(p => p.round === r)) this.enemyDifficultyHistory.push(plan);
+    }
     if (isBoss) {
       this._planBossWaves();
     } else {

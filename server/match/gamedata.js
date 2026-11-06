@@ -139,12 +139,13 @@ export class GameData {
   }
 
   /**
-   * Leader HP pool multiplier — always 1 (no custom balance). Kept for callers written against the old tuning layer
+   * Leader HP pool multiplier — 1 for official content; optional challenge multiplier for plugin rounds.
+   * Kept for callers written against the old tuning layer
    * (finalAssault.bossPoolHp); use `bossPoolHp` / `bossPoolShare` for the official pool.
    * @deprecated
    */
   bossHpMul(bossId) { // eslint-disable-line no-unused-vars
-    return 1;
+    return this.roundDifficulty?.values.bossHp ?? 1;
   }
 
   /**
@@ -164,7 +165,7 @@ export class GameData {
     let base = boss && boss.bloodPoint && Number.isFinite(boss.bloodPoint[diff]) ? boss.bloodPoint[diff] : null;
     if (base == null && boss && boss.bloodPoint) base = Object.values(boss.bloodPoint).find((v) => Number.isFinite(v)) ?? null;
     if (base == null) base = 500000;
-    return Math.max(1, Math.round(base * this.bossPoolShare(aliveCount)));
+    return Math.max(1, Math.round(base * this.bossPoolShare(aliveCount) * this.bossHpMul(bossId)));
   }
 
   /**
@@ -451,9 +452,11 @@ export class GameData {
     };
   }
 
-  /** Enemy multipliers of round r = the official table (baseEnemyScale; no custom multiplier). */
+  /** Enemy multipliers of round r = official table plus the optional plugin round challenge. */
   enemyScale(r) {
-    return this.baseEnemyScale(r);
+    const base = this.baseEnemyScale(r);
+    const v = this.roundDifficulty?.round === r ? this.roundDifficulty.values : null;
+    return v ? { ...base, hpMul: base.hpMul * v.hp, atkMul: base.atkMul * v.atk, speedMul: base.speedMul * v.speed } : base;
   }
 
   timer(key) {

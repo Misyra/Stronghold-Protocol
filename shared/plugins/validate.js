@@ -1,5 +1,6 @@
 // Shared DATA.md reference checks, extracted verbatim from build-data (DESIGN §32.5).
 import { statusKey, standInRecord, unitForm } from '../standIn.js';
+import { validEnemyDifficulty } from '../enemyDifficulty.js';
 /** Recursively find non-finite numbers (NaN/Infinity would silently become null in JSON). */
 function findNonFinite(obj, path, out) {
   if (typeof obj === 'number') { if (!Number.isFinite(obj)) out.push(path); return; }
@@ -275,6 +276,7 @@ function checkData(data, { kitExists = null, vanilla = null, owners = null, vali
     || !object(data.backups.diy?.slots) || !object(data.backups.diy?.operators) || !Array.isArray(data.backups.diy?.ownedPool)
     || !object(data.factions.entries) || !object(data.choices.pools) || !Array.isArray(data.choices.cards?.bounty)) bad('data', 'missing config, backups, factions or choices fields');
   for (const m of Object.values(data.config.modes ?? {})) {
+    if (m.enemyDifficulty !== undefined && !validEnemyDifficulty(m.enemyDifficulty)) bad(`modes.${m.modeId}.enemyDifficulty`, 'invalid enemy difficulty settings', 'PLUGIN_DATA_BOUND');
     if (!object(m.rounds)) bad(m.modeId, 'rounds required');
     for (const k of ['stages', 'activeBondIds', 'inactiveBondIds']) array(m[k], `modes.${m.modeId}.${k}`);
   }

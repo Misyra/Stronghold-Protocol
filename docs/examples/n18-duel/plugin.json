@@ -1,0 +1,150 @@
+{
+  "$schema": "../../../schemas/plugin.schema.json",
+  "manifest": 2,
+  "name": {
+    "zh": "N18对掏来",
+    "en": "N18 Duel"
+  },
+  "version": "1.0.0",
+  "app": ">=0.3.0 <0.4.0",
+  "api": 2,
+  "class": "content",
+  "scope": [
+    "room"
+  ],
+  "permissions": [
+    "data.patch"
+  ],
+  "data": [
+    "data/patch.json"
+  ],
+  "id": "n18-duel",
+  "description": {
+    "zh": "固定倍率或每回合随机词条的难度挑战；数量仅限整数，出怪间隔同步缩短。",
+    "en": "Fixed or random round modifiers. Integer enemy counts with proportionally shorter spawn intervals."
+  },
+  "settings": {
+    "n18Mode": {
+      "type": "enum",
+      "options": [
+        "fixed",
+        "random"
+      ],
+      "default": "fixed",
+      "label": {
+        "zh": "模式",
+        "en": "Mode"
+      }
+    },
+    "n18MaxTerms": {
+      "type": "integer",
+      "min": 1,
+      "max": 5,
+      "default": 1,
+      "label": {
+        "zh": "每回合最多词条数",
+        "en": "Maximum modifiers per round"
+      }
+    },
+    "fixed_hp": {
+      "type": "number",
+      "min": 1,
+      "max": 10,
+      "step": 0.5,
+      "default": 1.5,
+      "label": {
+        "zh": "普通敌人生命"
+      }
+    },
+    "fixed_speed": {
+      "type": "number",
+      "min": 1,
+      "max": 3,
+      "step": 0.5,
+      "default": 1,
+      "label": {
+        "zh": "敌人移动速度"
+      }
+    },
+    "fixed_count": {
+      "type": "integer",
+      "min": 1,
+      "max": 3,
+      "step": 1,
+      "default": 1,
+      "label": {
+        "zh": "普通敌人数量"
+      }
+    },
+    "fixed_atk": {
+      "type": "number",
+      "min": 1,
+      "max": 3,
+      "step": 0.5,
+      "default": 1,
+      "label": {
+        "zh": "敌人攻击力"
+      }
+    },
+    "fixed_bossHp": {
+      "type": "number",
+      "min": 1,
+      "max": 10,
+      "step": 0.5,
+      "default": 1.5,
+      "label": {
+        "zh": "领袖共享血量"
+      }
+    },
+    "limit_hp": {
+      "type": "number",
+      "min": 1,
+      "max": 10,
+      "step": 0.5,
+      "default": 1.5,
+      "label": {
+        "zh": "普通敌人生命"
+      }
+    },
+    "limit_speed": {
+      "type": "number",
+      "min": 1,
+      "max": 3,
+      "step": 0.5,
+      "default": 1.5,
+      "label": {
+        "zh": "敌人移动速度"
+      }
+    },
+    "limit_count": {
+      "type": "integer",
+      "min": 1,
+      "max": 3,
+      "step": 1,
+      "default": 1,
+      "label": {
+        "zh": "普通敌人数量"
+      }
+    },
+    "limit_atk": {
+      "type": "number",
+      "min": 1,
+      "max": 3,
+      "step": 0.5,
+      "default": 1.5,
+      "label": {
+        "zh": "敌人攻击力"
+      }
+    },
+    "limit_bossHp": {
+      "type": "number",
+      "min": 1,
+      "max": 10,
+      "step": 0.5,
+      "default": 1.5,
+      "label": {
+        "zh": "领袖共享血量"
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "lock": 1,
+  "id": "n18-duel",
+  "version": "1.0.0",
+  "generator": "tools/plugin.mjs pack",
+  "files": {
+    "README.md": {
+      "sha256": "72ad320fa16af82dd6d7171cdb482aa4e0c1cfb91c703908b9bd22b3d129a388",
+      "bytes": 2242
+    },
+    "data/patch.json": {
+      "sha256": "4c8311c6bcc17781f6fc7b2622abe8d4a254766481d4c167e1122975b58739d8",
+      "bytes": 10382
+    },
+    "plugin.json": {
+      "sha256": "fb759b70878d2bd93fb1b030e1036d4bd3764c50a0707724ca31d2bf60c17e91",
+      "bytes": 2869
+    }
+  },
+  "spine": {}
+}

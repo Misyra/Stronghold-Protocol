@@ -281,6 +281,9 @@ function templateSpawns(gd, tpl, round, pick) {
   const spawns = [];
   const actions = [];
   const list = Array.isArray(tpl.spawns) ? tpl.spawns : [];
+  // Count only the already-resolved normal wave. Never reapply in bounties, summons or leaked-enemy handoff.
+  const difficulty = gd.roundDifficulty?.round === round ? gd.roundDifficulty.values : null;
+  const countMul = difficulty?.count ?? 1;
   for (let i = 0; i < list.length; i++) {
     const s = list[i];
     if (!s || (s.action && String(s.action).toUpperCase() !== 'SPAWN')) continue;
@@ -312,6 +315,10 @@ function templateSpawns(gd, tpl, round, pick) {
       }
     }
     if (!gd.enemy(key)) continue;
+    if (countMul > 1 && !isBoss && !isPart && !s.unharmful && s.countInTotal !== false && !gd.enemy(key).tokenOnly) {
+      count *= countMul;
+      step /= countMul;
+    }
     const slot = s.slot || classOf(gd, key);
     const spec = {
       time,
@@ -495,7 +502,7 @@ function bountyPlan(gd, round, wave, bounties, playerId, side) {
     const act = host ? acts.find((a) => a.index === host.index) : null;
     // the host's own units: only a server-sent action has any (a leader / random-group / invalid host spawns the
     // bounty list alone over its window — client _InsertSpActionToNormal finds no normal list for it)
-    const own = act && act.valid && act.server !== false ? Math.min(MAX_ACTION_UNITS, act.count) : 0;
+    const own = act && act.valid && act.server !== false ? Math.min(MAX_ACTION_UNITS * (gd.roundDifficulty?.values.count ?? 1), act.count) : 0;
     const sp = [];
     for (const it of items) for (let k = 0; k < it.count; k++) sp.push(it);
     // _InsertSpActionToNormal: insert the bounty units among the action's own units (list.Insert(FloorToInt(...)))
@@ -506,7 +513,9 @@ function bountyPlan(gd, round, wave, bounties, playerId, side) {
     } else {
       list = sp.slice();
     }
-    const step = window > 0 ? Math.max(window / list.length, MIN_ACTION_INTERVAL_RATIO * window) : 0;
+    // Enlarged challenge waves must finish inside the same action window, including inserted bounties.
+    const step = window > 0 ? (gd.roundDifficulty?.values.count > 1 ? window / list.length
+      : Math.max(window / list.length, MIN_ACTION_INTERVAL_RATIO * window)) : 0;
     const runs = runsOf(list);
     if (host && own > 0) retime.set(host.index, { time, step, ownRuns: runs.filter((r) => r.v === OWN) });
     for (const run of runs) {

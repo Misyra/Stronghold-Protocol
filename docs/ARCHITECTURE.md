@@ -193,6 +193,7 @@ so old imports keep working: `public/js/ui/gameLogic.js` (`public/js/ui/gameLogi
 | `public/studio/js/` (gameplay and import) | `authoring.js` / `validateDraft.js` wizard saves and validation; `editors/` template forms (including `dslForm.js` and shared `controls.js`); `trial.js` trial controls; `preview/` the game's cards, field and sound plus `replay.js` / `layers.js`; `forge.js` and `catalog.js` import/install flows |
 | `public/studio/console.html`, `public/studio/js/console/` | test console page: `main.js` key/JSON/persistence, `editor.js` scenario controls, `view.js` real sim/field host, `runtime.js` fixed-tick driving and bounded inspector/effect logs |
 | `public/js/ui/pluginSettings.js`, `public/js/ui/numberInput.js`, `public/js/ui/uiPlugins.js`, `public/js/ui/pluginFrame.js` | room settings controls, decimal input, personal UI switches and the sandboxed frame host |
+| `shared/enemyDifficulty.js`, `docs/examples/n18-duel/` | optional fixed/random enemy challenge: bounded settings, presets, independent round draws, record normalization and localized descriptions (DESIGN §37.126) |
 
 ### Data, tools, tests
 

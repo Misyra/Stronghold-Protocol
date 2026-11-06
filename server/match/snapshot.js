@@ -235,6 +235,7 @@ export const MATCH_FIELDS = Object.freeze([
   'stageId', 'factions', 'bossId', 'hiddenBossId', 'disabledBonds', 'staticInactiveBonds', 'bannedChess',
   'round', 'uidSeq', 'loneHuman', 'botBands', 'bandDupes', 'afkRemoveRounds', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
   'simErrorLog', 'draft', 'sp', 'wave', 'bossWaves', 'setupRevision', 'setupVote', '_setupVoteSeq', '_botEmotesSettledRound', '_botEmotesMerges',
+  'enemyDifficultyHistory', // Optional plugin round draws, restored before prep/battles resume.
   'speedVotes', // 战斗 2 倍速投票（speedVote.js）：已投换档赞成的席位
 ]);
 
@@ -424,6 +425,7 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
   m._pausedAt = 0;
   m.overtimeAt = 0;
   m.stage = m.stageId ? m.gd.stage(m.stageId) : null;
+  if (m.enemyDifficultyHistory) m.gd.roundDifficulty = m.enemyDifficultyHistory.find(p => p.round === m.round) ?? null;
   m.startedAt = now - (Number(doc.startedAtAgoMs) || 0);
   // a re-fought round must never collide with the reports of the interrupted one
   m._battleSeq = (Number(m._battleSeq) || 0) + RESTORE_SEQ_GAP;

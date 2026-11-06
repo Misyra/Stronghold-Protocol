@@ -65,6 +65,12 @@ LOBBY → INFO_CHECK (co-op 25 s; solo and single-human matches untimed; all hum
 → RESULT (m.result to every human, then onEnd once)
 ```
 
+**Optional plugin difficulty (§37.126).** A mode's validated `enemyDifficulty` configuration draws before wave planning.
+The match stores `enemyDifficultyHistory`, restores the current draw on `GameData`, announces on prep entry, and
+exposes `m.public.enemyDifficulty`. The normal-wave count is multiplied only after official replacements, with
+interval divided by the same integer (1/2/3); bounties retain counts/rewards, leaders and parts are not copied.
+Leader shared HP uses its separate multiplier. See [PLUGINS.md](PLUGINS.md#optional-enemy-difficulty-n18对掏来-37126).
+
 **Deploy field (user playtest #5 item 7).** From the ROUND_START of a boss round (最终攻势 / 隐秘核心) a player deploys on
 its half of the boss field (`Match.deployFieldOf` → `'bossL'`, or `'bossR'` for the second player of a drawn pair — the
 same pairing as the fields, `bossWaves` / `Match.bossGroupOf`, planned in `startRound` BEFORE the players' round start

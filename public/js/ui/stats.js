@@ -57,6 +57,7 @@ import { parseLegacyBackup } from '../history/legacyBackup.js';
 import { PHASE } from '../../../shared/constants.js';
 import { sanitizeName } from './playerName.js';
 import { DEFAULT_VERSION, versionById } from '../../../shared/versions.js';
+import { normalizeDifficultyRecord } from '../../../shared/enemyDifficulty.js';
 
 /** Current record-envelope version (bump + add a MIGRATIONS step when the record shape changes). */
 export const STATS_VERSION = 4;
@@ -338,6 +339,8 @@ export function normalizeRecord(raw) {
   // Only the literal true. A hand-edited string cannot mark a real match as a test, and a missing key leaves
   // the content id of a normal record unchanged.
   if (r.test === true) rec.test = true;
+  const challenge = normalizeDifficultyRecord(r.enemyDifficulty);
+  if (challenge) rec.enemyDifficulty = challenge;
   if (rec.test === true && Number.isInteger(r.testActions) && r.testActions >= 0 && r.testActions <= 1e6) rec.testActions = r.testActions;
   if (r.compact === true) rec.compact = true;
   // an id-less (hand-made) record gets a content id, so both copies of it land on the same key (`vs` and `content` left
@@ -449,7 +452,7 @@ export function peekStatsRecords() {
 // ---- compaction + the storage budget ---------------------------------------------------------------------------
 
 const COMPACT_FRAME = ['id', 'v', 't', 'end', 'victory', 'roundsPassed', 'lastRound', 'hiddenReached', 'hiddenCleared', 'reason', 'modeId',
-  'difficulty', 'roomMode', 'durationMs', 'selfId', 'vs', 'content', 'version', 'fav', 'test', 'testActions'];
+  'difficulty', 'roomMode', 'durationMs', 'selfId', 'vs', 'content', 'version', 'fav', 'test', 'testActions', 'enemyDifficulty'];
 
 /**
  * The compact form of a record: the frame and the player's OWN row without lineup, bonds and name — everything the
@@ -595,6 +598,7 @@ export function buildRecord(res, ctx = {}) {
     version: ctx.version ?? null,
     // the boss rounds' per-player / per-operator damage, straight from the settlement payload (§37.77)
     bossDamage: r.bossDamage,
+    enemyDifficulty: r.enemyDifficulty,
     players: r.players,
   });
 }
@@ -738,6 +742,7 @@ export function recordToResult(rec) {
     players: r.players,
     // the replayed settlement shows the same boss-round damage the live one did (§37.77)
     bossDamage: r.bossDamage ?? null,
+    ...(r.enemyDifficulty ? { enemyDifficulty: r.enemyDifficulty } : {}),
   };
   if (Number.isFinite(r.lastRound)) res.lastRound = r.lastRound;
   if (r.test === true) res.test = true;

@@ -449,3 +449,14 @@ A player who observes may still be sampled by another bettor; one successful bet
 observes. Base waves and the carried-cash management fee are unaffected. Plugin details live in its own README.
 
 Kurumi 4.5.2 starts at 20 LP. Sandbox availability does not select the plugin for a room: the host opts in, and new rooms retain an empty plugin selection by default. [ASSUMED] Optional plugin policy.
+
+### 可选插件难度（§37.126）
+
+维护者授权的非官方玩法 [ASSUMED]：内容插件可以通过模式的 `enemyDifficulty` 配置固定/随机强化。
+仅插件配置存在时启用；原版难度、数据与黄金期望不变。固定生命/移动/数量/攻击/领袖共享生命逐轮相同；
+随机在整备前以独立逐回合种子抽1至最多词条数，不放回抽词条；每项在有效上限内等概率取档。
+词条不跨回合累加，领袖生命仅在领袖回合参与随机，上限1不抽，无可用项则无强化。
+数量只能1/2/3倍，其余步长0.5；数量在官方敌人替换后乘算、出怪间隔除以同一倍率，保持时间窗口。
+领袖、机制部件、无害单位、召唤物与悬赏不加数量，悬赏奖励额度不变，联防漏怪不重复强化。
+整备开始播报，界面保留摘要；本回合配置全房间一致、断线及存档恢复不重抽，结算保存配置及逐轮记录。
+固定预设「热身演练」「加压作战」「高危战线」「N18对掏来」可改为自定义，默认采用热身演练。

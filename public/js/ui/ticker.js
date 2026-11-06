@@ -23,13 +23,13 @@ const QUEUE_MAX = 4;
  */
 
 /**
- * Whether a ticker line may still play in `round` (m.public.round): every line except a BOSS_HIT line from another
+ * Whether a ticker line may still play in `round` (m.public.round): every line except a BOSS_HIT or ENEMY_DIFFICULTY line from another
  * round (the Final Assault's lines once the Hidden Core's round started). Lines without a round always play.
  * @param {TickerLine|null} line
  * @param {number|null} round
  */
 export function tickerLineLive(line, round) {
-  if (!line || line.type !== 'BOSS_HIT') return true;
+  if (!line || !['BOSS_HIT', 'ENEMY_DIFFICULTY'].includes(line.type)) return true;
   return line.round == null || round == null || line.round === round;
 }
 

@@ -181,10 +181,18 @@ test('timeline with priorities: shop-level and promotion lines of the boss prep 
 test('main.js stamps every ticker line with its type, player and round; the strip is built on the helpers', () => {
   const main = readFileSync(new URL('../../public/js/main.js', import.meta.url), 'utf8');
   const handler = main.slice(main.indexOf("net.on('m.ticker'"), main.indexOf("net.on('m.emote'"));
-  assert.match(handler, /type, playerId, round:\s*s\.match\?\.public\?\.round \?\? null, priority/, 'the m.ticker handler keeps type, player, round and priority');
+  assert.match(handler, /type, playerId,\s*round: type === 'ENEMY_DIFFICULTY' && Number\.isInteger\(msg\.round\) \? msg\.round : s\.match\?\.public\?\.round \?\? null, priority/, 'the m.ticker handler keeps type, player, round and priority');
   const strip = readFileSync(new URL('../../public/js/ui/ticker.js', import.meta.url), 'utf8');
   const comp = strip.slice(strip.indexOf('export function Ticker('));
   assert.match(comp, /useStore\(\(s\) => s\.match\?\.public\?\.round/, 'the strip follows m.public.round');
   for (const fn of ['enqueueTickerLines(', 'pruneTickerLines(', 'nextTickerLine(']) assert.ok(comp.includes(fn), `the strip uses ${fn})`);
   assert.match(comp, /\}, \[round\]\);/, 'a round change re-filters the queue and the line on screen');
+});
+
+// A difficulty announcement must not outlive the round it describes.
+test('difficulty ticker lines expire on the next round while ordinary notices remain', () => {
+  const challenge = line('ENEMY_DIFFICULTY', 1);
+  assert.equal(tickerLineLive(challenge, 1), true);
+  assert.equal(tickerLineLive(challenge, 2), false);
+  assert.equal(tickerLineLive(line('CUSTOM', 1), 2), true);
 });

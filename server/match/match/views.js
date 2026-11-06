@@ -10,7 +10,7 @@ import { TEST_PUBLIC_LOG } from '../../../shared/testMode.js';
 import { boardOrder, pieceDir } from '../board.js';
 import { bondList, offBondCounts } from '../bondsMeta.js';
 import { cardView } from '../choices.js';
-import { bountySpawns, previewOf } from '../waves.js';
+import { bountySpawns, withBounties, previewOf } from '../waves.js';
 import { timelineAt, GAME_SPEED } from '../fields.js';
 import { bossFieldPlacement } from '../finalAssault.js';
 import { battleProgress } from '../../sim/spec.js';
@@ -75,6 +75,7 @@ export class MatchViews {
       t: 'm.public',
       phase: this.phase,
       round: this.round,
+      ...(this.gd.roundDifficulty ? { enemyDifficulty: this.gd.roundDifficulty } : {}),
       lastRound: this.gd.lastRound,
       deadline: this.deadline,
       serverNow: this.sched.now(),
@@ -296,6 +297,7 @@ export class MatchViews {
       return previewOf([...g.wave.spawns, ...bountySpawns(this.gd, this.round, g.wave, ps.bounties, ps.playerId, { solo: this.isSolo, side: g.side })]);
     }
     if (!this.wave) return [];
+    if (this.gd.roundDifficulty) return previewOf(withBounties(this.gd, this.round, this.wave, ps.bounties, ps.playerId));
     const bounty = bountySpawns(this.gd, this.round, this.wave, ps.bounties, ps.playerId, { solo: this.isSolo });
     return previewOf([...this.wave.spawns, ...bounty]);
   }

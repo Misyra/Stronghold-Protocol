@@ -246,6 +246,61 @@ function refs(root) {
 const show = (el, on) => { el.style.display = on ? '' : 'none'; };
 const place = (el, x, y, w, h) => { el.style.transform = `translate(${x}px,${y}px)`; el.style.width = w + 'px'; el.style.height = h + 'px'; };
 
+/* Film grain: the official recording is 30 fps, so a small bank of pre-generated noise frames rotated every
+   `everyN` calls gives the same look at 30 Hz — off the hot path that used to run ~100k Math.random calls and a
+   full-canvas putImageData on every animation frame. The context only needs createImageData/putImageData, so Node
+   can drive it with a stand-in (test/ui/film-grain.test.js); the bank is built once at mount, not per frame. */
+export const GRAIN_FRAMES = 8, GRAIN_EVERY = 2, GRAIN_W = 426, GRAIN_H = 240;
+export function createGrain(gg, opts = {}) {
+  const w = opts.width ?? GRAIN_W, h = opts.height ?? GRAIN_H;
+  const frameCount = opts.frameCount ?? GRAIN_FRAMES, everyN = opts.everyN ?? GRAIN_EVERY;
+  const bank = [];
+  if (gg && typeof gg.createImageData === 'function') {
+    for (let f = 0; f < frameCount; f++) {
+      const img = gg.createImageData(w, h), d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = Math.random() * 255;
+        d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+      }
+      bank.push(img);
+    }
+  }
+  let calls = 0, n = 0;
+  const grain = () => {
+    if (!bank.length) return;
+    calls++;
+    if (everyN > 1 && (calls - 1) % everyN !== 0) return; // 30 Hz: update on every Nth rAF
+    gg.putImageData(bank[(n++) % frameCount], 0, 0);
+  };
+  return { grain, frameCount, everyN, bank, get puts() { return n; } };
+}
+
+/* Per-frame style.filter writes: a filter string that changes every frame forces the browser to re-composite that
+   layer every frame (the 2048×920 dusk map is among them). The film's continuous filters are quantized to
+   FILTER_STEPS bands by the caller, and createFilterWriter writes a layer's style.filter only when its value actually
+   changes; constant / discrete filters (shipA, cross boosts, 'none') then write once. transform / opacity writes are
+   untouched — they do not trigger a re-composite. Only DOM el.style.filter is touched, so Node can drive it with a
+   fake style object (test/ui/film-filter.test.js) and count the writes exactly. */
+export const FILTER_STEPS = 24;
+/** Quantize a continuous filter number to FILTER_STEPS bands (max step 1/24 ≈ 0.042 of full brightness). */
+export function quantBrightness(x) { return Math.round(x * FILTER_STEPS) / FILTER_STEPS; }
+/**
+ * A per-element "write only on change" gate for style.filter. `set(el, value)` returns true when it wrote.
+ * @param {{ countWrites?: boolean }} [opts]
+ */
+export function createFilterWriter() {
+  const last = new WeakMap();
+  let writes = 0;
+  const set = (el, value) => {
+    if (last.get(el) === value) return false;
+    last.set(el, value);
+    el.style.filter = value;
+    writes++;
+    return true;
+  };
+  return { set, get writes() { return writes; } };
+}
+
 // ============ the recording's lobby scene: the film's final picture (3.12 s on) ============
 /* Measured on the video (lobby clock = video seconds - 3.12): a lock-on box flashes on the map's target at 4.40 s, the night
    gives way to the dusk at 5.05 s (dims to black over a dim grid while a ~970 px soft band of dusk sweeps in left to right,
@@ -499,7 +554,7 @@ function introHTML() {
  * spill past the edges rather than leaving wide black bars). Returns { stage, render(T), grain(), measure(), destroy() }:
  * render draws video second T (1.2 … 4.0), the caller drives the clock.
  */
-export function mountAllianceIntro(host) {
+export function mountAllianceIntro(host, opts = {}) {
   ensureShared();
   const stage = document.createElement('div');
   stage.className = 'spa-stage';
@@ -518,16 +573,13 @@ export function mountAllianceIntro(host) {
   fit();
   addEventListener('resize', fit);
 
-  // grain
+  // grain: a pre-generated bank rotated at 30 Hz (the recording's own frame rate); see createGrain above.
   const gc = E.grain, gg = gc.getContext('2d');
-  gc.width = 426; gc.height = 240;
-  const gimg = gg ? gg.createImageData(426, 240) : null;
-  const grain = () => {
-    if (!gimg) return;
-    const d = gimg.data;
-    for (let i = 0; i < d.length; i += 4) { const v = Math.random() * 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
-    gg.putImageData(gimg, 0, 0);
-  };
+  gc.width = GRAIN_W; gc.height = GRAIN_H;
+  const { grain } = (opts.makeGrain || createGrain)(gg);
+  // filter writes: quantized values, written only on change (injectable so Node can count them).
+  const filterSet = (opts.makeFilterWriter || createFilterWriter)();
+  const q = (x) => quantBrightness(x).toFixed(3);
   const GA_W = glyphSVG(E.tA, 19, 7);
   const gStops = [E.tA.querySelector('.spa-gs1'), E.tA.querySelector('.spa-gs2')];
   glyphSVG(E.cap1, 17, 11);
@@ -564,14 +616,14 @@ export function mountAllianceIntro(host) {
     // ---- background ----
     E.cam.style.transform = `scale(${SBG(t).toFixed(4)})`;
     E.cam.style.visibility = t >= 1.40 ? 'visible' : 'hidden';
-    E.fog.style.filter = `brightness(${(L > 0.5 ? 0.08 + 1.1 * L : 0.04 + 0.48 * L).toFixed(3)}) contrast(1.05) saturate(.9)`;
+    filterSet.set(E.fog, `brightness(${q(L > 0.5 ? 0.08 + 1.1 * L : 0.04 + 0.48 * L)}) contrast(1.05) saturate(.9)`);
     E.fog2.style.opacity = (seg(t, 1.9, 2.05) * (1 - 0.45 * seg(t, 2.7, 3.0))).toFixed(3);
-    E.fog2.style.filter = 'brightness(.52) saturate(.85)';
+    filterSet.set(E.fog2, 'brightness(.52) saturate(.85)');
     // bright phase: the ship only darkens the fog where it has dark detail; dark phase: a dim grey hull
-    E.shipA.style.filter = 'brightness(1.02) saturate(.62) contrast(1.05)';
+    filterSet.set(E.shipA, 'brightness(1.02) saturate(.62) contrast(1.05)');
     E.shipA.style.opacity = (0.88 * (1 - seg(t, 1.9, 1.99))).toFixed(3);
     E.shade.style.opacity = (seg(t, 1.45, 1.6) * (1 - seg(t, 1.92, 2.02))).toFixed(3);
-    E.shipB.style.filter = `contrast(4) brightness(${(0.17 + 0.1 * L).toFixed(3)}) saturate(.5)`;
+    filterSet.set(E.shipB, `contrast(4) brightness(${q(0.17 + 0.1 * L)}) saturate(.5)`);
     E.shipB.style.opacity = (0.92 * seg(t, 1.88, 1.99) * (1 - seg(t, 2.72, 3.0))).toFixed(3);
     // ---- HUD squares ----
     const hudFade = 1 - seg(t, 2.2, 2.38);
@@ -590,7 +642,7 @@ export function mountAllianceIntro(host) {
     if (rv) {
       const x = ROWX(t);
       E.rowsBase.style.opacity = BASEA(t).toFixed(3);
-      E.rows.style.filter = t < 1.40 ? `brightness(${RB(t).toFixed(3)})` : 'none';
+      filterSet.set(E.rows, t < 1.40 ? `brightness(${q(RB(t))})` : 'none');
       const y1 = Y1(t), h1 = H1(t), yr = YR2(t), hr = HR2(t);
       show(E.row1, x > -700); show(E.row2, x > -700);
       E.row1.style.transform = `translate(${x.toFixed(0)}px,${y1.toFixed(1)}px)`; E.row2.style.transform = `translate(${x.toFixed(0)}px,${(yr - 42).toFixed(1)}px)`;
@@ -626,7 +678,7 @@ export function mountAllianceIntro(host) {
       show(e, crossOn);
       const x = i % 2 ? 1280 - cxL : cxL, y = i < 2 ? cyT : 780 - cyT;
       e.style.transform = `translate(${x - 17.4}px,${y - 19.2}px) scale(.6)`;
-      e.style.filter = L > 0.6 ? 'url(#spaBoostDark)' : 'url(#spaBoostPale)';
+      filterSet.set(e, L > 0.6 ? 'url(#spaBoostDark)' : 'url(#spaBoostPale)');
       e.style.opacity = (1 - seg(t, 2.72, 2.87)).toFixed(2);
     });
     const hb = HBX(t), hbOn = t >= 1.88 && t < 2.86, hbA = (1 - seg(t, 2.72, 2.86)).toFixed(2);
@@ -729,7 +781,7 @@ export function mountAllianceIntro(host) {
     const LS = T > 3.0 ? lobbyFrame(E, Math.max(0, T - 3.12)) : null;
     logo(T);
     // the title turns black over the dusk (the video's title does the same)
-    E.logo.style.filter = LS && LS.dark > 0 ? `brightness(${(1 - LS.dark).toFixed(3)})` : '';
+    filterSet.set(E.logo, LS && LS.dark > 0 ? `brightness(${q(1 - LS.dark)})` : '');
   }
   measure();
   return {

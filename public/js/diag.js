@@ -322,7 +322,10 @@ export function buildDiagnostics(input) {
   const b = state.match?.battle || null;
   if (b) {
     lines.push(`battle: ${join(b.kind, b.fieldId ? `field ${b.fieldId}` : null, b.authoritative ? 'authoritative' : b.watch ? 'watching' : null,
-      b.done ? 'done' : b.loading ? 'loading' : 'running', b.paused ? 'paused' : null, Number.isFinite(b.speed) ? `${b.speed}x` : null)}`);
+      b.done ? 'done' : b.loading ? 'loading' : 'running',
+      // the runner's b.start → screen time of this battle (a local measurement; never sent to the server)
+      Number.isFinite(b.prepareMs) ? `prepare ${b.prepareMs} ms` : null,
+      b.paused ? 'paused' : null, Number.isFinite(b.speed) ? `${b.speed}x` : null)}`);
   }
   if (settings) {
     lines.push(`settings: ${join(`quality ${settings.quality}`, settings.damageNumbers ? 'damage numbers' : null, settings.officialDamageNumbers ? 'official damage numbers' : null, settings.ammoEnergyCount ? 'ammo and energy counts' : null, settings.bondTimers ? 'bond timers' : null, settings.combatMetrics ? 'combat metrics' : null, settings.officialFx && settings.officialFx !== 'auto' ? `official fx ${settings.officialFx}` : null, settings.muted ? 'muted' : null, settings.prepDeployFold === false ? 'deploy fold off' : null)}`);

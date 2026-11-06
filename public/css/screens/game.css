@@ -55,6 +55,15 @@
 .gm__loadfail__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: .1rem; }
 .gm__loadfail .btn { min-height: max(.4rem, 32px, calc(40px * var(--sp-ui, 1))); padding-inline: .18rem; font-size: calc(.15 * var(--t)); }
 @media (pointer: coarse) { .gm__loadfail .btn { min-height: max(.44rem, 32px, calc(44px * var(--sp-ui, 1))); } }
+/* a watched teammate's field is still preparing (a plugin set's Worker, runner.js prewarmWatch keeps it off the click):
+   a quiet plate over the current board until its b.start is shown — non-blocking, gone with the same state push */
+.gm__watchload {
+  position: absolute; left: 50%; top: 38%; transform: translateX(-50%); z-index: 2;
+  display: flex; align-items: center; gap: .12rem; padding: .1rem .24rem;
+  background: rgba(10, 14, 12, .86); border: 1px solid var(--line-2); color: var(--text-md);
+  font-size: calc(.17 * var(--t)); letter-spacing: .04em; pointer-events: none;
+  animation: screen-in var(--t-slow) var(--ease-out);
+}
 .gm__hud { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .gm__hud > * { pointer-events: auto; }
 .gm__difficulty { position: absolute; right: .2rem; top: 1.65rem; max-width: min(5rem, 80vw);

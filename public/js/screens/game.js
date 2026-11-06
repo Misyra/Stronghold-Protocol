@@ -1940,6 +1940,9 @@ function MatchScreen() {
         <${Button} variant="secondary" onClick=${() => globalThis.location?.reload()}>${t('刷新页面')}<//>
       </div>
     </div>` : null}
+    ${cc && combat && watchingOther && battleState?.loading && !battleState.error ? html`<div class="gm__watchload" role="status">
+      <${Spinner} size="sm" /><span>${t('正在载入战场…')}</span>
+    </div>` : null}
     <div class="gm__vignette" aria-hidden="true"></div>
     ${tempNotice ? html`<${TempRowNotice} view=${view} count=${temp.count} items=${temp.items} label=${!drag && !facing}
       ready=${phase === PHASE.PREP && !!priv?.ready} />` : null}

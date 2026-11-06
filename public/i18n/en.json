@@ -271,6 +271,7 @@
   "全员同意：下一场战斗起战斗 2 倍速": "Unanimous: battles run at 2× speed from the next battle",
   "战斗 2 倍速：全员同意后，下一场战斗开始生效（{count}/{need}）": "2× battle speed: takes effect at the next battle once everyone agrees ({count}/{need})",
   "正在载入模拟数据…": "Loading simulation data...",
+  "正在载入战场…": "Loading the battlefield...",
   "正在进入模拟…": "Entering simulation...",
   "渲染器暂时未能加载，已切换为简化视图（功能不受影响，可刷新重试）": "The renderer could not load. Switched to the simplified view (all features remain available; reload to retry).",
   "已配发的装备无法销毁": "Equipped Equipment cannot be destroyed",

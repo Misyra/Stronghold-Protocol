@@ -55,8 +55,8 @@
 //   import { battleRunner } from './battle/runner.js'     (browser singleton wired to net.js + store.js; null in Node)
 //   battleRunner.on('snap' | 'ev' | 'field' | 'state', fn) → off
 //   battleRunner.state()  → { battleId, fieldId, kind, authoritative, watch, done, own, members, loading, paused, leaks,
-//                              uniteLeft, bondLayers } | null
-//   battleRunner.stats()  → { ticks, stepMs, avgTickMs, maxFrameMs, catchups, errors, battles }
+//                              uniteLeft, bondLayers, prepareMs? } | null (prepareMs: the last b.start → screen time)
+//   battleRunner.stats()  → { ticks, stepMs, avgTickMs, maxFrameMs, catchups, errors, battles, prepares, prepareMs }
 //   battleRunner.unitStats(unitId, fieldId?) → the live stats of a unit of the battle on screen (shared/protocol.js
 //                           unitStatsEntry: current HP, effective max HP / ATK / DEF / RES / interval / block / move
 //                           speed next to its base; an ally also its live attack range `range` — unit.liveRangeGrid,
@@ -82,6 +82,13 @@
 // Battle (its data only, no script) instead of the plugin Worker, so 作战统计 works as on the original content.
 // A plugin set keeps one Worker for that content: `load` once, then `start` each round. `clear` parks it. It stops
 // when the content set changes, the page leaves the room, the Worker fails, or the runner is disposed.
+// A watch of a teammate's field (g.watch → b.start, watch: true) would pay that Worker's cold start — the whole content
+// set cloned into a new Worker and the plugin scripts installed — on the click, which is seconds on a big set. So once
+// the own battle's b.result is delivered the runner warms one host for the same set in the background (`warming`: the
+// same `load`, no battle) and a watch b.start of that set takes it (`takeWarm`), while a clear()/dispose() stops it.
+// Only normal rounds: a boss / hidden round's fields are never shown to the other pair, and a 联防 round has one field,
+// so the load would be pure waste. A hidden tab skips it, a low-memory device (navigator.deviceMemory < 4) too, and
+// `globalThis.__SP_PREWARM_WATCH__ = '0'` turns it off (read per call, like `stepPacketFull()`).
 //
 // createBattleRunner(deps) builds an instance with injectable net / store / clock / frame scheduler / sim loader
 // (test/match/runner.test.js and test/match/runner-pending.test.js drive it under Node).
@@ -253,9 +260,26 @@ export function createBattleRunner(deps) {
   const pending = new Map();
   /** One idle remote host for the content set it loaded. In-page hosts are not parked. */
   let parked = null;
+  /**
+   * One remote host warming for the set it is loading (prewarmWatch): `{ cs, host, ready }` — no battle, `ready` the
+   * `load` (never rejects). The own battle's result delivered is when a teammate's field becomes watchable, and a
+   * plugin set's Worker pays its whole cold start on the click — so it is paid here instead. prepare() awaits it for
+   * the same cs (takeWarm).
+   */
+  let warming = null;
   /** Entries clear() removed that still hold a pending or undelivered b.result. */
   const retained = [];
+  /** `__SP_PREWARM_WATCH__ = '0'` turns the watch prewarm off (dev / rollback switch, read per call). */
+  const prewarmWatchOn = () => globalThis.__SP_PREWARM_WATCH__ !== '0';
+  function releaseWarming() {
+    if (!warming) return;
+    const w = warming;
+    warming = null;
+    try { w.host.stop(); } catch { /* already stopped */ }
+  }
+  /** Release every idle remote host: the parked one and one still warming (leaving the room, dispose, another set). */
   function releaseParked() {
+    releaseWarming();
     if (!parked) return;
     const host = parked.host;
     parked = null;
@@ -268,11 +292,65 @@ export function createBattleRunner(deps) {
     parked = null;
     return host;
   }
+  /**
+   * The parked host for `cs`; one still warming for that set (prewarmWatch) is awaited first. The wait is bounded by
+   * the host's own load deadline (WORKER_LOAD_TIMEOUT_MS); a warm host that failed leaves nothing parked and the
+   * caller builds a fresh one exactly as before.
+   */
+  async function takeWarm(cs) {
+    const w = warming;
+    if (w && w.cs === cs) await w.ready;
+    return takeParked(cs);
+  }
   /** Park one healthy remote host. A second idle host for the same set is stopped (two live fields already have their own). */
   function parkHost(host, cs) {
     if (!host?.remote || host.stopped || !cs) { try { host?.stop(); } catch { /* ignore */ } return; }
     if (parked && parked.host !== host) releaseParked();
     parked = { host, cs };
+  }
+  /**
+   * Warm one remote host for the content set of `e` (a plugin set) once its b.result is delivered: the next g.watch
+   * then starts a warm Worker instead of cloning the whole content set and installing the scripts on the click. Best
+   * effort — a warm host that fails is stopped and never touches a battle.
+   */
+  function prewarmWatch(e) {
+    if (disposed || e.prewarmed) return;
+    e.prewarmed = true;
+    // plugin sets only: a vanilla battle runs on an InPageSimHost and a spec without cs has nothing to load
+    if (!e.host?.remote) return;
+    // normal fields only: the other pair's boss / hidden field is never shown to a fighting player, and a 联防 round
+    // has one shared field — a Worker warmed there could never be watched
+    if (e.kind !== 'normal') return;
+    // a result reply landing after the round / match moved on must not start a Worker for a room this page left
+    if (entries.get(e.battleId) !== e && pending.get(e.battleId) !== e) return;
+    const cs = e.sim && typeof e.sim.cs === 'string' && e.sim.cs ? e.sim.cs : null;
+    if (!cs || !e.sim.content) return;
+    // a battle of this set is already being prepared (a watch click that beat the result's reply): that host's load
+    // is the one a prewarm would duplicate
+    for (const p of pending.values()) if (p !== e && p.spec && p.spec.cs === cs) return;
+    if (!prewarmWatchOn() || hidden()) return;
+    const mem = globalThis.navigator?.deviceMemory;
+    if (typeof mem === 'number' && mem < 4) return; // a low-memory device keeps the second Worker off
+    if ((parked && parked.cs === cs) || (warming && warming.cs === cs)) return;
+    releaseWarming(); // another set's warm host is of no use here (and only one idle host may live)
+    let host;
+    try {
+      host = deps.createHost ? deps.createHost(e.sim, () => {})
+        : new WorkerSimHost({ onFailure: () => {}, timeoutMs: deps.workerTimeoutMs, stepPacketFull: stepPacketFull() });
+    } catch { return; }
+    const w = { cs, host, ready: null };
+    warming = w;
+    w.ready = Promise.resolve().then(() => host.load(cs, e.sim.content)).then(() => {
+      // cleared while it loaded: nobody will take it
+      if (warming !== w) { try { host.stop(); } catch { /* ignore */ } return; }
+      warming = null;
+      parkHost(host, cs);
+    }).catch((err) => {
+      if (warming === w) warming = null;
+      try { host.stop(); } catch { /* ignore */ }
+      if (!disposed) console.warn('[runner] watch prewarm failed', err);
+    });
+    return w.ready;
   }
   let cur = null;              // entry on screen
   let simP = null;
@@ -288,7 +366,9 @@ export function createBattleRunner(deps) {
   let pausedAt = null;
   /** a normal field's leak count (or a battle's bond layers) changed since the last publishState() */
   let leaksDirty = false;
-  const stats = { ticks: 0, stepMs: 0, maxFrameMs: 0, catchups: 0, errors: 0, battles: 0, frames: 0 };
+  // prepares / prepareMs: the b.start receipt → on screen time of the last battle (diag.js prints it with the battle;
+  // it stays local — the stats() call and the published battle state — and is never sent to the server)
+  const stats = { ticks: 0, stepMs: 0, maxFrameMs: 0, catchups: 0, errors: 0, battles: 0, frames: 0, prepares: 0, prepareMs: null };
   /** Hidden-tab backlog tuple → the game time it was drained at (emitFrame batches the backlog by it). */
   const heldAt = new WeakMap();
 
@@ -322,6 +402,7 @@ export function createBattleRunner(deps) {
     const vanilla = vanillaCs();
     const want = typeof cs === 'string' && vanilla != null && cs !== vanilla ? cs : null;
     if (parked && parked.cs !== want) releaseParked();
+    if (warming && warming.cs !== want) releaseWarming();
     if (simP && simCs === want) return simP;
     simCs = want;
     const p = (want ? contentFor(want).then((content) => {
@@ -370,6 +451,8 @@ export function createBattleRunner(deps) {
       battleId: e.battleId, fieldId: e.fieldId, kind: e.kind, authoritative: e.authoritative, watch: e.watch,
       done: e.done, own: e.own, members: e.members.slice(), loading: !!loading, error: !!(loading && loading.loadError), speed: e.speed, paused: pausedAt != null,
       leaks: leakMap(), uniteLeft: uniteLeftMap(), bondLayers: layerMap(),
+      // b.start → screen (diag.js `battle:` line); absent until the battle was shown once
+      ...(e.prepareMs != null ? { prepareMs: Math.round(e.prepareMs) } : {}),
     };
   }
 
@@ -633,7 +716,12 @@ export function createBattleRunner(deps) {
     const send = (tries) => {
       let req;
       try { req = net.request('b.result', msg, { timeout: 15000 }); } catch (err) { req = Promise.reject(err); }
-      return Promise.resolve(req).then(() => { e.delivery = 'delivered'; dropRetained(e); }, (err) => {
+      return Promise.resolve(req).then(() => {
+        e.delivery = 'delivered';
+        dropRetained(e);
+        // the own result is in: the teammate fields are watchable from here — pay the plugin Worker's cold start now
+        try { prewarmWatch(e); } catch (err) { console.warn('[runner] watch prewarm failed', err); }
+      }, (err) => {
         const code = err && err.code;
         if (code === 'TIMEOUT' && tries > 0) return send(tries - 1);
         if (LOST_RESULT_CODES.includes(code)) {
@@ -771,6 +859,13 @@ export function createBattleRunner(deps) {
 
   /** Put an entry on screen: field meta into the store (the game screen enters it), then its current frame. */
   function show(e) {
+    // the first show of an entry: how long it took from the b.start receipt (the watch latency a warm host shortens)
+    if (e.startedAt != null) {
+      e.prepareMs = Math.max(0, clock() - e.startedAt);
+      e.startedAt = null;
+      stats.prepares++;
+      stats.prepareMs = e.prepareMs;
+    }
     cur = e;
     e.held = [];
     e.slices = [];
@@ -870,8 +965,10 @@ export function createBattleRunner(deps) {
     const e = {
       battleId: msg.battleId, fieldId: msg.fieldId || msg.spec.fieldId, kind: msg.kind || msg.spec.kind, spec: msg.spec,
       // built by prepare(); `seq` = its latest b.start, `elapsed` = the field clock to start from, `endReason` = the first
-      // forced / timeout b.end (applied once the Battle exists), `ready` = the preparation (a promise)
+      // forced / timeout b.end (applied once the Battle exists), `ready` = the preparation (a promise);
+      // `startedAt` = the b.start receipt, `prepareMs` = receipt → first show (diag), `prewarmed` = prewarmWatch ran
       sim: null, battle: null, meter: null, seq, elapsed: Number(msg.elapsed) || 0, endReason: null, ready: null,
+      startedAt: clock(), prepareMs: null, prewarmed: false,
       // the simulation load that could not be completed: the b.start stays queued (loading state + `error`) and a
       // resend / `retry()` / the connection coming back tries again — one Battle, never a rebuild (SIM_LOAD_RETRY_MS)
       loadError: null, retrying: false, keepPending: false,
@@ -940,7 +1037,16 @@ export function createBattleRunner(deps) {
       if (!csAccepted(e.spec.cs)) e.authoritative = false;
       let battle;
       try {
-        const reused = sim.remote ? takeParked(sim.cs) : null;
+        // a warm host for this set (prewarmWatch) is awaited, not duplicated: one load per cs
+        const reused = sim.remote ? await takeWarm(sim.cs) : null;
+        if (!wanted()) {
+          if (reused) {
+            // taken while this b.start was superseded: hand it to the prepare that replaced it; after a clear() /
+            // dispose() the entry is gone and nothing may idle past that, so it stops
+            try { if (pending.get(e.battleId) === e) parkHost(reused, sim.cs); else reused.stop(); } catch { /* ignore */ }
+          }
+          return;
+        }
         if (reused) {
           reused.onFailure = (err) => failWorker(e, err);
           e.host = reused;
@@ -1081,6 +1187,8 @@ export function createBattleRunner(deps) {
   function clear({ keepMetrics = false } = {}) {
     ++startSeq;
     loading = null;
+    // a warm host is for the round that is over — stop it before a still-good battle host may be parked
+    releaseWarming();
     for (const e of entries.values()) {
       // never drop an unreported authoritative result (the round already moved on: the server has its own).
       // An in-page battle forceEnds here. A Worker battle is not forceEnded: the server takes an unfinished one,
@@ -1279,6 +1387,8 @@ export function createBattleRunner(deps) {
     _entries: entries,
     _frame: frame,
     _pump: pump,
+    /** The idle remote hosts: the parked slot `{ host, cs }` and the warming slot `{ cs, host, ready }` (either null). */
+    _idleHosts: () => ({ parked, warming }),
     onStart, onPool, onEnd, clear, ensureSim, redeliver, setPaused,
     dispose() {
       disposed = true;

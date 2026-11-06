@@ -2,7 +2,9 @@
 // animation frames: pacing (60 ticks per real second at 2×, ≤ 8 per frame), the b.snap / b.ev feed and the field meta,
 // b.progress / b.result when authoritative (valid protocol frames, the same result as the server's simulation),
 // fast-forward to `elapsed`, b.end (forced / takeover), the hidden-tab pump, the boss pool sync, phase clearing, the live
-// leak count of normal fields (state().leaks, user playtest #3 item 2).
+// leak count of normal fields (state().leaks, user playtest #3 item 2), the watch prewarm of a plugin set's Worker
+// (runner.js `warming`: started after the own result is delivered, taken by the watch b.start of the same cs, stopped
+// by clear()/dispose()) and the b.start → screen time (`stats().prepareMs`, state().prepareMs).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -30,7 +32,7 @@ function fakeNet() {
   return n;
 }
 
-function rig({ hidden = false, combatMetrics = true, pinMetrics = true, createHost = null } = {}) {
+function rig({ hidden = false, combatMetrics = true, pinMetrics = true, createHost = null, plugin = null } = {}) {
   let t = 1000;
   const frames = [];
   const intervals = [];
@@ -39,6 +41,11 @@ function rig({ hidden = false, combatMetrics = true, pinMetrics = true, createHo
   const store = createStore(initialState);
   // Existing cases pin the meter on, which is what the PR asserted. pinMetrics false leaves the production default
   // (off) so a test can drive setCombatMetrics. createHost stands in for a Worker sim.
+  // `plugin`: the page holds a gameplay content set, so a spec of that cs is a remote (Worker) sim — what
+  // ensureSim() returns for a plugin room: `{ content, cs, remote: true }` (a checked content set).
+  const loadSim = async (content) => (plugin && content
+    ? { spec: specMod, ds: DS, content, cs: content.cs, remote: true }
+    : { spec: specMod, ds: DS });
   const deps = {
     net, store, doc,
     now: () => t,
@@ -46,11 +53,16 @@ function rig({ hidden = false, combatMetrics = true, pinMetrics = true, createHo
     caf: () => {},
     setInterval: (fn) => { intervals.push(fn); return intervals.length; },
     clearInterval: () => {},
-    loadSim: async () => ({ spec: specMod, ds: DS }),
+    loadSim,
     logger: { error() {}, warn() {}, info() {}, debug() {} },
   };
   if (pinMetrics) deps.combatMetrics = combatMetrics;
   if (createHost) deps.createHost = createHost;
+  if (plugin) {
+    deps.vanillaCs = () => VANILLA_CS;
+    deps.simContent = () => ({ cs: plugin.cs });          // the checked set the page holds (content.js simContent)
+    deps.contentFor = async (cs) => ({ cs, data: {}, bounds: null, scripts: [], hashInput: 'h', nativeVerified: true });
+  }
   const runner = createBattleRunner(deps);
   const feed = { snaps: [], evs: [], fields: [] };
   runner.on('snap', (s) => feed.snaps.push(s));
@@ -85,6 +97,60 @@ function realStart(seed = 7301) {
   const msg = h.lastTo('p_0', 'b.start');
   h.m.dispose();
   return msg;
+}
+
+/** A content hash (64 hex, shared/protocol.js isContentHash) of the plugin / vanilla set the plugin cases play. */
+const PLUGIN_CS = 'c'.repeat(64);
+const VANILLA_CS = 'd'.repeat(64);
+
+/** A b.start of the plugin set: one player, no units — enough for the runner's prepare / show / end path. */
+function pluginStart({ battleId = 'plugin-own', fieldId = 'n:p_0', cs = PLUGIN_CS, authoritative = true, watch = false } = {}) {
+  return {
+    battleId, fieldId, kind: 'normal', authoritative, watch, speed: 2,
+    spec: { fieldId, kind: 'normal', cs, players: [{ playerId: 'p_0' }] },
+  };
+}
+
+/**
+ * Fake Worker-style hosts for the plugin cases — a new one per createHost() call, like the runner makes them: `load`
+ * counted (and optionally held / failed), `start` giving each battle its own minimal wire battle, `compactResult` a
+ * structurally valid forced result (shared/protocol.js isBattleResult) for the b.result delivery.
+ */
+function fakeRemoteHosts() {
+  const hosts = [];
+  const make = ({ hold = null, fail = false } = {}) => {
+    const host = {
+      remote: true,
+      onFailure: () => {},
+      loadCalls: 0, started: 0, stopped: false, loaded: null,
+      battle: null, meter: { lp: 0 },
+      async load(cs, content) {
+        host.loadCalls++;
+        host.loaded = { cs, content };
+        if (hold) await hold;
+        if (fail) throw Object.assign(new Error('load failed'), { code: 'PLUGIN_WORKER_FAILED' });
+      },
+      async start(spec) {
+        host.started++;
+        host.spec = spec;
+        host.battle = {
+          finished: false, time: 0, tickCount: 0, leakedCount: 0, flags: {}, allyUnits: [], enemies: [],
+          snapshot: () => ({ t: 0, units: [] }), drainEvents: () => [], fieldMeta: () => ({ units: [] }), getPlayer: () => null, heal: () => 0,
+        };
+        return host;
+      },
+      step: () => Promise.resolve({ snap: host.battle.snapshot(), ev: [], ticks: 0, slices: [] }),
+      progress: () => ({ gt: 0, killed: 0, total: 0, done: false, leaks: 0 }),
+      uniteLeft: () => null,
+      syncPool: () => Promise.resolve(),
+      forceEnd: () => Promise.resolve(),
+      compactResult: () => ({ reason: 'forced', time: 0, perPlayer: { p_0: { killed: 0, total: 0, leaked: [], perfect: false, layerGains: {}, unitsEnd: [] } } }),
+      stop() { host.stopped = true; },
+    };
+    hosts.push(host);
+    return host;
+  };
+  return { hosts, make };
 }
 
 test('authoritative battle: 2× pacing, ≤ max(8, 4·speed) ticks per frame, b.snap / b.ev feed, field meta in the store, progress ~1 Hz, the server-identical result', async () => {
@@ -725,6 +791,140 @@ test('show() re-enters the field from a fresh meta when the lean Worker packets 
   assert.equal(calm.feed.fields.length, 1, 'an unchanged fetch never re-shows');
   heals.runner.dispose();
   calm.runner.dispose();
+});
+
+test('no watch prewarm without a plugin set: a vanilla battle delivers its result and idles nothing', async () => {
+  const start = realStart(7320);
+  const r = rig();
+  r.net.emit('b.start', start);
+  await r.settle();
+  assert.deepEqual(r.runner._idleHosts(), { parked: null, warming: null }, 'an in-page battle before its result');
+  r.net.emit('b.end', { battleId: start.battleId, fieldId: start.fieldId, reason: 'forced' });
+  await r.settle();
+  assert.equal(r.net.sent.filter((x) => x.t === 'b.result').length, 1, 'the result was delivered');
+  assert.deepEqual(r.runner._idleHosts(), { parked: null, warming: null }, 'an in-page host is never parked or warmed');
+  // the b.start → screen measurement is local (the game screen's state, the diag report) — never a message
+  assert.equal(r.runner.stats().prepares, 1);
+  assert.equal(typeof r.runner.stats().prepareMs, 'number');
+  const b = r.store.get().match.battle;
+  assert.equal(typeof b.prepareMs, 'number', 'published with the battle state');
+  assert.ok(r.net.sent.every((m) => m.prepareMs === undefined), 'never sent to the server');
+  r.runner.dispose();
+});
+
+test('a plugin set prewarms a watch host once the own b.result is delivered — and only then', async () => {
+  const f = fakeRemoteHosts();
+  const r = rig({ plugin: { cs: PLUGIN_CS }, createHost: () => f.make() });
+  r.net.emit('b.start', pluginStart());
+  await r.settle();
+  assert.equal(f.hosts.length, 1, 'the own battle host');
+  assert.equal(f.hosts[0].loadCalls, 1);
+  assert.deepEqual(r.runner._idleHosts(), { parked: null, warming: null }, 'nothing is warmed while the own battle runs');
+  r.net.emit('b.end', { battleId: 'plugin-own', fieldId: 'n:p_0', reason: 'forced' });
+  await r.settle();
+  assert.equal(r.net.sent.filter((x) => x.t === 'b.result').length, 1);
+  assert.equal(f.hosts.length, 2, 'one warm host after the result was delivered');
+  const idle = r.runner._idleHosts();
+  assert.equal(idle.warming, null);
+  assert.equal(idle.parked?.host, f.hosts[1], 'the warm host is parked');
+  assert.equal(idle.parked?.cs, PLUGIN_CS);
+  assert.equal(f.hosts[1].loadCalls, 1);
+  assert.equal(f.hosts[1].loaded.cs, PLUGIN_CS);
+  assert.equal(f.hosts[1].started, 0, 'no battle on it: the load is the whole warm-up');
+  r.runner.dispose();
+});
+
+test('a watch b.start of the same set takes the warm host: no second load, no cold start', async () => {
+  const f = fakeRemoteHosts();
+  const r = rig({ plugin: { cs: PLUGIN_CS }, createHost: () => f.make() });
+  r.net.emit('b.start', pluginStart());
+  await r.settle();
+  r.net.emit('b.end', { battleId: 'plugin-own', fieldId: 'n:p_0', reason: 'forced' });
+  await r.settle();
+  assert.equal(f.hosts.length, 2);
+  const watch = pluginStart({ battleId: 'plugin-watch', fieldId: 'n:p_1', authoritative: false, watch: true });
+  r.net.emit('b.start', watch);
+  await r.settle();
+  assert.equal(f.hosts.length, 2, 'no third host, no second load');
+  const warm = f.hosts[1];
+  assert.equal(warm.started, 1, 'the watch battle starts on the warm host');
+  assert.equal(warm.loadCalls, 1, 'loaded once — by the prewarm');
+  assert.equal(r.runner._entries.get('plugin-watch')?.host, warm);
+  assert.equal(r.runner.state().battleId, 'plugin-watch', 'the watched field is on screen');
+  assert.deepEqual(r.runner._idleHosts(), { parked: null, warming: null }, 'the warm host was taken, not copied');
+  r.runner.dispose();
+});
+
+test('clear() / dispose() stop a warming host; its late load never parks the stopped Worker', async () => {
+  let release;
+  const gate = new Promise((res) => { release = res; });
+  const f = fakeRemoteHosts();
+  let made = 0;
+  // host #0 is the own battle (loads at once); the prewarm's host #1 is held inside its load
+  const r = rig({ plugin: { cs: PLUGIN_CS }, createHost: () => f.make({ hold: made++ === 0 ? null : gate }) });
+  r.net.emit('b.start', pluginStart());
+  await r.settle();
+  r.net.emit('b.end', { battleId: 'plugin-own', fieldId: 'n:p_0', reason: 'forced' });
+  await r.settle();
+  assert.equal(f.hosts.length, 2);
+  assert.equal(r.runner._idleHosts().warming?.host, f.hosts[1], 'warming while its load runs');
+  // the room still plays the plugin set at the prep (the phase subscription re-ensures it; a room-less store would
+  // ask for vanilla and release the set's host, which is what the store's room.content is for)
+  r.store.patch('room', { content: { vanilla: false, cs: PLUGIN_CS } });
+  r.store.patch('match', { public: { phase: PHASE.PREP } });
+  assert.equal(f.hosts[1].stopped, true, 'the round change stopped the warming host');
+  assert.equal(r.runner._idleHosts().warming, null);
+  assert.equal(r.runner._idleHosts().parked?.host, f.hosts[0], 'the finished battle host is the idle one instead');
+  release();
+  await r.settle();
+  assert.equal(r.runner._idleHosts().parked?.host, f.hosts[0], 'a late load of a stopped warm host changes nothing');
+  assert.equal(f.hosts.length, 2, 'and starts nothing new');
+  r.runner.dispose();
+
+  // dispose() while the prewarm is still loading stops it too
+  let release2;
+  const gate2 = new Promise((res) => { release2 = res; });
+  const g = fakeRemoteHosts();
+  let made2 = 0;
+  const r2 = rig({ plugin: { cs: PLUGIN_CS }, createHost: () => g.make({ hold: made2++ === 0 ? null : gate2 }) });
+  r2.net.emit('b.start', pluginStart());
+  await r2.settle();
+  r2.net.emit('b.end', { battleId: 'plugin-own', fieldId: 'n:p_0', reason: 'forced' });
+  await r2.settle();
+  assert.equal(r2.runner._idleHosts().warming?.host, g.hosts[1]);
+  r2.runner.dispose();
+  assert.deepEqual(r2.runner._idleHosts(), { parked: null, warming: null });
+  assert.ok(g.hosts.every((h) => h.stopped), 'every host of the disposed runner is stopped');
+  release2();
+  await r2.settle();
+  assert.equal(g.hosts[1].started, 0);
+});
+
+test('a warm host whose load failed is stopped; the watch then builds an ordinary cold host', async () => {
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const f = fakeRemoteHosts();
+    let made = 0;
+    // host #0 (own battle) loads; host #1 (the prewarm) fails; host #2 (the watch) loads
+    const r = rig({ plugin: { cs: PLUGIN_CS }, createHost: () => f.make({ fail: made++ === 1 }) });
+    r.net.emit('b.start', pluginStart());
+    await r.settle();
+    r.net.emit('b.end', { battleId: 'plugin-own', fieldId: 'n:p_0', reason: 'forced' });
+    await r.settle();
+    assert.equal(f.hosts.length, 2);
+    assert.equal(f.hosts[1].stopped, true, 'the failed warm host is stopped');
+    assert.deepEqual(r.runner._idleHosts(), { parked: null, warming: null }, 'and nothing is parked');
+    r.net.emit('b.start', pluginStart({ battleId: 'plugin-watch', fieldId: 'n:p_1', authoritative: false, watch: true }));
+    await r.settle();
+    assert.equal(f.hosts.length, 3, 'the watch falls back to a fresh host, exactly as without a prewarm');
+    assert.equal(f.hosts[2].loadCalls, 1);
+    assert.equal(r.runner._entries.get('plugin-watch')?.host, f.hosts[2]);
+    assert.equal(r.runner.state().battleId, 'plugin-watch');
+    r.runner.dispose();
+  } finally {
+    console.warn = warn;
+  }
 });
 
 test('frameOf: the in-page snapshot frame is restamped in place; a Worker host packet snapshot is copied, never mutated', async () => {

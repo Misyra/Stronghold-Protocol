@@ -105,6 +105,10 @@ export const CATCHUP_TICKS = 240;
 /** Silent catch-up slice (ticks) while a new battle is prepared before it is shown. */
 const PREPARE_SLICE = 600;
 const MAX_ENTRIES = 4;
+/** A compactResult that threw is retried on this cadence until it reports or the entry goes (the server holds the
+ *  field's result deadline on the report and takes the battle over when it passes — silence is the one outcome it
+ *  cannot use). */
+export const RESULT_RETRY_MS = 500;
 const STATE_EV = new Set(['spawn', 'die', 'deploy', 'status', 'skill', 'leak']);
 /**
  * The b.ev tuples a catch-up frame or the hidden-tab backlog keeps: the state-bearing kinds, and every fx that sets an
@@ -585,17 +589,23 @@ export function createBattleRunner(deps) {
   }
 
   function finished(e) {
-    if (e.done) return;
-    e.done = true;
-    noteLeaks(e);
+    if (!e.done) { e.done = true; noteLeaks(e); }
     if (e.authoritative && !e.resultSent && net) {
       progress(e, true);
-      e.resultSent = true;
       let result = null;
       try {
         result = e.host.compactResult({ bossLike: bossLike(e), battleId: e.battleId });
-      } catch (err) { console.warn('[runner] result failed', err); recordError('runner', err, 'result failed'); }
+      } catch (err) {
+        console.warn('[runner] result failed', err);
+        recordError('runner', err, 'result failed');
+        // resultSent only follows a result in hand: a transient throw is retried on a later frame (b.end arriving
+        // meanwhile re-enters here too), so one failure does not silence the battle for good
+        setTimeout(() => {
+          if (!disposed && !e.failed && e.authoritative && !e.resultSent && entries.get(e.battleId) === e) finished(e);
+        }, RESULT_RETRY_MS);
+      }
       if (result) {
+        e.resultSent = true;
         e.result = result;
         // the view answers with the settlement voice of this battle (screens/game.js → audio.voice result*): the
         // compact result carries the leaks and the kill count the slot is picked from
@@ -646,7 +656,8 @@ export function createBattleRunner(deps) {
     if (i >= 0) retained.splice(i, 1);
   }
 
-  /** The session is back: every result lost with the socket goes out again, including one clear() already dropped. */
+  /** The session is back: every result lost with the socket goes out again, including one a round's clear() dropped
+   *  (a new match's clear() does not hold any: they could never be accepted there). */
   function redeliver() {
     for (const e of entries.values()) if (e.delivery === 'undelivered') deliver(e);
     for (const e of [...retained]) if (e.delivery === 'undelivered') deliver(e);
@@ -674,9 +685,9 @@ export function createBattleRunner(deps) {
     if (behind <= 0) return;
     const cap = ticksPerFrameCap(e.speed);
     const catchingUp = behind > cap * 4;
-    if (catchingUp) stats.catchups++;
     const n = Math.min(behind, catchingUp ? CATCHUP_TICKS : cap);
-    if (e.stepping || e.failed) return;
+    if (e.stepping || e.failed) return; // a frame whose step never runs is not a catch-up
+    if (catchingUp) stats.catchups++;
     const finishStep = (dt) => {
       if (e.failed || entries.get(e.battleId) !== e) return;
       if (dt > stats.maxFrameMs) stats.maxFrameMs = dt;
@@ -819,8 +830,9 @@ export function createBattleRunner(deps) {
       const was = existing.authoritative;
       existing.authoritative = !!msg.authoritative && !existing.failed && !existing.resultSent && csAccepted(existing.spec.cs, { loading: !existing.battle });
       existing.watch = !!msg.watch;
-      // a re-received b.start may carry a new speed: the clock's rate is per-entry state, and only a changed speed
-      // re-derives t0 (recomputing it at the same speed would jump a battle that is already on its clock)
+      // a re-received b.start may carry a new speed: the clock's rate is per-entry state, and t0 is re-derived for a
+      // changed speed and for a handover only — an already-authoritative battle re-sent at the same speed stays on
+      // its clock (recomputing t0 would jump it)
       const speedChanged = existing.speed !== speed;
       existing.speed = speed;
       // the server still waits for this finished battle's result (lost with the socket, or its answer was): again
@@ -829,8 +841,13 @@ export function createBattleRunner(deps) {
         // still loading: it starts from the latest field clock
         existing.elapsed = Number(msg.elapsed) || 0;
       } else if (speedChanged || (existing.authoritative && !was)) {
-        // a new speed, or a handover (the partner left): continue from the field's clock
-        if (speedChanged) existing.t0 = clock() - ((Number(msg.elapsed) || 0) / speed) * 1000;
+        // a new speed, or a handover (the partner left): continue from the field's clock the b.start carries. A speed
+        // change re-derives t0 because the clock's rate moved; a handover because a follower's t0 dates from its own
+        // build — the elapsed it was captured with has not followed the field since (a late build, a hidden tab), and
+        // as the new authority its reports and result are judged on the field clock the deadline is armed on. The
+        // jump itself is safe in both directions: forward is the ordinary bounded catch-up; backward only idles
+        // advance() until the clock catches up (targetTick < tickCount) — a battle is never rewound.
+        existing.t0 = clock() - ((Number(msg.elapsed) || 0) / speed) * 1000;
         existing.lastProgressAt = -Infinity;
         if (existing.authoritative && !was && existing.battle.finished) { existing.done = false; finished(existing); }
       }
@@ -1093,6 +1110,9 @@ export function createBattleRunner(deps) {
     pending.clear();
     entries.clear();
     if (!keepMetrics) forgetCombat();
+    // undelivered results stay in `retained`: a round's clear() must not lose an answer the server is still
+    // waiting for (#864 — redeliver() on reconnect). The new-match path below (resetMetrics) is what bounds
+    // the array across matches; clearing it here would break the round-resume contract.
     cur = null;
     lastPool = null;
     if (rafH != null) { caf(rafH); rafH = null; }
@@ -1121,9 +1141,11 @@ export function createBattleRunner(deps) {
       const pub = s && s.match && s.match.public ? s.match.public : null;
       const round = Number(pub?.round) || 0;
       // a fresh match (m.public gone), a rewound round or a return to a lobby-like phase resets the combat totals
+      // — and drops the retained results: a settled match's server refuses them wherever they went (the clear()
+      // below does the same for its own batch, but an empty match leaves nothing for it to drop)
       const resetMetrics = (!pub && lastPhase != null) || round < lastRound
         || (pub?.phase !== lastPhase && ['LOBBY', 'INFO_CHECK', 'BAND_DRAFT', 'BATTLE_CHECK'].includes(pub?.phase));
-      if (resetMetrics) forgetCombat();
+      if (resetMetrics) { forgetCombat(); retained.length = 0; }
       lastRound = round;
       // solo pause (DESIGN §14): the local battle clocks follow m.public.paused
       setPaused(!!(pub && pub.paused));

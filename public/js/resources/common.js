@@ -292,13 +292,13 @@ export function isQuotaError(err) {
  * Whether a failed whole-cache query means "the browser will not serialize that answer": Chrome's
  * `CacheStorageError::kErrorQueryTooLarge` — `Cache.keys()` once the answer would pass its ~10 MiB query budget
  * (`kMaxQueryCacheResultBytes`, about 16 000 entries at this manifest's URL length) — arrives as an AbortError whose
- * message reads "Operation too large.". Only this refusal may be answered from the page-owned index instead
- * (docs/ASSETS.md「Preload」); every other Cache Storage failure has to surface as one.
+ * message reads "Operation too large.". The wording is the signal, name or wrapper notwithstanding; a plain AbortError
+ * is every other cancellation too (a stopped run, a dropped request) and must not be remembered as a refusal. Only
+ * this size class may be answered from the page-owned index instead (docs/ASSETS.md「Preload」); every other Cache
+ * Storage failure has to surface as one.
  */
 export function isCacheQueryLimit(err) {
   if (!err) return false;
-  if (err.name === 'AbortError') return true;
-  // Chromium's own wording, as a second signal for an error a layer has already wrapped.
   return /operation too large/i.test(String(err.message || ''));
 }
 

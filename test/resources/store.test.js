@@ -303,6 +303,34 @@ test('a cache the browser refuses to enumerate in one query is read from the ind
     assert.deepEqual((await keys()).map((request) => request.url).sort(), [`${ORIGIN}/assets/ui/a.png`, indexUrl(ORIGIN)].sort());
   });
 
+  test('the audio sweep of 清理缓存 defers to the manifest tier (a TIER_ESSENTIAL audio file survives it)', async () => {
+    const m = manifest([
+      { url: '/assets/ui/a.png', tier: 1, size: 4 },
+      { url: '/assets/audio/bgm/keep.mp3', tier: 1, size: 4 },
+      { url: '/assets/audio/voice/cn/v.mp3', tier: 2, size: 4 },
+    ]);
+    const caches = new MemoryCaches();
+    await seed(caches, `${ORIGIN}/assets/ui/a.png`, 'aaaa', 'h0');
+    await seed(caches, `${ORIGIN}/assets/audio/bgm/keep.mp3`, 'kkkk', 'h1');
+    await seed(caches, `${ORIGIN}/assets/audio/voice/cn/v.mp3`, 'vvvv', 'h2');
+    // a key the manifest no longer lists (an older layout's file): the audio path rule must not sweep it either while
+    // the manifest keeps an essential audio entry — the sweep follows the tiers, not the path alone
+    await seed(caches, `${ORIGIN}/assets/audio/bgm/unlisted.mp3`, 'uuuu', 'h3');
+    const cache = await caches.open(CACHE_NAME);
+    const st = await store(m, { caches }).clear({ optionalOnly: true });
+    assert.deepEqual([st.count, st.scan], [2, 'keys']);
+    assert.ok(await cache.match(`${ORIGIN}/assets/audio/bgm/keep.mp3`), 'an essential audio file survives');
+    assert.ok(await cache.match(`${ORIGIN}/assets/audio/bgm/unlisted.mp3`), 'so does an unlisted one: the tree is not optional wholesale');
+    assert.equal(await cache.match(`${ORIGIN}/assets/audio/voice/cn/v.mp3`), undefined, 'the optional audio is still swept');
+    // today's shape (every audio entry TIER_REST): the path rule still sweeps what the manifest no longer lists
+    const rest = manifest([{ url: '/assets/ui/a.png', tier: 1, size: 4 }, { url: '/assets/audio/voice/cn/v.mp3', tier: 2, size: 4 }]);
+    const caches2 = new MemoryCaches();
+    await seed(caches2, `${ORIGIN}/assets/ui/a.png`, 'aaaa', 'h0');
+    await seed(caches2, `${ORIGIN}/assets/audio/bgm/unlisted.mp3`, 'uuuu', 'h3');
+    await store(rest, { caches: caches2 }).clear({ optionalOnly: true });
+    assert.equal(await (await caches2.open(CACHE_NAME)).match(`${ORIGIN}/assets/audio/bgm/unlisted.mp3`), undefined, 'an unlisted audio file is swept while the tree stays optional');
+  });
+
   test('status reports what is cached, in files and bytes', async () => {
     const m = manifest([{ url: '/assets/a.png', tier: 1, size: 10 }, { url: '/assets/b.png', tier: 2, size: 20 }, { url: '/assets/c.png', tier: 2, size: 30 }]);
     const caches = new MemoryCaches();

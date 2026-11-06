@@ -190,12 +190,14 @@ export class FxZones {
    * A tile field the sim keeps re-sending (国度: “邪魔的利刃”'s 3×3 and the operator's range — the 'domain' fx, Stardust
    * fork b3f13f31): its tiles drawn darkened on the ground for as long as the sim refreshes it, updated in place by `key`
    * (one record per key, never a second field), faded in and out over DOMAIN_FADE s. Normal blend: a dark field, not a
-   * glow. The sim sends the whole tile set every pulse, so a field that moves or grows simply replaces it.
+   * glow. The sim sends the whole tile set every pulse, so a field that moves or grows simply replaces it. A field
+   * without a key gets a fresh sequence number — a map-size index would repeat once an earlier field faded and merge
+   * two live fields into one record.
    */
   domainField(key, tiles, tint, dur) {
     const list = Array.isArray(tiles) ? tiles.filter((t) => Array.isArray(t) && Number.isFinite(t[0]) && Number.isFinite(t[1])).slice(0, 120) : [];
     if (!list.length) return;
-    const k = key ?? `@${this.domains.size}`;
+    const k = key ?? `@${this.domainSeq++}`;
     const d = this.domains.get(k);
     if (d) { d.tiles = list; d.tint = tint; d.left = Math.max(d.left, dur); return; }
     this.domains.set(k, { tiles: list, tint, left: dur, t: 0, out: 0 });

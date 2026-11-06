@@ -4,7 +4,7 @@
 // the task, so the server rehearses at once instead of waiting for its timeout.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { installRehearsal, MAX_PENDING_TASKS } from '../../public/js/battle/rehearsal.js';
+import { installRehearsal, MAX_PENDING_TASKS, MAX_WORKER_FAILURES } from '../../public/js/battle/rehearsal.js';
 
 /** The socket double: records sent frames and lets a test push one in. */
 function fakeNet() {
@@ -101,26 +101,56 @@ test('tasks arriving while the worker is busy are queued in order, and the queue
   r.dispose();
 });
 
-test('a task the worker failed is answered as an error; a crashed worker refuses the later ones', async () => {
+test('a task the worker failed is answered as an error; a crashed worker is rebuilt on a bounded per-match budget', async () => {
   const net = fakeNet();
-  const worker = fakeWorker();
-  const r = installRehearsal({ net, runner: fakeRunner(), createWorker: () => worker, log: QUIET });
+  const workers = [];
+  const r = installRehearsal({ net, runner: fakeRunner(), createWorker: () => { const w = fakeWorker(); workers.push(w); return w; }, log: QUIET });
   net.push(task('t1'));
   await flush();
-  worker.reply({ t: 'error', taskId: 't1', message: 'boom' });
+  workers[0].reply({ t: 'error', taskId: 't1', message: 'boom' });
   assert.deepEqual(net.sent, [{ t: 'b.rehearsalResult', taskId: 't1', error: true }]);
   // a task-level error keeps the worker: the next task still goes there
   net.push(task('t2'));
   await flush();
-  assert.equal(worker.task().taskId, 't2');
-  // a crashed worker (its module failed to load, an uncaught error) is not reused: later tasks are refused at once
-  worker.onerror?.({ message: 'worker crashed' });
+  assert.equal(workers[0].task().taskId, 't2');
+  // a crashed worker (its module failed to load, an uncaught error) is dropped, but one crash does not break the
+  // page: the next task rebuilds a worker and is served
+  workers[0].onerror?.({ message: 'worker crashed' });
   assert.deepEqual(net.sent[1], { t: 'b.rehearsalResult', taskId: 't2', error: true });
-  assert.equal(worker.terminated, true);
+  assert.equal(workers[0].terminated, true);
   net.push(task('t3'));
   await flush();
-  assert.deepEqual(net.sent[2], { t: 'b.rehearsalResult', taskId: 't3', error: true });
-  assert.equal(worker.messages.filter((m) => m.t === 'rehearsal').length, 2, 'nothing is posted to a dead worker');
+  assert.equal(workers.length, 2, 'the next task rebuilds instead of refusing');
+  assert.equal(workers[1].task().taskId, 't3');
+  // the budget is MAX_WORKER_FAILURES crashes: one is spent above, the rebuilds are served until the last crash
+  // spends it — the task in the worker's hands then is answered error and the match refuses the rest
+  let served = 't3';
+  let live = 1;
+  for (let i = 0; i < MAX_WORKER_FAILURES - 2; i++) {
+    workers[live].onerror?.({ message: 'worker crashed again' });
+    await flush();
+    served = `b${i}`;
+    net.push(task(served));
+    await flush();
+    live++;
+    assert.equal(workers.length, live + 1, 'another rebuild of the match still happens');
+    assert.equal(workers[live].task().taskId, served);
+  }
+  workers[live].onerror?.({ message: 'worker crashed again' });
+  await flush();
+  assert.deepEqual(net.sent[net.sent.length - 1], { t: 'b.rehearsalResult', taskId: served, error: true },
+    'the task that outlived the budget is answered error');
+  net.push(task('t4'));
+  await flush();
+  assert.equal(workers.length, live + 1, 'nothing is rebuilt past the budget');
+  assert.deepEqual(net.sent[net.sent.length - 1], { t: 'b.rehearsalResult', taskId: 't4', error: true });
+  // the next match hands out a fresh budget: its first rehearsal rebuilds a worker again
+  r.clear();
+  net.push(task('t5'));
+  await flush();
+  assert.equal(workers.length, live + 2, 'a new match may try again');
+  workers[live + 1].reply({ t: 'done', taskId: 't5', choice: 1 });
+  assert.deepEqual(net.sent[net.sent.length - 1], { t: 'b.rehearsalResult', taskId: 't5', choice: 1 });
   r.dispose();
 });
 
@@ -381,6 +411,30 @@ test('a cancelled task the worker was still loading keeps the worker: the next p
   assert.equal(worker.task().taskId, 't2');
   worker.reply({ t: 'done', taskId: 't2', choice: 1 });
   assert.deepEqual(net.sent, [{ t: 'b.rehearsalResult', taskId: 't2', choice: 1 }]);
+  r.dispose();
+});
+
+test('clear() keeps a worker whose task was never sent: the next match\'s first rehearsal finds it warm', async () => {
+  const net = fakeNet();
+  const worker = fakeWorker({ autoReady: false });
+  const r = installRehearsal({ net, runner: fakeRunner(), createWorker: () => worker, log: QUIET });
+  net.push(task('t1'));
+  await flush();
+  assert.deepEqual(worker.messages, [], 'the worker has not reported ready yet');
+  // the match is over while the module graph still loads: the task is dropped, the load is not
+  r.clear();
+  assert.equal(worker.terminated, false, 'the loading worker is not thrown away with the match');
+  assert.equal(r.pending(), 0);
+  worker.reply({ t: 'ready' });
+  await flush();
+  assert.deepEqual(worker.messages.map((m) => m.t), ['data'], 'the surviving worker is warmed with the data');
+  // the next match's first rehearsal goes to the same, already-hot worker instead of a cold rebuild
+  net.push(task('t2'));
+  await flush();
+  assert.deepEqual(worker.messages.map((m) => m.t), ['data', 'rehearsal']);
+  assert.equal(worker.task().taskId, 't2');
+  worker.reply({ t: 'done', taskId: 't2', choice: 0 });
+  assert.deepEqual(net.sent, [{ t: 'b.rehearsalResult', taskId: 't2', choice: 0 }], 't1 was dropped unanswered');
   r.dispose();
 });
 

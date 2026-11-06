@@ -59,6 +59,7 @@ export class FxSystem {
     this.labels = [];         // floating '!' / '+n' labels
     this.tileFlashes = [];    // flashing tile sets (telegraphed boxes)
     this.domains = new Map(); // key → tile field the sim keeps re-sending (国度: zones.js domainField)
+    this.domainSeq = 0;       // fallback keys `@<n>` of keyless fields: a fresh number per field, never a map index
     this.domainGfx = new P.Graphics();   // normal blend: a dark field under the flashes
     ctx.layers.groundFx.addChild(this.domainGfx);
     this.tileGfx = new P.Graphics();
@@ -109,6 +110,7 @@ export class FxSystem {
     this.tileFlashes.length = 0;
     this.tileGfx.clear();
     this.domains.clear();
+    this.domainSeq = 0;
     this.domainGfx.clear();
     this.tintT = 0; this.tintSprite.alpha = 0;
   }

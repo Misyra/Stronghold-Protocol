@@ -200,12 +200,14 @@ export class MatchPrep {
     this._checkOffline();
     // 挂机移出(移植自用户分支): an idle human is removed before this round's battle exists (it may end the match)
     this._checkIdle();
+    // rehearsals still waiting for a host's answer die with the prep: their bots place the default layout, a late answer
+    // is ignored (Match._takeOverRehearsal / MatchRehearsal) and nothing of them runs after the phase ended. Before the
+    // early return: a prep the idle/offline check ended must drop its tasks too (no reentry — _cancelRehearsal only
+    // cancels timers / pool handles and tells the host to stop, it never touches phases or players).
+    this._cancelRehearsal();
     if (this.ended || this.disposed || this.phase !== PHASE.PREP) return;
     // an open 投票移出 ends with the prep (kickVote.js)
     this.cancelKickVote('prepEnd');
-    // rehearsals still waiting for a host's answer die with the prep: their bots place the default layout, a late answer
-    // is ignored (Match._takeOverRehearsal / MatchRehearsal) and nothing of them runs after the phase ended
-    this._cancelRehearsal();
     this.setDeadline(0);
     // A prep window ends with the prep: settle its waiting seats and drop every window before the battle exists, so
     // no stale g.offer can still grant during COMBAT (P1; phases.startRound used to be the only close point).

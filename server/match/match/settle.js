@@ -44,7 +44,10 @@ export class MatchSettle {
       const counted = (r.leaked || []).filter((l) => l && l.counted !== false).length;
       const loss = uniteRan && plan.leakers.includes(ps) ? Math.min(cap, survivors.get(ps.playerId) || 0) : Math.min(cap, counted);
       if (this.uniteResultView) this.uniteResultView.losses[ps.playerId] = loss;
-      ps.lp -= loss;
+      // Clamped at the source: a lethal round must not leave a negative lp for the dispatch below (the meta ctx's
+      // ctx.lp, the external AI's onBattleResult snapshot) — eliminateBroken only runs after the loop. The raw charge
+      // travels on its own in `loss` (ev.lpLoss, stats.lpLost, uniteResultView.losses).
+      ps.lp = Math.max(0, ps.lp - loss);
       ps.stats.lpLost += loss;
       ps.stats.leaks += counted;
       ps.stats.kills += Number(r.killed) || 0;

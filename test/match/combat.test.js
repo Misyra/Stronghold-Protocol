@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PHASE } from '../../shared/constants.js';
 import { GEO } from '../../shared/constants.js';
+import { MetaRegistry } from '../../server/match/effectsMeta.js';
+import { registerBuiltins } from '../../server/match/builtinMeta.js';
 import { FakeBattle } from './fakeBattle.js';
 import { DATA, makeMatch, give, checkInvariants, chessOfTier, legalTileFor } from './harness.js';
 
@@ -117,6 +119,27 @@ test('elimination: LP ≤ 0 → out, copies back to the pool; everyone out → R
   assert.equal(rows.p_0.roundsPassed, 0);
   assert.equal(rows.p_1.roundsPassed, 1);
   assert.equal(h.endedCount, 1);
+  checkInvariants(m);
+  m.dispose();
+});
+
+test('a lethal LP loss reads lp 0 (never negative) in the onBattleResult dispatch; the raw loss rides lpLoss', () => {
+  // p_0 leaks everything, the 联防 lets 10 through: 5 − 10 was dispatched as a negative lp before the clamp
+  const reg = registerBuiltins(new MetaRegistry(), DATA);
+  const seen = [];
+  reg.global('lpspy', { onBattleResult: (ctx, ev) => { if (ctx.playerId === 'p_0') seen.push([ctx.playerId, ctx.lp(), ev.lpLoss]); } });
+  const h = makeMatch({ mode: 'coop', humans: 2, seed: 33, fake: true, registry: reg,
+    script: (b) => (b.kind === 'unite' ? { survivors: { p_0: 10 } } : { leaks: Object.fromEntries(b.players.map((p) => [p, p === 'p_0' ? 10 : 0])) }) }).start();
+  const m = h.m;
+  h.toPrep(1);
+  const a = h.ps('p_0');
+  a.lp = 5;
+  h.drive(() => m.phase === PHASE.SETTLE);
+  assert.equal(a.alive, false, 'the seat died this round');
+  assert.equal(a.lp, 0);
+  assert.deepEqual(seen, [['p_0', 0, 10]], 'ctx.lp() is the clamped 0, ev.lpLoss the raw charge');
+  assert.equal(a.stats.lpLost, 10, 'the stats charge is unchanged');
+  assert.deepEqual(m.uniteResultView.losses, { p_0: 10, p_1: 0 }, 'the SETTLE box charge is unchanged');
   checkInvariants(m);
   m.dispose();
 });

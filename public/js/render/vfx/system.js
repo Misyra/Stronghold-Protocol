@@ -312,6 +312,8 @@ export class OfficialFx {
     for (const h of this.pending) h.cancelled = true;
     this.pending.length = 0;
     for (const fx of this.effects) if (fx.handle?.opts.loop || fx.def.loops) fx.stop();
+    // finish() also drops the persistent-loop timers the board registered (battle-finish.test.js pins this);
+    // the array is test-visible state, not a dead assignment.
     this.timers = [];
   }
 

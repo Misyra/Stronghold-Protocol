@@ -112,9 +112,10 @@ export function planReserveMs(m, ps, kind, config = EXTERNAL_DEFAULTS) {
     : m.round === m.gd.bossRound ? table.boss : m.round === m.gd.hiddenRound ? table.hidden
       : (table.rounds.find(([last]) => m.round <= last) ?? table.rounds.at(-1))[1]);
   // the window the host's next task would wait in (MatchRehearsal.delegateWindowMs — cold until it answered one): the
-  // plan budget tracks it, and the start() caller caps the whole reserve at half the remaining window (§37.102)
+  // plan budget tracks it, and the start() caller caps the whole reserve at half the remaining window (§37.102).
+  // Real ms, NOT scaled(): the answer window is a wall-clock budget, not game time.
   const delegated = kind === 'prep' && m.botRehearsalDelegate && ps.isBot
-    ? m.scaled(typeof m.delegateWindowMs === 'function' ? m.delegateWindowMs() : m.botRehearsalDelegateMs) : 0;
+    ? (typeof m.delegateWindowMs === 'function' ? m.delegateWindowMs() : m.botRehearsalDelegateMs) : 0;
   return base * config.reserveScale + delegated;
 }
 

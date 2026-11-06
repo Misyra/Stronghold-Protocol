@@ -4,6 +4,7 @@
 // never requests files the asset pipeline did not produce (no 404 noise in the console).
 
 import { manifestSkinKey } from '../../../shared/skins.js';
+import { resourceUrl } from '../resourceUrl.js';
 
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const obj = (v) => (v && typeof v === 'object' ? v : null);
@@ -17,9 +18,17 @@ function skinPicture(m, chess, skinId, field) {
   return str(elite && skin?.[`${field}E2`]) || str(skin?.[field]) || (field === 'portrait' ? str(skin?.illust) : null);
 }
 
-/** @param {any} m manifest @param {string} key 'group/key' */
+/**
+ * `ui` art by `group/key`, pinned through resourceUrl like every other art URL the client requests.
+ * `ui` is the one family that reaches CSS directly (`--src:url(...)`, `background-image`, `mask-image`):
+ * a bare CDN URL is cached for a year, and mask images fetch with CORS, so a response cached before the
+ * bucket sent ACAO fails forever. A file hash (or the release tag before the manifest lands) makes a new
+ * release's URL a cache miss instead. No CDN configured (tests, a plain static host): unchanged.
+ * @param {any} m manifest @param {string} key 'group/key'
+ */
 export function uiUrl(m, key) {
-  return str(obj(obj(m)?.ui)?.[key]);
+  const url = str(obj(obj(m)?.ui)?.[key]);
+  return url ? resourceUrl(url) : null;
 }
 
 /**

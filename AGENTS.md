@@ -45,7 +45,9 @@ that is why its imports are constrained. Every file is mapped in [docs/ARCHITECT
   `npm run golden:update` in the same commit, and the commit / PR names every moved scenario and why
   ([test/golden/README.md](test/golden/README.md)).
 - **Generated data.** Never hand-edit `data/*.json`: change `tools/build-data.mjs` and regenerate. A rebuild's JSON
-  diff must show only the intended change.
+  diff must show only the intended change. A new content shape (module type, avatar, …) also owes its icons to the
+  asset pipeline: `data/assets.json` and the on-disk extraction move together (`npm run assets`, `npm run manifest`),
+  and the `assets-diy` / `moduleIcons` tests fail loudly on drift (they need the extraction present).
 - **No game art in git.** `public/assets/` is ignored; never commit extracted or downloaded game files.
 - **Preload packs are not art.** `public/resource-packs/*.zip` (git-ignored) and their index
   `data/resource-packs.json` are the player preload packs, built with `npm run resources:packs` and handed out through
@@ -73,9 +75,15 @@ that is why its imports are constrained. Every file is mapped in [docs/ARCHITECT
 - **The protocol is normative.** `shared/protocol.js` holds one `C2S` validator per client message; a new message
   starts there, and the handler never trusts what the validator does not already bound (types, lengths, shapes).
   Requests carrying `rid` are answered `ok`/`error` echoing it ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §2).
+  A vote- or choice-style handler answers a repeated same-direction message with `ok` and no side effects:
+  `markPublic()` + `flush(true)` forces an unthrottled, un-deduplicated `m.public` replay to the whole room, so it is
+  only for a real state change (`speedVote.js` / `aiTakeover.js` are the reference; kick/setup votes needed this twice).
 - **CPU-heavy server work goes to the worker pool.** Pure CPU over data a worker thread can hold
   (`server/workers/pool.js`) belongs in a task with a fallback for `POOL_FULL`/failure; anything touching sockets,
-  timers or the lobby stays on the main thread (docs/ARCHITECTURE.md §7).
+  timers or the lobby stays on the main thread (docs/ARCHITECTURE.md §7). The consumer must match the shape the
+  worker actually returns, and a test's fake pool must mirror the real contract (`server/workers/simulation.js`) —
+  a wrong fake passes tests while production falls back (the d3fffd27 lesson); keep one test anchored on the real
+  pool (`test/workers-room.test.js`).
 - **Performance changes are measured.** Before/after on the same machine, with the project's tools
   (`tools/workerbench.mjs`, `tools/memorybench.mjs`, `tools/state-sync-micro.mjs`, `tools/bench-state-delta.mjs`,
   `tools/perfbench.mjs`, `tools/loadgen.mjs`, `tools/perf2-lcp.mjs`, `tools/perf2-probe.mjs`) — and golden results
@@ -91,6 +99,19 @@ that is why its imports are constrained. Every file is mapped in [docs/ARCHITECT
   no attribution trailers (`Co-Authored-By:`, `Generated with …`). The PR description states what, why, the sources,
   the `[ASSUMED]` points, the tests you ran (paste the summary lines) and the golden moves. No ads, payments or other
   monetisation — the project stays non-commercial.
+
+## Recurring bug classes
+
+Full-code review rounds keep finding the same few shapes; check them first when touching the area:
+
+- **Forced broadcasts.** `markPublic()` + `flush(true)` bypasses the `m.public` throttle and dedup — call it only
+  after a real state change, and make repeated input idempotent (zero broadcast on a repeat).
+- **Worker-pool contract drift.** Consumers or fake test doubles diverging from the worker's real return shape;
+  anchor on the real pool, not only the fake.
+- **Lifecycle pairing.** Every client listener/timer/RAF/store subscription gets a matching cleanup on unmount, and
+  a worker cancel/clear path must not kill a still-loading Worker (keep its `ready`/data state warm).
+- **Settle invariants.** LP and funds are clamped at zero at the accounting point; the raw loss travels separately
+  (`lpLoss` / `lpLost`) so no handler or external-AI snapshot ever reads a negative.
 
 ## Verify
 

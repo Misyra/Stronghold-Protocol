@@ -82,3 +82,7 @@ public/dev/simcheck/data/
 .state/
 # ZCode session artifacts: browser-automation console/page logs, recreated each session
 .playwright-mcp/
+# ZCode client session state (plans, drafts): per-session, not project source
+.zcode/
+# Local development archives: multi-GB snapshots, never committed
+*.7z

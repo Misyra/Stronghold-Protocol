@@ -56,3 +56,26 @@
 3. 复测建议（本机边界）：带完整 `public/assets` 的机器复测「进对局到首帧」与 film/filter 的 CDP LayerTree 重合成耗时；真实高 RTT（≥150 ms）链路复测 LCP 与 11 个 modulepreload 的请求数代价。
 4. 未做的候选（勿当已完成）：vendor `rgb2hex`/`Color.shared` 补丁、`fx/zones.js` `_updateDomains()` 每帧 `g.clear()` 脏重建、assets.js `images` Map 预算、Cloudflare `v=` 边缘规则（非代码）、协议侧 bonds/effects 数组复用。
 5. 事故记录：provider 切换（→ new-provider/hy4free）杀掉全部在飞代理（2× quota、3× server error），但已 commit 的工作不丢——处置一律「先盘点 worktree 再决定续跑/重派」；并发上限经用户指令 3→5→事故后 2→全部继续，额度失败时队列补位、不热重试。
+
+## 6. 集成落地与前后对比（2026-11-06，用户授权合并后）
+
+11 个分支按依赖顺序合入 `perf2/integration`（`f63ae8d4`，59 文件 / +2559 −226，29 commits）。唯一冲突 `public/js/main.js`（entry-split 的 `__SP__` 钩子 vs preload 的 `renderPrewarm.arm()`），整合为「保留双方：`renderPrewarm.arm()` + `preloadScreen/whenScreensReady/screensWarm`」，import 与两条语义都在。随后 stash 源仓库未提交的审查轮 `AGENTS.md` → `git merge --no-ff perf2/integration`（`bcc25af4`）→ stash pop 三方自动整合；审查轮的「Recurring bug classes / worker 契约 / 投票去重」与性能轮的「Performance acceptance」两节均完整保留，未跟踪的报告与 `.zcode/`  untouched。
+
+**确定性前后对比（同机同工具同参数，基线 = master 963ea741）：**
+
+| 指标 | 前 | 后 | 判定 |
+|---|---|---|---|
+| golden | 291/291 | 291/291（集成 HEAD 与落地 master 各跑一次，EXIT=0） | 零移动 |
+| 全量 npm test | 11601 pass / 7 assets 环境性 fail | 11649 pass / 7 fail | 失败名逐名一致（assets 抽取缺失）；+48 = 本轮新增测试；零新增功能失败 |
+| lint / typecheck / check:imports / smoke | 0 / 0 / 0 / PASS | 0 / 0 / 0 / PASS | 无回归 |
+| vite / buildGuard / lazy-screens / prewarm 定向 | — | 11/11 PASS | 构建页服务、原生模块边界、两 Worker、boot 脚本约束全保持 |
+| docs-consistency / docs-paths | — | 32/32 PASS | 文档链接零断 |
+| vite entry（raw / br） | 1,271,492 / 331,864 B | 679,017 / 182,332 B（构建产物实测） | **−46.6% / −45.1%**，chunk 16→20，`index.html` 守卫通过 |
+| loadgen 12 客 / 4 房 / 60s | 232.4 msg/s · RSS 280.9 MB · loop p95 22.5 ms | 237.0 msg/s · RSS 198 MB · loop p95 21.6 ms | 同量级，无回归 |
+| bench-state-delta | ratio 0.1848 · bytesIdentical true · CPU −10.97% | ratio 0.1848 · bytesIdentical true · CPU −9.75% | 字节逐字一致；差值属宿主漂移 |
+| workerbench 4×24 | 60.94 battles/s · maxTimerDelay 2.3 ms | 52.31 battles/s · maxTimerDelay 1.3 ms | 宿主漂移（±40–60%），**不计为收益** |
+| memorybench | 276 房 dispose 69.5→60.2 MB；4 worker 各 37–45 MB | 同型曲线（dispose 53.2→43.9 MB；4 worker 36.7–54.0 MB） | 无泄漏，绝对值漂移不计收益 |
+
+**口径声明**：本表只把「确定性结构量（bundle 字节/chunk 数/守卫用例）」与「零回归断言（golden/失败名单/静态检查）」当结论；workerbench、RSS、state-sync 计时等跨时段数字受本机 ±40–60% 负载漂移支配，前后差值一律不作为收益，真正的分项收益以各分支的交替 A/B 表（§3）为准。落地验证期间发生过一次「三个全量套件并行 → CPU 互抢 / CI 挂起」，已终止重复进程并改为干净串行重跑，结论取自串行那次。
+
+**落地状态**：master `bcc25af4`，未 push；工作区仅 `M AGENTS.md`（用户审查轮未提交改动）+ 4 个原有未跟踪文件 + 本文件的这一节追加（同为未提交）。集成分支与各 `perf2/*` 分支、worktree 保留，未删除，供逐 PR 拆分。

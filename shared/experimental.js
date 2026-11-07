@@ -31,6 +31,13 @@ export function experimentalOptions(value = EXPERIMENTAL_DEFAULTS) {
     ...(capacity > MAX_SEATS && value.disableDuckLord === true ? { disableDuckLord: true } : {}) });
 }
 
+/**
+ * Whether a room's options change a rule of the game, whatever the seat count: any key but playerCapacity that is set
+ * (an option that is off is false or absent, experimentalOptions). 多人匹配's rules axis reads it (server/matchmaking.js):
+ * the seat count is the other axis of a ticket.
+ */
+export const experimentalRuleChanged = value => !!value && Object.entries(value).some(([key, set]) => key !== 'playerCapacity' && !!set);
+
 const duckLordDisabled = value => roomCapacity('coop', value) > MAX_SEATS && value.disableDuckLord === true;
 export const experimentalKey = value => {
   const key = `${value.revivalEnabled ? 1 : 0}${value.disableSharedPool ? 1 : 0}`;

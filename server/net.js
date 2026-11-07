@@ -822,6 +822,20 @@ export class Network {
     }
     const name = sanitizeName(msg.name);
     if (!name) { this.reply(conn, errorMsg(ERR.BAD_MSG, rid, 'bad field name')); return; }
+    // Check an existing room's capability before replacing its socket or changing any session metadata
+    // (server/lobby.js helloAdmission): a legacy resume can neither receive a large room's snapshot nor evict the
+    // compatible live socket that owns it.
+    const previous = conn.session || (msg.token ? this.registry.byToken(msg.token) : null);
+    let admission;
+    try { admission = this.handler.helloAdmission?.(previous, msg); } catch (e) {
+      this.log.error('[net] hello admission crashed', e);
+      this.reply(conn, errorMsg(ERR.INTERNAL, rid));
+      return;
+    }
+    if (admission?.error) {
+      this.reply(conn, errorMsg(isErrCode(admission.error) ? admission.error : ERR.INTERNAL, rid, admission.detail));
+      return;
+    }
 
     let session = conn.session;
     let resumed = false;

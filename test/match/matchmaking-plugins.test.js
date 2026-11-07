@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { matchmakingAvailable, matchmakingMembers, mergePartyMatchmaking, queuePartyMatchmaking } from '../../server/matchmakingRooms.js';
 import { ERR } from '../../shared/constants.js';
+import { EXPERIMENTAL_DEFAULTS } from '../../shared/experimental.js';
 
 const session = { playerId: 'p_1', connected: true };
 
@@ -12,22 +13,32 @@ const session = { playerId: 'p_1', connected: true };
 const room = (needsContent) => ({
   code: 'ABCD', needsContent, disposed: false, match: null, hostId: 'p_1', mode: 'coop', consoleEnabled: false,
   spectatorOf: () => false,
-  activeHumans: () => [{ playerId: 'p_1' }],
+  // the guards read the capacity contract (server/matchmakingRooms.js): a fake must mirror the real Room's shape
+  capacity: 4, experimental: EXPERIMENTAL_DEFAULTS, seats: [], validCapacity: () => true,
+  activeHumans: () => [{ playerId: 'p_1', connected: true }],
 });
+
+/** Just enough of a Lobby for the guards: the capacity seams answer like an ordinary four-seat room. */
+const lobbyFor = (r) => ({
+  roomOf: () => r, registry: { byId: () => ({ connected: true }) },
+  capacityClients: () => true, isOnline: () => true,
+});
+/** One party ticket the queue could have handed out (Matchmaking.join's unit shape). */
+const ticket = { party: { roomCode: 'ABCD', required: 4, leaderId: 'p_1', experimental: EXPERIMENTAL_DEFAULTS, entries: [{ session }] } };
 
 test('a gameplay-plugin room is not available to the queue', () => {
   const modded = room(true);
-  const lobby = { roomOf: () => modded, registry: { byId: () => ({ connected: true }) } };
-  assert.equal(matchmakingAvailable(lobby, session, { party: { roomCode: 'ABCD' } }), false);
+  const lobby = lobbyFor(modded);
+  assert.equal(matchmakingAvailable(lobby, session, ticket), false);
   const vanillaRoom = room(false);
-  const vanilla = { roomOf: () => vanillaRoom, registry: { byId: () => ({ connected: true }) } };
-  assert.equal(matchmakingAvailable(vanilla, session, { party: { roomCode: 'ABCD' } }), true);
+  const vanilla = lobbyFor(vanillaRoom);
+  assert.equal(matchmakingAvailable(vanilla, session, ticket), true);
 });
 
 test('another official version room is not available either (needsContent, not only modded)', () => {
   const versionRoom = room(true); // a non-default version needs its own content just like a plugin room
-  const lobby = { roomOf: () => versionRoom, registry: { byId: () => ({ connected: true }) } };
-  assert.equal(matchmakingAvailable(lobby, session, { party: { roomCode: 'ABCD' } }), false);
+  const lobby = lobbyFor(versionRoom);
+  assert.equal(matchmakingAvailable(lobby, session, ticket), false);
   assert.deepEqual(matchmakingMembers(lobby, session, 'HARD', true), { error: ERR.ROOM_MODDED });
   assert.deepEqual(matchmakingMembers(lobby, session, 'HARD', false), { error: ERR.ROOM_MODDED });
   assert.deepEqual(queuePartyMatchmaking(lobby, session), { error: ERR.ROOM_MODDED });

@@ -1,7 +1,7 @@
 // Normative message catalogue (DESIGN §8). Used by server (validation) and client (building requests).
 // Every client→server message is `{ t, rid?, ...fields }`. Unknown `t` or invalid fields ⇒ ERR.BAD_MSG.
 
-import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, EMOTES, GEO, REHEARSAL_MAX_CANDIDATES } from './constants.js';
+import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, EMOTES, GEO, REHEARSAL_MAX_CANDIDATES } from './constants.js';
 import { isDroppableChess } from './standIn.js';
 import { diySlotIds, validateDiyPicks, ID_CHARS } from './diy.js';
 import { cultivatedStats, isPotential, isCultivate, POTENTIAL_DEFAULT, CULTIVATE_DEFAULT, hasPotentialData } from './potential.js';
@@ -9,6 +9,7 @@ import { isContentHash } from './plugins/identity.js';
 import { isPluginId } from './plugins/manifest.js';
 import { isTestCommand } from './testMode.js';
 import { isExperimental } from './experimental.js';
+import { MAX_PLAYER_CAPACITY, MAX_DRAFT_CARDS } from './playerCapacity.js';
 import { PLUGIN_OFFER_SLOTS } from './plugins/limits.js';
 
 // ---- tiny validators -------------------------------------------------------
@@ -536,7 +537,12 @@ export const C2S = {
   // soloUnlimited: the timed-solo opt-out 「不限时」 (DESIGN §35.23.10). Optional, and only the literal boolean —
   // the server applies `true` solely to a solo room of a version whose solo is timed, and ignores it otherwise, so a
   // default create stays the message it was.
-  'room.create': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v), test: (v) => v === true, version: isVersionId, soloUnlimited: isBool, $optional: ['test', 'difficulty', 'version', 'soloUnlimited'] },
+  // experimental: the room-owned rules (shared/experimental.js), the seat count included (playerCapacity
+  // 4/8/12/16/20, disableDuckLord) — the whole option set, so any optional flag travels with it. A create that asks
+  // for seats beyond its client's capability is refused (server/lobby.js create).
+  'room.create': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v), experimental: isExperimental,
+    test: (v) => v === true, version: isVersionId, soloUnlimited: isBool,
+    $optional: ['experimental', 'test', 'difficulty', 'version', 'soloUnlimited'] },
   'room.join': { $optional: ['testAck'], testAck: (v) => v === true, code: (v) => isStr(v, ROOM_CODE_LEN + 2) && /^[A-Za-z0-9]+$/.test(v) },
   'p2p.enable': { enabled: isBool },
   'p2p.signal': { epoch: isId, to: isId, description: isPeerDescription, candidate: isPeerCandidate, $optional: ['description', 'candidate'] },
@@ -550,8 +556,9 @@ export const C2S = {
   // the strategy an AI seat takes in the strategy draft (host, co-op, before the match; server/lobby.js setBotBand,
   // 移植自用户分支): `seat` holds an AI, `bandId` is one the mode offers (null / absent = the seat picks by itself),
   // one AI seat per strategy. The AI takes it in the draft, held for it until then (draft.reserved), and nobody else
-  // can pick it.
-  'room.setBotBand': { seat: (v) => isInt(v, 0, MAX_SEATS - 1), bandId: nullable(isId), $optional: ['bandId'] },
+  // can pick it. `seat` spans every seat an expanded room admits (playerCapacity up to MAX_PLAYER_CAPACITY); a seat
+  // the room does not admit is refused at the handler (server/lobby.js admitsSeat).
+  'room.setBotBand': { seat: (v) => isInt(v, 0, MAX_PLAYER_CAPACITY - 1), bandId: nullable(isId), $optional: ['bandId'] },
   // the co-op room option 「允许重复策略」 (host, before the match): the strategy draft lets several doctors hold the
   // same strategy — the 队友已选 guard, the bot re-draw and the automatic default all stand down (bandTaken). Off by
   // default; room.state.bandDupes.
@@ -580,10 +587,11 @@ export const C2S = {
   'queue.accept': { ticketId: isId, offerId: isId, revivalVote: isBool, $optional: ['revivalVote'] },
   'room.aiVote': { voteId: (v) => typeof v === 'string' && v.length <= 16, approve: isBool },
   'room.addBot': {},
-  'room.removeBot': { seat: (v) => isInt(v, 0, MAX_SEATS - 1) },
+  'room.removeBot': { seat: (v) => isInt(v, 0, MAX_PLAYER_CAPACITY - 1) },
   // the host removes another human before the match (server/lobby.js kick; community report #17); playerId = the one the
-  // host confirmed — a seat that changed hands meanwhile is refused
-  'room.kick': { seat: (v) => isInt(v, 0, MAX_SEATS - 1), playerId: isId },
+  // host confirmed — a seat that changed hands meanwhile is refused. `seat` spans every seat an expanded room admits
+  // (playerCapacity up to MAX_PLAYER_CAPACITY); one the room does not admit is refused at the handler (admitsSeat).
+  'room.kick': { seat: (v) => isInt(v, 0, MAX_PLAYER_CAPACITY - 1), playerId: isId },
   'room.start': {},
   // room.matchmaking (无字段): 房主把整个就绪同盟加入四人匹配 (server/lobby.js queueParty)。与 queue.join 的
   // 区别仅是语义快捷方式——同一引擎,同样的 queue.state 快照。
@@ -673,7 +681,9 @@ export const C2S = {
   // unequip (DESIGN §34.15): one equipped item back to the hand, else the visible temp window. Official rooms refuse it.
   'g.unequip': { itemUid: isUid },
   'g.reward': { idx: (v) => isInt(v, 0, 5) },
-  'g.choice': { idx: (v) => isInt(v, 0, 5), choiceId: isId, $optional: ['choiceId'] },
+  // 机变 draft (DESIGN §19): `idx` spans MAX_DRAFT_CARDS cards (22) — an expanded room's draft may lay out more than
+  // the ordinary six; the offer the seat is answering bounds it again (server/match/choices.js)
+  'g.choice': { idx: (v) => isInt(v, 0, MAX_DRAFT_CARDS - 1), choiceId: isId, $optional: ['choiceId'] },
   // a plugin interaction window (PLUGIN API v2, docs/PLUGINS.md §10b): offerId is the window's declared id, idx the
   // slot picked; g.offerRefresh redraws one slot (the window's own `refresh.perSlot` bounds how often). The host
   // applies the window's declared effect primitive — a plugin never receives these messages itself.
@@ -719,7 +729,9 @@ export const C2S = {
     resolved: (v) => isInt(v, 0, 1e5),
     leaks: (v) => isNum(v, 0, 1e6), bossDmg: (v) => isNum(v, 0, BIG),
     by: (v) => isMap(v, RESULT_LIMITS.players, isId, (x) => isNum(x, 0, BIG)), done: isBool,
-    left: (v) => isMap(v, RESULT_LIMITS.players, isId, (x) => isInt(x, 0, 1e5)),
+    // `left` names leakers by player: an expanded room's field can hold up to MAX_PLAYER_CAPACITY of them, while one
+    // battlefield still reports at most RESULT_LIMITS.players participants (`by` / perPlayer stay at four)
+    left: (v) => isMap(v, MAX_PLAYER_CAPACITY, isId, (x) => isInt(x, 0, 1e5)),
     leaksBy: (v) => isMap(v, RESULT_LIMITS.players, isId, (x) => isNum(x, 0, 1e6)),
     $optional: ['resolved', 'leaks', 'bossDmg', 'by', 'done', 'left', 'leaksBy'],
   },

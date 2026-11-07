@@ -15,6 +15,20 @@
 // clearInterval(handle), dispose(). Flags: `virtual` (bool), `instant` (bool: battles run synchronously).
 // Callbacks are expected to guard themselves; the schedulers still catch and report (onError) so one faulty
 // callback never breaks the queue.
+//
+// RealScheduler additionally carries the main-thread turn budget (SP_TURN_BUDGET_MS, default 50; 0 = off):
+// libuv drains every timer due at the same moment inside one timers turn — each slice is bounded
+// (botSliceMs / headlessSliceMs / the 20 ms battle tick) but the turn is not, so its length is the sum of
+// the batch (the 2026-11-07 production stack samples: every ≥150 ms pause entered through
+// processTimers → listOnTimeout → RealScheduler._wrap). The gate lives in _wrap: once a turn has
+// dispatched SP_TURN_BUDGET_MS worth of callback time, further due callbacks are re-queued with
+// setTimeout(1) through the same wrapper (same accounting); a setImmediate (the check phase — it runs
+// between two timer drains) resets the accumulator, so deferred work always gets the next turn. A
+// callback that already started is never preempted. 0 keeps the pre-change wrapper verbatim: no clock
+// reads, no extra handles, nothing on the hot path. Deferred work respects clearTimeout/clearInterval/
+// dispose (a cancelled or disposed timer's deferred continuation never runs).
+
+import { performance } from 'node:perf_hooks';
 
 const MAX_DELAY = 2 ** 31 - 1;
 const clampDelay = (ms) => {
@@ -22,6 +36,40 @@ const clampDelay = (ms) => {
   if (!Number.isFinite(n) || n <= 0) return 0;
   return Math.min(MAX_DELAY, n);
 };
+
+// —— turn budget（SP_TURN_BUDGET_MS，默认 50；0 = 关）——
+// 累计器是模块级的：一个 timers turn 会排空所有对局（每个对局有自己的 RealScheduler 实例）的定时器，
+// 预算必须对它们共享同一份。
+
+const TURN_BUDGET_DEFAULT = 50;
+
+const parseTurnBudget = (raw) => {
+  const n = Number(raw);
+  if (raw == null || raw === '' || !Number.isFinite(n) || n < 0) return TURN_BUDGET_DEFAULT;
+  return n;
+};
+
+let TURN_BUDGET_MS = parseTurnBudget(process.env.SP_TURN_BUDGET_MS);
+let turnSpentMs = 0; // 当前 turn 已派发的回调时长（ms）
+let turnResetPending = false; // 已有一个 setImmediate 在排队清零——同一轮多次超支不再叠加定时器
+
+const resetTurnSpent = () => {
+  turnSpentMs = 0;
+  turnResetPending = false;
+};
+
+const armTurnReset = () => {
+  if (turnResetPending) return;
+  turnResetPending = true;
+  setImmediate(resetTurnSpent);
+};
+
+/** 测试钩子：SP_TURN_BUDGET_MS 在 import 时读一次，测试用它改运行中的值并清掉上一轮的残账。 */
+export function _setTurnBudgetForTests(ms) {
+  TURN_BUDGET_MS = parseTurnBudget(ms == null ? undefined : String(ms));
+  turnSpentMs = 0;
+  turnResetPending = false;
+}
 
 export class RealScheduler {
   /** @param {{ now?: () => number, onError?: (e: unknown) => void }} [opts] */
@@ -34,6 +82,9 @@ export class RealScheduler {
     this._timeouts = new Set();
     /** @type {Set<any>} */
     this._intervals = new Set();
+    /** 已顺延的 timeout（原 handle → 顺延句柄）：clearTimeout(原 handle) 要能取消顺延中的工作。
+     *  惰性创建——关闸（预算 0）时一个 Map 也不分配。 */
+    this._deferred = null;
     this.disposed = false;
   }
 
@@ -42,15 +93,57 @@ export class RealScheduler {
   }
 
   _wrap(fn) {
-    return () => {
+    if (!TURN_BUDGET_MS) {
+      // 关闸（SP_TURN_BUDGET_MS=0）：与改动前逐字节等价的直通路径——没有时钟读数、没有额外句柄。
+      return () => {
+        try { fn(); } catch (e) { if (this._onError) this._onError(e); else console.error('[scheduler] callback threw', e); }
+      };
+    }
+    const wrapped = (h, interval) => {
+      if (turnSpentMs >= TURN_BUDGET_MS) { this._defer(wrapped, h, interval); return; }
+      const t0 = performance.now();
       try { fn(); } catch (e) { if (this._onError) this._onError(e); else console.error('[scheduler] callback threw', e); }
+      turnSpentMs += performance.now() - t0;
+      if (turnSpentMs >= TURN_BUDGET_MS) armTurnReset();
     };
+    return wrapped;
+  }
+
+  /**
+   * 预算耗尽后把一个到期回调顺延到下一个 turn：setTimeout(1)，仍走同一包装（wrapped）重新计量，
+   * 预算仍耗尽就再次顺延。顺延句柄登记在 _timeouts 里（dispose 一并清掉）；timeout 顺延另记在
+   * _deferred（原 handle → 顺延句柄），clearTimeout(原 handle) 仍能取消顺延中的工作；interval 顺延
+   * 在执行前复查 _intervals——clearInterval 之后必然为假，顺延中的工作不执行。
+   */
+  _defer(wrapped, h, interval) {
+    if (this.disposed) return;
+    const dh = setTimeout(() => {
+      this._timeouts.delete(dh);
+      if (interval) {
+        if (!this._intervals.has(h)) return; // 已 clearInterval：顺延中的工作不执行
+      } else if (h !== undefined) {
+        if (this._deferred?.get(h) !== dh) return; // 已 clearTimeout：顺延中的工作不执行
+        this._deferred.delete(h);
+      }
+      if (this.disposed) return;
+      wrapped(h, interval);
+    }, 1);
+    dh.unref?.();
+    this._timeouts.add(dh);
+    if (!interval && h !== undefined) (this._deferred ??= new Map()).set(h, dh);
   }
 
   setTimeout(fn, ms) {
     if (this.disposed || typeof fn !== 'function') return null;
     const run = this._wrap(fn);
-    const h = setTimeout(() => { this._timeouts.delete(h); run(); }, clampDelay(ms));
+    if (!TURN_BUDGET_MS) {
+      const h = setTimeout(() => { this._timeouts.delete(h); run(); }, clampDelay(ms));
+      h.unref?.();
+      this._timeouts.add(h);
+      return h;
+    }
+    // 开闸时把原 handle 传进包装：顺延句柄要能被 clearTimeout(原 handle) 取消（关闸包装忽略入参）。
+    const h = setTimeout(() => { this._timeouts.delete(h); run(h); }, clampDelay(ms));
     h.unref?.();
     this._timeouts.add(h);
     return h;
@@ -58,13 +151,26 @@ export class RealScheduler {
 
   clearTimeout(h) {
     if (!h) return;
+    const dh = this._deferred?.get(h);
+    if (dh !== undefined) {
+      this._deferred.delete(h);
+      this._timeouts.delete(dh);
+      clearTimeout(dh);
+    }
     clearTimeout(h);
     this._timeouts.delete(h);
   }
 
   setInterval(fn, ms) {
     if (this.disposed || typeof fn !== 'function') return null;
-    const h = setInterval(this._wrap(fn), Math.max(1, clampDelay(ms)));
+    if (!TURN_BUDGET_MS) {
+      const h = setInterval(this._wrap(fn), Math.max(1, clampDelay(ms)));
+      h.unref?.();
+      this._intervals.add(h);
+      return h;
+    }
+    const run = this._wrap(fn);
+    const h = setInterval(() => { run(h, true); }, Math.max(1, clampDelay(ms)));
     h.unref?.();
     this._intervals.add(h);
     return h;
@@ -82,6 +188,10 @@ export class RealScheduler {
     for (const h of this._intervals) clearInterval(h);
     this._timeouts.clear();
     this._intervals.clear();
+    if (this._deferred) {
+      for (const dh of this._deferred.values()) clearTimeout(dh);
+      this._deferred.clear();
+    }
   }
 }
 

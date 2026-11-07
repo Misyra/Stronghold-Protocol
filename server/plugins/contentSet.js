@@ -1,7 +1,11 @@
 // C1 immutable content compositions (DESIGN §32.5). HTTP and room ownership are handled by contentSets.js and roomSets.js.
-// A build is synchronous over the game data (patches, hashes, the freeze) and — when the set has script plugins — awaits
-// its registration probe as a child process (scriptPreflight.js): the event loop is never blocked on a plugin script,
-// the caller just answers later (DESIGN §32.10).
+// A build's data half walks the game data (patches, records, the checks, the hashes, the freeze) as a generator that
+// pauses between blocks — per data file, per plugin, per document, per stage, per table — so the event loop breathes
+// while a big composition is built (§37.135): the blocks stay within SP_CONTENT_SLICE_MS (default 25 ms) plus the one
+// unsliceable unit a block ends with. The walk itself is unchanged: a sliced build and a fully synchronous one return
+// the same bytes and the same problems. When the set has script plugins, the build awaits its registration probe
+// (scriptPreflight.js) between the data half and the tail — the event loop is never blocked on a plugin script, the
+// caller just answers later (DESIGN §32.10).
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, DATA_DIR, deepFreeze } from '../data.js';
@@ -28,16 +32,70 @@ import { composeRules } from '../../shared/plugins/rules.js';
 import { offerReferenceProblems } from './offerData.js';
 
 const bases = new WeakMap(), buffers = new WeakMap(), caches = new WeakMap();
-function baseFor(registry) {
+
+// --- the sliced walk (§37.135) ---------------------------------------------------------------------------------------------
+// The data half and the tail are generators; the caller drives them. driveSliced lets the event loop run whenever the
+// block since the last pause reached the budget; driveSync runs the same walk to completion without a single await
+// (checkContentSetDataOnly keeps its synchronous contract, and the pauses are plain continuations there).
+
+/** SP_CONTENT_SLICE_MS: the synchronous-block budget of a build's data half and tail, in ms (default 25; 0 = the walk
+ * never pauses — the pre-§37.135 fully synchronous build). Options.slice.budgetMs overrides it per build (tests). */
+function sliceOpts(options) {
+  const s = options?.slice;
+  const fromEnv = process.env.SP_CONTENT_SLICE_MS;
+  const env = fromEnv !== undefined && fromEnv !== '' && Number.isFinite(Number(fromEnv)) ? Math.max(0, Number(fromEnv)) : null;
+  const budgetMs = s && Number.isFinite(s.budgetMs) ? Math.max(0, s.budgetMs) : env ?? 25;
+  return { budgetMs, clock: s?.clock, step: s?.step };
+}
+
+/** Runs a walk generator to completion without acting on its pauses. @returns {any} the walk's result */
+function driveSync(gen) {
+  let r = gen.next();
+  while (!r.done) r = gen.next();
+  return r.value;
+}
+
+/** Runs a walk generator, awaiting `step` between pauses once the running block reached budgetMs: a pause is a
+ * candidate, the clock decides. A budget of 0 never awaits (driveSync's behavior over the async contract). */
+async function driveSliced(gen, { budgetMs, clock = () => performance.now(), step = () => new Promise(r => setImmediate(r)) }) {
+  let mark = clock();
+  let r = gen.next();
+  while (!r.done) {
+    if (budgetMs > 0 && clock() - mark >= budgetMs) { await step(); mark = clock(); }
+    r = gen.next();
+  }
+  return r.value;
+}
+
+// Composes never interleave. The data half reads process-global state (the official-bounds install must hold from
+// rememberOfficialBounds(base.data) to exportOfficialBounds, and DSL validation reads it mid-walk); pausing opened the
+// possibility of a second build running in between, so builds queue here exactly as they always did on one thread.
+let composeTail = Promise.resolve();
+
+/** Freeze each top-level branch of `root` as its own block (deepFreeze(root) in slices): the same objects end frozen —
+ * a branch already frozen is skipped, so a caller may pre-freeze the big one — and `root` is handed out only after. */
+function* freezeSliced(root) {
+  for (const k of Object.keys(root)) {
+    const branch = root[k];
+    if (branch && typeof branch === 'object' && !Object.isFrozen(branch)) { deepFreeze(branch); yield; }
+  }
+  Object.freeze(root);
+  return root;
+}
+
+// --- the vanilla snapshot (unchanged walk, pauses between files and between frozen tables) ----------------------------------
+function* baseFor(registry) {
   if (bases.has(registry)) return bases.get(registry);
   const dirs = registry.contentDirs ?? {};
   const dataDir = dirs.dataDir ?? DATA_DIR;
   const identity = computeVanillaContent({ dataDir, simDir: dirs.simDir ?? path.join(ROOT, 'server/sim'), sharedDir: dirs.sharedDir ?? path.join(ROOT, 'shared'), shim: DATA_SHIM_JS });
+  yield;
   const data = {}, files = new Map();
   for (const f of gameplayDataFiles(dataDir)) {
     const body = fs.readFileSync(f.abs);
     data[f.name] = JSON.parse(body.toString('utf8'));
     files.set(`data/${f.file}`, body);
+    yield;
   }
   const i18n = {};
   const langDir = path.join(dataDir, 'i18n');
@@ -45,11 +103,14 @@ function baseFor(registry) {
     const body = fs.readFileSync(path.join(langDir, file));
     i18n[file.slice(0, -5)] = JSON.parse(body.toString('utf8'));
     files.set(`i18n/${file}`, body);
+    yield;
   }
-  const base = { identity, data: deepFreeze(data), files, i18n };
+  yield* freezeSliced(data);
+  const base = { identity, data, files, i18n };
   bases.set(registry, base);
   return base;
 }
+
 const maps = data => ({ ...Object.fromEntries(Object.keys(RECORD_MAPS).map(k => [k, data[k]])),
   bonds: data.bonds, modes: data.config?.modes, units: data.backups?.units, operators: data.backups?.diy?.operators });
 const prefixes = { ...Object.fromEntries(Object.entries(RECORD_MAPS).map(([k, v]) => [k, v[0]])), bonds: 'bond_x', modes: 'mode_x', units: 'char_x', operators: 'char_x' };
@@ -70,9 +131,10 @@ function writesAllowed(before, after, plugin, owners) {
   return problems;
 }
 
-function translations(data, initial, plugins) {
+function* translationsGen(data, initial, plugins) {
   const out = clone(initial), problems = [];
   for (const p of plugins) for (const [lang, rel] of Object.entries(p.manifest.parts.i18n?.langs ?? {})) {
+    yield;
     const doc = p.content.documents[rel];
     if (doc?.version !== 1 || doc.lang !== lang || !object(doc.files)) { problems.push(problem('PLUGIN_I18N', rel, 'version:1, matching lang and files required')); continue; }
     const dest = out[lang] ??= { version: 1, lang, names: {}, files: {} };
@@ -93,12 +155,14 @@ function translations(data, initial, plugins) {
       });
       dest.files[file] ??= {};
       dest.files[file][id] = buildRecordOverlay([...leaves.values()]);
+      yield;
     }
   }
   for (const g of Object.values(data.garrisons ?? {})) for (const [lang, text] of Object.entries(g.operatorTrait?.translations ?? {})) {
     const dest = out[lang] ??= { version: 1, lang, names: {}, files: {} };
     dest.files.garrisons ??= {};
     dest.files.garrisons[g.garrisonId] = buildRecordOverlay(['desc', 'descRaw'].map(key => ({ path: [key], zh: g[key], en: text })));
+    yield;
   }
   return { out, problems };
 }
@@ -140,13 +204,16 @@ function dslWriterProblems(before, after, plugin, owners) {
   return problems;
 }
 
-/** potDown leaves whose path writes dsl or pluginId. Unchanged official leaves are not reported. */
-function potDownSites(data) {
+/** potDown leaves whose path writes dsl or pluginId. Unchanged official leaves are not reported. The walk pauses
+ * every POTDOWN_PAUSE nodes (a whole-data walk is one of the bigger blocks of a plugin build). */
+const POTDOWN_PAUSE = 8192;
+function* potDownSites(data) {
   const out = new Map();
-  const walk = (node, path) => {
+  let visits = 0;
+  const walk = function* (node, path) {
     if (!node || typeof node !== 'object') return;
     if (Array.isArray(node)) {
-      for (let i = 0; i < node.length; i++) walk(node[i], `${path}[${i}]`);
+      for (let i = 0; i < node.length; i++) yield* walk(node[i], `${path}[${i}]`);
       return;
     }
     if (object(node.potDown)) {
@@ -159,16 +226,17 @@ function potDownSites(data) {
     }
     for (const [k, v] of Object.entries(node)) {
       if (k === 'potDown' || !v || typeof v !== 'object') continue;
-      walk(v, path ? `${path}.${k}` : k);
+      if (++visits % POTDOWN_PAUSE === 0) yield;
+      yield* walk(v, path ? `${path}.${k}` : k);
     }
   };
-  walk(data, '');
+  yield* walk(data, '');
   return out;
 }
 
-function potDownProblems(before, after, plugin) {
+function* potDownProblems(before, after, plugin) {
   const problems = [];
-  const prev = potDownSites(before), next = potDownSites(after);
+  const prev = yield* potDownSites(before), next = yield* potDownSites(after);
   const bad = (path) => problems.push({ ...problem('PLUGIN_DSL_PLUGIN_ID', path, 'potDown cannot write dsl or pluginId'), plugin: plugin.id });
   for (const [path, json] of next) if (prev.get(path) !== json) bad(path);
   for (const path of prev.keys()) if (!next.has(path)) bad(path);
@@ -210,11 +278,13 @@ function wavesUsedByMode(mode) {
   return ids;
 }
 
-/** C1. ids accepts ids or {id, settings}; failures return only {problems}, never a usable cs/data. */
-function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
+/** C1's data half, as a walk: the pauses (`yield`) are where the driver may let the event loop run; the walk itself is
+ * the pre-slice synchronous one, statement for statement. ids accepts ids or {id, settings}; failures return only
+ * {problems}, never a usable cs/data. */
+function* composeGen({ registry, ids = [], checkDataOnly = false }) {
   if (!registry || !Array.isArray(ids)) return { problems: [problem('PLUGIN_CONTENT_FORMAT', 'ids', 'registry and plugin ids required')] };
   let base;
-  try { base = baseFor(registry); } catch (e) { return { problems: [problem('PLUGIN_CONTENT_FILE', 'data', e.message)] }; }
+  try { base = yield* baseFor(registry); } catch (e) { return { problems: [problem('PLUGIN_CONTENT_FILE', 'data', e.message)] }; }
   const selected = ids.map(v => typeof v === 'string' ? { id: v } : v);
   const usable = id => {
     const p = registry.plugin(id);
@@ -229,10 +299,13 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
   if (collisions.length) return { problems: collisions };
   const plugins = resolved.order.map(usable).filter(p => ['content','script','trusted'].includes(p.class)), settings = {}, owners = new Map();
   let data = base.data;
-  // Install the vanilla snapshot before expand/validate so a DSL literal uses the real cap, not the floor.
+  // Install the vanilla snapshot before expand/validate so a DSL literal uses the real cap, not the floor. After every
+  // pause it is re-installed (O(1) while this build holds it): a pause may run unrelated code that swaps the cache.
   rememberOfficialBounds(base.data);
+  function* tick() { yield; rememberOfficialBounds(base.data); }
   const problems = [], warnings = [], writes = new Map(), prepById = new Map();
   for (const p of plugins) {
+    yield* tick();
     settings[p.id] = normalizeSettings(p.manifest.settings, selected.find(v => v.id === p.id)?.settings);
     const before = data;
     for (const part of ['data', 'operators', 'enemies', 'stages', 'modes']) for (const rel of p.manifest.parts[part]?.files ?? []) {
@@ -260,10 +333,11 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
       }
       problems.push(...r.problems.map(e => ({ ...e, plugin: p.id, file: rel })));
       data = r.data;
+      yield* tick();
     }
     problems.push(...writesAllowed(before, data, p, owners));
     problems.push(...dslWriterProblems(before, data, p, owners));
-    problems.push(...potDownProblems(before, data, p));
+    problems.push(...(yield* potDownProblems(before, data, p)));
     const prep = prepSpecs(p);
     problems.push(...prep.problems.map(e => ({ ...e, plugin: p.id })));
     if (prep.specs.length) prepById.set(p.id, prep.specs);
@@ -272,6 +346,7 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
   if (prepById.size) {
     const table = {};
     for (const [id, specs] of prepById) {
+      yield* tick();
       if (!Array.isArray(specs)) { problems.push(problem('PLUGIN_DSL_SHAPE', `dsl.${id}`, 'prep specs must be an array')); continue; }
       for (const spec of specs) {
         const checked = validatePrepSpec(spec, id);
@@ -286,26 +361,33 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
   }
   if (plugins.length) {
     data = reconcilePluginTokens(reconcilePluginBonds(data));
+    yield* tick();
     for (const p of plugins) if (p.offers?.length) problems.push(...offerReferenceProblems(p.offers, p.manifest, p.content.documents, base.data, data));
     problems.push(...validateGameplayData(data, { kitExists: ref => !!officialKit(ref), vanilla: base.data, owners, validateDsl }));
     if (problems.length) return { problems };
+    yield* tick();
     warnings.push(...bossCentreWarnings(data));
     data = { ...data, stages: { ...data.stages } };
     const routes = Object.values(data.waves).flatMap(w => [...(w.routes ?? []), ...(w.extraRoutes ?? [])]);
     const changedWaves = new Set();
-    for (const [id, wave] of Object.entries(data.waves)) if (routesChanged(base.data.waves[id], wave)) changedWaves.add(id);
+    for (const [id, wave] of Object.entries(data.waves)) {
+      if (routesChanged(base.data.waves[id], wave)) changedWaves.add(id);
+      yield* tick();
+    }
     const stagesFromWaves = new Set();
     if (changedWaves.size) for (const mode of Object.values(data.config.modes ?? {})) {
       if (wavesUsedByMode(mode).some(id => changedWaves.has(id))) for (const sid of mode.stages ?? []) stagesFromWaves.add(sid);
+      yield* tick();
     }
     for (const [id, stage] of Object.entries(data.stages)) {
       const stageChanged = canonicalJson(stage) !== canonicalJson(base.data.stages[id] ?? null);
       // A route-only change keeps the stage's own deployTiles. [ASSUMED] bots then read the new paths; deployment lists stay the stage's.
       if (stageChanged) data.stages[id] = { ...stage, ...computeGroundPaths(stage, routes), deployTiles: computeDeployTiles(stage) };
       else if (stagesFromWaves.has(id)) data.stages[id] = { ...stage, ...computeGroundPaths(stage, routes) };
+      yield* tick();
     }
   }
-  const tr = translations(data, base.i18n, plugins);
+  const tr = yield* translationsGen(data, base.i18n, plugins);
   if (tr.problems.length) return { problems: tr.problems };
   // Checking declarative references must never execute a dependency's script setup/preflight.
   if (checkDataOnly) return { data, problems: [] };
@@ -315,6 +397,7 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
     // A new table (data/dsl.json) has no base bytes. canonicalJson(undefined) throws, so a missing key is always written.
     if (!Object.hasOwn(base.data, name) || canonicalJson(rec) !== canonicalJson(base.data[name])) bodies.set(rel, Buffer.from(JSON.stringify(rec)));
     const body = bodies.get(rel); hashes[name] = nodeSha256(body);
+    yield* tick();
   }
   for (const [lang, doc] of Object.entries(tr.out)) if (canonicalJson(doc) !== canonicalJson(base.i18n[lang] ?? null)) bodies.set(`i18n/${lang}.json`, Buffer.from(JSON.stringify(doc)));
   const boundsSnap = exportOfficialBounds(rememberOfficialBounds(base.data));
@@ -340,6 +423,7 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
   for (const p of scripts) {
     const body = Buffer.from(JSON.stringify(p));
     bodies.set(`scripts/${p.id}.json`,body); scriptHashes[p.id] = nodeSha256(body);
+    yield* tick();
   }
   if ([...bodies.values()].reduce((n, b) => n + b.length, 0) > 300 * 1024 * 1024) return { problems: [problem('PLUGIN_DATA_LIMIT', 'content', 'set exceeds 300 MB')] };
   const parts = plugins.map(p => ({ id: p.id, version: p.manifest.version,
@@ -355,10 +439,10 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
   const cs = contentHashOf({ app: base.identity.app, sim: base.identity.sim, data: hashes, plugins: parts, settings, ...(Object.keys(i18n).length ? { i18n } : {}), ...(rules ? { rules } : {}) });
   const cache = caches.get(registry) ?? new Map(); caches.set(registry, cache);
   if (cache.has(cs)) return cache.get(cs);
-  // The script probe (scriptPreflight.js) awaits a child process, so it gates the set outside this synchronous half:
-  // buildContentSet awaits it and only then runs finalizeContentSet. Everything above — the data patches, the hashes,
-  // the cs — ran before the probe in the synchronous builder too; only the served files and the snapshot below wait.
-  // [ASSUMED, revised] C1 is no longer synchronous end to end: only its data half is (DESIGN §32.10).
+  // The script probe (scriptPreflight.js) awaits a child process, so it gates the set outside this data half:
+  // buildContentSet awaits it and only then runs the tail. Everything above — the patches, the records, the checks,
+  // the hashes, the cs — ran before the probe in the synchronous builder too; only the served files and the frozen
+  // snapshot below wait. [ASSUMED, revised] C1's data half pauses between blocks; its result is unchanged (§37.135).
   return { pending: {
     probe: scripts.length ? { registry, scripts, hashInput: { plugins: parts, settings } } : null,
     bodies, base, data, plugins, scripts, parts, settings, execution, rules, cs, boundsSnap, warnings, cache,
@@ -366,10 +450,14 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
 }
 
 /** C1's tail: the served files, the index and the frozen snapshot — run once a probe (when the set has scripts) came
- * back clean, so a refused set never leaves a cache entry or served bytes behind. */
-function finalizeContentSet({ bodies, base, data, plugins, scripts, parts, settings, execution, rules, cs, boundsSnap, warnings, cache }) {
+ * back clean, so a refused set never leaves a cache entry or served bytes behind. Also a walk: pauses between the
+ * hashed bodies and between the frozen branches. Nothing here reads process-global state, so the pauses are free. */
+function* finalizeGen({ bodies, base, data, plugins, scripts, parts, settings, execution, rules, cs, boundsSnap, warnings, cache }) {
   const files = {};
-  for (const [rel, body] of bodies) files[rel] = { sha256: nodeSha256(body), bytes: body.length };
+  for (const [rel, body] of bodies) {
+    files[rel] = { sha256: nodeSha256(body), bytes: body.length };
+    yield;
+  }
   const vanilla = plugins.length === 0;
   // A plugin-added operator is a 自选 candidate only when one of its forms declares a kit — an official kitRef (KITS,
   // resolved by officialKit), a JSON SkillSpec or a DSL. A unit that would fall back to the generic kit is not offered:
@@ -385,18 +473,27 @@ function finalizeContentSet({ bodies, base, data, plugins, scripts, parts, setti
     const url = base.files.get(rel)?.equals(bodies.get(rel)) ? `/data/${rel.replace(/^(data\/)/, '')}?v=${f.sha256.slice(0, 8)}` : `/cs/${csUrlPart(cs)}/${rel}`;
     const [section, name] = rel.split('/');
     index[section][name.slice(0, -5)] = { url, ...f };
+    yield;
   }
-  const set = deepFreeze({ cs, vanilla, plugins: plugins.map(p => ({ id: p.id, version: p.manifest.version, hash: p.content.hash })),
+  const set = { cs, vanilla, plugins: plugins.map(p => ({ id: p.id, version: p.manifest.version, hash: p.content.hash })),
     data, files, ...(scripts.length ? {scripts, execution} : {}), ...(rules ? { rules } : {}), modes: Object.values(data.config.modes), problems: [], warnings, index, settings, bounds: boundsSnap,
     kitted: [...KITTED_CHARS, ...Object.keys(data.backups.units).filter(id => !own(base.data.backups.units, id) && hasDeclaredKit(data.backups.units[id]))],
     // PLUGIN API v2 (docs/PLUGINS.md §10b): the interaction windows the set declares, tagged with their plugin. Data
     // only and already checked by the registry; a set without one omits the field, so nothing downstream changes.
-    ...(offers.length ? { offers } : {}) });
+    ...(offers.length ? { offers } : {}) };
+  // Freeze the composed data one table at a time (the set's big branch), then the set branch by branch. Nothing can
+  // hold `set` before this walk returns, so the pauses are unobservable.
+  if (set.data && typeof set.data === 'object' && !Object.isFrozen(set.data)) {
+    for (const t of Object.keys(set.data)) { deepFreeze(set.data[t]); yield; }
+    Object.freeze(set.data);
+  }
+  yield* freezeSliced(set);
   // Executable routes use the descriptor's already hashed browser bytes; keep the JSON index table unchanged.
   if (execution === 'trusted') for (const p of scripts) {
     const m = JSON.parse(p.manifestSource);
     for (const rel of new Set([m.entry?.sim, m.entry?.meta, m.entry?.client].filter(Boolean)))
       bodies.set(`scripts/${p.id}/${rel}`, Buffer.from(p.browserSources[rel]));
+    yield;
   }
   bodies.set('index.json', Buffer.from(JSON.stringify(index)));
   buffers.set(set, bodies); cache.set(cs, set);
@@ -413,23 +510,28 @@ export function contentSetFiles(set) {
 /** C1 failures are data diagnostics, including invalid nested stage/translation input. A set with script plugins
  * awaits its registration probe (scriptPreflight.js) before the tail runs — callers await the build (contentSets.resolve
  * answers PLUGIN_BUSY/refusals once it settles; server/net.js replies then). The probe result is cached per registry,
- * so an unchanged set is not awaited on twice. */
+ * so an unchanged set is not awaited on twice. The data half pauses between blocks (§37.135); composes queue, so two
+ * builds never interleave — the same one-thread order the synchronous walk gave. */
 export async function buildContentSet(options) {
+  const opts = options ?? {};
   try {
-    const half = composeContentSet(options ?? {});
+    const slice = sliceOpts(opts);
+    const run = composeTail.then(() => driveSliced(composeGen(opts), slice));
+    composeTail = run.then(() => {}, () => {});
+    const half = await run;
     if (!half.pending) return half; // a problem, the vanilla/index identity, or the cached set: nothing to probe
     if (half.pending.probe) {
       const report = await preflightScripts(half.pending.probe.registry,half.pending.probe.scripts,half.pending.probe.hashInput);
       if (report) return {problems:[problem(report.code,'scripts',report.message)]};
     }
-    return finalizeContentSet(half.pending);
+    return await driveSliced(finalizeGen(half.pending), slice);
   }
   catch (e) { return { problems: [problem('PLUGIN_CONTENT_FORMAT', 'content', e.message)] }; }
 }
 
 /** C1's data-only composition check (the folder checkers, pack.js / gameplayCheck.js): stops before the scripts, so it
- * never probes and stays synchronous even though a full build awaits one. */
+ * never probes and stays fully synchronous — the walk is driven to completion without acting on its pauses. */
 export function checkContentSetDataOnly(options) {
-  try { return composeContentSet({ ...(options ?? {}), checkDataOnly: true }); }
+  try { return driveSync(composeGen({ ...(options ?? {}), checkDataOnly: true })); }
   catch (e) { return { problems: [problem('PLUGIN_CONTENT_FORMAT', 'content', e.message)] }; }
 }

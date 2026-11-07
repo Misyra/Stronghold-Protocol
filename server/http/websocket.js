@@ -2,12 +2,14 @@
 //
 //   * session wiring: SessionRegistry (reconnect tokens) → Lobby (rooms, server/lobby.js) → Network (the socket
 //     protocol, server/net.js), built from the startServer() options (config.js decides which go where);
-//   * WebSocket (ws) at /ws, maxPayload 64 KB, permessage-deflate (WS_DEFLATE) → Network.handleConnection. Refused at
+//   * WebSocket (ws) at /ws, maxPayload 64 KB, permessage-deflate only when SP_WS_COMPRESSION=on (WS_DEFLATE, the
+//     preset of server/wsCompression.js; per-type allowlist in net.js) → Network.handleConnection. Refused at
 //     the upgrade: any other path 404; per-network socket limit for internet clients (maxConnectionsPerAddr, see net.js
 //     clientAddress; local/LAN peers are exempt) 429; server full (maxConnections) or shutting down 503.
 
 import { WebSocketServer } from 'ws';
 import { Network, SessionRegistry, NET_DEFAULTS } from '../net.js';
+import { resolveWsCompression } from '../wsCompression.js';
 import { Lobby } from '../lobby.js';
 import { splitUrl } from './common.js';
 import { netOptionsFrom, lobbyOptionsFrom } from './config.js';
@@ -16,28 +18,29 @@ import { netOptionsFrom, lobbyOptionsFrom } from './config.js';
 export const WS_MAX_PAYLOAD = 64 * 1024;
 
 /**
- * permessage-deflate (RFC 7692) for the JSON text frames. A message from 1 KB up (m.public, m.private, b.start, welcome
- * …) is compressed with an 8 KB window (serverMaxWindowBits 13) and zlib memLevel 7, and the window is KEPT from one
- * message to the next (context takeover, the ws default: the extension's `server_no_context_takeover` is not
- * negotiated) — the views repeat most of their keys and values (bonds, players, shop), so a frame costs a fraction of
- * its standalone deflate. A 4-player match's frames (3,339 KiB of payload, 1,127 frames, one client's stream, measured
- * over a real ws round trip): 809 KiB on the wire with per-message deflate and a 2 KB window, 284 KiB with the context
- * kept — a window of 15 would reach about 160 KiB at about 140 KiB more zlib state per connection, so 13 is the balance
- * (about 105 KiB of zlib state per connection); smaller frames (pong, ok) go out as they are. A connection that
- * negotiates no extension, or one that caps the server window below ours, gets plain frames. Context takeover is
- * negotiated per connection and reset with it: a client that offers `server_no_context_takeover` keeps getting
- * standalone messages.
+ * permessage-deflate (RFC 7692) for the JSON text frames, the preset SP_WS_COMPRESSION=on runs (DESIGN §37.138, the
+ * server/wsCompression.js port of the Stardust fork). The window is KEPT from one message to the next (context
+ * takeover, the ws default: the extension's `server_no_context_takeover` is not negotiated) at the full 32 KiB — the
+ * state frames and the battle stream repeat most of their keys and values (bonds, players, shop), so a frame costs a
+ * fraction of its standalone deflate; with the shared context even the small battle frames shrink several-fold for
+ * little CPU, which per-message deflate could not. WHICH frames enter that context is not a byte-length threshold but
+ * the per-type allowlist of server/wsCompression.js, applied at the send paths (net.js sendRaw / send): welcome
+ * (credentials), error/ok/pong and every unknown type go out plain — they never touch the shared context.
  */
-export const WS_DEFLATE = Object.freeze({
-  threshold: 1024,
-  serverMaxWindowBits: 13,
-  zlibDeflateOptions: Object.freeze({ memLevel: 7 }),
-});
+export const WS_DEFLATE = resolveWsCompression('on');
+
+/**
+ * The reference server window of narrowDeflateOffer, in bits: the zlib default a browser client gets (browsers offer
+ * no `server_max_window_bits`, so the shared context runs at the full 15-bit / 32 KiB window).
+ */
+export const WS_DEFLATE_SERVER_WINDOW_BITS = 15;
 
 /**
  * Does every permessage-deflate offer of this `Sec-WebSocket-Extensions` header cap the server window below
- * WS_DEFLATE.serverMaxWindowBits? ws cannot accept such an offer and refuses the whole handshake (400), so the upgrade
- * drops the header instead and the connection goes uncompressed. No browser sends `server_max_window_bits`.
+ * WS_DEFLATE_SERVER_WINDOW_BITS? With the preset unpinned, ws itself would accept such an offer as asked — but a
+ * server window that small defeats the shared-context design (each frame then compresses against a 0.5–8 KiB history
+ * for nearly full CPU), so the upgrade drops the header instead and the connection goes uncompressed. No browser
+ * sends `server_max_window_bits`.
  * @param {string | string[] | undefined} header
  */
 export function narrowDeflateOffer(header) {
@@ -46,7 +49,7 @@ export function narrowDeflateOffer(header) {
   if (!offers.length) return false;
   return offers.every((offer) => {
     const m = /(?:^|;)\s*server_max_window_bits\s*=\s*"?(\d+)"?/i.exec(offer);
-    return !!m && Number(m[1]) < WS_DEFLATE.serverMaxWindowBits;
+    return !!m && Number(m[1]) < WS_DEFLATE_SERVER_WINDOW_BITS;
   });
 }
 
@@ -103,37 +106,17 @@ function meterSocket(ws, req, traffic) {
   ws.once('close', () => traffic.wsClose(socket));
 }
 
-/** The options of a frame that must go out uncompressed. */
-const PLAIN = Object.freeze({ compress: false });
-
-/**
- * Keep `WS_DEFLATE.threshold` true now that the window is kept.
- * ws applies its own threshold only when the extension negotiated `*_no_context_takeover` (sender.js: the check sits
- * behind that parameter) — with context takeover every message it is handed is compressed, so a pong or an `ok` would
- * be too. The decision is made here instead, on the UTF-8 byte length of text frames, and only for the small ones:
- * `compress: false` leaves the frame plain and the server's deflate window untouched.
- */
-function applySendThreshold(ws) {
-  const send = ws.send;
-  ws.send = function sendWithThreshold(data, options, callback) {
-    if (typeof options === 'function') { callback = options; options = null; }
-    if (typeof data === 'string' && Buffer.byteLength(data, 'utf8') < WS_DEFLATE.threshold) {
-      return send.call(this, data, options ? { ...options, compress: false } : PLAIN, callback);
-    }
-    return send.call(this, data, options, callback);
-  };
-}
-
 /**
  * Serve the WebSocket endpoint /ws on `server` (its 'upgrade' event).
  * @param {import('node:http').Server} server
- * @param {{ network: Network, log: object, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter> }} deps
+ * @param {{ network: Network, log: object, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter>,
+ *   wsCompression?: false | object }} deps `wsCompression`: the resolved permessage-deflate options
+ *   (wsCompression.js resolveWsCompression), false: none; default the on-preset (startServer resolves SP_WS_COMPRESSION)
  * @returns {WebSocketServer}
  */
-export function attachWebSocket(server, { network, log, traffic = null, gate = null }) {
-  const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD, perMessageDeflate: { ...WS_DEFLATE }, clientTracking: false });
+export function attachWebSocket(server, { network, log, traffic = null, gate = null, wsCompression = WS_DEFLATE }) {
+  const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD, perMessageDeflate: wsCompression === false ? false : { ...wsCompression }, clientTracking: false });
   wss.on('connection', (ws, req) => {
-    applySendThreshold(ws);
     if (traffic) meterSocket(ws, req, traffic);
     network.handleConnection(ws, req);
   });

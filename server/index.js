@@ -49,6 +49,7 @@ import { getBotStrategy, getBotStrategySeats } from './match/botStrategies.js';
 import { noteLlmIgnored, releaseIgnoresExternalAi, validateExternalConfig } from './match/llmGate.js';
 import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, parseAssetCdn, assetIndexOptionsFrom, versionsFrom, versionPrewarmFrom, parseRoomCode, announcementOptionsFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
+import { resolveWsCompression } from './wsCompression.js';
 import { siteCsp } from './http/csp.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPluginRegistry } from './plugins/registry.js';
@@ -148,6 +149,9 @@ export {
  *                     close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
+  // WS 压缩 (DESIGN §37.138, server/wsCompression.js): SP_WS_COMPRESSION on/off (默认 on)。非法值在这里就拒绝启动
+  // (宁可不起, 也不默默选一边); opts.wsCompression 让测试/嵌入方绕过 env 直接给 resolveWsCompression 的结果。
+  const wsCompression = resolveWsCompression(opts.wsCompression ?? process.env.SP_WS_COMPRESSION ?? 'on');
   // A release ignores external-AI settings (one log line) and keeps the built-in bot (§35.66).
   // An unknown strategy id still fails here, before data is loaded or the port is opened.
   const log = opts.log || makeLogger(!!opts.quiet);
@@ -376,7 +380,9 @@ export async function startServer(opts = {}) {
   const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic, chatLog, persister, store, getHealthMetrics: () => healthMetrics }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime, gate,
     readAnnouncement, announcementSource: announcementOptions.source }));
   server.on('clientError', answerClientError);
-  const wss = attachWebSocket(server, { network, log, traffic, gate, trustProxy: network.opts.trustProxy });
+  const wss = attachWebSocket(server, { network, log, traffic, gate, trustProxy: network.opts.trustProxy, wsCompression });
+  // The deploy log states the WS compression actually running (like the [http] limits line above).
+  log.info(`[ws] permessage-deflate: ${wsCompression === false ? 'off (SP_WS_COMPRESSION=off)' : 'on (per-type allowlist, shared 32 KiB server context)'}`);
 
   // The address actually bound. The default may fall back to IPv4; the returned host and url follow that.
   let boundHost;

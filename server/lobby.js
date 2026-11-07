@@ -238,7 +238,7 @@ import { DIFFICULTIES, ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor 
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks, charPotentialChanges, checkSkinSelection, operatorCharIds } from '../shared/protocol.js';
 import { skinFor } from '../shared/skins.js';
 import { EXPERIMENTAL_DEFAULTS, experimentalOptions, isExperimental, sameExperimental } from '../shared/experimental.js';
-import { roomCapacity } from '../shared/playerCapacity.js';
+import { PLAYER_CAPACITY_VERSION, roomCapacity } from '../shared/playerCapacity.js';
 import { encode, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
 import { Match as DefaultMatch, AFK_REMOVE_ROUNDS } from './match/Match.js';
@@ -432,13 +432,14 @@ function sameSkins(a, b) {
   return ka.length === kb.length && ka.every((k) => a[k] === b[k]);
 }
 
-/** One room: 4 seat slots, host, difficulty, optional running match. */
+/** One room: its capacity's seat slots (solo keeps the legacy four-slot DTO), host, difficulty, optional running match. */
 export class Room {
   /**
    * @param {string} code @param {'solo'|'coop'} mode @param {string} difficulty @param {number} now
    * @param {string} [version] the official version the room plays (header "Official versions")
+   * @param {object} [experimental] the room's experimental options (shared/experimental.js; the seat count included)
    */
-  constructor(code, mode, difficulty, now, version = DEFAULT_VERSION) {
+  constructor(code, mode, difficulty, now, version = DEFAULT_VERSION, experimental = EXPERIMENTAL_DEFAULTS) {
     this.code = code;
     this.mode = mode;
     this.difficulty = difficulty;
@@ -449,7 +450,7 @@ export class Room {
      * key. 联动干员 is not one of them any more (2026-11-03): the collab 6★ are ordinary 自选 picks.
      * @type {Readonly<{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean }>}
      */
-    this.experimental = EXPERIMENTAL_DEFAULTS;
+    this.experimental = experimentalOptions(experimental);
     /** 'private' (room.create) or 'matchmaking' (a queue allocation). */
     this.source = 'private';
     /**
@@ -492,7 +493,7 @@ export class Room {
     /** @type {string | null} */
     this.hostId = null;
     /** @type {(Seat | null)[]} */
-    this.seats = new Array(MAX_SEATS).fill(null);
+    this.seats = new Array(mode === 'solo' ? MAX_SEATS : this.capacity).fill(null);
     /** @type {{ playerId: string, name: string, connected: boolean }[]} spectator seats, ≤ MAX_SPECTATORS (header) */
     this.spectators = [];
     /** @type {any} running Match instance */
@@ -549,8 +550,19 @@ export class Room {
   /** @param {string} playerId @returns {{ playerId: string, name: string, connected: boolean } | null} */
   spectatorOf(playerId) { return this.spectators.find((s) => s.playerId === playerId) || null; }
 
-  /** Lowest free seat index, or -1. */
-  freeSeat() { return this.seats.indexOf(null); }
+  /** The seats the room admits (shared/playerCapacity.js): a solo plays alone, a co-op room its experimental size. */
+  get capacity() { return roomCapacity(this.mode, this.experimental); }
+
+  admitsSeat(seat) { return Number.isInteger(seat) && seat >= 0 && seat < this.capacity; }
+
+  /** Lowest free admitted seat index, or -1. Never compact occupied seat numbers. */
+  freeSeat() { return this.seats.findIndex((seat, index) => index < this.capacity && seat === null); }
+
+  /** The room's options and its seats array still describe the same capacity, and every seat knows its index. */
+  validCapacity() {
+    return isExperimental(this.experimental) && this.seats.length === (this.mode === 'solo' ? MAX_SEATS : this.capacity)
+      && this.seats.every((seat, index) => !seat || (this.admitsSeat(index) && seat.seat === index));
+  }
 
   /** Humans that have not departed, in seat order. @returns {Seat[]} */
   activeHumans() { return this.seats.filter((s) => s && !s.isBot && !s.left); }
@@ -917,6 +929,34 @@ export class Lobby {
   // net.js handler interface
   // ---------------------------------------------------------------------------------------------------
 
+  /** A session that is identified, on a live socket, and still the registry's one identity for its player id. */
+  isOnline(session) {
+    return !!session?.connected && session.ws?.readyState === 1 && this.registry.byId(session.playerId) === session;
+  }
+
+  /** Whether the client speaks the current expanded-room contract (shared/playerCapacity.js). */
+  supportsCapacity(session) { return session?.playerCapacityVersion === PLAYER_CAPACITY_VERSION; }
+
+  /**
+   * Whether every online member (humans and spectators) of `room` could take its `capacity` of seats: a capacity past
+   * four is an opt-in experiment, so a legacy page must neither sit in it nor watch it.
+   */
+  capacityClients(room, capacity = room.capacity) {
+    return capacity <= MAX_SEATS || [...room.activeHumans(), ...room.spectators].every((member) => {
+      const session = this.registry.byId(member.playerId);
+      return !this.isOnline(session) || this.supportsCapacity(session);
+    });
+  }
+
+  /**
+   * Called by net.js before a hello attaches/replaces the socket (server/net.js onHelloMsg): a legacy resume must
+   * neither receive a large room's snapshot nor evict the compatible live socket that owns it.
+   */
+  helloAdmission(session, message) {
+    const room = session ? this.roomOf(session) : null;
+    return room?.capacity > MAX_SEATS && message.playerCapacityVersion !== PLAYER_CAPACITY_VERSION ? fail(ERR.BAD_MSG) : OK;
+  }
+
   /**
    * After `welcome`: resend room state / match state for resumed (or repeated) hellos.
    * @param {import('./net.js').Session} session
@@ -1035,7 +1075,9 @@ export class Lobby {
   handleMessage(session, msg, ctx = null) {
     switch (msg.t) {
       case 'queue.join': return this.queueReply(this.queueJoin(session, msg));
-      case 'queue.cancel': return this.queueReply(this.cancelMatchmaking(session, msg));
+      // the engine's own ticket-scoped cancel (fork 终态): any ticket holder may withdraw — parties are indivisible,
+      // so one member's cancel takes the whole party out, and the room's waiting flag clears with the idle snapshot
+      case 'queue.cancel': return this.queueReply(this.queueCancel(session, msg));
       case 'queue.accept': return this.queueReply(this.matchmaking.accept(session, msg));
       case 'room.matchmaking': return this.queueReply(this.queueParty(session));
       case 'room.create': return this.create(session, msg);
@@ -1175,6 +1217,10 @@ export class Lobby {
     if (test === true && this.testEnabled !== true) return fail(ERR.TEST_DISABLED);
     // room-owned experimental rules (shared/experimental.js): absent = a standard room
     if (experimental !== undefined && !isExperimental(experimental)) return fail(ERR.BAD_MSG, 'invalid experimental options');
+    // 扩编房间是显式的实验性选项 (docs/PLAYING.md「实验性规则」): a create that widens the seats past four answers only a
+    // client that speaks the current capacity contract (shared/playerCapacity.js PLAYER_CAPACITY_VERSION); ordinary and
+    // solo rooms stay open to every client
+    if (roomCapacity(mode, experimental) > MAX_SEATS && !this.supportsCapacity(session)) return fail(ERR.BAD_MSG, 'this client cannot enter an expanded room');
     // the official version (header "Official versions"): left out, the server's default
     const version = askedVersion ?? this.defaultVersion();
     if (!this.versionEnabled(version)) return fail(ERR.VERSION_UNKNOWN);
@@ -1234,9 +1280,8 @@ export class Lobby {
     if (!this.allowRoomAction(session, 'create', cur)) return fail(ERR.RATE, 'room creation rate exceeded');
     this.leaveQueue(session, 'cancelled');
     if (cur) this.removeMember(cur, session.playerId);
-    const room = new Room(code, mode, difficulty, this.now(), version);
+    const room = new Room(code, mode, difficulty, this.now(), version, experimental ?? EXPERIMENTAL_DEFAULTS);
     room.source = 'private';
-    if (experimental !== undefined) room.experimental = experimentalOptions(experimental);
     room.test = test === true;
     // 「不限时」 only on a solo room of a version whose solo is timed (header). Anywhere else the key is ignored, so a
     // stray true cannot change a default or co-op create.
@@ -1257,11 +1302,55 @@ export class Lobby {
     return OK;
   }
 
+  /**
+   * The queue's room (server/matchmakingRooms.js allocateCohort): the confirmed cohort's fresh matchmade co-op room,
+   * built synchronously — the queue's allocate seam (server/matchmaking.js `allocate`) cannot await room.create's
+   * plugin resolution, and a queue room always plays the version's base content (rooms that need content are refused
+   * upstream, matchmakingMembers ROOM_MODDED). The room carries the offer's options, seat count included. create's
+   * own gates (room caps, per-network room cap, the action budget) apply unchanged.
+   * @param {import('./net.js').Session} session the cohort's host (the room's host)
+   * @param {{ difficulty: string, experimental: object }} spec
+   * @returns {Room | { error: string, detail?: string }}
+   */
+  buildQueueRoom(session, { difficulty, experimental }) {
+    // 房间回收(移植自用户分支): capacity pressure frees fully-offline rooms before the hard limit refuses
+    this.reclaimOfflineRooms();
+    if (this.rooms.size >= this.opts.maxRooms) return fail(ERR.INTERNAL, 'too many rooms');
+    const key = session.limitKey || null;
+    if (key && this.opts.maxRoomsPerAddr > 0
+      && this.countRooms((r) => r.ownerKey === key) >= this.opts.maxRoomsPerAddr) {
+      this.limitWarn(`room limit (${this.opts.maxRoomsPerAddr}) reached for ${session.addr}`);
+      return fail(ERR.RATE, 'too many rooms from your network');
+    }
+    // the action-budget half (server/roomProtection.js): a queue allocation spends its host's create budget too
+    if (!this.allowRoomAction(session, 'create', null)) return fail(ERR.RATE, 'room creation rate exceeded');
+    const code = this.genCode();
+    if (!code) return fail(ERR.INTERNAL, 'no room code available');
+    const room = new Room(code, 'coop', difficulty, this.now(), undefined, experimental ?? EXPERIMENTAL_DEFAULTS);
+    // a room the queue allocated: the private-room options are not offered there, and any seated human may propose
+    // the setup reroll vote (野排)
+    room.source = 'matchmaking';
+    room.fromMatchmaking = true;
+    room.content = this.baseContent(room.version);
+    room.ownerKey = key;
+    this.rooms.set(code, room);
+    room.seats[0] = this.humanSeat(0, session, room);
+    room.hostId = session.playerId;
+    session.roomCode = code;
+    session.notice = null;
+    session.pendingResult = null;
+    this.log.info(`[lobby] ${code} allocated by the queue (${room.mode}/${difficulty}, ${room.capacity} seats) for ${session.name}`);
+    this.broadcastState(room);
+    return room;
+  }
+
   join(session, { code, testAck }) {
     const norm = String(code).trim().toUpperCase();
     const room = norm.length === ROOM_CODE_LEN ? this.rooms.get(norm) : undefined;
     if (!room) return fail(ERR.ROOM_NOT_FOUND);
     if (room.test && testAck !== true) return fail(ERR.TEST_CONFIRM);
+    // an expanded room answers only a client that speaks its capacity contract (shared/playerCapacity.js)
+    if (room.capacity > MAX_SEATS && !this.supportsCapacity(session)) return fail(ERR.BAD_MSG);
     const cur = this.roomOf(session);
     // idempotent for members; a spectator of this room goes on below: it may take a free player seat (header)
     if (cur === room && !room.spectatorOf(session.playerId)) { this.sendState(room, session); return OK; }
@@ -1321,8 +1410,24 @@ export class Lobby {
     return queued;
   }
 
+  /**
+   * queue.cancel (fork 终态): the engine's own ticket-scoped cancel — any ticket holder may withdraw, and parties are
+   * indivisible, so one member's cancel takes the whole party out (the room's waiting flag clears with the idle
+   * snapshot). The engine insists on the ticket it handed out; a client that lost the frame — a page reload, a room
+   * screen that never saw queue.state — may omit it and still cancel its own ticket.
+   */
+  queueCancel(session, { ticketId } = {}) {
+    const named = ticketId ?? this.matchmaking.entries.get(session.playerId)?.ticketId;
+    return this.matchmaking.cancel(session, { ticketId: named });
+  }
+
   /** The host opts the whole ready alliance into four-human matchmaking. */
   queueParty(session) { return queuePartyMatchmaking(this, session); }
+
+  /** One-line seams over server/matchmakingRooms.js (the class keeps the shape its fork gave it). */
+  matchmakingAvailable(session, entry) { return matchmakingAvailable(this, session, entry); }
+
+  matchmakingMembers(session, difficulty, party) { return matchmakingMembers(this, session, difficulty, party); }
 
   cancelMatchmaking(session, msg = {}) { return cancelPartyMatchmaking(this, session, msg); }
 
@@ -1352,6 +1457,8 @@ export class Lobby {
     const room = norm.length === ROOM_CODE_LEN ? this.rooms.get(norm) : undefined;
     if (!room) return fail(ERR.ROOM_NOT_FOUND);
     if (room.test && testAck !== true) return fail(ERR.TEST_CONFIRM);
+    // an expanded room answers only a client that speaks its capacity contract (shared/playerCapacity.js)
+    if (room.capacity > MAX_SEATS && !this.supportsCapacity(session)) return fail(ERR.BAD_MSG);
     const cur = this.roomOf(session);
     if (cur === room) {
       if (!room.spectatorOf(session.playerId)) return fail(ERR.ALREADY, 'seated as a player');
@@ -1549,6 +1656,10 @@ export class Lobby {
    * The room's experimental rules (shared/experimental.js): host-only, before the match, private rooms only (a matchmade
    * room never: BAD_MSG). Changing a rule un-readies the other humans, as every room option does.
    * 联动干员 is no longer a rule here — the collab 6★ are ordinary 自选 picks (2026-11-03).
+   *
+   * The seat count is one of the rules (playerCapacity 4/8/12/16/20): growing the array preserves every seat
+   * identity, and a shrink is refused while any high seat still holds a human or an AI — a rejection never touches
+   * options, ready flags, replay or seats. Every seated client must speak the room's capacity contract.
    */
   setExperimental(session, { experimental }) {
     const room = this.roomOf(session);
@@ -1557,17 +1668,25 @@ export class Lobby {
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
     if (!isExperimental(experimental)) return fail(ERR.BAD_MSG);
-    // 本服固定四席 (docs/PLUGIN-GUIDE.md): an experimental room may not widen the seat count, or the queue's
-    // cohort (allocateCohort) would never be able to fill it.
-    if (roomCapacity('coop', experimental) !== MAX_SEATS) return fail(ERR.BAD_MSG, 'experimental player capacity is fixed at four');
     if (room.source !== 'private') return fail(ERR.BAD_MSG, 'experimental rules: private rooms only');
+    const capacity = roomCapacity(room.mode, experimental);
+    if (capacity > MAX_SEATS && (!this.supportsCapacity(session) || !this.capacityClients(room, capacity))) {
+      return fail(ERR.BAD_MSG, 'every room member must support its capacity');
+    }
+    // Reject before touching options, ready flags, replay or seats, including a
+    // disconnected human / AI in a high slot. A shrink never reassigns seats.
+    if (room.seats.slice(capacity).some(Boolean)) return fail(ERR.ROOM_FULL, 'higher seats must be empty before reducing capacity');
     const next = experimentalOptions(experimental);
     if (sameExperimental(room.experimental, next)) return OK;
     // a queued alliance would enter the queue with rules it no longer has: withdraw it first
     this.leaveQueue(session, 'cancelled');
     this.dropReplay(room, session.playerId);
+    const slots = room.mode === 'solo' ? MAX_SEATS : capacity;
+    while (room.seats.length < slots) room.seats.push(null);
+    room.seats.length = slots;
     room.experimental = next;
-    for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
+    this.dropUnofferedBotBands(room);
+    for (const seat of room.activeHumans()) if (seat.playerId !== room.hostId) seat.ready = false;
     this.broadcastState(room);
     return OK;
   }
@@ -2042,6 +2161,7 @@ export class Lobby {
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
     this.dropReplay(room, session.playerId);
+    if (!room.admitsSeat(seat)) return fail(ERR.BAD_TARGET, 'seat outside room capacity');
     const target = room.seats[seat];
     if (!target || !target.isBot) return fail(ERR.BAD_TARGET, 'seat does not hold an AI');
     room.seats[seat] = null;
@@ -2056,6 +2176,7 @@ export class Lobby {
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
     this.dropReplay(room, session.playerId);
+    if (!room.admitsSeat(seat)) return fail(ERR.BAD_TARGET, 'seat outside room capacity');
     const target = room.seats[seat];
     if (!target || target.left) return fail(ERR.BAD_TARGET, 'seat holds no player');
     if (target.playerId !== playerId) return fail(ERR.BAD_TARGET, 'seat changed hands'); // the confirmed player left meanwhile
@@ -2079,6 +2200,8 @@ export class Lobby {
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
     if (room.matchmaking) return fail(ERR.ALREADY, 'cancel matchmaking before starting');
+    // the seats array and the room's options still agree, and every member's client speaks its capacity
+    if (!room.validCapacity() || !this.capacityClients(room)) return fail(ERR.BAD_MSG);
     if (room.versionVote) return fail(ERR.VERSION_VOTE);
     const humans = room.activeHumans();
     if (room.content?.trusted && humans.some(s => s.consentCs !== room.content.cs)) return fail(ERR.PLUGIN_CONSENT);

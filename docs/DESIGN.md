@@ -88,6 +88,8 @@ this swap; the second period added it. This is an **INTENTIONAL DEVIATION**, rec
 
 0.3.4 未发布变更见 [§37](history/0.3.4.md)。名片干员的可选范围扩展到本版本的自选编队池（#877）见 [§37.50](history/0.3.4.md)：候选 = 可见、非自选的 chess 干员 ∪ `backups.diy.ownedPool`，服务器白名单与 `ui/loadoutSync.js installCardSync` 共用同一份名单；跨时期干员本次不做。
 
+0.3.4 的扩编房间与同容量匹配见 [§37.141](history/0.3.4.md)：`experimental.playerCapacity`（4/8/12/16/20，房主实验性选项，`disableDuckLord` 仍仅 >4）把自建房座位数组按容量构造，`room.create`/`room.setExperimental` 协议绑定该选项，`room.join`/`room.spectate`/`room.start` 与 hello 重连（`helloAdmission`）只对说当前 `playerCapacityVersion` 的客户端开放扩编房；匹配池以容量为轴（同容量整队合并、一次提交），分配校验 cohort 恰为 offer 的 required，持久化 `roomDoc.experimental` 并按原容量恢复。对局引擎侧（poolGroups/扩编招募/联防扩编/快照）与客户端渲染归并行分支。
+
 ## Where each section lives
 
 

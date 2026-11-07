@@ -43,7 +43,8 @@ test('protocol: room.setBotBand takes a seat index and a nullable band id', () =
   assert.equal(validateC2S({ t: 'room.setBotBand', seat: 3, bandId: null }), null);
   assert.equal(validateC2S({ t: 'room.setBotBand', seat: 0 }), null);
   for (const msg of [{ t: 'room.setBotBand' }, { t: 'room.setBotBand', seat: -1, bandId: null },
-    { t: 'room.setBotBand', seat: 1.5, bandId: null }, { t: 'room.setBotBand', seat: 4, bandId: null },
+    // seat 4 is a legal wire value now (an expanded room admits up to MAX_PLAYER_CAPACITY seats)
+    { t: 'room.setBotBand', seat: 1.5, bandId: null }, { t: 'room.setBotBand', seat: 20, bandId: null },
     { t: 'room.setBotBand', seat: 0, bandId: 7 }, { t: 'room.setBotBand', seat: 0, bandId: 'has space' }]) {
     assert.notEqual(validateC2S(msg), null, JSON.stringify(msg));
   }

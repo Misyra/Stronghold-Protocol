@@ -9,7 +9,8 @@
 // server/. `OK` / `fail` mirror Lobby's local helpers so the result shapes stay identical.
 
 import { randomUUID } from 'node:crypto';
-import { ERR, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN } from '../shared/constants.js';
+import { ERR, MAX_SPECTATORS, ROOM_CODE_LEN } from '../shared/constants.js';
+import { EXPERIMENTAL_DEFAULTS, experimentalOptions, isExperimental } from '../shared/experimental.js';
 import { N_ } from '../shared/i18n.js';
 import { DEFAULT_VERSION } from '../shared/versions.js';
 import { restoreMatch as applyMatchCheckpoint } from './match/snapshot.js';
@@ -120,7 +121,16 @@ export async function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() }
     if (!d || typeof d.code !== 'string' || d.code.length !== ROOM_CODE_LEN || !/^[A-Z0-9]+$/.test(d.code) || lobby.rooms.has(d.code)) { stats.droppedSeats++; continue; }
     const mode = d.mode === 'solo' ? 'solo' : 'coop';
     const difficulty = typeof d.difficulty === 'string' && d.difficulty ? d.difficulty : 'NORMAL';
-    const room = new Room(d.code, mode, difficulty, now, typeof d.version === 'string' && d.version ? d.version : undefined);
+    // the room's options (roomDoc.experimental): the seat count travels with them, so an expanded room comes back at
+    // its size. A document without the key is an ordinary room; an invalid one refuses the room — silently shrinking
+    // it would strand its high seats (the reader drops exactly those documents).
+    const experimental = d.experimental === undefined ? EXPERIMENTAL_DEFAULTS
+      : isExperimental(d.experimental) ? experimentalOptions(d.experimental) : null;
+    if (experimental === null) {
+      stats.droppedSeats += Array.isArray(d.seats) ? d.seats.filter(Boolean).length : 0;
+      continue;
+    }
+    const room = new Room(d.code, mode, difficulty, now, typeof d.version === 'string' && d.version ? d.version : undefined, experimental);
     // the room instance id (roomDoc): mint one when the document predates the field
     room.roomId = typeof d.roomId === 'string' && d.roomId ? d.roomId : randomUUID();
     if (Number.isSafeInteger(d.createdAt) && d.createdAt >= 0 && d.createdAt <= now) room.createdAt = d.createdAt;
@@ -134,7 +144,7 @@ export async function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() }
     room.matchKey = typeof d.matchKey === 'string' ? d.matchKey : null;
     room.matchCount = Number.isInteger(d.matchCount) && d.matchCount >= 0 ? d.matchCount : 0;
     for (const s of Array.isArray(d.seats) ? d.seats : []) {
-      if (!s || typeof s.playerId !== 'string' || !Number.isInteger(s.seat) || s.seat < 0 || s.seat >= MAX_SEATS || room.seats[s.seat]) continue;
+      if (!s || typeof s.playerId !== 'string' || !Number.isInteger(s.seat) || !room.admitsSeat(s.seat) || room.seats[s.seat]) continue;
       const isBot = !!s.isBot;
       const left = !!s.left;
       const session = isBot ? null : lobby.registry.byId(s.playerId);

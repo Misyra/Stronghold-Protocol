@@ -7,7 +7,8 @@
 // server/. `fail` mirrors Lobby's local helper so the result shapes stay identical.
 
 import { ERR, MAX_SEATS, MAX_SPECTATORS } from '../shared/constants.js';
-import { EXPERIMENTAL_DEFAULTS } from '../shared/experimental.js';
+import { EXPERIMENTAL_DEFAULTS, sameExperimental } from '../shared/experimental.js';
+import { MAX_PLAYER_CAPACITY, roomCapacity } from '../shared/playerCapacity.js';
 import { sendSession } from './net.js';
 
 /** Mirrors Lobby's local `fail` (server/lobby.js): a result object, never a throw. */
@@ -19,7 +20,9 @@ export const matchmakingSend = (session, msg) => sendSession(session, msg);
 /**
  * Whether a session can still be part of a match right now (server/matchmaking.js `available`). A solo ticket needs
  * no room; a party ticket needs its room intact, nobody seated elsewhere, and every seated human present — a party is
- * indivisible, so one absence withdraws all of it.
+ * indivisible, so one absence withdraws all of it. The room must also still be the party the ticket describes: same
+ * size (an expanded room's `playerCapacity` included), same rules, same host — a rule change, a capacity change or a
+ * host migration withdraws the whole party instead of allocating strangers into a room that moved under them.
  */
 export function matchmakingAvailable(lobby, session, entry) {
   if (!session || !session.connected) return false;
@@ -28,19 +31,26 @@ export function matchmakingAvailable(lobby, session, entry) {
   // load content an allocation must never force on matched strangers.
   if (room?.needsContent === true) return false;
   if (room?.spectatorOf(session.playerId)) return false;
-  const partyCode = entry?.party?.roomCode || null;
+  const party = entry?.party;
+  const partyCode = party?.roomCode || null;
   if (!partyCode) return !room || !room.match;
   if (!room || room.disposed || room.match || room.code !== partyCode) return false;
   if (room.spectatorOf(session.playerId)) return false;
-  return room.activeHumans().every((seat) => {
-    const member = lobby.registry.byId(seat.playerId);
-    return !!member && member.connected && lobby.roomOf(member) === room;
-  });
+  if (room.mode !== 'coop' || room.capacity !== (party.required ?? MAX_SEATS) || !room.validCapacity()
+    || !lobby.capacityClients(room) || room.hostId !== (party.leaderId || null)
+    || !sameExperimental(room.experimental, party.experimental ?? EXPERIMENTAL_DEFAULTS)
+    || room.seats.some((s) => s?.isBot)
+    || room.activeHumans().some((s) => !s.connected || (s.playerId !== room.hostId && !s.ready))) return false;
+  const humans = room.activeHumans();
+  return humans.length === party.entries.length && party.entries.every((member) =>
+    humans.some((seat) => seat.playerId === member.session.playerId) && lobby.isOnline(member.session));
 }
 
 /**
  * The sessions one ticket covers (server/matchmaking.js `members`): the solo player, or every seated human of the
- * host's alliance. A party joins as one indivisible unit and its room keeps `matchmaking` set while it waits.
+ * host's alliance. A party joins as one indivisible unit and its room keeps `matchmaking` set while it waits; it
+ * queues at its room's own difficulty and seat count (playerCapacity 4/8/12/16/20), full or not — the queue fills
+ * the rest of the offer.
  */
 export function matchmakingMembers(lobby, session, difficulty, party) {
   if (!party) {
@@ -58,17 +68,20 @@ export function matchmakingMembers(lobby, session, difficulty, party) {
   if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
   if (room.match) return fail(ERR.ROOM_STARTED);
   if (room.consoleEnabled) return fail(ERR.CONSOLE_ON);
-  if (room.mode !== 'coop' || room.seats.some((s) => s?.isBot) || room.freeSeat() < 0) return fail(ERR.BAD_MSG);
+  if (room.mode !== 'coop' || room.seats.some((s) => s?.isBot)) return fail(ERR.BAD_MSG);
+  if (difficulty !== room.difficulty) return fail(ERR.BAD_MSG, 'party difficulty must match the room');
+  if (!room.validCapacity() || !lobby.capacityClients(room)) return fail(ERR.BAD_MSG, 'all room members must support its capacity');
   if (room.activeHumans().some((s) => !s.connected || (s.playerId !== room.hostId && !s.ready))) return fail(ERR.NOT_READY);
   const sessions = room.activeHumans().map((seat) => lobby.registry.byId(seat.playerId));
-  if (sessions.some((s) => !s) || sessions.length > MAX_SEATS) return fail(ERR.NOT_READY);
+  if (sessions.some((s) => !s) || sessions.length > room.capacity) return fail(ERR.NOT_READY);
   return { sessions, roomCode: room.code, leaderId: room.hostId, experimental: room.experimental ?? EXPERIMENTAL_DEFAULTS };
 }
 
 /**
- * Allocate a fresh private co-op room and start it with exactly four opted-in humans. The cohort's tickets stay
- * the queue's own while this runs: lobby.leaveQueue skips them, so a failed start keeps accepted tickets for a
- * retry instead of dissolving the pool with a misleading `cancelled`.
+ * Allocate a fresh private co-op room and start it with the confirmed humans of one offer — exactly the pool's
+ * required seats, four or an expanded room's `playerCapacity`. The offer's own options decide the room the cohort
+ * plays in. The cohort's tickets stay the queue's own while this runs: lobby.leaveQueue skips them, so a failed
+ * start keeps accepted tickets for a retry instead of dissolving the pool with a misleading `cancelled`.
  */
 export function allocateMatchmakingGroup(lobby, group, difficulty) {
   for (const s of group) s.mmCohort = true;
@@ -77,7 +90,14 @@ export function allocateMatchmakingGroup(lobby, group, difficulty) {
 }
 
 function allocateCohort(lobby, group, difficulty) {
-  if (group.length !== MAX_SEATS || group.some((s) => !s.connected)) return fail(ERR.NOT_READY);
+  if (group.length < MAX_SEATS || group.length > MAX_PLAYER_CAPACITY || group.some((s) => !s.connected)) return fail(ERR.NOT_READY);
+  // The queue hands over one confirmed offer at a time: the cohort is exactly that offer, and the room it plays in
+  // is the offer's size (roomCapacity) — a mismatched or half-confirmed cohort is refused whole.
+  const first = lobby.matchmaking.entries.get(group[0].playerId);
+  const offer = first?.offerId ? lobby.matchmaking.offers.get(first.offerId) : null;
+  if (!offer || offer.entries.length !== offer.required || group.length !== offer.required
+    || roomCapacity('coop', offer.experimental ?? EXPERIMENTAL_DEFAULTS) !== offer.required) return fail(ERR.NOT_READY);
+  const experimental = offer.experimental ?? EXPERIMENTAL_DEFAULTS;
   // Every participant's network budget applies, including when that player is not the generated room's host.
   const keys = new Set(group.map((s) => s.limitKey).filter(Boolean));
   if (lobby.opts.maxMatchesPerAddr > 0) for (const key of keys) {
@@ -88,14 +108,11 @@ function allocateCohort(lobby, group, difficulty) {
     if (own) own.queueCohort = true;
     return mergePartyMatchmaking(lobby, group, difficulty);
   }
-  const created = lobby.create(group[0], { mode: 'coop', difficulty });
-  if (!created.ok) return created;
-  const room = lobby.roomOf(group[0]);
+  // a fresh matchmade room built synchronously (Lobby.buildQueueRoom): the queue's allocate seam cannot await
+  // room.create's plugin resolution, and the cohort's room carries the offer's options, seat count included
+  const room = lobby.buildQueueRoom(group[0], { difficulty, experimental });
+  if (!room || room.error) return room?.error ? room : fail(ERR.INTERNAL, 'could not allocate a match');
   room.queueCohort = true;
-  // a room the queue allocated: the private-room options (联动干员) are not offered there
-  room.source = 'matchmaking';
-  // 野排: any seated human may propose the setup reroll vote (server/lobby.js rerollSetup)
-  room.fromMatchmaking = true;
   try {
     for (const s of group.slice(1)) {
       const joined = lobby.join(s, { code: room.code });
@@ -158,6 +175,10 @@ export function mergePartyMatchmaking(lobby, group, difficulty) {
   if (parties.some((r) => r.match || r.disposed || r.mode !== 'coop' || r.difficulty !== difficulty ||
     r.seats.some((s) => s?.isBot) || r.activeHumans().some((s) => !group.some((p) => p.playerId === s.playerId)))) return fail(ERR.NOT_READY);
   const room = parties[0];
+  // Every party of one offer queues at one size and one rule set (the pool's capacity and option axes): the room
+  // borrowed for the cohort must still be that room — its seats hold the whole offer, its options the ticket's.
+  if (!room.validCapacity() || room.capacity !== group.length
+    || parties.some((r) => !sameExperimental(r.experimental, room.experimental))) return fail(ERR.NOT_READY);
   const spectators = parties.flatMap((r) => r.spectators);
   if (spectators.length > MAX_SPECTATORS) return fail(ERR.ROOM_FULL);
   const previous = { seats: room.seats, spectators: room.spectators, matchCount: room.matchCount, replay: room.replay,
@@ -182,6 +203,9 @@ export function mergePartyMatchmaking(lobby, group, difficulty) {
   try { result = lobby.start(lobby.registry.byId(room.hostId)); } catch { result = fail(ERR.INTERNAL); }
   delete room.queueCohort;
   if (result.ok) {
+    // the queue allocated this room (a matchmade room never carries the private-room options, room.setExperimental)
+    room.source = 'matchmaking';
+    lobby.broadcastState(room);
     for (let i = 0; i < group.length; i++) if (origins[i] !== room) {
       if (origins[i]) lobby.audit('room.left', group[i], origins[i], { reason: 'merged' });
       lobby.audit('room.joined', group[i], room, { reason: 'merged', sourceRoomCode: origins[i]?.code || null });

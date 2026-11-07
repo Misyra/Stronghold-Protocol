@@ -125,6 +125,10 @@ export function roomDoc(room) {
     createdAt: room.createdAt,
     mode: room.mode,
     difficulty: room.difficulty,
+    // the room's experimental options (shared/experimental.js), the seat count included (playerCapacity): an
+    // expanded room comes back at its size. Documents written before this field existed carry none — the reader
+    // falls back to the ordinary room (server/matchRestore.js).
+    experimental: room.experimental,
     // the official version the room plays (header "Official versions", 本仓补录: fork 无版本面)
     version: room.version,
     // The content set the room plays (header "Gameplay plugins", "Official versions"). Without it a restart turns a

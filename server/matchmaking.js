@@ -606,7 +606,10 @@ export class Matchmaking {
         if (!rest) continue; // never split a party; an unfillable older unit does not block later fits
         const parties = [leader, ...rest];
         const entries = parties.flatMap((party) => party.entries);
-        const experimental = parties.find(party => party.experimental)?.experimental ?? EXPERIMENTAL_DEFAULTS;
+        // Lone tickets make an ordinary game of the pool's size (a pool past four only fills with a party's room
+        // options today; the fallback keeps an offer's options and its required seats consistent regardless).
+        const experimental = parties.find(party => party.experimental)?.experimental
+          ?? (leader.required === MAX_SEATS ? EXPERIMENTAL_DEFAULTS : experimentalOptions({ ...EXPERIMENTAL_DEFAULTS, playerCapacity: leader.required }));
         const offer = { id: id(), experimental, required: leader.required,
           deadline: Math.min(this.now() + this.opts.acceptMs, ...entries.map((e) => e.expiresAt)), entries };
         this.offers.set(offer.id, offer);

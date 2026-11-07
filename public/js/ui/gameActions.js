@@ -11,7 +11,8 @@ const SUCCESS_SFX = {
   'g.buy': 'buy', 'g.sell': 'sell', 'g.refresh': 'refresh', 'g.freeze': 'freeze', 'g.levelUp': 'levelup',
   'g.move': 'drop', 'g.equip': 'equip', 'g.art': 'artPlace', 'g.reward': 'pick', 'g.choice': 'pick',
   'g.console': 'pick',
-  'g.band': 'confirm', 'g.bandSkip': 'back', 'g.infoReady': 'ready', 'g.emote': 'emote', 'g.destroy': 'back', 'g.unequip': 'back',
+  'g.band': 'confirm', 'g.bandSkip': 'back', 'g.bandHold': 'pick', 'g.bandCancel': 'back', 'g.bandLock': 'confirm',
+  'g.infoReady': 'ready', 'g.emote': 'emote', 'g.destroy': 'back', 'g.unequip': 'back',
   'g.speedVote': 'confirm',
 };
 
@@ -72,6 +73,11 @@ export const actions = {
   cancelReroll: (voteId) => act('room.cancelReroll', { voteId }, { sfx: 'back' }),
   band: (bandId) => act('g.band', { bandId }),
   bandSkip: () => act('g.bandSkip'),
+  // 自由选人 (room.setExperimental playerCapacity, 移植自 Stardust fork; server MatchPhases.freeDraft):
+  // a concurrent draft's tentative choice, its cancel and its 锁定
+  bandHold: (bandId) => act('g.bandHold', { bandId }),
+  bandCancel: () => act('g.bandCancel'),
+  bandLock: () => act('g.bandLock'),
   buy: (slot) => act('g.buy', { slot }),
   // a tap while the previous g.refresh is still on the wire is dropped (GitHub #501) — see onRefreshBusy above
   refresh: () => {

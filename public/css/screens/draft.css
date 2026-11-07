@@ -414,3 +414,23 @@
 
 /* 预选盟约 on each order row (ui/bondPlan.js, fork e64a3260; the picker itself lives in the briefing) */
 .dorder__plan { align-self: flex-start; margin-top: .02rem; }
+
+/* ---- 扩展同盟人数 (移植自 Stardust fork): an experimental room's chess pools over the order rows, a free draft's
+   hold box (未锁定) and its header 锁定选择 button ------------------------------------------------- */
+.draft-pool { flex: none; display: flex; flex-direction: column; gap: .12rem; padding-left: .12rem; border-left: .03rem solid var(--line-2); }
+.draft-pool.is-mine { border-left-color: var(--mint-500); }
+.draft-pool__head { display: flex; align-items: baseline; gap: .1rem; font-size: calc(.18 * var(--t)); color: var(--text-hi); }
+.draft-pool__head small { font-size: calc(.14 * var(--t)); color: var(--text-lo); }
+.draft-pool.is-mine .draft-pool__head b, .draft-pool__head .draft-pool__mine { color: var(--mint-400); }
+.draft-pool__head .draft-pool__mine { margin-left: auto; }
+/* a free draft: a choice not locked yet — the band behind a gold frame, 未锁定 under it */
+.dorder__box.is-held { box-shadow: inset 0 0 0 1px rgba(255, 214, 120, .55); background: radial-gradient(circle at 50% 40%, #3a3320, #14120c 75%); }
+.dorder__box.is-held .bandicon { opacity: .72; }
+.dorder__box.is-held:hover { box-shadow: inset 0 0 0 2px #ffd678; }
+.dorder__unlocked { position: absolute; left: 0; right: 0; bottom: 0; padding: .02rem 0; background: rgba(12, 12, 10, .78); color: #ffd678; font-size: calc(.1 * var(--t)); text-align: center; pointer-events: none; }
+.draft-lockbtn { display: inline-flex; align-items: center; gap: .1rem; height: .44rem; padding: 0 .3rem 0 .24rem; border-radius: .22rem;
+  background: #0b2d25; color: #44e6b8; font-size: calc(.15 * var(--t)); font-weight: 700; cursor: pointer; }
+.draft-lockbtn:hover:not(:disabled) { filter: brightness(1.15); }
+.draft-lockbtn:disabled { opacity: .6; cursor: default; }
+.draft-lockbtn .icon { width: 1.1em; height: 1.1em; }
+.draft-detail__status--held { color: var(--mint-400); }

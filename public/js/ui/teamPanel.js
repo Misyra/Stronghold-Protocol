@@ -17,6 +17,12 @@
 // local 联防 replica's count while it is on screen (`uniteLocal`: the battle runner's state().uniteLeft, the same battle
 // the player watches, so the number moves with the kills on screen), else m.public players[].uniteLeft (the authority's
 // report, ~1 Hz).
+// Layout (ui/teamLayout.js, css/screens/team.css — 移植自 Stardust fork): 'classic' — the official column, desktop with at
+// most four seats, always open, emote bubbles beside the rows (unchanged rendering); 'list' — compact one-line rows in a
+// bounded scroller, phones and rooms of more than four, folded by default into a small 同盟成员 button, opened on tap. The
+// layout follows the screen (rotation, resize across the phone breakpoint) and refolds when it changes. Emotes of a list
+// (or any roster without rows beside them) fly as danmaku over the field (ui/danmaku.js). An experimental room's list
+// groups its rows by chess pool (m.public poolGroups) so teammates can check who draws from the same pool.
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
 import { PHASE } from '../../../shared/constants.js';
@@ -29,6 +35,9 @@ import { MissTag, uniteRemaining } from './hud.js';
 import { BondPlanTag } from './bondPlan.js';
 import { localAsset } from '../data.js';
 import { t } from '../../../shared/i18n.js';
+import { PHONE_QUERY, rosterPools, rosterStartsOpen, teamDensity, teamEmoteMode, teamPanelLayout } from './teamLayout.js';
+import { useMediaQuery } from './device.js';
+import { Danmaku } from './danmaku.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -96,7 +105,7 @@ export function prepDblClickWatches(o = {}) {
   return !!view.fieldId;
 }
 
-/** How long the second click of a double-click counts as "already asked" before `watching` re-renders. */
+/** How long the second click of a double-click counts as "already asked" before `watching` re-rendered. */
 const AVATAR_CLICK_GAP_MS = 500;
 
 /**
@@ -111,6 +120,15 @@ export function rowLpTip(lp, cap = 10) {
     : t('目标生命值 {lp}，结算时扣除 {pending} 点', { lp: lp.lp, pending: lp.pending });
 }
 
+/** An experimental room's pool header: 卡池 N, its seat count, 你的卡池 on the own one. */
+function PoolHead({ pool }) {
+  return html`<div class=${cx('team__pool-head', pool.mine && 'is-mine')}>
+    <span class="team__pool-name">${pool.id == null ? t('其他') : t('卡池 {n}', { n: pool.id })}</span>
+    <small class="num">${t('{n} 人', { n: pool.players.length })}</small>
+    ${pool.mine ? html`<small class="team__pool-mine">${t('你的卡池')}</small>` : null}
+  </div>`;
+}
+
 /**
  * @param {{ pub:any, myId:string, watching:string|null, bubbles: Map<string,{id?:string,text?:string,seq:number,at?:number,ttl?:number}>, onWatch:(p:any)=>void,
  *   compact?: boolean, teamLp?: number|null, self?: { lp?: number|null, pending: number, unite: boolean, left?: number|null } | null,
@@ -119,12 +137,51 @@ export function rowLpTip(lp, cap = 10) {
  *   uniteLocal: the local 联防 replica's per-leaker counts while it is on screen (battle runner state().uniteLeft), else null
  */
 function TeamPanelView({ pub, myId, watching, bubbles, onWatch, compact = false, observe = null, self: selfLive = null, cap = 10, uniteLocal = null, spMarks = null }) {
+  const players = sortedPlayers(pub);
+  // layout (ui/teamLayout.js): the density follows the screen, a change of density refolds — a list starts folded (it
+  // would cover the field), the classic column stays open (its rendering is unchanged)
+  const phone = useMediaQuery(PHONE_QUERY);
+  const density = teamDensity({ count: players.length, phone });
+  const list = density === 'list';
+  const [fold, setFold] = useState(() => ({ density, open: rosterStartsOpen(density) }));
+  const rosterOpen = fold.density === density ? fold.open : rosterStartsOpen(density);
+  useEffect(() => { if (fold.density !== density) setFold({ density, open: rosterStartsOpen(density) }); }, [density]);
+  const setRosterOpen = (fn) => setFold((s) => {
+    const cur = s.density === density ? s.open : rosterStartsOpen(density);
+    return { density, open: typeof fn === 'function' ? fn(cur) : !!fn };
+  });
   const [openPid, setOpenPid] = useState(null);
   // the playerId whose avatar just called onWatch, so the other click of a double-click does not open the view again
   const askedAt = useRef(/** @type {{ id: string|null, at: number }} */ ({ id: null, at: 0 }));
   const phaseKey = `${pub?.phase}:${pub?.round}`;
   useEffect(() => { setOpenPid(null); }, [phaseKey, watching, observe?.observing]);
-  const players = sortedPlayers(pub);
+  const panelRef = useRef(null);
+  const headerRef = useRef(null);
+  const [layout, setLayout] = useState(() => teamPanelLayout(players.length, 0));
+  // a desktop list takes a second column when its seats do not fit the height (phones: one column, the drawer scrolls)
+  const measured = list && rosterOpen && !phone;
+  useEffect(() => {
+    if (!measured) return undefined;
+    const panel = panelRef.current;
+    const measure = () => {
+      if (!panel) return;
+      const css = globalThis.getComputedStyle(panel);
+      const header = headerRef.current?.getBoundingClientRect().height || 0;
+      const height = panel.clientHeight - (parseFloat(css.paddingTop) || 0) - (parseFloat(css.paddingBottom) || 0) - header;
+      const root = parseFloat(globalThis.getComputedStyle(globalThis.document.documentElement).fontSize) || 40;
+      // the widest the panel may grow (css/screens/team.css --team-w2)
+      const width = Math.min(globalThis.innerWidth * 0.32, Math.max(520, root * 5.2)) - (parseFloat(css.paddingLeft) || 0) - (parseFloat(css.paddingRight) || 0);
+      const coarse = globalThis.document.documentElement.classList.contains('sp-coarse');
+      const next = teamPanelLayout(players.length, height, root, width, coarse, 0);
+      setLayout((prev) => (prev.columns === next.columns && prev.rows === next.rows && prev.rowHeight === next.rowHeight ? prev : next));
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    if (panel) observer?.observe(panel);
+    if (headerRef.current) observer?.observe(headerRef.current);
+    globalThis.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); globalThis.removeEventListener('resize', measure); };
+  }, [measured, players.length]);
   if (!players.length) return null;
   // a boss round: the viewer's pair framed in green from the round's start (item 51 — the official bg_team_border,
   // tinted like the official green; a plain green ring without the local art)
@@ -157,53 +214,73 @@ function TeamPanelView({ pub, myId, watching, bubbles, onWatch, compact = false,
     noteAsked(p);
     onWatch(p);
   };
-  return html`<aside class=${cx('team', compact && 'team--compact')} aria-label=${t('同盟成员')}>
-    ${players.map((p) => {
-      const self = p.playerId === myId;
-      const status = p.alive === false ? 'dead' : p.status;
-      const meta = STATUS_META[status] || STATUS_META.acting;
-      const watched = teammateFieldShown(watching, p);
-      const bubble = bubbles?.get(p.playerId);
-      const offline = p.connected === false && !p.isBot;
-      const open = !!observe && openPid === p.playerId && !self;
-      const back = !!observe && self && observe.observing;
-      const title = observe ? (self ? (observe.observing ? t('返回战场') : t('你自己')) : t('查看 {name} 的战场', { name: p.name })) : (self ? t('查看自己的阵地') : t('查看 {name} 的阵地', { name: p.name }));
-      const lp = rowLp(p, pub, self ? selfLive : null, { uniteLocal, cap });
-      const inTeam = team.has(p.playerId);
-      return html`<div key=${p.playerId} class=${cx('team__row', self && 'is-self', inTeam && 'is-team', watched && 'is-watched', p.alive === false && 'is-dead', open && 'is-open')}>
-        <button type="button" class="team__btn" onClick=${() => click(p, self)} onDblClick=${(e) => dblClick(e, p, self)} title=${inTeam && !self ? `${title} · ${t('与你在同一战场')}` : title} aria-expanded=${observe && !self ? String(open) : undefined}>
-          <${PlayerAvatar} player=${p} self=${self} />
-          ${inTeam ? html`<span class=${cx('team__frame', !frameArt && 'team__frame--plain')} style=${frameArt ? `--frame:url("${frameArt}")` : undefined} aria-hidden="true"></span>` : null}
-          <span class="team__seat num">P${(p.seat ?? 0) + 1}</span>
-          ${p.isBot ? html`<span class="team__ai">AI</span>` : null}
-          ${self ? html`<span class="team__you"><${Icon} name="user" /></span>` : null}
-          ${spMarks?.get(p.playerId) === 'done' ? html`<span class="team__spmark is-done" title=${t('已完成选择')}><${Icon} name="check" /></span>`
-            : spMarks?.get(p.playerId) === 'turn' ? html`<span class="team__spmark is-turn" title=${t('正在决策…')}><i></i><i></i><i></i></span>` : null}
-        </button>
-        <div class="team__info">
-          <span class="team__name">${p.name || t('博士')}</span>
-          <div class="team__line">
-            <${LpTower} value=${lp.lp} size="sm" tone=${Number.isFinite(lp.lp) && lp.lp - lp.pending <= 5 ? 'danger' : null} pending=${lp.pending}
-              tip=${rowLpTip(lp, cap)} />
-            ${lp.left != null ? html`<${MissTag} n=${lp.left} name=${self ? null : p.name || t('博士')} />` : null}
-            ${p.bondPlan ? html`<${BondPlanTag} bondId=${p.bondPlan} compact=${true} class="team__plan" />` : null}
-            <${Tooltip} text=${offline ? t('连接已断开') : t(meta.text)} placement="right">
-              <span class=${cx('team__status', `is-${meta.tone}`, offline && 'is-offline', (offline || STATUS_SPRITE[status]) && localAsset('ui/battle', offline ? 'icon_lost_connect' : STATUS_SPRITE[status]) && 'has-sprite')} aria-label=${t(meta.text)}>
-                ${offline ? html`<${LocalSprite} name="icon_lost_connect" fallback=${html`<${Icon} name="wifiOff" />`} />`
-                  : STATUS_SPRITE[status] ? html`<${LocalSprite} name=${STATUS_SPRITE[status]} fallback=${html`<${GIcon} name=${meta.glyph} />`} />`
-                  : html`<${GIcon} name=${meta.glyph} />`}
-              </span>
-            <//>
-            ${watched && !self ? html`<span class="team__eye" title=${t('正在查看')}><${GIcon} name="eye" /></span>` : null}
-          </div>
-          ${open ? html`<button type="button" class="btn btn--primary btn--sm team__ob"
-            onClick=${() => { setOpenPid(null); onWatch(p); }}><span class="btn__label">${t('前往查看')}</span></button>` : null}
-          ${back ? html`<button type="button" class="btn btn--secondary btn--sm team__back"
-            onClick=${() => observe.onBack()}><span class="btn__label">${t('返回战场')}</span></button>` : null}
+  // emotes: beside the rows of the open classic roster, else over the field as danmaku (a list has no room beside its rows)
+  const emoteMode = teamEmoteMode({ density, open: rosterOpen });
+  // an experimental room's rows grouped by chess pool (list only — the classic column stays as it is)
+  const pools = list ? rosterPools(pub, players, myId) : null;
+  const row = (p) => {
+    const self = p.playerId === myId;
+    const status = p.alive === false ? 'dead' : p.status;
+    const meta = STATUS_META[status] || STATUS_META.acting;
+    const watched = teammateFieldShown(watching, p);
+    const bubble = emoteMode === 'bubble' ? bubbles?.get(p.playerId) : null;
+    const offline = p.connected === false && !p.isBot;
+    const open = !!observe && openPid === p.playerId && !self;
+    const back = !!observe && self && observe.observing;
+    const title = observe ? (self ? (observe.observing ? t('返回战场') : t('你自己')) : t('查看 {name} 的战场', { name: p.name })) : (self ? t('查看自己的阵地') : t('查看 {name} 的阵地', { name: p.name }));
+    const lp = rowLp(p, pub, self ? selfLive : null, { uniteLocal, cap });
+    const inTeam = team.has(p.playerId);
+    return html`<div key=${p.playerId} class=${cx('team__row', self && 'is-self', inTeam && 'is-team', watched && 'is-watched', p.alive === false && 'is-dead', open && 'is-open')}>
+      <button type="button" class="team__btn" onClick=${() => click(p, self)} onDblClick=${(e) => dblClick(e, p, self)} title=${inTeam && !self ? `${title} · ${t('与你在同一战场')}` : title} aria-expanded=${observe && !self ? String(open) : undefined}>
+        <${PlayerAvatar} player=${p} self=${self} />
+        ${inTeam ? html`<span class=${cx('team__frame', !frameArt && 'team__frame--plain')} style=${frameArt ? `--frame:url("${frameArt}")` : undefined} aria-hidden="true"></span>` : null}
+        <span class="team__seat num">P${(p.seat ?? 0) + 1}</span>
+        ${p.isBot ? html`<span class="team__ai">AI</span>` : null}
+        ${self ? html`<span class="team__you"><${Icon} name="user" /></span>` : null}
+        ${spMarks?.get(p.playerId) === 'done' ? html`<span class="team__spmark is-done" title=${t('已完成选择')}><${Icon} name="check" /></span>`
+          : spMarks?.get(p.playerId) === 'turn' ? html`<span class="team__spmark is-turn" title=${t('正在决策…')}><i></i><i></i><i></i></span>` : null}
+      </button>
+      <div class="team__info">
+        <span class="team__name">${p.name || t('博士')}</span>
+        <div class="team__line">
+          <${LpTower} value=${lp.lp} size="sm" tone=${Number.isFinite(lp.lp) && lp.lp - lp.pending <= 5 ? 'danger' : null} pending=${lp.pending}
+            tip=${rowLpTip(lp, cap)} />
+          ${lp.left != null ? html`<${MissTag} n=${lp.left} name=${self ? null : p.name || t('博士')} />` : null}
+          ${p.bondPlan ? html`<${BondPlanTag} bondId=${p.bondPlan} compact=${true} class="team__plan" />` : null}
+          <${Tooltip} text=${offline ? t('连接已断开') : t(meta.text)} placement="right">
+            <span class=${cx('team__status', `is-${meta.tone}`, offline && 'is-offline', (offline || STATUS_SPRITE[status]) && localAsset('ui/battle', offline ? 'icon_lost_connect' : STATUS_SPRITE[status]) && 'has-sprite')} aria-label=${t(meta.text)}>
+              ${offline ? html`<${LocalSprite} name="icon_lost_connect" fallback=${html`<${Icon} name="wifiOff" />`} />`
+                : STATUS_SPRITE[status] ? html`<${LocalSprite} name=${STATUS_SPRITE[status]} fallback=${html`<${GIcon} name=${meta.glyph} />`} />`
+                : html`<${GIcon} name=${meta.glyph} />`}
+            </span>
+          <//>
+          ${watched && !self ? html`<span class="team__eye" title=${t('正在查看')}><${GIcon} name="eye" /></span>` : null}
         </div>
-        ${bubble ? html`<${EmoteBubble} key=${bubble.seq} id=${bubble.id} text=${bubble.text} at=${bubble.at} ttl=${bubble.ttl} class="team__bubble" />` : null}
-      </div>`;
-    })}
+        ${open ? html`<button type="button" class="btn btn--primary btn--sm team__ob"
+          onClick=${() => { setOpenPid(null); onWatch(p); }}><span class="btn__label">${t('前往查看')}</span></button>` : null}
+        ${back ? html`<button type="button" class="btn btn--secondary btn--sm team__back"
+          onClick=${() => observe.onBack()}><span class="btn__label">${t('返回战场')}</span></button>` : null}
+      </div>
+      ${bubble ? html`<${EmoteBubble} key=${bubble.seq} id=${bubble.id} text=${bubble.text} at=${bubble.at} ttl=${bubble.ttl} class="team__bubble" />` : null}
+    </div>`;
+  };
+  if (!list) {
+    return html`<aside class=${cx('team', compact && 'team--compact')} aria-label=${t('同盟成员')}>${players.map(row)}</aside>`;
+  }
+  // list: the folded 同盟成员 button, the bounded scroller when open; pools group the rows (an experimental room)
+  const columns = measured ? layout.columns : 1;
+  const style = `--team-columns:${columns};--team-rows:${Math.ceil(players.length / columns)}`;
+  return html`<aside ref=${panelRef} class=${cx('team', 'team--list', columns > 1 && 'team--wide', pools && 'team--pools', rosterOpen ? 'is-open' : 'is-folded')} style=${style} aria-label=${t('同盟成员')}>
+    <div ref=${headerRef} class="team__header">
+      <button type="button" class="team__toggle" data-testid="team-roster-toggle" aria-expanded=${String(rosterOpen)} aria-controls="team-roster"
+        onClick=${() => setRosterOpen((on) => !on)}>
+        <${Icon} name="users" /><span>${t('同盟成员')}</span><b class="num">${players.length}</b><${Icon} name="chevronRight" />
+      </button>
+    </div>
+    <div class="team__players" id="team-roster" hidden=${!rosterOpen}>${pools
+      ? pools.map((pool) => html`<section key=${pool.id ?? 'rest'} class=${cx('team__pool', pool.mine && 'is-mine')}><${PoolHead} pool=${pool} />${pool.players.map(row)}</section>`)
+      : players.map(row)}</div>
+    ${emoteMode === 'danmaku' ? html`<${Danmaku} players=${players} myId=${myId} />` : null}
   </aside>`;
 }
 export const TeamPanel = memo(TeamPanelView);

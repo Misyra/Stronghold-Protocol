@@ -49,6 +49,7 @@
 
 import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTY_NAMES, DIFFICULTY_COLORS, MAX_SEATS, MAX_SPECTATORS } from '../../../shared/constants.js';
+import { PLAYER_CAPACITIES, isPlayerCapacity, roomCapacity } from '../../../shared/playerCapacity.js';
 import {
   html, Button, Icon, MicroLabel, PingPill, AvatarFrame, DifficultyIcon, Tooltip, Spinner, confirmDialog, doctorNo, Modal,
 } from '../ui/components.js';
@@ -83,12 +84,12 @@ import { MatchmakingOffer, matchmakingTitle } from '../ui/matchmaking.js';
 import { t, tc } from '../../../shared/i18n.js';
 
 /**
- * Seats padded to the room's capacity (co-op 4, solo 1), each null or a seat record.
+ * Seats padded to the room's capacity (co-op 4, an expanded room 8–20, solo 1), each null or a seat record.
  * @param {any} room room.state payload
  * @returns {(null | {seat:number, playerId:any, name:string, isBot:boolean, ready:boolean, connected:boolean})[]}
  */
 export function normalizeSeats(room) {
-  const cap = room?.mode === 'solo' ? 1 : MAX_SEATS;
+  const cap = roomCapacity(room?.mode, room?.experimental);
   const src = Array.isArray(room?.seats) ? room.seats : [];
   const out = [];
   for (let i = 0; i < cap; i++) {
@@ -193,6 +194,62 @@ export function aiLastOption(room, myId) {
 export function bandDupesOption(room, myId) {
   if (!room || room.mode === 'solo') return null;
   return { on: room.bandDupes === true, editable: room.hostId != null && room.hostId === myId };
+}
+
+/**
+ * 扩展同盟人数 (room.setExperimental, 移植自 Stardust fork 的容量选项): the co-op room's seat capacity — 4 by default,
+ * 8/12/16/20 as the host's experimental opt-in (shared/playerCapacity.js PLAYER_CAPACITIES). The whole option set goes to
+ * the server at once (shared/experimental.js isExperimental), and a room the queue allocated can never widen.
+ * @param {any} room room.state payload
+ * @param {any} myId
+ * @returns {{ capacity: number, expanded: boolean, editable: boolean } | null}
+ */
+export function capacityOption(room, myId) {
+  if (!room || room.mode !== 'coop' || room.source === 'matchmaking') return null;
+  const capacity = roomCapacity('coop', room.experimental);
+  return { capacity, expanded: capacity > MAX_SEATS, editable: room.hostId != null && room.hostId === myId && !room.inMatch };
+}
+
+/**
+ * The option set for a `room.setExperimental` that sets the seat `capacity` (capacityOption's sender): the two base
+ * flags always travel, `playerCapacity` only above the official four (a standard room's payload stays two-flag), and
+ * 禁用鸭爵策略 survives only an expanded room.
+ * @param {number} capacity @param {any} [current] room.state experimental
+ * @returns {{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean }}
+ */
+export function capacityExperimental(capacity, current = null) {
+  const base = { revivalEnabled: current?.revivalEnabled === true, disableSharedPool: current?.disableSharedPool === true };
+  if (!isPlayerCapacity(capacity) || capacity === MAX_SEATS) return base;
+  const next = { ...base, playerCapacity: capacity };
+  if (current?.disableDuckLord === true) next.disableDuckLord = true;
+  return next;
+}
+
+/**
+ * 禁用鸭爵策略 (expanded rooms only, the fork's duckLordRow): the switch's state and who may change it — null while the
+ * room sits at the official four seats.
+ * @param {any} room room.state payload
+ * @param {any} myId
+ * @returns {{ on: boolean, editable: boolean } | null}
+ */
+export function duckLordOption(room, myId) {
+  const cap = capacityOption(room, myId);
+  if (!cap || !cap.expanded) return null;
+  return { on: room.experimental?.disableDuckLord === true, editable: cap.editable };
+}
+
+/**
+ * The option set for toggling 禁用鸭爵策略 (expanded rooms only, the fork's duckLordRow): an ordinary room's payload
+ * keeps its shape without the key.
+ * @param {boolean} on @param {any} [current] room.state experimental
+ * @returns {{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean }}
+ */
+export function duckLordExperimental(on, current = null) {
+  const base = capacityExperimental(roomCapacity('coop', current), current);
+  if (base.playerCapacity == null) return base;
+  if (on === true) return { ...base, disableDuckLord: true };
+  const { disableDuckLord: _dropped, ...rest } = base;
+  return rest;
 }
 
 /** Spectator handover is available only in original default-version co-op rooms, with a host opt-in. */
@@ -443,6 +500,47 @@ function BandDupesToggle({ option, busy, onToggle }) {
   </div>`;
 }
 
+/**
+ * 扩展同盟人数 (room.setExperimental, 移植自 Stardust fork 的容量选项): the host's switch, and once expanded the
+ * 8/12/16/20 seat picker — an experimental mode, so the picker line says what it costs (bigger rooms wait and settle
+ * longer, and every member needs an up-to-date page). The others see the state read-only.
+ */
+function CapacityToggle({ option, busy, onCapacity }) {
+  if (!option) return null;
+  return html`<div class="ailast">
+    <${Tooltip} text=${t('实验性选项：同盟扩到 8–20 人。可直接开局，人数较多时等待与演算时间可能增加；所有成员需更新页面。')}>
+      <button type="button" role="switch" aria-checked=${option.expanded ? 'true' : 'false'} data-testid="room-capacity"
+          class=${`dpick__opt ailast__opt${option.expanded ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
+          onClick=${() => option.editable && onCapacity(option.expanded ? MAX_SEATS : 8)}>
+        <${Icon} name="check" class=${option.expanded ? 'is-on' : ''} />${t('扩展同盟人数')}
+      </button>
+    <//>
+    ${option.expanded ? html`<label class="rs-capacity" for="rs-capacity-pick" data-testid="room-capacity-pick">
+      <span>${t('同盟人数模式')}</span>
+      <select id="rs-capacity-pick" value=${option.capacity} disabled=${!option.editable || !!busy}
+        onChange=${(e) => onCapacity(Number(e.currentTarget.value))}>
+        ${PLAYER_CAPACITIES.map((n) => html`<option key=${n} value=${n}>${t('{n} 人', { n })}</option>`)}
+      </select>
+    </label>` : null}
+    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
+  </div>`;
+}
+
+/** The 「禁用鸭爵策略」 switch (expanded rooms only, the fork's duckLordRow): the host toggles it, the others read it. */
+function DuckLordToggle({ option, busy, onToggle }) {
+  if (!option) return null;
+  return html`<div class="ailast">
+    <${Tooltip} text=${t('勾选后，本局无法选择鸭爵策略；不影响其他策略。')}>
+      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-duck-lord"
+          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
+          onClick=${() => option.editable && onToggle(!option.on)}>
+        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('禁用鸭爵策略')}
+      </button>
+    <//>
+    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
+  </div>`;
+}
+
 function AiTakeoverToggle({ option, busy, onToggle }) {
   if (!option) return null;
   return html`<div class="ailast">
@@ -490,7 +588,8 @@ function ConsoleToggle({ option, busy, onToggle, matching }) {
  * ⚙ of the bottom pill (co-op): 同盟设置 — the 模拟难度 (opens 选择模拟协议: the host's 确认, the others' read-only view)
  * and the 「AI 队友最后选择」 switch. Closes on a click outside it or Esc.
  */
-function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, room, isHost, busy, onAiLast, dupesOption = null, onBandDupes, onSoloUnlimited, onConsole, consoleOpt, onDifficulty, onClose, version = null }) {
+function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, room, isHost, busy, onAiLast, dupesOption = null, onBandDupes,
+  capOption = null, onCapacity, duckOption = null, onDuckLord, onSoloUnlimited, onConsole, consoleOpt, onDifficulty, onClose, version = null }) {
   const info = difficultyInfo(room.mode, room.difficulty);
   const title = soloOption ? t('模拟设置') : t('同盟设置');
   useEffect(() => {
@@ -522,6 +621,8 @@ function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, 
       ? html`<${SoloUnlimitedToggle} option=${soloOption} busy=${busy} onToggle=${onSoloUnlimited} />`
       : html`<${AiLastToggle} option=${option} busy=${busy} onToggle=${onAiLast} />`}
     <${BandDupesToggle} option=${dupesOption} busy=${busy} onToggle=${onBandDupes} />
+    <${CapacityToggle} option=${capOption} busy=${busy} onCapacity=${onCapacity} />
+    <${DuckLordToggle} option=${duckOption} busy=${busy} onToggle=${onDuckLord} />
     <${ConsoleToggle} option=${consoleOpt} busy=${busy} matching=${!!room.matchmaking} onToggle=${onConsole} />
   </div>`;
 }
@@ -612,6 +713,17 @@ export function RoomScreen() {
     const name = DIFFICULTY_NAMES[room.difficulty] ? t(DIFFICULTY_NAMES[room.difficulty]) : room.difficulty;
     toast(t('创建者已将模拟难度改为「{name}」', { name }), 'info');
   }, [room?.code, room?.difficulty]);
+  // 扩展同盟人数 is told to the others the same way (a change resets their ready state — the server's rule)
+  const seenExp = useRef(room ? `${room.code}|${roomCapacity('coop', room.experimental)}` : '');
+  useEffect(() => {
+    if (!room) return;
+    const n = roomCapacity('coop', room.experimental);
+    const key = `${room.code}|${n}`;
+    const before = seenExp.current;
+    seenExp.current = key;
+    if (!before || before === key || !before.startsWith(`${room.code}|`) || room.hostId === me.playerId) return;
+    toast(n > MAX_SEATS ? t('创建者已开启「{n} 人模式」', { n }) : t('创建者已关闭扩展同盟人数'), 'info');
+  }, [room?.code, room?.experimental]);
   // official versions (DESIGN §35.23): the room's switch is told to everybody (the host's own page included — a vote's
   // result arrives later than the pick); never on entering a room or switching rooms
   const versions = useStore((s) => s.versions);
@@ -682,6 +794,8 @@ export function RoomScreen() {
   // 开发者控制台与匹配互斥 (server/matchmakingRooms.js) —— 开着控制台的房间不进队列,所以「开始搜寻」留在原地并说明
   // 原因,而不是点下去才被服务器拒。
   const consoleOn = room?.consoleEnabled === true;
+  // 扩展同盟人数 (移植自 Stardust fork): an expanded room's seat cards keep a readable width and scroll sideways
+  const big = facts.seats.length > MAX_SEATS;
   // 玩法插件房间与官方匹配互斥 (server/matchmakingRooms.js matchmakingMembers): 官方队列只收原生内容,和开发者控制台同一条规则。
   const modded = isModdedRoom(room);
   const searchable = coop && facts.canMatch;
@@ -717,6 +831,10 @@ const setAiTakeover = (on) => run('aihandover', () => net.request('room.setAiTak
 const setAiLast = (on) => run('ailast', () => net.request('room.setAiPicksLast', { on }));
 // 「允许重复策略」 (本仓新设): the host toggles it, the draft's 队友已选 guard stands down
 const setBandDupes = (on) => run('dupes', () => net.request('room.setBandDupes', { on }));
+// 扩展同盟人数 / 禁用鸭爵策略 (room.setExperimental, 移植自 Stardust fork): the whole option set goes to the server at
+// once; the server resets the others' ready when it takes a change (server/lobby.js setExperimental)
+const setCapacity = (capacity) => run('capacity', () => net.request('room.setExperimental', { experimental: capacityExperimental(capacity, room.experimental) }));
+const setDuckLord = (on) => run('ducklord', () => net.request('room.setExperimental', { experimental: duckLordExperimental(on, room.experimental) }));
 // AI 指定策略 (room.setBotBand, 移植自用户分支): the host names the strategy an AI seat takes in the draft (null = 自动选择)
 const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.request('room.setBotBand', { seat, bandId }); setBandSeat(null); });
   // 开发者控制台 (移植自用户分支): two messages, host-only on the server (a solo room's own seat may toggle it).
@@ -853,7 +971,7 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
     if (sent && alive.current) setVersionOpen(false);
   };
 
-  return html`<div class=${`screen room-screen rs${coop ? '' : ' rs--solo'}`} style=${`--d-color:${DIFFICULTY_COLORS[room.difficulty] || 'var(--amber)'}; --n:${facts.seats.length}`}>
+  return html`<div class=${`screen room-screen rs${coop ? '' : ' rs--solo'}${big ? ' rs--big' : ''}`} style=${`--d-color:${DIFFICULTY_COLORS[room.difficulty] || 'var(--amber)'}; --n:${facts.seats.length}`}>
     <div class="rs__bg" aria-hidden="true"></div>
     <header class="topbar rs-top">
       <div class="topbar__left rs-top__left">
@@ -862,7 +980,8 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
         <//>
         <div class="rs-clock">
           <b>${modeName}${room.test ? html` <${TestMark} />` : null}<${VersionTag} room=${room} class="rs-clock__ver" />
-            ${pluginMode ? html`<span class="rs-clock__sep"></span><span class="room-mode" data-testid="room-mode">${pluginMode}</span>` : null}</b>
+            ${pluginMode ? html`<span class="rs-clock__sep"></span><span class="room-mode" data-testid="room-mode">${pluginMode}</span>` : null}
+            ${big ? html`<span class="rs-clock__sep"></span><span class="room-capacity" data-testid="room-capacity-chip">${t('实验性 · {n} 人', { n: facts.seats.length })}</span>` : null}</b>
           <span class="rs-clock__ping">${t('当前延迟')}<${PingPill} ms=${conn.ping} online=${online} /></span>
         </div>
         <div class="rs-tools">
@@ -938,6 +1057,7 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
             aria-expanded=${opts ? 'true' : 'false'}><${GearGlyph} /></button>
           ${opts ? html`<${RoomOptions} takeoverOption=${aiTakeoverOption(room, me.playerId)} onAiTakeover=${setAiTakeover} option=${aiLast} soloOption=${soloOpt} room=${room} isHost=${facts.isHost} busy=${busy} onAiLast=${setAiLast}
             dupesOption=${dupesOpt} onBandDupes=${setBandDupes}
+            capOption=${capacityOption(room, me.playerId)} onCapacity=${setCapacity} duckOption=${duckLordOption(room, me.playerId)} onDuckLord=${setDuckLord}
             onConsole=${setConsole} consoleOpt=${consoleOpt} onSoloUnlimited=${setSoloUnlimited} onDifficulty=${openProto} onClose=${() => setOpts(false)} version=${versionCtl} />` : null}
         </div>
       </div>

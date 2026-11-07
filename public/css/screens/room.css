@@ -1028,3 +1028,16 @@
 .botband__eff, .botband__used { font-size: calc(.115 * var(--t)); color: var(--text-dim); }
 .botband__used { color: var(--red-premium); }
 .botband__now { margin: .14rem 0 0; font-size: calc(.14 * var(--t)); }
+
+/* ---- 扩展同盟人数 (移植自 Stardust fork): an expanded room (8–20 seats) keeps readable cards that scroll sideways,
+   the 实验性 chip beside the mode, and the host's capacity picker in ⚙ 同盟设置 ------------------------------------ */
+.rs--big .rs-seats { justify-content: flex-start; gap: .16rem; }
+.rs--big .rseat { --w: max(1.7rem, 32px, calc(120px * var(--sp-ui, 1))); animation-delay: calc(150ms + var(--i, 0) * 35ms); }
+.rs-clock .room-capacity { color: var(--amber); white-space: nowrap; }
+.rs-capacity { display: flex; align-items: center; gap: .1rem; padding: .04rem 0 .04rem .3rem; font-size: calc(.14 * var(--t)); color: var(--text-md); }
+.rs-capacity span { white-space: nowrap; }
+.rs-capacity select {
+  min-height: .3rem; padding: 0 .12rem; color: var(--text-hi); background: rgba(10, 18, 15, .9);
+  border: 1px solid var(--line-2); font: inherit; cursor: pointer;
+}
+.rs-capacity select:disabled { opacity: .55; cursor: default; }

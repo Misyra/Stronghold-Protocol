@@ -1,0 +1,122 @@
+/* Team panel list density and emote danmaku (ui/teamPanel.js, ui/teamLayout.js, ui/danmaku.js) — 移植自 Stardust fork.
+   The classic column keeps its styles (css/screens/game.css §team panel); this sheet only adds the 'list' density:
+   compact one-line rows in a bounded scroller (phones, rooms of more than four), folded by default into the
+   同盟成员 button (.team--list.is-folded), an experimental room's rows grouped by chess pool (.team--pools), and the
+   danmaku band the emotes fly across when the roster is folded or a list (.danmaku).
+   Loaded after game.css (the classic block) — before devices.css, which keeps the touch hit areas. */
+
+.team.team--list {
+  --team-w1: max(2.9rem, 32px, calc(280px * var(--sp-ui, 1)));
+  --team-w2: min(max(5.2rem, 32px, calc(520px * var(--sp-ui, 1))), 32vw);
+  --team-fs: max(calc(.15 * var(--t)), 13px);
+  --team-fs-sm: max(calc(.12 * var(--t)), 11px);
+  --team-row: 44px;
+  --team-av: 36px;
+  --team-top: 2.36rem;                          /* below the bond strip (game.css .team) */
+  --team-bottom: 2.72rem;                       /* above the shop bar */
+  width: var(--team-w1); max-width: calc(100vw - 32px);
+  top: var(--team-top); bottom: auto; padding: 4px; gap: 4px;
+}
+.team.team--list.is-open { bottom: var(--team-bottom); }
+.team.team--list.team--wide { width: var(--team-w2); }
+.team.team--list.is-folded { width: max(2.4rem, 32px, calc(148px * var(--sp-ui, 1))); bottom: auto; }
+
+.team__header { flex: none; pointer-events: auto; }
+.team__toggle {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 6px 10px;
+  color: var(--mint-400); background: rgba(10, 18, 15, .94); border: 1px solid var(--mint-700);
+  font-size: max(calc(.16 * var(--t)), 14px); cursor: pointer;
+}
+.team__toggle .icon { width: 18px; height: 18px; }
+.team__toggle .icon:last-child { margin-left: auto; transform: rotate(-90deg); transition: transform var(--t-fast); }
+.team__toggle span { white-space: nowrap; } /* 「同盟成员」 on one line beside its count (a 20-seat room on a phone wrapped it) */
+.team.is-folded .team__toggle .icon:last-child { transform: rotate(90deg); }
+.team .team__players[hidden] { display: none; }
+
+/* ---- list rows: the same .team__row DOM as the classic column, restyled compact ------------------------------- */
+.team--list .team__players {
+  display: grid; grid-auto-flow: column; grid-template-columns: repeat(var(--team-columns, 1), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--team-rows, 1), max-content); align-content: start; gap: 4px;
+  min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y;
+  padding: 2px; pointer-events: auto;
+}
+.team--list.team--pools .team__players { grid-auto-flow: row; grid-template-rows: none; align-items: start; }
+.team--list .team__row {
+  min-height: var(--team-row); min-width: 0; gap: 6px; padding: 0 6px 0 0;
+  background: rgba(10, 18, 15, .88); border: 1px solid var(--line);
+}
+.team--list .team__btn { flex: none; width: 44px; height: 44px; min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+.team--list .pavatar { --pa: var(--team-av); }
+.team--list .team__info { flex: 1; min-width: 0; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding: 0; background: none; }
+.team--list .team__row.is-open { background: rgba(13, 44, 36, .92); border-color: var(--mint-700); }
+.team--list .team__row.is-open .team__info { background: none; }
+.team--list .team__name { flex: 1 1 3em; min-width: 0; max-width: none; font-size: var(--team-fs); }
+.team--list .team__line { flex: none; gap: 6px; }
+.team--list .team__line .misstag { height: 20px; min-width: 52px; padding-right: .06rem; }
+.team--list .team__line .misstag.has-art { width: 56px; }
+.team--list .misstag__n, .team--list .misstag__icon { font-size: 12px; }
+.team--list .team__status, .team--list .team__status.has-sprite .lsprite { width: 20px; height: 20px; }
+.team--list .team__status .icon, .team--list .team__eye .icon { width: 16px; height: 16px; }
+.team--list .team__seat { font-size: 10px; left: -2px; top: -2px; padding: 0 2px; }
+.team--list .team__ai { font-size: 10px; padding: 0 2px; right: -2px; bottom: -2px; }
+.team--list .team__you { width: 16px; height: 16px; right: -2px; top: -2px; }
+.team--list .team__you .icon { width: 12px; height: 12px; }
+.team--list .team__frame { inset: -3px; }
+/* the second line of a row: 前往查看 / 返回战场 take the row's full width under the name */
+.team--list .team__ob, .team--list .team__back { position: static; flex-basis: 100%; margin: 2px 0; min-height: 44px; max-width: 100%; white-space: normal; font-size: 14px; }
+
+/* ---- an experimental room: the rows grouped by chess pool (m.public poolGroups) --------------------------------- */
+.team__pool { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-left: 4px; border-left: 2px solid var(--line-2); }
+.team__pool.is-mine { border-left-color: var(--mint-500); }
+.team__pool-head {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: baseline; gap: 6px; min-height: 24px; padding: 3px 6px;
+  background: rgba(8, 11, 10, .95); color: var(--text-md); font-size: var(--team-fs); font-weight: 700; letter-spacing: .04em;
+}
+.team__pool-head small { font-size: var(--team-fs-sm); font-weight: 400; color: var(--text-lo); letter-spacing: 0; }
+.team__pool.is-mine .team__pool-name { color: var(--mint-400); }
+.team__pool-head .team__pool-mine { margin-left: auto; color: var(--mint-400); }
+
+/* ---- danmaku: emotes over the field while the roster shows no rows beside them ---------------------------------- */
+.team .danmaku {
+  --dm-lane-h: max(.5rem, 32px, calc(40px * var(--sp-ui, 1)));
+  position: absolute; left: -.22rem; top: -.2rem; width: 100vw; height: calc(var(--dm-lanes, 3) * var(--dm-lane-h));
+  overflow: hidden; pointer-events: none; z-index: 3;
+}
+.danmaku__item {
+  position: absolute; left: 100%; top: calc(var(--dm-lane, 0) * var(--dm-lane-h) + 2px); height: calc(var(--dm-lane-h) - 4px);
+  display: flex; align-items: center; gap: 6px; padding: 0 8px 0 2px; white-space: nowrap;
+  background: rgba(8, 11, 10, .66); border: 1px solid rgba(78, 216, 175, .3); border-radius: calc(var(--dm-lane-h) / 2);
+  animation: danmaku-fly var(--dm-dur, 6000ms) linear forwards; will-change: transform;
+}
+.danmaku__item.is-self { border-color: var(--mint-500); background: rgba(13, 44, 36, .78); }
+.danmaku__who { display: flex; flex: none; }
+.danmaku__who .pavatar { --pa: calc(var(--dm-lane-h) - 10px); border-radius: 50%; overflow: hidden; }
+.danmaku__who .pavatar + .pavatar { margin-left: -12px; }
+.danmaku__name { max-width: 7em; overflow: hidden; text-overflow: ellipsis; font-size: max(calc(.15 * var(--t)), 13px); font-weight: 500; color: var(--text-hi); text-shadow: 0 1px 2px #000; }
+.danmaku__n { font-size: max(calc(.15 * var(--t)), 13px); color: var(--gold); }
+.danmaku__art { flex: none; width: calc(var(--dm-lane-h) - 6px); height: calc(var(--dm-lane-h) - 6px); display: grid; place-items: center; }
+@keyframes danmaku-fly { from { transform: translateX(0); } to { transform: translateX(calc(-100vw - 100%)); } }
+/* reduced motion: standing in the lane's middle, gone after the bubble time (only the delay survives the global 1 ms) */
+.danmaku--still .danmaku__item { left: 50%; transform: translateX(-50%); will-change: auto;
+  animation: danmaku-out 1ms linear calc(var(--dm-dur, 3000ms) - 1ms) forwards; }
+@keyframes danmaku-out { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .danmaku__item { animation-duration: 1ms; } }
+
+/* ---- phones: the folded header under the bond strip, the open list a drawer over the shop bar ------------------- */
+@media (max-height: 600px) and (pointer: coarse), (max-width: 767px) {
+  .team.team--list { --team-top: max(2.6rem, 32px, calc(104px * var(--sp-ui, 1))); }
+  .team.team--list.is-folded { width: 164px; }
+  .team.team--list.is-open {
+    bottom: 8px; width: min(300px, calc(100vw - 24px)); z-index: 5;
+    background: rgba(6, 10, 9, .94); border: 1px solid var(--line-2); box-shadow: .06rem 0 .3rem rgba(0, 0, 0, .55);
+  }
+  .team .team__name { font-size: max(calc(.16 * var(--t)), 14px); }
+  .team .danmaku { --dm-lane-h: 34px; }
+}
+/* a portrait phone in a big room: the top bar takes two rows (css/screens/game.css), the roster starts below them */
+@media (max-width: 600px) and (orientation: portrait) {
+  .team.team--list { --team-top: 4.1rem; }
+}
+@media (max-height: 560px) and (orientation: landscape) and (hover: hover) and (pointer: fine) {
+  .team.team--list { --team-top: 1.9rem; --team-bottom: 1.4rem; }
+}

@@ -66,6 +66,8 @@ function stubMatch({ now, deadline = 0, startedAt = now() }) {
     disposed: false, ended: false, phase: PHASE.INFO_CHECK,
     sched: { now },
     pool: { entries: new Map() },
+    // 多人同盟容量: canSnapshot 也要求分组面（普通房是一组空组，captureMatch 的 poolGroups 映射对空数组零输出）
+    poolGroups: [],
     deadline, startedAt,
     order: [], alivePlayers: () => [],
   };

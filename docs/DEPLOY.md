@@ -696,6 +696,12 @@ libuv 在一次 timers turn 里一次性排空同一时刻到期的全部定时�
 
 台架 A/B（bot 布防风暴：8 场对局 × 3 bot 持续重规划，1 ms JS 层采样器，ABBAABBA 8 轮取 min）：drift max 103.0 → 56.7 ms（−45%）、p99 91.9 → 55.3 ms（−40%）；关闸与 master 原版同噪声带（drift max 121.4 / p99 99.4）；开闸不降吞吐（规划完成数 911–951 vs 关闸 868–903）。见 docs/history/0.3.4.md §37.132。
 
+### 版本开机预热（`SP_VERSIONS_PREWARM`）
+
+官方多版本（DESIGN §35.23）的数据原本在「第一个该版本的房间 / 清单请求 / 对局宿主」触到时才在主线程同步载入：readFileSync×16（~5 MB）+ JSON.parse + deepFreeze + official bounds，单版本 ≈ 3.4 s（2026-11-07 线上 18:49:22 窗口 max=3405.8 ms；重启恢复潮里带版本的房间同样触发，见 §37.133）。开机预热在**开监听和恢复存档之前**把每个启用非默认版本的 data + bounds + manifest 逐一走完（逐版本让出），此后四条路径全部命中内存。
+
+`npm start`（进程入口）**默认开**；`startServer()` 的程序化调用（测试、工具、探针）默认关。`SP_VERSIONS_PREWARM=0`（或 `off` / `false` / `no`）是运维回滚口：立即回到惰性首载行为。单个版本载入失败只记 error 日志并跳过——该版本保持既有的「永久不可用」语义（`available` 拒绝、`welcome` 不列），启动绝不被阻断。开机成本 = 每个启用非默认版本 ~1–3 s（慢机/冷缓存；开发机热缓存 ~80–100 ms/版本），发生在无人连接的窗口；启动日志 `[versions] prewarmed: <id> <ms>…` 一行写明实测耗时。
+
 ### 结果校验（`SP_VERIFY`）
 
 战斗在各玩家浏览器里模拟，服务器默认只按 spec 检查结果的形状和边界（`fields.js validateClientResult`），不重算。三档：

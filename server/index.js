@@ -47,7 +47,7 @@ import path from 'node:path';
 import { loadDataAsync, preloadData, simWorkerData } from './data.js';
 import { getBotStrategy, getBotStrategySeats } from './match/botStrategies.js';
 import { noteLlmIgnored, releaseIgnoresExternalAi, validateExternalConfig } from './match/llmGate.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, parseAssetCdn, assetIndexOptionsFrom, versionsFrom, parseRoomCode, announcementOptionsFrom } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, parseAssetCdn, assetIndexOptionsFrom, versionsFrom, versionPrewarmFrom, parseRoomCode, announcementOptionsFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { siteCsp } from './http/csp.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
@@ -124,7 +124,10 @@ export {
  *   studio: the plugin studio at /studio/ (default on for this machine and the local network — SP_STUDIO=local|off;
  *   false: none);
  *   matchHost: options of the match hosts (server/match/host/index.js — watchdogMs, matchOptions …; tests) — the
- *   version hosts' too; versions: the official versions this server offers (http/config.js versionsFrom; DESIGN §35.23);
+ *   version hosts' too; versions: the official versions this server offers (http/config.js versionsFrom; DESIGN §35.23) —
+ *   prewarm: true walks every enabled non-default version's data + bounds + manifest before the listener opens
+ *   (DESIGN §37.133; off by default for programmatic boots — tests, tools, probes; the process entry opts in,
+ *   SP_VERSIONS_PREWARM turns it on or off);
  *   versionVoteMs / versionRetryMs: the version vote's answer window and the guard after a declined or expired vote (tests;
  *   server/lobby.js header "Official versions")
  *   roomCode: a fixed alliance key for every new room (--room-code; four letters or digits — config.js parseRoomCode);
@@ -229,6 +232,16 @@ export async function startServer(opts = {}) {
     ? createMatchHosts({ contents: versions, log, options: { transport, ...(opts.matchHost || {}), kind: 'version', maxWorkers: Math.max(1, versionCfg.maxHosts) } })
     : null;
   log.info(`[versions] enabled: ${versions.ids.map((id) => `${id} (${t(/** @type {any} */ (versionById(id)).label)}${id === versions.defaultId ? ', default' : ''})`).join(', ')}`);
+  // 版本预热（DESIGN §37.133）：在开监听——以及恢复存档里带版本的房间——之前，把每个启用非默认版本的 data +
+  // official bounds + manifest 逐一走一遍。惰性首用本来会在房间消息/清单请求/host 启动路径上同步 read+parse+
+  // freeze+bounds（线上实测 ~3.4 s/版本，§37.132 的 18:49:22 窗口与重启恢复潮都栽在这里）；开机时间换运行期永绝。
+  // 默认关（程序化调用——测试、工具、探针——不付这笔），进程入口 runMain 与 SP_VERSIONS_PREWARM=1 打开；
+  // 逐版本让出（prewarm 内部 setImmediate），单个版本失败只记日志并跳过，启动绝不被阻断。
+  if (versionPrewarmFrom(opts) && versions.nonDefault.length) {
+    const rows = await versions.prewarm();
+    const done = rows.filter((r) => r.ok);
+    if (done.length) log.info(`[versions] prewarmed: ${done.map((r) => `${r.id} ${Math.round(r.ms)}ms`).join(', ')}`);
+  }
   // The pool clones a subset into every thread (server/data.js simWorkerData): the sim's data only, not the art
   // manifests / emotes / tuning the worker tasks never read. Version rooms and plugin rooms never submit here
   // (match/rehearsal.js poolRehearsal), so the default pack is always what a worker sees.
@@ -512,4 +525,10 @@ export function roomCodeFromArgv(argv = process.argv.slice(2)) {
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).
 // The state file defaults to .state/server-<PORT> (persist, 移植自用户分支); SP_STATE_FILE / SP_REDIS_URL override.
-if (isProcessEntry(import.meta.url)) runMain(() => startServer({ roomCode: roomCodeFromArgv(), stateFile: process.env.SP_STATE_FILE ?? path.join(ROOT, '.state', `server-${process.env.PORT || 3000}`) }));
+// 版本预热（§37.133）随进程入口开启：开机把非默认版本的 data+bounds 走完，运行期不再有 3.4 s 级的惰性首载；
+// SP_VERSIONS_PREWARM=0 是运维回滚口。
+if (isProcessEntry(import.meta.url)) runMain(() => startServer({
+  roomCode: roomCodeFromArgv(),
+  stateFile: process.env.SP_STATE_FILE ?? path.join(ROOT, '.state', `server-${process.env.PORT || 3000}`),
+  versions: { prewarm: true },
+}));

@@ -22,6 +22,7 @@
 // The module is engine-side only: server/persist.js owns the storage and the lobby owns the room wiring.
 
 import { PHASE } from '../../shared/constants.js';
+import { createItemPools } from './pool.js';
 
 /** Checkpoint layout version; a document of another version is refused. */
 export const SNAPSHOT_VERSION = 1;
@@ -47,7 +48,7 @@ const ROUND_START_SEC = 2;
 export function canSnapshot(m) {
   if (!m || m.disposed || m.ended) return false;
   if (!m.sched || typeof m.sched.now !== 'function') return false;   // a stub Match (tests) has no restorable state
-  if (!m.pool || !(m.pool.entries instanceof Map)) return false;
+  if (!m.pool || !(m.pool.entries instanceof Map) || !Array.isArray(m.poolGroups)) return false;
   if (!SNAPSHOT_PHASES.includes(m.phase)) return false;
   if (m.phase === PHASE.PREP) {
     for (const ps of m.alivePlayers()) if (ps.botControlled && !ps.ready) return false;
@@ -209,7 +210,9 @@ export function persistVersion(m) {
   const parts = [m._persistRev | 0, m.pool?.revision | 0, m.round | 0, m.uidSeq | 0, m._battleSeq | 0, m.pausedMs | 0,
     m.setupRevision | 0, m._setupVoteSeq | 0, m._botEmotesSettledRound | 0, m._botEmotesMerges?.size | 0,
     m.hiddenLayerSum | 0, m.hiddenReached ? 1 : 0, m.errorCount | 0, m.errors?.length | 0, m.simErrors?.length | 0,
-    m.simErrorLog?.length | 0, m.phase];
+    m.simErrorLog?.length | 0, m.phase,
+    // 容量房间的分组卡池各有自己的修订（持久化面是每组剩余份数；容量字段是构造期标量，不随局内变化）
+    (m.poolGroups || []).reduce((n, g) => n + (g.pool?.revision | 0), 0)];
   for (const name of RNG_NAMES) {
     const rng = m[name];
     parts.push(rng && typeof rng.state === 'function' ? rng.state() >>> 0 : 0);
@@ -237,6 +240,9 @@ export const MATCH_FIELDS = Object.freeze([
   'simErrorLog', 'draft', 'sp', 'wave', 'bossWaves', 'setupRevision', 'setupVote', '_setupVoteSeq', '_botEmotesSettledRound', '_botEmotesMerges',
   'enemyDifficultyHistory', // Optional plugin round draws, restored before prep/battles resume.
   'speedVotes', // 战斗 2 倍速投票（speedVote.js）：已投换档赞成的席位
+  // 多人同盟容量（移植自用户分支 snapshot.js）：构造器由房间的 experimental 推导这些值，落档一份使得按旧存档
+  // 恢复（房间丢了实验开关）时规则与分组保持一致；finalAliveCount 是隐秘核心门槛的 Final Assault 存活数
+  'playerCapacity', 'capacityExperiment', 'twentyPlayerMode', 'disableDuckLord', 'finalAliveCount',
 ]);
 
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */
@@ -274,6 +280,13 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
   'cs', 'vs', 'requireCs', 'hostId', 'botRehearsalDelegate', 'botRehearsalDelegateMs', 'botRehearsalColdMs', '_rehearsalHostAnswers',
   '_rehearsalTasks', '_rehearsalSeq', 'rehearsalStats',
   'version', 'test',
+  // 多人同盟容量（移植自用户分支 snapshot.js）：分组与路由面由恢复侧按 doc.poolGroups 重建（pool 的 doc.poolLeft 同
+  // 一套路），接力档案是本轮战斗的过渡状态
+  'poolGroups', 'playerPools', 'playerItemPools', '_normalAliveCount', '_uniteRelay',
+  // 容量房间的私池开关（experimental.disableSharedPool）：构造期由规范化后的房间规则推导
+  'disableSharedPool',
+  // 房间规则开关（experimentalOptions 规范化后的冻结副本）：构造期由房间的 experimental 推导，与 gd/ds 一类
+  'experimental',
   // 本仓 (0.3.3) 特有、fork 清单里没有的重建面: the bot strategy adapter and the external-AI gate (rebuilt from
   // opts/env by the constructor), the plugin-offer windows (an open window does not survive a restart — the same
   // class as a solo pause; the pool rebuilds from its round schedule), rehearsal counters, the reroll cooldown map
@@ -348,6 +361,10 @@ export function captureMatch(m) {
   // the shared pool: only the remaining copies live in the checkpoint (cap/tier are data-derived)
   doc.poolLeft = {};
   for (const [id, e] of m.pool.entries) doc.poolLeft[id] = e.left;
+  // 多人同盟容量（移植自用户分支 snapshot.js）: every chess-pool group's remaining copies and every equipment
+  // group's debt — caps/scale/playerIds are rebuilt by restoreMatch (buildPoolGroups), never saved
+  doc.poolGroups = m.poolGroups.map((g) => ({ lefts: Object.fromEntries([...g.pool.entries].map(([id, e]) => [id, e.left])) }));
+  doc.itemDebt = m.poolGroups.map((g) => [...(m.playerItemPools.get(g.playerIds[0])?.debt || new Map())]);
   // RNG positions: keeps the continuation of a restored match identical to the run it replaces
   doc.rng = {};
   for (const name of RNG_NAMES) {
@@ -406,7 +423,7 @@ export function encodeMatchCapture(capture) {
  */
 export function restoreMatch(m, doc, { createRngFromState, log = console } = {}) {
   if (!m || !doc || typeof doc !== 'object') return false;
-  if (!m.sched || typeof m.sched.now !== 'function' || !m.pool || !(m.pool.entries instanceof Map)) return false;
+  if (!m.sched || typeof m.sched.now !== 'function' || !m.pool || !(m.pool.entries instanceof Map) || !Array.isArray(m.poolGroups)) return false;
   if (doc.v !== SNAPSHOT_VERSION) { log.warn?.(`[snapshot] ${m.roomCode}: unsupported checkpoint version ${doc.v}`); return false; }
   if (!SNAPSHOT_PHASES.includes(doc.phase)) { log.warn?.(`[snapshot] ${m.roomCode}: unsupported phase ${doc.phase}`); return false; }
   const players = Array.isArray(doc.players) ? doc.players : [];
@@ -434,6 +451,35 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
     for (const [id, left] of Object.entries(doc.poolLeft)) {
       const e = m.pool.entries.get(id);
       if (e) e.left = Math.max(0, Math.min(e.cap, Math.trunc(Number(left) || 0)));
+    }
+  }
+  // 多人同盟容量（移植自用户分支 restoreMatch）: rebuild the seat groups (the capacity scalars above are already
+  // applied) and re-apply their saved copies / equipment debts. A checkpoint of the older single-pool layout (no
+  // poolGroups document) keeps the constructor's single pool.
+  if (Array.isArray(doc.poolGroups)) {
+    const groups = m.buildPoolGroups(m.bannedChess || []);
+    if (groups.length !== doc.poolGroups.length) {
+      log.warn?.(`[snapshot] ${m.roomCode}: checkpoint refused (pool groups ${doc.poolGroups.length} != ${groups.length})`);
+      return false;
+    }
+    doc.poolGroups.forEach((saved, i) => {
+      const lefts = saved && typeof saved === 'object' ? saved.lefts : null;
+      if (!lefts || typeof lefts !== 'object') return;
+      for (const [id, left] of Object.entries(lefts)) {
+        const e = groups[i].pool.entries.get(id);
+        if (e) e.left = Math.max(0, Math.min(e.cap, Math.trunc(Number(left) || 0)));
+      }
+    });
+    m.poolGroups = groups;
+    m.playerPools = m.routePools(groups);
+    m.playerItemPools = createItemPools(m.gd, groups, (id) => m.players.get(id));
+    m.itemPool = m.playerItemPools.get(groups[0].playerIds[0]);
+    if (Array.isArray(doc.itemDebt)) {
+      doc.itemDebt.forEach((entries, i) => {
+        if (!Array.isArray(entries)) return;
+        const pool = m.playerItemPools.get(groups[i]?.playerIds[0]);
+        if (pool) pool.debt = new Map(entries);
+      });
     }
   }
   for (const name of RNG_NAMES) {

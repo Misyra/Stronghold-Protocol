@@ -15,12 +15,14 @@
 //   opts.aiPicksLast boolean (optional)         the co-op room option 「AI 队友最后选择」 (room.setAiPicksLast, GitHub #338):
 //                                              the strategy and 机变 drafts put every human seat before every AI seat
 //                                              (MatchPhases.humansFirst); only `true` turns it on; ignored in solo
-//   opts.seats       Array<{ seat: 0..3, playerId: string, name: string, isBot: boolean, connected: boolean,
+//   opts.seats       Array<{ seat: 0..(capacity-1), playerId: string, name: string, isBot: boolean, connected: boolean,
 //                            loadout?: { [baseChessId]: { skill: index, module: uniEquipId|'none'|null } } | null,
 //                            ops?: { [charId]: { potential: 1–6, cultivate: 0–3 } } | null,
 //                            notOwned?: string[] | null,
 //                            diy?: { [slotBaseId]: { charId, skillIndex, uniEquipId } } | null }>
-//                    sorted by seat, 1–4 entries, ≥ 1 human; solo ⇒ exactly 1 human and no bots.
+//                    sorted by seat, ordinary 1–4 entries; opt-in friend-room capacity up to 20 (opts.experimental
+//                    playerCapacity, shared/playerCapacity.js; Match.playerCapacity / capacityExperiment /
+//                    twentyPlayerMode). Solo stays one seat.
 //                    Bot playerIds start with 'ai_'. Seat indexes may have gaps (e.g. seats 0 and 2).
 //                    `loadout` (DESIGN §16, optional): the human's operator loadout, already checked by the lobby
 //                    (shared/protocol.js checkLoadout); PlayerState re-checks it against opts.data and ignores it for bots.
@@ -228,11 +230,15 @@
 //   unitePhase.js    联防 (UNITE) in both modes and the leakers' live counts
 //   bossRounds.js    FINAL_ASSAULT / HIDDEN_CORE: boss fields, the shared pool, plausibility budgets, the boss clock,
 //                    b.pool, the merged team LP, overtime, bounties after a boss field
+//   poolGroups.js    the capacity experiment's seat groups (pool.js createPoolGroups): buildPoolGroups / routePools /
+//                    poolFor / itemPoolFor — 多人同盟的分组卡池与装备库存路由
 //   settle.js        SETTLE and RESULT
 //   common.js        what the modules share (FLOW_TICKER_PRIORITY, DELAYS, BAND_TURN_SECONDS — re-exported here, OK,
 //                    fail, BOSS_CLOCK_MS)
 
 import { PHASE, modeIdFor } from '../../shared/constants.js';
+import { experimentalOptions } from '../../shared/experimental.js';
+import { roomCapacity } from '../../shared/playerCapacity.js';
 import { isContentHash } from '../../shared/plugins/identity.js';
 import { DEFAULT_VERSION, versionById } from '../../shared/versions.js';
 import { Battle } from '../sim/Battle.js';
@@ -240,7 +246,7 @@ import { DataSource } from '../sim/simdata.js';
 import { createRng, deriveSeed } from '../sim/rng.js';
 import { GameData } from './gamedata.js';
 import { RealScheduler } from './scheduler.js';
-import { SharedPool, SharedItemPool, drawDisabledBonds } from './pool.js';
+import { SharedPool, createItemPools, drawDisabledBonds } from './pool.js';
 import { PlayerState } from './PlayerState.js';
 import { EffectDispatcher, getDefaultRegistry } from './effectsMeta.js';
 import { setupMatchWaves } from './waves.js';
@@ -265,6 +271,7 @@ import { MatchRehearsal, REHEARSAL_ANSWER_MS, REHEARSAL_COLD_ANSWER_MS } from '.
 import { MatchReports } from './match/reports.js';
 import { MatchUnite } from './match/unitePhase.js';
 import { MatchBoss } from './match/bossRounds.js';
+import { MatchPoolGroups } from './match/poolGroups.js';
 import { MatchSettle } from './match/settle.js';
 import { AFK_REMOVE_ROUNDS } from './match/common.js';
 import { installTestTrace } from './testTrace.js';
@@ -368,12 +375,13 @@ export class Match {
     if (opts.rules && typeof opts.rules === 'object' && !Array.isArray(opts.rules)) this.rules = Object.freeze({ ...opts.rules });
     /**
      * The room-owned experimental options this match started with (server/lobby.js startMatchWith; shared/experimental.js):
-     * fixed for the match. 联动干员 is no longer one of them — the collab 6★ are ordinary 自选 picks (2026-11-03).
-     * Absent = a standard match.
+     * locked and normalized (experimentalOptions — an invalid shape, capacity or duck-lord switch throws), fixed for the
+     * match. 联动干员 is no longer one of them — the collab 6★ are ordinary 自选 picks (2026-11-03). Direct engine
+     * fixtures keep the legacy option names (opts.revivalEnabled / opts.disableSharedPool).
      */
-    if (opts.experimental && typeof opts.experimental === 'object' && !Array.isArray(opts.experimental)) {
-      this.experimental = Object.freeze({ ...opts.experimental });
-    }
+    this.experimental = experimentalOptions(opts.experimental ?? {
+      revivalEnabled: opts.revivalEnabled === true, disableSharedPool: opts.disableSharedPool === true,
+    });
     /**
      * The interaction windows this match's content set declares (PLUGIN API v2, docs/PLUGINS.md §10b): the normalized
      * `offers` of the plugins the host installed, handed in as `opts.offers` before construction so test journals
@@ -393,6 +401,17 @@ export class Match {
     this.gd = new GameData(this.data, this.modeId);
     if (!this.difficulty) this.difficulty = this.gd.difficulty;
     this.isSolo = this.mode === 'solo' || this.gd.isSolo;
+    /** 多人同盟容量（移植自用户分支，shared/playerCapacity.js）: the room's seat count; a solo room stays one seat */
+    this.playerCapacity = roomCapacity(this.isSolo ? 'solo' : this.mode, this.experimental);
+    /** the capacity experiment: an opt-in co-op room past the ordinary four — drafts repeat, pools group */
+    this.capacityExperiment = !this.isSolo && this.playerCapacity > 4;
+    /** the 20-seat variant: fixed consecutive four-seat pool chunks (pool.js createPoolGroups) */
+    this.twentyPlayerMode = this.capacityExperiment && this.playerCapacity === 20;
+    /** 华法琳禁用 (experimental.disableDuckLord, capacity rooms only): the default band is out (gamedata bandAllowed) */
+    this.disableDuckLord = this.capacityExperiment && this.experimental.disableDuckLord === true;
+    this.gd.disableDuckLord = this.disableDuckLord;
+    /** the room's private-pool switch (experimental.disableSharedPool): every seat its own complete pool (poolGroups) */
+    this.disableSharedPool = this.experimental.disableSharedPool;
     /** 「AI 队友最后选择」 (opts.aiPicksLast, GitHub #338): humans draft before AI seats (MatchPhases.humansFirst) */
     this.aiPicksLast = !this.isSolo && opts.aiPicksLast === true;
     /** 「允许重复策略」 (opts.bandDupes, 本仓新设): the strategy draft lets several doctors hold the same strategy */
@@ -506,6 +525,7 @@ export class Match {
      * next match of the room (the same socket, the same field ids) never names a battle of this match.
      */
     this.battlePrefix = `${this.seed.toString(36)}${Number.isInteger(opts.matchNo) && opts.matchNo > 0 ? `-${opts.matchNo.toString(36)}` : ''}`;
+    if (opts.seats.length > this.playerCapacity) throw new RangeError('Match: seats exceed room capacity');
     this._progressTimer = null;
     this._bossClock = null;
     this._lastPoolAt = -Infinity;
@@ -523,10 +543,14 @@ export class Match {
 
     /** @type {Map<string, PlayerState>} */
     this.players = new Map();
-    const seen = new Set();
+    const seen = new Set(), seatIndexes = new Set();
     for (const s of opts.seats) {
       if (!s || typeof s.playerId !== 'string' || seen.has(s.playerId)) continue;
+      if (!Number.isInteger(s.seat) || s.seat < 0 || s.seat >= this.playerCapacity || seatIndexes.has(s.seat)) {
+        throw new TypeError('Match: unique seat index within room capacity required');
+      }
       seen.add(s.playerId);
+      seatIndexes.add(s.seat);
       this.players.set(s.playerId, new PlayerState(this, s));
     }
     if (!this.players.size) throw new TypeError('Match: seats required');
@@ -567,8 +591,15 @@ export class Match {
     this.disabledBonds = bans.drawn;
     this.staticInactiveBonds = bans.staticOff;
     this.bannedChess = bans.banned;
-    this.pool = new SharedPool(this.gd, { banned: bans.banned });
-    this.itemPool = new SharedItemPool(this.gd, () => this.order);
+    // 容量房间（移植自用户分支）: one pool per seat group (pool.js createPoolGroups via MatchPoolGroups.buildPoolGroups);
+    // `pool` remains the ordinary diagnostic/bond-availability view; transactions always route via poolFor / ps.pool.
+    this.poolGroups = this.buildPoolGroups(bans.banned);
+    this.pool = this.disableSharedPool ? new SharedPool(this.gd, { banned: bans.banned }) : this.poolGroups[0].pool;
+    this.playerPools = this.routePools(this.poolGroups);
+    // equipment stock follows the same groups (pool.js createItemPools); `itemPool` is the first group's — the only one
+    // in an ordinary match — and every transaction routes via itemPoolFor / ps.itemPool
+    this.playerItemPools = createItemPools(this.gd, this.poolGroups, (id) => this.players.get(id));
+    this.itemPool = this.playerItemPools.get(this.poolGroups[0].playerIds[0]);
     // 自选编队 (0.2.0): each human's slotted DIY pieces get their own stock — none for one whose bonds are all off this
     // match (player/diy.js initDiyStock); no randomness is drawn here
     const off = new Set([...bans.drawn, ...bans.staticOff]);
@@ -639,6 +670,10 @@ export class Match {
     /** The finished battle's own game-time seconds per player (combat._finishCombat; the onBattleResult ev's `time`). */
     this.lastResultTimes = new Map();
     this.unitePlan = null;
+    /** 本轮普通战斗开始时的存活席位数（combat.js 写入；容量联防接力以 ≥8 判定，round start 先归零） */
+    this._normalAliveCount = 0;
+    /** 联防接力（容量房间 ≥8 人，unitePhase.js startUnite）：{ rounds: [{ plan, result, survivors, view }] } */
+    this._uniteRelay = null;
     /** 伤害/治疗结算板 (fork feature, server/match/damageBoard.js): every finished field's result folded in, cumulative
      * across the match; read-only metadata, exposed as m.public.damage (views.js) — reconnects and spectator seats
      * included. Nothing in the sim / settlement reads it, so no golden result moves. */
@@ -664,7 +699,7 @@ export class Match {
 }
 
 // the method modules, in this order (a name defined twice is an error, never a silent override)
-for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchKickVote, MatchSpeedVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchRehearsal, MatchReports, MatchUnite, MatchBoss, MatchSettle, MatchTestCommands, MatchOffers]) {
+for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchKickVote, MatchSpeedVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchRehearsal, MatchReports, MatchUnite, MatchBoss, MatchPoolGroups, MatchSettle, MatchTestCommands, MatchOffers]) {
   for (const key of Reflect.ownKeys(part.prototype)) {
     if (key === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(Match.prototype, key)) throw new Error(`Match.${String(key)} is defined twice`);

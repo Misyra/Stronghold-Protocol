@@ -41,7 +41,8 @@ import { layerGainRoom } from '../../shared/constants.js';
 /**
  * @param {import('./Match.js').Match} m
  * @param {Map<string, object>} results playerId → BattleResult.perPlayer entry of the player's own combat
- * @returns {null | { helpers: any[], leakers: any[], leaked: object[], notReentered: Map<string, number> }}
+ * @returns {null | { helpers: any[], leakers: any[], leaked: object[], notReentered: Map<string, number>,
+ *   uniteRound?: 1, relayCandidates?: any[] }} uniteRound/relayCandidates 只在容量房间的 ≥8 人接力里出现
  */
 export function planUnite(m, results) {
   if (m.isSolo) return null;
@@ -79,7 +80,90 @@ export function planUnite(m, results) {
       leaked.push({ enemyKey: l.enemyKey, mods: l.mods ? { ...l.mods } : null, lpr: l.lpr ?? 1, sourcePlayerId: ps.playerId, tag: l.tag ?? null, bounty });
     }
   }
-  return { helpers, leakers, leaked, notReentered };
+  return withRelay(m, { helpers, leakers, leaked, notReentered }, perfects);
+}
+
+/**
+ * 容量联防接力（移植自用户分支 planUnite）：扩编房间（capacityExperiment）本轮普通战斗开始与联防计划时都还有
+ * ≥ 8 个存活席位时，第一轮联防带上接力候选——未被选为 helper 的完美玩家（自己那场无记漏；合成结果 disqualified
+ * 由 uniteRelayHelpers 在接力时复核）。两个数字都是真实存活数，与房间容量或开局席位数无关。8 人以下的普通房保持
+ * 原单轮计划。
+ */
+function withRelay(m, plan, perfects) {
+  const alive = m.alivePlayers();
+  // _normalAliveCount 由 combat.js 在战斗开始时写入；其缺席（直接构造/旧调用方）以计划时的存活数兜底
+  const atCombatStart = Number.isInteger(m._normalAliveCount) && m._normalAliveCount > 0 ? m._normalAliveCount : alive.length;
+  if (m.capacityExperiment && atCombatStart >= 8 && alive.length >= 8) {
+    plan.uniteRound = 1;
+    plan.relayCandidates = perfects.filter((ps) => !plan.helpers.includes(ps));
+  }
+  return plan;
+}
+
+/** Living, unused qualified helpers for a possible second relay (the same eligibility at entry and release). */
+export function uniteRelayHelpers(m, plan) {
+  if (plan.uniteRound !== 1 || !Array.isArray(plan.relayCandidates)) return [];
+  const perfects = plan.relayCandidates.filter((ps) => {
+    const r = m.lastResults.get(ps.playerId);
+    return m.players.get(ps.playerId) === ps && ps.alive && !ps.left && !plan.helpers.includes(ps)
+      && r && !r.synthetic && r.perfect !== false && !(r.leaked || []).some((l) => l && l.counted !== false);
+  });
+  return helperOrder(m, perfects, m.lastResults).slice(0, m.gd.unite.maxHelpers);
+}
+
+/**
+ * The relay's second round (移植自用户分支 planUniteRelay): only the first field's residual enemies re-enter — the
+ * first helpers' leaked / unspawned ones, recovered against the field's own spawn schedule; the ordinary leaks never
+ * re-enter twice. Null without a viable helper set or nothing left to fight.
+ * @param {import('./Match.js').Match} m
+ * @param {object} plan the first round's unite plan (uniteRound 1)
+ * @param {object|null} result the first field's result
+ * @param {Array<{ enemyKey: string, sourcePlayerId?: string, time?: number, count?: number, interval?: number, mods?: object, bounty?: object }>|null} [fieldSpawns]
+ *   the first field's input spawns (field.spec.spawns); the wave template rebuilds them when absent
+ * @returns {object|null} the uniteRound-2 plan, or null when no relay runs
+ */
+export function planUniteRelay(m, plan, result, fieldSpawns = null) {
+  if (plan.uniteRound !== 1 || !result || result.synthetic) return null;
+  const helpers = uniteRelayHelpers(m, plan);
+  if (!helpers.length) return null;
+  const leaked = [];
+  const notReentered = new Map(plan.notReentered);
+  const sources = new Set(plan.leakers.map((ps) => ps.playerId));
+  // Use the actual field input: equal enemy keys may have different mods/bounties and spawn times.
+  // Expand counts just as the simulation queue does, then consume each pending entry at most once.
+  const spawns = fieldSpawns || buildUniteWave(m.gd, plan.leaked, plan.helpers.length, m.wave?.timeLimit || 60).spawns;
+  const pending = [];
+  for (const s of spawns) for (let i = 0; i < Math.max(1, Math.trunc(s.count || 1)); i++) {
+    pending.push({ ...s, time: (Number(s.time) || 0) + i * Math.max(0, Number(s.interval) || 0) });
+  }
+  const takeUnspawned = (l) => {
+    const matches = (s) => s.enemyKey === l.enemyKey && s.sourcePlayerId === l.sourcePlayerId;
+    let i = Number.isFinite(l.time) ? pending.findIndex((s) => matches(s) && Math.abs(s.time - l.time) < 1e-6) : -1;
+    if (i < 0) i = pending.findIndex(matches); // legacy results without a precise pending time: preserve multiset order
+    return i < 0 ? null : pending.splice(i, 1)[0];
+  };
+  const add = (l, unspawned = false) => {
+    if (!l || l.counted === false || !sources.has(l.sourcePlayerId)) return;
+    if (!m.gd.enemy(l.enemyKey)) {
+      notReentered.set(l.sourcePlayerId, (notReentered.get(l.sourcePlayerId) || 0) + 1);
+      return;
+    }
+    // An unspawned result omits mods/bounty. Recover them from this field's input, not a new normal wave.
+    const source = unspawned ? takeUnspawned(l) : null;
+    const mods = unspawned ? source?.mods : l.mods;
+    const bountyId = mods?.bountyId;
+    const ps = m.players.get(l.sourcePlayerId);
+    const card = bountyId ? ps?.bounties.find((x) => x.id === bountyId)?.card : null;
+    const coins = card && card.payout !== 'perfect' && card.enemyKey === l.enemyKey ? Math.trunc(Number(card.coin) || 0)
+      : !bountyId ? Math.trunc(Number(mods?.bountyCoins) || 0) : 0;
+    const bounty = source?.bounty || (coins > 0 ? { coins, ownerPlayerId: l.sourcePlayerId } : null);
+    leaked.push({ ...l, mods: mods ? { ...mods } : null, bounty, sourcePlayerId: l.sourcePlayerId });
+  };
+  for (const pp of Object.values(result.perPlayer || {})) for (const l of pp?.leaked || []) add(l);
+  for (const l of result.unspawned || []) add(l, true);
+  // Non-reenterable losses are billed at final settlement, but cannot create an empty extra battle.
+  if (!leaked.length) return null;
+  return { helpers, leakers: plan.leakers, leaked, notReentered, uniteRound: 2 };
 }
 
 /**

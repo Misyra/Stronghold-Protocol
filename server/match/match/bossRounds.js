@@ -50,7 +50,10 @@ export class MatchBoss {
     // the pool's own per-player tally, one pool per boss round. stats.bossDamage (the result's 领袖伤害) adds up both
     // rounds, so it would credit the Final Assault's damage to the hidden leader ("隐藏boss还没打就出了50%播报").
     const hitSteps = new Map();
-    const pool = new SharedBossPool(bossPoolHp(this.gd, bossId, alive.length), {
+    // 容量房间（移植自用户分支 startFinalAssault）：Final Assault 记下存活数供隐秘核心门槛放大；领袖池按
+    // bossPoolHp 的 experimental 入参放大（>4 人按人数对 4 人份数放大；enemyHpPlan 的 hpMul 不在本仓范围）
+    if (!hidden) this.finalAliveCount = alive.length;
+    const pool = new SharedBossPool(bossPoolHp(this.gd, bossId, alive.length, { experimental: this.capacityExperiment }), {
       onHit: (pid, dmg) => {
         const ps = this.players.get(pid);
         if (!ps) return;
@@ -577,7 +580,10 @@ export class MatchBoss {
     if (this.runner) { try { this.runner.stop(); } catch { /* already stopped */ } }
     this.runner = null;
     if (!hidden) {
-      const eligible = victory && !!this.hiddenBossId && hiddenEligible(this.gd, { layerSum: this.hiddenLayerSum, teamLp: this.teamLp });
+      // 容量房间（移植自用户分支 _finishFinal）：隐秘核心门槛随 Final Assault 时的存活数放大（hiddenEligible 的
+      // experimental 入参；本仓 finalAssault.js 尚未接入时多传的键被忽略，行为不变）
+      const eligible = victory && !!this.hiddenBossId && hiddenEligible(this.gd, { layerSum: this.hiddenLayerSum,
+        teamLp: this.teamLp, aliveCount: this.finalAliveCount, experimental: this.capacityExperiment });
       this.later(this.scaled(DELAYS.SETTLE), () => {
         if (eligible) {
           this.hiddenReached = true;

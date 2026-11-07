@@ -508,7 +508,9 @@ test('timeout, bots and majority skip unavailable slots in order, or close with 
     h.m.dispose();
   }
   for (const bots of [0, 2]) {
-    const h = matchWith([stockOffer({ chess: 'chess_char_5_diy1_a' }, { quorum: 'majority' })], { fake: true, humans: 3, bots });
+    // 多数决需要 5 个席位：挂上容量实验（Match 构造器的座位上限；本测试考的是 quorum，不是容量）
+    const h = matchWith([stockOffer({ chess: 'chess_char_5_diy1_a' }, { quorum: 'majority' })], { fake: true, humans: 3, bots,
+      ...(3 + bots > 4 ? { experimental: { revivalEnabled: false, disableSharedPool: false, playerCapacity: 8 } } : {}) });
     h.m.openOfferWindow('prep', 3);
     const w = h.m.offerWin[0];
     const idx = w.options.get('p_0').findIndex(c => c.id === 'funds');

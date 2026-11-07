@@ -137,6 +137,15 @@ import { PlayerDiy, DiyStock } from './player/diy.js';
 
 export class PlayerState {
   /**
+   * The chess pool this seat draws from（容量房间是其卡池组的那一份，Match.poolFor；普通对局即共享池）。getter 而非
+   * 构造器字段：PlayerState 在 Match 装配 poolGroups 之前创建，路由只能在取用时求值（移植自用户分支）。
+   * @returns {import('./pool.js').SharedPool}
+   */
+  get pool() { return this.m.poolFor(this); }
+  /** This seat's equipment stock (Match itemPoolFor: its chess-pool group's). */
+  get itemPool() { return this.m.itemPoolFor(this); }
+
+  /**
    * @param {import('./Match.js').Match} m owning match
    * @param {{ seat: number, playerId: string, name: string, isBot: boolean, connected: boolean, loadout?: any, notOwned?: any, diy?: any, skins?: any }} seat
    */
@@ -280,5 +289,14 @@ for (const part of [PlayerBasics, PlayerPieces, PlayerAcquire, PlayerEconomy, Pl
     Object.defineProperty(PlayerState.prototype, key, Object.getOwnPropertyDescriptor(part.prototype, key));
   }
 }
+
+// 容量房间（移植自用户分支；本仓 player/diy.js 的 poolOf 落在不属于本代理边界的文件里，这里在部件安装完成后按
+// fork 的终态覆盖：非自选槽的基础干员记到席位自己卡池组的份上（ps.pool getter），而不是 Match.pool（第一组）。
+// 普通对局 ps.pool === m.pool，行为与原实现逐字节一致。若 player/diy.js 的 poolOf 就地改为同一回退，此覆盖与它
+// 等价，保留其一即可。
+Object.defineProperty(PlayerState.prototype, 'poolOf', {
+  value: function poolOf(baseId) { return this.diyStock && this.diyStock.has(baseId) ? this.diyStock : this.pool; },
+  writable: true, configurable: true,
+});
 
 export { FIELD };

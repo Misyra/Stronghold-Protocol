@@ -18,10 +18,10 @@ import { makeCtx } from '../../server/match/effectsMeta.js';
 import { Lobby } from '../../server/lobby.js';
 import { SessionRegistry } from '../../server/net.js';
 
-function modMatch(t, rules, opts = {}) {
+async function modMatch(t, rules, opts = {}) {
   const f = fixture(t);
   f.put('room-rules', { rules, permissions: [] });
-  const set = buildContentSet({ registry: f.registry, ids: ['room-rules'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['room-rules'] });
   assert.deepEqual(set.problems, []);
   assert.equal(set.vanilla, false);
   return makeMatch({ mode: 'solo', seed: 21, fake: true, data: set.data, cs: set.cs, requireCs: true, rules: set.rules, ...opts });
@@ -36,8 +36,8 @@ const SWIRE = 'chess_char_3_04_a';
 const chess = (id) => DATA.chess[id];
 const ok = (r) => assert.deepEqual(r, { ok: true });
 
-function prep(rules, t) {
-  const h = (rules ? modMatch(t, rules) : makeMatch({ mode: 'solo', seed: 21, fake: true })).start().toPrep(1);
+async function prep(rules, t) {
+  const h = (rules ? await modMatch(t, rules) : makeMatch({ mode: 'solo', seed: 21, fake: true })).start().toPrep(1);
   const ps = h.ps('p_0');
   ps.funds = 50;
   return h;
@@ -52,8 +52,8 @@ function wearer(h, itemIds) {
   return p;
 }
 
-test('a room without rules stays the official match', () => {
-  const h = prep();
+test('a room without rules stays the official match', async () => {
+  const h = await prep();
   assert.equal(h.m.rules, undefined);
   assert.equal(h.m.phase, PHASE.PREP);
   const r = h.m.setLoadout('p_0', {});
@@ -67,9 +67,9 @@ test('a room without rules stays the official match', () => {
   h.m.dispose();
 });
 
-test('shopBias bondBias draws the active bond when that tier has one, and matches official when none is active', (t) => {
-  const plain = prep();
-  const biased = prep({ shopBias: 'bondBias' }, t);
+test('shopBias bondBias draws the active bond when that tier has one, and matches official when none is active', async (t) => {
+  const plain = await prep();
+  const biased = await prep({ shopBias: 'bondBias' }, t);
   const plainItems = plain.ps('p_0').shop.slots.filter((s) => s && s.kind === 'item').map((s) => s.id);
   const biasedItems = biased.ps('p_0').shop.slots.filter((s) => s && s.kind === 'item').map((s) => s.id);
   assert.deepEqual(biasedItems, plainItems, 'no active bond: the shop rng stays today\'s');
@@ -129,8 +129,8 @@ test('shopBias bondBias draws the active bond when that tier has one, and matche
   biased.m.dispose();
 });
 
-test('prepLoadout merges one submission in 休整期 and locks it after 准备', (t) => {
-  const h = prep({ prepLoadout: 'prep' }, t);
+test('prepLoadout merges one submission in 休整期 and locks it after 准备', async (t) => {
+  const h = await prep({ prepLoadout: 'prep' }, t);
   const m = h.m;
   const ps = h.ps('p_0');
   const first = checkLoadout({ [INSIDE]: { skill: 0 } }, chess).loadout;
@@ -150,7 +150,7 @@ test('prepLoadout merges one submission in 休整期 and locks it after 准备',
   const lobby = new Lobby({ registry: new SessionRegistry() });
   t.after(() => lobby.shutdown());
   const session = { playerId: 'p_0', name: 'Test', connected: true, ws: null };
-  ok(lobby.create(session, { mode: 'solo', difficulty: 'NORMAL' }));
+  ok(await lobby.create(session, { mode: 'solo', difficulty: 'NORMAL' }));
   const room = lobby.roomOf(session);
   room.content = { cs: m.cs, vanilla: false, rules: m.rules, plugins: [] };
   room.match = m;
@@ -161,7 +161,7 @@ test('prepLoadout merges one submission in 休整期 and locks it after 准备',
   assert.equal(m.setLoadout('p_0', first).error, ERR.WRONG_PHASE);
   assert.equal(ps.loadout[INSIDE].skill, 0);
   h.m.dispose();
-  const info = modMatch(t, { prepLoadout: 'prep' }, { seed: 4 }).start();
+  const info = (await modMatch(t, { prepLoadout: 'prep' }, { seed: 4 })).start();
   assert.equal(info.m.phase, PHASE.INFO_CHECK);
   info.ps('p_0').ready = true;
   ok(info.m.setLoadout('p_0', first));
@@ -184,8 +184,8 @@ function placeToken(h, ps, token) {
   assert.fail('no legal summon tile');
 }
 
-test('prep loadout reconciles summons in both skill directions and the next real battle', (t) => {
-  const h = prep({ prepLoadout: 'prep' }, t);
+test('prep loadout reconciles summons in both skill directions and the next real battle', async (t) => {
+  const h = await prep({ prepLoadout: 'prep' }, t);
   t.after(() => h.m.dispose());
   const ps = h.ps('p_0');
   ok(h.m.setLoadout('p_0', { [SILENCE]: { skill: 0 } }));
@@ -229,8 +229,8 @@ test('prep loadout reconciles summons in both skill directions and the next real
   h.invariants();
 });
 
-test('prep module changes trim excess summons, preserve valid placements, and leave other owners alone', (t) => {
-  const h = prep({ prepLoadout: 'prep' }, t);
+test('prep module changes trim excess summons, preserve valid placements, and leave other owners alone', async (t) => {
+  const h = await prep({ prepLoadout: 'prep' }, t);
   t.after(() => h.m.dispose());
   const ps = h.ps('p_0');
   const id = chess(SILENCE).goldenId;
@@ -258,10 +258,10 @@ test('prep module changes trim excess summons, preserve valid placements, and le
   h.invariants();
 });
 
-test('morphPairing plus grants only the leftmost bond and does not spend a slot on the morph', (t) => {
+test('morphPairing plus grants only the leftmost bond and does not spend a slot on the morph', async (t) => {
   const knife = Object.values(DATA.items).find((it) => it.itemType === 'EQUIP' && !it.canGiveBond && !it.isGolden && it.giveBondId && it.giveBondId !== 'victoriaShip' && it.id !== HAMMER);
   assert.ok(knife, 'a second bond item');
-  const plus = prep({ morphPairing: 'plus' }, t);
+  const plus = await prep({ morphPairing: 'plus' }, t);
   const both = wearer(plus, [HAMMER, knife.id, ISO]);
   const wornIds = both.items.map((it) => it.id);
   const granted = pieceBonds(plus.m.gd, both, plus.m.rules).filter((b) => b === 'victoriaShip' || b === knife.giveBondId);
@@ -293,7 +293,7 @@ test('morphPairing plus grants only the leftmost bond and does not spend a slot 
   assert.equal(again.error, ERR.BAD_TARGET);
   assert.equal(again.detail, 'morph already equipped');
   plus.invariants();
-  const official = prep();
+  const official = await prep();
   const worn = wearer(official, [HAMMER, knife.id, ISO]);
   assert.equal(worn.items.length, 2, 'official morph occupies a slot and the third item replaced the hammer');
   const bothBonds = pieceBonds(official.m.gd, { ...worn, items: wornIds.map((id) => ({ id })) }).filter((b) => b === 'victoriaShip' || b === knife.giveBondId);
@@ -306,8 +306,8 @@ test('morphPairing plus grants only the leftmost bond and does not spend a slot 
   official.m.dispose();
 });
 
-test('unequip allow returns the item to the hand, then the visible temp row, and refuses when both are full', (t) => {
-  const h = prep({ unequip: 'allow' }, t);
+test('unequip allow returns the item to the hand, then the visible temp row, and refuses when both are full', async (t) => {
+  const h = await prep({ unequip: 'allow' }, t);
   const { m } = h;
   const ps = h.ps('p_0');
   const p = wearer(h, [KNIFE, HAMMER]);

@@ -1,4 +1,7 @@
 // C1 immutable content compositions (DESIGN §32.5). HTTP and room ownership are handled by contentSets.js and roomSets.js.
+// A build is synchronous over the game data (patches, hashes, the freeze) and — when the set has script plugins — awaits
+// its registration probe as a child process (scriptPreflight.js): the event loop is never blocked on a plugin script,
+// the caller just answers later (DESIGN §32.10).
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, DATA_DIR, deepFreeze } from '../data.js';
@@ -306,7 +309,7 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
   if (tr.problems.length) return { problems: tr.problems };
   // Checking declarative references must never execute a dependency's script setup/preflight.
   if (checkDataOnly) return { data, problems: [] };
-  const bodies = new Map(base.files), files = {}, hashes = {};
+  const bodies = new Map(base.files), hashes = {};
   for (const [name, rec] of Object.entries(data)) {
     const rel = `data/${name}.json`;
     // A new table (data/dsl.json) has no base bytes. canonicalJson(undefined) throws, so a missing key is always written.
@@ -352,10 +355,20 @@ function composeContentSet({ registry, ids = [], checkDataOnly = false }) {
   const cs = contentHashOf({ app: base.identity.app, sim: base.identity.sim, data: hashes, plugins: parts, settings, ...(Object.keys(i18n).length ? { i18n } : {}), ...(rules ? { rules } : {}) });
   const cache = caches.get(registry) ?? new Map(); caches.set(registry, cache);
   if (cache.has(cs)) return cache.get(cs);
-  if (scripts.length) {
-    const report = preflightScripts(registry,scripts,{plugins:parts,settings});
-    if (report) return {problems:[problem(report.code,'scripts',report.message)]};
-  }
+  // The script probe (scriptPreflight.js) awaits a child process, so it gates the set outside this synchronous half:
+  // buildContentSet awaits it and only then runs finalizeContentSet. Everything above — the data patches, the hashes,
+  // the cs — ran before the probe in the synchronous builder too; only the served files and the snapshot below wait.
+  // [ASSUMED, revised] C1 is no longer synchronous end to end: only its data half is (DESIGN §32.10).
+  return { pending: {
+    probe: scripts.length ? { registry, scripts, hashInput: { plugins: parts, settings } } : null,
+    bodies, base, data, plugins, scripts, parts, settings, execution, rules, cs, boundsSnap, warnings, cache,
+  } };
+}
+
+/** C1's tail: the served files, the index and the frozen snapshot — run once a probe (when the set has scripts) came
+ * back clean, so a refused set never leaves a cache entry or served bytes behind. */
+function finalizeContentSet({ bodies, base, data, plugins, scripts, parts, settings, execution, rules, cs, boundsSnap, warnings, cache }) {
+  const files = {};
   for (const [rel, body] of bodies) files[rel] = { sha256: nodeSha256(body), bytes: body.length };
   const vanilla = plugins.length === 0;
   // A plugin-added operator is a 自选 candidate only when one of its forms declares a kit — an official kitRef (KITS,
@@ -397,8 +410,26 @@ export function contentSetFiles(set) {
   return new Map([...(buffers.get(set) ?? [])].map(([rel, body]) => [rel, { body: Buffer.from(body), sha256: nodeSha256(body), bytes: body.length }]));
 }
 
-/** C1 failures are data diagnostics, including invalid nested stage/translation input. */
-export function buildContentSet(options) {
-  try { return composeContentSet(options ?? {}); }
+/** C1 failures are data diagnostics, including invalid nested stage/translation input. A set with script plugins
+ * awaits its registration probe (scriptPreflight.js) before the tail runs — callers await the build (contentSets.resolve
+ * answers PLUGIN_BUSY/refusals once it settles; server/net.js replies then). The probe result is cached per registry,
+ * so an unchanged set is not awaited on twice. */
+export async function buildContentSet(options) {
+  try {
+    const half = composeContentSet(options ?? {});
+    if (!half.pending) return half; // a problem, the vanilla/index identity, or the cached set: nothing to probe
+    if (half.pending.probe) {
+      const report = await preflightScripts(half.pending.probe.registry,half.pending.probe.scripts,half.pending.probe.hashInput);
+      if (report) return {problems:[problem(report.code,'scripts',report.message)]};
+    }
+    return finalizeContentSet(half.pending);
+  }
+  catch (e) { return { problems: [problem('PLUGIN_CONTENT_FORMAT', 'content', e.message)] }; }
+}
+
+/** C1's data-only composition check (the folder checkers, pack.js / gameplayCheck.js): stops before the scripts, so it
+ * never probes and stays synchronous even though a full build awaits one. */
+export function checkContentSetDataOnly(options) {
+  try { return composeContentSet({ ...(options ?? {}), checkDataOnly: true }); }
   catch (e) { return { problems: [problem('PLUGIN_CONTENT_FORMAT', 'content', e.message)] }; }
 }

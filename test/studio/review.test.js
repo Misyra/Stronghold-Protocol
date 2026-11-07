@@ -214,7 +214,7 @@ test('sandbox-incompatible code cannot be promoted to trusted by the studio key'
   assert.equal(result.issues[0].code, 'PLUGIN_SANDBOX_SYNTAX');
 });
 
-test('numeric wizard and folder check share C1 maximum and minimum step boundaries', t => {
+test('numeric wizard and folder check share C1 maximum and minimum step boundaries', async t => {
   const f = fixture(t), data = readStudioData(path.resolve('data'));
   const fields = numericFields(data, { kind: 'operator', key: 'char_102_texas' });
   const scale = fields.find(f => f.path.at(-1) === 'atk_scale');
@@ -229,7 +229,7 @@ test('numeric wizard and folder check share C1 maximum and minimum step boundari
     const expected = []; appendOfficialBounds(applyPatches(data, ops).data, data, (...args) => expected.push(args));
     assert.equal(expected.length === 0, ok);
     assert.equal(checkPluginFolder(raw).issues.some(i => i.code === 'PLUGIN_DATA_BOUND'), !ok);
-    assert.equal(buildContentSet({ registry: f.registry, ids: ['numbers'] }).problems.length === 0, ok);
+    assert.equal((await buildContentSet({ registry: f.registry, ids: ['numbers'] })).problems.length === 0, ok);
   }
 });
 

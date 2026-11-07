@@ -18,49 +18,49 @@ const defs = {
   defense: { type: 'number', min: 0, max: 1, step: 0.1, default: 0.1 },
   choice: { type: 'enum', options: ['one', 2, false], default: 'one' },
 };
-function setup(t) {
+async function setup(t) {
   const f = fixture(t);
   f.put('settings-test', { permissions: ['data.patch'], settings: defs, data: ['p.json'] }, { 'p.json': bondPatch({ $setting: 'defense' }) });
   const vanillaData = readStudioData(path.resolve('data'));
-  const base = buildContentSet({ registry: f.registry, ids: [] });
+  const base = await buildContentSet({ registry: f.registry, ids: [] });
   const contents = createContentSets({ registry: f.registry, vanillaData });
   const plugins = createRoomSets({ registry: f.registry, visual: null, contents, policy: null });
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, plugins, content: { cs: base.cs } });
   const player = name => { const s = registry.create(name); s.connected = true; s.messages = []; s.ws = { readyState: 1, bufferedAmount: 0, send: txt => s.messages.push(JSON.parse(txt)) }; return s; };
   const host = player('host'), guest = player('guest');
-  assert.deepEqual(lobby.create(host, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
+  assert.deepEqual(await lobby.create(host, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
   lobby.join(guest, { code: host.roomCode });
   const room = lobby.roomOf(host);
   t.after(() => { lobby.shutdown(); contents.close(); });
   return { ...f, base, contents, plugins, lobby, host, guest, room };
 }
 
-test('typed settings -> room.setPlugins -> normalizeSettings -> content data; guest sees same settings and original room bytes return', t => {
-  const f = setup(t); const { lobby, host, guest, room, contents } = f;
+test('typed settings -> room.setPlugins -> normalizeSettings -> content data; guest sees same settings and original room bytes return', async t => {
+  const f = await setup(t); const { lobby, host, guest, room, contents } = f;
   const vanilla = JSON.stringify(room.content);
   assert.equal(settingValue(defs.choice, '1'), 2); assert.equal(settingValue(defs.choice, '2'), false);
   assert.equal(settingValue(defs.on, false), false); assert.equal(validSetting(defs.count, 3), false);
   assert.equal(validSetting(defs.defense, 0.3), true);
   const chosen = settingsSelection(['settings-test'], [], { id: 'settings-test', settings: { on: false, count: 4, defense: 0.3, choice: 2, undeclared: 'dropped' } });
-  assert.deepEqual(lobby.setPlugins(host, { plugins: chosen }), { ok: true });
+  assert.deepEqual(await lobby.setPlugins(host, { plugins: chosen }), { ok: true });
   assert.equal(contents.dataOf(room.content.cs).bonds.deputShip.bb.base_def, 0.3);
   assert.deepEqual(room.content.plugins[0].settings, { on: false, count: 4, defense: 0.3, choice: 2 });
   assert.deepEqual(guest.messages.at(-1).content, host.messages.at(-1).content);
   const again = settingsSelection(['settings-test'], room.content.plugins);
   assert.equal(again[0].settings.defense, 0.3, 'toggle/reapply preserves values');
-  lobby.setPlugins(host, { plugins: [{ id: 'settings-test', settings: { count: 3, defense: 5 } }] });
+  await lobby.setPlugins(host, { plugins: [{ id: 'settings-test', settings: { count: 3, defense: 5 } }] });
   assert.deepEqual(room.content.plugins[0].settings, { on: true, count: 2, defense: 0.1, choice: 'one' });
-  assert.equal(lobby.setPlugins(guest, { plugins: [] }).error, 'NOT_HOST');
-  lobby.setPlugins(host, { plugins: [] }); assert.equal(JSON.stringify(room.content), vanilla);
-  const empty = buildContentSet({ registry: f.registry, ids: [] });
+  assert.equal((await lobby.setPlugins(guest, { plugins: [] })).error, 'NOT_HOST');
+  await lobby.setPlugins(host, { plugins: [] }); assert.equal(JSON.stringify(room.content), vanilla);
+  const empty = await buildContentSet({ registry: f.registry, ids: [] });
   assert.equal(empty.cs, f.base.cs);
   assert.ok(contentSetFiles(empty).get('index.json').body.equals(contentSetFiles(f.base).get('index.json').body));
 });
 
-test('content disk edits notify only the host once per held set, including during a match; watcher sees equal-length edits', t => {
-  const f = setup(t); const { lobby, host, guest, room, registry, dir, contents } = f;
-  lobby.setPlugins(host, { plugins: [{ id: 'settings-test' }] });
+test('content disk edits notify only the host once per held set, including during a match; watcher sees equal-length edits', async t => {
+  const f = await setup(t); const { lobby, host, guest, room, registry, dir, contents } = f;
+  await lobby.setPlugins(host, { plugins: [{ id: 'settings-test' }] });
   const old = room.content.cs;
   host.messages.length = 0; guest.messages.length = 0;
   const before = pluginStates(registry);
@@ -70,7 +70,7 @@ test('content disk edits notify only the host once per held set, including durin
   assert.equal(host.messages.filter(m => m.t === 'm.toast').length, 1);
   assert.equal(guest.messages.filter(m => m.t === 'm.toast').length, 0);
   assert.equal(room.content.cs, old); assert.equal(contents.dataOf(old).bonds.deputShip.bb.base_def, 0.1);
-  lobby.setPlugins(host, { plugins: settingsSelection(['settings-test'], room.content.plugins) });
+  await lobby.setPlugins(host, { plugins: settingsSelection(['settings-test'], room.content.plugins) });
   assert.notEqual(room.content.cs, old);
   room.match = { dispose() {} };
   host.messages.length = 0;
@@ -96,9 +96,9 @@ test('content hot reload debounces source events, ignores sidecars, and notices 
   await new Promise(r => setTimeout(r, 40)); assert.deepEqual(seen, [['watched-data']]);
 });
 
-test('visual and content notices use independent keys, and deferred names are merged', t => {
-  const { lobby, host, guest, room } = setup(t);
-  lobby.setPlugins(host, { plugins: [{ id: 'settings-test' }] });
+test('visual and content notices use independent keys, and deferred names are merged', async t => {
+  const { lobby, host, guest, room } = await setup(t);
+  await lobby.setPlugins(host, { plugins: [{ id: 'settings-test' }] });
   room.content = { ...room.content, vs: 'v'.repeat(64) };
   host.messages.length = 0; guest.messages.length = 0;
   for (const kind of ['visual', 'content']) {

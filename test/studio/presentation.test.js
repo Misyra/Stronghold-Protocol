@@ -40,7 +40,7 @@ function make(f, template, options = {}, id = `look-${template}`) {
   return { id, dir, made, files, author: createAuthoring({ files, dataDir: path.resolve('data') }) };
 }
 
-for (const template of ['theme', 'notices', 'fx', 'skins']) test(`${template}: strict CLI check, visual/content composition and form JSON round trip`, t => {
+for (const template of ['theme', 'notices', 'fx', 'skins']) test(`${template}: strict CLI check, visual/content composition and form JSON round trip`, async t => {
   const f = fixture(t), m = make(f, template);
   const run = spawnSync(process.execPath, ['tools/plugin.mjs', 'check', m.dir, '--strict'], { encoding: 'utf8', timeout: 60000 });
   assert.equal(run.status, 0, run.stdout + run.stderr);
@@ -56,7 +56,7 @@ for (const template of ['theme', 'notices', 'fx', 'skins']) test(`${template}: s
   const check = checkPluginFolder(m.dir);
   assert.deepEqual(check.problems, []); assert.deepEqual(check.warnings, []);
   f.registry.rescan();
-  if (m.made.manifest.scope?.includes('room') || !m.made.manifest.scope) assert.deepEqual(buildContentSet({ registry: f.registry, ids: [m.id] }).problems, []);
+  if (m.made.manifest.scope?.includes('room') || !m.made.manifest.scope) assert.deepEqual((await buildContentSet({ registry: f.registry, ids: [m.id] })).problems, []);
   else assert.ok(f.registry.pluginIndex().plugins.some(p => p.id === m.id && p.status === 'loaded'), 'personal presentations compose in the catalogue');
   const preview = createPreviews({ vanilla: () => null }).preview(m.id, m.dir);
   if (template === 'skins') assert.ok(preview.ops.some(op => op.at.at(-1) === 'name' && op.value === 'Winter'));

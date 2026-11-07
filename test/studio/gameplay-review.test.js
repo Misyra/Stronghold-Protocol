@@ -113,10 +113,10 @@ test('review: final item params use strings within a buff and the first occurren
   assert.deepEqual(JSON.parse(made.files['data/item.json']).entries[0].value.params, { first: 1, shared: 'text', last: 3 });
 });
 
-test('review: edited item buffs rebuild first-occurrence params and grant the edited layers on equip', t => {
+test('review: edited item buffs rebuild first-occurrence params and grant the edited layers on equip', async t => {
   const source = data.items.chess_item_1_04_e_a;
   const f = setup(t, 'item', { base: source.id, paired: false, normal: { buffs: source.buffs.map(b => ({ ...b, bb: { ...b.bb, layer: 1 } })) } });
-  f.registry.rescan(); const set = buildContentSet({ registry: f.registry, ids: [f.id] });
+  f.registry.rescan(); const set = await buildContentSet({ registry: f.registry, ids: [f.id] });
   assert.deepEqual(set.problems, []);
   const id = 'item_x_review_item_a'; assert.equal(set.data.items[id].params.layer, 1);
   const original = getData(); setData(set.data); t.after(() => setData(original));
@@ -132,10 +132,10 @@ test('review: edited item buffs rebuild first-occurrence params and grant the ed
   for (const bid of rec.bonds) assert.equal(ps.layers[bid], 1);
 });
 
-for (const base of ['chess_item_6_09_e_a', 'chess_item_6_01_m']) test(`review: inherited item ${base} validates and composes`, t => {
+for (const base of ['chess_item_6_09_e_a', 'chess_item_6_01_m']) test(`review: inherited item ${base} validates and composes`, async t => {
   const f = setup(t, 'item', { base });
   assert.equal(f.author.validateDraft(f.draft({})).ok, true);
-  f.registry.rescan(); const set = buildContentSet({ registry: f.registry, ids: [f.id] });
+  f.registry.rescan(); const set = await buildContentSet({ registry: f.registry, ids: [f.id] });
   assert.deepEqual(set.problems, []);
   const item = set.data.items.item_x_review_item_a;
   assert.equal(item.itemType, data.items[base].itemType); assert.equal(item.effectRef, base);

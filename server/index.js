@@ -57,6 +57,7 @@ import { createVisualSets } from './plugins/visualSet.js';
 import { createContentSets } from './plugins/contentSets.js';
 import { createPluginPolicy } from './plugins/policy.js';
 import { createRoomSets } from './plugins/roomSets.js';
+import { warmupScriptProbes } from './plugins/scriptPreflight.js';
 import { createMatchHosts } from './match/host/index.js';
 import { createVersionSets, preloadVersionFiles } from './versions.js';
 import { versionById } from '../shared/versions.js';
@@ -194,6 +195,13 @@ export async function startServer(opts = {}) {
   const scriptMode = process.env.SP_PLUGIN_SCRIPTS;
   const packs = createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log, scriptHost:host, scriptMode });
   packs.refresh(true);
+  // The script probes warm in the background (server/plugins/scriptPreflight.js warmupScriptProbes): the first room
+  // that builds a set with a script plugin then finds the report cached instead of paying the probe child on the
+  // message path. Never awaited — boot does not wait for a child — and every failure is caught inside. Re-warmed once
+  // the script host is bound (a trust-gated script plugin only loads then) and after every rescan (an install, a
+  // changed folder): the per-key cache and the in-flight dedup make a repeat free.
+  warmupScriptProbes(packs, log);
+  packs.onScan(() => warmupScriptProbes(packs, log));
   const data = await dataReady;
   const content = await contentReady;
   log.info(`[content] vanilla ${content.cs.slice(0, 16)} (${Object.keys(content.simFiles).length} code files, ${Object.keys(content.data).length} data files)`);
@@ -390,6 +398,7 @@ export async function startServer(opts = {}) {
     const actual = server.address();
     const scriptHost = actual && typeof actual === 'object' ? actual.address : '';
     packs.setScriptHost(scriptHost);
+    warmupScriptProbes(packs, log); // a script plugin the bind just admitted (trust gate): probed off the message path now
     const testGate = lobby.setTestHost(scriptHost);
     if (testGate.warn) log.warn(`[test-mode] ${testGate.warn}`);
     else if (testGate.enabled) log.info('[test-mode] test rooms enabled');

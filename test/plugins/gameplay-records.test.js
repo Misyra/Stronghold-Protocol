@@ -29,10 +29,10 @@ function items() {
 function entries(mode) {
   return [bond(mode), { file: 'effects', id: 'effect_x_data_demo_hook', value: { name: 'Hook', buffs: [], params: {} } }, ...items()];
 }
-function compose(t, mode, dsl) {
+async function compose(t, mode, dsl) {
   const f = fixture(t), op = guard(); op.chess.bonds = [bondId]; op.kit = dsl ? { dsl } : 'generic';
   f.put('data-demo', { data: ['r.json'], operators: ['o.json'], ...(dsl ? { permissions: ['data.add', 'dsl'] } : {}) }, { 'r.json': { records: 1, entries: entries(mode) }, 'o.json': op });
-  const set = buildContentSet({ registry: f.registry, ids: ['data-demo'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['data-demo'] });
   assert.deepEqual(set.problems, []); return { ...set, registry: f.registry };
 }
 
@@ -49,8 +49,8 @@ test('bonds and complete item pairs validate atomically; legacy expansion stays 
   assert.ok(expandGameplayRecords(base, [bad], opts).problems.length);
 });
 
-for (const mode of ['BOARD', 'BOARD_AND_DECK', 'BOARD_ALL_CHESS']) test(`new bond ${mode} uses existing counting, layers, order and membership`, t => {
-  const set = compose(t, mode), gd = new GameData(set.data, 'mode_single_normal');
+for (const mode of ['BOARD', 'BOARD_AND_DECK', 'BOARD_ALL_CHESS']) test(`new bond ${mode} uses existing counting, layers, order and membership`, async t => {
+  const set = await compose(t, mode), gd = new GameData(set.data, 'mode_single_normal');
   const id = 'chess_x_data_demo_guard_a', piece = { kind: 'chess', id: mode === 'BOARD_ALL_CHESS' ? gd.chess(id).goldenId : id };
   const ps = { board: new Map(mode === 'BOARD_AND_DECK' ? [] : [['10,4', piece]]), hand: mode === 'BOARD_AND_DECK' ? [piece] : [], layers: { [bondId]: 7 } };
   const states = computeBonds(gd, ps);
@@ -60,8 +60,8 @@ for (const mode of ['BOARD', 'BOARD_AND_DECK', 'BOARD_ALL_CHESS']) test(`new bon
   assert.ok(gd.shopItemsByTier[2].includes(itemId)); assert.ok(!gd.shopItemsByTier[2].includes(eliteId));
 });
 
-test('modded match activates the new bond, dispatches guarded prep actions, and item tiers add 25/50 ASPD', t => {
-  const set = compose(t), reg = createRegistry();
+test('modded match activates the new bond, dispatches guarded prep actions, and item tiers add 25/50 ASPD', async t => {
+  const set = await compose(t), reg = createRegistry();
   const spec = { dsl: 1, meta: { key: 'effect:data-demo:team', on: [{ when: 'roundStart', if: { bondActive: bondId }, do: [
     { funds: { amount: 2 } }, { layers: { bond: bondId, amount: 3 } }, { gainItem: { item: itemId } },
   ] }] } };
@@ -84,15 +84,15 @@ test('modded match activates the new bond, dispatches guarded prep actions, and 
   }
 });
 
-test('new bonds cannot claim another plugin namespace at composition', t => {
+test('new bonds cannot claim another plugin namespace at composition', async t => {
   const f = fixture(t), b = bond(); b.id = 'bond_x_someone_else_team';
   f.put('data-demo', { data: ['r.json'] }, { 'r.json': { records: 1, entries: [b] } });
-  const set = buildContentSet({ registry: f.registry, ids: ['data-demo'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['data-demo'] });
   assert.ok(set.problems.some(p => p.code === 'PLUGIN_RECORD_ID'));
 });
 
-test('member DSL talents apply battle buffs only while the plugin bond is active', t => {
-  const set = compose(t, 'BOARD', { dsl: 1, talents: [{ when: 'deploy', if: { bondActive: bondId }, do: [
+test('member DSL talents apply battle buffs only while the plugin bond is active', async t => {
+  const set = await compose(t, 'BOARD', { dsl: 1, talents: [{ when: 'deploy', if: { bondActive: bondId }, do: [
     { buff: { target: 'self', key: 'team-bonus', mods: { atkFlat: 17 } } },
   ] }] });
   const id = 'chess_x_data_demo_guard_a';
@@ -102,13 +102,13 @@ test('member DSL talents apply battle buffs only while the plugin bond is active
   }
 });
 
-test('DIY token references receive independent, complete variants without altering the shop record', t => {
+test('DIY token references receive independent, complete variants without altering the shop record', async t => {
   const f = fixture(t), op = guard(); op.as = 'both'; op.kit = 'generic';
   const tokenId = 'token_x_data_demo_helper', source = structuredClone(Object.values(base.tokens)[0]);
   source.tokenId = tokenId;
   for (const form of Object.values(op.forms)) { form.tokens = [tokenId]; form.tags = ['DPS']; }
   f.put('data-demo', { data: ['r.json'], operators: ['o.json'] }, { 'r.json': { records: 1, entries: [{ file: 'tokens', id: tokenId, value: source }] }, 'o.json': op });
-  const set = buildContentSet({ registry: f.registry, ids: ['data-demo'] }); assert.deepEqual(set.problems, []);
+  const set = await buildContentSet({ registry: f.registry, ids: ['data-demo'] }); assert.deepEqual(set.problems, []);
   assert.ok(new GameData(set.data, 'mode_single_normal').token(tokenId));
   assert.deepEqual(set.data.chess.chess_x_data_demo_guard_a.tokens, [tokenId]);
   assert.deepEqual(set.data.chess.chess_x_data_demo_guard_a.tags, ['DPS']);
@@ -118,7 +118,7 @@ test('DIY token references receive independent, complete variants without alteri
   }
 });
 
-test('DIY token aliases select the matching normal/elite chess variant', t => {
+test('DIY token aliases select the matching normal/elite chess variant', async t => {
   const f = fixture(t), op = guard(); op.kit = 'generic';
   const tokenId = 'token_x_data_demo_helper', source = structuredClone(Object.values(base.tokens)[0]);
   source.tokenId = tokenId;
@@ -132,7 +132,7 @@ test('DIY token aliases select the matching normal/elite chess variant', t => {
   f.put('data-demo', { data: ['r.json'], operators: ['o.json'] }, {
     'r.json': { records: 1, entries: [{ file: 'tokens', id: tokenId, value: source }] }, 'o.json': op,
   });
-  const set = buildContentSet({ registry: f.registry, ids: ['data-demo'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['data-demo'] });
   assert.deepEqual(set.problems, []);
   assert.deepEqual(set.data.tokens[tokenId], source);
   for (const [status, form] of Object.entries(set.data.backups.units[op.charId].forms)) {

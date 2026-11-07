@@ -57,7 +57,7 @@ test('an unchanged online room survives a long idle period, while real disconnec
   t.after(() => lobby.shutdown());
   const online = registry.create('online');
   online.connected = true; online.disconnectedAt = null;
-  lobby.create(online, { mode: 'coop', difficulty: 'NORMAL' });
+  await lobby.create(online, { mode: 'coop', difficulty: 'NORMAL' });
   const at = Date.now();
   const dropped = registry.create('dropped');
   dropped.disconnectedAt = at;
@@ -72,7 +72,7 @@ test('an unchanged online room survives a long idle period, while real disconnec
     const fresh = new SessionRegistry();
     const restored = new Lobby({ registry: fresh, log, MatchClass: StubMatch, getData: () => ({}) });
     try {
-      restoreServer({ doc, registry: fresh, lobby: restored, now, log });
+      await restoreServer({ doc, registry: fresh, lobby: restored, now, log });
       assert.equal(!!fresh.byToken(online.token), expectedOnline);
       assert.equal(!!restored.getRoom(online.roomCode), expectedOnline, 'seat and room survive with the identity');
       assert.equal(fresh.byToken(dropped.token), null, 'heartbeat never extends a genuinely disconnected identity');
@@ -257,7 +257,7 @@ test('steady persistence never re-encodes large terminal metadata; replacement a
   const lobby = new Lobby({ registry, log, MatchClass: StubMatch, getData: () => ({}) });
   t.after(() => lobby.shutdown());
   const session = registry.create('Alice');
-  lobby.create(session, { mode: 'solo', difficulty: 'NORMAL' });
+  await lobby.create(session, { mode: 'solo', difficulty: 'NORMAL' });
   const room = lobby.getRoom(session.roomCode);
   let encodes = 0;
   room.lastSummary = { toJSON() { encodes++; return { result: 'x'.repeat(1024 * 1024) }; } };

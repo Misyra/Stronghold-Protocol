@@ -90,14 +90,14 @@ test('a prep DSL spec rewrites round-1 income inside the match host; a set with 
     plainbond: [{ data: ['p.json'] }, { 'p.json': bondPatch(0.33) }],
   });
   const contents = setsOf(dir);
-  const gold = contents.resolve(['roundgold']);
+  const gold = await contents.resolve(['roundgold']);
   assert.ok(gold.ok, JSON.stringify(gold));
   assert.equal(gold.set.data.dsl.roundgold[0].meta.key, 'effect:roundgold:income');
   const dslFile = gold.set.served.get('data/dsl.json');
   assert.ok(dslFile, 'prep specs are a served data file');
   assert.match(dslFile.body.toString('utf8'), /effect:roundgold:income/);
   assert.equal(typeof gold.set.hashInput.data.dsl, 'string', 'data/dsl.json is part of cs');
-  const plain = contents.resolve(['plainbond']);
+  const plain = await contents.resolve(['plainbond']);
   assert.ok(plain.ok, JSON.stringify(plain));
   assert.equal(Object.hasOwn(plain.set.data, 'dsl'), false);
   assert.equal(plain.set.served.get('data/dsl.json'), undefined);
@@ -111,12 +111,12 @@ test('a prep DSL spec rewrites round-1 income inside the match host; a set with 
   } finally { hosts.close(); }
 });
 
-test('a prep key that is not this plugin id is refused before a match host boots', () => {
+test('a prep key that is not this plugin id is refused before a match host boots', async () => {
   const dir = pluginsDir({
     badkey: [{ permissions: ['dsl'], dsl: ['dsl/income.json'] }, { 'dsl/income.json': incomeSpec('badkey', 'effect:other:income') }],
   });
   const contents = setsOf(dir);
-  const r = contents.resolve(['badkey']);
+  const r = await contents.resolve(['badkey']);
   assert.notEqual(r.ok, true);
   assert.equal(r.set, undefined);
   assert.equal(r.error, 'PLUGIN_BLOCKED');
@@ -128,7 +128,7 @@ test('a hashed prep spec that skipped the builder fails host boot', { timeout: 3
     badkey: [{ permissions: ['dsl'], dsl: ['dsl/income.json'] }, { 'dsl/income.json': incomeSpec('badkey') }],
   });
   const contents = setsOf(dir);
-  const r = contents.resolve(['badkey']);
+  const r = await contents.resolve(['badkey']);
   assert.ok(r.ok, JSON.stringify(r));
   contents.hold(r.set.cs);
   const files = contents.dataBytes(r.set.cs);

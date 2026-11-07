@@ -73,8 +73,8 @@ process.once('message', async ({ dirs, request, allowedScripts, temporary, heapM
       reply({ ok: false, issues: problems?.length ? problems : [issue({ code: 'PLUGIN_UNKNOWN' })] }); return;
     }
     if (p.class === 'ui') throw new StudioError('PLUGIN_STUDIO_TRIAL_SCENARIO', 400);
-    const base = buildContentSet({ registry: view, ids: [] });
-    const set = buildContentSet({ registry: view, ids: [{ id: request.id, settings: request.settings }] });
+    const base = await buildContentSet({ registry: view, ids: [] });
+    const set = await buildContentSet({ registry: view, ids: [{ id: request.id, settings: request.settings }] });
     if (!set.cs) { reply({ ok: false, issues: set.problems.map(issue) }); return; }
     const newOp = Object.values(set.data.chess).find(r => !r.isGolden && !base.data.chess[r.chessId]);
     const wizard = request.draft || authored.read(request.id);

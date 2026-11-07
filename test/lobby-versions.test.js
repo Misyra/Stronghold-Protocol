@@ -91,7 +91,7 @@ const refused = (r, code, detail) => {
   if (detail) assert.equal(r.detail, detail);
 };
 
-test('room.create frees the sole-held old room set for default plugins at maxSets (without a socket)', () => {
+test('room.create frees the sole-held old room set for default plugins at maxSets (without a socket)', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-version-content-limit-'));
   let contents;
   let h;
@@ -108,11 +108,11 @@ test('room.create frees the sole-held old room set for default plugins at maxSet
     const plugins = createRoomSets({ registry, visual: null, contents, policy });
     h = harness({ plugins });
     const p = h.player('Host');
-    ok(h.lobby.create(p, { mode: 'solo' }));
-    ok(h.lobby.setPlugins(p, { plugins: [{ id: 'two' }] }));
+    ok(await h.lobby.create(p, { mode: 'solo' }));
+    ok(await h.lobby.setPlugins(p, { plugins: [{ id: 'two' }] }));
     const oldCode = p.roomCode;
     assert.equal(contents.inUse(), 1);
-    ok(h.lobby.create(p, { mode: 'solo' }));
+    ok(await h.lobby.create(p, { mode: 'solo' }));
     assert.equal(h.lobby.getRoom(oldCode), null);
     assert.deepEqual(h.last(p).content.plugins.map((x) => x.id), ['one']);
     assert.equal(h.last(p).content.vanilla, false);
@@ -125,9 +125,9 @@ test('room.create frees the sole-held old room set for default plugins at maxSet
 });
 
 /** A co-op room with `n` humans (the first one the host). */
-function coop(h, n, extra = {}) {
+async function coop(h, n, extra = {}) {
   const people = Array.from({ length: n }, (_, i) => h.player(`P${i}`));
-  ok(h.lobby.create(people[0], { mode: 'coop', difficulty: 'NORMAL', ...extra }));
+  ok(await h.lobby.create(people[0], { mode: 'coop', difficulty: 'NORMAL', ...extra }));
   const code = people[0].roomCode;
   for (const p of people.slice(1)) ok(h.lobby.join(p, { code }));
   return { people, room: h.lobby.getRoom(code) };
@@ -147,16 +147,16 @@ test('protocol: room.create version and the three vote messages', () => {
   assert.notEqual(validateC2S({ t: 'room.cancelVersionVote', voteId: 'x' }), null);
 });
 
-test('a lone human switches at once — solo, and co-op with AI teammates: version, cs, seats loading, replay gone', () => {
+test('a lone human switches at once — solo, and co-op with AI teammates: version, cs, seats loading, replay gone', async () => {
   for (const mode of ['solo', 'coop']) {
     const h = harness();
     const p = h.player('Solo');
-    ok(h.lobby.create(p, { mode, difficulty: 'NORMAL' }));
+    ok(await h.lobby.create(p, { mode, difficulty: 'NORMAL' }));
     const room = h.lobby.getRoom(p.roomCode);
     if (mode === 'coop') { ok(h.lobby.addBot(p)); ok(h.lobby.addBot(p)); }
     room.replay = { publicFrame: null, frames: new Map([[p.playerId, '{}']]), pending: new Set([p.playerId]) };
     h.clear();
-    ok(h.lobby.proposeVersion(p, { version: 'act1autochess' }));
+    ok(await h.lobby.proposeVersion(p, { version: 'act1autochess' }));
     assert.equal(room.version, 'act1autochess');
     assert.equal(room.versionVote, null);
     assert.equal(room.replay, null);
@@ -168,7 +168,7 @@ test('a lone human switches at once — solo, and co-op with AI teammates: versi
     for (const s of st.seats.filter((x) => x && x.isBot)) assert.equal(s.content, undefined, 'AI seats load nothing');
     // and back to 第二期下半: exactly the default shape again
     h.clock.t += 10_000;
-    ok(h.lobby.proposeVersion(p, { version: DEFAULT_VERSION }));
+    ok(await h.lobby.proposeVersion(p, { version: DEFAULT_VERSION }));
     const back = h.last(p);
     assert.equal(Object.hasOwn(back, 'version'), false);
     assert.deepEqual(back.content, { cs: VANILLA, vanilla: true, plugins: [] });
@@ -177,32 +177,32 @@ test('a lone human switches at once — solo, and co-op with AI teammates: versi
   }
 });
 
-test('unanimous agreement switches; one decline cancels with a toast to all, then the 5 s guard', () => {
+test('unanimous agreement switches; one decline cancels with a toast to all, then the 5 s guard', async () => {
   const h = harness();
-  const { people: [a, b, c], room } = coop(h, 3);
+  const { people: [a, b, c], room } = await coop(h, 3);
   ok(h.lobby.addBot(a));
   h.clear();
-  ok(h.lobby.proposeVersion(a, { version: 'act2autochess@V2_1' }));
+  ok(await h.lobby.proposeVersion(a, { version: 'act2autochess@V2_1' }));
   const v = h.last(c).versionVote;
   assert.deepEqual(v, { id: 1, proposerId: a.playerId, version: 'act2autochess@V2_1', voters: [a.playerId, b.playerId, c.playerId], agreed: [a.playerId], remainingMs: 60_000 });
   assert.equal(room.version, DEFAULT_VERSION, 'nothing switched yet');
-  refused(h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.VERSION_VOTE);
+  refused(await h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.VERSION_VOTE);
   h.clock.t += 1500;
-  ok(h.lobby.versionVote(b, { voteId: 1, agree: true }));
+  ok(await h.lobby.versionVote(b, { voteId: 1, agree: true }));
   assert.deepEqual(h.last(a).versionVote.agreed, [a.playerId, b.playerId]);
   assert.equal(h.last(a).versionVote.remainingMs, 58_500, 'a duration by the lobby clock');
-  ok(h.lobby.versionVote(b, { voteId: 1, agree: true }), 'agreeing twice changes nothing');
-  ok(h.lobby.versionVote(c, { voteId: 1, agree: true }));
+  ok(await h.lobby.versionVote(b, { voteId: 1, agree: true }), 'agreeing twice changes nothing');
+  ok(await h.lobby.versionVote(c, { voteId: 1, agree: true }));
   assert.equal(room.version, 'act2autochess@V2_1');
   assert.equal(h.last(b).versionVote, undefined);
   assert.equal(h.last(b).version, 'act2autochess@V2_1');
 
   // a decline: cancelled, every member told, 5 s before the next proposal
   h.clock.t += 1000;
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
   assert.equal(room.versionVote.id, 2);
   h.clear();
-  ok(h.lobby.versionVote(c, { voteId: 2, agree: false }));
+  ok(await h.lobby.versionVote(c, { voteId: 2, agree: false }));
   assert.equal(room.versionVote, null);
   assert.equal(room.version, 'act2autochess@V2_1');
   for (const p of [a, b, c]) {
@@ -212,21 +212,21 @@ test('unanimous agreement switches; one decline cancels with a toast to all, the
     assert.deepEqual(toast.params, { name: 'P2' });
   }
   h.clock.t += 4000;
-  refused(h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.RATE);
+  refused(await h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.RATE);
   h.clock.t += 1001;
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
   assert.equal(room.versionVote.id, 3);
   h.lobby.shutdown();
 });
 
-test('the host cancels (told to the others); a stale or foreign vote id is BAD_TARGET; who may answer', () => {
+test('the host cancels (told to the others); a stale or foreign vote id is BAD_TARGET; who may answer', async () => {
   const h = harness();
-  const { people: [a, b], room } = coop(h, 2);
+  const { people: [a, b], room } = await coop(h, 2);
   const spy = h.player('Spy');
   ok(h.lobby.spectate(spy, { code: room.code }));
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
-  refused(h.lobby.versionVote(b, { voteId: 99, agree: true }), ERR.BAD_TARGET, 'vote changed');
-  refused(h.lobby.versionVote(spy, { voteId: 1, agree: true }), ERR.SPECTATOR);
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  refused(await h.lobby.versionVote(b, { voteId: 99, agree: true }), ERR.BAD_TARGET, 'vote changed');
+  refused(await h.lobby.versionVote(spy, { voteId: 1, agree: true }), ERR.SPECTATOR);
   refused(h.lobby.cancelVersionVote(b, { voteId: 1 }), ERR.NOT_HOST);
   refused(h.lobby.cancelVersionVote(spy, { voteId: 1 }), ERR.SPECTATOR);
   refused(h.lobby.cancelVersionVote(a, { voteId: 7 }), ERR.BAD_TARGET);
@@ -237,35 +237,35 @@ test('the host cancels (told to the others); a stale or foreign vote id is BAD_T
   assert.equal(h.toasts(b)[0].msgid, '创建者取消了切换版本投票');
   assert.equal(h.toasts(b)[0].kind, 'info');
   assert.equal(h.toasts(spy)[0].msgid, '创建者取消了切换版本投票');
-  refused(h.lobby.versionVote(b, { voteId: 1, agree: true }), ERR.WRONG_PHASE);
+  refused(await h.lobby.versionVote(b, { voteId: 1, agree: true }), ERR.WRONG_PHASE);
   refused(h.lobby.cancelVersionVote(a, { voteId: 1 }), ERR.WRONG_PHASE);
   // no guard after a cancel; but the 300 ms debounce holds
-  refused(h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.RATE);
+  refused(await h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.RATE);
   h.clock.t += 300;
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
   // a voter that joined later is not one
   ok(h.lobby.cancelVersionVote(a, { voteId: 2 }));
   h.lobby.shutdown();
 });
 
-test('a version whose data failed to load is refused by room.create and room.proposeVersion (VERSION_UNSUPPORTED)', () => {
+test('a version whose data failed to load is refused by room.create and room.proposeVersion (VERSION_UNSUPPORTED)', async () => {
   const stub = versionStub({ enabled: ['act2autochess', 'act1autochess'] });
   stub.available = (id) => id === DEFAULT_VERSION; // server/versions.js available after act1autochess's load failed
   const h = harness({ versions: stub });
-  refused(h.lobby.create(h.player('Solo'), { mode: 'solo', version: 'act1autochess' }), ERR.VERSION_UNSUPPORTED, 'the data of this version is not available');
-  const { people: [a], room } = coop(h, 2);
-  refused(h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.VERSION_UNSUPPORTED, 'the data of this version is not available');
+  refused(await h.lobby.create(h.player('Solo'), { mode: 'solo', version: 'act1autochess' }), ERR.VERSION_UNSUPPORTED, 'the data of this version is not available');
+  const { people: [a], room } = await coop(h, 2);
+  refused(await h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.VERSION_UNSUPPORTED, 'the data of this version is not available');
   assert.equal(room.versionVote, null, 'no vote opened');
   assert.equal(room.version, DEFAULT_VERSION);
   h.lobby.shutdown();
 });
 
-test('a configured default whose data failed to load: rooms and settings fall back (第二期下半, else the first that loads)', () => {
+test('a configured default whose data failed to load: rooms and settings fall back (第二期下半, else the first that loads)', async () => {
   const stub = versionStub({ enabled: ['act2autochess', 'act1autochess'], defaultId: 'act1autochess' });
   stub.available = (id) => id === DEFAULT_VERSION;
   const h = harness({ versions: stub });
   const solo = h.player('Solo');
-  ok(h.lobby.create(solo, { mode: 'solo' }));
+  ok(await h.lobby.create(solo, { mode: 'solo' }));
   assert.equal(h.lobby.roomOf(solo).version, DEFAULT_VERSION, 'not VERSION_UNSUPPORTED for a room created without a version');
   assert.equal(h.lobby.csOf(null), VANILLA);
   assert.equal(h.lobby.dataFor(null), getData());
@@ -274,36 +274,36 @@ test('a configured default whose data failed to load: rooms and settings fall ba
   other.available = (id) => id === 'act2autochess@V2_1';
   const h2 = harness({ versions: other });
   const p = h2.player('Solo');
-  ok(h2.lobby.create(p, { mode: 'solo' }));
+  ok(await h2.lobby.create(p, { mode: 'solo' }));
   assert.equal(h2.lobby.roomOf(p).version, 'act2autochess@V2_1');
   h2.lobby.shutdown();
 });
 
-test('refusals of room.proposeVersion, in their order', () => {
+test('refusals of room.proposeVersion, in their order', async () => {
   const h = harness({ versions: versionStub({ enabled: ['act2autochess', 'act1autochess', 'act2autochess@V2_1'], roomModes: { 'act2autochess@V2_1': ['solo'] } }) });
   const outsider = h.player('Out');
-  refused(h.lobby.proposeVersion(outsider, { version: 'act1autochess' }), ERR.NOT_IN_ROOM);
-  const { people: [a, b], room } = coop(h, 2);
+  refused(await h.lobby.proposeVersion(outsider, { version: 'act1autochess' }), ERR.NOT_IN_ROOM);
+  const { people: [a, b], room } = await coop(h, 2);
   const spy = h.player('Spy');
   ok(h.lobby.spectate(spy, { code: room.code }));
-  refused(h.lobby.proposeVersion(spy, { version: 'act1autochess' }), ERR.SPECTATOR);
-  refused(h.lobby.proposeVersion(b, { version: 'act1autochess' }), ERR.NOT_HOST);
+  refused(await h.lobby.proposeVersion(spy, { version: 'act1autochess' }), ERR.SPECTATOR);
+  refused(await h.lobby.proposeVersion(b, { version: 'act1autochess' }), ERR.NOT_HOST);
   room.match = { start() {} };
-  refused(h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.ROOM_STARTED);
+  refused(await h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.ROOM_STARTED);
   room.match = null;
-  refused(h.lobby.proposeVersion(a, { version: 'act1autochess@V1_1' }), ERR.VERSION_UNKNOWN, undefined);
-  refused(h.lobby.proposeVersion(a, { version: 'act9autochess' }), ERR.VERSION_UNKNOWN);
-  refused(h.lobby.proposeVersion(a, { version: 'act2autochess@V2_1' }), ERR.VERSION_UNSUPPORTED);
-  refused(h.lobby.proposeVersion(a, { version: DEFAULT_VERSION }), ERR.ALREADY);
+  refused(await h.lobby.proposeVersion(a, { version: 'act1autochess@V1_1' }), ERR.VERSION_UNKNOWN, undefined);
+  refused(await h.lobby.proposeVersion(a, { version: 'act9autochess' }), ERR.VERSION_UNKNOWN);
+  refused(await h.lobby.proposeVersion(a, { version: 'act2autochess@V2_1' }), ERR.VERSION_UNSUPPORTED);
+  refused(await h.lobby.proposeVersion(a, { version: DEFAULT_VERSION }), ERR.ALREADY);
   const bs = room.seatOf(b.playerId);
   bs.connected = false;
-  refused(h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.NOT_READY);
+  refused(await h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.NOT_READY);
   bs.connected = true;
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
   h.lobby.shutdown();
 });
 
-test('what voids a vote (toast to every member): a join, a spectator sitting down, a leave, a kick, the host leaving (its freed seat), a voter dropping', () => {
+test('what voids a vote (toast to every member): a join, a spectator sitting down, a leave, a kick, the host leaving (its freed seat), a voter dropping', async () => {
   const cases = {
     join: (h, ctx) => { ctx.late = h.player('Late'); ok(h.lobby.join(ctx.late, { code: ctx.room.code })); },
     sit: (h, { room, spy }) => ok(h.lobby.join(spy, { code: room.code })),
@@ -316,10 +316,10 @@ test('what voids a vote (toast to every member): a join, a spectator sitting dow
   };
   for (const [name, act] of Object.entries(cases)) {
     const h = harness();
-    const ctx = coop(h, 3);
+    const ctx = await coop(h, 3);
     ctx.spy = h.player('Spy');
     ok(h.lobby.spectate(ctx.spy, { code: ctx.room.code }));
-    ok(h.lobby.proposeVersion(ctx.people[0], { version: 'act1autochess' }));
+    ok(await h.lobby.proposeVersion(ctx.people[0], { version: 'act1autochess' }));
     h.clear();
     act(h, ctx);
     assert.equal(ctx.room.versionVote, null, name);
@@ -334,10 +334,10 @@ test('what voids a vote (toast to every member): a join, a spectator sitting dow
   }
 });
 
-test('what does not void a vote: spectators coming and going (a spectator\'s socket dropping too), AI seats added and removed', () => {
+test('what does not void a vote: spectators coming and going (a spectator\'s socket dropping too), AI seats added and removed', async () => {
   const h = harness();
-  const { people: [a], room } = coop(h, 2);
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  const { people: [a], room } = await coop(h, 2);
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
   const spy = h.player('Spy');
   ok(h.lobby.spectate(spy, { code: room.code }));
   ok(h.lobby.removeSpectator(a, { playerId: spy.playerId }));
@@ -354,85 +354,85 @@ test('what does not void a vote: spectators coming and going (a spectator\'s soc
   h.lobby.shutdown();
 });
 
-test('during a vote room.start, room.setPlugins and room.setMode answer VERSION_VOTE; room.setDifficulty still works', () => {
+test('during a vote room.start, room.setPlugins and room.setMode answer VERSION_VOTE; room.setDifficulty still works', async () => {
   const h = harness();
-  const { people: [a, b], room } = coop(h, 2);
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  const { people: [a, b], room } = await coop(h, 2);
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
   refused(h.lobby.start(a), ERR.VERSION_VOTE);
-  refused(h.lobby.setPlugins(a, { plugins: [] }), ERR.VERSION_VOTE);
+  refused(await h.lobby.setPlugins(a, { plugins: [] }), ERR.VERSION_VOTE);
   refused(h.lobby.setMode(a, { modeId: 'mode_multi_hard' }), ERR.VERSION_VOTE);
   ok(h.lobby.setDifficulty(a, { difficulty: 'HARD' }));
   assert.equal(room.difficulty, 'HARD');
-  ok(h.lobby.versionVote(b, { voteId: 1, agree: true }));
+  ok(await h.lobby.versionVote(b, { voteId: 1, agree: true }));
   assert.equal(room.version, 'act1autochess');
   h.lobby.shutdown();
 });
 
 test('the vote expires after versionVoteMs (toast, the 5 s guard); the 300 ms debounce', async () => {
   const h = harness({ options: { versionVoteMs: 40 } });
-  const { people: [a, b], room } = coop(h, 2);
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  const { people: [a, b], room } = await coop(h, 2);
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
   h.clear();
   await new Promise((r) => setTimeout(r, 120));
   assert.equal(room.versionVote, null);
   assert.equal(h.toasts(b)[0].msgid, '切换版本投票已超时，房间版本未改变');
   assert.equal(h.toasts(a)[0].msgid, '切换版本投票已超时，房间版本未改变');
-  refused(h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.RATE);
+  refused(await h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.RATE);
   h.clock.t += 5000;
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
   ok(h.lobby.cancelVersionVote(a, { voteId: 2 }));
   h.clock.t += 299;
-  refused(h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.RATE);
+  refused(await h.lobby.proposeVersion(a, { version: 'act1autochess' }), ERR.RATE);
   h.clock.t += 1;
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
   h.lobby.shutdown();
   assert.equal(room.versionVote, null, 'disposed with the room');
 });
 
-test('ABYSS → HARD on a switch and on create; a version room refuses its missing modes (BAD_TARGET)', () => {
+test('ABYSS → HARD on a switch and on create; a version room refuses its missing modes (BAD_TARGET)', async () => {
   const h = harness();
   const p = h.player('A');
-  ok(h.lobby.create(p, { mode: 'coop', difficulty: 'ABYSS' }));
+  ok(await h.lobby.create(p, { mode: 'coop', difficulty: 'ABYSS' }));
   const room = h.lobby.getRoom(p.roomCode);
-  ok(h.lobby.proposeVersion(p, { version: 'act1autochess@V1_1' }));
+  ok(await h.lobby.proposeVersion(p, { version: 'act1autochess@V1_1' }));
   assert.equal(room.difficulty, 'HARD');
   refused(h.lobby.setDifficulty(p, { difficulty: 'ABYSS' }), ERR.BAD_TARGET, 'not a mode of this version');
   refused(h.lobby.setMode(p, { modeId: 'mode_multi_abyss' }), ERR.BAD_TARGET, 'not a mode of this version');
   ok(h.lobby.setMode(p, { modeId: 'mode_multi_funny' }));
   assert.equal(room.difficulty, 'FUNNY');
   const q = h.player('B');
-  ok(h.lobby.create(q, { mode: 'solo', difficulty: 'ABYSS', version: 'act2autochess@V2_1' }));
+  ok(await h.lobby.create(q, { mode: 'solo', difficulty: 'ABYSS', version: 'act2autochess@V2_1' }));
   assert.equal(h.lobby.getRoom(q.roomCode).difficulty, 'HARD');
   assert.equal(h.lobby.fallbackDifficulty('act1autochess', 'coop', 'NORMAL'), 'NORMAL');
   h.lobby.shutdown();
 });
 
-test('room.create: unknown or disabled → VERSION_UNKNOWN; a version without the room mode → VERSION_UNSUPPORTED', () => {
+test('room.create: unknown or disabled → VERSION_UNKNOWN; a version without the room mode → VERSION_UNSUPPORTED', async () => {
   const h = harness({ versions: versionStub({ enabled: ['act2autochess', 'act1autochess'], roomModes: { act1autochess: ['solo'] } }) });
   const p = h.player('A');
-  refused(h.lobby.create(p, { mode: 'coop', version: 'act1autochess@V1_1' }), ERR.VERSION_UNKNOWN);
-  refused(h.lobby.create(p, { mode: 'coop', version: 'zzz' }), ERR.VERSION_UNKNOWN);
-  refused(h.lobby.create(p, { mode: 'coop', version: 'act1autochess' }), ERR.VERSION_UNSUPPORTED);
-  ok(h.lobby.create(p, { mode: 'solo', version: 'act1autochess' }));
+  refused(await h.lobby.create(p, { mode: 'coop', version: 'act1autochess@V1_1' }), ERR.VERSION_UNKNOWN);
+  refused(await h.lobby.create(p, { mode: 'coop', version: 'zzz' }), ERR.VERSION_UNKNOWN);
+  refused(await h.lobby.create(p, { mode: 'coop', version: 'act1autochess' }), ERR.VERSION_UNSUPPORTED);
+  ok(await h.lobby.create(p, { mode: 'solo', version: 'act1autochess' }));
   assert.equal(h.last(p).version, 'act1autochess');
   // a lobby without the service knows 第二期下半 alone
   const bare = new Lobby({ registry: new SessionRegistry(), log: quiet, MatchClass: Rec, getData });
   const s = bare.registry.create('X');
   s.connected = true;
-  refused(bare.create(s, { mode: 'solo', version: 'act1autochess' }), ERR.VERSION_UNKNOWN);
-  ok(bare.create(s, { mode: 'solo', version: DEFAULT_VERSION }));
+  refused(await bare.create(s, { mode: 'solo', version: 'act1autochess' }), ERR.VERSION_UNKNOWN);
+  ok(await bare.create(s, { mode: 'solo', version: DEFAULT_VERSION }));
   bare.shutdown();
   h.lobby.shutdown();
 });
 
-test('room.create without a version: the server default; a server default ≠ act2autochess writes room.state.version', () => {
+test('room.create without a version: the server default; a server default ≠ act2autochess writes room.state.version', async () => {
   const h = harness({ versions: versionStub({ defaultId: 'act1autochess' }) });
   const p = h.player('A');
-  ok(h.lobby.create(p, { mode: 'coop', difficulty: 'NORMAL' }));
+  ok(await h.lobby.create(p, { mode: 'coop', difficulty: 'NORMAL' }));
   assert.equal(h.last(p).version, 'act1autochess');
   assert.equal(h.last(p).content.cs, CS.act1autochess);
   const q = h.player('B');
-  ok(h.lobby.create(q, { mode: 'coop', difficulty: 'NORMAL', version: DEFAULT_VERSION }));
+  ok(await h.lobby.create(q, { mode: 'coop', difficulty: 'NORMAL', version: DEFAULT_VERSION }));
   assert.equal(Object.hasOwn(h.last(q), 'version'), false);
   // settings outside a room are checked against (and stamped with) the server's default version
   const r = h.player('C');
@@ -442,7 +442,7 @@ test('room.create without a version: the server default; a server default ≠ ac
   h.lobby.shutdown();
 });
 
-test('a default room on a server with versions has no new key; welcome carries versions only beyond act2autochess', () => {
+test('a default room on a server with versions has no new key; welcome carries versions only beyond act2autochess', async () => {
   const plain = harness({ versions: versionStub({ enabled: ['act2autochess'] }) });
   assert.equal(Object.hasOwn(plain.lobby.welcomeInfo(), 'versions'), false);
   plain.lobby.shutdown();
@@ -452,7 +452,7 @@ test('a default room on a server with versions has no new key; welcome carries v
   const h = harness();
   assert.deepEqual(h.lobby.welcomeInfo().versions.map((v) => v.id), ALL);
   const p = h.player('A');
-  ok(h.lobby.create(p, { mode: 'coop', difficulty: 'NORMAL' }));
+  ok(await h.lobby.create(p, { mode: 'coop', difficulty: 'NORMAL' }));
   const st = h.last(p);
   for (const k of ['version', 'versionVote']) assert.equal(Object.hasOwn(st, k), false, k);
   assert.deepEqual(st.content, { cs: VANILLA, vanilla: true, plugins: [] });
@@ -460,7 +460,7 @@ test('a default room on a server with versions has no new key; welcome carries v
   h.lobby.shutdown();
 });
 
-test('gameplay plugins: refused in a version room and for a proposal while on; cosmetic plugins kept across a switch', () => {
+test('gameplay plugins: refused in a version room and for a proposal while on; cosmetic plugins kept across a switch', async () => {
   const resolved = [];
   const plugins = {
     resolve(ids, opts) {
@@ -475,28 +475,28 @@ test('gameplay plugins: refused in a version room and for a proposal while on; c
   };
   const h = harness({ plugins });
   const p = h.player('A');
-  ok(h.lobby.create(p, { mode: 'solo', difficulty: 'NORMAL' }));
+  ok(await h.lobby.create(p, { mode: 'solo', difficulty: 'NORMAL' }));
   const room = h.lobby.getRoom(p.roomCode);
-  ok(h.lobby.setPlugins(p, { plugins: [{ id: 'rules' }] }));
+  ok(await h.lobby.setPlugins(p, { plugins: [{ id: 'rules' }] }));
   assert.equal(room.modded, true);
-  refused(h.lobby.proposeVersion(p, { version: 'act1autochess' }), ERR.VERSION_UNSUPPORTED);
-  ok(h.lobby.setPlugins(p, { plugins: [{ id: 'skin' }] }));
-  ok(h.lobby.proposeVersion(p, { version: 'act1autochess' }));
+  refused(await h.lobby.proposeVersion(p, { version: 'act1autochess' }), ERR.VERSION_UNSUPPORTED);
+  ok(await h.lobby.setPlugins(p, { plugins: [{ id: 'skin' }] }));
+  ok(await h.lobby.proposeVersion(p, { version: 'act1autochess' }));
   const st = h.last(p);
   assert.equal(st.content.vs, 'ff'.repeat(32), 'the cosmetic set comes along');
   assert.equal(st.content.cs, CS.act1autochess);
   assert.equal(st.content.version, 'act1autochess');
   assert.deepEqual(st.content.plugins.map((x) => x.id), ['skin']);
   assert.equal(resolved.at(-1)[1], false, 'resolved without gameplay plugins');
-  refused(h.lobby.setPlugins(p, { plugins: [{ id: 'rules' }] }), ERR.VERSION_UNSUPPORTED);
+  refused(await h.lobby.setPlugins(p, { plugins: [{ id: 'rules' }] }), ERR.VERSION_UNSUPPORTED);
   // cosmetic plugins that do not resolve on the target (the owner's policy, a refused plugin): the proposal is refused
   h.clock.t += 1000;
-  ok(h.lobby.proposeVersion(p, { version: DEFAULT_VERSION }));
-  ok(h.lobby.setPlugins(p, { plugins: [{ id: 'old-skin' }] }));
+  ok(await h.lobby.proposeVersion(p, { version: DEFAULT_VERSION }));
+  ok(await h.lobby.setPlugins(p, { plugins: [{ id: 'old-skin' }] }));
   const resolve = plugins.resolve;
   plugins.resolve = (ids, opts) => (ids.includes('old-skin') && opts.gameplay === false ? { error: ERR.PLUGIN_BLOCKED, detail: 'not here' } : resolve(ids, opts));
   h.clock.t += 1000;
-  refused(h.lobby.proposeVersion(p, { version: 'act1autochess' }), ERR.VERSION_UNSUPPORTED);
+  refused(await h.lobby.proposeVersion(p, { version: 'act1autochess' }), ERR.VERSION_UNSUPPORTED);
   assert.equal(room.version, DEFAULT_VERSION);
   // …and when they stop resolving between a vote and its end, the switch keeps the version's base without them
   plugins.resolve = resolve;
@@ -504,24 +504,24 @@ test('gameplay plugins: refused in a version room and for a proposal while on; c
   const g = h.player('Guest');
   room.mode = 'coop'; // (a second human for a vote)
   ok(h.lobby.join(g, { code: room.code }));
-  ok(h.lobby.proposeVersion(p, { version: 'act1autochess' }));
+  ok(await h.lobby.proposeVersion(p, { version: 'act1autochess' }));
   plugins.resolve = (ids, opts) => (opts.gameplay === false ? { error: ERR.PLUGIN_BLOCKED } : resolve(ids, opts));
-  ok(h.lobby.versionVote(g, { voteId: room.versionVote.id, agree: true }));
+  ok(await h.lobby.versionVote(g, { voteId: room.versionVote.id, agree: true }));
   assert.equal(room.version, 'act1autochess');
   assert.deepEqual(room.content, { cs: CS.act1autochess, vanilla: true, version: 'act1autochess', plugins: [] });
   plugins.resolve = resolve;
   // a room-sets object that ignores the option still cannot slip a gameplay set into a version room
   const lax = harness({ plugins: { ...plugins, resolve: (ids) => plugins.resolve(ids, { gameplay: true }) } });
   const q = lax.player('B');
-  ok(lax.lobby.create(q, { mode: 'solo', version: 'act1autochess' }));
-  refused(lax.lobby.setPlugins(q, { plugins: [{ id: 'rules' }] }), ERR.VERSION_UNSUPPORTED);
+  ok(await lax.lobby.create(q, { mode: 'solo', version: 'act1autochess' }));
+  refused(await lax.lobby.setPlugins(q, { plugins: [{ id: 'rules' }] }), ERR.VERSION_UNSUPPORTED);
   lax.lobby.shutdown();
   h.lobby.shutdown();
 });
 
-test('the content gate: contentReady flips the seat, ready / start wait for it; spectators show theirs', () => {
+test('the content gate: contentReady flips the seat, ready / start wait for it; spectators show theirs', async () => {
   const h = harness();
-  const { people: [a, b], room } = coop(h, 2, { version: 'act1autochess' });
+  const { people: [a, b], room } = await coop(h, 2, { version: 'act1autochess' });
   const spy = h.player('Spy');
   ok(h.lobby.spectate(spy, { code: room.code }));
   const st = h.last(a);
@@ -542,9 +542,9 @@ test('the content gate: contentReady flips the seat, ready / start wait for it; 
   h.lobby.shutdown();
 });
 
-test('a switch: others un-readied, settings cleared, a card the version lacks dropped, replay gone, every page loading', () => {
+test('a switch: others un-readied, settings cleared, a card the version lacks dropped, replay gone, every page loading', async () => {
   const h = harness();
-  const { people: [a, b], room } = coop(h, 2);
+  const { people: [a, b], room } = await coop(h, 2);
   const spy = h.player('Spy');
   ok(h.lobby.spectate(spy, { code: room.code }));
   // the last match's replay, still owed to everyone — a spectator too (buildReplay): the old version's chess ids, so the
@@ -555,8 +555,8 @@ test('a switch: others un-readied, settings cleared, a card the version lacks dr
   ok(h.lobby.loadout(b, { entries: { chess_char_1_02_a: { skill: 0 } } }));
   ok(h.lobby.ownership(b, { notOwned: ['chess_char_1_02_a'] }));
   ok(h.lobby.ready(b, { ready: true }));
-  ok(h.lobby.proposeVersion(a, { version: 'act1autochess' }));
-  ok(h.lobby.versionVote(b, { voteId: 1, agree: true }));
+  ok(await h.lobby.proposeVersion(a, { version: 'act1autochess' }));
+  ok(await h.lobby.versionVote(b, { voteId: 1, agree: true }));
   const seat = room.seatOf(b.playerId);
   assert.equal(seat.ready, false);
   assert.equal(seat.loadout, null);
@@ -571,12 +571,12 @@ test('a switch: others un-readied, settings cleared, a card the version lacks dr
   h.lobby.shutdown();
 });
 
-test('settings sent before the seat\'s page reported the new content are unverified: a version room\'s match drops them', () => {
+test('settings sent before the seat\'s page reported the new content are unverified: a version room\'s match drops them', async () => {
   const h = harness();
   const p = h.player('A');
-  ok(h.lobby.create(p, { mode: 'solo', difficulty: 'NORMAL' }));
+  ok(await h.lobby.create(p, { mode: 'solo', difficulty: 'NORMAL' }));
   const room = h.lobby.getRoom(p.roomCode);
-  ok(h.lobby.proposeVersion(p, { version: 'act1autochess' }));
+  ok(await h.lobby.proposeVersion(p, { version: 'act1autochess' }));
   // the page built this against 第二期's data (角峰 at chess_char_1_02), and it lands after the switch
   ok(h.lobby.loadout(p, { entries: { chess_char_1_02_a: { skill: 0 } } }));
   ok(h.lobby.ownership(p, { notOwned: ['chess_char_1_02_a'] }));
@@ -592,7 +592,7 @@ test('settings sent before the seat\'s page reported the new content are unverif
   // after the page reported the content ready, a setting is the room's
   const h2 = harness();
   const q = h2.player('B');
-  ok(h2.lobby.create(q, { mode: 'solo', difficulty: 'NORMAL', version: 'act1autochess' }));
+  ok(await h2.lobby.create(q, { mode: 'solo', difficulty: 'NORMAL', version: 'act1autochess' }));
   ok(h2.lobby.contentReady(q, { cs: CS.act1autochess }));
   ok(h2.lobby.loadout(q, { entries: { chess_char_1_02_a: { skill: 0 } } }));
   assert.equal(h2.lobby.getRoom(q.roomCode).seatOf(q.playerId).loadoutCs, CS.act1autochess);
@@ -602,7 +602,7 @@ test('settings sent before the seat\'s page reported the new content are unverif
   h2.lobby.shutdown();
 });
 
-test('seatSettings: a setting checked for another version keeps only the chess ids whose operator is the same (角峰 ≠ 讯使)', () => {
+test('seatSettings: a setting checked for another version keeps only the chess ids whose operator is the same (角峰 ≠ 讯使)', async () => {
   const h = harness();
   const p = h.player('A');
   // checked outside a room against 第二期 (the vanilla cs): chess_char_1_02 = 角峰 there, 讯使 in 第一期; `same` (a
@@ -618,7 +618,7 @@ test('seatSettings: a setting checked for another version keeps only the chess i
   ok(h.lobby.loadout(p, { entries: { chess_char_1_02_a: { skill: 0 }, [same]: { skill: 0 } } }));
   ok(h.lobby.ownership(p, { notOwned: [diff, same] }));
   assert.equal(p.loadoutCs, VANILLA);
-  ok(h.lobby.create(p, { mode: 'solo', difficulty: 'NORMAL', version: 'act1autochess' }));
+  ok(await h.lobby.create(p, { mode: 'solo', difficulty: 'NORMAL', version: 'act1autochess' }));
   ok(h.lobby.contentReady(p, { cs: CS.act1autochess }));
   ok(h.lobby.start(p));
   const seat = Rec.last.seats[0];
@@ -627,10 +627,10 @@ test('seatSettings: a setting checked for another version keeps only the chess i
   // and the other way: checked for 第一期, played on 第二期
   const h2 = harness();
   const q = h2.player('B');
-  ok(h2.lobby.create(q, { mode: 'solo', version: 'act1autochess' }));
+  ok(await h2.lobby.create(q, { mode: 'solo', version: 'act1autochess' }));
   ok(h2.lobby.contentReady(q, { cs: CS.act1autochess }));
   ok(h2.lobby.loadout(q, { entries: { chess_char_1_02_a: { skill: 0 }, [same]: { skill: 0 } } }));
-  ok(h2.lobby.create(q, { mode: 'solo' }));
+  ok(await h2.lobby.create(q, { mode: 'solo' }));
   ok(h2.lobby.start(q));
   assert.deepEqual(Object.keys(Rec.last.seats[0].loadout), [same]);
   assert.equal(Object.hasOwn(Rec.last, 'version'), false);
@@ -638,13 +638,13 @@ test('seatSettings: a setting checked for another version keeps only the chess i
   h2.lobby.shutdown();
 });
 
-test('startMatch: a version room plays in its version host (version + requireCs); a default room keeps today\'s opts', () => {
+test('startMatch: a version room plays in its version host (version + requireCs); a default room keeps today\'s opts', async () => {
   const hosted = [];
   const versionHosts = { create(cs, opts) { assert.equal(opts.simPool, undefined, "a live pool must not cross the match-host boundary"); hosted.push([cs, opts]); return { hosted: true, start() {}, dispose() {} }; } };
   const h = harness({ versionHosts, MatchClass: Rec });
   h.lobby.simPool = { submit() { throw new Error("must not reach hosted versions"); } };
   const p = h.player('A');
-  ok(h.lobby.create(p, { mode: 'solo', difficulty: 'NORMAL', version: 'act2autochess@V2_1' }));
+  ok(await h.lobby.create(p, { mode: 'solo', difficulty: 'NORMAL', version: 'act2autochess@V2_1' }));
   ok(h.lobby.contentReady(p, { cs: CS['act2autochess@V2_1'] }));
   ok(h.lobby.start(p));
   const [cs, opts] = hosted[0];
@@ -657,7 +657,7 @@ test('startMatch: a version room plays in its version host (version + requireCs)
   h.lobby.simPool = null;
   const q = h.player('B');
   Rec.last = null;
-  ok(h.lobby.create(q, { mode: 'solo', difficulty: 'NORMAL' }));
+  ok(await h.lobby.create(q, { mode: 'solo', difficulty: 'NORMAL' }));
   ok(h.lobby.start(q));
   assert.equal(hosted.length, 1);
   const keys = Object.keys(Rec.last).sort();
@@ -668,7 +668,7 @@ test('startMatch: a version room plays in its version host (version + requireCs)
   const lone = new Lobby({ registry: new SessionRegistry(), log: quiet, content: { cs: VANILLA }, getData, versions: versionStub() });
   const s = lone.registry.create('C');
   s.connected = true;
-  ok(lone.create(s, { mode: 'solo', version: 'act1autochess' }));
+  ok(await lone.create(s, { mode: 'solo', version: 'act1autochess' }));
   ok(lone.contentReady(s, { cs: CS.act1autochess }));
   refused(lone.start(s), ERR.INTERNAL, 'no match host for this version');
   assert.equal(lone.getRoom(s.roomCode).match, null);
@@ -676,14 +676,14 @@ test('startMatch: a version room plays in its version host (version + requireCs)
   h.lobby.shutdown();
 });
 
-test('the real version service: a room of 第一期上半 names its real cs and data, its match its version', () => {
+test('the real version service: a room of 第一期上半 names its real cs and data, its match its version', async () => {
   const vanilla = computeVanillaContent({ simDir: path.join(ROOT, 'server', 'sim'), sharedDir: path.join(ROOT, 'shared'), dataDir: DATA_DIR, shim: DATA_SHIM_JS });
   const versions = createVersionSets({ enabled: ['act2autochess', 'act1autochess@V1_1'], vanilla, defaultData: getData(), log: quiet });
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quiet, MatchClass: Rec, content: { cs: vanilla.cs }, getData, versions });
   const s = registry.create('A');
   s.connected = true;
-  ok(lobby.create(s, { mode: 'coop', difficulty: 'ABYSS', version: 'act1autochess@V1_1' }));
+  ok(await lobby.create(s, { mode: 'coop', difficulty: 'ABYSS', version: 'act1autochess@V1_1' }));
   const room = lobby.getRoom(s.roomCode);
   assert.equal(room.difficulty, 'HARD');
   assert.equal(room.content.cs, versions.csOf('act1autochess@V1_1'));
@@ -697,7 +697,7 @@ test('the real version service: a room of 第一期上半 names its real cs and 
   lobby.shutdown();
 });
 
-test('server/plugins/roomSets.js resolve({ gameplay: false }): a content / script / trusted plugin in the closed list → VERSION_UNSUPPORTED, nothing built', () => {
+test('server/plugins/roomSets.js resolve({ gameplay: false }): a content / script / trusted plugin in the closed list → VERSION_UNSUPPORTED, nothing built', async () => {
   const built = [];
   const plugin = (id, cls, extra = {}) => ({ id, class: cls, status: 'loaded', content: cls !== 'cosmetic' ? {} : undefined, visual: cls === 'cosmetic' ? {} : undefined,
     manifest: { version: '1.0.0', scope: ['room'], ...extra } });
@@ -709,17 +709,17 @@ test('server/plugins/roomSets.js resolve({ gameplay: false }): a content / scrip
     policy: null,
   });
   for (const ids of [['rules'], ['needs'], ['skin', 'rules']]) {
-    const r = sets.resolve(ids, { gameplay: false });
+    const r = await sets.resolve(ids, { gameplay: false });
     assert.equal(r.error, ERR.VERSION_UNSUPPORTED, `${ids}: ${JSON.stringify(r)}`);
   }
   assert.deepEqual(built, [], 'refused before any set is built');
-  assert.equal(sets.resolve(['skin'], { gameplay: false }).ok, true);
-  assert.equal(sets.resolve(['rules']).ok, true, 'the default keeps gameplay plugins');
+  assert.equal((await sets.resolve(['skin'], { gameplay: false })).ok, true);
+  assert.equal((await sets.resolve(['rules'])).ok, true, 'the default keeps gameplay plugins');
 });
 
-test('room.setExperimental keeps the room at four seats (the capacity panel 8/12/16/20 is not offered)', () => {
+test('room.setExperimental keeps the room at four seats (the capacity panel 8/12/16/20 is not offered)', async () => {
   const h = harness();
-  const { people } = coop(h, 1);
+  const { people } = await coop(h, 1);
   const host = people[0];
   refused(h.lobby.setExperimental(host, { experimental: { revivalEnabled: false, disableSharedPool: false, playerCapacity: 8 } }), ERR.BAD_MSG);
   refused(h.lobby.setExperimental(host, { experimental: { revivalEnabled: false, disableSharedPool: false, playerCapacity: 20 } }), ERR.BAD_MSG);

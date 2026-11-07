@@ -24,14 +24,14 @@ export function makePlugin(f, template, id, options = {}) {
   fs.writeFileSync(path.join(dir, '.studio.json'), manifestText({ v: 1, authoring: made.authoring }));
   return { dir, made };
 }
-for (const template of TEMPLATES.filter(t => t.build)) test(`new ${template.id} -> strict check -> pack -> content composition`, t => {
+for (const template of TEMPLATES.filter(t => t.build)) test(`new ${template.id} -> strict check -> pack -> content composition`, async t => {
   const f = fixture(t), id = `studio-${template.id}`;
   const result = spawnSync(process.execPath, ['tools/plugin.mjs', 'new', template.id, id, '--dir', path.join(f.dir, 'plugins')], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   const dir = path.join(f.dir, 'plugins', id);
   const check = checkPluginFolder(dir);
   f.registry.rescan();
-  const set = template.class === 'content' ? buildContentSet({ registry: f.registry, ids: [id] }) : null;
+  const set = template.class === 'content' ? await buildContentSet({ registry: f.registry, ids: [id] }) : null;
   const cliCheck = spawnSync(process.execPath, ['tools/plugin.mjs', 'check', dir, '--strict'], { encoding: 'utf8' });
   assert.equal(cliCheck.status, 0, cliCheck.stdout + cliCheck.stderr);
   assert.deepEqual(check.problems, []); assert.deepEqual(check.warnings, []);
@@ -93,7 +93,7 @@ test('mode wizard economy, DP and round timers reach GameData while the base mod
   const { GameData } = await import('../../server/match/gamedata.js');
   const f = fixture(t);
   makePlugin(f, 'mode', 'mode-wizard', { base: 'mode_multi_normal', incomePerRound: 20, refreshPrice: 2, prepTime: 45, infoCheck: 8, dpInit: 20 });
-  const set = buildContentSet({ registry: f.registry, ids: ['mode-wizard'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['mode-wizard'] });
   assert.deepEqual(set.problems, []);
   const changed = new GameData(set.data, 'mode_x_mode_wizard_one');
   const original = new GameData(set.data, 'mode_multi_normal');

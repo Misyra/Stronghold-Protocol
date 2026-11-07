@@ -135,7 +135,7 @@ test('Forge keeps custom skill heal 65/80 through import and composition, retain
   assert.equal(result.ok, true, JSON.stringify(result.issues));
   const registry = createPluginRegistry({ publicDir: path.join(root, 'public'), packsDir: path.join(root, 'packs'), pluginsDir: path.join(root, 'plugins'), dataDir });
   registry.rescan();
-  const set = buildContentSet({ registry, ids: ['test-healer'] });
+  const set = await buildContentSet({ registry, ids: ['test-healer'] });
   assert.deepEqual(set.problems, []);
   for (const [golden, heal] of [[false, 65], [true, 80]]) {
     const form = Object.values(set.data.chess).find(c => c.chessId.startsWith('chess_x_test_healer_') && c.isGolden === golden);

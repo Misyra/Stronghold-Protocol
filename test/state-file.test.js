@@ -66,18 +66,18 @@ test('shutdown waits for an interval write and then persists the final state, ra
   assert.equal(docs[1].sessions[0].name, 'final');
   lobby.shutdown();
 });
-test('server downtime counts toward reconnect expiry, with the longer solo recovery window', () => {
+test('server downtime counts toward reconnect expiry, with the longer solo recovery window', async () => {
   const registry = new SessionRegistry(); const lobby = new Lobby({ registry, log });
   const coop = registry.create('coop'); const solo = registry.create('solo');
-  lobby.create(coop, { mode: 'coop', difficulty: 'NORMAL' });
-  lobby.create(solo, { mode: 'solo', difficulty: 'NORMAL' });
+  await lobby.create(coop, { mode: 'coop', difficulty: 'NORMAL' });
+  await lobby.create(solo, { mode: 'solo', difficulty: 'NORMAL' });
   coop.connected = solo.connected = true;
   lobby.getRoom(solo.roomCode).match = { dispose() {} };
   const at = Date.now();
   const doc = snapshotServer({ registry, lobby, now: at });
   const fresh = new SessionRegistry(); const restored = new Lobby({ registry: fresh, log });
   try {
-    const result = restoreServer({ doc, registry: fresh, lobby: restored, now: at + 15 * 60_000, log });
+    const result = await restoreServer({ doc, registry: fresh, lobby: restored, now: at + 15 * 60_000, log });
     assert.equal(result.expired, 1);
     assert.equal(fresh.byId(coop.playerId), null);
     assert.ok(fresh.byId(solo.playerId));
@@ -86,11 +86,11 @@ test('server downtime counts toward reconnect expiry, with the longer solo recov
 test('a state file containing session secrets is refused under a publicly served directory', async () => {
   await assert.rejects(startServer({ port: 0, workers: 0, log, stateFile: 'data/leaked.state.json' }), /公开静态目录/);
 });
-test('room spectators and pending settlement replay survive a document round trip', () => {
+test('room spectators and pending settlement replay survive a document round trip', async () => {
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log, MatchClass: StubMatch });
   const p = registry.create('player'); const spectator = registry.create('watcher');
-  lobby.create(p, { mode: 'coop', difficulty: 'NORMAL' });
+  await lobby.create(p, { mode: 'coop', difficulty: 'NORMAL' });
   const room = lobby.getRoom(p.roomCode);
   spectator.roomCode = room.code;
   room.spectators.push({ playerId: spectator.playerId, name: spectator.name, connected: true });
@@ -100,7 +100,7 @@ test('room spectators and pending settlement replay survive a document round tri
   const doc = JSON.parse(JSON.stringify(snapshotServer({ registry, lobby })));
   const fresh = new SessionRegistry(); const restored = new Lobby({ registry: fresh, log, MatchClass: StubMatch });
   try {
-    assert.equal(restoreServer({ doc, registry: fresh, lobby: restored, log }).ok, true);
+    assert.equal((await restoreServer({ doc, registry: fresh, lobby: restored, log })).ok, true);
     assert.equal(restored.getRoom(room.code).spectators[0].playerId, spectator.playerId);
     assert.equal(restored.getRoom(room.code).replay.frames.get(p.playerId), room.replay.frames.get(p.playerId));
     assert.equal(fresh.byId(p.playerId).notice, 'timeout');

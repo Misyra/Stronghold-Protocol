@@ -52,7 +52,7 @@ function runComposition(dirs, ids, probeMs = 1000) {
   const source = `import { createPluginRegistry } from ${JSON.stringify(new URL('../../server/plugins/registry.js',import.meta.url).href)};
     import { buildContentSet } from ${JSON.stringify(new URL('../../server/plugins/contentSet.js',import.meta.url).href)};
     const registry = createPluginRegistry(${JSON.stringify(dirs)}, {scriptMode:'trusted',scriptHost:'127.0.0.1'});
-    console.log(JSON.stringify(buildContentSet({registry,ids:${JSON.stringify(ids)}})));`;
+    console.log(JSON.stringify(await buildContentSet({registry,ids:${JSON.stringify(ids)}})));`;
   // (the probe's ceiling, SP_SCRIPT_PROBE_MS, at probeMs — 1 s unless a test needs more: the hang case returns quickly;
   // the default is 5 s)
   const env = {...process.env, SP_SCRIPT_PROBE_MS: String(probeMs)}; delete env.NODE_TEST_CONTEXT;
@@ -132,7 +132,7 @@ test('SIGTERM-catching setup hits the probe\'s SIGKILL ceiling, returns no set a
   assert.equal(SCRIPT_PROBE_TIMEOUT_MS,5000,'the default ceiling (no SP_SCRIPT_PROBE_MS in this process)');
 });
 
-test('probe cache covers successes and failures but separates locks, descriptors and normalized settings',t => {
+test('probe cache covers successes and failures but separates locks, descriptors and normalized settings',async t => {
   const f = scriptFixture(t), file = path.join(f.root,'count.txt');
   const source = `export default sp => {
     global['pro'+'cess'].getBuiltinModule('fs').appendFileSync(${JSON.stringify(file)},'x');
@@ -141,19 +141,19 @@ test('probe cache covers successes and failures but separates locks, descriptors
   }`;
   f.put('cache',source,{settings:{n:{type:'integer',min:1,max:3,default:1}}});
   f.put('extra','export default sp => sp.kits.register("char_x_extra_guard",()=>({}));');
-  const build = ids => buildContentSet({registry:f.registry,ids});
-  assert.deepEqual(build(['cache']).problems,[]);
-  assert.deepEqual(build(['cache','extra']).problems,[]);
+  const build = async ids => await buildContentSet({registry:f.registry,ids});
+  assert.deepEqual((await build(['cache'])).problems,[]);
+  assert.deepEqual((await build(['cache','extra'])).problems,[]);
   assert.equal(fs.readFileSync(file,'utf8'),'x','same script across different sets is probed once');
-  assert.deepEqual(build([{id:'cache',settings:{n:2}}]).problems,[]);
+  assert.deepEqual((await build([{id:'cache',settings:{n:2}}])).problems,[]);
   assert.equal(fs.readFileSync(file,'utf8'),'xx');
-  for (let i=0;i<2;i++) assert.equal(build([{id:'cache',settings:{n:3}}]).problems[0].code,'PLUGIN_SCRIPT_CHECK');
+  for (let i=0;i<2;i++) assert.equal((await build([{id:'cache',settings:{n:3}}])).problems[0].code,'PLUGIN_SCRIPT_CHECK');
   assert.equal(fs.readFileSync(file,'utf8'),'xxx','failed probe is cached too');
   f.put('cache',source+'\n// new lock',{settings:{n:{type:'integer',min:1,max:3,default:1}}});
-  assert.deepEqual(build(['cache']).problems,[]);assert.equal(fs.readFileSync(file,'utf8'),'xxxx');
+  assert.deepEqual((await build(['cache'])).problems,[]);assert.equal(fs.readFileSync(file,'utf8'),'xxxx');
   f.put('conflict','export default sp => sp.kits.register("char_x_cache_1",()=>({}));');
-  assert.deepEqual(build(['conflict']).problems,[]);
-  assert.equal(build(['cache','conflict']).problems[0].code,'PLUGIN_SCRIPT_CONFLICT','cached reports still conflict');
+  assert.deepEqual((await build(['conflict'])).problems,[]);
+  assert.equal((await build(['cache','conflict'])).problems[0].code,'PLUGIN_SCRIPT_CONFLICT','cached reports still conflict');
 });
 
 for (const action of ['activation timeout','activation error','route timeout','close']) test(`trusted ${action} kills a SIGTERM-catching child and waits for exit`,{timeout:15000},async t => {

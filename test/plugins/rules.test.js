@@ -99,9 +99,9 @@ test('Forge omitted options preserve a declared default and its conflict', async
   assert.deepEqual(result.report.products[0].rules, { unequip: 'official' });
   f.put('declared-default', { permissions: [], rules: result.report.products[0].rules });
   f.put('allow', { permissions: [], rules: { unequip: 'allow' } });
-  const conflict = buildContentSet({ registry: f.registry, ids: ['declared-default', 'allow'] });
+  const conflict = await buildContentSet({ registry: f.registry, ids: ['declared-default', 'allow'] });
   assert.ok(conflict.problems.some((p) => p.code === 'PLUGIN_RULE_CONFLICT'));
-  const declared = buildContentSet({ registry: f.registry, ids: ['declared-default'] });
+  const declared = await buildContentSet({ registry: f.registry, ids: ['declared-default'] });
   assert.deepEqual(declared.index.rules, { unequip: 'official' });
 });
 
@@ -121,9 +121,9 @@ test('rules-only manifests load, hash and compose through the room summary and b
   const plugin = f.registry.plugin('alpha');
   assert.ok(plugin?.content, 'registry recognises rules-only content');
   const before = plugin.content.hash;
-  const plain = buildContentSet({ registry: f.registry });
+  const plain = await buildContentSet({ registry: f.registry });
   assert.equal(Object.hasOwn(plain.index, 'rules'), false);
-  const set = buildContentSet({ registry: f.registry, ids: ['alpha', 'beta'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['alpha', 'beta'] });
   assert.deepEqual(set.rules, { unequip: 'allow' });
   assert.equal(set.vanilla, false);
   const files = contentSetFiles(set);
@@ -138,16 +138,16 @@ test('rules-only manifests load, hash and compose through the room summary and b
   assert.equal(loaded.cs, set.cs, 'browser includes rules when verifying the identity');
   const contents = createContentSets({ registry: f.registry });
   const rooms = createRoomSets({ registry: f.registry, contents });
-  const room = rooms.resolve(['alpha', 'beta']);
+  const room = await rooms.resolve(['alpha', 'beta']);
   assert.equal(room.ok, true, JSON.stringify(room));
   assert.deepEqual(room.set.rules, set.rules);
   f.put('beta', { permissions: [], rules: { unequip: 'official' } });
-  const conflict = rooms.resolve(['alpha', 'beta']);
+  const conflict = await rooms.resolve(['alpha', 'beta']);
   assert.equal(conflict.error, 'PLUGIN_RULE_CONFLICT');
   for (const name of ['alpha', 'beta', 'unequip']) assert.ok(conflict.detail.includes(name));
   f.put('alpha', { permissions: [], rules: { unequip: 'official' } });
   assert.notEqual(f.registry.plugin('alpha').content.hash, before, 'the declaration enters the plugin hash');
-  assert.notEqual(buildContentSet({ registry: f.registry, ids: ['alpha'] }).cs, set.cs);
+  assert.notEqual((await buildContentSet({ registry: f.registry, ids: ['alpha'] })).cs, set.cs);
 });
 
 test('shopBias filters within the drawn tier, respects stock, and falls back in that same tier', () => {
@@ -176,7 +176,7 @@ test('the isolated match host takes prep rules from the verified content set rat
   const f = fixture(t);
   f.put('host-rules', { permissions: [], rules: { prepLoadout: 'prep' } });
   const contents = createContentSets({ registry: f.registry, vanillaData: getData() });
-  const resolved = contents.resolve(['host-rules']);
+  const resolved = await contents.resolve(['host-rules']);
   assert.equal(resolved.ok, true, JSON.stringify(resolved));
   const hosts = createMatchHosts({ contents, options: { matchOptions: { botRehearsal: 0, timerScale: 0.001 } } });
   t.after(() => hosts.close());

@@ -81,45 +81,45 @@ test('protocol: room.create may carry soloUnlimited, room.setSoloUnlimited takes
   assert.notEqual(validateC2S({ t: 'room.setSoloUnlimited' }), null);
 });
 
-test('create stores soloUnlimited only for a timed solo, and room.state omits it otherwise', () => {
+test('create stores soloUnlimited only for a timed solo, and room.state omits it otherwise', async () => {
   const h = harness();
   const host = h.player('Host');
-  ok(h.lobby.create(host, { mode: 'solo', version: V1, soloUnlimited: true }));
+  ok(await h.lobby.create(host, { mode: 'solo', version: V1, soloUnlimited: true }));
   assert.equal(h.state(host).soloUnlimited, true);
   assert.equal(h.state(host).version, V1);
 
-  ok(h.lobby.create(host, { mode: 'solo', version: V1 }));
+  ok(await h.lobby.create(host, { mode: 'solo', version: V1 }));
   assert.equal(h.state(host).soloUnlimited, undefined);
-  ok(h.lobby.create(host, { mode: 'solo', version: V1, soloUnlimited: false }));
+  ok(await h.lobby.create(host, { mode: 'solo', version: V1, soloUnlimited: false }));
   assert.equal(h.state(host).soloUnlimited, undefined);
 
-  ok(h.lobby.create(host, { mode: 'solo', soloUnlimited: true }));
+  ok(await h.lobby.create(host, { mode: 'solo', soloUnlimited: true }));
   assert.equal(h.state(host).version, undefined, 'default room');
   assert.equal(h.state(host).soloUnlimited, undefined);
-  ok(h.lobby.create(host, { mode: 'solo', version: V2_1, soloUnlimited: true }));
+  ok(await h.lobby.create(host, { mode: 'solo', version: V2_1, soloUnlimited: true }));
   assert.equal(h.state(host).version, V2_1);
   assert.equal(h.state(host).soloUnlimited, undefined);
-  ok(h.lobby.create(host, { mode: 'coop', version: V1, soloUnlimited: true }));
+  ok(await h.lobby.create(host, { mode: 'coop', version: V1, soloUnlimited: true }));
   assert.equal(h.state(host).mode, 'coop');
   assert.equal(h.state(host).soloUnlimited, undefined);
 });
 
-test('setSoloUnlimited: host of a timed solo only; false drops the key; a started match refuses', () => {
+test('setSoloUnlimited: host of a timed solo only; false drops the key; a started match refuses', async () => {
   const h = harness();
   const host = h.player('Host');
   const guest = h.player('Guest');
-  ok(h.lobby.create(host, { mode: 'coop', version: V1 }));
+  ok(await h.lobby.create(host, { mode: 'coop', version: V1 }));
   refused(h.lobby.setSoloUnlimited(guest, { on: true }), ERR.NOT_IN_ROOM);
   ok(h.lobby.spectate(guest, { code: h.state(host).code }));
   refused(h.lobby.setSoloUnlimited(guest, { on: true }), ERR.SPECTATOR);
   refused(h.lobby.setSoloUnlimited(host, { on: true }), ERR.BAD_TARGET);
 
-  ok(h.lobby.create(host, { mode: 'solo', version: V2_1 }));
+  ok(await h.lobby.create(host, { mode: 'solo', version: V2_1 }));
   refused(h.lobby.setSoloUnlimited(host, { on: true }), ERR.BAD_TARGET);
-  ok(h.lobby.create(host, { mode: 'solo' }));
+  ok(await h.lobby.create(host, { mode: 'solo' }));
   refused(h.lobby.setSoloUnlimited(host, { on: true }), ERR.BAD_TARGET);
 
-  ok(h.lobby.create(host, { mode: 'solo', version: V1 }));
+  ok(await h.lobby.create(host, { mode: 'solo', version: V1 }));
   ok(h.lobby.setSoloUnlimited(host, { on: true }));
   assert.equal(h.state(host).soloUnlimited, true);
   ok(h.lobby.setSoloUnlimited(host, { on: true }));
@@ -135,27 +135,27 @@ test('setSoloUnlimited: host of a timed solo only; false drops the key; a starte
   refused(h.lobby.setSoloUnlimited(host, { on: false }), ERR.ROOM_STARTED);
 });
 
-test('a version switch clears the flag off a timed solo and keeps it between the two 第一期 versions', () => {
+test('a version switch clears the flag off a timed solo and keeps it between the two 第一期 versions', async () => {
   const h = harness();
   const host = h.player('Host');
-  ok(h.lobby.create(host, { mode: 'solo', version: V1, soloUnlimited: true }));
-  ok(h.lobby.proposeVersion(host, { version: V1_1 }));
+  ok(await h.lobby.create(host, { mode: 'solo', version: V1, soloUnlimited: true }));
+  ok(await h.lobby.proposeVersion(host, { version: V1_1 }));
   assert.equal(h.state(host).version, V1_1);
   assert.equal(h.state(host).soloUnlimited, true);
   h.clock.t += 300; // versionProposeGapMs: the second proposal in the same instant is RATE
-  ok(h.lobby.proposeVersion(host, { version: V2_1 }));
+  ok(await h.lobby.proposeVersion(host, { version: V2_1 }));
   assert.equal(h.state(host).version, V2_1);
   assert.equal(h.state(host).soloUnlimited, undefined);
   h.clock.t += 300;
-  ok(h.lobby.proposeVersion(host, { version: DEFAULT_VERSION }));
+  ok(await h.lobby.proposeVersion(host, { version: DEFAULT_VERSION }));
   assert.equal(h.state(host).version, undefined);
   assert.equal(h.state(host).soloUnlimited, undefined);
 });
 
-test('startMatch and wireOptions omit soloUnlimited unless the flag is on', () => {
+test('startMatch and wireOptions omit soloUnlimited unless the flag is on', async () => {
   const h = harness();
   const host = h.player('Host');
-  ok(h.lobby.create(host, { mode: 'solo', version: V1 }));
+  ok(await h.lobby.create(host, { mode: 'solo', version: V1 }));
   const room = h.lobby.getRoom(host.roomCode);
   ok(h.lobby.contentReady(host, { cs: room.content.cs }));
   ok(h.lobby.start(host));
@@ -168,7 +168,7 @@ test('startMatch and wireOptions omit soloUnlimited unless the flag is on', () =
   // the first match is still running, so the same session cannot create again (ROOM_STARTED)
   const h2 = harness();
   const host2 = h2.player('Host');
-  ok(h2.lobby.create(host2, { mode: 'solo' }));
+  ok(await h2.lobby.create(host2, { mode: 'solo' }));
   ok(h2.lobby.start(host2));
   assert.equal(Object.hasOwn(Rec.last, 'soloUnlimited'), false);
   assert.equal(Object.hasOwn(Rec.last, 'version'), false);

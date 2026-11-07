@@ -47,7 +47,7 @@ const badEdits = {
   rules: { rules: { unequip: 'sometimes' } },
 };
 for (const template of GAMEPLAY_TEMPLATES) {
-  test(`${template}: form -> JSON -> save -> strict check/composition; invalid field leaves files unchanged`, t => {
+  test(`${template}: form -> JSON -> save -> strict check/composition; invalid field leaves files unchanged`, async t => {
     const f = setup(t, template);
     const initial = { ...f.author.read(f.id), id: f.id };
     const draft = editGameplay(initial, edits[template]);
@@ -57,7 +57,7 @@ for (const template of GAMEPLAY_TEMPLATES) {
     const checked = checkPluginFolder(f.dir);
     assert.deepEqual(checked.problems, []); assert.deepEqual(checked.warnings, []);
     f.registry.rescan();
-    const set = buildContentSet({ registry: f.registry, ids: [f.id] });
+    const set = await buildContentSet({ registry: f.registry, ids: [f.id] });
     assert.deepEqual(set.problems, []);
     if (template === 'bond') {
       const b = set.data.bonds[bondId(f.id)];
@@ -137,7 +137,7 @@ for (const [template, Form, label, value, read] of [
   assert.equal(render().find(n => n.props?.label === label).props.value, value);
 });
 
-test('removing both bond effect lists removes owned parts/permission and preserves the icon', t => {
+test('removing both bond effect lists removes owned parts/permission and preserves the icon', async t => {
   const f = setup(t, 'bond');
   f.author.save(f.id, editGameplay({ ...f.author.read(f.id), id: f.id }, { prep: [], talents: [] }));
   const manifest = JSON.parse(fs.readFileSync(path.join(f.dir, 'plugin.json'), 'utf8'));
@@ -145,16 +145,16 @@ test('removing both bond effect lists removes owned parts/permission and preserv
   assert.equal(manifest.permissions.includes('dsl'), false);
   assert.ok(manifest.assets.bonds[bondId(f.id)]);
   f.registry.rescan();
-  const set = buildContentSet({ registry: f.registry, ids: [f.id] });
+  const set = await buildContentSet({ registry: f.registry, ids: [f.id] });
   assert.deepEqual(set.problems, []);
   assert.equal(Object.values(set.data.garrisons).some(g => g.operatorTrait?.pluginId === f.id), false);
 });
 
-test('two authored bonds retain each other on a shared official member', t => {
+test('two authored bonds retain each other on a shared official member', async t => {
   const f = setup(t, 'bond', { prep: [], talents: [] });
   const other = createPlugin(templateById('bond'), { id: 'second-bond', options: { prep: [], talents: [] } });
   f.put('second-bond', other.manifest, other.files);
-  const set = buildContentSet({ registry: f.registry, ids: [f.id, 'second-bond'] });
+  const set = await buildContentSet({ registry: f.registry, ids: [f.id, 'second-bond'] });
   assert.deepEqual(set.problems, []);
   const member = Object.values(set.data.chess).find(c => c.charId === 'char_102_texas' && !c.isGolden);
   assert.ok(member.bonds.includes(bondId(f.id))); assert.ok(member.bonds.includes(bondId('second-bond')));
@@ -173,7 +173,7 @@ test('trait form vocabulary covers all eight prep hooks, burst filters and both 
 
 test('offer exercise uses real refresh limits, round matching and timeout grants', async t => {
   const f = setup(t, 'offers');
-  const set = buildContentSet({ registry: f.registry, ids: [f.id] });
+  const set = await buildContentSet({ registry: f.registry, ids: [f.id] });
   const op = chooseOperator(set.data);
   const scene = await trialScenario({ seconds: 1 }, set.data, op, op);
   const draft = { id: f.id, template: 'offers', options: {} };

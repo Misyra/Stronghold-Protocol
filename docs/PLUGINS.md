@@ -1227,9 +1227,11 @@ server can raise SP_SCRIPT_PROBE_MS`, GitHub #847).
 Results, including failures, are cached per registry by plugin id + lock hash + actual descriptor hash + normalized
 settings (256 recent results [ASSUMED]); changing settings or executable bytes requires another probe. This also
 prevents a stale or missing lock in an explicit CLI test from reusing another source's result.
-C1 remains synchronous: **the lobby pauses during each uncached probe**, including rooms without plugins. Several
-uncached plugins add their pauses together. Moving to async spawn requires coordinating the C1 builder, content/room
-set resolvers, lobby and studio/CLI callers; this step preserves their synchronous contracts. The HTTP/lobby process
+The probe is an awaited child process, never a main-thread stall (§37.129 — the §32.10 revision of the original
+synchronous spawn): C1's data half (patches, hashes, the freeze) stays synchronous, a build with scripts awaits the
+probe, and the room's message is answered once it settles (server/net.js). Concurrent builds of one cache key share
+one child; every registry load (boot, a bound script host, a rescan after an install) warms the cache for each loaded
+script plugin at its default settings, so the first room does not pay the probe. The HTTP/lobby process
 never imports author modules. Actual duplicate registrations, including computed ids and
 normal/elite chess aliases, fail composition with `PLUGIN_SCRIPT_CONFLICT`. [ASSUMED] `overrides: [<official kit id>]`
 allows replacing an official kit; it never allows overwriting another plugin's registration. Vanilla registries stay

@@ -43,13 +43,13 @@ test('composition resolves registrations in content order and rejects actual com
   const f=scriptFixture(t);
   f.put('zeta',setup('char_x_zeta_guard'));
   f.put('alpha',setup('char_x_alpha_guard'));
-  const a=buildContentSet({registry:f.registry,ids:['zeta','alpha']});
-  const b=buildContentSet({registry:f.registry,ids:['alpha','zeta']});
+  const a=await buildContentSet({registry:f.registry,ids:['zeta','alpha']});
+  const b=await buildContentSet({registry:f.registry,ids:['alpha','zeta']});
   assert.deepEqual(a.problems,[]);assert.equal(a.cs,b.cs);
   await loadScripts(a.scripts,{hashInput:a.index});
   assert.deepEqual(extensionRegistrations().map(x=>x.pluginId),['alpha','zeta']);resetExtensions();
   f.put('other',`export default sp => sp.kits.register(['char','x','alpha','guard'].join('_'),()=>({}));`);
-  const bad=buildContentSet({registry:f.registry,ids:['alpha','other']});assert.equal(bad.problems[0].code,'PLUGIN_SCRIPT_CONFLICT');
+  const bad=await buildContentSet({registry:f.registry,ids:['alpha','other']});assert.equal(bad.problems[0].code,'PLUGIN_SCRIPT_CONFLICT');
 });
 test('script callbacks and actions exhaust only their own battle budget and remove tagged buffs',()=>{
   resetExtensions();
@@ -74,11 +74,11 @@ test('enemy registration installs at spawn and content registerMeta joins the pr
   h.step();assert.equal(h.enemy('enemy_script_dummy').s.atk,117);resetExtensions();
 });
 
-test('disabled scripts remain in the catalogue as sandboxable without executing setup',t=>{
+test('disabled scripts remain in the catalogue as sandboxable without executing setup',async t=>{
   const f=scriptFixture(t,{mode:''});f.put('off-script','export default sp => { throw Error("must never execute"); };');
   const item=f.registry.pluginIndex().plugins.find(p=>p.id==='off-script');
   assert.equal(item.status,'disabled');assert.equal(item.disabled.code,'PLUGIN_SCRIPTS_DISABLED');assert.equal(item.sandboxable,true);
-  assert.ok(!buildContentSet({registry:f.registry,ids:['off-script']}).cs);
+  assert.ok(!(await buildContentSet({registry:f.registry,ids:['off-script']})).cs);
 });
 
 test('script hook removal preserves off(name, fn) and buff callbacks also spend budget',()=>{

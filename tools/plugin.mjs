@@ -198,7 +198,7 @@ export async function main(argv, io = {}) {
     const lookup = registry.plugin;
     const testing = {...registry, plugin: key => { const p = lookup(key); return p ? {...p,status:'loaded',
       ...(p.script ? {script:{...p.script,execution:'trusted'}} : {})} : null; }};
-    const set = buildContentSet({registry:testing,ids:[id]});
+    const set = await buildContentSet({registry:testing,ids:[id]});
     if (!set.cs) { console.error(JSON.stringify(set.problems)); return 1; }
     const testDir = path.join(dirs.pluginsDir,id,'test');
     const tests = fs.existsSync(testDir) ? fs.readdirSync(testDir).filter(f => f.endsWith('.test.js')).sort().map(f => path.join(testDir,f)) : [];

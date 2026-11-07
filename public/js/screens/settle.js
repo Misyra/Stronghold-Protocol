@@ -552,12 +552,29 @@ function TeamPage({ r, res, gd, myId, at: when, content, backLabel, onBack, onDe
     const id = setTimeout(() => backRef.current?.focus({ preventScroll: true }), 900);
     return () => clearTimeout(id);
   }, []);
+  // more than four doctors (扩展同盟人数, 8–20 — 移植自 Stardust fork): the card row scrolls sideways, the own card is
+  // in view at first, a vertical wheel scrolls it (the page has no room for twenty cards side by side)
+  const wide = r.players.length > 4;
+  const rowRef = useRef(null);
+  useEffect(() => {
+    if (!wide || !rowRef.current) return undefined;
+    const row = rowRef.current;
+    const me = row.querySelector('.tcard.is-self');
+    if (me) row.scrollLeft = me.offsetLeft - (row.clientWidth - me.offsetWidth) / 2;
+    const onWheel = (e) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || row.scrollWidth <= row.clientWidth) return;
+      row.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    row.addEventListener('wheel', onWheel, { passive: false });
+    return () => row.removeEventListener('wheel', onWheel);
+  }, [wide]);
   return html`<section class=${cx('steam', r.victory ? 'is-win' : 'is-lose')} data-testid="settle-team">
     <div class="steam__bg" aria-hidden="true"><${Sprite} k=${`settle/settlemen_teamshow_${bg}`} /></div>
     <div class="settle__stage">
       <${Logo} />
-      <div class="steam__cards" style=${`--n:${r.players.length}`}>
-        ${r.players.length ? r.players.map((p, i) => html`<${TeamCard} key=${p.playerId} p=${p} i=${i} gd=${gd} self=${p.playerId === myId} victory=${r.victory} raw=${rawOf(p.playerId)} />`)
+      <div ref=${rowRef} class=${cx('steam__cards', wide && 'is-wide')} style=${`--n:${r.players.length}`}>
+        ${r.players.length ? r.players.map((p, i) => html`<${TeamCard} key=${p.playerId} p=${p} i=${wide ? Math.min(i, 7) : i} gd=${gd} self=${p.playerId === myId} victory=${r.victory} raw=${rawOf(p.playerId)} />`)
           : html`<p class="steam__none">${t('暂无结算数据')}</p>`}
       </div>
       <div class="settle__barbg steam__barbg" aria-hidden="true"><${Sprite} k="settle/bottom_bg" /></div>

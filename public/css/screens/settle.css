@@ -298,6 +298,13 @@ span.settle__nexticon .icon { width: .34rem; height: .34rem; }
 .steam .slogo { left: .45rem; top: .2rem; }
 .steam .slogo__img { height: .56rem; }
 .steam__cards { position: absolute; left: 0; right: 0; top: .66rem; display: flex; justify-content: center; gap: .95rem; }
+/* more than four doctors (an expanded room of up to 20; screens/settle.js TeamPage is-wide): the row scrolls sideways —
+   auto margins still centre a row that fits, the wheel scrolls it (TeamPage), the own card is in view at first */
+.steam__cards.is-wide { justify-content: flex-start; overflow-x: auto; overflow-y: hidden; padding: 0 .6rem .12rem; scroll-snap-type: x proximity;
+  scrollbar-width: thin; scrollbar-color: rgba(74, 242, 196, .45) transparent; }
+.steam__cards.is-wide .tcard { scroll-snap-align: center; }
+.steam__cards.is-wide .tcard:first-child { margin-left: auto; }
+.steam__cards.is-wide .tcard:last-child { margin-right: auto; }
 .tcard { position: relative; isolation: isolate; width: 3.47rem; flex: none; display: flex; flex-direction: column; animation: tcard-in 560ms var(--ease-out) calc(150ms + var(--i) * 120ms) both; }
 @keyframes tcard-in { 0% { opacity: 0; transform: translateY(-.3rem); filter: brightness(2.4) saturate(0); } 50% { opacity: 1; } }
 .tcard::before { content: ''; position: absolute; left: -.06rem; right: -.06rem; top: .36rem; bottom: .7rem; background: rgba(22, 27, 26, .78); box-shadow: 0 0 0 1px rgba(180, 196, 192, .14); z-index: -1; }

@@ -43,6 +43,7 @@
 //   onExpire(session)                      the session was purged (disconnected longer than the window)
 
 import { prepareStateFrame, negotiateStateDelta, resetStateDelta, setStateDeltaRoom } from './stateTransport.js';
+import { isCompressibleType } from './wsCompression.js';
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { C2S, validateC2S } from '../shared/protocol.js';
@@ -358,21 +359,27 @@ export function encode(msg) {
 
 const onSendDone = (err) => { void err; }; // errors surface through the socket's 'error'/'close' events
 
+/** Send-option objects shared by every frame: ws spreads them, it never writes into the caller's object. */
+const PLAIN_SEND = Object.freeze({ compress: false });
+const COMPRESSED_SEND = Object.freeze({ compress: true });
+
 /**
  * Send an already-encoded frame. Skips when the socket is not OPEN, when `droppable` and the socket is
- * congested (> 1 MB queued), and terminates sockets whose queue exceeds 16 MB.
+ * congested (> 1 MB queued), and terminates sockets whose queue exceeds 16 MB. `compress` enters the connection's
+ * shared deflate context (server/wsCompression.js allowlist, DESIGN §37.138): every frame not explicitly allowlisted
+ * — welcome (credentials), error/ok/pong, room setup — goes out plain.
  * @param {import('ws').WebSocket | null | undefined} ws
  * @param {string} data
- * @param {{ droppable?: boolean }} [opts]
+ * @param {{ droppable?: boolean, compress?: boolean }} [opts]
  * @returns {boolean} true when the frame was queued
  */
-export function sendRaw(ws, data, { droppable = false } = {}) {
+export function sendRaw(ws, data, { droppable = false, compress = false } = {}) {
   if (!ws || ws.readyState !== WS_OPEN || typeof data !== 'string') return false;
   try {
     const queued = ws.bufferedAmount;
     if (queued > NET_DEFAULTS.hardBufferBytes) { ws.terminate(); return false; }
     if (droppable && queued > NET_DEFAULTS.snapDropBytes) return false;
-    ws.send(data, onSendDone);
+    ws.send(data, compress === true ? COMPRESSED_SEND : PLAIN_SEND, onSendDone);
     return true;
   } catch {
     return false;
@@ -398,7 +405,7 @@ export function send(ws, msg, encoded = null) {
   // Pre-encoded bytes that are not a JSON object cannot be a baseline: fall back to the full frame encoded here.
   const data = frame.usable ? frame.data : encode(msg);
   if (data == null) return false;
-  const ok = sendRaw(ws, data, { droppable: isDroppable(msg) });
+  const ok = sendRaw(ws, data, { droppable: isDroppable(msg), compress: isCompressibleType(msg?.t) });
   if (ok && frame.usable) frame.commit();
   return ok;
 }

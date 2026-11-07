@@ -719,6 +719,16 @@ boss 场被服务器接管时（权威客户端离开 / 静默 / 报了不可信
 切片时逐字节一致。构建的对外签名、memo 语义（同 (ids, settings) 只构建一次）、失败传播都不变；命中 memo 的
 重复请求不走这条走查，零开销。
 
+### WS 出帧压缩（`SP_WS_COMPRESSION`）
+
+服务器发给浏览器的 WebSocket 帧，默认（`SP_WS_COMPRESSION=on`，DESIGN §37.138）只压缩**按类型白名单**的状态与战斗流帧
+（`m.public` / `m.private` / `m.state` / `m.unitStats` / `m.field` / `m.damage` / `b.damage` / `b.start` / `b.snap` / `b.ev` /
+`b.ext`）：每条连接一个共享的 32 KiB deflate 上下文（服务器侧 ~144 KiB zlib 状态），相邻帧内容高度重复，实测一条
+状态+战斗流压到约十分之一（§37.138 台架：wire/payload 1.01 → 0.094）。welcome（重连凭证）、error/ok/pong、房间状态、
+结算帧等一切非白名单帧**恒明文**——凭证永不进共享压缩上下文。浏览器无需任何改动（RFC 7692 标准协商）；不支持压缩的
+客户端拿到的就是明文帧。`SP_WS_COMPRESSION=off` 是运维回滚口：全量明文，启动日志 `[ws] permessage-deflate: off` 写明
+实际模式（写别的值服务器拒绝启动）。压缩的 CPU 代价实测 ≈ +0.05 s CPU / 60 s 流量（单核 ~0.1%），事件循环漂移无变化。
+
 ### 结果校验（`SP_VERIFY`）
 
 战斗在各玩家浏览器里模拟，服务器默认只按 spec 检查结果的形状和边界（`fields.js validateClientResult`），不重算。三档：

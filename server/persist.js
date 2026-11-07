@@ -44,6 +44,10 @@ export const PERSIST_VERSION = 1;
 /** Default interval between state writes (ms). */
 export const SAVE_MS = 10_000;
 
+/** Default max committed checkpoint encodes per sweep round ([ASSUMED] ~8 covers steady drift at ~130 live matches;
+ * SP_PERSIST_ENCODE_BUDGET / opts.encodeBudget override, 0 = uncapped). */
+export const ENCODE_BUDGET_DEFAULT = 8;
+
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
 // ---------------------------------------------------------------------------------------------------
@@ -306,9 +310,10 @@ export class Persister {
    *   registry: import('./net.js').SessionRegistry,
    *   lobby: import('./lobby.js').Lobby,
    *   log?: object, now?: () => number, saveMs?: number, minFlushMs?: number, verifyVersion?: boolean,
+   *   encodeBudget?: number,
    * }} opts
    */
-  constructor({ store, registry, lobby, log = noopLog, now = Date.now, saveMs = SAVE_MS, minFlushMs, verifyVersion }) {
+  constructor({ store, registry, lobby, log = noopLog, now = Date.now, saveMs = SAVE_MS, minFlushMs, verifyVersion, encodeBudget }) {
     this.store = store;
     this.registry = registry;
     this.lobby = lobby;
@@ -317,6 +322,15 @@ export class Persister {
     this.saveMs = Math.max(1000, Number(saveMs) || SAVE_MS);
     /** Minimum gap between two write rounds: checkpoint events coalesce into the next slot instead of a hot loop. */
     this.minFlushMs = minFlushMs == null ? this.saveMs : Math.max(0, Number(minFlushMs) || 0);
+    /** Max committed checkpoint encodes per round (0 = uncapped): a capture's structured clone blocks the main thread,
+     * so the sweep spreads them over rounds (SP_PERSIST_ENCODE_BUDGET). Deferred rooms keep their stale version and
+     * are re-checked first next round. */
+    const budgetEnv = Number.parseInt(process.env.SP_PERSIST_ENCODE_BUDGET ?? '', 10);
+    this.encodeBudget = Number.isInteger(encodeBudget) && encodeBudget >= 0
+      ? encodeBudget
+      : (Number.isInteger(budgetEnv) && budgetEnv >= 0 ? budgetEnv : ENCODE_BUDGET_DEFAULT);
+    /** Round-robin start offset into the room list for the next sweep (encode-budget fairness). */
+    this._encodeCursor = 0;
     /** Encoded clock-free checkpoint bodies per room code (JSON text; written to a shard verbatim). */
     this.matchDocs = new Map();
     this.metadataTokens = new WeakMap();
@@ -340,7 +354,7 @@ export class Persister {
      */
     this.verifyVersion = verifyVersion ?? process.env.SP_PERSIST_VERIFY === '1';
     /** Checkpoint bookkeeping: encodes, skips (nothing changed), verified comparisons, and version misses. */
-    this.versionStats = { encodes: 0, skipped: 0, verified: 0, holes: 0 };
+    this.versionStats = { encodes: 0, skipped: 0, verified: 0, holes: 0, deferred: 0 };
     this.encoder = new PersistenceWorker();
     this.checkpointPending = new Set();
     /**
@@ -406,7 +420,8 @@ export class Persister {
     return this.metadataVersion;
   }
 
-  /** Refresh every checkpointable match (Worker-encoded, one room at a time); drop checkpoints of gone rooms. */
+  /** Refresh every checkpointable match (Worker-encoded, one room at a time, at most encodeBudget committed encodes
+   * per round, rotating fairly); drop checkpoints of gone rooms and stale version entries. */
   async checkpointMatches() {
     for (const code of [...this.matchDocs.keys()]) {
       if (!this.lobby.rooms.has(code)) {
@@ -423,10 +438,26 @@ export class Persister {
       const room = this.lobby.rooms.get(code);
       if (!room || room.disposed || room.match !== stored.match) this.matchVersions.delete(code);
     }
-    for (const [code, room] of this.lobby.rooms) {
+    // One committed encode costs the main thread a capture's structured clone (tens of ms on a big match), and the
+    // encode budget caps how many a single round may spend; the rotation walks the room list round-robin, so a room
+    // the budget deferred is the first candidate next round — a checkpoint at most one save interval staler, never
+    // lost (an unvisited room keeps its stale version, so the next sweep re-checks and re-encodes it). Every encode
+    // is followed by a macrotask yield, so captures never pile into one tick.
+    const rooms = [...this.lobby.rooms];
+    let visited = 0;
+    let encoded = 0;
+    for (let i = 0; i < rooms.length; i++) {
+      if (this.encodeBudget > 0 && encoded >= this.encodeBudget) {
+        this.versionStats.deferred++;
+        break;
+      }
+      const [code, room] = rooms[(this._encodeCursor + i) % rooms.length];
+      visited++;
       if (room.disposed || !room.match) continue;
-      await this.encodeRoom(code, room.match);
+      if (await this.encodeRoom(code, room.match)) encoded++;
+      await new Promise(setImmediate);
     }
+    this._encodeCursor = (this._encodeCursor + visited) % Math.max(1, rooms.length);
   }
 
   /**

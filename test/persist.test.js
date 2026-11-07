@@ -627,3 +627,45 @@ test('checkpointMatches releases a version entry once the room no longer holds t
   } finally { lobby.rooms.clear(); await persister.encoder.close(); lobby.shutdown(); }
 });
 
+test('checkpointMatches encodes at most encodeBudget rooms per round and rotates fairly', async () => {
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
+  const store = new MemoryStore();
+  const persister = new Persister({ store, registry, lobby, log: quietLog, encodeBudget: 2 });
+  try {
+    for (const c of ['A', 'B', 'C', 'D', 'E', 'F']) lobby.rooms.set(c, { code: c, disposed: false, match: {} });
+    const calls = [];
+    persister.encodeRoom = async (code) => { calls.push(code); return true; };
+    await persister.checkpointMatches();
+    await persister.checkpointMatches();
+    await persister.checkpointMatches();
+    await persister.checkpointMatches();
+    assert.deepEqual(calls.slice(0, 6), ['A', 'B', 'C', 'D', 'E', 'F'],
+      'the budget takes the next two rooms each round, in rotation');
+    assert.equal(calls[6], 'A', 'after the full rotation the first room is due again');
+    assert.equal(persister.versionStats.deferred, 4, 'each truncated round is counted once');
+    // A deferred room keeps whatever version entry it had: the next sweep re-checks it (nothing is lost).
+    persister.matchVersions.set('F', { match: lobby.rooms.get('F').match, version: 5 });
+    await persister.checkpointMatches();
+    assert.equal(persister.matchVersions.has('F'), true,
+      'a budget-deferred room is not touched by the sweep that skipped it');
+  } finally { lobby.rooms.clear(); await persister.encoder.close(); lobby.shutdown(); }
+});
+
+test('encodeBudget 0 is the uncapped escape hatch and pure skips cost no budget', async () => {
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
+  const store = new MemoryStore();
+  const persister = new Persister({ store, registry, lobby, log: quietLog, encodeBudget: 0 });
+  try {
+    for (const c of ['A', 'B', 'C']) lobby.rooms.set(c, { code: c, disposed: false, match: {} });
+    lobby.rooms.set('IDLE', { code: 'IDLE', disposed: false, match: null });
+    const calls = [];
+    persister.encodeRoom = async (code) => { calls.push(code); return false; };
+    await persister.checkpointMatches();
+    assert.deepEqual(calls, ['A', 'B', 'C'], 'every room with a match is visited; the matchless one is not');
+    assert.equal(persister.versionStats.deferred, 0, 'no committed encode, no budget pressure');
+    assert.equal(persister._encodeCursor, 0, 'a full rotation wraps the cursor back to the start');
+  } finally { lobby.rooms.clear(); await persister.encoder.close(); lobby.shutdown(); }
+});
+

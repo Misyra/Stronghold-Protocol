@@ -11,7 +11,9 @@ import { makeMatch } from './harness.js';
 
 /** n humans (p_0 … p_{n-1}), the last one dropped at the start: by PREP R3 the AI plays its seat. */
 function takenOver(n = 4, o = {}) {
-  const h = makeMatch({ mode: 'coop', humans: n, seed: 65, fake: true, script: () => ({ duration: 4 }), ...o }).start();
+  // 超过 4 人的用例挂上容量实验（Match 构造器的座位上限；本测试考的是投票，不是容量）
+  const cap = { ...(n > 4 ? { experimental: { revivalEnabled: false, disableSharedPool: false, playerCapacity: 8 } } : {}) };
+  const h = makeMatch({ mode: 'coop', humans: n, seed: 65, fake: true, script: () => ({ duration: 4 }), ...cap, ...o }).start();
   const target = h.ps(`p_${n - 1}`);
   h.m.onDisconnect(target.playerId);
   h.runToPhase(PHASE.PREP, 3);

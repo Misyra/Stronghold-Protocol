@@ -13,6 +13,7 @@ import { cardView } from '../choices.js';
 import { bountySpawns, withBounties, previewOf } from '../waves.js';
 import { timelineAt, GAME_SPEED } from '../fields.js';
 import { bossFieldPlacement } from '../finalAssault.js';
+import { uniteRelayHelpers } from '../unite.js';
 import { battleProgress } from '../../sim/spec.js';
 
 /** Milliseconds since the match started. A stamp before the start, or a bad stamp, is 0. The stored log keeps the epoch. */
@@ -50,10 +51,11 @@ export class MatchViews {
       case PHASE.INFO_CHECK: return ps.infoReady ? 'ready' : 'deciding';
       case PHASE.BAND_DRAFT:
         if (this.draft && this.draft.picks[ps.playerId]) return 'ready';
-        return this.draft && this.draftTurn() === ps.playerId ? 'deciding' : 'acting';
+        // 并发草稿（concurrentDraft）：所有仍在决定的席位都是 deciding（移植自用户分支 statusOf）
+        return this.draft && (this.draft.concurrent || this.draftTurn() === ps.playerId) ? 'deciding' : 'acting';
       case PHASE.SP_DRAFT:
         if (this.sp && this.sp.picks[ps.playerId] != null) return 'ready';
-        return this.sp && this.spTurn() === ps.playerId ? 'deciding' : 'acting';
+        return this.sp && (this.sp.concurrent ? this.spPending(ps) : this.spTurn() === ps.playerId) ? 'deciding' : 'acting';
       case PHASE.PREP: return ps.ready ? 'ready' : 'acting';
       case PHASE.COMBAT: case PHASE.FINAL_ASSAULT: case PHASE.HIDDEN_CORE: {
         const f = this.fields.find((x) => x.players.includes(ps.playerId));
@@ -73,6 +75,11 @@ export class MatchViews {
   publicView() {
     const v = {
       t: 'm.public',
+      // 多人同盟容量（移植自用户分支 views.js）: the opt-in room's seat count and its chess-pool groups — absent on an
+      // ordinary match, whose m.public stays byte-identical
+      ...(this.capacityExperiment ? { playerCapacity: this.playerCapacity } : {}),
+      ...(this.capacityExperiment
+        ? { poolGroups: this.poolGroups.map(({ id, playerIds, scale }) => ({ id, playerIds: playerIds.slice(), scale })) } : {}),
       phase: this.phase,
       round: this.round,
       ...(this.gd.roundDifficulty ? { enemyDifficulty: this.gd.roundDifficulty } : {}),
@@ -179,19 +186,39 @@ export class MatchViews {
         turnSeconds: d.untimed ? 0 : this.bandTurnMs() / 1000, untimed: !!d.untimed,
         // 「允许重复策略」 (bandDupes, 本仓新设): the client stands its 队友已选 guard down
         ...(this.bandDupes ? { dupes: true } : {}),
-        // room.setBotBand (移植自用户分支): the designated strategies still held for their AI seats (bandId → playerId)
-        ...(this.botBands?.size && !this.bandDupes ? { reserved: this.reservedBands() } : {}),
+        // 扩编房间 repeats（移植自用户分支 views.js）: repeats are allowed and the step is concurrent — `turn` is null,
+        // the countdown is the step's
+        ...(this.capacityExperiment ? { allowRepeat: true } : {}),
+        ...(d.concurrent ? { concurrent: true } : {}),
+        // room.setBotBand (移植自用户分支): the designated strategies still held for their AI seats (bandId → playerId);
+        // an expanded room holds none (bandTaken/reservedBands stand down under capacityExperiment)
+        ...(this.botBands?.size && !this.bandDupes && !this.capacityExperiment ? { reserved: this.reservedBands() } : {}),
       };
     }
     if (this.phase === PHASE.SP_DRAFT && this.sp) {
       const s = this.sp;
       v.sp = {
         family: s.family, name: s.name, desc: s.desc, eventId: s.eventId,
-        cards: s.cards.map(c => ({ ...cardView(c), soldOut: c.kind === 'item' && !this.itemPool.canGain(c.id) })), order: s.order.slice(),
+        // an item card's stock is the picking seat's (its chess-pool group's: Match itemPoolFor); a concurrent draft has
+        // no picking seat: soldOut = no alive seat's stock holds it (each seat's own: m.private spBlocked)
+        cards: s.cards.map(c => ({ ...cardView(c), soldOut: c.kind === 'item' && !this.spItemAvailable(c.id, this.spTurn()) })), order: s.order.slice(),
         turn: this.spTurn(), picks: { ...s.picks }, taken: { ...s.taken }, untimed: !!s.untimed,
+        // 扩编房间 repeats / 并发（移植自用户分支 views.js）
+        ...(this.capacityExperiment ? { allowRepeat: true } : {}),
+        ...(s.concurrent ? { concurrent: true } : {}),
       };
     }
-    if (this.phase === PHASE.UNITE && this.unitePlan) v.unite = { helpers: this.unitePlan.helpers.map((p) => p.playerId), leakers: this.unitePlan.leakers.map((p) => p.playerId) };
+    if (this.phase === PHASE.UNITE && this.unitePlan) {
+      v.unite = { helpers: this.unitePlan.helpers.map((p) => p.playerId), leakers: this.unitePlan.leakers.map((p) => p.playerId) };
+      // 容量联防接力（≥8 人，unitePhase.js）：两轮的轮次元数据（移植自用户分支 views.js；`battleId` 取当轮场地）
+      if (this._uniteRelay && this.unitePlan.uniteRound) {
+        v.uniteRound = this.unitePlan.uniteRound;
+        v.uniteRounds = this.unitePlan.uniteRound === 2 || uniteRelayHelpers(this, this.unitePlan).length ? 2 : 1;
+        const f = this.fields[0];
+        v.unite.battleId = f && (f.battleId || f.spec?.battleId || f.battle?.opts?.battleId);
+        v.unite.rounds = this._uniteRelay.rounds.map((r) => ({ ...r.view, helpers: r.view.helpers.slice() }));
+      }
+    }
     // SETTLE after a 联防: its outcome as data (settle.js uniteResultView; GitHub #235, PR #112) — { through, helpers,
     // leakers, losses: { playerId: the LP settlement charged this round } } — the client's result box reads the viewer's
     // own charge from it; absent when no 联防 resolved (the client then shows the round's own battle result)

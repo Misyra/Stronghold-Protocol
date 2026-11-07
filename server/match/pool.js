@@ -21,6 +21,9 @@
 // the promotion reward and random grants pass diyStockEntries (the roll's own tier, DESIGN §30.23). Weighted by its
 // copies like any chess, drawn by that player only.
 
+// 容量实验（移植自用户分支，shared/poolPlan.js 的自动分组半边；手动卡池编组 poolPlan 不在本仓范围）。
+import { MAX_PLAYER_CAPACITY } from '../../shared/playerCapacity.js';
+
 /**
  * Per-match disabled bond set D and banned chess (research 01 A2): D = uniform sample of `core` core bonds and `addon`
  * add-on bonds among weight > 0 bonds that are active in the mode. A visible chess is banned iff every one of its
@@ -55,19 +58,64 @@ function sample(arr, n, rng) {
   return a.slice(0, Math.max(0, Math.min(n, a.length)));
 }
 
+/** 一个池相对完整普通池的规模：≤4 席恰好一份，更多席位按人数放大（五席实验房 ×5/4）。 */
+export const poolScale = (n) => (n > 4 ? n / 4 : 1);
+
+/** 最大的房间的每一个席位同池时的规模上限（SharedPool 的 scale 校验界）。 */
+const MAX_POOL_SCALE = poolScale(MAX_PLAYER_CAPACITY);
+
+/**
+ * 自动分组的切块大小（`count` 个席位按座位顺序；fork shared/poolPlan.js autoPoolSizes 的容量域子集——
+ * independent（不共享池）/ legacySix（旧检查点）随手动编组一起不在本仓范围，但 independent 仍要支持
+ * disableSharedPool：每席一组，各自完整份数）。
+ * @param {number} count
+ * @param {{ experimental?: boolean, independent?: boolean, fixedChunks?: boolean }} [opts]
+ * @returns {{ sizes: number[], enlarged: boolean }}
+ */
+export function autoPoolSizes(count, { experimental = false, independent = false, fixedChunks = false } = {}) {
+  const chunked = experimental && fixedChunks && !independent;
+  const enlarged = experimental && !independent && !chunked && count === 5;
+  const groups = independent ? count : chunked || (experimental && !enlarged && count >= 6) ? Math.ceil(count / 4) : 1;
+  const sizes = chunked ? Array.from({ length: groups }, (_, i) => Math.min(4, count - i * 4))
+    : Array.from({ length: groups }, (_, i) => Math.floor(count / groups) + (i < count % groups ? 1 : 0));
+  return { sizes, enlarged };
+}
+
+/**
+ * 开局时的席位分组（fork pool.js createPoolGroups，去掉 poolPlan 手动编组）：实际座位顺序的连续块，每块自己的
+ * 卡池。`experimental`（容量房间）按 autoPoolSizes 切，20 人房（fixedChunks）固定连续 4 人块；普通房一组、原份数，
+ * 与旧的单池行为完全一致。分组之后永不因淘汰/离开而重排（Match.buildPoolGroups）。
+ * @param {import('./gamedata.js').GameData} gd
+ * @param {Array<{ seat: number, playerId: string }>} players
+ * @param {{ banned?: string[], experimental?: boolean, independent?: boolean, fixedChunks?: boolean }} [opts]
+ */
+export function createPoolGroups(gd, players, { banned = [], experimental = false, independent = false, fixedChunks = false } = {}) {
+  if (!Array.isArray(players) || players.length < 1 || players.length > MAX_PLAYER_CAPACITY) throw new RangeError('pool groups require 1..20 players');
+  const sorted = players.slice().sort((a, b) => a.seat - b.seat);
+  const count = sorted.length;
+  const { sizes, enlarged } = autoPoolSizes(count, { experimental, independent, fixedChunks });
+  let offset = 0;
+  return sizes.map((n, i) => {
+    const playerIds = sorted.slice(offset, offset += n).map((p) => p.playerId);
+    const scale = enlarged ? count / 4 : 1;
+    return { id: i + 1, playerIds, scale, pool: new SharedPool(gd, { banned, scale }) };
+  });
+}
+
 export class SharedPool {
   /**
    * @param {import('./gamedata.js').GameData} gd
-   * @param {{ banned?: Iterable<string> }} [opts]
+   * @param {{ banned?: Iterable<string>, scale?: number }} [opts]
    */
-  constructor(gd, { banned = [] } = {}) {
+  constructor(gd, { banned = [], scale = 1 } = {}) {
+    if (!Number.isFinite(scale) || scale < 1 || scale > MAX_POOL_SCALE) throw new RangeError(`pool scale must be 1..${MAX_POOL_SCALE}`);
     this.gd = gd;
     const ban = new Set(banned);
     /** @type {Map<string, { cap: number, left: number, tier: number }>} */
     this.entries = new Map();
     for (const id of gd.visibleChess) {
       if (ban.has(id)) continue;
-      const cap = gd.poolCopies(id);
+      const cap = scale === 1 ? gd.poolCopies(id) : Math.ceil(gd.poolCopies(id) * scale);
       if (cap <= 0) continue;
       this.entries.set(id, { cap, left: cap, tier: gd.tierOf(id) });
     }
@@ -210,15 +258,20 @@ export class SharedPool {
  * copy is free. 整备 and ordinary grants stay limited. Fixed gift families may exceed the cap without a debt entry.
  * Source: the original experiment BV1eLXXBqEgF, 1:30 and 2:30, extended to equipment by the maintainer on
  * 2026-10-14 (#624). [ASSUMED] An item that is consumed, destroyed or removed by elimination no longer occupies
- * stock, consistently with the video's ownership model; this is not a per-match purchase limit. */
+ * stock, consistently with the video's ownership model; this is not a per-match purchase limit.
+ * `players` 是一个卡池组的席位（createItemPools），`scale` 是该组的池规模（>1 时按比例放大、向上取整）。 */
 export class SharedItemPool {
-  constructor(gd, players) {
+  constructor(gd, players, { scale = 1 } = {}) {
     this.gd = gd;
     this.players = players;
+    this.scale = scale;
     /** @type {Map<string, number>} base id → copies taken past the cap by an already-displayed card */
     this.debt = new Map();
   }
-  cap(id) { return this.gd.itemPoolCopies(id); }
+  cap(id) {
+    const n = this.gd.itemPoolCopies(id);
+    return n == null || this.scale === 1 ? n : Math.ceil(n * this.scale);
+  }
   need(id) { return this.gd.isGolden(id) ? 2 : 1; }
   held(id) {
     const base = this.gd.baseIdOf(id);
@@ -270,4 +323,16 @@ export class SharedItemPool {
     for (const [id, weight] of pairs) if ((r -= Math.max(0, weight)) < 0) return id;
     return pairs.at(-1)?.[0] || null;
   }
+}
+
+/** 装备库存跟随卡池分组（fork pool.js createItemPools）：一个席位只把本组席位的持有量记到本组按规模放大后的
+ * 上限上，容量房间因此像共享干员一样共享装备——每组席位一份库存，不共享池的房间每席一份。普通对局只有一组：
+ * 全体席位、实测份数。 */
+export function createItemPools(gd, groups, playerOf) {
+  const out = new Map();
+  for (const g of groups) {
+    const pool = new SharedItemPool(gd, () => g.playerIds.map(playerOf).filter(Boolean), { scale: g.scale });
+    for (const id of g.playerIds) out.set(id, pool);
+  }
+  return out;
 }

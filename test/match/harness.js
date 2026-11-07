@@ -111,7 +111,7 @@ export function makeMatch(o = {}) {
     // still has no kitted key.
     ...(o.kitted !== undefined ? { kitted: o.kitted } : {}),
     ...(o.rules !== undefined ? { rules: o.rules } : {}),
-    ...(o.experimental !== undefined ? { experimental: o.experimental } : {}),
+    experimental: o.experimental,
   });
   const m = h.m;
   if (m.clientCombat && o.clients !== false) {
@@ -151,9 +151,11 @@ export function makeMatch(o = {}) {
       for (const ps of m.players.values()) {
         if (ps.isBot || ps.left) continue;
         if (m.phase === 'INFO_CHECK' && !ps.infoReady) m.handle(ps.playerId, { t: 'g.infoReady' });
-        if (m.phase === 'BAND_DRAFT' && m.draftTurn() === ps.playerId) m.handle(ps.playerId, { t: 'g.band', bandId: band });
-        if (m.phase === 'SP_DRAFT' && m.spTurn() === ps.playerId) {
-          const idx = m.sp.cards.map((c) => c.idx).find((k) => m.sp.taken[k] == null);
+        // (an expanded room's drafts are concurrent: every seat still deciding picks — Match concurrentDraft)
+        const bandDue = m.draft?.concurrent ? m.draft.order.includes(ps.playerId) && !m.draft.picks[ps.playerId] : m.draftTurn() === ps.playerId;
+        if (m.phase === 'BAND_DRAFT' && bandDue) m.handle(ps.playerId, { t: 'g.band', bandId: band });
+        if (m.phase === 'SP_DRAFT' && (m.sp?.concurrent ? m.spPending(ps) : m.spTurn() === ps.playerId)) {
+          const idx = m.sp.cards.find((c) => m.spCardAvailable(c, ps))?.idx;
           if (idx != null) m.handle(ps.playerId, { t: 'g.choice', idx });
         }
         if (ready && m.phase === 'PREP' && ps.alive && !ps.ready) {
@@ -183,10 +185,40 @@ export function checkInvariants(m) {
   return legacyInvariants(m);
 }
 
+/**
+ * 容量房间的分组校验（server/match/invariants.js 的分组化落地前的替身，见移植报告）：collectViolations 的非记账行
+ * （它对第一组之外的持有会按单池误报）+ 逐池的 left + held == cap 核对（自选槽位仍记本席库存，与 legacyInvariants
+ * 同一算法）。普通房间与 checkInvariants 等价。
+ * @param {import('../../server/match/Match.js').Match} m
+ * @returns {string[]} every violation found
+ */
+export function capacityViolations(m) {
+  const out = collectViolations(m).filter((v) => !/^pool |^non-pool chess /.test(v));
+  const holdings = new Map(m.poolGroups.map((g) => [g.pool, new Map()]));
+  for (const ps of m.players.values()) {
+    const pool = m.poolFor(ps);
+    if (!holdings.has(pool)) holdings.set(pool, new Map());
+    const held = holdings.get(pool);
+    for (const p of [...ps.board.values(), ...ps.hand, ...ps.temp]) {
+      if (!p || p.kind !== 'chess') continue;
+      const base = m.gd.baseIdOf(p.id);
+      if (ps.diyStock && ps.diyStock.has(base)) continue; // 自选库存有自己的核对（invariants.js 逐席照旧）
+      held.set(base, (held.get(base) || 0) + (p.poolCopies || 0));
+    }
+  }
+  for (const [pool, held] of holdings) {
+    for (const [base, e] of pool.entries) {
+      if (!(Number.isInteger(e.left) && e.left <= e.cap)) out.push(`pool ${base}: balance ${e.left} cap ${e.cap}`);
+      if (e.left + (held.get(base) || 0) !== e.cap) out.push(`pool ${base}: left ${e.left} + held ${held.get(base) || 0} != cap ${e.cap}`);
+    }
+    for (const [base, n] of held) if (!pool.has(base)) out.push(`non-pool chess ${base} holds ${n} copies`);
+  }
+  return out;
+}
+
 /** The original harness checks (kept alongside collectViolations; they must agree). */
 function legacyInvariants(m) {
-  const pool = m.pool;
-  const held = new Map();
+  const holdings = new Map();
   const uids = new Set();
   const note = (p) => {
     assert.ok(Number.isInteger(p.uid) && p.uid > 0, `bad uid ${p.uid}`);
@@ -194,6 +226,9 @@ function legacyInvariants(m) {
     uids.add(p.uid);
   };
   for (const ps of m.players.values()) {
+    const pool = m.poolFor(ps);
+    if (!holdings.has(pool)) holdings.set(pool, new Map());
+    const held = holdings.get(pool);
     assert.ok(Number.isInteger(ps.funds) && ps.funds >= 0, `${ps.playerId} funds ${ps.funds}`);
     assert.ok(Number.isInteger(ps.pendingFunds) && ps.pendingFunds >= 0, `${ps.playerId} pending ${ps.pendingFunds}`);
     assert.equal(ps.hand.length, GEO.HAND_SIZE);
@@ -255,12 +290,14 @@ function legacyInvariants(m) {
       assert.equal(e.left + (diyHeld.get(base) || 0), e.cap, `${ps.playerId} 自选 stock ${base}: left ${e.left} + held ${diyHeld.get(base) || 0} != cap ${e.cap}`);
     }
   }
-  for (const [base, e] of pool.entries) {
-    assert.ok(Number.isInteger(e.left) && e.left <= e.cap, `pool ${base} balance ${e.left} cap ${e.cap}`);
-    assert.equal(pool.left(base), Math.max(0, e.left), 'overdrawn ownership never becomes a negative shop supply');
-    assert.equal(e.left + (held.get(base) || 0), e.cap, `pool accounting ${base}: left ${e.left} + held ${held.get(base) || 0} != cap ${e.cap}`);
+  for (const [pool, held] of holdings) {
+    for (const [base, e] of pool.entries) {
+      assert.ok(Number.isInteger(e.left) && e.left <= e.cap, `pool ${base} balance ${e.left} cap ${e.cap}`);
+      assert.equal(pool.left(base), Math.max(0, e.left), 'overdrawn ownership never becomes a negative shop supply');
+      assert.equal(e.left + (held.get(base) || 0), e.cap, `pool accounting ${base}: left ${e.left} + held ${held.get(base) || 0} != cap ${e.cap}`);
+    }
+    for (const [base, n] of held) if (!pool.has(base)) assert.equal(n, 0, `non-pool chess ${base} holds copies`);
   }
-  for (const [base, n] of held) if (!pool.has(base)) assert.equal(n, 0, `non-pool chess ${base} holds copies`);
   return true;
 }
 
@@ -269,7 +306,7 @@ export function give(m, ps, chessId, where = 'hand', at = null) {
   const rec = m.gd.chess(chessId);
   assert.ok(rec, `unknown chess ${chessId}`);
   const base = m.gd.baseIdOf(chessId);
-  const taken = m.pool.take(base, rec.isGolden ? m.gd.goldenCopies : 1);
+  const taken = m.poolFor(ps).take(base, rec.isGolden ? m.gd.goldenCopies : 1);
   const piece = ps.newPiece('chess', chessId, { poolCopies: taken });
   if (where === 'board') {
     ps.board.set(tileKey(at[0], at[1]), piece);

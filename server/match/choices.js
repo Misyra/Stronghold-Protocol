@@ -424,11 +424,15 @@ export function cardView(c) {
 export function applyCard(m, ps, card) {
   const targets = card.kind === 'tactic' && card.team ? [ps, ...m.alivePlayers().filter((p) => p !== ps)] : [ps];
   for (const p of targets) {
-    const ev = { card: { ...card }, family: card.family, picker: ps.playerId, forTeammate: p !== ps };
-    const handled = m.dispatcher.runKey(p, `choice:${card.id}`, 'onChoicePick', { kind: 'choice', card }, ev);
-    if (!handled) applyDefault(m, p, card);
+    // 容量房间 repeats（移植自用户分支 applyCard）：每个受领人拿自己的一份克隆——嵌套内容的变更隔离在一次
+    // 应用之内，绝不写回草稿的卡面（其他席位/下次重复取卡读到的是原样）
+    const chosen = m.capacityExperiment ? structuredClone(card) : card;
+    const ev = { card: { ...chosen }, family: chosen.family, picker: ps.playerId, forTeammate: p !== ps };
+    const key = `choice:${chosen.id}`;
+    const handled = m.dispatcher.runKey(p, key, 'onChoicePick', { kind: 'choice', card: chosen }, ev);
+    if (!handled) applyDefault(m, p, chosen);
     // every other source observes the pick (the card's own key already ran above)
-    m.dispatch(p, 'onChoicePick', ev, { skipKey: `choice:${card.id}` });
+    m.dispatch(p, 'onChoicePick', ev, { skipKey: key });
     p.recompute();
   }
 }
@@ -457,7 +461,7 @@ function applyDefault(m, ps, card) {
       case 'global_special_choice_gain_equip': {
         const gain = Math.min(PLUGIN_GAIN_COUNT_MAX, count);
         for (let i = 0; i < gain; i++) {
-          const id = m.rollItemId({ pool: bs.pool });
+          const id = m.rollItemId({ pool: bs.pool, player: ps });
           if (id) ps.acquireItem(id, { source: 'choice' });
         }
         handled = true;
@@ -493,8 +497,9 @@ function applyDefault(m, ps, card) {
         const gain = Math.min(PLUGIN_GAIN_COUNT_MAX, count);
         for (let i = 0; i < gain; i++) {
           const extra = typeof ps.diyStockEntries === 'function' ? ps.diyStockEntries() : null;
-          const id = m.pool.roll(m.rngMeta, { maxTier: Math.max(1, ps.shop.level), filter: hasBond, extra })
-            || m.pool.roll(m.rngMeta, { maxTier: 6, filter: hasBond, extra });
+          // 容量房间：抽自受领人自己卡池组（ps.pool getter → Match.poolFor；移植自用户分支 applyDefault）
+          const id = ps.pool.roll(m.rngMeta, { maxTier: Math.max(1, ps.shop.level), filter: hasBond, extra })
+            || ps.pool.roll(m.rngMeta, { maxTier: 6, filter: hasBond, extra });
           if (id) ps.acquireChess(id, { source: 'choice' });
         }
         handled = true;

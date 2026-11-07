@@ -180,7 +180,9 @@ export function draftTip({ timed, turnSeconds = null, autoName = null, selected 
       : t('{skip}；{clock}，锁定前可以取消或改选；倒计时结束时固定当前选择', { skip, clock });
   }
   if (!timed) return t('{skip}；本局不限时', { skip });
-  const clock = Number(turnSeconds) > 0 ? t(concurrent ? '限时 {n} 秒' : '每位博士有 {n} 秒', { n: Math.round(turnSeconds) }) : t('每位博士限时决策');
+  const clock = Number(turnSeconds) > 0
+    ? (concurrent ? t('限时 {n} 秒', { n: Math.round(turnSeconds) }) : t('每位博士有 {n} 秒', { n: Math.round(turnSeconds) }))
+    : t('每位博士限时决策');
   if (!autoName) return t('{skip}；{clock}', { skip, clock });
   return selected ? t('{skip}；{clock}，超时将自动选择当前选中的「{autoName}」', { skip, clock, autoName })
     : t('{skip}；{clock}，超时将自动选择「{autoName}」', { skip, clock, autoName });

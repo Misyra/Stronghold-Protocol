@@ -82,6 +82,7 @@ test('an unchanged match is not encoded again: only the clock envelope moves', a
   const match = {
     disposed: false, ended: false, phase: PHASE.INFO_CHECK, sched: { now: () => now }, deadline: 65_000, startedAt: 4_000,
     pool: { entries: new Map([['chess_a', { cap: 20, left: 20, tier: 1 }]]), revision: 0, take(id, n) { this.entries.get(id).left -= n; this.revision++; } },
+    poolGroups: [],
     order: [], alivePlayers: () => [], errorCount: 0, errors: [], round: 1, _persistRev: 0, uidSeq: 0, _battleSeq: 0, pausedMs: 0,
   };
   const { lobby, code } = await roomFor(match, { mode: 'solo' });

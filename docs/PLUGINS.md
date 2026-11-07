@@ -1229,7 +1229,7 @@ settings (256 recent results [ASSUMED]); changing settings or executable bytes r
 prevents a stale or missing lock in an explicit CLI test from reusing another source's result.
 The probe is an awaited child process, never a main-thread stall (§37.129 — the §32.10 revision of the original
 synchronous spawn): C1's data half (patches, records, the checks, the hashes, the freeze) pauses between blocks — per
-data file, per plugin, per document, per stage, per table (§37.135, `SP_CONTENT_SLICE_MS`) — a build with scripts
+data file, per plugin, per document, per stage, per table (§37.136, `SP_CONTENT_SLICE_MS`) — a build with scripts
 awaits the probe, and the room's message is answered once it settles (server/net.js). Concurrent builds of one cache key share
 one child; every registry load (boot, a bound script host, a rescan after an install) warms the cache for each loaded
 script plugin at its default settings, so the first room does not pay the probe. The HTTP/lobby process

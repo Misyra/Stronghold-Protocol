@@ -1,7 +1,7 @@
 // C1 immutable content compositions (DESIGN §32.5). HTTP and room ownership are handled by contentSets.js and roomSets.js.
 // A build's data half walks the game data (patches, records, the checks, the hashes, the freeze) as a generator that
 // pauses between blocks — per data file, per plugin, per document, per stage, per table — so the event loop breathes
-// while a big composition is built (§37.135): the blocks stay within SP_CONTENT_SLICE_MS (default 25 ms) plus the one
+// while a big composition is built (§37.136): the blocks stay within SP_CONTENT_SLICE_MS (default 25 ms) plus the one
 // unsliceable unit a block ends with. The walk itself is unchanged: a sliced build and a fully synchronous one return
 // the same bytes and the same problems. When the set has script plugins, the build awaits its registration probe
 // (scriptPreflight.js) between the data half and the tail — the event loop is never blocked on a plugin script, the
@@ -33,13 +33,13 @@ import { offerReferenceProblems } from './offerData.js';
 
 const bases = new WeakMap(), buffers = new WeakMap(), caches = new WeakMap();
 
-// --- the sliced walk (§37.135) ---------------------------------------------------------------------------------------------
+// --- the sliced walk (§37.136) ---------------------------------------------------------------------------------------------
 // The data half and the tail are generators; the caller drives them. driveSliced lets the event loop run whenever the
 // block since the last pause reached the budget; driveSync runs the same walk to completion without a single await
 // (checkContentSetDataOnly keeps its synchronous contract, and the pauses are plain continuations there).
 
 /** SP_CONTENT_SLICE_MS: the synchronous-block budget of a build's data half and tail, in ms (default 25; 0 = the walk
- * never pauses — the pre-§37.135 fully synchronous build). Options.slice.budgetMs overrides it per build (tests). */
+ * never pauses — the pre-§37.136 fully synchronous build). Options.slice.budgetMs overrides it per build (tests). */
 function sliceOpts(options) {
   const s = options?.slice;
   const fromEnv = process.env.SP_CONTENT_SLICE_MS;
@@ -442,7 +442,7 @@ function* composeGen({ registry, ids = [], checkDataOnly = false }) {
   // The script probe (scriptPreflight.js) awaits a child process, so it gates the set outside this data half:
   // buildContentSet awaits it and only then runs the tail. Everything above — the patches, the records, the checks,
   // the hashes, the cs — ran before the probe in the synchronous builder too; only the served files and the frozen
-  // snapshot below wait. [ASSUMED, revised] C1's data half pauses between blocks; its result is unchanged (§37.135).
+  // snapshot below wait. [ASSUMED, revised] C1's data half pauses between blocks; its result is unchanged (§37.136).
   return { pending: {
     probe: scripts.length ? { registry, scripts, hashInput: { plugins: parts, settings } } : null,
     bodies, base, data, plugins, scripts, parts, settings, execution, rules, cs, boundsSnap, warnings, cache,
@@ -510,7 +510,7 @@ export function contentSetFiles(set) {
 /** C1 failures are data diagnostics, including invalid nested stage/translation input. A set with script plugins
  * awaits its registration probe (scriptPreflight.js) before the tail runs — callers await the build (contentSets.resolve
  * answers PLUGIN_BUSY/refusals once it settles; server/net.js replies then). The probe result is cached per registry,
- * so an unchanged set is not awaited on twice. The data half pauses between blocks (§37.135); composes queue, so two
+ * so an unchanged set is not awaited on twice. The data half pauses between blocks (§37.136); composes queue, so two
  * builds never interleave — the same one-thread order the synchronous walk gave. */
 export async function buildContentSet(options) {
   const opts = options ?? {};

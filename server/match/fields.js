@@ -261,6 +261,26 @@ export const HEADLESS_SLICE_MS = 8;
 export const CATCHUP_TICKS_PER_INTERVAL = 240;
 const perfNow = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
 
+// —— 接管追帧的墙钟预算（SP_PACER_SKIP_BUDGET_MS，默认 8；0 = 关，回滚口）——
+// 追帧分片原以定数 CATCHUP_TICKS_PER_INTERVAL（240 tick）为一轮上限；一个 tick 的真实成本随战场深度与
+// 主机负载放大后（线上 70–240 ms/块），一轮的停顿跟着放大。墙钟预算把它封顶：一轮最多花这么多墙钟毫秒，
+// 余量下一轮续。0 = 完全关闭：回到与改动前等价的纯定数行为（无时钟读数）。
+
+const PACER_SKIP_BUDGET_DEFAULT = 8;
+
+const parsePacerSkipBudget = (raw) => {
+  const n = Number(raw);
+  if (raw == null || raw === '' || !Number.isFinite(n) || n < 0) return PACER_SKIP_BUDGET_DEFAULT;
+  return n;
+};
+
+let PACER_SKIP_BUDGET_MS = parsePacerSkipBudget(process.env.SP_PACER_SKIP_BUDGET_MS);
+
+/** 测试钩子：SP_PACER_SKIP_BUDGET_MS 在 import 时读一次，测试用它改运行中的值。 */
+export function _setPacerSkipBudgetForTests(ms) {
+  PACER_SKIP_BUDGET_MS = parsePacerSkipBudget(ms == null ? undefined : String(ms));
+}
+
 /**
  * A timeline sample of a battle: [gt, killed, total, resolved], plus — 联防 — the leakers' enemies still standing at
  * index 4 (spec.js uniteLeft; omitted when unknown). `resolved` is the HUD capsule's numerator of that game second
@@ -397,7 +417,9 @@ export class HeadlessPacer {
   /**
    * Fast-forward an entry's battle silently until its game time reaches `gt` (bounded). `budgetTicks` (default: all at
    * once) spreads it over the pacing intervals instead — at most that many extra ticks per interval on top of the
-   * normal pacing — so a takeover late in a boss fight never stalls the host's event loop.
+   * normal pacing, further bounded by the SP_PACER_SKIP_BUDGET_MS wall clock when a tick costs more than assumed
+   * (0 = the fixed tick budget alone, as before) — so a takeover late in a boss fight never stalls the host's event
+   * loop.
    */
   skipTo(entry, gt, { budgetTicks = Infinity } = {}) {
     const cap = Math.ceil(Math.min(Number(gt) || 0, HARD_CAP_SECONDS) / TICK);
@@ -410,12 +432,21 @@ export class HeadlessPacer {
     this._skip(entry, cap, Infinity);
   }
 
-  /** Silent steps toward `cap` ticks (at most `max`); returns the steps taken. */
-  _skip(entry, cap, max) {
+  /**
+   * Silent steps toward `cap` ticks (at most `max`, and — when `budgetMs` > 0 — at most `budgetMs` wall-clock
+   * milliseconds, checked every tick with a one-tick minimum so a slice never starves); returns the steps taken.
+   */
+  _skip(entry, cap, max, budgetMs = 0, now = perfNow) {
     const b = entry.battle;
+    const timed = budgetMs > 0;
+    const t0 = timed ? now() : 0;
     let k = 0;
     try {
-      while (!b.finished && b.tickCount < cap && k < max) { b.step(); k++; } // loop-cap: tick cap
+      while (!b.finished && b.tickCount < cap && k < max) { // loop-cap: tick cap + wall-clock budget
+        b.step();
+        k++;
+        if (timed && now() - t0 >= budgetMs) break; // over budget: the remainder continues next interval
+      }
     } catch (e) {
       this.m.reportError('pacer skip', e);
       try { b.forceEnd('timeout'); } catch { /* ignore */ }
@@ -447,9 +478,11 @@ export class HeadlessPacer {
       if (e.done) continue;
       const b = e.battle;
       if (e.skipTicks != null) {
-        // sliced fast-forward (takeover): the field clock keeps running, so the target moves with the pacing
+        // sliced fast-forward (takeover): the field clock keeps running, so the target moves with the pacing;
+        // the wall-clock budget (SP_PACER_SKIP_BUDGET_MS) bounds the slice when a tick costs more than the
+        // fixed tick budget assumed — the remainder continues over the following intervals
         e.skipTicks += n;
-        e.skipped += this._skip(e, e.skipTicks, e.skipBudget + n);
+        e.skipped += this._skip(e, e.skipTicks, e.skipBudget + n, PACER_SKIP_BUDGET_MS);
         if (e.done) continue;
         if (b.tickCount >= e.skipTicks) e.skipTicks = null;
         if (e.onTick) { try { e.onTick(e); } catch (err) { this.m.reportError('pacer onTick', err); } }

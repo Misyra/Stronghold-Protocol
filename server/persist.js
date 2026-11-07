@@ -328,7 +328,9 @@ export class Persister {
     /**
      * The persistence version each stored checkpoint body was encoded at, per room code, together with the match it
      * belongs to (snapshot.js persistVersion). An unchanged version means capture, cross-thread clone and codec are
-     * all skipped and only the clock envelope is refreshed.
+     * all skipped and only the clock envelope is refreshed. An entry only serves the room's *current* match:
+     * checkpointMatches() releases it once the room's match moved on (ended, replaced, room gone) — the stored body
+     * stays on the store, and an ended match's object graph must not stay pinned until the room's next match commits.
      */
     this.matchVersions = new Map();
     /**
@@ -412,6 +414,14 @@ export class Persister {
         this.matchClocks.delete(code);
         this.matchVersions.delete(code);
       }
+    }
+    // A version entry only serves the room's *current* match (encodeRoom skips on `stored.match === match`). Once the
+    // room's match moved on — it ended (the room keeps only the summary and the replay), was replaced, or the room is
+    // gone — the entry would pin the whole ended match's object graph until the next match's first commit, so it is
+    // released here; the next checkpoint of the new match stores a fresh one.
+    for (const [code, stored] of this.matchVersions) {
+      const room = this.lobby.rooms.get(code);
+      if (!room || room.disposed || room.match !== stored.match) this.matchVersions.delete(code);
     }
     for (const [code, room] of this.lobby.rooms) {
       if (room.disposed || !room.match) continue;

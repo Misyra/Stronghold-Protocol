@@ -597,6 +597,33 @@ test('seedMatches drops a version recorded against another checkpoint so it cann
     assert.equal(persister.matchDocs.get('ROOM1'), '{"round":3}', 'the recovered body replaces the run\'s');
     assert.equal(persister.matchVersions.has('ROOM1'), false,
       'the recovered body has no trusted version: the next encode must rewrite it');
-  } finally { await persister.encoder.close(); lobby.shutdown(); }
+  } finally { lobby.rooms.clear(); await persister.encoder.close(); lobby.shutdown(); }
+});
+
+test('checkpointMatches releases a version entry once the room no longer holds that match', async () => {
+  const registry = new SessionRegistry();
+  const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
+  const store = new MemoryStore();
+  const persister = new Persister({ store, registry, lobby, log: quietLog });
+  try {
+    const ended = {};  // the match a room already ended (the room itself keeps only the summary and the replay)
+    const live = {};   // a room's current match (canSnapshot refuses it: no sched — the sweep is what is under test)
+    // Minimal room shapes: the sweep reads only `.disposed` and `.match` (server/persist.js checkpointMatches).
+    lobby.rooms.set('ENDED', { code: 'ENDED', disposed: false, match: null });
+    lobby.rooms.set('REPLACED', { code: 'REPLACED', disposed: false, match: live });
+    lobby.rooms.set('LIVE', { code: 'LIVE', disposed: false, match: live });
+    persister.matchDocs.set('ENDED', '{"round":9}');
+    persister.matchVersions.set('ENDED', { match: ended, version: 5 });
+    persister.matchVersions.set('REPLACED', { match: ended, version: 5 });
+    persister.matchVersions.set('LIVE', { match: live, version: 5 });
+    await persister.checkpointMatches();
+    assert.equal(persister.matchVersions.has('ENDED'), false,
+      'the ended match must not stay pinned by the persister');
+    assert.equal(persister.matchDocs.get('ENDED'), '{"round":9}', 'the stored checkpoint body survives the release');
+    assert.equal(persister.matchVersions.has('REPLACED'), false,
+      'an entry of a replaced match is released before the new match commits');
+    assert.equal(persister.matchVersions.has('LIVE'), true,
+      'the current match keeps its skip entry');
+  } finally { lobby.rooms.clear(); await persister.encoder.close(); lobby.shutdown(); }
 });
 

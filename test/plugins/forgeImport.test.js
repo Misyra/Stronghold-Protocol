@@ -285,7 +285,7 @@ test('numbers pack: bond patch, operator and enemy, content set with no problems
     const pack = await quiet(['pack', dir, '--root', ROOT]);
     assert.equal(pack.code, 0, pack.out);
     const { registry } = setsOf(got.parent);
-    const set = buildContentSet({ registry, ids: ['rose-numbers'] });
+    const set = await buildContentSet({ registry, ids: ['rose-numbers'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
     assert.equal(fs.existsSync(BAIT), false);
   } finally { fs.rmSync(got.parent, { recursive: true, force: true }); }
@@ -326,7 +326,7 @@ test('mixed pack: cosmetic, content, ui and lang; refused pieces named with thei
     const look = visual.resolve(['rose-mixed-look']);
     assert.equal(look.ok, true, JSON.stringify(look));
     assert.deepEqual(look.set.warnings, []);
-    const content = buildContentSet({ registry, ids: ['rose-mixed'] });
+    const content = await buildContentSet({ registry, ids: ['rose-mixed'] });
     assert.deepEqual(content.problems, [], JSON.stringify(content.problems));
     assert.equal(fs.existsSync(BAIT), false);
   } finally { fs.rmSync(got.parent, { recursive: true, force: true }); }
@@ -666,7 +666,7 @@ test('form skills and numeric form ranks become normal and elite', async () => {
     assert.match(got.markdown, /rangeId/);
     assert.equal(/没有技能/.test(got.markdown), false);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['rose-rank'] });
+    const set = await buildContentSet({ registry, ids: ['rose-rank'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
 });
@@ -846,7 +846,7 @@ test('a 6★ declared in operators is diy and is not a visible shop chess', asyn
     assert.deepEqual(op.chess.bonds, ['deputShip']);
     assert.equal(op.chess.tier, 6);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['rose-ace'] });
+    const set = await buildContentSet({ registry, ids: ['rose-ace'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
     const shop = Object.values(set.data.chess).filter((c) => c.backup?.charId === op.charId && c.visible && !c.isDiy && !c.isHidden);
     assert.equal(shop.length, 0);
@@ -1026,7 +1026,7 @@ test('chess.json pairs become compact records: a shop piece and a 自选 piece; 
     const check = await quiet(['check', path.join(parent, 'rose-chess'), '--strict', '--root', ROOT]);
     assert.equal(check.code, 0, check.out);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['rose-chess'] });
+    const set = await buildContentSet({ registry, ids: ['rose-chess'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
     assert.deepEqual(set.data.chess.chess_x_rose_chess_rose_pair_a.garrisonIds, ['garrison_01_a']);
     assert.deepEqual(set.data.chess.chess_x_rose_chess_rose_pair_b.garrisonIds, ['garrison_01_b']);
@@ -1084,7 +1084,7 @@ test('official skills of one operator keep their ids and bind that operator\'s k
     assert.match(got.markdown, /char_4231_clemnt/);
     assert.equal(got.markdown.includes('units:char_rose_sea#kit'), false);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['rose-sea'] });
+    const set = await buildContentSet({ registry, ids: ['rose-sea'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
     setGameData(set.data);
     t.after(() => setGameData(null));
@@ -1123,7 +1123,7 @@ test('a partial or ambiguous official match keeps the generic kit and the report
     assert.match(kitLine('rose_turn'), /default skill skchr_excu2_1 differs from skchr_excu2_2/);
     assert.match(kitLine('rose_common'), /several operators/);
     const { registry } = setsOf(parent);
-    assert.deepEqual(buildContentSet({ registry, ids: ['rose-part'] }).problems, []);
+    assert.deepEqual((await buildContentSet({ registry, ids: ['rose-part'] })).problems, []);
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
 });
 
@@ -1266,7 +1266,7 @@ test('the imported script plugin runs in our own sandbox: the kit\'s talent rais
   const chessId = 'chess_x_rose_kit_rose_hunter_a';
   // the content plugin alone: the generic kit, no talent
   const { registry: plain } = setsOf(plugins);
-  const alone = buildContentSet({ registry: plain, ids: ['rose-kit'] });
+  const alone = await buildContentSet({ registry: plain, ids: ['rose-kit'] });
   assert.deepEqual(alone.problems, []);
   setGameData(alone.data);
   t.after(() => setGameData(null));
@@ -1277,7 +1277,7 @@ test('the imported script plugin runs in our own sandbox: the kit\'s talent rais
   // the script plugin, through the production path: SES preflight child, the checked content set, an SES Worker
   const registry = createPluginRegistry({ publicDir: path.join(ROOT, 'public'), packsDir: path.join(ROOT, 'packs'), pluginsDir: plugins, dataDir: path.join(ROOT, 'data') },
     { scriptMode: 'sandbox', recheckMs: 0, log: { info() {}, warn() {} } });
-  const built = buildContentSet({ registry, ids: ['kits-rose-kit'] });
+  const built = await buildContentSet({ registry, ids: ['kits-rose-kit'] });
   assert.deepEqual(built.problems, [], JSON.stringify(built.problems));
   assert.equal(built.execution, 'sandbox');
   const { loadContentSet } = await import('../../public/js/content.js');
@@ -1366,7 +1366,7 @@ test('hidden pieces preserve explicit pair, source and both forms of art without
     assert.equal(op.art.assets.voice, 'char_102_texas');
     assert.equal(op.art.ref, undefined);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['sidecar'] });
+    const set = await buildContentSet({ registry, ids: ['sidecar'] });
     assert.deepEqual(set.problems, []);
     assert.equal(set.data.chess.chess_x_sidecar_seed.upgradeChessId, 'chess_x_sidecar_bloom');
     assert.equal(set.data.chess.chess_x_sidecar_bloom.assets.portrait, 'char_102_texas_2');
@@ -1491,7 +1491,7 @@ test('a safe integer past ±1e9 does not reject a Forge file; game-data fields s
     assert.deepEqual(grid[0].value, [[1, 0]]);
     assert.equal(patch.ops.some((o) => o.path.join('.') === 'price'), false);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['rose-stamp'] });
+    const set = await buildContentSet({ registry, ids: ['rose-stamp'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
     const refused = await importForge(bomb, { ...forgeOpts(parent), dryRun: true });
     assert.equal(refused.ok, false);
@@ -1546,7 +1546,7 @@ test('a chess override writes skill and the default skills[] entry as one object
     assert.equal(canonicalJson(body), canonicalJson(skill[0].value));
     assert.equal(body.bb.extra_key, 3);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['rose-skill'] });
+    const set = await buildContentSet({ registry, ids: ['rose-skill'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
     const composed = set.data.chess.chess_char_1_01_a;
     const def = composed.skills.find((s) => s.isDefault === true);
@@ -1600,7 +1600,7 @@ test('an unknown bond, garrison or bond member is named and left out of the over
     const grid = patch.ops.find((o) => o.id === 'chess_char_1_01_a' && o.path.join('.') === 'rangeGrid');
     assert.deepEqual(grid.value, [[1, 0]]);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['rose-bond'] });
+    const set = await buildContentSet({ registry, ids: ['rose-bond'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
     assert.deepEqual(set.data.chess.chess_char_1_01_a.bonds, ['lateranoShip', 'victoriaShip']);
     assert.equal(set.data.bonds.swiftShip.members.includes('chess_char_1_01_a'), false);
@@ -1632,7 +1632,7 @@ test('a finite number past ±1e9 inside an array leaf is omitted and the rest of
     const price = patch.ops.find((o) => o.id === 'chess_char_1_01_a' && o.path.join('.') === 'price');
     assert.equal(price.value, 3);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['rose-grid'] });
+    const set = await buildContentSet({ registry, ids: ['rose-grid'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
     assert.equal(set.data.chess.chess_char_1_01_a.price, 3);
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
@@ -1666,7 +1666,7 @@ test('a skill override without skills[] merges onto the official skill', async (
     const grid = patch.ops.find((o) => o.id === 'chess_char_1_01_a' && o.path.join('.') === 'rangeGrid');
     assert.deepEqual(grid.value, [[1, 0]]);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['rose-partial'] });
+    const set = await buildContentSet({ registry, ids: ['rose-partial'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
     assert.equal(set.data.chess.chess_char_1_01_a.skill.spCost, 30);
     assert.equal(set.data.chess.chess_char_1_01_a.skill.skillId, official.skill.skillId);
@@ -1704,7 +1704,7 @@ test('a garrison bbStr bond token that is not a bond id is named and that field 
     assert.equal(JSON.stringify(patch).includes('rhodesShip'), false);
     assert.equal(JSON.stringify(patch).includes('noSuchBond'), false);
     const { registry } = setsOf(parent);
-    const set = buildContentSet({ registry, ids: ['rose-gar'] });
+    const set = await buildContentSet({ registry, ids: ['rose-gar'] });
     assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
     assert.equal(set.data.garrisons.garrison_10_b.bbStr.bond_id, official.garrison_10_b.bbStr.bond_id);
     assert.equal(set.data.garrisons.garrison_35_a.bbStr.bond, official.garrison_35_a.bbStr.bond);

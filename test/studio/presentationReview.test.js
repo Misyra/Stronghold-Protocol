@@ -53,8 +53,8 @@ function clean(m) {
   assert.deepEqual([...result.problems, ...result.warnings], []);
 }
 
-test('review P1: editing FX preserves hand-edited record bytes, other declarations and hidden FX settings', t => {
-  const m = setup(t, 'fx'), raw = m.raw();
+test('review P1: editing FX preserves hand-edited record bytes, other declarations and hidden FX settings', async t => {
+  const m = await setup(t, 'fx'), raw = m.raw();
   const record = JSON.parse(fs.readFileSync(m.files.stat(m.id, 'data/operator.json').abs));
   record.forms.normal.stats.atk = 1234;
   const text = manifestText(record).replace('1234', '1.234e3');
@@ -67,8 +67,8 @@ test('review P1: editing FX preserves hand-edited record bytes, other declaratio
   assert.deepEqual(m.raw().operators, raw.operators); assert.deepEqual(m.raw().assets.fx.silentPhases, ['custom']); clean(m);
 });
 
-for (const template of ['theme', 'notices', 'fx']) test(`review P1: ${template} reopens actual declarations and applies only form changes`, t => {
-  const m = setup(t, template), raw = m.raw();
+for (const template of ['theme', 'notices', 'fx']) test(`review P1: ${template} reopens actual declarations and applies only form changes`, async t => {
+  const m = await setup(t, template), raw = m.raw();
   if (template === 'theme') raw.theme.vars = { '--gold': '#123456', '--bg-0': '#445566' };
   if (template === 'notices') raw.notices[0].body = 'Hand-edited announcement';
   if (template === 'fx') { raw.assets.fx.flipbooks.flash.fps = 29; raw.assets.fx.bind.char_x_review_fx_one = { 1: { hit: 'flash' } }; }
@@ -83,8 +83,8 @@ for (const template of ['theme', 'notices', 'fx']) test(`review P1: ${template} 
   if (template === 'fx') assert.equal(m.raw().assets.fx.flipbooks.flash.fps, 30);
 });
 
-test('review P1: FX hydrates current kit and official FX record, keeping other record fields byte-identical', t => {
-  const m = setup(t, 'fx'), file = m.files.stat(m.id, 'data/operator.json').abs;
+test('review P1: FX hydrates current kit and official FX record, keeping other record fields byte-identical', async t => {
+  const m = await setup(t, 'fx'), file = m.files.stat(m.id, 'data/operator.json').abs;
   const record = JSON.parse(fs.readFileSync(file)); record.kit.ref = 'char_377_gdglow';
   // A synthetic local effects index suffices for authoring; no official files are needed.
   const publicDir = path.join(m.dir, 'public'); fs.mkdirSync(path.join(publicDir, 'assets/local/fx'), { recursive: true });
@@ -97,7 +97,7 @@ test('review P1: FX hydrates current kit and official FX record, keeping other r
 });
 
 for (const kind of ['missing', 'grid', 'retained', 'empty']) test(`review P1: whole-folder validation refuses ${kind} before any write`, async t => {
-  const m = setup(t, kind === 'retained' ? 'theme' : kind === 'empty' ? 'notices' : 'fx');
+  const m = await setup(t, kind === 'retained' ? 'theme' : kind === 'empty' ? 'notices' : 'fx');
   if (kind === 'retained') { const raw = m.raw(); raw.permissions.push('assets.override'); raw.assets = { items: { icon: 'missing.png' } }; m.write(raw); }
   const draft = { ...m.author.read(m.id), id: m.id };
   if (kind === 'missing') draft.options.flipbooks.push(emptyBook('new'));
@@ -112,7 +112,7 @@ for (const kind of ['missing', 'grid', 'retained', 'empty']) test(`review P1: wh
 });
 
 test('review P1: new flipbook and PNG save in one validated request; invalid upload leaves every byte alone', async t => {
-  const m = setup(t, 'fx'), call = api(t, m), draft = m.author.read(m.id);
+  const m = await setup(t, 'fx'), call = await api(t, m), draft = m.author.read(m.id);
   draft.options.flipbooks.push({ ...emptyBook('new'), frames: 4, cols: 2 });
   draft.uploads = [{ path: 'fx/new.png', data: png(8, 8).toString('base64') }];
   const result = await call('authoring', draft);
@@ -126,7 +126,7 @@ test('review P1: new flipbook and PNG save in one validated request; invalid upl
 });
 
 test('review P1: FX upload input stays enabled for an unsaved new book and stages bytes in the draft', async t => {
-  const m = setup(t, 'fx'); let draft = m.author.read(m.id); draft.options.flipbooks.push(emptyBook('new'));
+  const m = await setup(t, 'fx'); let draft = m.author.read(m.id); draft.options.flipbooks.push(emptyBook('new'));
   const props = { draft, state: { id: m.id, files: [], authoring: draft }, dirty: true, busy: false, onChange: next => { draft = typeof next === 'function' ? next(draft) : next; } };
   const node = { __c: { __h: [], props, context: {}, setState() {} } }; preact.__r(node);
   let tree; try { tree = FxEditor(props); } finally { preact.__b(node); }
@@ -141,7 +141,7 @@ test('review P1: FX upload input stays enabled for an unsaved new book and stage
 });
 
 for (const field of ['avatar', 'front']) test(`review P1: skin rename/reused key isolates ${field} uploads`, async t => {
-  const m = setup(t, 'skins'), call = api(t, m);
+  const m = await setup(t, 'skins'), call = await api(t, m);
   const model = bytes => [media('model.skel', skel()), media('model.atlas', Buffer.from(atlas(['page.png']))), media('page.png', bytes)];
   const old = png(4, 4, [255, 0, 0, 255]), replacement = png(4, 4, [0, 0, 255, 255]);
   assert.equal((await call('slot', { at: slot('outfit-1', field), files: field === 'avatar' ? [media('old.png', old)] : model(old) })).status, 200);
@@ -156,7 +156,7 @@ for (const field of ['avatar', 'front']) test(`review P1: skin rename/reused key
 });
 
 test('review P2: raw FX and skin uploads reject bad PNG bytes, dimensions and encoding without replacement', async t => {
-  const fx = setup(t, 'fx'), skin = setup(t, 'skins'), fxApi = api(t, fx), skinApi = api(t, skin);
+  const fx = await setup(t, 'fx'), skin = await setup(t, 'skins'), fxApi = await api(t, fx), skinApi = await api(t, skin);
   const forged = png(); forged[24] = 16; // a header edited after its checksum
   const broken = [Buffer.from('not a PNG'), forged, png().subarray(0, 33)];
   // well-formed PNGs outside the FX loader's 8-bit RGB/RGBA ≤ 2048 subset
@@ -178,7 +178,7 @@ test('review P2: raw FX and skin uploads reject bad PNG bytes, dimensions and en
 });
 
 test('review P2: invalid Spine uploads leave the current skeleton, atlas, PNG and declaration untouched', async t => {
-  const m = setup(t, 'skins'), call = api(t, m);
+  const m = await setup(t, 'skins'), call = await api(t, m);
   const files = [media('model.skel', skel()), media('model.atlas', Buffer.from(atlas(['page.png']))), media('page.png', png())];
   assert.equal((await call('slot', { at: slot('outfit-1', 'front'), files })).status, 200);
   const before = m.author.read(m.id).revision;
@@ -188,19 +188,19 @@ test('review P2: invalid Spine uploads leave the current skeleton, atlas, PNG an
   }
 });
 
-test('review P2: summon carriers are explicitly refused; supported carriers preserve source attack metadata', t => {
+test('review P2: summon carriers are explicitly refused; supported carriers preserve source attack metadata', async t => {
   const data = readStudioData(path.resolve('data'));
   for (const kitRef of ['char_2023_ling', 'char_250_phatom']) {
     assert.throws(() => createPlugin(templateById('fx'), { id: 'summon-fx', options: { kitRef }, data }), e => e.code === 'PLUGIN_RECORD_TYPE' && /summon/.test(e.params.detail));
   }
-  const m = setup(t, 'fx', { kitRef: 'char_377_gdglow' }); m.registry.rescan();
-  const built = buildContentSet({ registry: m.registry, ids: [m.id] }); assert.deepEqual(built.problems, []);
+  const m = await setup(t, 'fx', { kitRef: 'char_377_gdglow' }); m.registry.rescan();
+  const built = await buildContentSet({ registry: m.registry, ids: [m.id] }); assert.deepEqual(built.problems, []);
   const carrier = Object.values(built.data.chess).find(r => r.charId === 'char_x_review_fx_one' && !r.isGolden), source = officialOperator(data, 'char_377_gdglow').normal;
   for (const key of ['dmgType', 'attackKind', 'projectile', 'canHitFly', 'targetPriority']) assert.deepEqual(carrier[key], source[key]);
 });
 
 test('review P2: default replay attacks activate the custom sheet on the equipped skill slot', async t => {
-  const m = setup(t, 'fx'); m.registry.rescan();
+  const m = await setup(t, 'fx'); m.registry.rescan();
   const bench = createTrialBench({ registry: m.registry, files: m.files }); t.after(() => bench.close());
   const replay = await bench.run({ id: m.id, seconds: 3, scenario: 'dummy' }); assert.equal(replay.ok, true);
   const info = replay.plugin.field.units[0], record = replay.plugin.renderRecords.chess[info.defId];
@@ -214,9 +214,9 @@ test('review P2: default replay attacks activate the custom sheet on the equippe
   assert.ok(sprites > 0, 'real replay attack events activate the default binding');
 });
 
-test('cosmetic presentation checks and saves do not need installed gameplay tables', t => {
+test('cosmetic presentation checks and saves do not need installed gameplay tables', async t => {
   for (const template of ['theme', 'notices', 'skins']) {
-    const m = setup(t, template);
+    const m = await setup(t, template);
     if (template === 'skins') {
       const side = JSON.parse(m.files.readSidecar(m.id, '.studio.json')); side.authoring.target = 'operator:char_102_texas';
       m.files.writeSidecar(m.id, '.studio.json', Buffer.from(manifestText(side)));
@@ -226,8 +226,8 @@ test('cosmetic presentation checks and saves do not need installed gameplay tabl
   }
 });
 
-test('FX edits preserve additional records within the carrier document and unsupported manifest fields', t => {
-  const m = setup(t, 'fx'), file = m.files.stat(m.id, 'data/operator.json').abs;
+test('FX edits preserve additional records within the carrier document and unsupported manifest fields', async t => {
+  const m = await setup(t, 'fx'), file = m.files.stat(m.id, 'data/operator.json').abs;
   const carrier = JSON.parse(fs.readFileSync(file)), extra = { ...carrier, charId: 'char_x_review_fx_extra' };
   fs.writeFileSync(file, manifestText([carrier, extra]));
   const draft = m.author.read(m.id); draft.options.flipbooks[0].fps = 22; m.author.save(m.id, draft);
@@ -237,7 +237,7 @@ test('FX edits preserve additional records within the carrier document and unsup
 });
 
 test('shared Spine page-only uploads copy the skeleton and atlas before changing either skin', async t => {
-  const m = setup(t, 'skins'), call = api(t, m), old = png(), next = png(4, 4, [0, 255, 0, 255]);
+  const m = await setup(t, 'skins'), call = await api(t, m), old = png(), next = png(4, 4, [0, 255, 0, 255]);
   assert.equal((await call('slot', { at: slot('outfit-1', 'front'), files: [media('model.skel', skel()), media('model.atlas', Buffer.from(atlas(['page.png']))), media('page.png', old)] })).status, 200);
   const raw = m.raw(), skins = raw.assets.chars.char_102_texas.skins;
   skins.other = structuredClone(skins['outfit-1']); m.write(raw);
@@ -250,8 +250,8 @@ test('shared Spine page-only uploads copy the skeleton and atlas before changing
   assert.ok(fs.readFileSync(m.files.stat(m.id, current.textures[0]).abs).equals(next));
 });
 
-test('a failed document write rolls back staged media and leaves the author revision intact', t => {
-  const m = setup(t, 'fx'), draft = m.author.read(m.id), original = m.files.write;
+test('a failed document write rolls back staged media and leaves the author revision intact', async t => {
+  const m = await setup(t, 'fx'), draft = m.author.read(m.id), original = m.files.write;
   draft.options.flipbooks.push(emptyBook('new')); draft.uploads = [{ path: 'fx/new.png', data: png().toString('base64') }];
   let fail = true;
   m.files.write = (id, rel, ...args) => { if (rel === 'plugin.json' && fail) { fail = false; throw new Error('synthetic write failure'); } return original(id, rel, ...args); };
@@ -260,8 +260,8 @@ test('a failed document write rolls back staged media and leaves the author revi
   assert.equal(fs.existsSync(path.join(m.dir, 'fx/new.png')), false); clean(m);
 });
 
-test('an older unsupported summon-carrier draft can switch to a supported source', t => {
-  const m = setup(t, 'fx');
+test('an older unsupported summon-carrier draft can switch to a supported source', async t => {
+  const m = await setup(t, 'fx');
   const legacy = createPlugin(templateById('operator'), { id: m.id, options: { kitRef: 'char_2023_ling' } });
   m.files.write(m.id, 'data/operator.json', Buffer.from(legacy.files['data/operator.json']));
   const draft = m.author.read(m.id); assert.equal(draft.options.kitRef, 'char_2023_ling');

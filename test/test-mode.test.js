@@ -125,29 +125,29 @@ function openLobby(t, extra = {}) {
   return { lobby, player };
 }
 
-test('a server with the gate off rejects a test room and omits the welcome flag', (t) => {
+test('a server with the gate off rejects a test room and omits the welcome flag', async (t) => {
   const { lobby, player } = openLobby(t);
   assert.equal(lobby.testEnabled, false);
   assert.equal(lobby.welcomeInfo().testMode, undefined);
   const host = player('host');
-  const res = lobby.create(host, { mode: 'solo', difficulty: 'NORMAL', test: true });
+  const res = await lobby.create(host, { mode: 'solo', difficulty: 'NORMAL', test: true });
   assert.equal(res.error, 'TEST_DISABLED');
   assert.equal(lobby.rooms.size, 0);
-  assert.equal(lobby.create(host, { mode: 'solo', difficulty: 'NORMAL', test: false }).ok, true);
+  assert.equal((await lobby.create(host, { mode: 'solo', difficulty: 'NORMAL', test: false })).ok, true);
   const room = lobby.roomOf(host);
   assert.equal(room.test, false);
   assert.equal(room.toState().test, undefined);
   assert.equal(typeof lobby.setTest, 'undefined');
 });
 
-test('an enabled local gate marks the room, the welcome and a co-op guest', (t) => {
+test('an enabled local gate marks the room, the welcome and a co-op guest', async (t) => {
   const { lobby, player } = openLobby(t, { testMode: '1', testHost: '127.0.0.1' });
   assert.equal(lobby.testEnabled, true);
   assert.equal(lobby.welcomeInfo().testMode, true);
   assert.equal(lobby.testWarn, null);
   const host = player('host');
   const guest = player('guest');
-  assert.equal(lobby.create(host, { mode: 'coop', difficulty: 'NORMAL', test: true }).ok, true);
+  assert.equal((await lobby.create(host, { mode: 'coop', difficulty: 'NORMAL', test: true })).ok, true);
   const room = lobby.roomOf(host);
   assert.equal(room.test, true);
   assert.equal(room.toState().test, true);
@@ -156,12 +156,12 @@ test('an enabled local gate marks the room, the welcome and a co-op guest', (t) 
   assert.ok(seen.length > 0);
   assert.equal(seen.at(-1).test, true);
   const plain = player('other');
-  assert.equal(lobby.create(plain, { mode: 'solo', difficulty: 'NORMAL' }).ok, true);
+  assert.equal((await lobby.create(plain, { mode: 'solo', difficulty: 'NORMAL' })).ok, true);
   assert.equal(lobby.roomOf(plain).test, false);
   assert.equal(lobby.roomOf(plain).toState().test, undefined);
 });
 
-test('startMatch forwards test only for a room created with the flag', (t) => {
+test('startMatch forwards test only for a room created with the flag', async (t) => {
   const seen = [];
   class Rec {
     constructor(opts) { seen.push(opts); this.opts = opts; }
@@ -170,12 +170,12 @@ test('startMatch forwards test only for a room created with the flag', (t) => {
   }
   const { lobby, player } = openLobby(t, { testMode: '1', testHost: '127.0.0.1', MatchClass: Rec });
   const host = player('host');
-  lobby.create(host, { mode: 'solo', difficulty: 'NORMAL' });
+  await lobby.create(host, { mode: 'solo', difficulty: 'NORMAL' });
   assert.equal(lobby.startMatch(lobby.roomOf(host)).ok, true);
   assert.equal(seen[0].test, undefined);
   assert.equal(typeof seen[0].hostId, 'string');
   const host2 = player('host2');
-  lobby.create(host2, { mode: 'solo', difficulty: 'NORMAL', test: true });
+  await lobby.create(host2, { mode: 'solo', difficulty: 'NORMAL', test: true });
   assert.equal(lobby.startMatch(lobby.roomOf(host2)).ok, true);
   assert.equal(seen[1].test, true);
   assert.equal(seen[1].hostId, host2.playerId);
@@ -612,10 +612,10 @@ test('test journal re-simulates real inputs, timer order, RNG, public/private vi
   copy.dispose(); m.dispose();
 });
 
-test('test join and watch require acknowledgement before any seat or private state is sent', (t) => {
+test('test join and watch require acknowledgement before any seat or private state is sent', async (t) => {
   const { lobby, player } = openLobby(t, { testMode: '1', testHost: '127.0.0.1' });
   const host = player('host'), guest = player('guest'), watcher = player('watcher');
-  ok(lobby.create(host, { mode: 'coop', difficulty: 'NORMAL', test: true }));
+  ok(await lobby.create(host, { mode: 'coop', difficulty: 'NORMAL', test: true }));
   const code = host.roomCode;
   for (const [s, method] of [[guest, 'join'], [watcher, 'spectate']]) {
     error(lobby[method](s, { code }), 'TEST_CONFIRM');
@@ -630,14 +630,14 @@ test('test join and watch require acknowledgement before any seat or private sta
   }
 });
 
-test('lobby rechecks process and immutable room gates on start and every command', (t) => {
+test('lobby rechecks process and immutable room gates on start and every command', async (t) => {
   const { lobby, player } = openLobby(t, { testMode: '1', testHost: '127.0.0.1' });
-  const host = player('host'); ok(lobby.create(host, { mode: 'solo', difficulty: 'NORMAL' }));
+  const host = player('host'); ok(await lobby.create(host, { mode: 'solo', difficulty: 'NORMAL' }));
   const room = lobby.roomOf(host);
   let calls = 0; room.match = { handle() { calls++; }, dispose() {} };
   error(lobby.routeGameNow(host, { t: 'g.test', cmd: 'funds', args: { amount: 9 }, test: true }), 'TEST_FORBIDDEN');
   assert.equal(calls, 0);
-  const tester = player('tester'); ok(lobby.create(tester, { mode: 'solo', difficulty: 'NORMAL', test: true }));
+  const tester = player('tester'); ok(await lobby.create(tester, { mode: 'solo', difficulty: 'NORMAL', test: true }));
   const testRoom = lobby.roomOf(tester);
   lobby.setTestHost('8.8.8.8');
   error(lobby.startMatch(testRoom), 'TEST_DISABLED');

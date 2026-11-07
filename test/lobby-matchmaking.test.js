@@ -39,7 +39,7 @@ test('a failed matchmaking merge informs a never-joined member through the queue
   const solo = h.player('Solo');
 
   // the party: three humans in one co-op room, everyone ready but the host
-  assert.deepEqual(h.lobby.create(host, { mode: 'coop', difficulty: 'HARD' }), { ok: true });
+  assert.deepEqual(await h.lobby.create(host, { mode: 'coop', difficulty: 'HARD' }), { ok: true });
   const code = host.roomCode;
   const room = h.lobby.getRoom(code);
   assert.deepEqual(h.lobby.join(mate1, { code }), { ok: true });

@@ -38,7 +38,7 @@ const PILOT = {
 };
 
 /** Write the pilot into a fresh plugins/ folder, scan it, and build its content set. */
-function pilotSet(t) {
+async function pilotSet(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-pilot-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const root = path.join(dir, 'plugins', PILOT.manifest.id);
@@ -56,13 +56,13 @@ function pilotSet(t) {
   const found = registry.plugins().filter((p) => p.id === 'pilot');
   assert.equal(found.length, 1, 'the registry loaded the pilot');
   assert.equal(found[0].offers.length, 3, 'its three windows were read');
-  const set = buildContentSet({ registry, ids: ['pilot'] });
+  const set = await buildContentSet({ registry, ids: ['pilot'] });
   assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
   return { set, registry, root };
 }
 
-test('a manifest with nothing but offers is loaded, and the set carries its windows tagged by plugin', (t) => {
-  const { set } = pilotSet(t);
+test('a manifest with nothing but offers is loaded, and the set carries its windows tagged by plugin', async (t) => {
+  const { set } = await pilotSet(t);
   assert.equal(set.vanilla, false);
   assert.equal(set.offers.length, 3);
   assert.deepEqual(set.offers.map((o) => `${o.pluginId}:${o.id}`).sort(), ['pilot:before-r3', 'pilot:before-r9', 'pilot:every-2']);
@@ -76,8 +76,8 @@ test('a manifest with nothing but offers is loaded, and the set carries its wind
   assert.deepEqual(at(10), ['every-2']);
 });
 
-test('the engine opens the pilot windows before R3 and before R9 and applies their primitives', (t) => {
-  const { set } = pilotSet(t);
+test('the engine opens the pilot windows before R3 and before R9 and applies their primitives', async (t) => {
+  const { set } = await pilotSet(t);
   const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 2, bots: 1, seed: 11 });
   h.m.offers = set.offers;
   h.start();
@@ -109,13 +109,13 @@ test('a vanilla match of the same code opens no window at all (the part absent â
   h.m.dispose();
 });
 
-test('offers-only content changes room identity; option edits replace cs and old snapshots survive', t => {
-  const { set, registry, root } = pilotSet(t);
-  const vanilla = buildContentSet({ registry, ids: [] });
+test('offers-only content changes room identity; option edits replace cs and old snapshots survive', async t => {
+  const { set, registry, root } = await pilotSet(t);
+  const vanilla = await buildContentSet({ registry, ids: [] });
   assert.notEqual(set.cs, vanilla.cs);
   assert.equal(set.plugins[0].id, 'pilot');
   const contents = createContentSets({ registry, vanillaData: getData() });
-  const room = createRoomSets({ registry, visual: null, contents, policy: null }).resolve(['pilot']);
+  const room = await createRoomSets({ registry, visual: null, contents, policy: null }).resolve(['pilot']);
   assert.equal(room.ok, true);
   assert.equal(room.set.cs, set.cs);
   assert.equal(room.set.plugins[0].id, 'pilot');
@@ -123,18 +123,18 @@ test('offers-only content changes room identity; option edits replace cs and old
   const file = path.join(root, 'lib/options.json');
   const cards = JSON.parse(fs.readFileSync(file)); cards[0].name = 'Changed';
   fs.writeFileSync(file, JSON.stringify(cards)); registry.rescan();
-  const changed = buildContentSet({ registry, ids: ['pilot'] });
+  const changed = await buildContentSet({ registry, ids: ['pilot'] });
   assert.deepEqual(changed.problems, []);
   assert.notEqual(changed.cs, set.cs);
   assert.notEqual(changed.plugins[0].hash, set.plugins[0].hash);
   assert.notEqual(set.offers[0].cards[0].name, 'Changed');
-  assert.equal(buildContentSet({ registry, ids: [] }).cs, vanilla.cs, 'installing/editing offers never changes vanilla composition');
+  assert.equal((await buildContentSet({ registry, ids: [] })).cs, vanilla.cs, 'installing/editing offers never changes vanilla composition');
 });
 
 for (const transport of ['process', 'worker']) test(`offers reach real Match options, snapshots and g.offer in ${transport} host`, { timeout: 30000 }, async t => {
-  const { registry } = pilotSet(t);
+  const { registry } = await pilotSet(t);
   const contents = createContentSets({ registry, vanillaData: getData() });
-  const resolved = contents.resolve(['pilot']); assert.ok(resolved.ok, JSON.stringify(resolved));
+  const resolved = await contents.resolve(['pilot']); assert.ok(resolved.ok, JSON.stringify(resolved));
   const hosts = createMatchHosts({ contents, options: { transport, matchOptions: { botRehearsal: 0 },
     matchModule: fileURLToPath(new URL('./fixtures/offerMatch.js', import.meta.url)) } });
   t.after(() => hosts.close());

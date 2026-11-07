@@ -86,7 +86,7 @@ test('native script HTTP routes serve exact descriptor bytes and JavaScript MIME
   f.put('native',"import {kit} from 'sp:sdk@1'; export default sp => {};",
     {class:'trusted',permissions:['sim.code','trusted.page'],entry:{sim:'index.js',client:'page.js'}},{'page.js':'globalThis.nativeTest = true;'});
   const contents=createContentSets({registry:f.registry,vanillaData:getData()});
-  const r=contents.resolve(['native']);assert.ok(r.ok,JSON.stringify(r));
+  const r=await contents.resolve(['native']);assert.ok(r.ok,JSON.stringify(r));
   const set=r.set,cs16=set.cs.slice(0,16);
   const serveStatic=createStaticHandler({publicDir,dataDir:path.resolve('data'),sharedDir:path.resolve('shared'),contents});
   const serve=createRequestHandler({serveStatic,csp:siteCsp(publicDir),health:{},log:console});

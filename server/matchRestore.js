@@ -29,9 +29,9 @@ const fail = (code, detail) => (detail ? { error: code, detail } : { error: code
  * official matchmaking queue. Old documents carry no content: the room gets its version's base content, which is the
  * best the document can say.
  * @param {object} lobby @param {object} room @param {object} d the persisted room
- * @returns {object | null | undefined} the content, null for a lobby with no content identity, undefined = refuse
+ * @returns {Promise<object | null | undefined>} the content, null for a lobby with no content identity, undefined = refuse
  */
-function restoredContent(lobby, room, d) {
+async function restoredContent(lobby, room, d) {
   const doc = d.content;
   if (!doc || typeof doc !== 'object' || typeof doc.cs !== 'string' || !doc.cs) {
     const base = lobby.baseContent(room.version);
@@ -45,7 +45,7 @@ function restoredContent(lobby, room, d) {
   const ids = [...new Set(plugins.filter((p) => p && typeof p.id === 'string' && p.id && !p.auto).map((p) => p.id))];
   const settings = {};
   for (const p of plugins) if (p && typeof p.id === 'string' && p.settings && typeof p.settings === 'object') settings[p.id] = p.settings;
-  const r = lobby.resolveContent(room, ids, settings, room.version, null);
+  const r = await lobby.resolveContent(room, ids, settings, room.version, null);
   if ('error' in r || !r.content) {
     lobby.log.warn?.(`[lobby] ${room.code}: the room's content ${String(doc.cs).slice(0, 8)} is no longer available (${'error' in r ? r.error : 'none'}) — the room is not restored`);
     return undefined;
@@ -108,9 +108,10 @@ export function seatEntries(room, checkpoint) {
  * @param {object[]} docs
  * @param {{ Room: new (code: string, mode: string, difficulty: string, now: number, version?: string) => object, now?: number }} options
  *   `Room` is injected: this module must not import lobby.js (see the header).
- * @returns {{ rooms: number, seats: number, droppedSeats: number }}
+ * @returns {Promise<{ rooms: number, seats: number, droppedSeats: number }>} each restored room's content set is rebuilt
+ *   through Lobby.resolveContent (a script plugin probes as a child), so the caller awaits the restore
  */
-export function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() } = {}) {
+export async function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() } = {}) {
   const stats = { rooms: 0, seats: 0, droppedSeats: 0 };
   for (const d of Array.isArray(docs) ? docs : []) {
     // The live alphabet (lobby.js CODE_ALPHABET, config.js parseRoomCode): the persistence shard of a running match is
@@ -175,7 +176,7 @@ export function restoreLobbyRooms(lobby, docs, { Room, now = lobby.now() } = {})
     // The room's content set (roomDoc.content): rebuilt and held again, or the room is refused — a plugin room must
     // never come back as the original game (header "Gameplay plugins"; P1c). Resolved only once the room is otherwise
     // accepted, so a refused room never leaves a held set behind. undefined = the set is gone.
-    const content = restoredContent(lobby, room, d);
+    const content = await restoredContent(lobby, room, d);
     if (content === undefined) { stats.droppedSeats += room.seats.filter(Boolean).length; continue; }
     room.content = content;
     lobby.rooms.set(room.code, room);

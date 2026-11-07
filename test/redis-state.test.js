@@ -255,7 +255,7 @@ test('整份文档的旧 API（save → load → restoreServer）在这一层也
 
   const registry2 = new SessionRegistry();
   const lobby2 = new Lobby({ registry: registry2, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
-  const stats = restoreServer({ doc, registry: registry2, lobby: lobby2, now });
+  const stats = await restoreServer({ doc, registry: registry2, lobby: lobby2, now });
   assert.equal(stats.ok, true, JSON.stringify(stats));
   assert.equal(stats.sessions, 1);
   assert.ok([...registry2.all()].some((x) => x.token === 'tok-redis-1'), '会话回来了');

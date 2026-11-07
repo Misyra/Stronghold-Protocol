@@ -14,13 +14,13 @@ import { loadBrowserSim } from '../../public/js/battle/runner.js';
 import { buildBattleSpec, createBattleFromSpec, resultDigest } from '../../server/sim/spec.js';
 import { compileDsl } from '../../server/sim/content/dsl/compile.js';
 const close = (a,b) => assert.ok(Math.abs(a-b) < 1e-7, `${a} != ${b}`);
-function setFor(t, { operators = [guard()], entries = [], patch = bondPatch() } = {}) {
+async function setFor(t, { operators = [guard()], entries = [], patch = bondPatch() } = {}) {
   const f = fixture(t); f.put('data-demo', { operators: ['op.json'], data: ['p.json', 'r.json'] }, { 'op.json': operators, 'p.json': patch, 'r.json': { records: 1, entries } });
-  const set = buildContentSet({ registry: f.registry, ids: ['data-demo'] }); assert.deepEqual(set.problems, []);
+  const set = await buildContentSet({ registry: f.registry, ids: ['data-demo'] }); assert.deepEqual(set.problems, []);
   setGameData(set.data); t.after(() => setGameData(null)); return { ...f, set };
 }
-test('kitRef normal and elite use official behavior with plugin blackboards', t => {
-  const { set } = setFor(t);
+test('kitRef normal and elite use official behavior with plugin blackboards', async t => {
+  const { set } = await setFor(t);
   for (const suffix of ['a','b']) {
     const id = `chess_x_data_demo_guard_${suffix}`, rec = set.data.chess[id];
     const h = makeBattle({ data: new DataSource(set.data), units: [{ chessId: id, row: 10, col: 5 }] });
@@ -28,16 +28,16 @@ test('kitRef normal and elite use official behavior with plugin blackboards', t 
     close(u.s.def, rec.stats.def * 1.5); close(u.s.maxHp, rec.stats.maxHp * 1.4); checkInvariants(h.b);
   }
 });
-test('kitRef survives a one-skill DIY pick and a file-stem alias resolves', t => {
+test('kitRef survives a one-skill DIY pick and a file-stem alias resolves', async t => {
   const op = guard(); op.kit = { ref: 'chess_char_1_02-yak' };
-  const { set } = setFor(t, { operators: [op] });
+  const { set } = await setFor(t, { operators: [op] });
   const h = makeBattle({ data: new DataSource(set.data), units: [{ diy: { slot: 5, charId: op.charId, skillIndex: 0 }, row: 10, col: 5 }] });
   h.step(); const u = h.allies()[0]; assert.ok(!u.kit.generic); u.skill.activate('test', { free: true }); close(u.s.def, 375); checkInvariants(h.b);
 });
 
-test('JSON SkillSpec and permanent talent mods work on shop and DIY units', t => {
+test('JSON SkillSpec and permanent talent mods work on shop and DIY units', async t => {
   const op = guard(); op.kit = { spec: { kind: 'passive', mods: { atkPct: 0.5 }, attack: { dmgType: 'arts', hits: 2 } } }; op.talentMods = { defFlat: 25 };
-  const { set } = setFor(t, { operators: [op] });
+  const { set } = await setFor(t, { operators: [op] });
   for (const units of [[{ chessId: 'chess_x_data_demo_guard_a', row: 10, col: 5 }], [{ diy: { slot: 5, charId: op.charId, skillIndex: 0 }, row: 10, col: 5 }]]) {
     const h = makeBattle({ data: new DataSource(set.data), units }); h.step(); const u = h.allies()[0];
     assert.ok(!u.kit.generic); close(u.s.atk, 300); close(u.s.def, 275); assert.equal(u.skill.spec.attack.hits, 2); checkInvariants(h.b);
@@ -45,16 +45,16 @@ test('JSON SkillSpec and permanent talent mods work on shop and DIY units', t =>
   // P2's compiler stands at the C2 seam since claude/030-int was merged (the stub is gone): an invalid spec is a coded refusal
   assert.throws(() => compileDsl({}), (e) => /^PLUGIN_DSL_/.test(e.code));
 });
-test('effectRef item reaches the id-dispatched battle effect; copied params remain concrete', t => {
-  const { set } = setFor(t, { entries: [{ file: 'items', id: 'item_x_data_demo_scope', base: 'chess_item_3_02_e_a' }] });
+test('effectRef item reaches the id-dispatched battle effect; copied params remain concrete', async t => {
+  const { set } = await setFor(t, { entries: [{ file: 'items', id: 'item_x_data_demo_scope', base: 'chess_item_3_02_e_a' }] });
   const probe = chessRec({ id: 'probe', stats: { atk: 500, maxHp: 2000 } });
   const raw = { ...set.data, chess: { ...set.data.chess, probe }, enemies: { ...set.data.enemies, enemy_dummy: enemyRec({ key: 'enemy_dummy', hp: 1e7, speed: 0 }) } };
   const h = makeBattle({ data: new DataSource(raw), units: [{ chessId: 'probe', row: 10, col: 3, items: ['item_x_data_demo_scope'] }], enemies: [{ key: 'enemy_dummy', pos: [10,6] }] });
   h.step(); const u = h.unit('probe'), e = h.enemy('enemy_dummy');
   close(h.b.dealDamage(u, e, { amount: 1000, type: 'true', canDodge: false }), 1300); checkInvariants(h.b);
 });
-test('mode economy and global overrides reach GameData and the battle flags', t => {
-  const { set } = setFor(t, { entries: [{ file: 'modes', id: 'mode_x_data_demo_free', base: 'mode_single_normal', set: {
+test('mode economy and global overrides reach GameData and the battle flags', async t => {
+  const { set } = await setFor(t, { entries: [{ file: 'modes', id: 'mode_x_data_demo_free', base: 'mode_single_normal', set: {
     economy: { refreshPrice: 0, income: [0, 99], chessPrice: { 1: { normal: 7 } } }, dp: { init: 35 }, timers: { infoCheck: 7 }, lpCapPerRound: 4,
   } }] });
   const gd = new GameData(set.data, 'mode_x_data_demo_free'), normal = new GameData(set.data, 'mode_single_normal');
@@ -64,7 +64,7 @@ test('mode economy and global overrides reach GameData and the battle flags', t 
   assert.equal(h.b.flags.dpInit, 35); checkInvariants(h.b);
 });
 test('merged data reaches every support lookup and a real battle, through Node and the actual browser-style loader', async t => {
-  const { set, dir } = setFor(t);
+  const { set, dir } = await setFor(t);
   for (const [file, get] of [['bonds',bondRecord],['items',itemRecord],['bands',bandRecord],['garrisons',garrisonRecord],['effects',effectRecord],['chess',chessRecord]]) {
     const id = Object.keys(set.data[file])[0]; assert.equal(get(id), set.data[file][id]);
   }
@@ -103,8 +103,8 @@ test('merged data reaches every support lookup and a real battle, through Node a
   assert.deepEqual(browser.snapshot(), server.snapshot()); assert.deepEqual(resultDigest(browser.result()), resultDigest(server.result()));
 });
 
-test('effectRef band keeps the new record parameters in its battle handler', t => {
-  const { set } = setFor(t, { entries: [{ file: 'bands', id: 'band_x_data_demo_emperor', base: 'band_emperor', set: {
+test('effectRef band keeps the new record parameters in its battle handler', async t => {
+  const { set } = await setFor(t, { entries: [{ file: 'bands', id: 'band_x_data_demo_emperor', base: 'band_emperor', set: {
     buffs: [{ key: 'env_gbuff_new_with_verify', bb: { respawn_time: -0.2, value: 0 }, bbStr: { key: 'act1autochess_band16_buff' } }],
   } }] });
   const h = makeBattle({ data: new DataSource(set.data), bandId: 'band_x_data_demo_emperor', units: [{ chessId: 'chess_x_data_demo_guard_a', row: 10, col: 5 }] });

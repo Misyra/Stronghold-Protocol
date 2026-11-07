@@ -194,14 +194,16 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
 
   /**
    * The content set of the content plugins `ids` (closed and in load order — server/plugins/roomSets.js), built or
-   * remembered (see the header).
+   * remembered (see the header). A build that has to probe a plugin script (scriptPreflight.js) awaits the child; the
+   * room's message is answered once it settles (server/net.js), the event loop never blocks on it.
    * @param {string[]} ids
    * @param {{ settings?: Record<string, Record<string, unknown>>, replacing?: string | null }} [opts]
-   * @returns {{ ok: true, set: ContentSet } | { error: string, detail: string }}
+   * @returns {Promise<{ ok: true, set: ContentSet } | { error: string, detail: string }>}
    */
-  function resolve(ids, { settings = {}, replacing = null } = {}) {
-    // the same plugins, in the same state, with the same (normalized) settings: the set built before (a build takes a few
-    // hundred ms of this process — every rooms: fixed room, every 「重新应用」 and every cosmetic switch beside them asks again)
+  async function resolve(ids, { settings = {}, replacing = null } = {}) {
+    // the same plugins, in the same state, with the same (normalized) settings: the set built before (a build runs the
+    // process's data half and — for script plugins, uncached — a probe child; every rooms: fixed room, every
+    // 「重新应用」 and every cosmetic switch beside them asks again)
     const norm = normalized(ids, settings);
     const mk = memoKey(ids, norm);
     const remembered = mk && memo.has(mk) ? sets.get(memo.get(mk)) || null : null;
@@ -219,7 +221,7 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
       let built;
       try {
         builds++;
-        built = build({ registry, ids: ids.map((id) => (norm[id] ? { id, settings: norm[id] } : id)) });
+        built = await build({ registry, ids: ids.map((id) => (norm[id] ? { id, settings: norm[id] } : id)) });
       } catch (e) {
         log.error?.('[plugins] content set failed to build', e);
         return { error: ERR.INTERNAL, detail: 'the content set failed to build' };

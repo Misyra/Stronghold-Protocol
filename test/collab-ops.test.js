@@ -58,9 +58,9 @@ function fixture(t) {
     s.ws = { readyState: 1, bufferedAmount: 0, send(data, cb) { cb?.(); } };
     return s;
   };
-  const room = (size, mode = 'coop') => {
+  const room = async (size, mode = 'coop') => {
     const members = Array.from({ length: size }, player);
-    assert.deepEqual(lobby.create(members[0], { mode, difficulty: 'NORMAL', experimental: rules() }), { ok: true });
+    assert.deepEqual(await lobby.create(members[0], { mode, difficulty: 'NORMAL', experimental: rules() }), { ok: true });
     const owner = lobby.roomOf(members[0]);
     for (const m of members.slice(1)) {
       assert.deepEqual(lobby.join(m, { code: owner.code }), { ok: true });
@@ -73,7 +73,7 @@ function fixture(t) {
 
 test('lobby: a collab pick is an ordinary 自选 pick — kept with no switch and handed to the match', REAL, async (t) => {
   const h = fixture(t);
-  const { owner, members } = h.room(1, 'solo');
+  const { owner, members } = await h.room(1, 'solo');
   const got = h.lobby.diy(members[0], { picks: { [T6A]: ASH_PICK } });
   assert.equal(got.ok, true);
   assert.deepEqual(got.picks, { [T6A]: ASH_PICK });

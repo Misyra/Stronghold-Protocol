@@ -54,7 +54,7 @@ writePlugin(path.join(pluginsDir, 'bond-def'), { manifest: 2, version: '1.0.0', 
 const registry = createPluginRegistry({ publicDir: path.join(ROOT, 'public'), dataDir: path.join(ROOT, 'data'), packsDir: path.join(tmp, 'packs'), pluginsDir }, { log: quiet });
 registry.refresh(true);
 const contents = createContentSets({ registry, vanillaData: getData({ log: quiet }), log: quiet });
-const built = contents.resolve(['bond-def']);
+const built = await contents.resolve(['bond-def']);
 assert.ok(built.ok, JSON.stringify(built));
 const CS = built.set.cs;
 const CS16 = CS.slice(0, 16);
@@ -77,7 +77,7 @@ function serverFetch({ edit = null, fail = null } = {}) {
   return { fetchFn, seen };
 }
 
-describe('loading and checking a room\'s content set (public/js/content.js)', () => {
+describe('loading and checking a room\'s content set (public/js/content.js)', async () => {
   test('fetchChecked: the bytes are checked before they are decoded — a BOM stays part of them; a changed byte or size is refused', async () => {
     const json = Buffer.from(JSON.stringify({ a: 1 }));
     const bom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), json]);
@@ -270,7 +270,7 @@ describe('data.js setContent', () => {
   });
 });
 
-describe('the runner\'s cs check (public/js/battle/runner.js)', () => {
+describe('the runner\'s cs check (public/js/battle/runner.js)', async () => {
   const DS = new DataSource(DATA, null);
   let start = null;
   /** A real b.start of round 2 from a client-combat match (as test/match/runner.test.js). */

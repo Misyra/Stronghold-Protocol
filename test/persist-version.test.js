@@ -59,11 +59,11 @@ function driveTo(h, pred, { maxSteps = 2e6, ready = true } = {}) {
 }
 
 /** A lobby room whose live match is a real harness match (the Persister only reads room.match). */
-function roomFor(match, { mode = 'coop', difficulty = 'NORMAL' } = {}) {
+async function roomFor(match, { mode = 'coop', difficulty = 'NORMAL' } = {}) {
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
   const session = registry.create('Alice');
-  lobby.create(session, { mode, difficulty });
+  await lobby.create(session, { mode, difficulty });
   const code = session.roomCode;
   lobby.getRoom(code).match = match;
   return { registry, lobby, code };
@@ -84,7 +84,7 @@ test('an unchanged match is not encoded again: only the clock envelope moves', a
     pool: { entries: new Map([['chess_a', { cap: 20, left: 20, tier: 1 }]]), revision: 0, take(id, n) { this.entries.get(id).left -= n; this.revision++; } },
     order: [], alivePlayers: () => [], errorCount: 0, errors: [], round: 1, _persistRev: 0, uidSeq: 0, _battleSeq: 0, pausedMs: 0,
   };
-  const { lobby, code } = roomFor(match, { mode: 'solo' });
+  const { lobby, code } = await roomFor(match, { mode: 'solo' });
   const persister = new Persister({ store: null, registry: lobby.registry, lobby, log: quietLog });
   try {
     assert.equal(await persister.encodeRoom(code, match), true, 'the first checkpoint is encoded');
@@ -113,7 +113,7 @@ test('an unchanged match is not encoded again: only the clock envelope moves', a
 
 test('a skipped checkpoint still restores the live match (no confirmed change is lost)', async () => {
   const h = makeMatch({ ...OPTIONS, seed: 7 });
-  const { lobby, code } = roomFor(h.m);
+  const { lobby, code } = await roomFor(h.m);
   const persister = new Persister({ store: new MemoryStore(), registry: lobby.registry, lobby, log: quietLog });
   const fresh = () => makeMatch({ ...OPTIONS, seed: 7 });
   const restore = (b) => {
@@ -162,7 +162,7 @@ test('a skipped checkpoint still restores the live match (no confirmed change is
 
 test('the version never misses a change: verification over a driven match', async () => {
   const h = makeMatch({ ...OPTIONS, seed: 11 });
-  const { lobby, code } = roomFor(h.m);
+  const { lobby, code } = await roomFor(h.m);
   const persister = new Persister({ store: new MemoryStore(), registry: lobby.registry, lobby, log: quietLog, verifyVersion: true });
   let flushes = 0;
   try {
@@ -193,7 +193,7 @@ test('the version never misses a change: verification over a driven match', asyn
 
 test('the version is checked, not trusted: a persisted field that moves alone is caught', async () => {
   const h = makeMatch({ ...OPTIONS, seed: 5 });
-  const { lobby, code } = roomFor(h.m);
+  const { lobby, code } = await roomFor(h.m);
   const persister = new Persister({ store: null, registry: lobby.registry, lobby, log: quietLog, verifyVersion: true });
   const warnings = [];
   persister.log = { ...quietLog, warn: (msg) => warnings.push(String(msg)) };

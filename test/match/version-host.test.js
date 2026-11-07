@@ -238,7 +238,7 @@ test('a test room of a version plays in its host: test commands through the prox
     s.connected = true;
     s.disconnectedAt = null;
     s.ws = { readyState: 1, bufferedAmount: 0, send() {}, terminate() {} };
-    assert.deepEqual(lobby.create(s, { mode: 'solo', difficulty: 'NORMAL', test: true, version: 'act1autochess' }), { ok: true });
+    assert.deepEqual(await lobby.create(s, { mode: 'solo', difficulty: 'NORMAL', test: true, version: 'act1autochess' }), { ok: true });
     const room = lobby.getRoom(s.roomCode);
     assert.deepEqual(lobby.contentReady(s, { cs: room.content.cs }), { ok: true });
     assert.deepEqual(lobby.start(s), { ok: true });

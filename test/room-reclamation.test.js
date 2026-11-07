@@ -13,12 +13,12 @@ function fixture(t) {
   const lobby = new Lobby({ registry, MatchClass: StubMatch, getData: () => ({}), now: () => now,
     log: { info: (s) => { if (s.startsWith('[audit] ')) audits.push(JSON.parse(s.slice(8))); }, warn() {}, error() {}, debug() {} } });
   t.after(() => lobby.shutdown());
-  const create = () => {
+  const create = async () => {
     now++;
     const session = registry.create('Host');
     session.connected = true;
     session.addr = '203.0.113.1';
-    assert.equal(lobby.create(session, { mode: 'coop', difficulty: 'NORMAL' }).ok, true);
+    assert.equal((await lobby.create(session, { mode: 'coop', difficulty: 'NORMAL' })).ok, true);
     return { session, room: lobby.roomOf(session) };
   };
   const offline = (entry, at = now + 1001) => {
@@ -30,8 +30,8 @@ function fixture(t) {
   return { registry, lobby, audits, create, offline };
 }
 
-test('90% triggers, removes longest-offline first and stops strictly below 80%', (t) => {
-  const f = fixture(t), entries = Array.from({ length: 9 }, f.create);
+test('90% triggers, removes longest-offline first and stops strictly below 80%', async (t) => {
+  const f = fixture(t), entries = await Promise.all(Array.from({ length: 9 }, f.create));
   for (const e of entries.slice(0, 3)) assert.equal(f.lobby.addBot(e.session).ok, true);
   assert.equal(f.lobby.start(entries[1].session).ok, true);
   const matchCtx = entries[1].room.matchCtx;
@@ -56,8 +56,8 @@ test('90% triggers, removes longest-offline first and stops strictly below 80%',
   assert.equal(f.audits.filter((a) => a.action === 'room.disposed' && a.reason === 'capacity').length, 2);
 });
 
-test('below 90% preserves reconnect grace; exactly 80% must lose one more room', (t) => {
-  const f = fixture(t), entries = Array.from({ length: 8 }, f.create);
+test('below 90% preserves reconnect grace; exactly 80% must lose one more room', async (t) => {
+  const f = fixture(t), entries = await Promise.all(Array.from({ length: 8 }, f.create));
   f.offline(entries[0]);
   f.offline(entries[1]);
   f.lobby.opts.maxRooms = 10;
@@ -70,8 +70,8 @@ test('below 90% preserves reconnect grace; exactly 80% must lose one more room',
   assert.equal(f.lobby.roomPressure.active, false);
 });
 
-test('online players and spectators are protected, including registry/seat disagreement', (t) => {
-  const f = fixture(t), entries = Array.from({ length: 9 }, f.create);
+test('online players and spectators are protected, including registry/seat disagreement', async (t) => {
+  const f = fixture(t), entries = await Promise.all(Array.from({ length: 9 }, f.create));
   const spectator = f.registry.create('Viewer');
   spectator.connected = true;
   assert.equal(f.lobby.spectate(spectator, { code: entries[0].room.code }).ok, true);
@@ -84,8 +84,8 @@ test('online players and spectators are protected, including registry/seat disag
   assert.ok(entries.every((e) => !e.room.disposed));
 });
 
-test('pressure stays armed when too few rooms are offline and disarms below 80%', (t) => {
-  const f = fixture(t), entries = Array.from({ length: 9 }, f.create);
+test('pressure stays armed when too few rooms are offline and disarms below 80%', async (t) => {
+  const f = fixture(t), entries = await Promise.all(Array.from({ length: 9 }, f.create));
   f.lobby.opts.maxRooms = 10;
   assert.equal(f.lobby.reclaimOfflineRooms(), 0);
   f.offline(entries[0]);
@@ -100,8 +100,8 @@ test('pressure stays armed when too few rooms are offline and disarms below 80%'
   assert.equal(entries[2].room.disposed, false);
 });
 
-test('fractional room-pressure thresholds round safely', (t) => {
-  const f = fixture(t), entries = Array.from({ length: 10 }, f.create);
+test('fractional room-pressure thresholds round safely', async (t) => {
+  const f = fixture(t), entries = await Promise.all(Array.from({ length: 10 }, f.create));
   for (const e of entries) f.offline(e);
   f.lobby.opts.maxRooms = 11;
   assert.equal(f.lobby.reclaimOfflineRooms(), 2); // 10 >= 9.9, 8 < 8.8.
@@ -111,31 +111,31 @@ test('fractional room-pressure thresholds round safely', (t) => {
   assert.equal(Math.ceil(1000 * 4 / 5) - 1, 799);
 });
 
-test('creating the room that reaches 90% triggers automatic reclamation', (t) => {
-  const f = fixture(t), entries = Array.from({ length: 8 }, f.create);
+test('creating the room that reaches 90% triggers automatic reclamation', async (t) => {
+  const f = fixture(t), entries = await Promise.all(Array.from({ length: 8 }, f.create));
   f.offline(entries[0]);
   f.offline(entries[1]);
   f.lobby.opts.maxRooms = 10;
-  const added = f.create();
+  const added = await f.create();
   assert.equal(f.lobby.rooms.size, 7);
   assert.equal(added.room.disposed, false);
 });
 
-test('default 1000-room cap triggers exactly at 900 and reclaims to 799', (t) => {
-  const f = fixture(t), entries = Array.from({ length: 899 }, f.create);
+test('default 1000-room cap triggers exactly at 900 and reclaims to 799', async (t) => {
+  const f = fixture(t), entries = await Promise.all(Array.from({ length: 899 }, f.create));
   for (const e of entries.slice(0, 101)) f.offline(e);
   assert.equal(f.lobby.reclaimOfflineRooms(), 0);
   assert.equal(f.lobby.rooms.size, 899);
-  const newest = f.create();
+  const newest = await f.create();
   assert.equal(f.lobby.rooms.size, 799);
   assert.equal(newest.room.disposed, false);
   assert.equal(f.lobby.roomPressure.reclaimed, 101);
   assert.equal(f.lobby.roomPressure.active, false);
 });
 
-test('periodic check reclaims offline rooms and shutdown stops its timer', (t) => {
+test('periodic check reclaims offline rooms and shutdown stops its timer', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
-  const f = fixture(t), entries = Array.from({ length: 9 }, f.create);
+  const f = fixture(t), entries = await Promise.all(Array.from({ length: 9 }, f.create));
   f.offline(entries[0]);
   f.offline(entries[1]);
   f.lobby.opts.maxRooms = 10;
@@ -148,8 +148,8 @@ test('periodic check reclaims offline rooms and shutdown stops its timer', (t) =
   t.mock.timers.tick(15000);
 });
 
-test('repeated full-server creation attempts scan at most once per second', (t) => {
-  const f = fixture(t), entries = Array.from({ length: 10 }, f.create);
+test('repeated full-server creation attempts scan at most once per second', async (t) => {
+  const f = fixture(t), entries = await Promise.all(Array.from({ length: 10 }, f.create));
   f.lobby.opts.maxRooms = 10;
   let scans = 0;
   const original = entries[0].room.activeHumans.bind(entries[0].room);
@@ -157,7 +157,7 @@ test('repeated full-server creation attempts scan at most once per second', (t) 
   const requester = f.registry.create('Blocked');
   requester.connected = true;
   for (let i = 0; i < 100; i++)
-    assert.equal(f.lobby.create(requester, { mode: 'coop', difficulty: 'NORMAL' }).error, 'INTERNAL');
+    assert.equal((await f.lobby.create(requester, { mode: 'coop', difficulty: 'NORMAL' })).error, 'INTERNAL');
   assert.equal(scans, 1);
   assert.equal(f.lobby.rooms.size, 10);
 });

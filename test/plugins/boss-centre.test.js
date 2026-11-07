@@ -65,7 +65,7 @@ test('MELEE centre tiles and active deployment platforms warn; adjacent tiles an
   }
 });
 
-for (const format of ['parts', 'records', 'patches']) test(`${format}: registry, CLI/studio check and composed data warn without refusing or changing deployment`, t => {
+for (const format of ['parts', 'records', 'patches']) test(`${format}: registry, CLI/studio check and composed data warn without refusing or changing deployment`, async t => {
   const f = fixture(t);
   const stageRec = { id: stageId, value: stage() };
   const modeRec = { id: modeId, base: 'mode_multi_normal', set: { stages: [stageId] } };
@@ -89,7 +89,7 @@ for (const format of ['parts', 'records', 'patches']) test(`${format}: registry,
   const check = checkPluginFolder(dir, 'plugins/centre/');
   assert.deepEqual(check.problems, []); assert.ok(check.plugin);
   assert.equal(check.issues.filter(i => i.code === CODE).length, 1);
-  const set = buildContentSet({ registry: f.registry, ids: ['centre'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['centre'] });
   assert.deepEqual(set.problems, []); assert.ok(set.cs);
   assert.equal(set.warnings.filter(i => i.code === CODE).length, 1);
   for (const half of ['bossLeft', 'bossRight']) assert.ok(set.data.stages[stageId].deployTiles[half].melee.some(([r, c]) => r === 2 && c === 10));
@@ -116,19 +116,19 @@ test('a data patch changing an existing official boss lane also warns', t => {
   assert.ok(issue); assert.equal(issue.params.rows, '2, 5');
 });
 
-test('full composition checks a mode using a dependency-provided stage', t => {
+test('full composition checks a mode using a dependency-provided stage', async t => {
   const f = fixture(t), id = 'stage_x_terrain_map';
   f.put('terrain', { stages: 'map.json', permissions: ['data.add'] }, { 'map.json': { id, value: { ...stage(), id } } });
   f.put('centre', { modes: 'mode.json', permissions: ['data.add'], requires: { terrain: '*' } }, {
     'mode.json': { id: modeId, base: 'mode_multi_normal', set: { stages: [id] } },
   });
-  const set = buildContentSet({ registry: f.registry, ids: ['centre'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['centre'] });
   assert.deepEqual(set.problems, []);
   const issue = set.warnings.find(i => i.code === CODE);
   assert.ok(issue); assert.match(issue.params.stage, /stage_x_terrain_map/);
 });
 
-test('folder checks use defaults; full composition warns when selected settings enable the centre', t => {
+test('folder checks use defaults; full composition warns when selected settings enable the centre', async t => {
   const f = fixture(t);
   const dir = f.put('centre', { data: 'patch.json', permissions: ['data.patch'],
     settings: { build: { type: 'enum', options: ['NONE', 'ALL'], default: 'NONE' } },
@@ -136,8 +136,8 @@ test('folder checks use defaults; full composition warns when selected settings 
     { op: 'set', file: 'stages', id: 'act1autochess_m01', path: ['tiles', 'O', 'buildable'], value: { $setting: 'build' } },
   ] } });
   assert.deepEqual(checkPluginFolder(dir).issues.filter(i => i.code === CODE), []);
-  assert.deepEqual(buildContentSet({ registry: f.registry, ids: ['centre'] }).warnings, []);
-  const set = buildContentSet({ registry: f.registry, ids: [{ id: 'centre', settings: { build: 'ALL' } }] });
+  assert.deepEqual((await buildContentSet({ registry: f.registry, ids: ['centre'] })).warnings, []);
+  const set = await buildContentSet({ registry: f.registry, ids: [{ id: 'centre', settings: { build: 'ALL' } }] });
   assert.deepEqual(set.problems, []);
   assert.equal(set.warnings.find(i => i.code === CODE).params.rows, '2, 5');
 });

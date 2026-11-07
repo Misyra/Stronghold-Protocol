@@ -39,7 +39,7 @@ import { applyPatches, normalizeSettings } from '../../shared/plugins/patch.js';
 import { appendOfficialBounds } from '../../shared/plugins/officialBounds.js';
 import { zipFiles } from './zip.js';
 import { hasOperatorTrait } from './operatorTraits.js';
-import { buildContentSet } from './contentSet.js';
+import { checkContentSetDataOnly } from './contentSet.js';
 import { operatorMetadataProblems } from '../../shared/plugins/records.js';
 
 /** What packs a lock (its `generator`). */
@@ -135,7 +135,7 @@ export function checkPluginFolder(dir, where, { vanilla, dataDir = DATA_DIR } = 
       }
       return available.get(id);
     } };
-    const checked = buildContentSet({ registry, ids: [p.id], checkDataOnly: true });
+    const checked = checkContentSetDataOnly({ registry, ids: [p.id] });
     for (const e of checked.problems) list.problem(e.code, e.message, { where: e.path, detail: e.message });
   }
   const patches = (p?.manifest.parts.data?.files || []).map(rel => p.content?.documents[rel]).filter(doc => doc?.patch === 1);

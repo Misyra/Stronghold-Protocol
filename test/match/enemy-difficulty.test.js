@@ -25,13 +25,13 @@ function installed(t) {
   return f.registry;
 }
 
-test('real plugin composes fixed/random settings into distinct immutable content sets; quantity is integer only', t => {
+test('real plugin composes fixed/random settings into distinct immutable content sets; quantity is integer only', async t => {
   const registry = installed(t);
-  const fixed = buildContentSet({ registry, ids: ['n18-duel'] });
+  const fixed = await buildContentSet({ registry, ids: ['n18-duel'] });
   assert.deepEqual(fixed.problems, []);
   assert.equal(fixed.data.config.modes.mode_multi_normal.enemyDifficulty.fixed.hp, 1.5);
   assert.equal(fixed.data.config.modes.mode_multi_normal.enemyDifficulty.fixed.count, 1);
-  const random = buildContentSet({ registry, ids: [{ id: 'n18-duel', settings: { n18Mode: 'random', n18MaxTerms: 2, limit_count: 3 } }] });
+  const random = await buildContentSet({ registry, ids: [{ id: 'n18-duel', settings: { n18Mode: 'random', n18MaxTerms: 2, limit_count: 3 } }] });
   assert.deepEqual(random.problems, []);
   assert.notEqual(fixed.cs, random.cs);
   assert.equal(random.data.config.modes.mode_multi_normal.enemyDifficulty.limits.count, 3);
@@ -43,7 +43,7 @@ test('real plugin composes fixed/random settings into distinct immutable content
   // Check through the real composition path too, rather than relying on settings normalization alone.
   const f = fixture(t);
   f.put('bad-difficulty', { data:['p.json'] }, { 'p.json':{patch:1,ops:[{op:'merge',file:'config',path:['modes'],value:{mode_multi_normal:{enemyDifficulty:bad.config.modes.mode_multi_normal.enemyDifficulty}}}]}});
-  assert.ok(buildContentSet({registry:f.registry, ids:['bad-difficulty']}).problems.some(p=>p.code === 'PLUGIN_DATA_BOUND'));
+  assert.ok((await buildContentSet({registry:f.registry, ids:['bad-difficulty']})).problems.some(p=>p.code === 'PLUGIN_DATA_BOUND'));
 });
 
 test('random draws have unique applicable terms, exact steps, no accumulation, bounded inclusive caps and reproducible seeds', () => {

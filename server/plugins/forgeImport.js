@@ -3280,7 +3280,7 @@ export async function importForge(source, opts = {}) {
             else if (got.set?.problems?.length || got.set?.warnings?.length) issues.push({ code: 'PLUGIN_INVALID', detail: `${p.id}: visual set ${got.set.problems?.length || 0} problems, ${got.set.warnings?.length || 0} warnings` });
           }
           if (p.class === 'content') {
-            const set = buildContentSet({ registry, ids: [p.id] });
+            const set = await buildContentSet({ registry, ids: [p.id] });
             if (!set || set.problems?.length) issues.push({ code: set?.problems?.[0]?.code || 'PLUGIN_INVALID', detail: `${p.id}: ${set?.problems?.[0]?.message || set?.problems?.[0]?.code || 'content set failed'}` });
             else if (set.warnings?.length) issues.push({ code: 'PLUGIN_INVALID', detail: `${p.id}: content set ${set.warnings.length} warnings` });
           }

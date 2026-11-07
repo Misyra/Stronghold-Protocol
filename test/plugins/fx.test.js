@@ -152,7 +152,7 @@ test('registry, pack/check and studio findings accept fx-only cosmetics and warn
   assert.deepEqual(checked.problems, []); assert.ok(checked.warnings.some(s => s.includes('char_999999_missing')));
 });
 
-test('saved content fx mapping and DSL action survive production content-set composition', t => {
+test('saved content fx mapping and DSL action survive production content-set composition', async t => {
   const f = fxFixture(t), op = guard();
   op.fx = { unit: 'char_112_siege', skills: { 0: 'skchr_siege_3' } };
   op.kit = { dsl: { dsl: 1, talents: [{ when: 'deploy', do: [{ fx: { kind: 'plugin', id: 'flash', dur: 0.4 } }] }] } };
@@ -160,7 +160,7 @@ test('saved content fx mapping and DSL action survive production content-set com
     class: 'content', scope: ['room'], permissions: ['data.add', 'dsl'], operators: ['op.json'] });
   f.put('plugins/data-demo/op.json', op);
   const registry = createPluginRegistry({ publicDir: path.join(f.root, 'public'), packsDir: path.join(f.root, 'packs'), pluginsDir: path.join(f.root, 'plugins'), dataDir: path.join(ROOT, 'data') });
-  const set = buildContentSet({ registry, ids: ['data-demo'] });
+  const set = await buildContentSet({ registry, ids: ['data-demo'] });
   assert.deepEqual(set.problems, []);
   const rec = set.data.chess.chess_x_data_demo_guard_a;
   assert.deepEqual(rec.fx, op.fx);

@@ -43,11 +43,11 @@ test('sandbox catalogue, constrained preflight, no pin/public gate, real room ne
   const plugins=createRoomSets({registry:f.registry,visual:null,contents,policy:null});
   const lobby=new Lobby({registry:new SessionRegistry(),content:{cs:'c'.repeat(64)},plugins});t.after(()=>lobby.shutdown());
   const host={playerId:'h',name:'Host',connected:true,ws:null},guest={playerId:'g',name:'Guest',connected:true,ws:null};
-  lobby.create(host,{mode:'coop',difficulty:'NORMAL'});lobby.join(guest,{code:host.roomCode});
-  assert.deepEqual(lobby.setPlugins(host,{plugins:[{id:'demo'}]}),{ok:true});
+  await lobby.create(host,{mode:'coop',difficulty:'NORMAL'});lobby.join(guest,{code:host.roomCode});
+  assert.deepEqual(await lobby.setPlugins(host,{plugins:[{id:'demo'}]}),{ok:true});
   const room=lobby.roomOf(host),content=room.toState().content;
   assert.equal(content.execution,'sandbox');assert.equal(content.trusted,undefined);assert.equal(content.plugins[0].execution,'sandbox');
-  const built=buildContentSet({registry:f.registry,ids:['demo']});assert.deepEqual(built.problems,[]);
+  const built=await buildContentSet({registry:f.registry,ids:['demo']});assert.deepEqual(built.problems,[]);
   const loaded=await loadContentSet(built.cs,{fetch:fetchSet(built),retryDelays:[]});
   assert.equal(loaded.canSim,true);assert.equal(loaded.nativeVerified,false);assert.equal(loaded.scripts.length,1);
   verifyScripts(loaded.scripts,loaded.index);
@@ -61,10 +61,10 @@ test('sandbox catalogue, constrained preflight, no pin/public gate, real room ne
 test('native and mixed sets require consent; mode changes identity; source responses must match descriptor bytes',async t=>{
   const portable='export default sp => sp.kits.register("char_x_demo_guard",()=>({}));';
   const f=scriptFixture(t,{mode:'sandbox'});f.put('demo',portable);
-  const sandbox=buildContentSet({registry:f.registry,ids:['demo']});assert.deepEqual(sandbox.problems,[]);
+  const sandbox=await buildContentSet({registry:f.registry,ids:['demo']});assert.deepEqual(sandbox.problems,[]);
   // Identical manifest, lock and source, with only the execution decision changed.
   f.registry.plugin('demo').script.execution='trusted';
-  const native=buildContentSet({registry:f.registry,ids:['demo']});assert.deepEqual(native.problems,[]);
+  const native=await buildContentSet({registry:f.registry,ids:['demo']});assert.deepEqual(native.problems,[]);
   assert.notEqual(native.cs,sandbox.cs);
   const noConsent=await loadContentSet(native.cs,{fetch:fetchSet(native),retryDelays:[]});assert.equal(noConsent.canSim,false);
   const loaded=await loadContentSet(native.cs,{fetch:fetchSet(native),consent:true,retryDelays:[]});assert.equal(loaded.nativeVerified,true);
@@ -78,7 +78,7 @@ test('native and mixed sets require consent; mode changes identity; source respo
   trusted.put('page','export default () => {};',{class:'trusted',permissions:['trusted.page'],entry:{client:'page.js'}},{'page.js':'globalThis.pageProbe = true;'});
   const contents=createContentSets({registry:trusted.registry,vanillaData:getData()});
   const rooms=createRoomSets({registry:trusted.registry,visual:null,contents,policy:null});
-  const mixed=rooms.resolve(['demo','page']);assert.ok(mixed.ok,JSON.stringify(mixed));
+  const mixed=await rooms.resolve(['demo','page']);assert.ok(mixed.ok,JSON.stringify(mixed));
   assert.equal(mixed.set.execution,'trusted');assert.equal(mixed.set.trusted.plugins.length,2);
   const set=contents.get(mixed.set.cs),part=mixed.set.cs.slice(0,16);
   const route=contents.file(part,'scripts/page/page.js');assert.match(route.type,/text\/javascript/);
@@ -93,7 +93,7 @@ test('production SDK budget in SES disables one plugin, keeps other effects and 
     b.on('battleStart',()=>{b.addBuff(b.allyUnits[0],{key:'bad',mods:{atkFlat:999}});for(let i=0;i<9000;i++)b.addDp('p1',1);});
   }});`);
   f.put('good',`export default sp => sp.content.register({install(b){b.on('tick',()=>b.addDp('p1',1));}});`);
-  const built=buildContentSet({registry:f.registry,ids:['bad','good']});assert.deepEqual(built.problems,[]);
+  const built=await buildContentSet({registry:f.registry,ids:['bad','good']});assert.deepEqual(built.problems,[]);
   const loaded=await loadContentSet(built.cs,{fetch:fetchSet(built),retryDelays:[]});
   const host=new WorkerSimHost({workerFactory:()=>{
     const worker=new Worker(new URL('../helpers/simWorkerNode.mjs',import.meta.url));

@@ -26,7 +26,7 @@ function template(f){
 }
 test('same script battle is bit-identical in match child and loadBrowserSim, spectator fetches no scripts',async t=>{
  const f=scriptFixture(t);template(f);
- const built=buildContentSet({registry:f.registry,ids:['script-demo']});assert.deepEqual(built.problems,[]);
+ const built=await buildContentSet({registry:f.registry,ids:['script-demo']});assert.deepEqual(built.problems,[]);
  const calls=[], served=contentSetFiles(built);
  const fetch=async url=>{
   calls.push(url);let body;
@@ -49,7 +49,7 @@ test('same script battle is bit-identical in match child and loadBrowserSim, spe
  const spec=buildBattleSpec({...h.b.opts,cs:built.cs,stageId:'act1autochess_m01',players:[{playerId:'p1',seat:0,units:[{uid:'guard',chessId:'chess_x_script_demo_guard_a',row:9,col:5}]}]});
  const browser=sim.spec.createBattleFromSpec(spec,sim.ds);browser.start();for(let i=0;i<90;i++)browser.step();
  assert.equal(browser.allyUnits[0].kit.generic,undefined);assert.ok(browser.allyUnits[0].s.atk>200);
- const contents=createContentSets({registry:f.registry,vanillaData:getData()});const set=contents.resolve(['script-demo']);assert.ok(set.ok,JSON.stringify(set));
+ const contents=createContentSets({registry:f.registry,vanillaData:getData()});const set=await contents.resolve(['script-demo']);assert.ok(set.ok,JSON.stringify(set));
  const hosts=createMatchHosts({contents,log:quiet,options:{matchOptions:{scriptSpec:spec},matchModule:fileURLToPath(new URL('./fixtures/scriptBattleMatch.js',import.meta.url))}});t.after(()=>hosts.close());
  let resolve;const message=new Promise(r=>{resolve=r;});
  const m=hosts.create(built.cs,{roomCode:'TEST',seats:[],scriptSpec:spec,broadcast:resolve,send(){},onEnd(){}});m.start();
@@ -61,7 +61,7 @@ test('all-bot match completes with script content and meta effects in production
  sp.content.register({install(b){b.on('battleStart',()=>{for(const u of b.allyUnits)b.addBuff(u,{key:'test',mods:{atkFlat:2}});});}});
  sp.meta.register('global:training',{onRoundStart(ctx){ctx.addFunds(1);}});
  }`,{permissions:['sim.code','meta.code'],entry:{sim:'index.js',meta:'index.js'}});
- const contents=createContentSets({registry:f.registry,vanillaData:getData()});const r=contents.resolve(['training']);assert.ok(r.ok,JSON.stringify(r));
+ const contents=createContentSets({registry:f.registry,vanillaData:getData()});const r=await contents.resolve(['training']);assert.ok(r.ok,JSON.stringify(r));
  const hosts=createMatchHosts({contents,log:quiet,options:{virtualTime:true,matchOptions:{botRehearsal:0}}});t.after(()=>hosts.close());
  let end;const done=new Promise(resolve=>{end=resolve;});
  const match=hosts.create(r.set.cs,{roomCode:'BOTS',mode:'coop',difficulty:'NORMAL',modeId:'mode_multi_normal',

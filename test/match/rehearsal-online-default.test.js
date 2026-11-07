@@ -14,13 +14,13 @@ import { Match } from '../../server/match/Match.js';
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
 
 /** Run `fn` with SP_BOT_REHEARSAL set to `value` (undefined deletes it), restoring the process environment after. */
-function withEnv(value, fn) {
+async function withEnv(value, fn) {
   const had = Object.hasOwn(process.env, 'SP_BOT_REHEARSAL');
   const before = process.env.SP_BOT_REHEARSAL;
   if (value === undefined) delete process.env.SP_BOT_REHEARSAL;
   else process.env.SP_BOT_REHEARSAL = value;
   try {
-    return fn();
+    return await fn(); // the env stays set until the (possibly async) body settled
   } finally {
     if (had) process.env.SP_BOT_REHEARSAL = before;
     else delete process.env.SP_BOT_REHEARSAL;
@@ -36,7 +36,7 @@ class RecordingMatch {
 }
 
 /** A one-human co-op room started through the lobby's own online path (room.create → room.start). */
-function startOnlineRoom() {
+async function startOnlineRoom() {
   RecordingMatch.last = null;
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quiet, MatchClass: RecordingMatch, getData: () => ({}) });
@@ -44,29 +44,29 @@ function startOnlineRoom() {
   host.connected = true;
   host.disconnectedAt = null;
   host.ws = { readyState: 1, bufferedAmount: 0, send() {}, terminate() {} };
-  assert.deepEqual(lobby.create(host, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
+  assert.deepEqual(await lobby.create(host, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
   assert.deepEqual(lobby.start(host), { ok: true });
   const opts = RecordingMatch.last;
   lobby.shutdown();
   return opts;
 }
 
-test('an online room delegates the bot rehearsal to its host by default (SP_BOT_REHEARSAL unset)', () => {
-  withEnv(undefined, () => {
-    assert.equal(startOnlineRoom().botRehearsalDelegate, true);
+test('an online room delegates the bot rehearsal to its host by default (SP_BOT_REHEARSAL unset)', async () => {
+  await withEnv(undefined, async () => {
+    assert.equal((await startOnlineRoom()).botRehearsalDelegate, true);
   });
 });
 
-test('SP_BOT_REHEARSAL=host keeps the online default on', () => {
-  withEnv('host', () => {
-    assert.equal(startOnlineRoom().botRehearsalDelegate, true);
+test('SP_BOT_REHEARSAL=host keeps the online default on', async () => {
+  await withEnv('host', async () => {
+    assert.equal((await startOnlineRoom()).botRehearsalDelegate, true);
   });
 });
 
-test('SP_BOT_REHEARSAL=server|off|0|false turns the online default off (case-insensitive)', () => {
+test('SP_BOT_REHEARSAL=server|off|0|false turns the online default off (case-insensitive)', async () => {
   for (const value of ['server', 'off', '0', 'false', 'SERVER', ' Off ', 'FALSE']) {
-    withEnv(value, () => {
-      assert.equal(startOnlineRoom().botRehearsalDelegate, false, `SP_BOT_REHEARSAL=${JSON.stringify(value)}`);
+    await withEnv(value, async () => {
+      assert.equal((await startOnlineRoom()).botRehearsalDelegate, false, `SP_BOT_REHEARSAL=${JSON.stringify(value)}`);
     });
   }
 });

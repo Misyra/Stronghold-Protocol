@@ -69,12 +69,12 @@ async function player(port, name, token) {
 // document round trip (no server)
 // ---------------------------------------------------------------------------------------------------
 
-test('a room and its sessions survive a document round trip', () => {
+test('a room and its sessions survive a document round trip', async () => {
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
   const a = registry.create('Alice');
   const b = registry.create('Bob');
-  assert.deepEqual(lobby.create(a, { mode: 'coop', difficulty: 'HARD' }), { ok: true });
+  assert.deepEqual(await lobby.create(a, { mode: 'coop', difficulty: 'HARD' }), { ok: true });
   const code = a.roomCode;
   assert.deepEqual(lobby.join(b, { code }), { ok: true });
   assert.deepEqual(lobby.ready(b, { ready: true }), { ok: true });
@@ -92,7 +92,7 @@ test('a room and its sessions survive a document round trip', () => {
   // a second (restarted) server reads it back
   const registry2 = new SessionRegistry();
   const lobby2 = new Lobby({ registry: registry2, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
-  const stats = restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog });
+  const stats = await restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog });
   assert.deepEqual({ sessions: stats.sessions, rooms: stats.rooms, matches: stats.matches }, { sessions: 2, rooms: 1, matches: 0 });
   const resumed = registry2.byToken(a.token);
   assert.ok(resumed, 'the token resolves after the restart');
@@ -108,13 +108,13 @@ test('a room and its sessions survive a document round trip', () => {
   assert.equal(lobby2.graceTimers.size, 2);
 });
 
-test('the seat card (名片干员) survives a document round trip, on the session and the seat', () => {
+test('the seat card (名片干员) survives a document round trip, on the session and the seat', async () => {
   const data = { chess: { x: { charId: 'char_498_inside', visible: true } } };
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => data });
   const a = registry.create('Alice');
   const b = registry.create('Bob');
-  assert.deepEqual(lobby.create(a, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
+  assert.deepEqual(await lobby.create(a, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
   const code = a.roomCode;
   assert.deepEqual(lobby.join(b, { code }), { ok: true });
   const cardA = { charId: 'char_498_inside', avatar: 'char_498_inside', art: 'e2', bg: 'nc_1', bgY: 7 };
@@ -132,7 +132,7 @@ test('the seat card (名片干员) survives a document round trip, on the sessio
   // a second (restarted) server reads it back
   const registry2 = new SessionRegistry();
   const lobby2 = new Lobby({ registry: registry2, log: quietLog, MatchClass: StubMatch, getData: () => data });
-  assert.equal(restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog }).ok, true);
+  assert.equal((await restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog })).ok, true);
   const resumedA = registry2.byToken(a.token);
   const resumedB = registry2.byToken(b.token);
   assert.ok(resumedA && resumedB);
@@ -143,7 +143,7 @@ test('the seat card (名片干员) survives a document round trip, on the sessio
   assert.deepEqual(room2.seatOf(b.playerId).card, cardB);
 });
 
-test('sessions older than their reconnect window are dropped, with their seats', () => {
+test('sessions older than their reconnect window are dropped, with their seats', async () => {
   const now = Date.now();
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
@@ -164,7 +164,7 @@ test('sessions older than their reconnect window are dropped, with their seats',
     ],
     matches: {},
   };
-  const stats = restoreServer({ doc, registry, lobby, now, log: quietLog });
+  const stats = await restoreServer({ doc, registry, lobby, now, log: quietLog });
   assert.equal(stats.expired, 1, 'the 10-minute session is gone');
   assert.equal(stats.sessions, 2);
   assert.ok(registry.byToken('cc'), 'the 24 h solo window survives');
@@ -176,7 +176,7 @@ test('sessions older than their reconnect window are dropped, with their seats',
   assert.ok(lobby.getRoom('BBBB'), 'the solo room survives its longer window');
 });
 
-test('a tampered room code (wrong charset) is dropped, never restored as a room', () => {
+test('a tampered room code (wrong charset) is dropped, never restored as a room', async () => {
   const now = Date.now();
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
@@ -198,7 +198,7 @@ test('a tampered room code (wrong charset) is dropped, never restored as a room'
     ],
     matches: {},
   };
-  const stats = restoreServer({ doc, registry, lobby, now, log: quietLog });
+  const stats = await restoreServer({ doc, registry, lobby, now, log: quietLog });
   assert.ok(!lobby.getRoom('../a'), 'the traversal code never becomes a room');
   assert.ok(!lobby.getRoom('ab-c'), 'the hyphenated code never becomes a room');
   assert.ok(lobby.getRoom('ABCD'), 'a plain [A-Z0-9] code still restores');
@@ -206,10 +206,10 @@ test('a tampered room code (wrong charset) is dropped, never restored as a room'
   assert.equal(stats.droppedSeats >= 2, true, 'the tampered rooms count as dropped seats');
 });
 
-test('a document from another version is refused', () => {
+test('a document from another version is refused', async () => {
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
-  const stats = restoreServer({ doc: { v: 99, sessions: [], rooms: [] }, registry, lobby, log: quietLog });
+  const stats = await restoreServer({ doc: { v: 99, sessions: [], rooms: [] }, registry, lobby, log: quietLog });
   assert.equal(stats.ok, false);
   assert.match(stats.reason, /version/);
   assert.equal(stats.rooms, 0);
@@ -430,19 +430,19 @@ test('a checkpoint whose player lost their session is not resumed (room stays in
 });
 
 
-test('operator potential and development survive session and room metadata recovery', () => {
+test('operator potential and development survive session and room metadata recovery', async () => {
   const now = Date.now();
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
   const player = registry.create('A');
   player.ops = { char_003_kalts: { potential: 2, cultivate: 0 } };
-  lobby.create(player, { mode: 'coop', difficulty: 'NORMAL' });
+  await lobby.create(player, { mode: 'coop', difficulty: 'NORMAL' });
   lobby.setAiPicksLast(player, { on: true });
   const doc = snapshotServer({ registry, lobby, now });
   const registry2 = new SessionRegistry();
   const lobby2 = new Lobby({ registry: registry2, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
   try {
-    assert.equal(restoreServer({ doc, registry: registry2, lobby: lobby2, now, log: quietLog }).ok, true);
+    assert.equal((await restoreServer({ doc, registry: registry2, lobby: lobby2, now, log: quietLog })).ok, true);
     assert.equal(lobby2.getRoom(player.roomCode).aiPicksLast, true);
     assert.deepEqual(registry2.byId(player.playerId).ops, player.ops);
     assert.deepEqual(lobby2.getRoom(player.roomCode).seatOf(player.playerId).ops, player.ops);
@@ -485,15 +485,15 @@ const contentLobby = (registry, plugins, versions = null) => new Lobby({
   registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}), content: { cs: CS_VANILLA }, plugins, versions,
 });
 
-test('a restarted room keeps its content set: modded, vs and cs survive and matchmaking still refuses it', () => {
+test('a restarted room keeps its content set: modded, vs and cs survive and matchmaking still refuses it', async () => {
   const now = Date.now();
   const registry = new SessionRegistry();
   const plugins = contentPlugins();
   const lobby = contentLobby(registry, plugins);
   try {
     const a = registry.create('Alice');
-    assert.deepEqual(lobby.create(a, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
-    assert.deepEqual(lobby.setPlugins(a, { plugins: [{ id: 'demo' }] }), { ok: true });
+    assert.deepEqual(await lobby.create(a, { mode: 'coop', difficulty: 'NORMAL' }), { ok: true });
+    assert.deepEqual(await lobby.setPlugins(a, { plugins: [{ id: 'demo' }] }), { ok: true });
     const room = lobby.getRoom(a.roomCode);
     assert.equal(room.modded, true);
     assert.equal(room.content.cs, CS_MODDED);
@@ -508,7 +508,7 @@ test('a restarted room keeps its content set: modded, vs and cs survive and matc
     const plugins2 = contentPlugins();
     const lobby2 = contentLobby(registry2, plugins2);
     try {
-      assert.equal(restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog }).rooms, 1);
+      assert.equal((await restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog })).rooms, 1);
       const room2 = lobby2.getRoom(room.code);
       assert.ok(room2);
       assert.equal(room2.modded, true, 'a plugin room does not come back as the original game');
@@ -530,7 +530,7 @@ test('a restarted room keeps its content set: modded, vs and cs survive and matc
     const plugins3 = contentPlugins();
     const lobby3 = contentLobby(registry3, plugins3);
     try {
-      const stats = restoreServer({ doc: doc2, registry: registry3, lobby: lobby3, now: now + 1000, log: quietLog });
+      const stats = await restoreServer({ doc: doc2, registry: registry3, lobby: lobby3, now: now + 1000, log: quietLog });
       assert.equal(stats.rooms, 0);
       assert.equal(lobby3.rooms.size, 0);
       assert.deepEqual(plugins3.held.cs, [], 'a refused room holds nothing');
@@ -538,7 +538,7 @@ test('a restarted room keeps its content set: modded, vs and cs survive and matc
   } finally { lobby.shutdown(); }
 });
 
-test('a restarted version room regains its version base content, and is refused when that version is gone', () => {
+test('a restarted version room regains its version base content, and is refused when that version is gone', async () => {
   const now = Date.now();
   const VERSION = 'act1demo';
   const versions = {
@@ -553,7 +553,7 @@ test('a restarted version room regains its version base content, and is refused 
   const lobby = contentLobby(registry, contentPlugins(), versions);
   try {
     const a = registry.create('Alice');
-    assert.deepEqual(lobby.create(a, { mode: 'coop', difficulty: 'NORMAL', version: VERSION }), { ok: true });
+    assert.deepEqual(await lobby.create(a, { mode: 'coop', difficulty: 'NORMAL', version: VERSION }), { ok: true });
     const room = lobby.getRoom(a.roomCode);
     assert.equal(room.version, VERSION);
     assert.equal(room.needsContent, true, 'a version room makes every page load its content (requireCs at start)');
@@ -565,7 +565,7 @@ test('a restarted version room regains its version base content, and is refused 
     const registry2 = new SessionRegistry();
     const lobby2 = contentLobby(registry2, contentPlugins(), versions);
     try {
-      assert.equal(restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog }).rooms, 1);
+      assert.equal((await restoreServer({ doc, registry: registry2, lobby: lobby2, now: now + 1000, log: quietLog })).rooms, 1);
       const room2 = lobby2.getRoom(room.code);
       assert.ok(room2);
       assert.equal(room2.version, VERSION);
@@ -578,7 +578,7 @@ test('a restarted version room regains its version base content, and is refused 
     const versions3 = { ...versions, content: () => null };
     const lobby3 = contentLobby(registry3, contentPlugins(), versions3);
     try {
-      assert.equal(restoreServer({ doc, registry: registry3, lobby: lobby3, now: now + 1000, log: quietLog }).rooms, 0);
+      assert.equal((await restoreServer({ doc, registry: registry3, lobby: lobby3, now: now + 1000, log: quietLog })).rooms, 0);
       assert.equal(lobby3.rooms.size, 0);
     } finally { lobby3.shutdown(); }
   } finally { lobby.shutdown(); }

@@ -71,7 +71,7 @@ const passive = { dsl: 1, skill: { kind: 'passive', mods: { atkPct: 0.5 } } };
 test('a data-plugin DSL operator fights the same battle on the server and in the browser loader', async (t) => {
   const f = fixture(t);
   f.put('data-demo', { permissions: ['data.add', 'dsl'], operators: ['op.json'] }, { 'op.json': operator('data-demo', passive) });
-  const set = buildContentSet({ registry: f.registry, ids: ['data-demo'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['data-demo'] });
   assert.deepEqual(set.problems, []);
   assert.equal(Object.hasOwn(set.data, 'dsl'), false, 'a battle spec is on the chess record, not data.dsl');
   const id = 'chess_x_data_demo_caster_a';
@@ -122,13 +122,13 @@ test('a data-plugin DSL operator fights the same battle on the server and in the
   assert.deepEqual(resultDigest(browser.result()), resultDigest(server.result()));
 });
 
-test('a bad DSL spec, a spoofed pluginId, a missing permission and an official chess are refused', (t) => {
+test('a bad DSL spec, a spoofed pluginId, a missing permission and an official chess are refused', async (t) => {
   const f = fixture(t);
-  const put = (manifest, documents) => {
+  const put = async (manifest, documents) => {
     f.put('data-demo', manifest, documents);
-    return buildContentSet({ registry: f.registry, ids: ['data-demo'] });
+    return await buildContentSet({ registry: f.registry, ids: ['data-demo'] });
   };
-  const bad = put(
+  const bad = await put(
     { permissions: ['data.add', 'dsl'], operators: ['op.json'] },
     { 'op.json': operator('data-demo', {}) },
   );
@@ -136,21 +136,21 @@ test('a bad DSL spec, a spoofed pluginId, a missing permission and an official c
   assert.equal(bad.problems[0].code, 'PLUGIN_DSL_VERSION');
   assert.equal(f.registry.plugin('data-demo').status, 'loaded');
 
-  const spoof = put(
+  const spoof = await put(
     { permissions: ['data.add', 'dsl'], operators: ['op.json'] },
     { 'op.json': operator('data-demo', { ...passive, pluginId: 'other-plug' }) },
   );
   assert.equal(spoof.cs, undefined);
   assert.equal(spoof.problems[0].code, 'PLUGIN_DSL_PLUGIN_ID');
 
-  const bare = put(
+  const bare = await put(
     { permissions: ['data.add'], operators: ['op.json'] },
     { 'op.json': operator('data-demo', passive) },
   );
   assert.equal(bare.cs, undefined);
   assert.ok(bare.problems.some((p) => p.code === 'PLUGIN_CONTENT_PERMISSION'));
 
-  const official = put(
+  const official = await put(
     { permissions: ['data.patch', 'dsl'], data: ['p.json'] },
     { 'p.json': { patch: 1, ops: [{ op: 'merge', file: 'chess', id: 'chess_char_1_02_a', value: { dsl: passive, pluginId: 'data-demo' } }] } },
   );
@@ -168,13 +168,13 @@ test('a bad DSL spec, a spoofed pluginId, a missing permission and an official c
   assert.ok(f.registry.report().skipped.some((p) => p.problems.some((s) => s.includes('PLUGIN_DSL_PLUGIN_ID'))));
 });
 
-test('DSL in two data plugins spends each plugin id budget', (t) => {
+test('DSL in two data plugins spends each plugin id budget', async (t) => {
   const f = fixture(t);
   const wide = { dsl: 1, talents: [{ when: 'deploy', do: [{ buff: { target: 'self', key: 'keep', duration: 30, mods: { atkFlat: 50 } } }] }] };
   const tiny = { dsl: 1, budget: 2, talents: [{ when: 'every', seconds: 1 / 30, do: [{ dp: { amount: 1 } }] }] };
   f.put('wideplug', { permissions: ['data.add', 'dsl'], operators: ['op.json'] }, { 'op.json': melee('wideplug', wide) });
   f.put('tinyplug', { permissions: ['data.add', 'dsl'], operators: ['op.json'] }, { 'op.json': melee('tinyplug', tiny) });
-  const set = buildContentSet({ registry: f.registry, ids: ['wideplug', 'tinyplug'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['wideplug', 'tinyplug'] });
   assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
   assert.equal(set.data.chess.chess_x_wideplug_keep_a.pluginId, 'wideplug');
   assert.equal(set.data.chess.chess_x_tinyplug_keep_a.pluginId, 'tinyplug');
@@ -234,26 +234,26 @@ const incomeDoc = (id, key = `effect:${id}:income`, amount = 15) => ({
   meta: { key, on: [{ when: 'income', do: [{ funds: { amount, setIncome: true } }] }] },
 });
 
-test('potDown cannot attach dsl or pluginId, and a form DSL write needs the owner and the dsl permission', (t) => {
+test('potDown cannot attach dsl or pluginId, and a form DSL write needs the owner and the dsl permission', async (t) => {
   const f = fixture(t);
   f.put('alpha', { permissions: ['data.patch'], data: ['p.json'] }, {
     'p.json': { patch: 1, ops: [{ op: 'merge', file: 'chess', id: 'chess_char_1_02_a', value: { potDown: { '4': { dsl: { dsl: 2 }, pluginId: 'victim', atk: 1 } } } }] },
   });
-  const pot = buildContentSet({ registry: f.registry, ids: ['alpha'] });
+  const pot = await buildContentSet({ registry: f.registry, ids: ['alpha'] });
   assert.equal(pot.cs, undefined);
   assert.ok(pot.problems.some((p) => p.code === 'PLUGIN_DSL_PLUGIN_ID' && p.plugin === 'alpha' && /potDown cannot write dsl or pluginId/.test(p.message)));
 
   f.put('alpha', { permissions: ['data.patch'], data: ['p.json'] }, {
     'p.json': { patch: 1, ops: [{ op: 'merge', file: 'chess', id: 'chess_char_1_02_a', value: { potDown: { '4': { 'stats.atk': 1 } } } }] },
   });
-  const stat = buildContentSet({ registry: f.registry, ids: ['alpha'] });
+  const stat = await buildContentSet({ registry: f.registry, ids: ['alpha'] });
   assert.deepEqual(stat.problems, [], JSON.stringify(stat.problems));
   assert.equal(stat.data.chess.chess_char_1_02_a.potDown['4']['stats.atk'], 1);
 
   const body = operator('alpha', null);
   delete body.kit;
   f.put('alpha', { permissions: ['data.add'], operators: ['op.json'] }, { 'op.json': body });
-  const alone = buildContentSet({ registry: f.registry, ids: ['alpha'] });
+  const alone = await buildContentSet({ registry: f.registry, ids: ['alpha'] });
   assert.deepEqual(alone.problems, [], JSON.stringify(alone.problems));
   const forms = alone.data.backups.units.char_x_alpha_caster.forms;
   const status = Object.keys(forms)[0];
@@ -267,22 +267,22 @@ test('potDown cannot attach dsl or pluginId, and a form DSL write needs the owne
       }],
     },
   });
-  const form = buildContentSet({ registry: f.registry, ids: ['alpha', 'bravo'] });
+  const form = await buildContentSet({ registry: f.registry, ids: ['alpha', 'bravo'] });
   assert.equal(form.cs, undefined);
   assert.ok(form.problems.some((p) => p.code === 'PLUGIN_CONTENT_PERMISSION' && p.plugin === 'bravo'));
   assert.ok(form.problems.some((p) => p.code === 'PLUGIN_DSL_PLUGIN_ID' && p.plugin === 'bravo' && /only the record owner/.test(p.message)));
 });
 
-test('a data patch cannot rewrite the reserved dsl table', (t) => {
+test('a data patch cannot rewrite the reserved dsl table', async (t) => {
   const f = fixture(t);
   f.put('alpha', { permissions: ['dsl'], dsl: ['dsl/income.json'] }, { 'dsl/income.json': incomeDoc('alpha', 'effect:alpha:income', 15) });
-  const own = buildContentSet({ registry: f.registry, ids: ['alpha'] });
+  const own = await buildContentSet({ registry: f.registry, ids: ['alpha'] });
   assert.deepEqual(own.problems, []);
   assert.equal(own.data.dsl.alpha[0].meta.on[0].do[0].funds.amount, 15);
   f.put('bravo', { permissions: ['data.patch'], data: ['p.json'] }, {
     'p.json': { patch: 1, ops: [{ op: 'set', file: 'dsl', id: 'alpha', value: [incomeDoc('alpha', 'effect:alpha:income', 99)] }] },
   });
-  const stolen = buildContentSet({ registry: f.registry, ids: ['alpha', 'bravo'] });
+  const stolen = await buildContentSet({ registry: f.registry, ids: ['alpha', 'bravo'] });
   assert.equal(stolen.cs, undefined);
   assert.equal(stolen.data, undefined);
   const hit = stolen.problems.find((p) => p.code === 'PLUGIN_DSL_PLUGIN_ID' && p.plugin === 'bravo');
@@ -290,7 +290,7 @@ test('a data patch cannot rewrite the reserved dsl table', (t) => {
   assert.match(hit.message, /reserved dsl table/);
 });
 
-test('another plugin cannot replace a record DSL; the owner can', (t) => {
+test('another plugin cannot replace a record DSL; the owner can', async (t) => {
   const f = fixture(t);
   const first = { dsl: 1, skill: { kind: 'passive', mods: { atkPct: 0.1 } } };
   const next = { dsl: 1, skill: { kind: 'passive', mods: { atkPct: 0.25 } } };
@@ -298,7 +298,7 @@ test('another plugin cannot replace a record DSL; the owner can', (t) => {
     'rec.json': { records: 1, entries: [operator('alpha', first)] },
     'patch.json': { patch: 1, ops: [{ op: 'set', file: 'chess', id: 'chess_x_alpha_caster_a', path: ['dsl'], value: next }] },
   });
-  const own = buildContentSet({ registry: f.registry, ids: ['alpha'] });
+  const own = await buildContentSet({ registry: f.registry, ids: ['alpha'] });
   assert.deepEqual(own.problems, [], JSON.stringify(own.problems));
   assert.equal(own.data.chess.chess_x_alpha_caster_a.pluginId, 'alpha');
   assert.equal(own.data.chess.chess_x_alpha_caster_a.dsl.skill.mods.atkPct, 0.25);
@@ -308,18 +308,18 @@ test('another plugin cannot replace a record DSL; the owner can', (t) => {
   f.put('bravo', { permissions: ['data.patch', 'dsl'], requires: { alpha: '*' }, data: ['p.json'] }, {
     'p.json': { patch: 1, ops: [{ op: 'set', file: 'chess', id: 'chess_x_alpha_keep_a', path: ['dsl'], value: stolenSpec }] },
   });
-  const stolen = buildContentSet({ registry: f.registry, ids: ['alpha', 'bravo'] });
+  const stolen = await buildContentSet({ registry: f.registry, ids: ['alpha', 'bravo'] });
   assert.equal(stolen.cs, undefined);
   assert.equal(stolen.data, undefined);
   assert.ok(stolen.problems.some((p) => p.code === 'PLUGIN_DSL_PLUGIN_ID' && p.plugin === 'bravo'));
   assert.equal(stolen.problems.some((p) => p.plugin === 'alpha' && p.code === 'PLUGIN_DSL_PLUGIN_ID'), false);
 });
 
-test('DSL literals above the official cap are refused; an in-range product is clamped', (t) => {
+test('DSL literals above the official cap are refused; an in-range product is clamped', async (t) => {
   const f = fixture(t);
-  const put = (dsl) => {
+  const put = async (dsl) => {
     f.put('bounds', { permissions: ['data.add', 'dsl'], operators: ['op.json'] }, { 'op.json': operator('bounds', dsl) });
-    return buildContentSet({ registry: f.registry, ids: ['bounds'] });
+    return await buildContentSet({ registry: f.registry, ids: ['bounds'] });
   };
   const cases = [
     [{ dsl: 1, skill: { kind: 'passive', mods: { atkPct: 1e9 } } }, /黑板 atk/, /300/],
@@ -329,7 +329,7 @@ test('DSL literals above the official cap are refused; an in-range product is cl
     [{ dsl: 1, skill: { kind: 'passive', attack: { atkScale: 1e9 } } }, /黑板 atk_scale/, /80/],
   ];
   for (const [dsl, key, cap] of cases) {
-    const set = put(dsl);
+    const set = await put(dsl);
     assert.equal(set.cs, undefined, JSON.stringify(set.problems));
     const hit = set.problems.find((p) => p.code === 'PLUGIN_DATA_BOUND');
     assert.ok(hit, JSON.stringify(set.problems));
@@ -343,7 +343,7 @@ test('DSL literals above the official cap are refused; an in-range product is cl
   f.put('mulbig', { permissions: ['data.add', 'dsl'], operators: ['op.json'] }, {
     'op.json': operator('mulbig', { dsl: 1, skill: { kind: 'passive', mods: { atkPct: { mul: [1e9, 1e9] } } } }),
   });
-  const set = buildContentSet({ registry: f.registry, ids: ['mulcap', 'mulbig'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['mulcap', 'mulbig'] });
   assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
   const h = makeBattle({
     data: new DataSource(set.data),
@@ -360,10 +360,10 @@ test('DSL literals above the official cap are refused; an in-range product is cl
   }
 });
 
-test('a one-skill DSL kit binds the default skill for shop, DIY and a stand-in', (t) => {
+test('a one-skill DSL kit binds the default skill for shop, DIY and a stand-in', async (t) => {
   const f = fixture(t);
   f.put('data-demo', { permissions: ['data.add', 'dsl'], operators: ['op.json'] }, { 'op.json': operator('data-demo', passive) });
-  const set = buildContentSet({ registry: f.registry, ids: ['data-demo'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['data-demo'] });
   assert.deepEqual(set.problems, [], JSON.stringify(set.problems));
   const h = makeBattle({
     data: new DataSource(set.data),
@@ -397,12 +397,12 @@ test('a one-skill DSL kit binds the default skill for shop, DIY and a stand-in',
   assert.equal(unbound.skills, undefined);
 });
 
-test('the runtime validator refuses schema-closed fields, including through buildContentSet', (t) => {
+test('the runtime validator refuses schema-closed fields, including through buildContentSet', async (t) => {
   const f = fixture(t);
   f.put('typo', { permissions: ['data.add', 'dsl'], operators: ['op.json'] }, {
     'op.json': operator('typo', { dsl: 1, skill: { kind: 'passive', modz: { atkPct: 1 } } }),
   });
-  const skill = buildContentSet({ registry: f.registry, ids: ['typo'] });
+  const skill = await buildContentSet({ registry: f.registry, ids: ['typo'] });
   assert.equal(skill.cs, undefined);
   assert.ok(skill.problems.some((p) => p.code === 'PLUGIN_DSL_SKILL'));
   assert.equal(f.registry.plugin('typo').status, 'loaded');
@@ -410,7 +410,7 @@ test('the runtime validator refuses schema-closed fields, including through buil
   f.put('aim', { permissions: ['data.add', 'dsl'], operators: ['op.json'] }, {
     'op.json': operator('aim', { dsl: 1, skill: { kind: 'passive', targeting: { rangeGird: [[0, 1]] } } }),
   });
-  const aim = buildContentSet({ registry: f.registry, ids: ['aim'] });
+  const aim = await buildContentSet({ registry: f.registry, ids: ['aim'] });
   assert.equal(aim.cs, undefined);
   assert.ok(aim.problems.some((p) => p.code === 'PLUGIN_DSL_SKILL'));
 
@@ -419,23 +419,23 @@ test('the runtime validator refuses schema-closed fields, including through buil
   });
   assert.equal(f.registry.plugin('badprep'), null);
   assert.ok(f.registry.report().skipped.some((p) => p.problems.some((s) => String(s).includes('PLUGIN_DSL_ACTION'))));
-  const skipped = buildContentSet({ registry: f.registry, ids: ['badprep'] });
+  const skipped = await buildContentSet({ registry: f.registry, ids: ['badprep'] });
   assert.equal(skipped.cs, undefined);
   assert.ok(skipped.problems.some((p) => p.code === 'PLUGIN_UNKNOWN'));
 });
 
-test('a prep key for another plugin, or an empty meta.on, fails the content set and still loads', (t) => {
+test('a prep key for another plugin, or an empty meta.on, fails the content set and still loads', async (t) => {
   const f = fixture(t);
-  const refuse = (id, doc) => {
+  const refuse = async (id, doc) => {
     f.put(id, { permissions: ['dsl'], dsl: ['p.json'] }, { 'p.json': doc });
     assert.equal(f.registry.plugin(id).status, 'loaded', id);
-    const set = buildContentSet({ registry: f.registry, ids: [id] });
+    const set = await buildContentSet({ registry: f.registry, ids: [id] });
     assert.equal(set.cs, undefined, id);
     assert.ok(set.problems.some((p) => p.code === 'PLUGIN_DSL_META'), JSON.stringify(set.problems));
   };
-  refuse('badkey', incomeDoc('badkey', 'effect:other:income'));
-  refuse('emptykey', { dsl: 1, pluginId: 'emptykey', meta: {} });
-  refuse('blankon', { dsl: 1, pluginId: 'blankon', meta: { key: 'effect:blankon:income', on: [] } });
+  await refuse('badkey', incomeDoc('badkey', 'effect:other:income'));
+  await refuse('emptykey', { dsl: 1, pluginId: 'emptykey', meta: {} });
+  await refuse('blankon', { dsl: 1, pluginId: 'blankon', meta: { key: 'effect:blankon:income', on: [] } });
 });
 
 test('a DSL literal that reaches kit setup is a content fault, not a fight', () => {

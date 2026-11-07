@@ -341,14 +341,14 @@ test('notice catalogue hint reaches health and welcome, and is omitted when abse
   }
 });
 
-test('notices are not part of a content set hash', (t) => {
+test('notices are not part of a content set hash', async (t) => {
   const fx = fixture(t);
   const id = 'notehash';
   fx.put(id, { permissions: ['data.patch'], data: ['data/patch.json'] }, { 'data/patch.json': { patch: 1, ops: [] } });
-  const a = buildContentSet({ registry: fx.registry, ids: [id] });
+  const a = await buildContentSet({ registry: fx.registry, ids: [id] });
   assert.equal(a.problems.length, 0, JSON.stringify(a.problems));
   const sets = createContentSets({ registry: fx.registry, vanillaData: {} });
-  const selected = sets.resolve([id]);
+  const selected = await sets.resolve([id]);
   assert.equal(selected.ok, true);
   sets.hold(selected.set.cs);
   const stale = [];
@@ -360,27 +360,27 @@ test('notices are not part of a content set hash', (t) => {
     if (notices === undefined) delete doc.notices; else doc.notices = notices;
     fs.writeFileSync(file, JSON.stringify(doc, null, 2));
     fx.registry.rescan();
-    const b = buildContentSet({ registry: fx.registry, ids: [id] });
+    const b = await buildContentSet({ registry: fx.registry, ids: [id] });
     assert.equal(b.problems.length, 0, JSON.stringify(b.problems));
     assert.equal(b.cs, a.cs, 'notice add/edit/empty/remove keeps cs');
     assert.equal(fx.registry.plugin(id).content.hash, snapshot, 'same gameplay snapshot');
     assert.deepEqual(b.plugins, a.plugins, 'same room-facing hashes');
     assert.deepEqual(stale, [], 'no gameplay-stale notification for catalogue-only changes');
-    assert.equal(sets.resolve([id]).set.cs, selected.set.cs);
+    assert.equal((await sets.resolve([id])).set.cs, selected.set.cs);
   }
   sets.release(selected.set.cs);
   sets.close();
 });
 
-test('registry checks theme files and delivers capped notices independently of room selection', (t) => {
+test('registry checks theme files and delivers capped notices independently of room selection', async (t) => {
   const fx = fixture(t);
-  const baseline = buildContentSet({ registry: fx.registry, ids: [] });
+  const baseline = await buildContentSet({ registry: fx.registry, ids: [] });
   fx.put('theme-file', { class: 'cosmetic', scope: ['personal'], permissions: ['theme'], theme: 'theme.json', notices: datedNotice() }, { 'theme.json': { vars: { '--text-hi': '#abc' } } });
   const item = fx.registry.pluginIndex().plugins.find((p) => p.id === 'theme-file');
   assert.deepEqual(item.theme, { vars: { '--text-hi': '#abc' } });
   assert.deepEqual(item.notices, datedNotice());
   assert.equal(item.vs, undefined);
-  assert.equal(buildContentSet({ registry: fx.registry, ids: [] }).cs, baseline.cs);
+  assert.equal((await buildContentSet({ registry: fx.registry, ids: [] })).cs, baseline.cs);
   const sets = createRoomSets({ registry: fx.registry, visual: null, contents: null, policy: null });
   assert.equal(sets.hasNotices(), true);
   fx.put('theme-file', { class: 'cosmetic', scope: ['personal'], permissions: ['theme'], theme: 'theme.json' }, { 'theme.json': { vars: { '--text-hi': 'var(--red)' } } });
@@ -392,17 +392,17 @@ test('registry checks theme files and delivers capped notices independently of r
   assert.equal(sets.hasNotices(), true, 'language plugins also advertise notices');
 });
 
-for (const mode of ['sandbox', 'trusted']) test(`${mode} script notice add/edit/remove keeps content identity and raw lock verification`, (t) => {
+for (const mode of ['sandbox', 'trusted']) test(`${mode} script notice add/edit/remove keeps content identity and raw lock verification`, async (t) => {
   const fx = scriptFixture(t, { mode });
   const source = 'export default sp => {};';
   fx.put('note-script', source);
-  const a = buildContentSet({ registry: fx.registry, ids: ['note-script'] });
+  const a = await buildContentSet({ registry: fx.registry, ids: ['note-script'] });
   assert.deepEqual(a.problems, []);
   verifyScripts(a.scripts, a.index);
   assert.equal(JSON.parse(a.scripts[0].manifestSource).notices, undefined);
   const sets = createContentSets({ registry: fx.registry, vanillaData: {} });
   t.after(() => sets.close());
-  const selected = sets.resolve(['note-script']);
+  const selected = await sets.resolve(['note-script']);
   sets.hold(selected.set.cs);
   const stale = [];
   sets.onStale((...args) => stale.push(args));
@@ -413,7 +413,7 @@ for (const mode of ['sandbox', 'trusted']) test(`${mode} script notice add/edit/
     assert.equal(p.script.lockValid, true);
     assert.equal(nodeSha256(Buffer.from(p.script.manifestSource)), p.content.files['plugin.json'], 'raw bytes still verify');
     rawHashes.add(p.script.lockHash);
-    const b = buildContentSet({ registry: fx.registry, ids: ['note-script'] });
+    const b = await buildContentSet({ registry: fx.registry, ids: ['note-script'] });
     assert.deepEqual(b.problems, []);
     verifyScripts(b.scripts, b.index);
     assert.equal(b.cs, a.cs);
@@ -512,15 +512,15 @@ test('ui notice add/edit/remove keeps the frame visual identity and file hashes'
   }
 });
 
-test('trusted personal theme values never enter gameplay descriptors or room-facing hashes', (t) => {
+test('trusted personal theme values never enter gameplay descriptors or room-facing hashes', async (t) => {
   const fx = scriptFixture(t);
   const manifest = { class: 'trusted', permissions: ['sim.code', 'theme'], theme: 'theme.json' };
   fx.put('theme-script', 'export default sp => {};', manifest, { 'theme.json': { vars: { '--t-fast': '0s' } } });
-  const a = buildContentSet({ registry: fx.registry, ids: ['theme-script'] });
+  const a = await buildContentSet({ registry: fx.registry, ids: ['theme-script'] });
   assert.deepEqual(a.problems, []);
   for (const theme of ['theme.json', { vars: { '--t-fast': '2s' } }]) {
     fx.put('theme-script', 'export default sp => {};', { ...manifest, theme }, { 'theme.json': { vars: { '--t-fast': '1s' } } });
-    const b = buildContentSet({ registry: fx.registry, ids: ['theme-script'] });
+    const b = await buildContentSet({ registry: fx.registry, ids: ['theme-script'] });
     assert.deepEqual(b.problems, []);
     verifyScripts(b.scripts, b.index);
     assert.equal(b.cs, a.cs);

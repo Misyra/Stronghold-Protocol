@@ -102,11 +102,11 @@ test('clocks travel outside the body: an idle room stays byte-stable while its c
   assert.equal('deadlineRemainingMs' in JSON.parse(one.body), false, 'the body carries no clock');
 });
 
-test('an encode that outlives its match is never committed', () => {
+test('an encode that outlives its match is never committed', async () => {
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
   const a = registry.create('Alice');
-  lobby.create(a, { mode: 'solo', difficulty: 'NORMAL' });
+  await lobby.create(a, { mode: 'solo', difficulty: 'NORMAL' });
   const code = a.roomCode;
   const room = lobby.getRoom(code);
   const matchA = stubMatch({ now: () => 1_000 });
@@ -128,7 +128,7 @@ test('a match end drops the room checkpoint; the Worker path commits a live one'
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
   const a = registry.create('Alice');
-  lobby.create(a, { mode: 'solo', difficulty: 'NORMAL' });
+  await lobby.create(a, { mode: 'solo', difficulty: 'NORMAL' });
   const code = a.roomCode;
   const room = lobby.getRoom(code);
   const persister = new Persister({ store: null, registry, lobby, log: quietLog });
@@ -149,7 +149,7 @@ test('a broken persistence Worker degrades to a synchronous encode', async () =>
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
   const a = registry.create('Alice');
-  lobby.create(a, { mode: 'solo', difficulty: 'NORMAL' });
+  await lobby.create(a, { mode: 'solo', difficulty: 'NORMAL' });
   const code = a.roomCode;
   const room = lobby.getRoom(code);
   const persister = new Persister({ store: null, registry, lobby, log: quietLog });

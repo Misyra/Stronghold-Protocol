@@ -191,20 +191,23 @@ export function snapshotServer({ registry, lobby, now = Date.now() }) {
  *   doc: object, registry: import('./net.js').SessionRegistry, lobby: import('./lobby.js').Lobby,
  *   now?: number, log?: object,
  * }} args
- * @returns {{ ok: boolean, reason?: string, sessions: number, expired: number, rooms: number, matches: number, droppedSeats: number }}
+ * @returns {Promise<{ ok: boolean, reason?: string, sessions: number, expired: number, rooms: number, matches: number, droppedSeats: number }>}
+ *   awaited: a restored room's content set is rebuilt through Lobby.resolveContent, and a script plugin probes as a
+ *   child process (server/plugins/scriptPreflight.js)
  */
-export function restoreServer(args) {
-  return restoreServerCore(args, false).stats;
+export async function restoreServer(args) {
+  return (await restoreServerCore(args, false)).stats;
 }
 
 /**
- * The boot path (server/index.js): the same restore, awaited. The synchronous restoreServer stays for every caller
- * that owns no Worker (tests, a stub lobby).
+ * The boot path (server/index.js): the same restore, awaited. restoreServer stays for every caller that owns no Worker
+ * (tests, a stub lobby) — both await now: a restored room's content set is rebuilt through Lobby.resolveContent and a
+ * script plugin probes as a child (server/plugins/scriptPreflight.js).
  * @param {Parameters<typeof restoreServer>[0]} args
  * @returns {Promise<ReturnType<typeof restoreServer>>}
  */
 export async function restoreServerForBoot(args) {
-  const { stats, pending } = restoreServerCore(args, true);
+  const { stats, pending } = await restoreServerCore(args, true);
   await Promise.all(pending);
   return stats;
 }
@@ -213,8 +216,9 @@ export async function restoreServerForBoot(args) {
  * @param {{ doc: object, registry: import('./net.js').SessionRegistry, lobby: import('./lobby.js').Lobby,
  *   now?: number, log?: object }} args
  * @param {boolean} lanes true: a Promise from lobby.restoreMatch is collected instead of dropped
+ * @returns {Promise<{ stats: object, pending: Promise<void>[] }>}
  */
-function restoreServerCore({ doc, registry, lobby, now = Date.now(), log = noopLog }, lanes) {
+async function restoreServerCore({ doc, registry, lobby, now = Date.now(), log = noopLog }, lanes) {
   /** @type {Promise<void>[]} restores a lane Worker still owes this restore */
   const pending = [];
   const stats = { ok: false, sessions: 0, expired: 0, rooms: 0, matches: 0, droppedSeats: 0 };
@@ -259,7 +263,7 @@ function restoreServerCore({ doc, registry, lobby, now = Date.now(), log = noopL
     }
   }
 
-  const result = lobby.restoreRooms(Array.isArray(doc.rooms) ? doc.rooms : [], { now });
+  const result = await lobby.restoreRooms(Array.isArray(doc.rooms) ? doc.rooms : [], { now });
   stats.rooms = result.rooms;
   stats.droppedSeats = result.droppedSeats;
 

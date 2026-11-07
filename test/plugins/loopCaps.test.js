@@ -393,14 +393,14 @@ test('every while in the sim and the match names its loop cap', () => {
   assert.deepEqual(missing, []);
 });
 
-test('a content selection ships the same vanilla bounds the engine installs', (t) => {
+test('a content selection ships the same vanilla bounds the engine installs', async (t) => {
   const f = fixture(t);
-  const vanilla = buildContentSet({ registry: f.registry });
+  const vanilla = await buildContentSet({ registry: f.registry });
   assert.equal(contentSetFiles(vanilla).has('bounds/official.json'), false);
   assert.equal(vanilla.bounds.v, 1);
   assert.equal(vanilla.bounds.bb.times, 12);
   f.put('data-demo', { data: ['patch.json'] }, { 'patch.json': bondPatch() });
-  const set = buildContentSet({ registry: f.registry, ids: ['data-demo'] });
+  const set = await buildContentSet({ registry: f.registry, ids: ['data-demo'] });
   assert.deepEqual(set.problems, []);
   assert.equal(set.bounds.v, 1);
   assert.equal(set.bounds.bb.times, 12);

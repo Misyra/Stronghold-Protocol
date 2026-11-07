@@ -355,7 +355,8 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
     if (!lobby || typeof lobby.refreshPlugins !== 'function' || !(lobby.rooms instanceof Map)) return;
     for (const room of lobby.rooms.values()) {
       if (room.disposed || !room.content?.vs || !ids.has(room.hostId)) continue;
-      try { lobby.refreshPlugins(room); } catch (e) { log.warn?.(`[studio] applying the plugins of ${room.code} again failed: ${e?.message || e}`); }
+      // refreshPlugins awaits the content build now: a failure settles on the promise, not on the call
+      try { Promise.resolve(lobby.refreshPlugins(room)).catch((e) => log.warn?.(`[studio] applying the plugins of ${room.code} again failed: ${e?.message || e}`)); } catch (e) { log.warn?.(`[studio] applying the plugins of ${room.code} again failed: ${e?.message || e}`); }
     }
   }
 
@@ -373,7 +374,8 @@ export function createStudio({ publicDir, pluginsDir, dataDir, registry, lobby =
       let humans;
       try { humans = room.activeHumans().length; } catch { continue; }
       if (!autoApply({ hostId: room.hostId, humans })) continue;
-      try { lobby.refreshPlugins(room); } catch (e) { log.warn?.(`[studio] applying the plugins of ${room.code} again failed: ${e?.message || e}`); }
+      // refreshPlugins awaits the content build now: a failure settles on the promise, not on the call
+      try { Promise.resolve(lobby.refreshPlugins(room)).catch((e) => log.warn?.(`[studio] applying the plugins of ${room.code} again failed: ${e?.message || e}`)); } catch (e) { log.warn?.(`[studio] applying the plugins of ${room.code} again failed: ${e?.message || e}`); }
     }
   }
 

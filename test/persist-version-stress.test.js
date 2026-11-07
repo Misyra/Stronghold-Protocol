@@ -39,11 +39,11 @@ class MemoryStore {
 }
 
 /** A lobby room whose live match is a real harness match (the Persister only reads room.match). */
-function roomFor(match, { mode = 'coop', difficulty = 'NORMAL' } = {}) {
+async function roomFor(match, { mode = 'coop', difficulty = 'NORMAL' } = {}) {
   const registry = new SessionRegistry();
   const lobby = new Lobby({ registry, log: quietLog, MatchClass: StubMatch, getData: () => ({}) });
   const session = registry.create('Alice');
-  lobby.create(session, { mode, difficulty });
+  await lobby.create(session, { mode, difficulty });
   const code = session.roomCode;
   lobby.getRoom(code).match = match;
   return { registry, lobby, code };
@@ -146,7 +146,7 @@ function driveToCheckpointable(h) {
 
 test('a whole played match, checkpointed on every step, never lets the version hide a persisted change', async (t) => {
   const h = makeMatch(OPTIONS);
-  const { lobby, code } = roomFor(h.m, { mode: 'coop', difficulty: 'NORMAL' });
+  const { lobby, code } = await roomFor(h.m, { mode: 'coop', difficulty: 'NORMAL' });
   const persister = new Persister({ store: new MemoryStore(), registry: lobby.registry, lobby, log: quietLog, verifyVersion: true });
   let s = OPTIONS.seed >>> 0;
   const roll = () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32;
@@ -216,7 +216,7 @@ test('persistVersion is a pure read: the same state gives the same string and no
 
 test('a different match in the same room code is encoded, never mistaken for the one already checkpointed', async () => {
   const first = makeMatch({ ...OPTIONS, seed: 3 });
-  const { lobby, code } = roomFor(first.m);
+  const { lobby, code } = await roomFor(first.m);
   const persister = new Persister({ store: new MemoryStore(), registry: lobby.registry, lobby, log: quietLog });
   const second = makeMatch({ ...OPTIONS, seed: 3 });              // same settings, so an identical version string
   try {
@@ -252,7 +252,7 @@ test('a different match in the same room code is encoded, never mistaken for the
 
 test('an idle room is skipped on the save round: the flush cadence reaches the store, not the encoder', async () => {
   const h = makeMatch({ ...OPTIONS, humans: 2, bots: 1, seed: 9 });
-  const { lobby, code } = roomFor(h.m);
+  const { lobby, code } = await roomFor(h.m);
   const store = new MemoryStore();
   const persister = new Persister({ store, registry: lobby.registry, lobby, log: quietLog });
   try {
@@ -277,7 +277,7 @@ test('an idle room is skipped on the save round: the flush cadence reaches the s
 
 test('the self-verification switch is off unless the environment asks for it', async () => {
   const h = makeMatch({ ...OPTIONS, humans: 2, bots: 0, seed: 2 });
-  const { lobby } = roomFor(h.m);
+  const { lobby } = await roomFor(h.m);
   const saved = process.env.SP_PERSIST_VERIFY;                     // the suite stays runnable under the canary itself
   delete process.env.SP_PERSIST_VERIFY;
   try {
@@ -303,7 +303,7 @@ test('the self-verification switch is off unless the environment asks for it', a
 // self-check re-encodes and counts the hole, and without the switch the skip would have kept the older body.
 test('a persisted field the version does not sample is caught by the check, never quietly kept', async () => {
   const h = makeMatch({ ...OPTIONS, humans: 2, bots: 1, seed: 21 });
-  const { lobby, code } = roomFor(h.m);
+  const { lobby, code } = await roomFor(h.m);
   const store = new MemoryStore();
   const watched = new Persister({ store, registry: lobby.registry, lobby, log: quietLog, verifyVersion: true });
   const blind = new Persister({ store, registry: lobby.registry, lobby, log: quietLog });

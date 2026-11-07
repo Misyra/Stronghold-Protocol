@@ -762,13 +762,24 @@ export class Lobby {
       // the plugin studio's rooms (the author hosts, or plays alone): the same choice again at once (refreshPlugins)
       let auto;
       try { auto = !!this.autoApplyPlugins?.({ code: room.code, hostId: room.hostId, humans: room.activeHumans().length, inMatch: !!room.match }); } catch { auto = false; }
-      if (kind === 'visual' && auto && this.refreshPlugins(room)) continue;
-      room.pluginNoticeKeys[kind] = noticeKey;
-      this.log.info(`[lobby] ${room.code} plugins changed on disk: ${ids.join(', ')} — the host is asked to apply them again`);
-      // during a match the panel cannot change them: the host hears it once the room is back in its lobby (onMatchEnd)
-      room.pluginsChanged = [...new Set([...(room.pluginsChanged || []), ...ids])];
-      if (!room.match) this.tellPluginsChanged(room);
+      if (kind === 'visual' && auto) {
+        // refreshPlugins awaits the content build now: a room it re-applies hears nothing, a refusal (or a failure)
+        // is marked here once it settles
+        Promise.resolve(this.refreshPlugins(room)).then((applied) => { if (!applied) this.markPluginsChanged(room, noticeKey, ids, kind); },
+          (e) => { this.log.error(`[lobby] ${room.code} plugins could not be applied again`, e); this.markPluginsChanged(room, noticeKey, ids, kind); });
+        continue;
+      }
+      this.markPluginsChanged(room, noticeKey, ids, kind);
     }
+  }
+
+  /** The host of `room` is asked to apply its plugins again (pluginsChanged): mark the room, tell the host once. */
+  markPluginsChanged(room, noticeKey, ids, kind) {
+    room.pluginNoticeKeys[kind] = noticeKey;
+    this.log.info(`[lobby] ${room.code} plugins changed on disk: ${ids.join(', ')} — the host is asked to apply them again`);
+    // during a match the panel cannot change them: the host hears it once the room is back in its lobby (onMatchEnd)
+    room.pluginsChanged = [...new Set([...(room.pluginsChanged || []), ...ids])];
+    if (!room.match) this.tellPluginsChanged(room);
   }
 
   /**
@@ -781,11 +792,11 @@ export class Lobby {
    * (false: the host is told).
    * @param {Room} room
    */
-  refreshPlugins(room) {
+  async refreshPlugins(room) {
     const before = room.content;
     if (!before?.vs || before.vanilla === false || !this.vanilla || !this.plugins) return false;
     const ids = before.plugins.filter((p) => !p.auto).map((p) => p.id);
-    const r = this.resolveContent(room, ids);
+    const r = await this.resolveContent(room, ids);
     if (!('content' in r) || !r.content) { this.log.info(`[lobby] ${room.code} plugins changed on disk and no longer apply: ${'detail' in r && r.detail ? r.detail : ('error' in r ? r.error : '?')}`); return false; }
     const next = r.content;
     if (next.vanilla === false || !next.vs) return false;
@@ -890,6 +901,8 @@ export class Lobby {
   }
 
   /** Rebuild the lobby's rooms from a persisted document (server/matchRestore.js; `Room` is injected). */
+  /** @returns {Promise<{ rooms: number, seats: number, droppedSeats: number }>} a restored room's content set is
+   *   rebuilt (resolveContent — a script plugin probes as a child), so the restore is awaited (server/persist.js) */
   restoreRooms(docs, options) { return restoreLobbyRooms(this, docs, { Room, ...options }); }
 
   /**
@@ -1157,7 +1170,7 @@ export class Lobby {
   // room.* handlers
   // ---------------------------------------------------------------------------------------------------
 
-  create(session, { mode, difficulty: asked, test, version: askedVersion, soloUnlimited, experimental } = {}) {
+  async create(session, { mode, difficulty: asked, test, version: askedVersion, soloUnlimited, experimental } = {}) {
     // A test room exists only when the process switch allowed it. The check runs before the room is built.
     if (test === true && this.testEnabled !== true) return fail(ERR.TEST_DISABLED);
     // room-owned experimental rules (shared/experimental.js): absent = a standard room
@@ -1209,7 +1222,7 @@ export class Lobby {
     let initial = this.baseContent(version);
     const defaults = this.plugins?.defaults?.() || [];
     if (defaults.length) {
-      const r = this.resolveContent(null, defaults, {}, version, leaving ? cur.content : null);
+      const r = await this.resolveContent(null, defaults, {}, version, leaving ? cur.content : null);
       if ('error' in r) {
         const fixed = (() => { try { return this.plugins?.fixed?.() || null; } catch { return null; } })();
         if (fixed && fixed.length && version !== DEFAULT_VERSION) return fail(ERR.VERSION_UNSUPPORTED, `this server fixes every room's plugins (plugins/config.json rooms: fixed): ${r.error}`);
@@ -1600,7 +1613,7 @@ export class Lobby {
    * when it is the set the room already has. The host's result replay (a settlement screen still open) is dropped only
    * when the set did change: re-applying the same plugins, or a refused set, leaves it.
    */
-  setPlugins(session, { plugins }) {
+  async setPlugins(session, { plugins }) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
@@ -1610,7 +1623,7 @@ export class Lobby {
     /** @type {Record<string, Record<string, unknown>>} */
     const settings = {};
     for (const p of plugins) if (p.settings) settings[p.id] = p.settings;
-    const r = this.resolveContent(room, ids, settings);
+    const r = await this.resolveContent(room, ids, settings);
     if ('error' in r) return r;
     let content = r.content;
     const before = room.content;
@@ -1645,9 +1658,10 @@ export class Lobby {
    * @param {string} [version] the version the content is for (default: the room's)
    * @param {Room['content'] | null} [replacing] the content this change frees (default: the room's — room.create passes
    *   the creator's old room's when it goes away with the create: its set counts as freed against limits.maxSets)
-   * @returns {{ content: Room['content'] } | { error: string, detail?: string }}
+   * @returns {Promise<{ content: Room['content'] } | { error: string, detail?: string }>} a set with script plugins
+   *   awaits its probe child (server/plugins/scriptPreflight.js); the message layer answers once it settles
    */
-  resolveContent(room, ids, settings = {}, version = room ? room.version : DEFAULT_VERSION, replacing = room?.content ?? null) {
+  async resolveContent(room, ids, settings = {}, version = room ? room.version : DEFAULT_VERSION, replacing = room?.content ?? null) {
     const base = this.baseContent(version);
     if (!ids.length) {
       // the server owner may fix every room's plugins (plugins/config.json rooms: fixed): the original game is not one
@@ -1658,7 +1672,7 @@ export class Lobby {
     if (!this.vanilla || !this.plugins || !base) return fail(ERR.PLUGIN_UNKNOWN, 'this server applies no plugins');
     const gameplay = version === DEFAULT_VERSION;
     let r;
-    try { r = this.plugins.resolve(ids, { scope: 'room', settings, replacing, gameplay }); } catch (e) {
+    try { r = await this.plugins.resolve(ids, { scope: 'room', settings, replacing, gameplay }); } catch (e) {
       this.log.error(`[lobby] ${room?.code ?? '----'} plugin set failed`, e);
       return fail(ERR.INTERNAL);
     }
@@ -1849,7 +1863,7 @@ export class Lobby {
    * room.proposeVersion { version } (host, before the match): a lone active human switches at once, else the seated
    * humans vote (header "Official versions").
    */
-  proposeVersion(session, { version }) {
+  async proposeVersion(session, { version }) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
@@ -1869,11 +1883,11 @@ export class Lobby {
     // the room's cosmetic plugins must resolve on the target (the server owner's policy, a plugin refused there)
     const ids = (room.content?.plugins || []).filter((p) => !p.auto).map((p) => p.id);
     if (ids.length) {
-      const r = this.resolveContent(room, ids, this.pluginSettings(room.content), version);
+      const r = await this.resolveContent(room, ids, this.pluginSettings(room.content), version);
       if ('error' in r) return fail(ERR.VERSION_UNSUPPORTED, `the room's plugins do not apply to ${version}: ${r.error}`);
     }
     this.dropReplay(room, session.playerId);
-    if (humans.length === 1) { this.applyVersion(room, version, 'alone'); return OK; }
+    if (humans.length === 1) { await this.applyVersion(room, version, 'alone'); return OK; }
     room.versionVoteSeq = room.versionVoteSeq >= 2 ** 31 ? 1 : room.versionVoteSeq + 1;
     const id = room.versionVoteSeq;
     const ms = Math.max(0, Number(this.opts.versionVoteMs) || 0);
@@ -1890,7 +1904,7 @@ export class Lobby {
   }
 
   /** room.versionVote { voteId, agree } (a voter): a decline cancels the vote, the last agreement switches. */
-  versionVote(session, { voteId, agree }) {
+  async versionVote(session, { voteId, agree }) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
@@ -1905,7 +1919,7 @@ export class Lobby {
     }
     if (vote.agreed.has(session.playerId)) return OK;
     vote.agreed.add(session.playerId);
-    if (vote.voters.every((id) => vote.agreed.has(id))) this.applyVersion(room, vote.version, 'vote');
+    if (vote.voters.every((id) => vote.agreed.has(id))) await this.applyVersion(room, vote.version, 'vote');
     else this.broadcastState(room);
     return OK;
   }
@@ -1963,7 +1977,7 @@ export class Lobby {
    * dropped. Broadcast.
    * @param {Room} room @param {string} version @param {'vote' | 'alone'} how
    */
-  applyVersion(room, version, how) {
+  async applyVersion(room, version, how) {
     if (room.versionVote) { clearTimeout(room.versionVote.timer); room.versionVote = null; }
     const before = room.content;
     room.version = version;
@@ -1974,7 +1988,7 @@ export class Lobby {
     let next = this.baseContent(version);
     const ids = (before?.plugins || []).filter((p) => !p.auto).map((p) => p.id);
     if (ids.length) {
-      const r = this.resolveContent(room, ids, this.pluginSettings(before));
+      const r = await this.resolveContent(room, ids, this.pluginSettings(before));
       if ('content' in r && r.content && r.content.vanilla !== false) next = r.content;
       else this.warnOnce(`[lobby] ${room.code} plugins (${ids.join(', ')}) dropped on the switch to ${version}: ${'error' in r ? r.error : '?'}${'detail' in r && r.detail ? ` (${r.detail})` : ''}`);
     }

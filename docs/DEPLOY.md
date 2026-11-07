@@ -719,6 +719,24 @@ boss 场被服务器接管时（权威客户端离开 / 静默 / 报了不可信
 切片时逐字节一致。构建的对外签名、memo 语义（同 (ids, settings) 只构建一次）、失败传播都不变；命中 memo 的
 重复请求不走这条走查，零开销。
 
+### 主线程看门狗（`SP_MAIN_WATCHDOG_MS`，移植自 Stardust fork）
+
+进程内的所有可观测面都跑在主线程上——主线程真的停摆（死循环、死锁、native 卡死）时，`[loop]`、/healthz、日志
+全都一起哑掉，只能靠 journal 断流事后推理归因（§37.140）。看门狗是进程级的兜底：主线程每拍给一个共享计数器
++1（实测 ~5 ns/次），常驻 worker 发现静默超过阈值，就经 inspector 抓下主线程栈前 30 帧，把一行 JSON 直写进
+stdout（journalctl / NSSM / Docker 的日志按行原样捕获）：
+
+```
+{"event":"watchdog","role":"server","blockedMs":30261,"thresholdMs":30000,"captured":true,"frames":[{"fn":"…","at":"server/match/fields.js:…"}],"rssBytes":…,"uptimeSec":…}
+```
+
+随后 **SIGKILL 本进程**——由 systemd `Restart=always` / NSSM / Docker 的重启策略拉起新一代（裸进程部署没有这层
+重启策略时，看门狗只保证「不再挂死」，请自行配守护）。`SP_MAIN_WATCHDOG_MS`：未设 = **30000**；显式 `0` 关闭
+（运维回滚口：无 worker、无定时器）；5000–600000 之外的值回默认。只在进程入口生效（程序化 `startServer()`
+不看门狗）。SIGINT/SIGTERM 一到看门狗就先停——正常关停绝不误杀。两层注意：①想用 `--inspect` 附着调试器单步
+调试生产进程时先设 `0`，否则调试器暂停主线程会被看门狗照杀；②栈抓不到（死在不可中断的 native 调用里）时
+`captured:false` 照杀。常驻成本：worker 约 8–10 MB RSS，主线程每秒 ~5 ns（详见 §37.140 的实测）。
+
 ### 结果校验（`SP_VERIFY`）
 
 战斗在各玩家浏览器里模拟，服务器默认只按 spec 检查结果的形状和边界（`fields.js validateClientResult`），不重算。三档：

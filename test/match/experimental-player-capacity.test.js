@@ -1,10 +1,13 @@
 // test/match/experimental-player-capacity.test.js — 容量规则的 match 侧子集（移植自用户分支
-// test/match/experimental-player-capacity.test.js 中不依赖边界外文件的部分；分组记账见 twenty-player-rules.test.js
-// 的文件头。跨组信标赠礼 / 团队补充的逐组路由要等 effectsMeta / player 侧接线，见移植报告）。
+// test/match/experimental-player-capacity.test.js 中不依赖边界外文件的部分。跨组信标赠礼 / 团队补充的逐组路由
+// 要等 effectsMeta 侧接线，见移植报告）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPoolGroups, SharedPool } from '../../server/match/pool.js';
-import { makeMatch, DATA, capacityViolations } from './harness.js';
+import { collectViolations } from '../../server/match/invariants.js';
+import { bossPoolHp, hiddenEligible } from '../../server/match/finalAssault.js';
+import { GameData } from '../../server/match/gamedata.js';
+import { makeMatch, DATA } from './harness.js';
 
 const exp = (playerCapacity = 20, extra = {}) => ({ revivalEnabled: false, disableSharedPool: false, playerCapacity, ...extra });
 const seats = count => Array.from({ length: count }, (_, seat) => ({ seat, playerId: `p_${seat}`, name: `P${seat}`, isBot: false, connected: true }));
@@ -33,12 +36,12 @@ for (const [count, sizes] of [[5, [4, 1]], [6, [4, 2]], [7, [4, 3]], [9, [4, 4, 
     for (const ps of m.order) assert.ok(ps.acquireChess(base));
     const last = m.order.at(-1); last.eliminate(1);
     assert.deepEqual(m.order.map(p => p.pool), identities, 'death must not regroup surviving seats');
-    // An accounting defect in ANY group, not just the diagnostic first pool, must be detected（capacityViolations
-    // 的逐组核对：最后一组的 left + held != cap 出现在违规列表里；invariants.js 的分组化落地前用它替身，见报告）。
+    // An accounting defect in ANY group, not just the diagnostic first pool, must be detected（invariants.js 的
+    // 分组化已落地：逐池核对进 collectViolations 本体）。
     const pool = m.poolGroups.at(-1).pool; pool.take(base);
-    assert.ok(capacityViolations(m).some(v => v.includes('!= cap')));
+    assert.ok(collectViolations(m).some(v => v.includes('!= cap')));
     pool.give(base);
-    assert.deepEqual(capacityViolations(m), []);
+    assert.deepEqual(collectViolations(m), []);
   });
 }
 
@@ -48,7 +51,7 @@ for (const count of [5, 7, 20]) test(`${count} players: disableSharedPool takes 
   assert.equal(new Set(h.m.order.map(p => p.pool)).size, count);
   assert.equal(h.m.poolGroups.length, count);
   for (const ps of h.m.order) for (const [id, e] of ps.pool.entries) assert.equal(e.cap, h.m.gd.poolCopies(id));
-  assert.deepEqual(capacityViolations(h.m), []);
+  assert.deepEqual(collectViolations(h.m), []);
 });
 
 test('createPoolGroups and SharedPool scale bounds', t => {
@@ -61,4 +64,19 @@ test('createPoolGroups and SharedPool scale bounds', t => {
   const one = createPoolGroups(h.m.gd, seats(4), { banned: [] });
   assert.deepEqual(one.map(g => [g.playerIds.length, g.scale]), [[4, 1]]);
   void DATA;
+});
+
+test('only experimental >4-alive Boss HP and strict hidden threshold scale; default/solo are unchanged', () => {
+  for (const modeId of ['mode_multi_normal', 'mode_single_normal']) {
+    const gd = new GameData(DATA, modeId);
+    for (const count of [1, 2, 3, 4, 5, 6, 7, 9, 20]) {
+      const plain = bossPoolHp(gd, 'boss_1', count);
+      const enlarged = bossPoolHp(gd, 'boss_1', count, { experimental: true });
+      assert.equal(enlarged, !gd.isSolo && count > 4 ? gd.boss('boss_1').bloodPoint.NORMAL * count : plain);
+      const threshold = gd.isSolo ? gd.hiddenCore.single : gd.hiddenCore.multi * (count > 4 ? count / 4 : 1);
+      assert.equal(hiddenEligible(gd, { layerSum: threshold, teamLp: 2, aliveCount: count, experimental: true }), false);
+      assert.equal(hiddenEligible(gd, { layerSum: threshold + 1, teamLp: 2, aliveCount: count, experimental: true }), true);
+      assert.equal(hiddenEligible(gd, { layerSum: threshold + 1, teamLp: 1, aliveCount: count, experimental: true }), false);
+    }
+  }
 });

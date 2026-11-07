@@ -20,7 +20,9 @@ export class PlayerItems {
    */
   releaseItemStock(piece) {
     if (!piece || piece.kind !== 'item' || !this.m?.itemPool) return 0;
-    return this.m.itemPool.repay(piece.id, this.m.itemPool.need(piece.id));
+    // the seat's own equipment stock (its chess-pool group's: Match itemPoolFor)
+    const pool = this.itemPool;
+    return pool.repay(piece.id, pool.need(piece.id));
   }
 
   /**

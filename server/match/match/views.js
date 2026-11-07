@@ -225,6 +225,8 @@ export class MatchViews {
     if (this.phase === PHASE.SETTLE && this.uniteResultView) {
       const ur = this.uniteResultView;
       v.uniteResult = { through: ur.through, helpers: ur.helpers.slice(), leakers: ur.leakers.slice(), losses: { ...ur.losses } };
+      // 容量联防接力（settle.js 的 rounds 视图，移植自用户分支 views.js）：relay 的两轮元数据随结算一并发布
+      if (ur.rounds) v.uniteResult.rounds = ur.rounds.map((r) => ({ ...r, helpers: r.helpers.slice() }));
     }
     // Test match (DESIGN §34.8). Omitted entirely when the flag is off, so a normal m.public stays identical.
     if (this.test === true) {

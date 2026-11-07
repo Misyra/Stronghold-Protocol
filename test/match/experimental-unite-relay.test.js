@@ -1,13 +1,11 @@
 // test/match/experimental-unite-relay.test.js — 扩编联防接力（移植自用户分支 test/match/experimental-unite-relay.test.js
 // 的纯 match 逻辑部分）。与本仓的差异（见移植报告）：
-//   * settle.js 的 relay 合并 hunks（combinedUnite / rounds 视图 / 合成第二轮的幸存者计费）不在本代理边界——
-//     最终结算只按最后一轮的幸存者计费，第一轮 helper 的击杀/金币并入与 m.public.uniteResult.rounds 留待该文件落地；
 //   * 救援（rel35 revival）不在本仓范围，相关断言随之省去；worker 传输（experimental-unite-relay-workers）同前。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PHASE } from '../../shared/constants.js';
 import { planUniteRelay } from '../../server/match/unite.js';
-import { makeMatch, give, legalTileFor } from './harness.js';
+import { makeMatch, give, legalTileFor, checkInvariants } from './harness.js';
 
 const experiment = { playerCapacity: 20, revivalEnabled: false, disableSharedPool: false };
 const enemyKey = 'enemy_1007_slime';
@@ -70,17 +68,23 @@ test('relay inline server: first residual only, distinct helpers, original map/c
   settleOnce(h);
   assert.equal(h.ps('p_0').lp, 19); assert.equal(h.ps('p_0').stats.lpLost, 1);
   assert.equal(m.uniteResultView.through, 1);
-  // （settle.js 的 relay hunks 落地前：helpers 只列最后一轮的；第一轮 helper 的金币/击杀并入与 rounds 视图同批补）
-  assert.deepEqual(m.uniteResultView.helpers, ['p_3', 'p_4']);
-  for (const id of ['p_3', 'p_4']) {
+  // settle.js 的 relay hunks：helpers 为两轮的 flatMap，rounds 视图随 m.public.uniteResult 发布
+  assert.deepEqual(m.uniteResultView.helpers, ['p_1', 'p_2', 'p_3', 'p_4']);
+  assert.deepEqual(m.uniteResultView.rounds.map(r => r.helpers), [['p_1', 'p_2'], ['p_3', 'p_4']]);
+  assert.deepEqual(m.publicView().uniteResult.rounds.map(r => r.helpers), [['p_1', 'p_2'], ['p_3', 'p_4']]);
+  for (const id of ['p_1', 'p_2', 'p_3', 'p_4']) {
     const p = h.ps(id), normal = m.lastResults.get(id), u = m._uniteRelay.rounds.find(r => r.plan.helpers.includes(p)).result.perPlayer[id];
-    assert.equal(p.pendingFunds, 1 + 5);
+    assert.equal(p.pendingFunds, 1 + u.coins);
     assert.equal(p.stats.kills, normal.killed + u.killed);
     assert.equal(p.stats.dmgDealt, normal.damageDealt + u.damageDealt);
-    assert.equal(p.stats.fundsGained - h.statsBefore.get(id).fundsGained, 1 + 5);
+    assert.equal(p.stats.fundsGained - h.statsBefore.get(id).fundsGained, 1 + u.coins);
   }
   assert.equal(m._uniteRelay.rounds[0].result, result1, 'round one result is never overwritten by round two');
-  // （fork 的 settlement fence——settle.js 对 SETTLE 相位的重入直接返回——属于 settle.js 的 relay hunks，见文件头）
+  // settle.js 的重入闸：SETTLE 相位里对同一计划的第二次结算直接返回（一场战斗只结算一次，零副作用）
+  const stats = structuredClone(m.order.map(p => p.stats));
+  m.settle(m._uniteRelay.rounds.at(-1).plan, m._uniteRelay.rounds.at(-1).result);
+  assert.deepEqual(m.order.map(p => p.stats), stats);
+  checkInvariants(m);
 });
 
 for (const [label, options] of [
@@ -127,8 +131,8 @@ for (const candidates of [0, 1]) test(`only ${candidates} unused qualified helpe
   if (candidates) { second(h); assert.equal(m.unitePlan.helpers.length, 1); assert.equal(m.unitePlan.helpers[0].playerId, 'p_7'); }
   settleOnce(h);
   assert.equal(m._uniteRelay.rounds.length, candidates ? 2 : 1);
-  // settle.js 的 relay hunks 落地前，SETTLE 视图只列最后一轮的 helpers（fork 为两轮的 flatMap）
-  assert.deepEqual(m.uniteResultView.helpers, candidates ? ['p_7'] : ['p_1', 'p_2']);
+  // settle.js 的 relay hunks：helpers 为两轮的 flatMap（单轮 relay 即第一轮自己的）
+  assert.deepEqual(m.uniteResultView.helpers, candidates ? ['p_1', 'p_2', 'p_7'] : ['p_1', 'p_2']);
 });
 
 test('second helper qualification excludes departure, synthetic, counted leaks and perfect:false', t => {
@@ -177,5 +181,6 @@ test('synthetic second result archives only; first rewards preserved', t => {
   m.BattleClass = FailingSecond;
   second(h); settleOnce(h);
   assert.equal(m._uniteRelay.rounds[1].result.synthetic, true);
-  assert.equal(h.ps('p_1').pendingFunds, 1, 'a helper of the first round keeps its own normal coins (settle.js 的 relay 并入前)');
+  // settle.js 的 relay 并入：第一轮 helper 的金币照常入账（合成第二轮的 perPlayer 不覆盖别人）
+  assert.equal(h.ps('p_1').pendingFunds, 1 + 3);
 });

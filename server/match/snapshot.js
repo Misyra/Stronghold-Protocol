@@ -471,6 +471,9 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
       }
     });
     m.poolGroups = groups;
+    // 恢复后 m.pool 重新指到重建出的第一组池（fork restoreMatch 同款）：普通对局 m.pool 就是交易池
+    // （poolFor 无 playerPools 时返回它），留在旧对象上会让同一份池出现两份记账（逐池不变量会抓到）。
+    if (!m.disableSharedPool) m.pool = groups[0].pool;
     m.playerPools = m.routePools(groups);
     m.playerItemPools = createItemPools(m.gd, groups, (id) => m.players.get(id));
     m.itemPool = m.playerItemPools.get(groups[0].playerIds[0]);

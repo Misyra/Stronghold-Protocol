@@ -335,6 +335,14 @@ export class MatchPlatform {
     this.maybeEndInfo();
     if (!ps.alive) return;
     const phase = this.phase;
+    const d = this.draft;
+    // 并发草稿（concurrentDraft）没有「到它的回合由 AI 代选」：退出席位立即落默认策略并重入并发步，否则一步倒计时
+    // 之前 draft 挂着不走（移植自用户分支 _quit）。普通房保留 6dc796d1 的顺位代选，见本方法末尾分支。
+    if (phase === PHASE.BAND_DRAFT && d && d.concurrent && !d.picks[ps.playerId]) {
+      d.picks[ps.playerId] = this.defaultBand(ps.playerId);
+      ps.bandId = d.picks[ps.playerId];
+      this.startDraftTurn();
+    }
     const passedRound = phase === PHASE.SETTLE ? this.round + 1 : Math.max(1, this.round);
     // its own normal battle has nobody left to fight for
     for (const f of this.fields) {
@@ -366,7 +374,8 @@ export class MatchPlatform {
       this.finish({ victory: false, reason: 'eliminated' });
       return;
     }
-    if (phase === PHASE.SP_DRAFT && this.sp && this.spTurn() === ps.playerId) this.startSpTurn();
+    // 并发机变（concurrentDraft）没有回合：退出也要重入并发步——最后一个未决定席位退出时立即收尾（移植自用户分支 _quit）
+    if (phase === PHASE.SP_DRAFT && this.sp && (this.sp.concurrent || this.spTurn() === ps.playerId)) this.startSpTurn();
     // a seat leaving during the strategy draft keeps its place in the order, like one gone before it: at its turn the AI
     // drafts for it (botControlled → scheduleBandBot; botPickBand's departedWeight: Touch while nobody else holds it,
     // never 歌利亚) and it keeps the 0 LP it left with (_applyBand; stardust 6dc796d1)

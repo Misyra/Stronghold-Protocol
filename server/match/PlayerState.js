@@ -290,13 +290,4 @@ for (const part of [PlayerBasics, PlayerPieces, PlayerAcquire, PlayerEconomy, Pl
   }
 }
 
-// 容量房间（移植自用户分支；本仓 player/diy.js 的 poolOf 落在不属于本代理边界的文件里，这里在部件安装完成后按
-// fork 的终态覆盖：非自选槽的基础干员记到席位自己卡池组的份上（ps.pool getter），而不是 Match.pool（第一组）。
-// 普通对局 ps.pool === m.pool，行为与原实现逐字节一致。若 player/diy.js 的 poolOf 就地改为同一回退，此覆盖与它
-// 等价，保留其一即可。
-Object.defineProperty(PlayerState.prototype, 'poolOf', {
-  value: function poolOf(baseId) { return this.diyStock && this.diyStock.has(baseId) ? this.diyStock : this.pool; },
-  writable: true, configurable: true,
-});
-
 export { FIELD };

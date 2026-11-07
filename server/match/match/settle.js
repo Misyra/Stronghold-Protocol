@@ -13,6 +13,14 @@ import { creditedKillsOf } from '../../sim/spec.js';
 
 export class MatchSettle {
   settle(plan, uniteResult) {
+    // 相位重入闸（移植自用户分支 settle）：一场战斗只结算一次——联防接力的每轮 done 回调只放行当前 plan 的那次
+    if (this.disposed || this.ended || (this.phase !== PHASE.COMBAT && this.phase !== PHASE.UNITE)) return;
+    // 容量联防接力（移植自用户分支 settle）：两轮档案只认它的最后一段计划（旧档案的 settle 是重入，直接忽略）
+    const relay = this._uniteRelay?.rounds.at(-1)?.plan === plan ? this._uniteRelay : null;
+    // Per-field results stay archived (including the earlier leaks). Helpers are unique, so merging their
+    // reward/stat entries cannot overwrite another round. LP below uses only the final field's survivors.
+    const combinedUnite = relay ? { ...uniteResult,
+      perPlayer: Object.assign({}, ...relay.rounds.map((r) => r.result?.perPlayer || {})) } : uniteResult;
     this.phase = PHASE.SETTLE;
     this.runner = null;
     this._stopClientCombat();
@@ -20,8 +28,9 @@ export class MatchSettle {
     for (const ps of this.order) if (ps.pendingLayerGains) { ps.pendingLayerGains = null; ps.dirty(); }
     const cap = this.gd.lpCapPerRound;
     // a 联防 battle that could not run at all (synthetic result) must not wipe the leakers' losses: charge their own leaks
-    const uniteRan = !!(plan && uniteResult && !uniteResult.synthetic);
-    const survivors = uniteRan ? uniteSurvivors(plan, uniteResult) : null;
+    const uniteRan = relay ? relay.rounds.some((r) => r.result && !r.result.synthetic)
+      : !!(plan && uniteResult && !uniteResult.synthetic);
+    const survivors = relay ? relay.rounds.at(-1).survivors : uniteRan ? uniteSurvivors(plan, uniteResult) : null;
     // The 联防's outcome as data for the SETTLE view (m.public.uniteResult, views.js; GitHub #235, PR #112 by @Convey123):
     // each client pops the official result box from it (ui/gameLogic/phases.js uniteResultBox) — `through` = the leakers'
     // enemies that still got through (uncapped; only decides whether 「全员无伤！」 is true), `losses` = every alive
@@ -30,9 +39,10 @@ export class MatchSettle {
     // itself. No ticker line: the official reports the outcome in the one dialog. null when no 联防 resolved.
     this.uniteResultView = uniteRan && plan.leakers.length ? {
       through: plan.leakers.reduce((n, lk) => n + Math.max(0, survivors.get(lk.playerId) || 0), 0),
-      helpers: plan.helpers.map((p) => p.playerId),
+      helpers: relay ? relay.rounds.flatMap((r) => r.view.helpers) : plan.helpers.map((p) => p.playerId),
       leakers: plan.leakers.map((p) => p.playerId),
       losses: {},
+      ...(relay ? { rounds: relay.rounds.map((r) => ({ ...r.view, helpers: r.view.helpers.slice() })) } : {}),
     } : null;
     // 伤害/治疗结算板: the 联防 field's result is folded in here — settle() is the one place it exists in both modes
     // (server-run: unitePhase.startUnite's runner onDone; client-run: _finishUniteClient). Normal fields were already
@@ -56,11 +66,12 @@ export class MatchSettle {
       if (r.perfect !== false && counted === 0) ps.stats.perfectRounds++;
       // bounty coins (own battle + unite kills) are credited to the next prep
       let coins = Math.max(0, Math.trunc(Number(r.coins) || 0));
-      const up = uniteResult && uniteResult.perPlayer && uniteResult.perPlayer[ps.playerId];
+      const up = combinedUnite && combinedUnite.perPlayer && combinedUnite.perPlayer[ps.playerId];
       if (up) {
         coins += Math.max(0, Math.trunc(Number(up.coins) || 0));
         ps.stats.dmgDealt += Number(up.damageDealt) || 0;
         ps.stats.kills += Number(up.killed) || 0;
+        if (relay) ps.stats.healing += Number(up.healingDone) || 0;
       }
       ps.creditedKills += creditedKillsOf(r) + creditedKillsOf(up);
       // perfect-payout bounties (战术特训): own phase perfect
@@ -80,7 +91,7 @@ export class MatchSettle {
       }
       this._charDamageTickers(ps, r);
       // `time` is the finished battle's own game-time seconds (combat._finishCombat) — meta handlers scale by it
-      this.dispatch(ps, 'onBattleResult', { result: r, lpLoss: loss, perfect: counted === 0 && r.perfect !== false, unite: uniteResult || null, time: Number(this.lastResultTimes.get(ps.playerId)) || 0 });
+      this.dispatch(ps, 'onBattleResult', { result: r, lpLoss: loss, perfect: counted === 0 && r.perfect !== false, unite: combinedUnite || null, time: Number(this.lastResultTimes.get(ps.playerId)) || 0 });
       ps.recompute();
     }
     this.eliminateBroken();

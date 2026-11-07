@@ -251,6 +251,7 @@ test('host feedback observes real successful buys, sales, merges and battle resu
   assert.deepEqual(o.private, ownWire); assert.deepEqual(o.public, pubWire);
   assert.equal(o.digest.feedback.through, 3); assert.equal(o.context.matchId, ai.matchId);
   m.lastResults = new Map([[ps.playerId, { leaked: [{}, {}, { counted: false }], layerGains: {} }]]);
+  m.phase = 'COMBAT'; // settle 只从战斗/联防相位进入（match/settle.js 的重入闸）
   m.settle(null, null);
   assert.equal(ai.feedbackFor(ps).lastBattle.leaks, 2);
   assert.equal(ai.feedbackFor(ps).lastBattle.lpLoss, 2);

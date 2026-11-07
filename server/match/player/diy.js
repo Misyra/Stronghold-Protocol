@@ -212,7 +212,7 @@ export class PlayerDiy {
 
   /** The copy accounting of base chess `baseId` for this player: its own stock for a slotted DIY slot, else the shared pool. */
   poolOf(baseId) {
-    return this.diyStock && this.diyStock.has(baseId) ? this.diyStock : this.m.pool;
+    return this.diyStock && this.diyStock.has(baseId) ? this.diyStock : this.pool;
   }
 
   /**

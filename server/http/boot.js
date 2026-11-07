@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { APP_VERSION, DEV_BUILD } from '../../shared/constants.js';
 import { limitKeyOf } from '../net.js';
 import { applyPendingUpdate } from '../update.js';
+import { startMainWatchdog } from '../health/watchdog.js';
 import { ROOT } from './config.js';
 
 /**
@@ -138,6 +139,11 @@ export async function runMain(start) {
   // before the data, the packs or the browser runtime are read: the files must be the new version's (server/update.js).
   // Nothing is listening yet, so returning ends the process with exit code 1 once the message is written.
   if (applyPendingUpdate(ROOT).state === 'failed') { process.exitCode = 1; return; }
+  // 主线程看门狗（server/health/watchdog.js，移植自 Stardust fork）：在一切数据与监听之前起，覆盖启动期与
+  // 服务期的主线程静默；SP_MAIN_WATCHDOG_MS=0 关（缺省 30 s）。SIGINT/SIGTERM 一到就停——运维信号已经
+  // 证明主线程活着，关停有自己的 SP_SHUTDOWN_TIMEOUT_MS 兜底（systemd 另有 TimeoutStopSec），
+  // 不该在最后一笔状态落盘的途中被看门狗误杀。
+  const watchdog = startMainWatchdog();
   let srv;
   try {
     srv = await start();
@@ -149,6 +155,7 @@ export async function runMain(start) {
   printBanner(srv);
 
   const stop = shutdownHandler(srv);
-  process.on('SIGINT', () => stop('SIGINT'));
-  process.on('SIGTERM', () => stop('SIGTERM'));
+  const onSignal = (signal) => { void watchdog?.stop().catch(() => {}); stop(signal); };
+  process.on('SIGINT', () => onSignal('SIGINT'));
+  process.on('SIGTERM', () => onSignal('SIGTERM'));
 }

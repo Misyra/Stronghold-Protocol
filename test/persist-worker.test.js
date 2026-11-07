@@ -165,7 +165,7 @@ test('a broken persistence Worker degrades to a synchronous encode', async () =>
 
 test('dispose unsubscribes and waits for checkpoint callbacks before closing the encoder', async () => {
   const lobby = new Lobby({ registry: new SessionRegistry(), log: quietLog });
-  const persister = new Persister({ store: null, registry: lobby.registry, lobby, log: quietLog });
+  const persister = new Persister({ store: null, registry: lobby.registry, lobby, log: quietLog, eventInline: true });
   const calls = [];
   let finish;
   persister.encodeRoom = () => new Promise((resolve) => { finish = () => { calls.push('encoded'); resolve(true); }; });

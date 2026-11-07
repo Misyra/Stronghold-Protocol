@@ -688,6 +688,14 @@ node --expose-gc tools/memorybench.mjs
 
 第一条比较主线程与线程池的耗时、吞吐和主线程定时器延迟，第二条打印主进程与每个线程的常驻内存。启动日志里的 `[workers] simulation pool: …` 一行会写明实际生效的线程数或 `off`。
 
+### 主线程 turn 预算（`SP_TURN_BUDGET_MS`）
+
+libuv 在一次 timers turn 里一次性排空同一时刻到期的全部定时器：单片有界（bot 切片 8 ms、战斗 tick 20 ms），turn 本身没有界——turn 时长 = 该批到期回调之和。2026-11-07 的线上栈采样里，主线程所有 ≥150 ms 停顿共享同一入口（`processTimers → listOnTimeout → RealScheduler._wrap → match guard`：战斗 tick 切片、bot 布防规划 `planLayoutSteps` / `parseKey`）。
+
+`SP_TURN_BUDGET_MS`（默认 **50**）给这个 turn 加预算：一轮累计派发达到预算后，后续到期回调用 `setTimeout(1)` 顺延到下一轮（仍走同一包装、记账一致；顺延中的工作被 `clearTimeout` / `clearInterval` / dispose 取消后不再执行）；一个 setImmediate（check 阶段，恰在两轮 timer 排空之间）把计数清零，饱和下不饿死。已经在跑的回调不抢占——单个不可切片的大调用（~120–170 ms 档）仍是残余尾巴。`0` = 完全关闭：关闸路径与改动前逐字节等价（无时钟读数、无额外句柄），是回滚口。
+
+台架 A/B（bot 布防风暴：8 场对局 × 3 bot 持续重规划，1 ms JS 层采样器，ABBAABBA 8 轮取 min）：drift max 103.0 → 56.7 ms（−45%）、p99 91.9 → 55.3 ms（−40%）；关闸与 master 原版同噪声带（drift max 121.4 / p99 99.4）；开闸不降吞吐（规划完成数 911–951 vs 关闸 868–903）。见 docs/history/0.3.4.md §37.132。
+
 ### 结果校验（`SP_VERIFY`）
 
 战斗在各玩家浏览器里模拟，服务器默认只按 spec 检查结果的形状和边界（`fields.js validateClientResult`），不重算。三档：

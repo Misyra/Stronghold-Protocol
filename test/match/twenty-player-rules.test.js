@@ -415,3 +415,18 @@ test('disableDuckLord keeps the duck band out of a capacity room: picks, default
   assert.equal(four.m.gd.bandAllowed('band_ducklord'), true);
   assert.equal(four.m.gd.defaultBandId, 'band_ducklord');
 });
+
+test('an expanded room\'s band effects roll from the dispatching seat\'s own stock (见者有份 onPrepStart)', (t) => {
+  // 娜仁图亚's 「见者有份」 rolls its free items via ctx.rollPool without an explicit player: in a grouped room that
+  // player is the dispatching seat (Match itemPoolFor) — the shared-pool fallback is gone and must not throw.
+  const h = make(t, 9), m = h.m;
+  m.phase = 'PREP'; m.round = 2;
+  for (const ps of m.order) ps.lp = 28;
+  const ps = m.order[0];
+  ps.bandId = 'band_narant';
+  m.dispatch(ps, 'onPrepStart', { round: 2 });
+  assert.equal(h.logs.error.filter(l => l.includes('meta handler error')).length, 0, 'no meta handler error');
+  assert.ok(ps.offers.some(o => Array.isArray(o.slots) && o.slots.length && o.slots.every(s => s.kind === 'item')),
+    'the free item offer arrived (rolled from the seat\'s group stock)');
+  assert.deepEqual(collectViolations(m), []);
+});

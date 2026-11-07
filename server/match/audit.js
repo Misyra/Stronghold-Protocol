@@ -338,6 +338,8 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
     check('sp turn', () => {
       if (m.phase !== PHASE.SP_DRAFT || !m.sp) return;
       const s = m.sp;
+      // a concurrent draft (Match concurrentDraft): one countdown for the step, armed once (spFirst)
+      if (s.concurrent) { if (!s.done && !m.soloUntimed && m.deadline !== s.turnDeadline) fail('concurrent 机变: deadline is not the step\'s'); return; }
       if (s.idx >= s.order.length) return;
       if (m.soloUntimed) { if (m.deadline) fail('untimed 机变 is timed'); } else expectDeadline(s.idx === 0 ? gd.timer('spFirst') : gd.timer('spTurn'), `SP_DRAFT turn ${s.idx}`);
     });
@@ -353,7 +355,9 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
       for (const pid of alive) {
         const idx = s.picks[pid];
         if (idx == null) fail(`${pid} ends 机变 without a card`);
-        else if (s.taken[idx] !== pid) fail(`${pid} picked card ${idx} held by ${s.taken[idx]}`);
+        else if (!Number.isInteger(idx) || !s.cards[idx]) fail(`${pid} picked an invalid card ${idx}`);
+        // an expanded-capacity room repeats cards: taken only records the FIRST taker (match/spDraft.js pickCard)
+        else if (!m.capacityExperiment && s.taken[idx] !== pid) fail(`${pid} picked card ${idx} held by ${s.taken[idx]}`);
       }
       const holders = Object.values(s.taken);
       if (new Set(holders).size !== holders.length) fail('a player took two 机变 cards');
@@ -469,9 +473,11 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
       m.fields.forEach((f, i) => { if (f.fieldId !== `b${i + 1}`) fail(`boss field id ${f.fieldId}`); });
       if (!hidden && m.teamLp !== lpSum) fail(`team LP ${m.teamLp} != Σ alive LP ${lpSum}`);
       if (hidden && m.teamLp !== teamLp0) fail(`hidden core changed team LP ${teamLp0} → ${m.teamLp}`);
-      const want = bossPoolHp(gd, hidden ? m.hiddenBossId : m.bossId, alive.length);
+      // 容量房间（移植自用户分支 audit）：boss 池与隐秘核心门槛的 experimental 放大与 bossRounds 的口径一致
+      const want = bossPoolHp(gd, hidden ? m.hiddenBossId : m.bossId, alive.length, { experimental: m.capacityExperiment });
       if (!m.bossPool || m.bossPool.maxHp !== want) fail(`boss pool ${m.bossPool && m.bossPool.maxHp} != ${want}`);
-      if (hidden && !hiddenEligible(gd, { layerSum: m.hiddenLayerSum, teamLp: m.teamLp })) fail('hidden core entered while not eligible');
+      if (hidden && !hiddenEligible(gd, { layerSum: m.hiddenLayerSum, teamLp: m.teamLp,
+        aliveCount: m.finalAliveCount, experimental: m.capacityExperiment })) fail('hidden core entered while not eligible');
       if (hidden && gd.difficulty === 'FUNNY') fail('hidden core on FUNNY');
     });
     return res;

@@ -3,7 +3,9 @@
 // (test/match/harness.js checkInvariants asserts the list is empty) and by tools/matchrun.mjs --check sweeps.
 //
 // collectViolations(m) → string[] (empty when every invariant holds):
-//   pool     raw balance ≤ cap and raw balance + Σ copies held by pieces == cap (public availability is clamped at zero) per base chess; non-pool chess hold 0 copies;
+//   pool     per chess-pool group (Match poolFor; the shared pool when there are no groups): raw balance ≤ cap and
+//            raw balance + Σ copies held by pieces == cap (public availability is clamped at zero) per base chess;
+//            non-pool chess hold 0 copies;
 //            every capped shop item is held by at most its cap (normal occupies 1, upgraded 2; effect-only items have no cap)
 //            a player's 自选 stock (0.2.0, player/diy.js) the same against its own pieces of each slotted slot — a DIY
 //            piece is always a slotted slot of its owner's, and a DIY shop / reward card one of its stocked slots
@@ -40,7 +42,9 @@ export function collectViolations(m, { limit = 25 } = {}) {
   const out = [];
   const fail = (msg) => { if (out.length < limit) out.push(msg); };
   const gd = m.gd;
-  const held = new Map();
+  // 多人同盟容量（移植自用户分支 invariants.js）：holdings per chess-pool group — no personal pool can borrow another
+  // seat's holdings; a match without groups routes every seat to the one shared pool.
+  const holdings = new Map((m.poolGroups || []).map(g => [g.pool, new Map()]));
   const uids = new Set();
   const banned = new Set(m.bannedChess || []);
   const note = (ps, p) => {
@@ -55,6 +59,9 @@ export function collectViolations(m, { limit = 25 } = {}) {
 
   for (const ps of m.players.values()) {
     const id = ps.playerId;
+    const pool = m.poolFor(ps);
+    if (!holdings.has(pool)) holdings.set(pool, new Map());
+    const held = holdings.get(pool);
     // the player's view of the data (its slotted 自选 slots are its operators) and the copies its 自选 pieces hold
     const pgd = ps.gd || gd;
     const diyHeld = new Map();
@@ -199,27 +206,33 @@ export function collectViolations(m, { limit = 25 } = {}) {
     for (const [base, n] of diyHeld) if (!(ps.diyStock && ps.diyStock.has(base)) && n !== 0) fail(`${id}: 自选 slot ${base} without stock holds ${n} copies`);
   }
 
-  // shared pool accounting
-  for (const [base, e] of m.pool.entries) {
-    if (!(Number.isInteger(e.left) && e.left <= e.cap)) fail(`pool ${base}: balance ${e.left} cap ${e.cap}`);
-    const h = held.get(base) || 0;
-    if (e.left + h !== e.cap) fail(`pool ${base}: left ${e.left} + held ${h} != cap ${e.cap}`);
+  // Shared or player-local pool accounting; no personal pool can borrow another seat's holdings.
+  for (const [pool, held] of holdings) {
+    for (const [base, e] of pool.entries) {
+      if (!(Number.isInteger(e.left) && e.left <= e.cap)) fail(`pool ${base}: balance ${e.left} cap ${e.cap}`);
+      const h = held.get(base) || 0;
+      if (e.left + h !== e.cap) fail(`pool ${base}: left ${e.left} + held ${h} != cap ${e.cap}`);
+    }
+    for (const [base, n] of held) if (!pool.has(base) && n !== 0) fail(`non-pool chess ${base} holds ${n} copies`);
   }
-  for (const [base, n] of held) if (!m.pool.has(base) && n !== 0) fail(`non-pool chess ${base} holds ${n} copies`);
 
-  // Displayed shop cards and item rewards may overdraw; itemPool.debt is that overage (#624). Fixed gift families
+  // Displayed shop cards and item rewards may overdraw; each stock's debt is that overage (#624). Fixed gift families
   // may overdraw without a debt entry. debt > over is always a missed repay or a debt recorded for a piece not kept.
-  // The chess pool above also permits explicit overdraw (Mimic, displayed operator cards).
-  if (m.itemPool && gd.raw.items) {
-    for (const [id, rec] of Object.entries(gd.raw.items)) {
-      if (!rec || rec.isGolden) continue;
-      const cap = m.itemPool.cap(id);
-      if (!Number.isInteger(cap)) continue;
-      const h = m.itemPool.held(id);
-      const over = Math.max(0, h - cap);
-      const debt = m.itemPool.debtOf(id);
-      if (debt > over) fail(`item ${id}: debt ${debt} > overage ${over} (held ${h}, cap ${cap})`);
-      if (!gd.isUnlimitedGiftItem(id) && over > debt) fail(`item ${id}: held ${h} > cap ${cap} without debt ${debt}`);
+  // The chess pool above also permits explicit overdraw (Mimic, displayed operator cards). Equipment stock is per
+  // chess-pool group (Match itemPoolFor).
+  const itemPools = new Set(m.playerItemPools ? m.playerItemPools.values() : m.itemPool ? [m.itemPool] : []);
+  if (gd.raw.items) {
+    for (const stock of itemPools) {
+      for (const [id, rec] of Object.entries(gd.raw.items)) {
+        if (!rec || rec.isGolden) continue;
+        const cap = stock.cap(id);
+        if (!Number.isInteger(cap)) continue;
+        const h = stock.held(id);
+        const over = Math.max(0, h - cap);
+        const debt = stock.debtOf(id);
+        if (debt > over) fail(`item ${id}: debt ${debt} > overage ${over} (held ${h}, cap ${cap})`);
+        if (!gd.isUnlimitedGiftItem(id) && over > debt) fail(`item ${id}: held ${h} > cap ${cap} without debt ${debt}`);
+      }
     }
   }
 

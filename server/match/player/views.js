@@ -115,6 +115,10 @@ export class PlayerViews {
       },
       ready: this.ready,
       canReady: this.alive && this.tempEmpty && !this.personalChoice && this.m.phase === PHASE.PREP,
+      // 并发机变（concurrentDraft，移植自用户分支 privateView）：逐席位私有标记——本席装备库存给不了的卡片（无任何
+      // 存活席位库存可取时他人也看不到可取），仍留在公屏的槽位上
+      ...(this.m.phase === PHASE.SP_DRAFT && this.m.sp?.concurrent
+        ? { spBlocked: this.m.sp.cards.filter((c) => !this.m.spCardAvailable(c, this)).map((c) => c.idx) } : {}),
       // 挂机移出 (移植自用户分支): one more idle prep removes this seat (Match _checkIdle) — until a substantive intent clears it
       ...(this.afkWarned() ? { afkWarn: true } : {}),
       personalChoice: this.personalChoice ? {

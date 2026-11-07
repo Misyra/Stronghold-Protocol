@@ -84,6 +84,9 @@ export class MatchCombat {
     const alive = this.alivePlayers();
     this.lastResults = new Map();
     this.lastResultTimes = new Map();
+    // 容量联防（移植自用户分支 startCombat）：联防的存活门槛精确到战斗开始时刻；接力档案随新战斗作废
+    this._normalAliveCount = alive.length;
+    this._uniteRelay = null;
     this.fields = alive.map((ps) => ({ fieldId: `n:${ps.playerId}`, kind: 'normal', players: [ps.playerId], battle: this._normalBattle(ps), live: true }));
     const limit = this.wave ? this.wave.timeLimit : 60;
     this.deadline = this.sched.instant ? 0 : this.sched.now() + Math.round((limit / this.gameSpeed) * 1000);
@@ -98,6 +101,9 @@ export class MatchCombat {
     const alive = this.alivePlayers();
     this.lastResults = new Map();
     this.lastResultTimes = new Map();
+    // 容量联防（移植自用户分支 _startCombatClient）：同 startCombat——门槛取战斗开始时刻的存活数，接力档案作废
+    this._normalAliveCount = alive.length;
+    this._uniteRelay = null;
     this.watchers.clear();
     const fields = alive.map((ps) => this._ccField({ fieldId: `n:${ps.playerId}`, kind: 'normal', players: [ps.playerId], opts: this._normalOpts(ps) }));
     const limit = this.wave ? this.wave.timeLimit : 60;

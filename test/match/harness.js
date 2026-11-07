@@ -185,37 +185,6 @@ export function checkInvariants(m) {
   return legacyInvariants(m);
 }
 
-/**
- * 容量房间的分组校验（server/match/invariants.js 的分组化落地前的替身，见移植报告）：collectViolations 的非记账行
- * （它对第一组之外的持有会按单池误报）+ 逐池的 left + held == cap 核对（自选槽位仍记本席库存，与 legacyInvariants
- * 同一算法）。普通房间与 checkInvariants 等价。
- * @param {import('../../server/match/Match.js').Match} m
- * @returns {string[]} every violation found
- */
-export function capacityViolations(m) {
-  const out = collectViolations(m).filter((v) => !/^pool |^non-pool chess /.test(v));
-  const holdings = new Map(m.poolGroups.map((g) => [g.pool, new Map()]));
-  for (const ps of m.players.values()) {
-    const pool = m.poolFor(ps);
-    if (!holdings.has(pool)) holdings.set(pool, new Map());
-    const held = holdings.get(pool);
-    for (const p of [...ps.board.values(), ...ps.hand, ...ps.temp]) {
-      if (!p || p.kind !== 'chess') continue;
-      const base = m.gd.baseIdOf(p.id);
-      if (ps.diyStock && ps.diyStock.has(base)) continue; // 自选库存有自己的核对（invariants.js 逐席照旧）
-      held.set(base, (held.get(base) || 0) + (p.poolCopies || 0));
-    }
-  }
-  for (const [pool, held] of holdings) {
-    for (const [base, e] of pool.entries) {
-      if (!(Number.isInteger(e.left) && e.left <= e.cap)) out.push(`pool ${base}: balance ${e.left} cap ${e.cap}`);
-      if (e.left + (held.get(base) || 0) !== e.cap) out.push(`pool ${base}: left ${e.left} + held ${held.get(base) || 0} != cap ${e.cap}`);
-    }
-    for (const [base, n] of held) if (!pool.has(base)) out.push(`non-pool chess ${base} holds ${n} copies`);
-  }
-  return out;
-}
-
 /** The original harness checks (kept alongside collectViolations; they must agree). */
 function legacyInvariants(m) {
   const holdings = new Map();

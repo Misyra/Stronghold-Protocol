@@ -98,6 +98,9 @@ export class GameData {
     this.config = getConfig(this.raw) || {};
     this.modeId = modeId;
     this.mode = getMode(modeId, this.raw) || {};
+    /** 华法琳禁用（experimental.disableDuckLord，容量房间；Match 构造器置位）: the default band is out. Raw effects
+     * and generated data are never modified. */
+    this.disableDuckLord = false;
     // Mode-level globals inherit field by field; the vanilla mode never changes its config object.
     const overrides = Object.fromEntries(Object.keys(this.config).filter(k => k !== 'modes' && Object.hasOwn(this.mode, k)).map(k => [k, this.mode[k]]));
     if (Object.keys(overrides).length) this.config = mergeData(this.config, overrides);
@@ -298,7 +301,12 @@ export class GameData {
     const extra = Object.values(this.raw.bands || {}).filter(b => b.effectRef && ids.includes(b.effectRef)).map(b => b.bandId);
     return extra.length ? [...ids, ...extra] : ids;
   }
-  get defaultBandId() { return typeof this.economy.defaultBandId === 'string' ? this.economy.defaultBandId : DEFAULTS.defaultBandId; }
+  get defaultBandId() {
+    const id = typeof this.economy.defaultBandId === 'string' ? this.economy.defaultBandId : DEFAULTS.defaultBandId;
+    // 华法琳禁用（disableDuckLord，容量房间）：默认策略被禁时取第一个可用的（移植自用户分支 defaultBandId）
+    if (!this.disableDuckLord || id !== 'band_ducklord') return id;
+    return this.bandAllowed(DEFAULTS.defaultBandId) ? DEFAULTS.defaultBandId : this.bandIds()[0] ?? DEFAULTS.defaultBandId;
+  }
   get defaultStartLp() { return posIntOr(this.economy.defaultStartLp, DEFAULTS.defaultStartLp); }
 
   rewardOffer() {
@@ -517,7 +525,9 @@ export class GameData {
     const b = this.config.bandDraft && typeof this.config.bandDraft === 'object' ? this.config.bandDraft : {};
     return {
       skipsPerPlayer: Number.isInteger(b.skipsPerPlayer) && b.skipsPerPlayer >= 0 ? b.skipsPerPlayer : DEFAULTS.bandDraft.skipsPerPlayer,
-      timeoutBandId: typeof b.timeoutBandId === 'string' && this.band(b.timeoutBandId) ? b.timeoutBandId : this.defaultBandId,
+      // 华法琳禁用（disableDuckLord，容量房间）：超时兜底不取被禁的默认策略（移植自用户分支 bandDraft）
+      timeoutBandId: typeof b.timeoutBandId === 'string' && this.band(b.timeoutBandId)
+        && !(this.disableDuckLord && b.timeoutBandId === 'band_ducklord') ? b.timeoutBandId : this.defaultBandId,
     };
   }
 
@@ -529,6 +539,8 @@ export class GameData {
 
   /** Band usable in this mode type. */
   bandAllowed(bandId) {
+    // 华法琳禁用（disableDuckLord，容量房间）：鸭爵策略不可选（移植自用户分支 bandAllowed；≤4 人房不置位此开关）
+    if (this.disableDuckLord && bandId === 'band_ducklord') return false;
     const b = this.band(bandId);
     if (!b) return false;
     const list = Array.isArray(b.modeTypeList) ? b.modeTypeList : null;

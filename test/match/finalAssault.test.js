@@ -10,6 +10,15 @@ import { createRng, deriveSeed } from '../../server/sim/rng.js';
 
 const bossFields = () => FakeBattle.instances.filter((b) => b.kind === 'boss' || b.kind === 'hidden');
 
+test('the opt-in >4-seat room extends the per-player pool: one bloodPoint per alive player past four', () => {
+  const gd = new GameData(DATA, 'mode_multi_hard');
+  const base = DATA.bosses.boss_1.bloodPoint.HARD;
+  for (const n of [5, 8, 20]) assert.equal(bossPoolHp(gd, 'boss_1', n, { experimental: true }), base * n, `${n} seats`);
+  assert.equal(bossPoolHp(gd, 'boss_1', 4, { experimental: true }), base * 4, 'four seats: the ordinary rule');
+  assert.equal(bossPoolHp(gd, 'boss_1', 8), base * 4, 'without the experiment the count stays capped at aliveFull');
+  assert.equal(bossPoolHp(new GameData(DATA, 'mode_single_hard'), 'boss_1', 1, { experimental: true }), base, 'solo untouched');
+});
+
 test('pairing is seeded, independent of input order, includes everyone once and can draw every partner', () => {
   const p = (seat) => ({ seat, playerId: `s${seat}` });
   const partners = new Set(), lone = new Set();

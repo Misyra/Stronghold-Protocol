@@ -189,7 +189,9 @@ function pushManifest(tag) {
   const name = path.basename(MANIFEST_FILE);
   console.log(`\n${name} 已写好：tag ${tag}`);
   console.log('  它不再入库。用 CDN 的服务器要拿到这一份：');
-  console.log(`    scp ${name} <服务器>:/opt/Stronghold-Protocol/${name}    # 然后重启游戏服务器`);
+  console.log("    ssh <服务器> 'systemctl show stronghold -p WorkingDirectory --value'   # 当前生效的 release 目录");
+  console.log(`    scp ${name} <服务器>:<上面的路径>/${name}    # 运行进程读自身 release 目录根（不是仓库安装目录）；重启后生效`);
+  console.log('  注意：下一版 release 目录是全新拷贝，记得把它随 DEPLOY.md 的运行期文件清单带到新 release');
   console.log('  或者在那台机器上构建镜像：Dockerfile 的构建阶段会用 tools/build-assets-manifest.mjs 重新生成');
   console.log(`  没有这份清单时照常启动，只是美术 URL 不带 ?v=<哈希>（/healthz 的 assetsManifest 为空）`);
 }

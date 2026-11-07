@@ -266,6 +266,24 @@ export function versionsFrom(opts, log = null) {
 }
 
 /**
+ * Whether the boot prewarms the enabled non-default versions' data and bounds before the listener opens
+ * (DESIGN §37.133): the `versions.prewarm` option, else SP_VERSIONS_PREWARM (any non-empty value turns it on;
+ * '0' / 'off' / 'false' / 'no' turn it off — the operator's switch beats both the option and the default), else
+ * off. Off is the programmatic default: tests, tools and probes boot through startServer() and do not pay the
+ * walk; the process entry (server/index.js runMain) opts in.
+ * @param {{ versions?: { prewarm?: boolean } }} opts
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {boolean}
+ */
+export function versionPrewarmFrom(opts, env = process.env) {
+  const o = opts.versions && typeof opts.versions === 'object' ? opts.versions : {};
+  const raw = String(env.SP_VERSIONS_PREWARM ?? '').trim().toLowerCase();
+  if (['0', 'off', 'false', 'no'].includes(raw)) return false;
+  if (typeof o.prewarm === 'boolean') return o.prewarm;
+  return raw !== '';
+}
+
+/**
  * 取自 xinhai-ai/Stronghold-Protocol（同许可证）：静态层只认「原样拼在 /assets/ 前的基址」—— 取走尾斜杠，
  * 非 http(s)/根路径的值当作未配置（返回空串）。与 server/index.js 的 CDN 分发、shared/cdn.js 的拼址保持一致。
  * @param {unknown} v

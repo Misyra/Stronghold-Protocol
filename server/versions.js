@@ -8,7 +8,8 @@
 //   * on first use (a room of that version, its manifest, its match host), its data — loadData of its directory,
 //     deep-frozen, kept for the process —, its official-bounds snapshot (shared/plugins/officialBounds.js
 //     officialBoundsOf: its own maxima, never the main process's cache) and its manifest (contentIndexOf: data URLs under
-//     /data/versions/<slug>/, `version`, `bounds`);
+//     /data/versions/<slug>/, `version`, `bounds`) — unless prewarmed first (prewarm(): the boot can walk every enabled
+//     non-default version before the listener opens, so a first use then finds everything memoized; DESIGN §37.133);
 //   * the default version (act2autochess) is the server's vanilla content: content(DEFAULT) is the vanilla shape, its
 //     data the server's own; nothing of it changes.
 //
@@ -26,6 +27,8 @@
 //   file(cs16, rel)                        GET /cs/<cs16>/index.json and /cs/<cs16>/bounds/official.json of a version
 //   servedDirs()                           the absolute data directories /data/versions/ may serve (static.js, buildTag)
 //   stats()                                { enabled, default, loaded }
+//   prewarm()                              walk every enabled non-default version now (data + bounds + manifest, one
+//                                          version per event-loop turn); per-version { id, ok, ms }, never throws
 //   get(cs), dataBytes(cs)                 the match hosts' contents interface (server/match/host/index.js kind
 //                                          'version'): the hash input, the bounds snapshot and the data bytes, read from
 //                                          disk at each host start (the host checks every sha256 against the hash input)
@@ -169,6 +172,36 @@ export function createVersionSets({ enabled, defaultId = DEFAULT_VERSION, dataDi
     ids: Object.freeze(ids),
     defaultId: def,
     nonDefault: Object.freeze(ids.filter((id) => id !== DEFAULT_VERSION)),
+    /**
+     * Walk every enabled non-default version before the listener opens (DESIGN §37.133): data + official bounds +
+     * manifest of each — exactly what the first room, manifest request or match host of a version would otherwise
+     * load synchronously on the message path (measured 3.4 s on the production box, §37.132's evidence window).
+     * One version per event-loop turn (a setImmediate yield between them): each block stays a single version's
+     * ~1–3 s, not one long one, and the boot's pending I/O gets its turns in between. A version whose load fails
+     * is left as the remembered permanent failure `load` already keeps (its own error line, null from then on) —
+     * the walk goes on, and the boot is never blocked: this never throws.
+     * @returns {Promise<{ id: string, ok: boolean, ms: number }[]>} one row per walked version, registry order
+     */
+    async prewarm() {
+      const rows = [];
+      for (const id of others.keys()) {
+        await new Promise((resolve) => setImmediate(resolve)); // 让出：逐版本一块，不合成一个超长同步段
+        const t0 = performance.now();
+        let ok = true;
+        try {
+          if (!load(id)) ok = false; // 失败已由 load 记账（error 日志 + 永久失败），这里只继续走下一个
+          else {
+            boundsOf(id);
+            indexOf(id);
+          }
+        } catch (e) {
+          ok = false;
+          log.error(`[versions] ${id} prewarm failed: ${e?.code || e?.message || e}`, e);
+        }
+        rows.push({ id, ok, ms: performance.now() - t0 });
+      }
+      return rows;
+    },
     /** @param {unknown} id */
     isEnabled: (id) => typeof id === 'string' && ids.includes(id),
     /** Enabled, and (another version) its data loads — a failed load stays failed (see `load`). @param {unknown} id */

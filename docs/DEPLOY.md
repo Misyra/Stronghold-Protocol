@@ -800,6 +800,7 @@ npm start
 | `SP_STATE_FILE` | `.state/server-<PORT>` | 状态路径（目录 = 分片布局，`….json` = 单文件，`off` = 纯内存）。**绝不指向公开静态目录**（会拒绝启动）；空串当作没写，回退默认路径并告警 |
 | `SP_STATE_SAVE_MS` | 10000 | 落盘周期（ms，最短 1000）。检查点事件（开局 / 休整期结束）即时合并进下一轮 |
 | `SP_PERSIST_VERIFY` | （关） | `1` 反向自证版本脏判断：版本说「没变」也重新编码并比对，不一致计入 `/healthz` 的 `versionHoles` 并告警 |
+| `SP_PERSIST_ENCODE_BUDGET` | 8 | 每轮落盘最多提交的检查点编码数（一次 capture 是整场对局的同步 clone，预算把它摊到多轮；被推后的房下一轮优先重编，checkpoint 至多陈旧一个落盘周期）。`0` = 不设上限（改动前行为） |
 | `SP_REDIS_URL` / `REDIS_URL` | （空 = 用文件） | 改用 Redis 后端（`redis://` / `rediss://` / `unix:`），配了就不再写文件。**一个前缀只给一个游戏服**，两个进程同前缀会互相覆盖 |
 | `SP_REDIS_PREFIX` | `stronghold:` | Redis 键前缀（`<前缀>index` / `runtime` / `cp:<房间码>`，与文件分片一一对应） |
 | `SP_REDIS_TTL` | 90000 | 每次写刷新的键过期时间（秒，最小 60）；默认 25 小时 ≈ 最长重连窗口。**Redis 后端不配 AOF/RDB 时重启即丢**——推荐配置见 fork 的 deploy 文档；持久性弱于默认文件布局 |

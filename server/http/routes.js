@@ -121,6 +121,7 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
       checkpoints: persister.matchDocs.size, lastSaveMs: persister.lastSaveMs ?? null,
       checkpointsEncoded: persister.versionStats?.encodes ?? null,
       checkpointsSkipped: persister.versionStats?.skipped ?? null,
+      encodesDeferred: persister.versionStats?.deferred ?? null,
       versionChecks: persister.versionStats?.verified ?? null,
       versionHoles: persister.versionStats?.holes ?? null,
       deferredSkips: persister.deferredSkips ?? 0,

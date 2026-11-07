@@ -669,3 +669,37 @@ test('encodeBudget 0 is the uncapped escape hatch and pure skips cost no budget'
   } finally { lobby.rooms.clear(); await persister.encoder.close(); lobby.shutdown(); }
 });
 
+
+test('a checkpoint event coalesces into the next sweep instead of encoding immediately', async () => {
+  const registry = new SessionRegistry();
+  let listener = null;
+  const lobby = { rooms: new Map(), subscribeCheckpoint: (fn) => { listener = fn; return () => {}; } };
+  const store = new MemoryStore();
+  const persister = new Persister({ store, registry, lobby, log: quietLog });
+  try {
+    const match = {};
+    lobby.rooms.set('R1', { code: 'R1', disposed: false, match });
+    const calls = [];
+    persister.encodeRoom = async (code) => { calls.push(code); return true; };
+    listener('R1', match);
+    assert.deepEqual(calls, [], 'the event alone must not encode: it only marks demand for the sweep');
+    await persister.checkpointMatches();
+    assert.deepEqual(calls, ['R1'], 'the next sweep encodes the room with the budgeted path');
+  } finally { await persister.encoder.close(); }
+});
+
+test('eventInline restores the immediate event encode (rollback hatch)', async () => {
+  const registry = new SessionRegistry();
+  let listener = null;
+  const lobby = { rooms: new Map(), subscribeCheckpoint: (fn) => { listener = fn; return () => {}; } };
+  const store = new MemoryStore();
+  const persister = new Persister({ store, registry, lobby, log: quietLog, eventInline: true });
+  try {
+    const match = {};
+    lobby.rooms.set('R1', { code: 'R1', disposed: false, match });
+    const calls = [];
+    persister.encodeRoom = async (code) => { calls.push(code); return true; };
+    listener('R1', match);
+    assert.deepEqual(calls, ['R1'], 'inline mode encodes at event time, off-budget');
+  } finally { await persister.encoder.close(); }
+});

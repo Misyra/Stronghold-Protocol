@@ -44,9 +44,9 @@ export const PERSIST_VERSION = 1;
 /** Default interval between state writes (ms). */
 export const SAVE_MS = 10_000;
 
-/** Default max committed checkpoint encodes per sweep round ([ASSUMED] ~8 covers steady drift at ~130 live matches;
- * SP_PERSIST_ENCODE_BUDGET / opts.encodeBudget override, 0 = uncapped). */
-export const ENCODE_BUDGET_DEFAULT = 8;
+/** Default max committed checkpoint encodes per sweep round ([ASSUMED] ~24 covers the coalesced event+sweep demand at
+ * the observed ~160/min peak; SP_PERSIST_ENCODE_BUDGET / opts.encodeBudget override, 0 = uncapped). */
+export const ENCODE_BUDGET_DEFAULT = 24;
 
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -314,10 +314,10 @@ export class Persister {
    *   registry: import('./net.js').SessionRegistry,
    *   lobby: import('./lobby.js').Lobby,
    *   log?: object, now?: () => number, saveMs?: number, minFlushMs?: number, verifyVersion?: boolean,
-   *   encodeBudget?: number,
+   *   encodeBudget?: number, eventInline?: boolean,
    * }} opts
    */
-  constructor({ store, registry, lobby, log = noopLog, now = Date.now, saveMs = SAVE_MS, minFlushMs, verifyVersion, encodeBudget }) {
+  constructor({ store, registry, lobby, log = noopLog, now = Date.now, saveMs = SAVE_MS, minFlushMs, verifyVersion, encodeBudget, eventInline }) {
     this.store = store;
     this.registry = registry;
     this.lobby = lobby;
@@ -328,13 +328,18 @@ export class Persister {
     this.minFlushMs = minFlushMs == null ? this.saveMs : Math.max(0, Number(minFlushMs) || 0);
     /** Max committed checkpoint encodes per round (0 = uncapped): a capture's structured clone blocks the main thread,
      * so the sweep spreads them over rounds (SP_PERSIST_ENCODE_BUDGET). Deferred rooms keep their stale version and
-     * are re-checked first next round. */
+     * are re-checked first next round. With checkpoint events coalesced into the sweep (default since §37.131) all
+     * encode demand flows through here, so the default covers its observed peak (~160/min): 24 × 6 rounds/min. */
     const budgetEnv = Number.parseInt(process.env.SP_PERSIST_ENCODE_BUDGET ?? '', 10);
     this.encodeBudget = Number.isInteger(encodeBudget) && encodeBudget >= 0
       ? encodeBudget
       : (Number.isInteger(budgetEnv) && budgetEnv >= 0 ? budgetEnv : ENCODE_BUDGET_DEFAULT);
     /** Round-robin start offset into the room list for the next sweep (encode-budget fairness). */
     this._encodeCursor = 0;
+    /** `SP_PERSIST_EVENT_INLINE=1`: a checkpoint event encodes immediately (pre-§37.131 behaviour) instead of
+     * coalescing into the next sweep round. The immediate capture is off-budget and clusters under phase-aligned
+     * lobbies — the rollback hatch for §37.131, not the recommended mode. */
+    this.eventInline = eventInline ?? process.env.SP_PERSIST_EVENT_INLINE === '1';
     /** Encoded clock-free checkpoint bodies per room code (JSON text; written to a shard verbatim). */
     this.matchDocs = new Map();
     this.metadataTokens = new WeakMap();
@@ -390,6 +395,15 @@ export class Persister {
         this.matchDocs.delete(code);
         this.matchClocks.delete(code);
         this.matchVersions.delete(code);
+        if (this.running) this.scheduleFlush('checkpoint');
+        return;
+      }
+      // Coalesced (default, §37.131): the event only marks demand and schedules the next round — the sweep encodes
+      // the room with the same budget/rotation/yield as every other room, so a burst of phase transitions can never
+      // pile captures into one tick (a restored lobby re-aligns every match's phase clock and would otherwise fire
+      // dozens of immediate captures back to back). The checkpoint lands at most one save interval late.
+      // SP_PERSIST_EVENT_INLINE=1 restores the §37.129-era behaviour: an event encodes now, off-budget.
+      if (!this.eventInline) {
         if (this.running) this.scheduleFlush('checkpoint');
         return;
       }

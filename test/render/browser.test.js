@@ -160,6 +160,34 @@ describe('render engine in headless Chrome', { skip }, () => {
     } finally { await page.close(); }
   });
 
+  // 过载 (b.snap `overdrive`): 塔露拉's S3 bar runs out over the first half, then runs again in red (the owner's word of
+  // 2026-11-05: 「第一段技能条走完之后第二条技能是过载状态」)
+  test('塔露拉 S3 from a real snapshot: the skill bar runs down twice, the 过载 gauge in red', async () => {
+    const { makeBattle } = await import('../helpers/battleHarness.js');
+    const { COLORS } = await import('../../public/js/render/style.js');
+    const h = makeBattle({ autoFinish: false, units: [{ uid: 1, diy: { slot: 'chess_char_5_diy1_a', charId: 'char_4247_oxi', skillIndex: 2, uniEquipId: null }, elite: true, row: 10, col: 4 }] });
+    h.step(); const u = h.unit(1), sk = u.skill;
+    sk.sp = sk.spCost; sk.charges = sk.maxCharges;
+    assert.ok(sk.activate('manual'));
+    h.run(sk.duration / 4);
+    const { page, problems } = await open('scene=prep&panel=0', 1600, 900);
+    const bar = (id) => { const v = window.__demo.view.debug.views.get(id); return { share: v.spFill.width / (v.spBg.width - 2), tint: v.spFill.tint, od: v.od }; };
+    try {
+      await page.evaluate(({ meta, snap }) => { window.__demo.pause(); const v = window.__demo.view; v.enterBattle(meta); v.pushSnapshot(snap); }, { meta: h.b.fieldMeta(), snap: h.b.snapshot() });
+      await page.waitForFunction(id => window.__demo.view.debug.views.get(id)?.od === 0, {}, u.id);
+      const first = await page.evaluate(bar, u.id);
+      assert.ok(Math.abs(first.share - 0.5) < 0.02 && first.tint === COLORS.spActive, JSON.stringify(first));
+      await page.screenshot({ path: path.join(OUT, 'oxi-overdrive-first.png') });
+      h.run(sk.duration / 2);
+      await page.evaluate(({ meta, snap }) => { const v = window.__demo.view; v.enterBattle(meta); v.pushSnapshot(snap); }, { meta: h.b.fieldMeta(), snap: h.b.snapshot() });
+      await page.waitForFunction(id => window.__demo.view.debug.views.get(id)?.od === 1, {}, u.id);
+      const second = await page.evaluate(bar, u.id);
+      assert.ok(Math.abs(second.share - 0.5) < 0.02 && second.tint === COLORS.spOverdrive, JSON.stringify(second));
+      await page.screenshot({ path: path.join(OUT, 'oxi-overdrive-second.png') });
+      assert.deepEqual(problems, []);
+    } finally { await page.close(); }
+  });
+
   test('Swire coins from a real snapshot remain separate from the elemental gauge', async () => {
     const { makeBattle } = await import('../helpers/battleHarness.js');
     const h = makeBattle({ autoFinish: false, units: [{ uid: 1, chessId: 'chess_char_3_04_a', row: 10, col: 4, skillIndex: 1 }] });

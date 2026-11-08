@@ -62,7 +62,7 @@ export default {
         }),
       }),
       skill: {
-        kind: 'duration', duration: total,
+        kind: 'duration', duration: total, overdrive: true, // the two-segment bar of 过载 (snapshot.js overdriveView)
         mods: mods({ atkPct: num(bb.atk), batPct: batPct(bb.base_attack_time, chess) }),
         onStart({ unit }) { unit.mem.hornT = 0; unit.mem.hornAcc = 0; unit.mem.overload = false; },
         onTick({ battle, unit, dt }) {

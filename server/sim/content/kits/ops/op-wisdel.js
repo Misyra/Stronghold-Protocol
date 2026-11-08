@@ -260,6 +260,7 @@ export default {
           kind: 'duration',
           mods: { atkPct: num(b2.atk), batPct: batMod(b2.base_attack_time, chess) },
           targeting: { maxTargets: 3 },
+          overdrive: true, // the two-segment bar of 过载 (snapshot.js overdriveView)
           onStart({ unit }) { unit.mem.wisdelOverload = false; },
           onTick({ battle, unit, skill }) {
             if (unit.mem.wisdelOverload || skill.timeLeft > skill.duration * (1 - OVERLOAD_AT) + 1e-9) return;

@@ -762,6 +762,7 @@ export class UnitView {
     this.motes = null;            // 魔王's orbiting 「微尘」: { n, wide } | null (sync; b.snap `motes`, render/motes.js)
     this.moteRing = null;
     this.fever = null;            // [fill, on] of 丰川祥子's Fever gauge (sync; b.snap `fever`)
+    this.od = null;               // 0 / 1: a running 过载 skill in its first / second gauge (sync; b.snap `overdrive`)
     this._feverBar = null;        // { root, bg, fill } sprites of the Fever bar, built on first use
     this.layers = 0;              // hit-negating 护盾 layers (sync; b.snap `layers`: the official layer effect, vfx/talentfx.js)
     this.charges = null;          // [stored, maximum] of a charge skill (sync; b.snap `charges`: vfx/skillfx.js)
@@ -1265,6 +1266,7 @@ export class UnitView {
     this.ammo = s.ammo || null; this.wolves = s.wolves || null; this.neg = s.neg > 0 ? Math.min(1, s.neg) : 0;
     this.motes = s.motes && s.motes.n > 0 ? s.motes : null;
     this.fever = s.fever || null;
+    this.od = s.od === 0 || s.od === 1 ? s.od : null;
     this.coins = s.coins || null;
     this.energy = s.energy || null;
     this.layers = s.layers > 0 ? s.layers | 0 : 0; this.charges = s.charges || null;
@@ -2129,12 +2131,16 @@ export class UnitView {
     let sy = 0;
     if (showSp) {
       const active = !!(this.flags & UF.SKILL);
-      const k = ammo ? ammo[0] / ammo[1] : clamp(this.sp / this.spMax, 0, 1);
+      // 过载 (b.snap `overdrive`, sim snapshot.js overdriveView): the skill's fraction runs the bar down twice — the first
+      // half full → empty, then the second half again in red; the server's `od` says which gauge (the boundary is the sim's)
+      const od = active && !ammo && this.od !== null ? this.od : null;
+      const whole = ammo ? ammo[0] / ammo[1] : clamp(this.sp / this.spMax, 0, 1);
+      const k = od === null ? whole : clamp(od ? whole * 2 : whole * 2 - 1, 0, 1);
       ready = !active && k >= 0.999;
       sy = cy + bh / 2 + spH / 2 + 1.5;
       this.spBg.position.set(x0 - 1, sy); this.spBg.width = bw + 2; this.spBg.height = spH + 2;
       this.spFill.position.set(x0, sy); this.spFill.width = bw * k; this.spFill.height = spH;
-      this.spFill.tint = ammo ? COLORS.ammo : active ? COLORS.spActive : ready ? COLORS.spReady : COLORS.sp;
+      this.spFill.tint = ammo ? COLORS.ammo : od === 1 ? COLORS.spOverdrive : active ? COLORS.spActive : ready ? COLORS.spReady : COLORS.sp;
       this._spY = sy;
     }
     this._updateAmmoCuts(showSp && !!ammo, ammo, x0, sy, bw, spH);

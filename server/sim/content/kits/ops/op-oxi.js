@@ -279,7 +279,7 @@ export default {
           },
         },
         [S3]: {
-          kind: 'duration', mods: { atkPct: num(b3.atk) }, flags: { disarm: true },
+          kind: 'duration', mods: { atkPct: num(b3.atk) }, flags: { disarm: true }, overdrive: true, // the two-segment bar of 过载 (snapshot.js overdriveView)
           // the owner's decision of 2026-11-06 (header): a selectable enemy anywhere on the field opens the cast, as
           // 荒芜拉普兰德's S3 — the data's DEFAULT would wait for one in her range (PRTS 基础策略, a deliberate deviation)
           trigger: { rule: 'GDGLOW_SKILL_2' },

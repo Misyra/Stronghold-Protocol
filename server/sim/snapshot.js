@@ -163,6 +163,19 @@ export function ammoView(u) {
   return [left, Math.max(1, Math.ceil((sk.ammoMax || sk.ammo || 0) - 1e-9), left)];
 }
 
+/**
+ * `overdriveView(u)` = 1 while a running 过载 skill is in its second gauge, 0 in its first; null for any other unit. Term
+ * ba.overdrive (gamedata_const termDescriptionDict) "技能持续拥有两段计量槽，技能进行到一半时触发额外效果"; PRTS 塔露拉 S3
+ * "触发额外效果时技能持续条变为红色": the bar runs down over the first half, then again, red, over the second (the owner's word
+ * of 2026-11-05: 「第一段技能条走完之后第二条是过载状态」). A kit marks such a timed skill `overdrive: true` (塔露拉 S3, 维什戴尔
+ * S2, 号角 S3). The tuple keeps the skill's whole fraction; the client cuts it in two (render/units.js). Display only.
+ */
+export function overdriveView(u) {
+  const sk = u.skill;
+  if (u.side !== 'ally' || !sk || !sk.active || sk.kind !== 'duration' || sk.spec?.overdrive !== true || !(sk.duration > 0)) return null;
+  return sk.timeLeft <= sk.duration / 2 + 1e-9 ? 1 : 0;
+}
+
 /** 琳琅诗怀雅's skill purse: zero is a balance; no purse is null. Display only. */
 export function coinView(u) {
   const n = u.mem?.coins, max = u.skill?.bb?.sp;

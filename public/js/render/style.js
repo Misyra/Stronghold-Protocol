@@ -66,6 +66,8 @@ export const COLORS = Object.freeze({
   sp: 0x6fd3ff,
   spReady: 0xffe066,
   spActive: 0xffb347,
+  // the second gauge of a 过载 skill (b.snap `overdrive`; PRTS 塔露拉 S3 "技能持续条变为红色")
+  spOverdrive: 0xff4b3e,
   // the ammo bar's yellow cells (b.snap `ammo`) and 伺夜's 狼影 pips (b.snap `wolves`)
   ammo: 0xffd04a,
   wolf: 0xe8f0ff,

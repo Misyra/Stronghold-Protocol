@@ -412,6 +412,8 @@ export class Match {
     this.gd.disableDuckLord = this.disableDuckLord;
     /** the room's private-pool switch (experimental.disableSharedPool): every seat its own complete pool (poolGroups) */
     this.disableSharedPool = this.experimental.disableSharedPool;
+    /** AI 联防置后 (experimental.uniteHumansFirst, 移植自用户分支 rel29): 联防 helper 先在真人里挑, AI 队友与 AI 托管垫后 (unite.js helperOrder) */
+    this.uniteHumansFirst = this.experimental.uniteHumansFirst === true;
     /** 「AI 队友最后选择」 (opts.aiPicksLast, GitHub #338): humans draft before AI seats (MatchPhases.humansFirst) */
     this.aiPicksLast = !this.isSolo && opts.aiPicksLast === true;
     /** 「允许重复策略」 (opts.bandDupes, 本仓新设): the strategy draft lets several doctors hold the same strategy */

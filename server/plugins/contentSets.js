@@ -28,7 +28,10 @@
 import { ERR, DIFFICULTIES } from '../../shared/constants.js';
 import { contentHashOf, csUrlPart, isContentHash } from '../../shared/plugins/identity.js';
 import { normalizeSettings } from '../../shared/plugins/patch.js';
-import { buildContentSet, contentSetFiles } from './contentSet.js';
+import { problem } from '../../shared/plugins/dataUtils.js';
+import { buildContentSet, contentSetFiles, builtSetFromWorkerFinal } from './contentSet.js';
+import { preflightScripts } from './scriptPreflight.js';
+import { ContentSetBuildWorker, contentSetWorkerEnabled } from './contentSetWorker.js';
 
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 /** Content sets kept that no room holds (their /cs/ files stay servable a while). [ASSUMED] */
@@ -69,11 +72,16 @@ export function pluginModes(modes, vanillaData) {
 /**
  * The content sets of one server.
  * @param {{ registry: { plugin: (id: string) => any, onScan?: (fn: () => void) => (() => void) }, vanillaData: Readonly<Record<string, any>>, log?: object,
- *   maxSets?: () => number, build?: typeof buildContentSet, filesOf?: typeof contentSetFiles, maxKept?: number }} opts
- *   maxSets: the limit now (the server owner's policy may change it); build / filesOf: the C1 builder (tests inject one)
+ *   maxSets?: () => number, build?: typeof buildContentSet, filesOf?: typeof contentSetFiles, maxKept?: number,
+ *   dirs?: { publicDir: string, dataDir: string, packsDir: string, pluginsDir: string } | null }} opts
+ *   maxSets: the limit now (the server owner's policy may change it); build / filesOf: the C1 builder (tests inject one);
+ *   dirs: the plugin folders, so SP_CONTENT_BUILD_WORKER can run the walk in a dedicated worker thread (off without it
+ *   and by default; an injected build always builds here, exactly as before); workerRecheckMs: the worker registry's
+ *   folder recheck cadence (tests pin it stale to force a drift; default: the registry's own)
  */
 export function createContentSets({ registry, vanillaData, log = noopLog, maxSets = () => DEFAULT_MAX_SETS,
-  build = buildContentSet, filesOf = contentSetFiles, maxKept = MAX_KEPT }) {
+  build = buildContentSet, filesOf = contentSetFiles, maxKept = MAX_KEPT, dirs = null, workerRecheckMs,
+  workerScriptHost, workerScriptMode }) {
   /** @type {Map<string, ContentSet>} by cs16, most recently used last */
   const sets = new Map();
   /** @type {Map<string, number>} cs16 → rooms holding it */
@@ -97,6 +105,43 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
   const memo = new Map();
   /** build() calls so far (stats: a burst of requests for one set builds it once) */
   let builds = 0;
+  /** The build worker (SP_CONTENT_BUILD_WORKER + dirs; an injected build means a test harness — stay on this thread). */
+  const workerOn = () => !!dirs && build === buildContentSet && contentSetWorkerEnabled();
+  let worker = null;
+  let workerBuilds = 0;
+  let workerFallbacks = 0;
+  /**
+   * One build through the worker thread, or null to build here (drift, a lost worker, or the switch off — every
+   * fallback is the main-thread sliced build, byte for byte). A set with script plugins probes here (the main
+   * registry's preflight, as always) and only then lets the worker finish its walk.
+   * @param {({ id: string, settings?: Record<string, unknown> } | string)[]} idsForBuild
+   * @returns {Promise<{ problems: any[] } | any | null>}
+   */
+  const buildViaWorker = async (idsForBuild) => {
+    workerBuilds++;
+    try {
+      worker ??= new ContentSetBuildWorker({ dirs, log, ...(workerRecheckMs !== undefined ? { recheckMs: workerRecheckMs } : {}),
+        ...(workerScriptHost !== undefined ? { scriptHost: workerScriptHost } : {}),
+        ...(workerScriptMode !== undefined ? { scriptMode: workerScriptMode } : {}) });
+      const expect = idsForBuild.map((v) => (typeof v === 'string' ? v : v.id)).map((id) => {
+        const p = registry.plugin(id);
+        return { id, status: p?.status ?? null, contentHash: p?.content?.hash ?? null, lockHash: p?.script?.lockHash ?? null };
+      });
+      const r = await worker.build(idsForBuild, expect);
+      if (r.drift) { workerFallbacks++; log.info?.(`[plugins] build worker disagrees on ${r.drift.join(', ')} — building here`); return null; }
+      if (r.pending) {
+        const report = await preflightScripts(registry, r.pending.scripts, r.pending.hashInput);
+        if (report) { worker.discard(r.wseq); return { problems: [problem(report.code, 'scripts', report.message)] }; }
+        const fin = await worker.finalize(r.wseq);
+        return await builtSetFromWorkerFinal(registry, fin.final);
+      }
+      return await builtSetFromWorkerFinal(registry, r.final);
+    } catch (e) {
+      workerFallbacks++;
+      log.warn?.(`[plugins] content set build worker unavailable (${e?.message || e}) — building here`);
+      return null;
+    }
+  };
   /**
    * Each plugin's settings as the builder reads them (shared/plugins/patch.js normalizeSettings over its manifest's
    * declared settings — an undeclared key dropped, a bad value its default): what a set is made of, so what the memo
@@ -218,13 +263,17 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
       // never the one dropped), so what is not remembered would be one set more [ASSUMED: a held set whose plugin's
       // manifest changed on disk since — same files, same cs — is refused here rather than built to find out]
       if (full) return busy();
-      let built;
-      try {
-        builds++;
-        built = await build({ registry, ids: ids.map((id) => (norm[id] ? { id, settings: norm[id] } : id)) });
-      } catch (e) {
-        log.error?.('[plugins] content set failed to build', e);
-        return { error: ERR.INTERNAL, detail: 'the content set failed to build' };
+      builds++;
+      // SP_CONTENT_BUILD_WORKER: the walk in the worker thread; null (drift, a lost worker) or a problem reply falls
+      // back to — or short-circuits at — the main-thread build below, whose result is the same bytes either way
+      let built = workerOn() ? await buildViaWorker(ids.map((id) => (norm[id] ? { id, settings: norm[id] } : id))) : null;
+      if (!built) {
+        try {
+          built = await build({ registry, ids: ids.map((id) => (norm[id] ? { id, settings: norm[id] } : id)) });
+        } catch (e) {
+          log.error?.('[plugins] content set failed to build', e);
+          return { error: ERR.INTERNAL, detail: 'the content set failed to build' };
+        }
       }
       if (!built || !isContentHash(built.cs) || (Array.isArray(built.problems) && built.problems.length)) {
         const list = Array.isArray(built?.problems) ? built.problems : [];
@@ -256,7 +305,6 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
   return {
     resolve,
     onStale(fn) { staleListeners.add(fn); return () => staleListeners.delete(fn); },
-    close() { offScan?.(); staleListeners.clear(); },
     /** A room uses the set of `cs`: never dropped until every holder released it. @param {string} cs */
     hold(cs) { if (!isContentHash(cs)) return; const k = csUrlPart(cs); held.set(k, (held.get(k) || 0) + 1); },
     /** A room no longer uses the set of `cs`. @param {string} cs */
@@ -306,6 +354,15 @@ export function createContentSets({ registry, vanillaData, log = noopLog, maxSet
     },
     /** Content sets rooms hold now (/healthz content.sets). */
     inUse: () => held.size,
-    stats: () => ({ sets: sets.size, held: held.size, builds }),
+    stats: () => ({ sets: sets.size, held: held.size, builds, workerBuilds, workerFallbacks }),
+    /** The build worker, for tests (null when the walk has only ever run on this thread). */
+    _worker: () => worker,
+    /** The server bound (or rebound): the worker registry's trust gate follows the main one. */
+    setWorkerScriptHost: (host) => { workerScriptHost = host; worker?.setScriptHost(host); },
+    async close() {
+      offScan?.();
+      staleListeners.clear();
+      if (worker) { const w = worker; worker = null; await w.close(); }
+    },
   };
 }

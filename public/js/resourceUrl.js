@@ -1,5 +1,4 @@
 import { assetCdnUrl } from '../../shared/assetCdn.js';
-import { i18nUrl } from '../../shared/cdn.js';
 
 /** The per-file art manifest (`/assets-manifest.json?v=<tag>`, fetched from <head> so it races the
  *  module graph): once its hashes land, every CDN URL gains a per-file `?v=<hash>` query and a
@@ -22,20 +21,6 @@ export function resourceReady(timeoutMs = 3000) {
 }
 void resourceReady();
 
-/** Release paths keep Spine's relative atlas/page references in the same cache namespace. */
-/**
- * 界面语言的 JSON（/i18n/<code>.json）跟着素材 CDN 走 —— 与 xinhai 的 shared/cdn.js i18nUrl 同一个规则。
- * 只搬 /i18n/：/packs/<id>/… 由本服务的插件目录提供（源站），/data/i18n/ 由数据加载器按数据 CDN 取。
- * @param {string} url
- * @returns {string}
- */
-export function i18nUrlFor(url) {
-  const cdn = globalThis.__spAssetCdn;
-  // 只搬 /i18n/：本仓库的语言包目录 /packs/<id>/… 由插件目录在源站提供，/data/i18n/ 由数据加载器按数据 CDN 取
-  if (!cdn || !String(url).startsWith('/i18n/')) return url;
-  return i18nUrl(url, cdn.base || '', '');
-}
-
 /**
  * 游戏数据 JSON 的根路径：配了数据 CDN（SP_DATA_CDN）就走它，否则留在本站 /data/。
  * 取自 xinhai 的 asset-cdn.js / simLoader.js 默认值 —— 本仓库此前只导出了 DATA_CDN，没人消费它。
@@ -51,12 +36,13 @@ export function dataBasePath() {
  *  只是退化为旧的整树失效语义）。 */
 const codeGroupOf = (url) => /^\/(js|vendor|shared|sim)\//.exec(url)?.[1] ?? null;
 
+// /i18n/ 语句包与 data 一样落整版 release tag（服务端 expectedTag 同分支，语言包喂 runtimeHash）。
 export function resourceUrl(url, version = /^\/(?:assets|fonts|media)\//.test(url) ? globalThis.__spArtVersion :
   codeGroupOf(url) ? (globalThis.__spCodeVersion?.[codeGroupOf(url)] || globalThis.__spRuntimeVersion || globalThis.__spAssetVersion)
   : globalThis.__spAssetVersion) {
   const remote = assetCdnUrl(url, globalThis.__spAssetCdn);
   if (remote !== url) return remote;
-  if (!version || typeof url !== 'string' || !/^\/(?:assets|data|vendor|fonts|js|shared|sim|media)\//.test(url)) return url;
+  if (!version || typeof url !== 'string' || !/^\/(?:assets|data|vendor|fonts|js|shared|sim|media|i18n)\//.test(url)) return url;
   return `/_v/${version}${url}`;
 }
 

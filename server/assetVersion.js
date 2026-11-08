@@ -4,7 +4,9 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { assetCdnUrl } from '../shared/assetCdn.js';
 
-const ROOTS = /^\/(?:js|css|fonts|vendor|assets|data|shared|sim|media)\/|^\/data\.js(?:[?#]|$)/;
+// /i18n/ 版本化（2026-11-09 P1-5）：界面语言包进 /_v/<release tag>/ immutable——它随 public/ 一起走
+// runtimeHash，release tag 对它的失效恰好正确；客户端 loadUiMessages 不再对裸路径 no-cache 重验。
+const ROOTS = /^\/(?:js|css|fonts|vendor|assets|data|shared|sim|media|i18n)\/|^\/data\.js(?:[?#]|$)/;
 export const VERSION_PREFIX = '/_v/';
 /** Executable roots that carry their own content group tag: a release which does not touch a root
  *  keeps its /_v/<tag>/ URLs, so clients retain that group's immutable cache across deploys. */

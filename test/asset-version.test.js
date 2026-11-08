@@ -121,6 +121,7 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
   write('public/assets/x.atlas', 'x.png\nsize: 1,1\n');
   write('public/assets/x.png', 'texture');
   write('public/assets/audio/a.mp3', '0123456789');
+  write('public/i18n/en.json', JSON.stringify({ 开始: 'Start', note: 'not/a/path' }));
   write('public/build/assets/nearl2-Bh3kX2mQ.webp', 'hashed webp');
   write('data/assets.json', JSON.stringify({ spine: { skel: '/assets/x.skel', atlas: '/assets/x.atlas', textures: ['/assets/x.png'], anims: {} }, remote: 'https://cdn.example/x.png' }));
   const dirs = { publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'), simDir: path.join(root, 'sim') };
@@ -174,6 +175,9 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
     assert.equal(audio, artPrefix + '/media/a');
     const range = await get(audio, { headers: { Range: 'bytes=2-5' } });
     assert.equal(range.status, 206); assert.equal(await range.text(), '2345');
+    const lang = await get(prefix + '/i18n/en.json');
+    assert.match(lang.headers.get('cache-control'), /31536000, immutable/, 'the language pack rides the release tag (P1-5 wiring)');
+    assert.deepEqual(await lang.json(), { 开始: 'Start', note: 'not/a/path' }, 'i18n strings pass through the versioned transform untouched');
     for (const denied of ['/sim/nodeData.js', '/assets/.hidden', '/shared/../sim/nodeData.js']) assert.equal((await get(prefix + denied)).status, 404);
     assert.equal((await get('/js/main.js?v=made-up')).headers.get('cache-control'), 'no-cache');
     for (const url of ['/icons/app.svg', '/manifest.json']) {

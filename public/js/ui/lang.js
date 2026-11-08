@@ -24,6 +24,7 @@ import { DEV_BUILD } from '../../../shared/constants.js';
 import { enemyDifficultyText } from '../../../shared/enemyDifficulty.js';
 import { loadPref, savePref } from '../store.js';
 import { data } from '../data.js';
+import { resourceUrl } from '../resourceUrl.js';
 import { updateRotateHintPwaI18n } from './device.js';
 import { html } from './components.js';
 
@@ -81,15 +82,20 @@ export function loadUiMessages(lang, doFetch = defaultFetch) {
   if (lang === DEFAULT_LANG) return Promise.resolve(true);
   if (uiLoads.has(lang)) return uiLoads.get(lang);
   const url = langInfo(lang)?.ui || `/i18n/${lang}.json`;
+  // 版本化 URL（/_v/<release tag>/i18n/…，resourceUrl.js）immutable 缓存、零重验；插件 /packs/ 等未
+  // 版本化路径保持 no-cache（资源URL 恒等时 cache 保持原语义）。
+  const pinned = resourceUrl(url);
+  const cache = pinned === url ? 'no-cache' : 'default';
   const p = (async () => {
     try {
-      const res = await doFetch(url, { cache: 'no-cache' });
+      const res = await doFetch(pinned, { cache });
       if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : '???'}`);
       addMessages(lang, await res.json());
       const overlay = langInfo(lang)?.uiOverlay;
       if (overlay) {
+        const overlayPinned = resourceUrl(overlay);
         try {
-          const extra = await doFetch(overlay, { cache: 'no-cache' });
+          const extra = await doFetch(overlayPinned, { cache: overlayPinned === overlay ? 'no-cache' : 'default' });
           if (!extra?.ok) throw new Error('language overlay unavailable');
           // [ASSUMED] Invalid overlay strings retain the built-in translation, including placeholder failures.
           const strings = Object.fromEntries(Object.entries(await extra.json()).filter(([k, v]) =>

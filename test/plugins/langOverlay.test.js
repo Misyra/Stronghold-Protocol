@@ -47,3 +47,23 @@ test('one installed lang plugin overlays built-in UI and data, missing/invalid k
   assert.equal(data.getRaw('chess').a.name, '甲');
   setLang('zh'); setMessages('qzz', {});
 });
+
+test('loadUiMessages pins the language pack URL: immutable /_v/ when versioned, pack paths keep no-cache', async () => {
+  const previous = globalThis.__spAssetVersion;
+  const fetched = [];
+  try {
+    globalThis.__spAssetVersion = '1234567890abcdef';
+    const ok = await loadUiMessages('zz-pin', async (url, init) => {
+      fetched.push([url, init?.cache]);
+      return { ok: true, json: async () => ({ 开始: 'Pinned' }) };
+    });
+    assert.equal(ok, true);
+    // 版本化语言包：immutable URL + 缓存语义 default，不再对裸路径 no-cache 重验（P1-5 接线）
+    assert.deepEqual(fetched, [['/_v/1234567890abcdef/i18n/zz-pin.json', 'default']]);
+    setLang('zz-pin');
+    assert.equal(t('开始'), 'Pinned');
+  } finally {
+    if (previous === undefined) delete globalThis.__spAssetVersion; else globalThis.__spAssetVersion = previous;
+    setLang('zh'); setMessages('zz-pin', {});
+  }
+});

@@ -253,7 +253,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       const match = /^\/_v\/([a-f0-9]{16})(\/.*)$/.exec(decoded);
       // `/data.js` is the one versioned URL that is not under a directory: the importmap names it (assetVersion
       // rewrites the `/data.js` entry to `/_v/<runtimeTag>/data.js`), and the shim below answers it.
-      if (!match || !/^\/(?:(?:js|css|fonts|vendor|assets|data|shared|sim|media)\/|data\.js$)/.test(match[2])) {
+      if (!match || !/^\/(?:(?:js|css|fonts|vendor|assets|data|shared|sim|media|i18n)\/|data\.js$)/.test(match[2])) {
         sendError(req, res, 404, '页面不存在 · Not found');
         return;
       }

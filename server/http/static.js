@@ -616,7 +616,7 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
           const identity = `${absPath}:${stat.mtimeMs}:${stat.size}:${stat.ctimeMs}:${stat.ino}`;
           let pending = cdnPending.get(identity);
           if (!pending) {
-            pending = manifestEncoder.request({ file: absPath, cdn }).then((bytes) => {
+            pending = manifestEncoder.request({ file: absPath, cdn, hashes: assetsManifest?.hashes || null }).then((bytes) => {
               const body = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
               return { body, hash: createHash('sha256').update(body).digest('hex') };
             })

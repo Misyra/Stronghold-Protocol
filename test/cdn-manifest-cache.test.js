@@ -11,10 +11,10 @@ test('rewritten versioned JSON retains immutable caching, encoding validators an
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-cdn-cache-'));
   for (const name of ['data', 'public', 'shared', 'sim']) fs.mkdirSync(path.join(dir, name));
   const file = path.join(dir, 'data/assets.json');
-  fs.writeFileSync(file, JSON.stringify({ ui: { icon: '/assets/a.png', padding: 'x'.repeat(12000) } }));
+  fs.writeFileSync(file, JSON.stringify({ ui: { icon: '/assets/a.png', cue: '/media/sfx/x.mp3', padding: 'x'.repeat(12000) } }));
   const handler = createStaticHandler({ publicDir: path.join(dir, 'public'), dataDir: path.join(dir, 'data'),
     sharedDir: path.join(dir, 'shared'), simDir: path.join(dir, 'sim'), cdnBase: 'https://cdn.example',
-    assetsManifest: { tag: '0123456789abcdef', hashes: { '/assets/a.png': 'aaaaaaaaaaaaaaaa' } } });
+    assetsManifest: { tag: '0123456789abcdef', hashes: { '/assets/a.png': 'aaaaaaaaaaaaaaaa', '/media/sfx/x.mp3': 'bbbbbbbbbbbbbbbb' } } });
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
     handler(req, res, url.pathname, url.search.slice(1)).catch((error) => { res.destroy(error); });
@@ -40,7 +40,8 @@ test('rewritten versioned JSON retains immutable caching, encoding validators an
     const gz = await request(url, { 'Accept-Encoding': 'gzip' });
     assert.equal(gz.status, 200); assert.match(gz.headers['cache-control'], /immutable/);
     assert.equal(gz.headers.vary, 'Accept-Encoding'); assert.equal(gz.headers['content-encoding'], 'gzip');
-    assert.equal(JSON.parse(gunzipSync(gz.body)).ui.icon, 'https://cdn.example/assets/a.png');
+    assert.equal(JSON.parse(gunzipSync(gz.body)).ui.icon, 'https://cdn.example/assets/a.png?v=aaaaaaaaaaaaaaaa');
+    assert.equal(JSON.parse(gunzipSync(gz.body)).ui.cue, 'https://cdn.example/media/sfx/x.mp3?v=bbbbbbbbbbbbbbbb');
     const count = handler.cacheStats().gzipEntries;
     assert.deepEqual((await request(url, { 'Accept-Encoding': 'gzip' })).body, gz.body);
     assert.equal(handler.cacheStats().gzipEntries, count);
@@ -55,6 +56,7 @@ test('rewritten versioned JSON retains immutable caching, encoding validators an
     assert.equal((await request(url)).status, 503, 'old version cannot cache changed bytes');
     assert.equal((await request(queryUrl)).status, 503, 'matching query tag cannot cache changed bytes either');
     const fresh = await request('/data/assets.json');
+    // 清单未列的文件保持裸前缀（资产端本就没有它的对象，无可冻结的旧字节）
     assert.equal(JSON.parse(fresh.body).ui.icon, 'https://cdn.example/assets/b.png');
     assert.notEqual(fresh.headers.etag, plain.headers.etag);
   } finally {

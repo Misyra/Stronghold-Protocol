@@ -869,7 +869,9 @@ export class AudioManager {
           // One deadline for headers and body (like fetchChecked): a stalled connection must not hold the track
           // switch — and the pending promise every later use joins — forever; the timeout is a transient failure
           // (BUFFER_RETRY_MS: a later use tries again).
-          const media = mediaUrl(url);
+          // 清单原文先过 resourceUrl：未配 CDN 时 /assets|media/ 音频进 /_v/<artTag>/ immutable（不再每次
+          // 会话对源站裸路径重验）；配了 CDN 时清单已被服务端逐文件 ?v= 钉版，resourceUrl 对已远址恒等。
+          const media = mediaUrl(resourceUrl(url));
           const attempt = async (u) => {
             const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
             let timer = null;

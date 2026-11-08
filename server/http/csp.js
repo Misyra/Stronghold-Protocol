@@ -26,7 +26,7 @@ function addInlineHashes(hashes, html) {
 }
 
 /** The page policy: every response carries it, and it may only allow scripts this server writes itself. */
-export function siteCsp(publicDir, transformPage = null, cdnBase = '', resourcePackRoutes = []) {
+export function siteCsp(publicDir, transformPage = null, cdnBase = '', resourcePackRoutes = [], codeCdnBase = '') {
   const hashes = new Set();
   for (const rel of CANDIDATES) {
     let html;
@@ -38,9 +38,15 @@ export function siteCsp(publicDir, transformPage = null, cdnBase = '', resourceP
   }
   // Art served from `assetsCdn` (SP_ASSETS_CDN) arrives from a second origin, and CSP does not care that it is ours:
   // every directive the pictures, audio and fonts land in has to name it, and connect-src covers the preload's own
-  // fetches (合并自用户分支). `script-src` never gains it — a CDN may ship art, never code.
+  // fetches (合并自用户分支). `script-src` never gains it — an art CDN may ship art, never code.
   let art = '';
   if (cdnBase) { try { art = ` ${new URL(cdnBase).origin}`; } catch { art = ''; } }
+  // The code CDN (SP_CODE_CDN) is the one second origin allowed to ship scripts: the ModelScope Studio's
+  // append-only copy of the four code roots (tools/studio-publish.mjs, SHA-256-verified at publish). It
+  // enters `script-src` only — modules are fetched as scripts, and nothing else (connect-src, img-src, …)
+  // may reach for code. Without SP_CODE_CDN the page's scripts stay entirely on 'self'.
+  let code = '';
+  if (codeCdnBase) { try { code = ` ${new URL(codeCdnBase).origin}`; } catch { code = ''; } }
   // Pack mirrors are download endpoints only (合并自用户分支). ModelScope redirects public ZIPs
   // to cdn-lfs-cn-*.modelscope.cn; scripts and workers remain on this site.
   const packOrigins = new Set();
@@ -62,5 +68,5 @@ export function siteCsp(publicDir, transformPage = null, cdnBase = '', resourceP
   // `connect-src` names `data:` because Pixi probes `isImageBitmapSupported` by fetching a 1×1 data: PNG in a
   // Worker; without it the probe throws, the Spine texture loader takes the failure path, and the battle units
   // fall back to their tokens (2026-10-19 console: "Fetch API cannot load data:image/png;base64,…").
-  return `default-src 'self'; script-src 'self'${hashes.size ? ' ' + [...hashes].join(' ') : ''}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com${art}; font-src 'self' https://fonts.gstatic.com${art}; img-src 'self' data: blob:${art}; media-src 'self' blob:${art}; connect-src 'self' blob: data:${art}${packConnect}; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'`;
+  return `default-src 'self'; script-src 'self'${code}${hashes.size ? ' ' + [...hashes].join(' ') : ''}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com${art}; font-src 'self' https://fonts.gstatic.com${art}; img-src 'self' data: blob:${art}; media-src 'self' blob:${art}; connect-src 'self' blob: data:${art}${packConnect}; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'`;
 }

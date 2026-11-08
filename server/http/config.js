@@ -296,6 +296,26 @@ export function parseAssetCdn(v) {
   return s.replace(/\/+$/, '');
 }
 
+/**
+ * The browser code tree's CDN base (SP_CODE_CDN / the `codeCdn` option, PLAN-2026-11-09 Task-3): the
+ * ModelScope Studio resolve base the four code roots are published under by tools/studio-publish.mjs.
+ * Validated like shared/assetCdn.js assetCdnSettings — an http(s) base URL without credentials, query or
+ * fragment; the trailing slashes come off. An invalid value refuses to boot: a page half on the CDN and
+ * half on the origin is worse than no CDN.
+ * @param {unknown} v
+ * @returns {string}
+ */
+export function parseCodeCdn(v) {
+  const value = String(v ?? '').trim();
+  if (!value) return '';
+  let url;
+  try { url = new URL(value); } catch { throw new TypeError('SP_CODE_CDN must be an http(s) URL'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new TypeError('SP_CODE_CDN must be an http(s) base URL without credentials, query or fragment');
+  }
+  return url.href.replace(/\/+$/, '');
+}
+
 /** TRUST_PROXY env → net.js trustProxy ('auto' unless explicitly on/off). @param {string | undefined} v */
 export function parseTrustProxy(v) {
   const s = String(v ?? '').trim().toLowerCase();

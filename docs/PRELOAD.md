@@ -250,7 +250,21 @@ b21e8516 之前上传的对象带旧 `max-age=3600`，对象元数据**只跟 PU
 `resources:packs`/发布前，先确认 `.assets-manifest.json` 与盘上字节一致（包构建器同样按盘上字节重哈希，
 `build-resource-packs.mjs:32` 注释：旧清单不得授权过期包字节）。
 
-## 6. 当前状态与缺口（截至 2026-11-05）
+## 6. 当前状态与缺口（截至 2026-11-09）
+
+### 6.0 资源线盘点后的现状（2026-11-09，PLAN-2026-11-09）
+
+- **预载包线暂停，数据集已清空待重建。** 服务全下线后维护者拍板「全清」：ModelScope 数据集
+  `Misyra/Arknight_Assets` 的 149 个 ZIP（2,019.9 MiB）与远端索引 resource-packs.json 已全部删除
+  （git commit `d281a60`；每包 sha256 与字节留档在仓库根 `MODELSCOPE-CLEANUP-2026-11-09.json`）。
+  复活时按届时拍板的粒度重新建包建索引——不在这份 149 包索引上追加。本节以下小节与 §6.1 的
+  三份索引对照均为删除前的 2026-11-05 实测快照，仅作历史口径保留。
+- **代码线（新增）：ModelScope 创空间已上线。** 浏览器代码（js / vendor / shared / sim）以内容寻址
+  单树 `code/<树tag>/<root>/…` 发布到创空间 `Misyra/arknight-proto`（`tools/studio-publish.mjs`，
+  append-only；tag 公式 import 自 `server/assetVersion.js`，与服务端 importmap 逐字节一致）。
+  配 `SP_CODE_CDN` 后页面代码走创空间，源站 `/_v/` 持同字节作回退；与预载包线互相独立。
+- **R2 逐文件线保留为美术兜底。** 两个 945MB 老整包（`assets/pack/` 与 `pack/`，同一 ETag 存两遍、
+  0.3.3 起零引用）已于 2026-11-09 删除（桶 4.54→2.65GB）；逐文件对象与 `.assets-manifest.json` 不动。
 
 以下来自本仓库可直接核对的证据（git 记录、清单内容、磁盘状态）；§6.1 的两站点与数据集数字为 2026-11-05 线上实测：
 
@@ -275,7 +289,7 @@ b21e8516 之前上传的对象带旧 `max-age=3600`，对象元数据**只跟 PU
   `python tools/modelscope-packs.py`（dry-run）与 `node tools/r2-s3-upload.mjs --dry-run --packs` 得到清单）。
 - **Cloudflare `v=` 缓存规则未建**（§5.2 标注的待办）。
 
-### 6.1 三份索引不是同一份（2026-11-05 线上实测）
+### 6.1 三份索引不是同一份（2026-11-05 线上实测；存档口径——所列 ZIP 已于 2026-11-09 全部删除，见 §6.0）
 
 排查预载包数量时最容易混的一点：**「数据集里有多少 ZIP」≠「索引文件里有多少条」≠「线上用哪份索引」**。
 三者是不同对象，数字对不上是正常的，口径如下（两个站点 `GET /data/resource-packs.json` 与数据集 git 树实测）：

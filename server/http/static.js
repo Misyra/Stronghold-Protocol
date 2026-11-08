@@ -135,7 +135,7 @@ async function settledIndex(registry, body) {
  *   packs: the server pack registry; runtime CDN and Vite behavior remain branch-owned.
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, rawPath: string, query: string) => Promise<void>}
  */
-export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'), pluginsDir = path.join(path.dirname(path.resolve(packsDir)), 'plugins'), packs = null, content = null, visual = null, contents = null, log = noopLog, cdnBase = '', dataCdnBase = '', resourcePackRoutes = [], assetsManifest = null, clientBuild = clientModeFromEnv(), versions = null }) {
+export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'), pluginsDir = path.join(path.dirname(path.resolve(packsDir)), 'plugins'), packs = null, content = null, visual = null, contents = null, log = noopLog, cdnBase = '', dataCdnBase = '', codeCdnBase = '', resourcePackRoutes = [], assetsManifest = null, clientBuild = clientModeFromEnv(), versions = null }) {
   const registry = packs || createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log: /** @type {any} */ (log) });
   const cdn = typeof cdnBase === 'string' ? cdnBase : '';
   const builtIndex = path.join(publicDir, 'build', 'index.html');
@@ -200,9 +200,10 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   /** 每文件指纹清单的响应体（一次构建，按 tag 重建时随进程重启） */
   let manifestBody = null;
 
-  // 本仓库追加：发布版本层（server/assetVersion.js）—— 代码走 /_v/<runtimeTag>/（immutable），
-  // 素材走 CDN 的每文件 ?v=<哈希>；两者都由下面同一个 release 决定，所以一次发布只 re-bust 变了的文件。
-  const release = createAssetVersion(mounts, DATA_SHIM_JS, { base: cdn, version: '', manifest: assetsManifest?.tag && cdn ? `/assets-manifest.json?v=${assetsManifest.tag}` : '', hashes: assetsManifest?.hashes || null });
+  // 本仓库追加：发布版本层（server/assetVersion.js）—— 代码走 /_v/<组tag>/（immutable，未配代码 CDN）或
+  // 创空间的 code/<树tag>/（SP_CODE_CDN → codeCdnBase），素材走 CDN 的每文件 ?v=<哈希>；
+  // 两者都由下面同一个 release 决定，所以一次发布只 re-bust 变了的文件。
+  const release = createAssetVersion(mounts, DATA_SHIM_JS, { base: cdn, version: '', manifest: assetsManifest?.tag && cdn ? `/assets-manifest.json?v=${assetsManifest.tag}` : '', hashes: assetsManifest?.hashes || null }, { codeBase: codeCdnBase });
   /**
    * 哪些响应要就地改写：HTML 与 CSS 一律（页面要拿到版本前缀与 __sp* 全局，CSS 要改写 url()），
    * JSON 只在版本化地址下改写（/_v/<tag>/data/assets.json）—— 普通 /data/*.json 必须原样送出，
@@ -653,6 +654,9 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   serveStatic.version = release.tag;
   serveStatic.artVersion = release.artTag;
   serveStatic.runtimeVersion = release.runtimeTag;
+  // 单树布局的树 tag（server/assetVersion.js codeContentTags）：SP_CODE_CDN 配置时 importmap 指向
+  // <base>/code/<这个 tag>/…，运维用它核对发布物（tools/studio-publish.mjs 的 plan/verify 输出同值）。
+  serveStatic.codeTreeVersion = release.treeTag;
   serveStatic.close = () => manifestEncoder.close();
   serveStatic.cacheStats = () => ({ gzipBytes: gzipCache.total, gzipEntries: gzipCache.map.size, gzipLimitBytes: gzipCache.maxTotal, gzipInflight: gzipCache.inflight.size,
     transformBytes: transformCache.total, transformEntries: transformCache.map.size, transformLimitBytes: transformCache.maxTotal, transformInflight: transformCache.inflight.size,

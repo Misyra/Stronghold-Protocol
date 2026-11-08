@@ -55,18 +55,26 @@ that is why its imports are constrained. Every file is mapped in [docs/ARCHITECT
   their own: a pack missing from the R2 bucket, from `.assets-manifest.json` or from an asset-coverage report is not a
   missing asset — leave it alone. Art means `public/{assets,fonts,media}` and its manifest
   ([docs/ASSETS.md](docs/ASSETS.md)「ZIP resource packs」).
-- **Two delivery paths, fixed roles.** Per-file requests go to the R2 bucket over its S3-compatible API
-  (`tools/r2-s3-upload.mjs`, SigV4, `.assets-manifest.json` as the resume state): that is a preload that fell back, and
-  everything a match asks for outside the preloaded set. Preload itself prefers the ModelScope dataset
-  `Misyra/Arknight_Assets` through the category ZIPs: the client uses those packs first (a relaxed coverage
-  gate plus a bigger retry budget on the ModelScope route) and R2 covers only the remaining gap. Build
-  new packs for uncovered files with `npm run resources:packs -- --scopes gap` (append-only,
-  `tools/assets/gapPacks.mjs`); never rebuild the whole index with `--scopes all` on a live dataset.
-  Do not make packs the primary R2 path, and do not serve per-file art from ModelScope.
-- **ModelScope is append-only and incomplete.** The dataset predates the current art and does not hold all of it:
+- **Three delivery paths, fixed roles.** Browser code (js / vendor / shared / sim) publishes append-only to the
+  ModelScope Studio (创空间, `Misyra/arknight-proto`) as content-addressed single trees `code/<树tag>/<root>/…`,
+  maintained by `tools/studio-publish.mjs` — tags come from the exported formula in `server/assetVersion.js`
+  (publish from the commit you deploy, or the importmap names a tree that was never pushed); a published tag dir is
+  never rewritten or deleted, and the first publish's scattered per-group dirs stay resolvable beside the new layout.
+  `SP_CODE_CDN` points the page — entry script, rewritten imports, importmap roots — at that copy while the origin
+  keeps serving the same bytes under `/_v/` as the fallback. Per-file art requests go to the R2 bucket over its
+  S3-compatible API (`tools/r2-s3-upload.mjs`, SigV4, `.assets-manifest.json` as the resume state): that is a preload
+  that fell back, and everything a match asks for outside the preloaded set. Preload prefers the ModelScope dataset
+  `Misyra/Arknight_Assets` through the category ZIPs — that line is paused: the dataset was emptied on 2026-11-09
+  pending a rebuild, so until it returns R2 is the only art path. (When it returns: the client uses those packs first
+  — a relaxed coverage gate plus a bigger retry budget on the ModelScope route — and R2 covers only the remaining
+  gap; build gap packs with `npm run resources:packs -- --scopes gap` (append-only, `tools/assets/gapPacks.mjs`);
+  never rebuild the whole index with `--scopes all` on a live dataset.) Do not make packs the primary R2 path, and
+  do not serve per-file art from ModelScope.
+- **The ModelScope dataset is append-only and incomplete.** It predates the current art and does not hold all of it:
   publish only the packs built from newly added files, append their entries to `data/resource-packs.json`, and never
   rewrite, renumber, re-pack or delete an existing pack. Every ZIP an older index names must keep resolving — a client
-  must never 404 or fail because of a publish. Adding is the only safe operation there.
+  must never 404 or fail because of a publish. Adding is the only safe operation there. (The Studio's code tree in
+  the bullet above carries the same append-only discipline.)
 - **Interface strings** go through `t('…')`, with entries in every pack under `public/i18n/`
   (`node tools/i18n.mjs check --all --strict`). Developer logs are exempt (`// i18n-ignore`).
 - **The browser client is native ESM.** `public/js/` loads with no bundler and no build step: no Node APIs, no

@@ -48,7 +48,7 @@ import { loadDataAsync, preloadData, simWorkerData } from './data.js';
 import { getBotStrategy, getBotStrategySeats } from './match/botStrategies.js';
 import { battlePoolDefault } from './match/match/clientCombat.js';
 import { noteLlmIgnored, releaseIgnoresExternalAi, validateExternalConfig } from './match/llmGate.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, parseAssetCdn, assetIndexOptionsFrom, versionsFrom, versionPrewarmFrom, parseRoomCode, announcementOptionsFrom } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, parseAssetCdn, parseCodeCdn, assetIndexOptionsFrom, versionsFrom, versionPrewarmFrom, parseRoomCode, announcementOptionsFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { resolveWsCompression } from './wsCompression.js';
 import { siteCsp } from './http/csp.js';
@@ -373,11 +373,16 @@ export async function startServer(opts = {}) {
   }
   const cdn = assetCdnSettings(cdnBase, cdnVersion);
   if (assetsManifest) log.info(`assets CDN ${cdnBase} manifest ${assetsManifest.tag} (${Object.keys(assetsManifest.hashes).length} files, per-file ?v= busting)`);
+  // 创空间代码发布点（PLAN-2026-11-09 Task-3）：SP_CODE_CDN 指向 tools/studio-publish.mjs 发布的
+  // ModelScope Studio resolve base —— 配了之后页面代码（入口 script、相对 import 改写、importmap 根映射）
+  // 指向 <base>/code/<树tag>/…，源站继续持同字节（/_v/<组tag>/）作回退；未配置时全部留在源站，行为不变。
+  const codeCdn = parseCodeCdn(opts.codeCdn ?? process.env.SP_CODE_CDN);
   const resourcePackRoutes = parseResourcePackRoutes(opts.resourcePackRoutes ?? process.env.SP_RESOURCE_PACK_ROUTES ?? DEFAULT_RESOURCE_PACK_ROUTES);
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, visual, contents, versions,
-    cdnBase: parseAssetCdn(cdn.base || cdnBase), dataCdnBase: parseAssetCdn(opts.dataCdn ?? process.env.SP_DATA_CDN),
+    cdnBase: parseAssetCdn(cdn.base || cdnBase), dataCdnBase: parseAssetCdn(opts.dataCdn ?? process.env.SP_DATA_CDN), codeCdnBase: codeCdn,
     resourcePackRoutes,
     assetsManifest });
+  if (codeCdn) log.info(`[code] code CDN ${codeCdn} (tree ${serveStatic.codeTreeVersion})`);
   // the plugin studio (DESIGN §32.9): its page and API for this machine and the local network; it watches plugins/ only
   // once it is used (hot reload), and rooms whose host is the author or alone follow a plugin's changes by themselves
   const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log, fetch: opts.fetch });
@@ -396,7 +401,7 @@ export async function startServer(opts = {}) {
   // 只读性能采样器 (server/healthMetrics.js, 移植自 Stardust fork): 主线程 CPU/ELU/内存/事件循环延迟的 10 s 缓存,
   // 只随 ?traffic=1 进 /healthz 的 `performance` 块 (routes.js 的回环/私网门控);不与 Worker/对局进程通信。
   let healthMetrics = null;
-  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic, chatLog, persister, store, getHealthMetrics: () => healthMetrics }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime, gate,
+  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir, serveStatic.transformPage, cdn.base, resourcePackRoutes, codeCdn), health: { startedAt, network, registry, lobby, content, traffic, assetIndex, views, trusted:trustedRuntime?.health, versions, versionHosts, serveStatic, chatLog, persister, store, getHealthMetrics: () => healthMetrics }, log, trustProxy: network.opts.trustProxy, studio, trustedRuntime, gate,
     readAnnouncement, announcementSource: announcementOptions.source }));
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log, traffic, gate, trustProxy: network.opts.trustProxy, wsCompression });

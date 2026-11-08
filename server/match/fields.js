@@ -10,6 +10,9 @@
 //   * a solo pause (Match.paused, g.pause) skips the intervals: the field clock stands still (HeadlessPacer too).
 // Every SNAP_EVERY (3) ticks of a field its events are drained; watchers of that field get `b.ev` then `b.snap`, both
 // carrying the field's game time `gt` (`emit: false` skips the streaming: server-run fields under client-side combat).
+// SP_FRAME_ECONOMY (server/match/frameEconomy.js) trims the stream: snapshots every 6 ticks (20 Hz → 10 Hz), one
+// stringify per emit shared by every watcher through the encoded channel, and a live field's byte-identical b.snap
+// (content, gt excluded) is skipped — the client already holds that state. Off (default): exactly the old stream.
 // Per-field isolation: an exception from step() force-ends that field as a timeout (and, if even that throws, the
 // field is closed with a synthetic result). A hard cap (HARD_CAP_SECONDS of game time) force-ends anything left.
 // Results that did not come from a finished battle carry `synthetic: true` (the match never charges LP for them).
@@ -33,6 +36,7 @@
 //   syntheticResult(players, progress)     stand-in when a boss field's client never reported
 import { TICK, SNAPSHOT_EVERY } from '../sim/constants.js';
 import { layerGainRoom } from '../../shared/constants.js';
+import { FRAME_ECONOMY_ON, SNAP_EVERY_ECONOMY } from './frameEconomy.js';
 import { uniteLeft } from '../sim/spec.js';
 import { diyTokenOwner, diyRecordOf } from '../../shared/diy.js';
 import { requiresTraitLayerAuthority } from './operatorTraits.js';
@@ -42,6 +46,8 @@ export const INTERVAL_MS = 1000 / 30;
 export const GAME_SPEED = 2;
 export const HARD_CAP_SECONDS = 3700;
 const SNAP_EVERY = Number.isInteger(SNAPSHOT_EVERY) && SNAPSHOT_EVERY > 0 ? SNAPSHOT_EVERY : 3;
+/** 快照/事件发射节奏:SP_FRAME_ECONOMY 开启时减半(20 Hz → 10 Hz;frameEconomy.js F3)。 */
+const snapEvery = () => (FRAME_ECONOMY_ON ? SNAP_EVERY_ECONOMY : SNAP_EVERY);
 
 /** Catch-up cap per pacing interval: 8 ticks at the normal 2× speed, proportionally more when sped up. */
 export function maxTicksPerInterval(speed) {
@@ -108,6 +114,9 @@ export class FieldRunner {
     this.done = false;
     this.stopped = false;
     this.crashes = 0;
+    // frame economy (SP_FRAME_ECONOMY): the emit cadence is fixed per phase — a mid-phase switch flip would
+    // otherwise mix 3-tick and 6-tick boundaries within one battle
+    this.snapEvery = snapEvery();
   }
 
   /** Game seconds elapsed on the master clock (all fields step in lockstep). */
@@ -171,7 +180,7 @@ export class FieldRunner {
         this._forceField(f, 'timeout');
       }
       if (b.finished) { f.live = false; this.m.markPublic(); }
-      if (this.ticks % SNAP_EVERY === 0 || !f.live) this._emit(f);
+      if (this.ticks % this.snapEvery === 0 || !f.live) this._emit(f);
     }
     if (this.onTick) {
       try { this.onTick(this); } catch (e) { this.m.reportError('field onTick', e); }
@@ -207,14 +216,35 @@ export class FieldRunner {
     if (!this.emit) return;
     const watchers = this.m.watchersOf(f.fieldId);
     if (!watchers.length) return;
-    let snapMsg = null;
-    try { snapMsg = snapFrame(f.fieldId, f.battle.snapshot()); } catch (e) { this.m.reportError(`field ${f.fieldId} snapshot`, e); }
+    const econ = FRAME_ECONOMY_ON;
+    let snapMsg;
+    let snapJson = null;
+    try {
+      snapMsg = snapFrame(f.fieldId, f.battle.snapshot());
+      if (econ) {
+        // frame economy F1: one stringify per emit — every watcher's send reuses these bytes through the
+        // encoded channel (server/lobby.js matchSend) instead of encoding the same frame once per recipient.
+        // The bytes must be exactly encode(msg): they are stringify of this very object, taken while the
+        // battle state it borrowed is still current.
+        snapJson = JSON.stringify(snapMsg);
+        // frame economy F2: skip a live field's b.snap whose content is byte-identical to the last one
+        // sent (everything before the trailing ,"gt":… — snapFrame puts gt last, and no payload string can
+        // contain an unescaped `,"gt":`). The client already holds this exact state; the events below still
+        // carry their own gt. A finished field's terminal frame always goes out. `f._lastSnapPrefix` lives
+        // on the field record, fresh with every combat phase.
+        const i = snapJson.lastIndexOf(',"gt":');
+        const prefix = i >= 0 ? snapJson.slice(0, i) : snapJson;
+        if (f.live && prefix === f._lastSnapPrefix) snapMsg = snapJson = null;
+        else f._lastSnapPrefix = prefix;
+      }
+    } catch (e) { this.m.reportError(`field ${f.fieldId} snapshot`, e); snapMsg = null; snapJson = null; }
     const time = Number(f.battle.time);
     const gt = snapMsg ? snapMsg.gt : Number.isFinite(time) ? time : 0;
     const evMsg = ev.length ? { t: 'b.ev', fieldId: f.fieldId, gt, ev } : null;
+    const evJson = evMsg && econ ? JSON.stringify(evMsg) : null;
     for (const pid of watchers) {
-      if (evMsg) this.m.sendTo(pid, evMsg);
-      if (snapMsg) this.m.sendTo(pid, snapMsg);
+      if (evMsg) this.m.sendTo(pid, evMsg, evJson);
+      if (snapMsg) this.m.sendTo(pid, snapMsg, snapJson);
     }
   }
 

@@ -252,6 +252,33 @@ export function duckLordExperimental(on, current = null) {
   return rest;
 }
 
+/**
+ * AI 联防置后 (room.setExperimental, 移植自用户分支 rel29): the co-op room's unite rule — 联防 helper 先在真人博士中按
+ * 原有顺序挑选，AI 队友与 AI 托管的席位排在所有真人之后。The host's switch in a private room; a room the queue
+ * allocated keeps its rules (capacityOption's rule).
+ * @param {any} room room.state payload
+ * @param {any} myId
+ * @returns {{ on: boolean, editable: boolean } | null}
+ */
+export function uniteHumansOption(room, myId) {
+  if (!room || room.mode !== 'coop' || room.source === 'matchmaking') return null;
+  return { on: room.experimental?.uniteHumansFirst === true, editable: room.hostId != null && room.hostId === myId && !room.inMatch };
+}
+
+/**
+ * The option set for toggling AI 联防置后 (uniteHumansOption's sender): 扩展同盟人数's set travels unchanged, and an
+ * ordinary room's payload keeps its shape without the key.
+ * @param {boolean} on @param {any} [current] room.state experimental
+ * @returns {{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean,
+ *   uniteHumansFirst?: boolean }}
+ */
+export function uniteHumansExperimental(on, current = null) {
+  const base = capacityExperimental(roomCapacity('coop', current), current);
+  if (on === true) return { ...base, uniteHumansFirst: true };
+  const { uniteHumansFirst: _dropped, ...rest } = base;
+  return rest;
+}
+
 /** Spectator handover is available only in original default-version co-op rooms, with a host opt-in. */
 export function aiTakeoverOption(room, myId) {
   if (!room || room.mode === 'solo' || roomVersion(room) !== DEFAULT_VERSION || room.content?.vanilla === false) return null;
@@ -541,6 +568,21 @@ function DuckLordToggle({ option, busy, onToggle }) {
   </div>`;
 }
 
+/** The 「AI 联防置后」 switch (co-op, 移植自用户分支 rel29): the host toggles it, the others read it. */
+function UniteHumansToggle({ option, busy, onToggle }) {
+  if (!option) return null;
+  return html`<div class="ailast">
+    <${Tooltip} text=${t('联防先按原有排序从真人博士中挑选，AI 队友和 AI 托管中的博士排在所有真人之后。')}>
+      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-unite-humans"
+          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
+          onClick=${() => option.editable && onToggle(!option.on)}>
+        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('AI 联防置后')}
+      </button>
+    <//>
+    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
+  </div>`;
+}
+
 function AiTakeoverToggle({ option, busy, onToggle }) {
   if (!option) return null;
   return html`<div class="ailast">
@@ -589,7 +631,8 @@ function ConsoleToggle({ option, busy, onToggle, matching }) {
  * and the 「AI 队友最后选择」 switch. Closes on a click outside it or Esc.
  */
 function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, room, isHost, busy, onAiLast, dupesOption = null, onBandDupes,
-  capOption = null, onCapacity, duckOption = null, onDuckLord, onSoloUnlimited, onConsole, consoleOpt, onDifficulty, onClose, version = null }) {
+  capOption = null, onCapacity, duckOption = null, onDuckLord, uniteOption = null, onUniteHumans, onSoloUnlimited, onConsole, consoleOpt,
+  onDifficulty, onClose, version = null }) {
   const info = difficultyInfo(room.mode, room.difficulty);
   const title = soloOption ? t('模拟设置') : t('同盟设置');
   useEffect(() => {
@@ -623,6 +666,7 @@ function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, 
     <${BandDupesToggle} option=${dupesOption} busy=${busy} onToggle=${onBandDupes} />
     <${CapacityToggle} option=${capOption} busy=${busy} onCapacity=${onCapacity} />
     <${DuckLordToggle} option=${duckOption} busy=${busy} onToggle=${onDuckLord} />
+    <${UniteHumansToggle} option=${uniteOption} busy=${busy} onToggle=${onUniteHumans} />
     <${ConsoleToggle} option=${consoleOpt} busy=${busy} matching=${!!room.matchmaking} onToggle=${onConsole} />
   </div>`;
 }
@@ -835,6 +879,8 @@ const setBandDupes = (on) => run('dupes', () => net.request('room.setBandDupes',
 // once; the server resets the others' ready when it takes a change (server/lobby.js setExperimental)
 const setCapacity = (capacity) => run('capacity', () => net.request('room.setExperimental', { experimental: capacityExperimental(capacity, room.experimental) }));
 const setDuckLord = (on) => run('ducklord', () => net.request('room.setExperimental', { experimental: duckLordExperimental(on, room.experimental) }));
+// AI 联防置后 (移植自用户分支 rel29): the whole option set goes to the server at once (room.setExperimental), like 扩展同盟人数
+const setUniteHumans = (on) => run('unite-humans', () => net.request('room.setExperimental', { experimental: uniteHumansExperimental(on, room.experimental) }));
 // AI 指定策略 (room.setBotBand, 移植自用户分支): the host names the strategy an AI seat takes in the draft (null = 自动选择)
 const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.request('room.setBotBand', { seat, bandId }); setBandSeat(null); });
   // 开发者控制台 (移植自用户分支): two messages, host-only on the server (a solo room's own seat may toggle it).
@@ -1058,6 +1104,7 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
           ${opts ? html`<${RoomOptions} takeoverOption=${aiTakeoverOption(room, me.playerId)} onAiTakeover=${setAiTakeover} option=${aiLast} soloOption=${soloOpt} room=${room} isHost=${facts.isHost} busy=${busy} onAiLast=${setAiLast}
             dupesOption=${dupesOpt} onBandDupes=${setBandDupes}
             capOption=${capacityOption(room, me.playerId)} onCapacity=${setCapacity} duckOption=${duckLordOption(room, me.playerId)} onDuckLord=${setDuckLord}
+            uniteOption=${uniteHumansOption(room, me.playerId)} onUniteHumans=${setUniteHumans}
             onConsole=${setConsole} consoleOpt=${consoleOpt} onSoloUnlimited=${setSoloUnlimited} onDifficulty=${openProto} onClose=${() => setOpts(false)} version=${versionCtl} />` : null}
         </div>
       </div>

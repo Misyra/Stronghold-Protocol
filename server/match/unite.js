@@ -199,13 +199,17 @@ export function helperStats(m, ps, results) {
 /**
  * The ≤ maxHelpers helpers, first = the one that meets the enemies first (right-hand field): selection by units >
  * active bond > standing units > seat, then the pair ordered by units > active bond > layers > standing > seat.
+ * AI 联防置后 (m.uniteHumansFirst, 多人同盟容量移植系列 rel29) ranks every human first, in both orders.
  */
 export function helperOrder(m, perfects, results) {
   const st = new Map(perfects.map((ps) => [ps.playerId, helperStats(m, ps, results)]));
   const S = (ps) => st.get(ps.playerId);
-  const select = perfects.slice().sort((a, b) => S(b).units - S(a).units || (S(b).active - S(a).active) || S(b).standing - S(a).standing || a.seat - b.seat)
+  // AI 联防置后 (the room's uniteHumansFirst, shared/experimental.js): every human before any seat the engine plays (an
+  // AI teammate, AI 托管), each side in the order below; off, 0 throughout
+  const engine = (ps) => (m?.uniteHumansFirst === true && ps.botControlled ? 1 : 0);
+  const select = perfects.slice().sort((a, b) => engine(a) - engine(b) || S(b).units - S(a).units || (S(b).active - S(a).active) || S(b).standing - S(a).standing || a.seat - b.seat)
     .slice(0, m.gd.unite.maxHelpers);
-  return select.sort((a, b) => S(b).units - S(a).units || (S(b).active - S(a).active) || S(b).layers - S(a).layers || S(b).standing - S(a).standing || a.seat - b.seat);
+  return select.sort((a, b) => engine(a) - engine(b) || S(b).units - S(a).units || (S(b).active - S(a).active) || S(b).layers - S(a).layers || S(b).standing - S(a).standing || a.seat - b.seat);
 }
 
 /** Battle options for the unite field (without data/logger, added by the match). */

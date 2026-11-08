@@ -1,6 +1,9 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { SIM_DATA_KEYS, setData } from '../data.js';
 import { memorySample } from './memory.js';
+import { GameData } from '../match/gamedata.js';
+import { applyPlanTask } from '../match/botPlanTask.js';
+import { createRngFromState } from '../sim/rng.js';
 
 // The pool clones only the sim's data subset (server/index.js simWorkerData, server/data.js SIM_DATA_KEYS): fail fast
 // when one of those keys is missing instead of simulating on half the data — a failed worker sends every task back to
@@ -17,6 +20,8 @@ const [{ DataSource }, { createBattleFromSpec }, { HeadlessJob }, { RehearsalRun
 ]);
 const ds = new DataSource(data, null);
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
+// 'botplan' 任务的记录解析（chess/token/baseIdOf——mode 无关的三个只查找；mode 子集缺失不影响它们）
+const planGameData = new GameData(data, 'act2autochess');
 
 parentPort.on('message', ({ id, type, payload, cancel }) => {
   const flag = new Int32Array(cancel);
@@ -46,6 +51,26 @@ parentPort.on('message', ({ id, type, payload, cancel }) => {
       while (!run.run(cancelled)) if (cancelled()) throw new Error('cancelled');
       value = { bestIndex: run.score.index, stats: { totalTicks: run.totalTicks, completed: run.completed,
         considered: run.index, stopReason: run.stopReason, choice: run.score.index, candidates: factories.length } };
+    } else if (type === 'botplan') {
+      // Bot placement planning (SP_BOT_PLAN_POOL): the batch is one seat's consecutive planLayout calls over
+      // snapshotted inputs, captured atomically before any of them ran — every task carries the same entry state
+      // and the calls share one mulberry32 stream, each continuing where the previous stopped (exactly the draw
+      // sequence the inline path produces). The plans and the final stream state come back byte-identical to the
+      // main thread's own run (botPlanTask.applyPlanTask runs the real planLayoutSteps over a rebuilt fake m/ps).
+      // A mixed entry state or an unknown record fails the task loudly — the consumer falls back inline, never to
+      // a wrong plan.
+      const tasks = payload.tasks;
+      if (!Array.isArray(tasks) || !tasks.length) throw new Error('botplan: empty batch');
+      const entry = tasks[0].rngState;
+      const rng = createRngFromState(entry);
+      const results = [];
+      for (const c of tasks) {
+        if (cancelled()) throw new Error('cancelled');
+        if (c.rngState !== entry) throw new Error(`botplan: batch entry states differ at task ${c.seq}`);
+        const r = applyPlanTask(planGameData, c, rng);
+        results.push({ seq: c.seq, plan: r.plan, rngState: r.rngState });
+      }
+      value = { results, rngState: rng.state() };
     } else throw new Error(`unknown simulation task: ${type}`);
     parentPort.postMessage({ id, value, memory: memorySample() });
   } catch (err) {

@@ -268,6 +268,7 @@ import { MatchPrep } from './match/prep.js';
 import { MatchCombat } from './match/combat.js';
 import { MatchClientCombat } from './match/clientCombat.js';
 import { MatchRehearsal, REHEARSAL_ANSWER_MS, REHEARSAL_COLD_ANSWER_MS } from './match/rehearsal.js';
+import { MatchBotPlan } from './match/botplan.js';
 import { MatchReports } from './match/reports.js';
 import { MatchUnite } from './match/unitePhase.js';
 import { MatchBoss } from './match/bossRounds.js';
@@ -307,6 +308,8 @@ export function parseVerify(v) {
 /** Default of the bot rehearsal delegation for a directly constructed match: off — SP_BOT_REHEARSAL=host opts in.
  *  Online rooms do not rely on this: the lobby passes an explicit true/false (hostRehearsalDefault, 2026-11-05). */
 const envBotRehearsal = () => String(env('SP_BOT_REHEARSAL') || '').trim().toLowerCase() === 'host';
+/** SP_BOT_PLAN_POOL=1 opts the bot placement planning into the simulation pool (default off: the inline path). */
+const envBotPlanPool = () => String(env('SP_BOT_PLAN_POOL') || '').trim() === '1';
 /** Candidate layouts per prep when `opts.botRehearsal` is absent: `SP_BOT_REHEARSAL_COUNT` (0–8), else the engine
  *  default. The deployment can lower it to 3 to cut rehearsal time (docs/DEPLOY.md). */
 const envBotRehearsalCount = () => {
@@ -456,6 +459,15 @@ export class Match {
      * first (tests), then SP_BOT_REHEARSAL_COLD_ANSWER_MS, then the engine default.
      */
     this.botRehearsalColdMs = Number.isFinite(opts.botRehearsalColdMs) && opts.botRehearsalColdMs >= 0 ? opts.botRehearsalColdMs : envBotRehearsalColdMs() ?? REHEARSAL_COLD_ANSWER_MS;
+    /**
+     * SP_BOT_PLAN_POOL（默认关）: hand the final arrange's first candidate-plan batch to the simulation pool
+     * (match/match/botplan.js + botPlanTask.js). Needs a pool (opts.simPool — poolPlan re-checks) and a plan task
+     * that answers before the next seat's prep touches the shared rngBots stream; every failure shape falls back to
+     * the inline path, so the flag can only save main-thread CPU, never change a layout.
+     */
+    this.botPlanPoolOn = envBotPlanPool();
+    /** how the bot-plan pool tasks ended (MatchBotPlan) — pooled / applied / inline fallbacks (the tests read it) */
+    this.botPlanPoolStats = { pooled: 0, accepted: 0, fallbacks: 0 };
     /** successful delegated answers per host player id (MatchRehearsal): ≥1 makes that host warm (the warm window) */
     this._rehearsalHostAnswers = new Map();
     /** the room's current host (opts.hostId; server/lobby.js room.hostId — setHost follows a migration) */
@@ -701,7 +713,7 @@ export class Match {
 }
 
 // the method modules, in this order (a name defined twice is an error, never a silent override)
-for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchKickVote, MatchSpeedVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchRehearsal, MatchReports, MatchUnite, MatchBoss, MatchPoolGroups, MatchSettle, MatchTestCommands, MatchOffers]) {
+for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchKickVote, MatchSpeedVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchRehearsal, MatchBotPlan, MatchReports, MatchUnite, MatchBoss, MatchPoolGroups, MatchSettle, MatchTestCommands, MatchOffers]) {
   for (const key of Reflect.ownKeys(part.prototype)) {
     if (key === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(Match.prototype, key)) throw new Error(`Match.${String(key)} is defined twice`);

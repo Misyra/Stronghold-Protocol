@@ -308,10 +308,11 @@ export class MatchRehearsal {
   _dropRehearsalTask(task, cancel = false) {
     if (this._rehearsalTasks.get(task.id) !== task) return;
     this._rehearsalTasks.delete(task.id);
+    task.dropped = true;
     if (task.timer) { this.cancel(task.timer); task.timer = null; }
     // a pool task is cancelled at the pool (its thread is told to stop stepping), a delegated one on its host
-    if (task.kind === 'pool') {
-      if (![...this._rehearsalTasks.values()].some((other) => other.kind === 'pool')) this.simPool?.release?.(this.roomCode);
+    if (task.kind === 'pool' || task.kind === 'plan') {
+      if (![...this._rehearsalTasks.values()].some((other) => other.kind === 'pool' || other.kind === 'plan')) this.simPool?.release?.(this.roomCode);
       if (task.cancel) { try { task.cancel(); } catch { /* the pool already settled it */ } task.cancel = null; }
       return;
     }

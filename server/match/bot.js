@@ -94,6 +94,7 @@ import { advisorPlan, planOf, planMain, planSells, planItemWanted, planEquips, p
   planBuyTarget } from './aiPlan.js';
 import { planProtected } from './aiEconomy.js';
 import { createPrepSteps } from './botPrep.js';
+import { capturePlanTask } from './botPlanTask.js';
 import { refineFormationSteps } from './botFormationCandidates.js';
 import { ASPD_MIN, COLS as SIM_COLS, TICK } from '../sim/constants.js';
 import { rehearsalCap, RehearsalRun } from '../sim/rehearsal.js';
@@ -3068,9 +3069,40 @@ export function* arrangeSteps(m, ps, { final = false, defer = false, delegate = 
     else tryDo(() => ps.sell(p.uid));
   }
   yield;
+  const opts = { final, defer, delegate, pooled, candidatePlans, adaptive };
+  // SP_BOT_PLAN_POOL（默认关）: the first candidate batch of the final arrange (the REHEARSAL_VARIANTS plans and a
+  // boss round's body plans — mutually independent, one rngBots chain) goes to the simulation pool; the worker runs
+  // the real planLayoutSteps over the snapshot (botPlanTask) and the plans come back byte-identical. Any failure
+  // shape — POOL_FULL, a failed task, the rng stream having moved while the task was in flight — falls back to the
+  // inline path inside the job (costs latency, never a different layout). The cheap glue between the batches
+  // (leaderChainPlan, the lineup heuristics) stays on this thread.
+  if (final && pooled && m.botPlanPoolOn && typeof m.createBotPlanJob === 'function'
+    && (m.wave || bossWaveOf(m, ps)) && m.botRehearsal > 0) {
+    const tasks = REHEARSAL_VARIANTS.map((v) => capturePlanTask(m, ps, chosen, { ...LAYOUT_PARAMS, ...v }));
+    if (!m.wave && fieldModel(m, ps, true).lead) {
+      for (let i = 0; i < FA_BODY_PLANS; i++) {
+        tasks.push(capturePlanTask(m, ps, chosen, { ...LAYOUT_PARAMS, ...REHEARSAL_VARIANTS[i % REHEARSAL_VARIANTS.length], body: FA_BODY_WEIGHT }));
+      }
+    }
+    const job = m.createBotPlanJob({ ps, chosen, tasks, nVariants: REHEARSAL_VARIANTS.length,
+      rest: (stage1) => arrangePlanSteps(m, ps, chosen, ctx, opts, stage1) });
+    if (job) return job;
+  }
+  return yield* arrangePlanSteps(m, ps, chosen, ctx, opts, null);
+}
+
+/**
+ * The planning body of arrange (everything after the lineup/withdraw step). `stage1` (SP_BOT_PLAN_POOL): the first
+ * batch of candidate plans already resolved — assembled exactly as the inline block below assembles them
+ * ([default, …body, chain?, …variants]); null runs everything inline, byte-identically to the pre-pool code path.
+ * Returns the rehearsal job (defer) or null, exactly like arrangeSteps did.
+ */
+export function* arrangePlanSteps(m, ps, chosen, ctx, { final = false, defer = false, delegate = false, pooled = false, candidatePlans = null, adaptive = false } = {}, stage1 = null) {
   let plans = [];
   // A boss round has no `m.wave`. The already-planned boss group is rehearsed the same way, on its own seed.
-  if (final && (m.wave || bossWaveOf(m, ps)) && m.botRehearsal > 0) {
+  if (stage1) {
+    plans = stage1.slice();
+  } else if (final && (m.wave || bossWaveOf(m, ps)) && m.botRehearsal > 0) {
     for (const v of REHEARSAL_VARIANTS) plans.push(yield* planLayoutSteps(m, ps, chosen, { ...LAYOUT_PARAMS, ...v }));
     // §37.33 the leader chain goes right after the default plan, inside the rehearsal budget (Final Assault only)
     const chain = leaderChainPlan(m, ps, chosen, plans[0]);

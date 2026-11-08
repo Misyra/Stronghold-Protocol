@@ -34,6 +34,8 @@
 //   --cold-answer-ms MS / --warm-answer-ms MS  the child server's SP_BOT_REHEARSAL_COLD_ANSWER_MS /
 //                    SP_BOT_REHEARSAL_ANSWER_MS (the answer windows under test; unset = the server's own defaults).
 //                    Deliberate overrides — the dev shell's own values are still stripped (CHILD_ENV_DENY)
+//   --plan-pool 0|1  the child server's SP_BOT_PLAN_POOL (bot placement planning in the simulation pool; unset =
+//                    the server's default, off). Deliberate override — the dev shell's own value is still stripped.
 //   --rehearsal-bot  the host adds one AI seat per coop room before the start (room.addBot): without a bot seat a room
 //                    has nothing to delegate, so every rehearsal measurement needs one. Summary keys `clients.rehearsal`
 //                    (frames, spec bytes, cancels, answers, per-PREP→COMBAT rotation) and `server.rehearsal` (the
@@ -105,6 +107,7 @@ const O = {
   rehearsalWarmAnswerMs: Math.max(0, Math.floor(num(opt['rehearsal-warm-answer-ms'], -1))),
   coldAnswerMs: opt['cold-answer-ms'] != null && opt['cold-answer-ms'] !== true ? Math.max(0, Math.floor(num(opt['cold-answer-ms'], 0))) : null,
   warmAnswerMs: opt['warm-answer-ms'] != null && opt['warm-answer-ms'] !== true ? Math.max(1, Math.floor(num(opt['warm-answer-ms'], 0))) : null,
+  planPool: opt['plan-pool'] != null && opt['plan-pool'] !== true ? (String(opt['plan-pool']).trim() === '1' ? 1 : 0) : null,
   rehearsalBot: opt['rehearsal-bot'] === true || (opt['rehearsal-answer-ms'] != null && opt['rehearsal-answer-ms'] !== true),
   json: opt.json === true ? null : opt.json,
   quiet: opt.quiet === true,
@@ -127,7 +130,7 @@ function lcg(seed) {
 // Env the child must NOT inherit: dev-shell exports that would skew or break the run (an external bot strategy, an
 // access gate, a Redis/Valkey state store, shrunk caps, test mode, another loop-sample config, another port).
 const CHILD_ENV_DENY = ['PORT', 'HOST', 'SP_WORKERS', 'SP_LOOP_SAMPLE', 'SP_LOOP_WINDOW_MS', 'SP_STATE_FILE',
-  'SP_BOT_REHEARSAL', 'SP_BOT_REHEARSAL_ANSWER_MS', 'SP_BOT_REHEARSAL_COLD_ANSWER_MS',
+  'SP_BOT_REHEARSAL', 'SP_BOT_REHEARSAL_ANSWER_MS', 'SP_BOT_REHEARSAL_COLD_ANSWER_MS', 'SP_BOT_PLAN_POOL',
   'SP_BOT_STRATEGY', 'SP_BOT_STRATEGY_SEATS', 'SP_GATE_PASSWORD', 'SP_GATE_SECRET',
   'SP_REDIS_URL', 'REDIS_URL', 'SP_VALKEY_URL', 'SP_PERSIST_BACKEND', 'SP_MATCH_HOST', 'SP_TEST_MODE',
   'SP_MAX_ROOMS', 'SP_MAX_ROOMS_PER_ADDR', 'SP_MAX_MATCHES_PER_ADDR', 'SP_MAX_CONNECTIONS',
@@ -154,6 +157,7 @@ async function startServerChild(port) {
     // the rehearsal windows under test (deliberate A/B overrides; the shell's own values were stripped above)
     ...(O.coldAnswerMs != null ? { SP_BOT_REHEARSAL_COLD_ANSWER_MS: String(O.coldAnswerMs) } : {}),
     ...(O.warmAnswerMs != null ? { SP_BOT_REHEARSAL_ANSWER_MS: String(O.warmAnswerMs) } : {}),
+    ...(O.planPool != null ? { SP_BOT_PLAN_POOL: String(O.planPool) } : {}),
   });
   const child = spawn(process.execPath, [path.join(ROOT, 'server', 'index.js')], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   const lines = [];

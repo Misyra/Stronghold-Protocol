@@ -97,6 +97,10 @@ export function makeMatch(o = {}) {
     // `botRehearsalColdMs` the first task's cold-start window (MatchRehearsal.delegateWindowMs)
     hostId: o.hostId !== undefined ? o.hostId : (o.test === true ? (seats.find((s) => s && !s.isBot)?.playerId ?? null) : undefined),
     test: o.test === true,
+    // 调控台 (room.console.enable): the room's console switch — a console room's test match widens g.test
+    // (server/match/match/testCommands.js). Omitted unless the test passes it, so a default match's opts
+    // keep no key.
+    ...(o.consoleEnabled !== undefined ? { consoleEnabled: o.consoleEnabled === true } : {}),
     botRehearsalDelegate: o.botRehearsalDelegate,
     botRehearsalDelegateMs: o.botRehearsalDelegateMs,
     botRehearsalColdMs: o.botRehearsalColdMs,

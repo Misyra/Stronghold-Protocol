@@ -40,6 +40,22 @@ function num(raw) {
   return Number(raw.trim());
 }
 
+/**
+ * Whether the viewer may use the panel (a plain test match: its host; a console room's match
+ * (room.console.enable): every seated player) and the match-wide controls (the host; in a console room's
+ * match its only human). Hookless (tests). The server applies the same matrix (testCommands.js).
+ * @param {any} pub m.public @param {string|null|undefined} myId @param {string|null|undefined} hostId
+ * @param {boolean} [consoleOn] the room's console switch (room.state consoleEnabled)
+ * @returns {{ show: boolean, shared: boolean }}
+ */
+export function testConsoleAccess(pub, myId, hostId, consoleOn = false) {
+  const players = Array.isArray(pub?.players) ? pub.players : [];
+  const show = !!pub && pub.test === true && !!myId
+    && (consoleOn ? players.some((p) => p && p.playerId === myId) : myId === hostId);
+  const shared = show && (!consoleOn || players.every((p) => !p || p.playerId === myId || p.isBot === true));
+  return { show, shared };
+}
+
 /** `chess:id,item:id` → slots, or null when the text is not that shape. */
 function shopSlots(raw) {
   const parts = String(raw || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -93,6 +109,8 @@ export function TestConsole() {
   const mine = useStore((s) => s.match.private);
   const myId = useStore((s) => s.me.playerId);
   const hostId = useStore((s) => s.room && s.room.hostId);
+  // 调控台 (room.console.enable): the room's switch — a console room's test match seats every human
+  const consoleOn = useStore((s) => !!s.room?.consoleEnabled);
   const [open, setOpenState] = useState(storedOpen);
   const [cmd, setCmd] = useState('funds');
   const [amount, setAmount] = useState('0');
@@ -174,7 +192,8 @@ export function TestConsole() {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
-  if (!pub || pub.test !== true || !myId || myId !== hostId) return null;
+  const access = testConsoleAccess(pub, myId, hostId, consoleOn);
+  if (!access.show) return null;
   const table = { chess: 'chess', item: 'items', token: 'tokens', bond: 'bonds', strategy: 'bands', bounty: 'enemies' }[cmd];
   const owned = [...(mine?.hand || []), ...(mine?.temp || []), ...(mine?.board || []).map((x) => x.piece || x)].filter((x) => x?.kind === 'chess');
   const tokenIds = cmd === 'token' ? ownedTokenIds(owned) : null;
@@ -282,7 +301,7 @@ export function TestConsole() {
         <b>${t('测试指令')}</b>
         <span class="t-dim">${t('已执行 {n} 次', { n: pub.testActions | 0 })}</span>
       </header>
-      <div class="testconsole__row">
+      ${access.shared ? html`<div class="testconsole__row">
         <button type="button" onClick=${() => send('timers', { on: false })}>${t('关闭计时')}</button>
         <button type="button" onClick=${() => send('timers', { on: true })}>${t('开启计时')}</button>
         <span class="t-dim">${pub.testTimers === false ? t('计时已关闭') : t('计时进行中')}</span>
@@ -293,7 +312,7 @@ export function TestConsole() {
         <button type="button" onClick=${() => send('phase', { name: 'prep' })}>${t('进入休整')}</button>
         <button type="button" onClick=${() => send('phase', { name: 'sp' })}>${t('进入机变')}</button>
         <button type="button" onClick=${() => send('phase', { name: 'combat' })}>${t('开始作战')}</button>
-      </div>
+      </div>` : null}
       <label class="testconsole__field">${t('测试指令')}
         <select value=${cmd} onChange=${(e) => setCmd(e.target.value)}>
           <option value="funds">${t('资金')}</option>
@@ -301,9 +320,9 @@ export function TestConsole() {
           <option value="item">${t('装备')}</option>
           <option value="token">${t('召唤物')}</option>
           <option value="lp">${t('目标生命')}</option>
-          <option value="hp">${t('领袖生命')}</option>
+          ${access.shared ? html`<option value="hp">${t('领袖生命')}</option>
           <option value="teamLp">${t('队伍生命')}</option>
-          <option value="round">${t('回合')}</option>
+          <option value="round">${t('回合')}</option>` : null}
           <option value="shop">${t('下一轮商店')}</option>
           <option value="bond">${t('盟约')}</option>
           <option value="strategy">${t('策略')}</option>

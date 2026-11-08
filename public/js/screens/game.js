@@ -1487,6 +1487,19 @@ function MatchScreen() {
     return () => screen.removeEventListener('pointerdown', onDown, true);
   }, []);
 
+  // 本局信息 / 敌方情报 closes on an outside press too (#60). The top bar's 🔍 toggles it itself, and a card or bond popup
+  // opened from inside it stays in front of it.
+  useEffect(() => {
+    const screen = hudElRef.current?.parentElement;
+    if (!screen) return undefined;
+    const onDown = (e) => {
+      if (!live.current.drawer || e.target?.closest?.('.edrawer, .dpanel, .bpop, [data-testid="check-player"]')) return;
+      setDrawer(null);
+    };
+    screen.addEventListener('pointerdown', onDown, true);
+    return () => screen.removeEventListener('pointerdown', onDown, true);
+  }, []);
+
   // The underframe belongs to the selected field piece. Keep it while using its actions, detail
   // card or bond popup: clearing selection on pointerdown can move the card before the click.
   // Field presses handle selection separately; other HUD content still dismisses it (#792).

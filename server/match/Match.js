@@ -417,6 +417,9 @@ export class Match {
     /** 华法琳禁用 (experimental.disableDuckLord, capacity rooms only): the default band is out (gamedata bandAllowed) */
     this.disableDuckLord = this.capacityExperiment && this.experimental.disableDuckLord === true;
     this.gd.disableDuckLord = this.disableDuckLord;
+    /** the room's battle rules (移植自 Stardust fork): every battle gets them as spec flags (_ruleFlags), the match's own layer writers read them */
+    this.disableLayerCap = this.experimental.disableLayerCap === true;
+    this.disableHitLimit = this.experimental.disableHitLimit === true;
     /** the room's private-pool switch (experimental.disableSharedPool): every seat its own complete pool (poolGroups) */
     this.disableSharedPool = this.experimental.disableSharedPool;
     /** AI 联防置后 (experimental.uniteHumansFirst, 移植自用户分支 rel29): 联防 helper 先在真人里挑, AI 队友与 AI 托管垫后 (unite.js helperOrder) */

@@ -591,6 +591,8 @@ export function makeCtx(m, ps, source, hook, ev = null, preview = null) {
     difficulty: m.difficulty,
     isSolo: m.isSolo,
     isCoop: !m.isSolo,
+    /** The room lifted the bond layer cap (experimental disableLayerCap): milestones stop at 999 layers' (milestonesDue). */
+    layerCapOff: m.disableLayerCap === true,
     data: gd.raw,
     gd,
     rng,

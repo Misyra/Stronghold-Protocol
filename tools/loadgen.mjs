@@ -771,6 +771,12 @@ async function main() {
         takeovers: deltaOf(rh0, rh1, 'takeovers'), pooled: deltaOf(rh0, rh1, 'pooled'),
         accepted: deltaOf(rh0, rh1, 'accepted'), fallbacks: deltaOf(rh0, rh1, 'fallbacks'),
       } : null,
+      // the bot placement-plan counters (healthz `botPlan`, SP_BOT_PLAN_POOL) over the WHOLE RUN
+      botPlan: (hzBoot.body?.botPlan || null) && (hz1.body?.botPlan || null) ? {
+        pooled: deltaOf(hzBoot.body.botPlan, hz1.body.botPlan, 'pooled'),
+        accepted: deltaOf(hzBoot.body.botPlan, hz1.body.botPlan, 'accepted'),
+        fallbacks: deltaOf(hzBoot.body.botPlan, hz1.body.botPlan, 'fallbacks'),
+      } : null,
       wsTraffic: ws0 && ws1 ? {
         wireOut: deltaOf(ws0, ws1, 'wireOut'), wireIn: deltaOf(ws0, ws1, 'wireIn'),
         payloadOut: deltaOf(ws0, ws1, 'payloadOut'), payloadIn: deltaOf(ws0, ws1, 'payloadIn'),

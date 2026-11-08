@@ -141,6 +141,8 @@ export function healthReport({ startedAt, network, registry, lobby, content = nu
   // the tuning pair for the host answer window. Same loopback / private gate as the traffic family: read-only
   // aggregates, but they stay out of the public /healthz a tunnel probe sees.
   if (withTraffic && lobby?.rehearsalStats) report.rehearsal = lobby.rehearsalStats();
+  // the bot placement-plan counters (SP_BOT_PLAN_POOL, lobby.botPlanStats): same read-only aggregate family
+  if (withTraffic && lobby?.botPlanStats) report.botPlan = lobby.botPlanStats();
   // the static layer's response caches (files.js CompressCache / TransformCache): bytes held, entries, budget —
   // an operator sees what a hot page load keeps in memory and when a budget starts churning (entries evicted)
   if (withTraffic && serveStatic?.cacheStats) report.staticCache = serveStatic.cacheStats();

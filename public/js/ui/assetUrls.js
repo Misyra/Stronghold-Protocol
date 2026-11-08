@@ -1,7 +1,9 @@
 // Asset URL resolution against data/assets.json (docs/ASSETS.md). Pure: every function takes the
 // manifest object (or null) and returns a URL string or null — callers draw their own fallback
 // (glyph, CSS shape) when null. Only URLs present in the manifest are ever returned, so the client
-// never requests files the asset pipeline did not produce (no 404 noise in the console).
+// never requests files the asset pipeline did not produce (no 404 noise in the console). Every URL
+// leaves pinned through resourceUrl (`pin`, below): with a CDN base it gains the art host prefix and
+// its per-file `?v=<hash>`; without one it is returned unchanged.
 
 import { manifestSkinKey } from '../../../shared/skins.js';
 import { resourceUrl } from '../resourceUrl.js';
@@ -9,13 +11,17 @@ import { resourceUrl } from '../resourceUrl.js';
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const obj = (v) => (v && typeof v === 'object' ? v : null);
 
+/** Manifest URLs leave every helper pinned through resourceUrl — uiUrl's doc below carries the why
+ *  (a bare CDN URL is cached for a year and never re-busts). null passes through untouched. */
+const pin = (url) => (url ? resourceUrl(url) : null);
+
 /** Skin pictures belong to the effective operator, never the original chess of a stand-in / DIY slot. */
 function skinPicture(m, chess, skinId, field) {
   if (!skinId) return null;
   const id = chess?.charId || str(chess?.assets?.[field])?.replace(/_[12]$/, '');
   const skin = m?.chars?.[id]?.skins?.[skinId];
   const elite = chess?.isGolden || /_2$/.test(chess?.assets?.[field] || '');
-  return str(elite && skin?.[`${field}E2`]) || str(skin?.[field]) || (field === 'portrait' ? str(skin?.illust) : null);
+  return pin(str(elite && skin?.[`${field}E2`]) || str(skin?.[field]) || (field === 'portrait' ? str(skin?.illust) : null));
 }
 
 /**
@@ -44,14 +50,14 @@ export function chessAvatarUrl(m, chess, { skin = null } = {}) {
   if (!chars || !id) return null;
   if (id.endsWith('_2') && !chars[id]) {
     const base = chars[id.slice(0, -2)];
-    return str(base?.avatarE2) || str(base?.avatar);
+    return pin(str(base?.avatarE2) || str(base?.avatar));
   }
   // A golden piece whose avatar id is the character key uses that entry's E2 art when it has one.
   // Official ids are `charId` or `charId_2` (the suffix branch above). Model and voice have no E2
   // field on the character entry: the composed `spine` / `voice` id is already the form's.
   const entry = chars[id];
-  if (entry && chess?.isGolden && str(entry.avatarE2)) return str(entry.avatarE2);
-  return str(entry?.avatar) || (chess?.charId ? str(chars[chess.charId]?.avatar) : null);
+  if (entry && chess?.isGolden && str(entry.avatarE2)) return pin(entry.avatarE2);
+  return pin(str(entry?.avatar) || (chess?.charId ? str(chars[chess.charId]?.avatar) : null));
 }
 
 /**
@@ -69,29 +75,29 @@ export function chessPortraitUrl(m, chess, { skin = null } = {}) {
     // A golden piece whose portrait id is the character key uses portraitE2 when the entry has one.
     // An entry with only `portrait` (a custom golden URL included) keeps that URL. Official ids are
     // `charId_1` / `charId_2` and are not character keys, so they stay on the suffix branches below.
-    if (chars[id]) return (chess?.isGolden ? str(chars[id].portraitE2) : null) || str(chars[id].portrait);
+    if (chars[id]) return pin((chess?.isGolden ? str(chars[id].portraitE2) : null) || str(chars[id].portrait));
     if (id.endsWith('_2')) {
       const base = chars[id.slice(0, -2)];
-      if (base) return str(base.portraitE2) || str(base.portrait);
+      if (base) return pin(str(base.portraitE2) || str(base.portrait));
     }
     if (id.endsWith('_1')) {
       const base = chars[id.slice(0, -2)];
-      if (base) return str(base.portrait);
+      if (base) return pin(str(base.portrait));
     }
   }
   const byChar = chess?.charId ? chars[chess.charId] : null;
   if (!byChar) return null;
-  return (chess?.isGolden ? str(byChar.portraitE2) : null) || str(byChar.portrait);
+  return pin((chess?.isGolden ? str(byChar.portraitE2) : null) || str(byChar.portrait));
 }
 
 /** Skill icon of a chess record (manifest `skills[iconId]`, else the empty skill sprite). */
 export function skillIconUrl(m, chess) {
   const skills = obj(obj(m)?.skills);
   const id = str(chess?.assets?.skillIcon) || str(chess?.skill?.iconId) || str(chess?.skill?.skillId);
-  if (skills && id && skills[id]) return str(skills[id]);
+  if (skills && id && skills[id]) return pin(str(skills[id]));
   const byId = obj(obj(m)?.skillsById);
   const alt = byId && chess?.skill?.skillId ? byId[chess.skill.skillId] : null;
-  if (skills && alt && skills[alt]) return str(skills[alt]);
+  if (skills && alt && skills[alt]) return pin(str(skills[alt]));
   return uiUrl(m, 'skillIcon/empty');
 }
 
@@ -102,10 +108,10 @@ export function skillIconUrl(m, chess) {
  */
 export function skillRecordIconUrl(m, skill, { empty = true } = {}) {
   const skills = obj(obj(m)?.skills);
-  for (const id of [str(skill?.iconId), str(skill?.skillId)]) if (skills && id && skills[id]) return str(skills[id]);
+  for (const id of [str(skill?.iconId), str(skill?.skillId)]) if (skills && id && skills[id]) return pin(str(skills[id]));
   const byId = obj(obj(m)?.skillsById);
   const alt = byId && skill?.skillId ? byId[skill.skillId] : null;
-  if (skills && alt && skills[alt]) return str(skills[alt]);
+  if (skills && alt && skills[alt]) return pin(str(skills[alt]));
   return empty ? uiUrl(m, 'skillIcon/empty') : null;
 }
 
@@ -117,13 +123,13 @@ const PROF_KEY = {
 /** Profession icon (small white glyph). */
 export function profIconUrl(m, profession) {
   const k = PROF_KEY[String(profession || '').toUpperCase()];
-  return k ? str(obj(obj(obj(m)?.prof)?.icon)?.[k]) : null;
+  return k ? pin(str(obj(obj(obj(m)?.prof)?.icon)?.[k])) : null;
 }
 
 /** Square profession glyph (manifest `prof.large`: a black glyph on white, drawn as a white one by loadout.css). */
 export function profGlyphUrl(m, profession) {
   const v = obj(obj(obj(m)?.prof)?.large)?.[String(profession || '').toLowerCase()];
-  return str(v);
+  return pin(str(v));
 }
 
 /** Sub-profession icon from a chess record (`assets.subProfIcon` = 'sub_<id>_icon'). */
@@ -132,34 +138,34 @@ export function subProfIconUrl(m, chess) {
   if (!sub) return null;
   const raw = str(chess?.assets?.subProfIcon);
   const id = raw ? raw.replace(/^sub_/, '').replace(/_icon$/, '') : str(chess?.subProfessionId);
-  return id ? str(sub[id]) : null;
+  return id ? pin(str(sub[id])) : null;
 }
 
 /** Bond glyph (white; tint in CSS). */
 export function bondIconUrl(m, bondId) {
-  return bondId ? str(obj(obj(m)?.bonds)?.[bondId]) : null;
+  return bondId ? pin(str(obj(obj(m)?.bonds)?.[bondId])) : null;
 }
 
 /** Band (strategy) icon. */
 export function bandIconUrl(m, bandId) {
-  return bandId ? str(obj(obj(m)?.bands)?.[bandId]) : null;
+  return bandId ? pin(str(obj(obj(m)?.bands)?.[bandId])) : null;
 }
 
 /** Item icon for an items.json record (by trapId / iconId) or a raw trap id. */
 export function itemIconUrl(m, item) {
   const items = obj(obj(m)?.items);
   if (!items) return null;
-  if (typeof item === 'string') return str(items[item]);
-  return str(items[item?.iconId]) || str(items[item?.trapId]);
+  if (typeof item === 'string') return pin(str(items[item]));
+  return pin(str(items[item?.iconId]) || str(items[item?.trapId]));
 }
 
 /** Enemy icon (manifest keeps fallbacks resolved). */
 export function enemyIconUrl(m, enemyKey) {
   const e = enemyKey ? obj(obj(obj(m)?.enemies)?.[enemyKey]) : null;
-  if (e?.icon) return str(e.icon);
+  if (e?.icon) return pin(str(e.icon));
   // `_2` / `_3` variants fall back to their base enemy
   const base = typeof enemyKey === 'string' ? enemyKey.replace(/_\d+$/, '') : null;
-  return base && base !== enemyKey ? str(obj(obj(obj(m)?.enemies)?.[base])?.icon) : null;
+  return base && base !== enemyKey ? pin(str(obj(obj(obj(m)?.enemies)?.[base])?.icon)) : null;
 }
 
 /** Token avatar: `tokens[id].skins[opts.skin]`, else the token's avatar, else its owner's (docs/SKINS.md). */
@@ -168,9 +174,9 @@ export function tokenAvatarUrl(m, tokenId, opts) {
   const t = tokenId ? obj(tokens?.[tokenId]) : null;
   if (!t) return null;
   const skin = opts?.skin ? obj(obj(t.skins)?.[String(opts.skin)]) : null;
-  if (skin?.avatar) return str(skin.avatar);
-  if (t.avatar) return str(t.avatar);
-  if (t.owner) return str(obj(obj(obj(m)?.chars)?.[t.owner])?.avatar);
+  if (skin?.avatar) return pin(str(skin.avatar));
+  if (t.avatar) return pin(str(t.avatar));
+  if (t.owner) return pin(str(obj(obj(obj(m)?.chars)?.[t.owner])?.avatar));
   return null;
 }
 
@@ -202,7 +208,7 @@ export function moduleTypeIconUrl(local, typeName) {
   const t = str(typeName)?.trim();
   if (!g || !t) return null;
   const exact = str(obj(g[t])?.path);
-  if (exact) return exact;
+  if (exact) return pin(exact);
   let idx = moduleIconIndex.get(g);
   if (!idx) {
     idx = new Map();
@@ -213,7 +219,7 @@ export function moduleTypeIconUrl(local, typeName) {
     moduleIconIndex.set(g, idx);
   }
   const key = t.replace(/[αβγδΔ]/g, (c) => GREEK[c]).toLowerCase();
-  return idx.get(key) || null;
+  return pin(idx.get(key) || null);
 }
 
 /**
@@ -242,7 +248,7 @@ export function effectIconUrl(m, eff) {
 export function chessOwnPortraitUrl(m, chess, e2 = false) {
   const rec = obj(obj(m)?.chars?.[str(chess?.charId)]);
   if (!rec) return null;
-  return (e2 ? str(rec.portraitE2) || str(rec.portrait) : str(rec.portrait)) || null;
+  return pin((e2 ? str(rec.portraitE2) || str(rec.portrait) : str(rec.portrait)) || null);
 }
 
 /**
@@ -284,5 +290,5 @@ export function skinPortraitUrl(m, chess, skinId) {
   const skins = obj(obj(m)?.chars?.[charId])?.skins;
   // manifestSkinKey turns a catalogue id into the manifest key; a skin the catalogue does not list yet (installed ahead of
   // a catalogue refresh) is ALREADY keyed by its official id — ask the manifest with that id instead of giving up.
-  return str(obj(skins?.[manifestSkinKey(id) ?? id])?.portrait);
+  return pin(str(obj(skins?.[manifestSkinKey(id) ?? id])?.portrait));
 }

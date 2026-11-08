@@ -11,7 +11,8 @@ import { createStaticHandler } from '../server/http/static.js';
 import { assetCdnSettings, assetCdnUrl, assetSiteUrl, cdnLatestUrl, resolveAssetsCdnVersion } from '../shared/assetCdn.js';
 import { resourceUrl, resourceCache, resourceReady } from '../public/js/resourceUrl.js';
 import { mediaUrl } from '../public/js/media.js';
-import { validSpine, loadSpineData, createAssets, unloadSpineData } from '../public/js/assets.js';
+import { validSpine, loadSpineData, createAssets, unloadSpineData, bgmEntry, sfxUrl, unitSfxUrl } from '../public/js/assets.js';
+import { chessAvatarUrl, skillIconUrl } from '../public/js/ui/assetUrls.js';
 
 test('CDN settings validate public bases and rewrite art without leaking the game version', () => {
   assert.deepEqual(assetCdnSettings(' https://game.misyra.com/ ', ''), { base: 'https://game.misyra.com', version: '' });
@@ -192,6 +193,38 @@ test('browser helpers honor CDN configuration and preserve remote audio URLs', (
   assert.equal(mediaUrl(resourceUrl('/assets/audio/bgm/a.mp3'), 'https://game.example'), 'https://cdn.example/assets/audio/bgm/a.mp3');
   globalThis.__spAssetCdn = assetCdnSettings('https://cdn.example', '1234567890abcdef');
   assert.equal(resourceCache(resourceUrl('/assets/local/tiles.json')), 'default');
+});
+
+test('every manifest-derived helper leaves pinned through resourceUrl (audio and the ui/assetUrls family too)', (t) => {
+  const previous = globalThis.__spAssetCdn;
+  t.after(() => { if (previous === undefined) delete globalThis.__spAssetCdn; else globalThis.__spAssetCdn = previous; });
+  globalThis.__spAssetCdn = {
+    base: 'https://cdn.example/static', version: '1234567890abcdef', manifest: '/assets-manifest.json?v=1234567890abcdef',
+    hashes: { '/assets/char/avatar/amiya.png': 'aaaaaaaaaaaaaaaa', '/assets/ui/empty.png': 'bbbbbbbbbbbbbbbb', '/assets/audio/sfx/ui/buy.mp3': 'cccccccccccccccc' },
+  };
+  const m = {
+    chars: { char_002_amiya: { avatar: '/assets/char/avatar/amiya.png' } },
+    ui: { 'battle/sprite_shadow': '/assets/ui/sprite_shadow.png' },
+    skills: { sk_empty: '/assets/ui/empty.png' },
+    audio: {
+      bgm: { prep: { loop: '/assets/audio/bgm/prep.mp3' } },
+      sfx: { ui: { buy: '/assets/audio/sfx/ui/buy.mp3' }, units: { char_002_amiya: { attack: '/assets/audio/sfx/amiya_atk.mp3' } } },
+    },
+  };
+  const cdn = 'https://cdn.example/static';
+  // the store's ui() — render/app.js's sprite_shadow reaches P.Texture.from through it
+  const store = createAssets({ manifest: m });
+  assert.equal(store.ui('battle/sprite_shadow'), `${cdn}/assets/ui/sprite_shadow.png?v=1234567890abcdef`, 'a file the manifest does not list is pinned with the release tag');
+  assert.equal(chessAvatarUrl(m, { charId: 'char_002_amiya' }), `${cdn}/assets/char/avatar/amiya.png?v=aaaaaaaaaaaaaaaa`);
+  assert.equal(skillIconUrl(m, { skill: { skillId: 'sk_empty' } }), `${cdn}/assets/ui/empty.png?v=bbbbbbbbbbbbbbbb`);
+  assert.equal(sfxUrl(m, 'ui', 'buy'), `${cdn}/assets/audio/sfx/ui/buy.mp3?v=cccccccccccccccc`);
+  assert.deepEqual(bgmEntry(m, 'prep'), { loop: `${cdn}/assets/audio/bgm/prep.mp3?v=1234567890abcdef` });
+  assert.equal(unitSfxUrl(m, 'char_002_amiya', 'attack'), `${cdn}/assets/audio/sfx/amiya_atk.mp3?v=1234567890abcdef`);
+  // null stays null, never a pinned string
+  assert.equal(chessAvatarUrl(m, null), null);
+  assert.equal(sfxUrl(m, 'ui', 'nope'), null);
+  assert.equal(bgmEntry(m, 'x'), null);
+  assert.equal(unitSfxUrl(m, 'nobody', 'attack'), null);
 });
 
 test('resolveAssetsCdnVersion reads the published tag and degrades to unversioned on any failure', async () => {

@@ -51,6 +51,7 @@
 // caller falls back (docs/ASSETS.md "Other fallbacks").
 
 import { resourceUrl, resourceCache, resourceReady } from './resourceUrl.js';
+import { uiUrl } from './ui/assetUrls.js';
 import { loadImageElement as repairImageElement } from './image.js';
 import { ART_REQUEST_MS, installArtParsers, loadRuntimeImage, subscribeArtRecovery } from './resourceNetwork.js';
 import { cdnSpineSource } from './cdnSpine.js';
@@ -192,8 +193,10 @@ export function skillIconUrl(m, id, opts) {
   return url || (fallback ? uiUrl(m, 'skillIcon/empty') : null);
 }
 
-/** UI sprite by `group/key` (e.g. 'battle/sprite_shadow'). */
-export const uiUrl = (m, name) => str(get(get(m, 'ui'), str(name) || ''));
+/** UI sprite by `group/key` (e.g. 'battle/sprite_shadow') — re-exported from ui/assetUrls.js, whose copy is
+ *  pinned through resourceUrl (uiUrl's doc there carries the why). The old unpinned local one was the last
+ *  bare manifest URL the client requested (render/app.js's sprite_shadow among its consumers). */
+export { uiUrl };
 
 /** Profession icon: kind 'icon' | 'large' | 'battlecard'; profession in any case (SNIPER → sniper). */
 export function profIconUrl(m, profession, kind = 'icon') {
@@ -218,34 +221,44 @@ export function unitPictureUrl(m, id, opts) {
 
 // ---- audio ---------------------------------------------------------------------------------------------------
 
-/** BGM `{ intro?, loop }` for 'lobby' | 'prep' | 'combat' | 'boss', or a boss id. */
+/** BGM `{ intro?, loop }` for 'lobby' | 'prep' | 'combat' | 'boss', or a boss id. A shallow copy with the two
+ *  URLs pinned through resourceUrl (every manifest-derived URL the client requests: a CDN base prefixes and
+ *  per-file-hashes them) — the manifest's own entry is never mutated. */
 export function bgmEntry(m, kind) {
   const a = get(m, 'audio');
   const b = get(get(a, 'bossBgm'), str(kind) || '') || get(get(a, 'bgm'), str(kind) || '');
-  return isObj(b) && str(b.loop) ? b : null;
+  if (!(isObj(b) && str(b.loop))) return null;
+  const pinned = { ...b };
+  if (str(b.intro)) pinned.intro = resourceUrl(str(b.intro));
+  pinned.loop = resourceUrl(str(b.loop));
+  return pinned;
 }
 
 /** SFX URL: group 'ui' | 'battle', key e.g. 'buy'. */
-export const sfxUrl = (m, group, key) => str(get(get(get(get(m, 'audio'), 'sfx'), str(group) || ''), str(key) || ''));
+export const sfxUrl = (m, group, key) => {
+  const url = str(get(get(get(get(m, 'audio'), 'sfx'), str(group) || ''), str(key) || ''));
+  return url ? resourceUrl(url) : null;
+};
 
 /**
  * Per-unit SFX: kind 'attack' | 'hit' | 'skill' | 'die' | 'born'; `skillIndex` picks `skills[i]` and — for an attack or
  * an impact — `attacks[i]` / `hits[i]` (the running skill's own files, tools/assets/audio.mjs pickModeAttacks /
- * pickModeHits) when the manifest has them.
+ * pickModeHits) when the manifest has them. Every URL leaves pinned through resourceUrl.
  */
 export function unitSfxUrl(m, id, kind, skillIndex) {
   const u = get(get(get(get(m, 'audio'), 'sfx'), 'units'), str(id) || '') || get(get(get(get(m, 'audio'), 'sfx'), 'units'), baseCharId(id) || '');
   if (!isObj(u)) return null;
   if (kind === 'skill' && Number.isInteger(skillIndex) && isObj(u.skills)) {
     const s = str(u.skills[skillIndex]);
-    if (s) return s;
+    if (s) return resourceUrl(s);
   }
   const per = kind === 'attack' ? u.attacks : kind === 'hit' ? u.hits : null;
   if (Number.isInteger(skillIndex) && isObj(per)) {
     const a = str(per[skillIndex]);
-    if (a) return a;
+    if (a) return resourceUrl(a);
   }
-  return str(u[kind]);
+  const url = str(u[kind]);
+  return url ? resourceUrl(url) : null;
 }
 
 // ---- cosmetic plugins (DESIGN §32 P1a) ---------------------------------------------------------------------------

@@ -370,3 +370,73 @@ test('every constructed Match and PlayerState own field has an explicit persiste
     for (const ps of h.m.players.values()) check(ps, PLAYER_FIELDS, TRANSIENT_PLAYER_FIELDS);
   } finally { h.m.dispose(); }
 });
+
+// 自选候补 (Stardust fork rel26 2d3ec08e, feedback #114; player/diy.js): the preset, the briefing's choice and the
+// fielded slots survive a checkpoint — and a preset of the old shape (two candidates per tier, no bench keys) restores
+// exactly as it did before 候补.
+const BENCH_SEATS = (T5, T5B, T6, T6B) => [
+  { seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true,
+    diy: {
+      [T5]: { charId: 'char_112_siege', skillIndex: 2, uniEquipId: null },
+      [T5B]: { charId: 'char_003_kalts', skillIndex: 2, uniEquipId: null },
+      diyBench_5_1: { charId: 'char_134_ifrit', skillIndex: 2, uniEquipId: null },
+      diyBench_5_2: { charId: 'char_248_mgllan', skillIndex: 2, uniEquipId: null },
+      [T6]: { charId: 'char_017_huang', skillIndex: 2, uniEquipId: null },
+      [T6B]: { charId: 'char_010_chen', skillIndex: 2, uniEquipId: null },
+    } },
+  { seat: 1, playerId: 'ai_0', name: 'AI0', isBot: true, connected: true },
+];
+
+test('自选候补: the briefing choice survives a checkpoint (the same slots re-fielded, the choice kept)', () => {
+  const T5 = 'chess_char_5_diy1_a', T5B = 'chess_char_5_diy2_a', T6 = 'chess_char_6_diy1_a', T6B = 'chess_char_6_diy2_a';
+  const a = makeMatch({ ...OPTIONS, seed: 11, seats: BENCH_SEATS(T5, T5B, T6, T6B) });
+  const b = makeMatch({ ...OPTIONS, seed: 11, seats: BENCH_SEATS(T5, T5B, T6, T6B) });
+  a.m.start();
+  assert.equal(a.m.phase, PHASE.INFO_CHECK);
+  const ps = a.m.players.get('p_0');
+  assert.equal(ps.hasDiyChoice(), true, 'four candidates at tier 5 leave a choice');
+  assert.deepEqual(a.m.handle('p_0', { t: 'g.diyChoose', tier: 5, charIds: ['char_134_ifrit', 'char_112_siege'] }), { ok: true });
+  assert.deepEqual(ps.diyChoice[5], ['char_134_ifrit', 'char_112_siege']);
+  // the chosen one already sitting in a slot keeps it; the other fills the free slot in preset order (tier 6 holds
+  // two candidates only, so both of its slots field)
+  assert.deepEqual(Object.keys(ps.diy).sort(), [T5, T5B, T6, T6B].sort());
+  assert.equal(ps.diy[T5].charId, 'char_112_siege');
+  assert.equal(ps.diy[T5B].charId, 'char_134_ifrit');
+  assert.equal(ps.diy[T6].charId, 'char_017_huang');
+  assert.equal(ps.diy[T6B].charId, 'char_010_chen');
+  const doc = snapshotMatch(a.m);
+  assert.ok(doc, 'an INFO_CHECK checkpoint');
+  assert.equal(restoreMatch(b.m, doc, DEPS), true);
+  const back = b.m.players.get('p_0');
+  assert.deepEqual(back.diyPreset, ps.diyPreset);
+  assert.deepEqual(back.diyChoice, ps.diyChoice);
+  assert.deepEqual(back.diy, ps.diy, 'the checkpoint slots re-field, not the preset\'s first two');
+  assert.equal(back.hasDiyChoice(), true, 'the choice is still open in the restored briefing');
+  assert.deepEqual(back.diyStock.entries.get(T5B)?.left, ps.diyStock.entries.get(T5B)?.left, 'the stock follows the fielded slot');
+});
+
+test('自选候补: a preset of the old shape (slots only, no bench keys) restores as before', () => {
+  const T5 = 'chess_char_5_diy1_a', T6 = 'chess_char_6_diy1_a';
+  const seats = [
+    { seat: 0, playerId: 'p_0', name: 'P0', isBot: false, connected: true,
+      diy: { [T5]: { charId: 'char_112_siege', skillIndex: 2, uniEquipId: null }, [T6]: { charId: 'char_003_kalts', skillIndex: 2, uniEquipId: null } } },
+    { seat: 1, playerId: 'ai_0', name: 'AI0', isBot: true, connected: true },
+  ];
+  const a = makeMatch({ ...OPTIONS, seed: 13, seats });
+  const b = makeMatch({ ...OPTIONS, seed: 13, seats });
+  a.m.start();
+  const ps = a.m.players.get('p_0');
+  assert.equal(ps.hasDiyChoice(), false, 'two candidates per tier: no choice to make');
+  const doc = snapshotMatch(a.m);
+  assert.ok(doc);
+  assert.equal(restoreMatch(b.m, doc, DEPS), true);
+  const back = b.m.players.get('p_0');
+  assert.deepEqual(back.diy, ps.diy);
+  assert.deepEqual(back.diyPreset, ps.diyPreset);
+  assert.equal(back.diyChoice ?? null, null, 'no choice was made');
+  // an old checkpoint (no diyPreset at all) still restores by its slots alone
+  for (const p of doc.players) { delete p.diyPreset; delete p.diyChoice; }
+  const c = makeMatch({ ...OPTIONS, seed: 13, seats });
+  assert.equal(restoreMatch(c.m, doc, DEPS), true);
+  assert.deepEqual(c.m.players.get('p_0').diy, ps.diy);
+});

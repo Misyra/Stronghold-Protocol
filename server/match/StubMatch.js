@@ -193,7 +193,7 @@ export class StubMatch {
     const summary = {
       stub: true, victory: false, roundsPassed: 0, modeId: this.modeId, difficulty: this.difficulty, seed: this.seed,
       reason: deadlinePassed ? 'timeout' : 'confirmed',
-      players: [...this.players.values()].map((p) => ({ playerId: p.playerId, seat: p.seat, name: p.name, isBot: p.isBot, lp: 0, title: null })),
+      players: [...this.players.values()].map((p) => ({ playerId: p.playerId, seat: p.seat, name: p.name, isBot: p.isBot, left: p.left, lp: 0, title: null })),
     };
     if (humansLeft) {
       this.broadcastFn(this.publicView());

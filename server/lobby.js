@@ -433,6 +433,26 @@ function sameSkins(a, b) {
 }
 
 /** One room: its capacity's seat slots (solo keeps the legacy four-slot DTO), host, difficulty, optional running match. */
+/**
+ * 结算点赞 (Stardust fork rel33 7c99acc1; the settlement's 同盟 page, the owner's request of 2026-11-05): Room.likes of a
+ * match that ended (Lobby.onMatchEnd) — its human players still in it (the result rows; a departed one is out), null
+ * when fewer than two — nobody to like.
+ * @param {any} summary the match's onEnd summary (m.result without `t`) @param {number} match the room's match number
+ */
+export function likesOf(summary, match) {
+  const rows = Array.isArray(summary?.players) ? summary.players : [];
+  const players = new Set(rows.filter((p) => p && !p.isBot && p.left !== true && typeof p.playerId === 'string').map((p) => p.playerId));
+  return players.size >= 2 ? { match, players, given: new Set(), counts: new Map() } : null;
+}
+
+/** room.likes for Room.likes: `from` / `to` for a new like, `mine` = the players this one liked (its resync). */
+export function likesFrame(likes, { from = null, to = null, mine = null } = {}) {
+  const msg = { t: 'room.likes', match: likes.match, counts: Object.fromEntries(likes.counts) };
+  if (from && to) Object.assign(msg, { from, to });
+  if (mine) msg.mine = [...likes.given].filter((k) => k.startsWith(`${mine}\n`)).map((k) => k.slice(mine.length + 1));
+  return msg;
+}
+
 export class Room {
   /**
    * @param {string} code @param {'solo'|'coop'} mode @param {string} difficulty @param {number} now
@@ -508,6 +528,12 @@ export class Room {
      * @type {{ publicFrame: string | null, frames: Map<string, string>, pending: Set<string> } | null}
      */
     this.replay = null;
+    /**
+     * 结算点赞 of the last match (room.like, Lobby.like): its human players (not departed), the likes given (`from\nto`)
+     * and the count each one got. Memory only; null when the last match had fewer than two (or no result).
+     * @type {{ match: number, players: Set<string>, given: Set<string>, counts: Map<string, number> } | null}
+     */
+    this.likes = null;
     /** @type {string[] | null} plugins of the room's set that changed on disk — the host not told yet (Lobby.pluginsChanged) */
     this.pluginsChanged = null;
     this.pluginNoticeKeys = {};
@@ -1118,6 +1144,7 @@ export class Lobby {
       case 'room.addBot': return this.addBot(session);
       case 'room.removeBot': return this.removeBot(session, msg);
       case 'room.kick': return this.kick(session, msg);
+      case 'room.like': return this.like(session, msg);
       case 'room.start': return this.start(session);
       case 'room.rerollSetup': return this.rerollSetup(session, msg);
       case 'room.cancelReroll': return this.rerollSetup(session, msg, true);
@@ -2760,6 +2787,7 @@ export class Lobby {
     room.matchCtx = null;
     room.matchKey = null;
     room.replay = this.buildReplay(room, ctx);
+    room.likes = likesOf(summary, room.matchCount);
     setImmediate(() => this.disposeMatchCtx(ctx));
     // a match of gameplay plugins, or of an official version, whose match host stopped (header "Gameplay plugins",
     // "Official versions"; its members were told: proxy.js)
@@ -2824,6 +2852,32 @@ export class Lobby {
     return [r.publicFrame, r.frames.get(playerId)].filter(Boolean);
   }
 
+  /**
+   * room.like {playerId} (结算点赞, the settlement's 同盟 page; the owner's request of 2026-11-05, Stardust fork rel33
+   * 7c99acc1): a human player of the room's last match likes another one — once per pair, from the match's end until the
+   * next match starts. Everybody in the room gets room.likes with the new counts. Nothing is kept beyond the room's
+   * memory of that one match (Room.likes). Refusals: WRONG_PHASE (a match runs, or the last one left nothing to like),
+   * SPECTATOR, BAD_TARGET (the sender or the target is no human player of that match — an AI seat, a departed player,
+   * somebody who joined later — or it is the sender). A repeated same-direction like answers ok with no side effects and
+   * no broadcast (the vote/choice iron rule: the broadcast rides a real state change only).
+   */
+  like(session, { playerId }) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    const likes = room.likes;
+    if (room.match || !likes) return fail(ERR.WRONG_PHASE, 'no settlement to like in');
+    const from = session.playerId;
+    if (!likes.players.has(from)) return fail(room.spectatorOf(from) ? ERR.SPECTATOR : ERR.BAD_TARGET, 'not a player of the last match');
+    if (playerId === from) return fail(ERR.BAD_TARGET, 'cannot like yourself');
+    if (!likes.players.has(playerId)) return fail(ERR.BAD_TARGET, 'not a human player of the last match');
+    const key = `${from}\n${playerId}`;
+    if (likes.given.has(key)) return OK;
+    likes.given.add(key);
+    likes.counts.set(playerId, (likes.counts.get(playerId) || 0) + 1);
+    this.broadcastRoom(room, likesFrame(likes, { from, to: playerId }));
+    return OK;
+  }
+
   /** The player moved on from the result screen (acted in the room, left): stop replaying it. */
   dropReplay(room, playerId) {
     const r = room.replay;
@@ -2877,7 +2931,12 @@ export class Lobby {
       return;
     }
     const frames = this.replayFor(room, session.playerId);
-    if (frames) for (const frame of frames) sendRaw(session.ws, frame);
+    if (!frames) return;
+    for (const frame of frames) sendRaw(session.ws, frame);
+    // back on the settlement: the likes so far, and the ones this player gave (the page's pressed buttons) — nothing
+    // while there is none (the page starts a settlement from none)
+    const likes = room.likes;
+    if (likes && likes.given.size > 0 && likes.players.has(session.playerId)) sendSession(session, likesFrame(likes, { mine: session.playerId }));
   }
 
   clearResync(playerId) {

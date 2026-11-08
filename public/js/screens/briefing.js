@@ -14,6 +14,10 @@
 // under it), 本局禁用干员 — with 已就绪 x/N over the person pips (已就绪 2/4 as research 06 §4.1 reads it, no colon) and
 // the big 准备就绪 in the bottom-right corner. The sections come in from the right one after another
 // (css/screens/briefing.css 开局转场).
+// 自选上场 (Stardust fork rel26 2d3ec08e, feedback #114): with more 自选 candidates than slots in a tier (the 候补), the
+// player chooses who plays this match (ui/diyChoice.js; m.private.diyChoice) — since feedback #127 (rel28 94d736da; the
+// owner, 2026-11-03: the last section of the column had to be scrolled to and went unnoticed) in a strip pinned above
+// 准备就绪 with the 重刷本局 bar (`brief__dock`), highlighted until the player chooses or is ready.
 
 import { useMemo, useState } from '../../vendor/hooks.module.js';
 import { html, Button, Icon } from '../ui/components.js';
@@ -24,6 +28,7 @@ import { MatchEnemies } from '../ui/matchEnemies.js';
 import { LoadoutButton } from './loadout.js';
 import { UnofficialMark, VersionTag } from '../ui/pluginTag.js';
 import { SetupReroll } from '../ui/setupReroll.js';
+import { DiyChoice } from '../ui/diyChoice.js';
 import { actions, act } from '../ui/gameActions.js';
 import { sortedPlayers, phaseTotalSeconds, modeOffBonds } from '../ui/gameLogic.js';
 import { plannableBonds, bondPlanOpen, bondPlanHolders, BondPlanPicker } from '../ui/bondPlan.js';
@@ -94,7 +99,10 @@ export function BriefingScreen() {
       </section>
       <section class="brief-sec brief-sec--banned" style="--i:4"><${BannedOperators} model=${info} /></section>
     </main>
-    <${SetupReroll} pub=${pub} />
+    <div class="brief__dock">
+      ${priv?.diyChoice ? html`<${DiyChoice} priv=${priv} onChoose=${actions.diyChoose} disabled=${!me} dock=${true} ready=${!!me?.ready} />` : null}
+      <${SetupReroll} pub=${pub} />
+    </div>
     <footer class="brief__foot">
       <${LoadoutButton} from="briefing" size="lg" class="brief-loadout" />
       ${canPlan ? html`<${Button} variant="secondary" size="lg" icon="users" class="brief-plan" data-testid="bond-plan-open"

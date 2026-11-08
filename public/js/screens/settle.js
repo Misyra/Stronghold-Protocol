@@ -8,7 +8,10 @@
 //   同盟 (TeamPage): one card per seat (its ace operator's art, the 评语, the rounds passed, the player plate, the
 //     trophies), the team's outcome and rounds, the match time and date, 数据详情 (the full report: screens/result.js
 //     ResultView) and 返回同盟 / 返回大厅. A match with gameplay plugins carries the 「非官方」 mark (DESIGN §32.6) and
-//     leaves the level alone; the 结算 tab plugin slot (result.tab) sits on this page.
+//     leaves the level alone; the 结算 tab plugin slot (result.tab) sits on this page. 结算点赞 (the owner's request of
+//     2026-11-05, Stardust fork rel33 7c99acc1; ui/likes.js): while I am a human player of the match still in its room,
+//     every other human player's card has a like button beside the trophies — once each — and every card shows the likes
+//     it got on this settlement; nothing is kept after it.
 // The LV is counted from this device's match records (ui/stats.js): the 卫戍认证 of each settled official match (its
 // settlement row's `reward`) and the 每日防卫目标 bonus of each day that reached it, against the levels of
 // config.rewards.milestones. [ASSUMED] the official game keeps the total on the account; this project has no accounts,
@@ -30,7 +33,9 @@ import { UnofficialMark, VersionTag, isModdedRoom } from '../ui/pluginTag.js';
 import { shownVersion, seasonOf } from '../versions.js';
 import { TestMark } from '../ui/testConsole.js';
 import { ResultView, resultBonds } from './result.js';
-import { DIFFICULTY_NAMES, DIFFICULTY_COLORS } from '../../../shared/constants.js';
+import { DIFFICULTY_NAMES, DIFFICULTY_COLORS, ERR } from '../../../shared/constants.js';
+import { cardLike } from '../ui/likes.js';
+import { net } from '../net.js';
 import { t } from '../../../shared/i18n.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -512,7 +517,23 @@ function titleView(p, gd) {
   };
 }
 
-function TeamCard({ p, i, gd, self, victory, raw }) {
+/**
+ * 结算点赞 of one card (ui/likes.js cardLike): a button while I may like the player — pressed once I did —, else the
+ * count it got when there is one. The count re-mounts on a change, so it pops.
+ */
+function LikeChip({ like, name, busy, onLike }) {
+  const n = like.count > 0 ? html`<b key=${like.count} class="num tchip__n">${like.count}</b>` : null;
+  if (like.can) {
+    const label = like.liked ? t('已点赞') : t('为 {name} 点赞', { name });
+    return html`<button type="button" class=${cx('tchip', 'tchip--like', like.liked && 'is-liked')} data-like=${like.liked ? 'done' : 'can'}
+      disabled=${like.liked || busy} aria-pressed=${like.liked ? 'true' : 'false'} aria-label=${label} title=${label} onClick=${onLike}>
+      <${Icon} name="like" />${n}</button>`;
+  }
+  if (!n) return null;
+  return html`<span class=${cx('tchip', 'tchip--like', 'is-static', like.liked && 'is-liked')} data-like="count" title=${t('获赞')}><${Icon} name="like" />${n}</span>`;
+}
+
+function TeamCard({ p, i, gd, self, victory, raw, like = null, likeBusy = false, onLike = null }) {
   const ace = aceOf(p.lineup);
   const v = ace ? unitView(ace, gd) : null;
   const title = titleView(p, gd);
@@ -537,6 +558,7 @@ function TeamCard({ p, i, gd, self, victory, raw }) {
     </div>
     <div class="tcard__chips">
       <span class="tchip tchip--cup" title=${t('获得奖杯')}><${Sprite} k="settle/id_info_cup_icon" class="tchip__cup" fallback=${html`<${Icon} name="crown" />`} /><b class="num">+${p.trophies}</b></span>
+      ${like ? html`<${LikeChip} like=${like} name=${p.name} busy=${likeBusy} onLike=${() => onLike?.(p.playerId)} />` : null}
     </div>
   </article>`;
 }
@@ -546,6 +568,30 @@ function TeamPage({ r, res, gd, myId, at: when, content, backLabel, onBack, onDe
   const backRef = useRef(null);
   const rawOf = (pid) => (Array.isArray(res?.players) ? res.players.find((x) => x && x.playerId === pid) : null) || null;
   const self = r.players.find((p) => p.playerId === myId) || null;
+  // 结算点赞 (Stardust fork rel33 7c99acc1, ui/likes.js): the counts and my likes from room.likes; `off` once the server
+  // cannot take one (an older server, the room's next match started, no longer in the room); `blocked` / `extra`: a card
+  // the server refused / found liked
+  const likes = useStore((st) => st.match.likes);
+  const inRoom = useStore((st) => !!st.room);
+  const [likeOff, setLikeOff] = useState(false);
+  const [likeBusy, setLikeBusy] = useState(() => new Set());
+  const [likeExtra, setLikeExtra] = useState(() => new Set());
+  const [likeBlocked, setLikeBlocked] = useState(() => new Set());
+  const humans = r.players.filter((p) => !p.isBot && !p.left).length;
+  const likeCtx = { me: self, inRoom, off: likeOff || humans < 2, likes, extra: likeExtra };
+  const likeOf = (p) => { const l = cardLike(p, likeCtx); return l && likeBlocked.has(p.playerId) ? { ...l, can: false } : l; };
+  const add = (set, id) => { const n = new Set(set); n.add(id); return n; };
+  const onLike = (pid) => {
+    if (likeBusy.has(pid)) return;
+    setLikeBusy((b) => add(b, pid));
+    Promise.resolve().then(() => net.request('room.like', { playerId: pid })).catch((err) => {
+      const code = err?.code;
+      if (code === ERR.ALREADY) setLikeExtra((x) => add(x, pid));
+      else if (code === ERR.BAD_TARGET) setLikeBlocked((x) => add(x, pid));
+      else if ([ERR.BAD_MSG, ERR.WRONG_PHASE, ERR.NOT_IN_ROOM, ERR.SPECTATOR].includes(code)) setLikeOff(true);
+      // RATE, offline, a timeout: the button stays, a later press tries again
+    }).finally(() => setLikeBusy((b) => { const n = new Set(b); n.delete(pid); return n; }));
+  };
   const bg = self?.left ? 'quit' : r.victory ? 'success' : 'fail';
   useEffect(() => {
     audio.sfx('settlementTeam');
@@ -574,7 +620,8 @@ function TeamPage({ r, res, gd, myId, at: when, content, backLabel, onBack, onDe
     <div class="settle__stage">
       <${Logo} />
       <div ref=${rowRef} class=${cx('steam__cards', wide && 'is-wide')} style=${`--n:${r.players.length}`}>
-        ${r.players.length ? r.players.map((p, i) => html`<${TeamCard} key=${p.playerId} p=${p} i=${wide ? Math.min(i, 7) : i} gd=${gd} self=${p.playerId === myId} victory=${r.victory} raw=${rawOf(p.playerId)} />`)
+        ${r.players.length ? r.players.map((p, i) => html`<${TeamCard} key=${p.playerId} p=${p} i=${wide ? Math.min(i, 7) : i} gd=${gd} self=${p.playerId === myId} victory=${r.victory} raw=${rawOf(p.playerId)}
+          like=${likeOf(p)} likeBusy=${likeBusy.has(p.playerId)} onLike=${onLike} />`)
           : html`<p class="steam__none">${t('暂无结算数据')}</p>`}
       </div>
       <div class="settle__barbg steam__barbg" aria-hidden="true"><${Sprite} k="settle/bottom_bg" /></div>

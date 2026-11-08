@@ -27,6 +27,10 @@
 // 联动干员 (the owner's decision of 2026-11-03): the collab 6★ (`diy.excluded`, left out of `ownedPool` for copyright) are
 // built in the data and offered like any other 6★ — diyPool appends them, checkDiyPick / diyRecordOf compose a collab
 // pick like an owned one. No room switch and no different rule (they used to need `experimental.collabOps`).
+// 自选候补 (Stardust fork rel26 2d3ec08e, feedback #114; the owner's decision of 2026-11-02): each tier's preset holds
+// four equal candidates in the player's order — its slots, then DIY_BENCH_SIZE bench keys —; in the briefing the player
+// picks any two (resolveDiySlots). A server without 候补 drops the bench keys like any unknown slot and fields the first
+// two positions as its slots (checkDiyPicks is lenient).
 
 import { composeUnitRecord, unitForm, statusKey } from './standIn.js';
 import { atPotential } from './potential.js';
@@ -107,6 +111,152 @@ export function diySlot(slotId, data) {
 /** The base ids of the 自选 slots (data order: tier 5 then tier 6). @param {DiyData} data @returns {string[]} */
 export function diySlotIds(data) {
   return Object.keys(diyOf(data)?.slots ?? {});
+}
+
+/**
+ * 自选候补 (feedback #114, see the header): a tier's preset holds four equal candidates in the player's order
+ * [ASSUMED count: the player asked for "四个（或者更多）"; the official count was not out on 2026-11-02] — positions 1–2
+ * under the tier's slot ids, 3–4 keyed `diyBench_<tier>_<n>` (n = 1…DIY_BENCH_SIZE) in the same picks map (room.diy,
+ * seats[].diy, a checkpoint's seats): 4 slots + 4 bench keys = DIY_LIMITS.slots (8, shared/protocol.js), so a server
+ * without 候补 reads the map, drops the bench keys like any unknown slot and fields the first two positions as its
+ * slots. A bench pick follows the rules of a pick of its tier (checkDiyPick against the tier's first slot; one
+ * operator once per tier, an owned operator once in the whole preset — validateDiyPicks). In the match the player
+ * chooses in the briefing (INFO_CHECK, once the bans are drawn) which candidates of each tier fill its slots
+ * (resolveDiySlots; server/match/player/diy.js).
+ */
+export const DIY_BENCH_SIZE = 2;
+const BENCH_ID = /^diyBench_(\d)_(\d)$/;
+
+/** The bench key `n` (1-based) of `tier`. @param {number} tier @param {number} n */
+export const diyBenchId = (tier, n) => `diyBench_${tier}_${n}`;
+
+/** The tiers that have 自选 slots in the data, in data order (5, then 6). @param {DiyData} data @returns {number[]} */
+export function diyTiers(data) {
+  const out = [];
+  for (const s of Object.values(diyOf(data)?.slots ?? {})) if (Number.isInteger(s?.tier) && !out.includes(s.tier)) out.push(s.tier);
+  return out;
+}
+
+/** The slot base ids of `tier`, in data order. @param {number} tier @param {DiyData} data @returns {string[]} */
+export function diyTierSlotIds(tier, data) {
+  const slots = diyOf(data)?.slots ?? {};
+  return Object.keys(slots).filter((id) => slots[id]?.tier === tier);
+}
+
+/** The bench keys of the data: tier 5's, then tier 6's, each 1…DIY_BENCH_SIZE. @param {DiyData} data @returns {string[]} */
+export function diyBenchIds(data) {
+  return diyTiers(data).flatMap((tier) => Array.from({ length: DIY_BENCH_SIZE }, (_, i) => diyBenchId(tier, i + 1)));
+}
+
+/** The tier of a bench key of the data, or null (not a bench key, or a tier without slots). @param {unknown} key @param {DiyData} data */
+export function diyBenchTier(key, data) {
+  const m = typeof key === 'string' ? BENCH_ID.exec(key) : null;
+  if (!m) return null;
+  const tier = Number(m[1]);
+  const n = Number(m[2]);
+  return n >= 1 && n <= DIY_BENCH_SIZE && diyTiers(data).includes(tier) ? tier : null;
+}
+
+/**
+ * The slot a key of a picks map is composed and checked against: a slot's own base id, a bench key's tier's first slot;
+ * null for anything else. @param {unknown} key @param {DiyData} data @returns {string|null}
+ */
+export function diyKeySlotId(key, data) {
+  const diy = diyOf(data);
+  if (!diy || typeof key !== 'string') return null;
+  if (own(diy.slots, key)) return key;
+  const tier = diyBenchTier(key, data);
+  return tier == null ? null : diyTierSlotIds(tier, data)[0] ?? null;
+}
+
+/** The tier of a key of a picks map (a slot base id or a bench key), or null. @param {unknown} key @param {DiyData} data */
+export function diyKeyTier(key, data) {
+  const diy = diyOf(data);
+  if (!diy || typeof key !== 'string') return null;
+  if (own(diy.slots, key)) return Number.isInteger(diy.slots[key]?.tier) ? diy.slots[key].tier : null;
+  return diyBenchTier(key, data);
+}
+
+/**
+ * The candidates of each tier of a picks map, in preset order — the tier's slots in data order, then its bench 1…n —,
+ * empty keys left out; tiers without a candidate absent.
+ * @param {Record<string, any>|null|undefined} picks @param {DiyData} data
+ * @returns {Map<number, Array<{ key: string, pick: any }>>}
+ */
+export function diyCandidates(picks, data) {
+  const out = new Map();
+  if (!isObj(picks)) return out;
+  for (const tier of diyTiers(data)) {
+    const keys = [...diyTierSlotIds(tier, data), ...Array.from({ length: DIY_BENCH_SIZE }, (_, i) => diyBenchId(tier, i + 1))];
+    const list = keys.filter((k) => own(picks, k) && isObj(picks[k])).map((key) => ({ key, pick: picks[key] }));
+    if (list.length) out.set(tier, list);
+  }
+  return out;
+}
+
+/** Whether a picks map leaves a choice to make: a tier with more candidates than slots. @param {any} picks @param {DiyData} data */
+export function hasDiyChoice(picks, data) {
+  for (const [tier, list] of diyCandidates(picks, data)) if (list.length > diyTierSlotIds(tier, data).length) return true;
+  return false;
+}
+
+/**
+ * The bonds of a 自选 operator switched off this match (`off`: a match's drawn and static bans), in its own order; [] when
+ * none is. @param {DiyData} data @param {string} charId @param {Set<string>|null} off @returns {string[]}
+ */
+export function diyPickOffBonds(data, charId, off) {
+  const bonds = diyOf(data)?.operators?.[charId]?.bonds;
+  return off && Array.isArray(bonds) ? bonds.filter((b) => off.has(b)) : [];
+}
+
+/**
+ * Whether every bond of a 自选 operator is switched off (`off`: a match's drawn and static bans) — such a piece gets no
+ * stock (server/match/player/diy.js buildDiyStock). @param {DiyData} data @param {string} charId @param {Set<string>|null} off
+ */
+export function diyPickOff(data, charId, off) {
+  const bonds = diyOf(data)?.operators?.[charId]?.bonds;
+  return !!off && Array.isArray(bonds) && bonds.length > 0 && bonds.every((b) => off.has(b));
+}
+
+/**
+ * The slot picks a match fields from a checked preset (候补, see DIY_BENCH_SIZE). Per tier: the candidates
+ * `choice[tier]` names (charIds — taken only when they are exactly min(slots, candidates) distinct candidates of the
+ * tier), else the default — the first candidates in the player's order whose bonds are not all off this match
+ * (diyPickOff with `off`), then the others in order [ASSUMED: the owner did not specify it; the official rule was not
+ * out on 2026-11-02]. A chosen candidate that sits in a slot keeps that slot; the other chosen ones fill the free slots
+ * in preset order — so a preset without a bench, or whose slotted picks are the chosen ones, comes back exactly as it
+ * was (a checkpoint's pieces name their slot).
+ * @param {Record<string, DiyLoadout>} picks a checked preset (slots and bench keys)
+ * @param {DiyData} data
+ * @param {{ choice?: Record<string|number, readonly string[]>|null, off?: Set<string>|null }} [opts]
+ * @returns {Record<string, DiyLoadout>} slot base id → pick, in data order
+ */
+export function resolveDiySlots(picks, data, { choice = null, off = null } = {}) {
+  /** @type {Record<string, DiyLoadout>} */
+  const out = {};
+  for (const [tier, list] of diyCandidates(picks, data)) {
+    const slots = diyTierSlotIds(tier, data);
+    const n = Math.min(slots.length, list.length);
+    const want = isObj(choice) && Array.isArray(choice[tier]) ? choice[tier] : null;
+    const ids = list.map((c) => c.pick.charId);
+    let chosen;
+    if (want && want.length === n && new Set(want).size === n && want.every((id) => ids.includes(id))) {
+      chosen = list.filter((c) => want.includes(c.pick.charId));
+    } else {
+      const ranked = [...list.filter((c) => !diyPickOff(data, c.pick.charId, off)), ...list.filter((c) => diyPickOff(data, c.pick.charId, off))].slice(0, n);
+      chosen = list.filter((c) => ranked.includes(c));
+    }
+    const at = {};
+    const free = [];
+    for (const s of slots) {
+      const c = chosen.find((x) => x.key === s);
+      if (c) at[s] = c.pick;
+      else free.push(s);
+    }
+    chosen.filter((c) => !slots.includes(c.key)).forEach((c, i) => { at[free[i]] = c.pick; });
+    for (const s of slots) if (at[s]) out[s] = at[s];
+  }
+  return out;
 }
 
 /**
@@ -269,7 +419,8 @@ export function diyModuleOf(slotId, charId, uniEquipId, data) {
  * Check a whole 自选 roster: `picks` maps slot base ids to a pick (absent / null = an empty slot). Strict: an unknown
  * slot, an illegal pick (checkDiyPick), a module of another game mode (isDiyModule: 集成战略 / 生息演算), an operator without a kit (when `kitted` is
  * given), the same operator twice in one tier, or an owned operator in two slots rejects the roster; a prototype may
- * fill a tier-5 and a tier-6 slot.
+ * fill a tier-5 and a tier-6 slot. A 候补 key (diyBenchId) is a pick of its tier like a slot of it (checked against the
+ * tier's first slot) and counts in both rules.
  * @param {any} picks
  * @param {{ data: DiyData, kitted?: Kitted }} opts
  * @returns {{ ok: true, picks: Record<string, DiyLoadout> } | { error: 'BAD_MSG'|'BAD_TARGET', detail: string }}
@@ -284,15 +435,16 @@ export function validateDiyPicks(picks, { data, kitted = null } = { data: null }
   const byTier = new Map();
   const ownedSeen = new Map();
   for (const [slotId, pick] of Object.entries(picks)) {
-    if (!own(diy.slots, slotId)) return { error: 'BAD_TARGET', detail: `not a 自选 slot: ${slotId}` };
+    const tier = diyKeyTier(slotId, data);
+    const at = diyKeySlotId(slotId, data);
+    if (tier == null || !at) return { error: 'BAD_TARGET', detail: `not a 自选 slot: ${slotId}` };
     if (pick == null) continue;
-    const c = checkDiyPick(slotId, pick, data);
+    const c = checkDiyPick(at, pick, data);
     if (!('ok' in c)) return { error: 'BAD_TARGET', detail: c.error };
     const { charId } = c.pick;
     if (!ok(charId)) return { error: 'BAD_TARGET', detail: `${charId} has no kit yet` };
-    const mod = c.pick.uniEquipId ? diyModuleOf(slotId, charId, c.pick.uniEquipId, data) : null;
+    const mod = c.pick.uniEquipId ? diyModuleOf(at, charId, c.pick.uniEquipId, data) : null;
     if (mod && !isDiyModule(mod)) return { error: 'BAD_TARGET', detail: `${charId}: ${c.pick.uniEquipId} is a module of another game mode (${mod.typeName}, ${/^RA-/.test(mod.typeName || '') ? '生息演算' : '集成战略'})` };
-    const tier = diy.slots[slotId].tier;
     const inTier = byTier.get(tier) ?? new Set();
     if (inTier.has(charId)) return { error: 'BAD_TARGET', detail: `${charId} fills two tier-${tier} slots` };
     inTier.add(charId);

@@ -261,8 +261,10 @@ describe('自选编队 tab (screens/diy.js)', () => {
 
   test('four slots by tier: an empty slot to fill, a filled one shows the operator, its tag, skill and module', () => {
     const tree = expand(DiyPanelView({ m: data.get('assets'), picks: { [T5A]: SIEGE_PICK, [T6A]: { charId: SHARP } }, legal: { [T5A]: SIEGE_PICK, [T6A]: { charId: SHARP } }, kitted: KIT, onSet() {}, picking: null, onPicking() {} }));
-    const slots = [...walk(tree)].filter((v) => hasClass(v, 'diy-slot'));
-    assert.deepEqual(slots.map((v) => v.props['data-slot']), [T5A, T5B, T6A, T6B]);
+    // four equal positions per tier (自选候补, feedback #114: positions 3–4 are diyBench_ keys; test/ui/diy-choice.test.js)
+    const all = [...walk(tree)].filter((v) => hasClass(v, 'diy-slot'));
+    assert.deepEqual(all.map((v) => v.props['data-slot']), [T5A, T5B, 'diyBench_5_1', 'diyBench_5_2', T6A, T6B, 'diyBench_6_1', 'diyBench_6_2']);
+    const slots = all.filter((v) => !String(v.props['data-slot']).startsWith('diyBench_'));
     const siege = slots[0];
     assert.equal(siege.props['data-char'], SIEGE);
     const txt = textOf(siege);

@@ -12,6 +12,7 @@
 //                 every local clock; `leaks`: { [fieldId]: counted leaks so far } of every normal field simulated
 //                 locally (the live LP of ui/hud.js liveLp, user playtest #3 item 2). Under client-side combat `field`
 //                 is published by the runner (the m.field shape of the battle on screen, `local: true`).
+//                 `likes`: the 结算点赞 of the settlement on screen (room.likes, ui/likes.js applyLikes) | null
 //   ticker      – recent `m.ticker` lines, emotes – recent `m.emote` events and live `m.chat` lines (avatar bubbles)
 //   clock       – { offset, rtt } server clock correction: serverNow ≈ Date.now() + offset
 //   ui          – small bits of local UI state shared between screens
@@ -76,7 +77,7 @@ export function createStore(initial) {
 }
 
 /** Fresh (empty) match slice. */
-export const emptyMatch = () => ({ public: null, private: null, field: null, result: null, battle: null });
+export const emptyMatch = () => ({ public: null, private: null, field: null, result: null, battle: null, likes: null });
 
 /** Initial app state (exported for tests and resets). */
 export const initialState = Object.freeze({

@@ -231,24 +231,24 @@
       "bossHpLeft": 2777480,
       "rngDraws": 302,
       "errors": {"count":0,"kinds":[]},
-      "players": {"p1":{"killed":5,"total":7,"perfect":false,"leaks":2,"leaksUncounted":0,"coins":0,"dmg":573740,"bossDmg":217986,"heal":28430,"deaths":2,"layerGains":{}}},
+      "players": {"p1":{"killed":5,"total":7,"perfect":false,"leaks":2,"leaksUncounted":0,"coins":0,"dmg":573740,"bossDmg":217986,"heal":28608,"deaths":2,"layerGains":{}}},
       "units": [
-        ["p1",1,"op","chess_char_4_17_b",1,"uniequip_002_hsguma",0,0,19,0,32684,15758,10398,83,0],
-        ["p1",2,"op","chess_char_4_18_b",1,"uniequip_002_mudrok",6714.4,1,4,0,127495,0,0,84,4],
-        ["p1",3,"op","chess_char_4_23_b",2,"uniequip_002_gvial2",3092.1,1,6,0,88127,5530,4083,91,4],
-        ["p1",4,"op","chess_char_4_19_b",2,"uniequip_002_flamtl",2329.8,1,7,1,27067,6753,1200,74,7],
+        ["p1",1,"op","chess_char_4_17_b",1,"uniequip_002_hsguma",0,0,19,0,32684,15821,10308,83,0],
+        ["p1",2,"op","chess_char_4_18_b",1,"uniequip_002_mudrok",6714.4,1,4,0,127495,0,908,84,4],
+        ["p1",3,"op","chess_char_4_23_b",2,"uniequip_002_gvial2",3092.1,1,6,0,88127,5530,3954,91,4],
+        ["p1",4,"op","chess_char_4_19_b",2,"uniequip_002_flamtl",2329.8,1,7,1,27067,6753,1115,74,7],
         ["p1",5,"op","chess_char_4_22_b",2,"uniequip_002_svrash",2825.9,1,8,4,171349,5055,0,77,3],
         ["p1",6,"op","chess_char_4_20_b",2,"uniequip_002_fartth",1560.9,1,9,0,33349,0,0,14,2],
         ["p1",7,"op","chess_char_4_21_b",1,"uniequip_002_plosis",1742.4,1,10,0,0,1243,528,1,0],
-        ["p1",8,"op","chess_char_4_24_b",1,"uniequip_002_billro",2395.8,1,1,0,93670,0,563,83,6],
-        ["p1",9,"op","chess_char_4_25_b",2,"uniequip_002_cetsyr",1838.1,1,3,0,0,0,300,0,3],
-        ["p1",10,"op","chess_char_4_26_b",0,"uniequip_002_bldsk",1674.2,1,5,0,0,0,11359,28,1]
+        ["p1",8,"op","chess_char_4_24_b",1,"uniequip_002_billro",2395.8,1,1,0,93670,0,421,83,6],
+        ["p1",9,"op","chess_char_4_25_b",2,"uniequip_002_cetsyr",1838.1,1,3,0,0,0,218,0,3],
+        ["p1",10,"op","chess_char_4_26_b",0,"uniequip_002_bldsk",1674.2,1,5,0,0,0,11156,28,1]
       ],
-      "enemies": {"enemy_1249_lysdb_2":[5,5,0,5829,107495],"enemy_1430_lrrook":[2,0,2,0,253925],"enemy_9017_achunt":[1,0,0,20071,222520]},
-      "hooks": [1,19,6000,587,587,1333,1882,4276,7,9,30,30,0,13707,110,5,8,2,1,7,0,6,2],
-      "events": {"atk":629,"cast":7,"deploy":11,"die":7,"dmg":1866,"engage":7,"fx":361,"heal":30,"leak":2,"rate":54,"skill":62,"spawn":18,"status":503},
+      "enemies": {"enemy_1249_lysdb_2":[5,5,0,5829,107495],"enemy_1430_lrrook":[2,0,2,0,253925],"enemy_9017_achunt":[1,0,0,20134,222520]},
+      "hooks": [1,19,6000,587,587,1333,1882,4221,7,9,30,30,0,13707,110,5,8,2,1,7,0,6,2],
+      "events": {"atk":629,"cast":7,"deploy":11,"die":7,"dmg":1866,"engage":7,"fx":361,"heal":32,"leak":2,"rate":54,"skill":62,"spawn":18,"status":503},
       "fx": {"appear":2,"bandage":1,"block":63,"burst":6,"charge":7,"disappear":2,"dodge":2,"featherArrow":2,"flame":7,"garrisonGrant":1,"jungleSoul":4,"mote":102,"redistribute":45,"reweave":3,"riposte":2,"rockslide":4,"sandChains":6,"shieldBreak":16,"slash":40,"spGift":5,"thorns":38,"truesilver":3},
-      "snaps": "02b5546c ab607e87 8fcb7232 4c76083c b2265be7 2d1936bc 7dc2eb2f 5d536678 10b2ae13 1c7a9b32 e1a98afa 92ff0137 131dc103 1bbf4f46 0a4123da 87e43964 4dca14a0 4d6a2e58 b6b81890 3a133bd9"
+      "snaps": "02b5546c d7bcc9dd f5dc0e10 f4619316 d2aa609b 5985be19 cef333af 15395a3f e5df9ddc a4fe9749 1ada165d 38001020 5d35e2bc 25b3fdc1 8989ea7d 79274b97 7ffc8443 87ae0ff3 353af1eb c66ff9da"
     },
     "boss-boss_3-pair": {
       "about": "假想敌：管 pair pool 4000000: chess_char_6_03_b chess_char_6_06_b chess_char_6_07_b chess_char_6_01_b chess_char_6_02_b chess_char_6_04_b chess_char_6_05_b chess_char_6_08_b chess_char_6_09_b chess_char_6_11_b token_10017_skadi2_dedant | chess_char_6_15_b chess_char_6_19_b chess_char_5_01_b chess_char_6_17_b chess_char_6_12_b chess_char_6_13_b chess_char_6_14_b chess_char_6_16_b chess_char_6_18_b chess_char_6_20_b",
@@ -521,26 +521,26 @@
       "bossHpLeft": 3738684,
       "rngDraws": 97,
       "errors": {"count":0,"kinds":[]},
-      "players": {"p1":{"killed":7,"total":7,"perfect":true,"leaks":0,"leaksUncounted":0,"coins":0,"dmg":805301,"bossDmg":461316,"heal":93294,"deaths":4,"layerGains":{}}},
+      "players": {"p1":{"killed":7,"total":7,"perfect":true,"leaks":0,"leaksUncounted":0,"coins":0,"dmg":805301,"bossDmg":461316,"heal":94771,"deaths":4,"layerGains":{}}},
       "units": [
-        ["p1",1,"op","chess_char_4_17_b",1,"uniequip_002_hsguma",3864.3,1,4,1,35494,12458,16553,31,0],
-        ["p1",2,"op","chess_char_4_18_b",1,"uniequip_002_mudrok",5890.86,1,6,0,68011,26076,25825,24,9],
-        ["p1",3,"op","chess_char_4_23_b",2,"uniequip_002_gvial2",3092.1,1,21,4,203172,29991,10533,46,1],
+        ["p1",1,"op","chess_char_4_17_b",1,"uniequip_002_hsguma",3864.3,1,4,1,35714,13069,16360,31,0],
+        ["p1",2,"op","chess_char_4_18_b",1,"uniequip_002_mudrok",5890.86,1,6,0,66851,26506,28153,23,9],
+        ["p1",3,"op","chess_char_4_23_b",2,"uniequip_002_gvial2",3092.1,1,21,4,203172,30211,10513,46,1],
         ["p1",4,"op","chess_char_4_19_b",2,"uniequip_002_flamtl",3727.68,1,9,0,9786,7795,0,23,2],
-        ["p1",5,"op","chess_char_4_22_b",2,"uniequip_002_svrash",2825.9,1,23,1,198813,5209,0,115,3],
+        ["p1",5,"op","chess_char_4_22_b",2,"uniequip_002_svrash",2825.9,1,23,0,198317,5209,0,115,3],
         ["p1",6,"op","chess_char_4_20_b",2,"uniequip_002_fartth",0,0,22,0,212146,3122,0,84,5],
         ["p1",7,"op","chess_char_4_21_b",1,"uniequip_002_plosis",1742.4,1,11,0,0,3925,17850,20,2],
-        ["p1",8,"op","chess_char_4_24_b",1,"uniequip_002_billro",2395.8,1,12,1,77879,5803,75,91,6],
-        ["p1",9,"op","chess_char_4_25_b",2,"uniequip_002_cetsyr",1838.1,1,3,0,0,3925,4336,0,3],
-        ["p1",10,"op","chess_char_4_26_b",0,"uniequip_002_bldsk",1674.2,1,5,0,0,3925,18124,21,2],
+        ["p1",8,"op","chess_char_4_24_b",1,"uniequip_002_billro",2395.8,1,12,2,79315,5803,75,91,6],
+        ["p1",9,"op","chess_char_4_25_b",2,"uniequip_002_cetsyr",1838.1,1,3,0,0,3925,4128,0,3],
+        ["p1",10,"op","chess_char_4_26_b",0,"uniequip_002_bldsk",1674.2,1,5,0,0,3925,17693,24,2],
         ["-","~1","device","trap_1105_accrate",null,null,100,1,1,0,0,0,0,0,null],
         ["-","~2","device","trap_1105_accrate",null,null,100,1,2,0,0,0,0,0,null]
       ],
-      "enemies": {"enemy_1010_demon_2":[2,2,0,4232,107495],"enemy_1438_dspred":[5,5,0,40503,236490],"enemy_1521_dslily":[1,0,0,51615,461316]},
-      "hooks": [1,23,6000,580,568,963,1133,6930,11,11,33,32,0,13579,153,16,8,0,1,11,0,27,4],
-      "events": {"atk":754,"cast":12,"deploy":13,"die":11,"dmg":1111,"engage":7,"fx":367,"heal":79,"rate":81,"skill":67,"spawn":20,"status":563},
-      "fx": {"appear":2,"bandage":2,"block":16,"burst":27,"camouflage":1,"disappear":2,"dodge":4,"featherArrow":5,"flame":2,"garrisonGrant":1,"grow":1,"healField":2,"jungleSoul":1,"mote":68,"redistribute":45,"reweave":3,"riposte":4,"rockfall":14,"rockslide":9,"sandChains":6,"shieldBreak":22,"slash":53,"spGift":5,"tentacle":4,"thorns":61,"tide":4,"truesilver":3},
-      "snaps": "4357c1b6 86b94722 511fa650 71db9050 9f68ab3b a50a706e 86c8441e a40745a7 7a31061b 670ded48 c057156b a0d9bb08 610b0255 652886da 588d3e79 5342a1be aa1e8325 30253c50 d3005528 a0a611fa"
+      "enemies": {"enemy_1010_demon_2":[2,2,0,4232,107495],"enemy_1438_dspred":[5,5,0,42087,236490],"enemy_1521_dslily":[1,0,0,51071,461316]},
+      "hooks": [1,23,6000,583,571,965,1137,6953,11,11,33,32,0,13587,155,16,8,0,1,11,0,27,4],
+      "events": {"atk":759,"cast":12,"deploy":13,"die":11,"dmg":1115,"engage":7,"fx":369,"heal":84,"rate":81,"skill":67,"spawn":20,"status":566},
+      "fx": {"appear":2,"bandage":2,"block":17,"burst":27,"camouflage":1,"disappear":2,"dodge":4,"featherArrow":5,"flame":2,"garrisonGrant":1,"grow":1,"healField":2,"jungleSoul":1,"mote":68,"redistribute":45,"reweave":3,"riposte":4,"rockfall":14,"rockslide":9,"sandChains":6,"shieldBreak":22,"slash":53,"spGift":5,"tentacle":4,"thorns":62,"tide":4,"truesilver":3},
+      "snaps": "4357c1b6 86b94722 6e86362f 9bea1044 e2fd4a88 6abe946d 54b89166 68395348 b93c6abc 4d540b8c 5dd4fc91 55e4adf6 397215ff e1fc80a8 e48965ff 1dc5eccc 82a7fb8f cc63602b 5c0ddf3e 8d97fb2c"
     },
     "boss-boss_5-pair": {
       "about": "卢西恩，“猩红血钻” pair pool 1560000: chess_char_6_03_b chess_char_6_06_b chess_char_6_07_b chess_char_6_01_b chess_char_6_02_b chess_char_6_04_b chess_char_6_05_b chess_char_6_08_b chess_char_6_09_b chess_char_6_11_b token_10017_skadi2_dedant token_10030_mlyss_wtrman | chess_char_6_15_b chess_char_6_19_b chess_char_5_01_b chess_char_6_17_b chess_char_6_12_b chess_char_6_13_b chess_char_6_14_b chess_char_6_16_b chess_char_6_18_b chess_char_6_20_b",
@@ -767,15 +767,15 @@
       "players": {"p1":{"killed":8,"total":4,"perfect":false,"leaks":2,"leaksUncounted":0,"coins":0,"dmg":287166,"bossDmg":185106,"heal":11043,"deaths":12,"layerGains":{}}},
       "units": [
         ["p1",1,"op","chess_char_4_17_b",1,"uniequip_002_hsguma",3864.3,1,10,0,5,0,0,5,0],
-        ["p1",2,"op","chess_char_4_18_b",1,"uniequip_002_mudrok",6714.4,1,11,0,4,0,0,4,1],
-        ["p1",3,"op","chess_char_4_23_b",2,"uniequip_002_gvial2",3092.1,1,12,2,6246,31,592,13,2],
-        ["p1",4,"op","chess_char_4_19_b",2,"uniequip_002_flamtl",0,0,45,1,5686,10495,460,80,4],
-        ["p1",5,"op","chess_char_4_22_b",2,"uniequip_002_svrash",2179.98,1,46,2,95205,19428,1855,57,4],
+        ["p1",2,"op","chess_char_4_18_b",1,"uniequip_002_mudrok",6714.4,1,11,0,4,0,658,4,1],
+        ["p1",3,"op","chess_char_4_23_b",2,"uniequip_002_gvial2",3092.1,1,12,2,6246,31,403,13,2],
+        ["p1",4,"op","chess_char_4_19_b",2,"uniequip_002_flamtl",0,0,45,1,5686,10495,371,80,4],
+        ["p1",5,"op","chess_char_4_22_b",2,"uniequip_002_svrash",2179.98,1,46,2,95205,19428,1710,57,4],
         ["p1",6,"op","chess_char_4_20_b",2,"uniequip_002_fartth",1560.9,1,7,2,104302,0,0,52,7],
         ["p1",7,"op","chess_char_4_21_b",1,"uniequip_002_plosis",3049.2,1,8,0,0,0,0,0,0],
         ["p1",8,"op","chess_char_4_24_b",1,"uniequip_002_billro",2395.8,1,36,1,75717,9988,574,84,5],
-        ["p1",9,"op","chess_char_4_25_b",2,"uniequip_002_cetsyr",0,0,42,0,0,8614,1061,0,2],
-        ["p1",10,"op","chess_char_4_26_b",0,"uniequip_002_bldsk",1674.2,1,9,0,0,0,6502,9,2],
+        ["p1",9,"op","chess_char_4_25_b",2,"uniequip_002_cetsyr",0,0,42,0,0,8614,988,0,2],
+        ["p1",10,"op","chess_char_4_26_b",0,"uniequip_002_bldsk",1674.2,1,9,0,0,0,6341,9,2],
         ["-","~1","device","trap_1105_accrate",null,null,100,1,1,0,0,0,0,0,null],
         ["-","~2","device","trap_1105_accrate",null,null,100,1,2,0,0,0,0,0,null],
         ["-","~3","device","trap_1105_accrate",null,null,100,1,3,0,0,0,0,0,null],
@@ -792,10 +792,10 @@
         "enemy_1198_msfshu": [6,6,0,0,66],
         "enemy_9032_aclionk": [1,0,0,48526,185106]
       },
-      "hooks": [1,47,6000,325,315,473,669,850,30,32,27,25,0,7650,114,2,21,2,1,20,0,0,3],
+      "hooks": [1,47,6000,325,315,473,669,865,30,32,27,25,0,7650,114,2,21,2,1,20,0,0,3],
       "events": {"atk":378,"cast":24,"deploy":20,"die":30,"dmg":365,"engage":7,"fx":138,"heal":12,"leak":2,"rate":63,"skill":54,"spawn":37,"status":317},
       "fx": {"appear":4,"bandage":2,"disappear":4,"dodge":3,"equip":12,"featherArrow":7,"flame":4,"garrisonGrant":1,"jungleSoul":2,"mote":11,"redistribute":6,"reweave":2,"riposte":3,"rockslide":1,"sandChains":5,"slash":44,"summon":2,"sword":1,"telegraph":14,"truesilver":4,"vest":6},
-      "snaps": "7513ebd0 dfa518f9 ca98b71f 243b15c6 e5329955 24c70ccc fa0773c2 210e7799 fbad638e c3503421 d4804c94 913d7236 6c0457e4 03a35563 08386049 383979ef 18d7a46b 49cb29f3 4f1b4ad7 015681e9"
+      "snaps": "7513ebd0 4a0b3c4b d8699751 dbb96314 0c53a197 4109beba eb8237ac dadd7c63 2fbb0c40 998fed4f 10fe38da fc326f84 9b07fa6a 57412f7d a048ca03 dc5dae21 3d279546 9bd276ca 16df4af6 c7dde024"
     },
     "boss-boss_7-pair": {
       "about": "“萨米的意志” pair pool 4000000: chess_char_6_03_b chess_char_6_06_b chess_char_6_07_b chess_char_6_01_b chess_char_6_02_b chess_char_6_04_b chess_char_6_05_b chess_char_6_08_b chess_char_6_09_b chess_char_6_11_b token_10017_skadi2_dedant token_10030_mlyss_wtrman | chess_char_6_15_b chess_char_6_19_b chess_char_5_01_b chess_char_6_17_b chess_char_6_12_b chess_char_6_13_b chess_char_6_14_b chess_char_6_16_b chess_char_6_18_b chess_char_6_20_b",
@@ -1338,15 +1338,15 @@
       "players": {"p1":{"killed":12,"total":5,"perfect":false,"leaks":1,"leaksUncounted":0,"coins":0,"dmg":635023,"bossDmg":445999,"heal":121591,"deaths":6,"layerGains":{}}},
       "units": [
         ["p1",1,"op","chess_char_4_17_b",1,"uniequip_002_hsguma",3318.66,1,4,4,25,546,0,15,0],
-        ["p1",2,"op","chess_char_4_18_b",1,"uniequip_002_mudrok",6354.4,1,23,1,4025,19228,12259,20,5],
-        ["p1",3,"op","chess_char_4_23_b",2,"uniequip_002_gvial2",3092.1,1,27,1,228868,34346,11475,196,4],
+        ["p1",2,"op","chess_char_4_18_b",1,"uniequip_002_mudrok",6354.4,1,23,1,4025,19228,14075,20,5],
+        ["p1",3,"op","chess_char_4_23_b",2,"uniequip_002_gvial2",3092.1,1,27,1,228868,34346,11029,196,4],
         ["p1",4,"op","chess_char_4_19_b",2,"uniequip_002_flamtl",3960.66,1,5,0,0,4368,0,0,0],
-        ["p1",5,"op","chess_char_4_22_b",2,"uniequip_002_svrash",2825.9,1,29,6,211912,24444,1384,92,3],
+        ["p1",5,"op","chess_char_4_22_b",2,"uniequip_002_svrash",2825.9,1,29,6,211912,24444,1350,92,3],
         ["p1",6,"op","chess_char_4_20_b",2,"uniequip_002_fartth",1560.9,1,1,0,148184,0,0,70,7],
-        ["p1",7,"op","chess_char_4_21_b",1,"uniequip_002_plosis",1742.4,1,28,0,0,24599,71151,87,2],
+        ["p1",7,"op","chess_char_4_21_b",1,"uniequip_002_plosis",1742.4,1,28,0,0,24599,70311,87,2],
         ["p1",8,"op","chess_char_4_24_b",1,"uniequip_002_billro",2395.8,1,2,0,42009,0,0,32,3],
-        ["p1",9,"op","chess_char_4_25_b",2,"uniequip_002_cetsyr",1838.1,1,26,0,0,29502,8248,0,2],
-        ["p1",10,"op","chess_char_4_26_b",0,"uniequip_002_bldsk",1674.2,1,3,0,0,4417,17074,27,6]
+        ["p1",9,"op","chess_char_4_25_b",2,"uniequip_002_cetsyr",1838.1,1,26,0,0,29502,7752,0,2],
+        ["p1",10,"op","chess_char_4_26_b",0,"uniequip_002_bldsk",1674.2,1,3,0,0,4417,17073,27,6]
       ],
       "enemies": {
         "enemy_1005_yokai_3": [1,0,1,21529,102638],
@@ -1355,10 +1355,10 @@
         "enemy_9022_acdumm": [1,0,0,561,0],
         "enemy_9023_acdums": [10,10,0,93928,360]
       },
-      "hooks": [1,31,6000,611,611,2157,2687,4926,18,19,32,30,0,10832,138,12,15,1,1,24,0,15,2],
-      "events": {"atk":961,"cast":63,"deploy":16,"die":18,"dmg":2650,"engage":6,"fx":771,"heal":188,"leak":1,"rate":54,"skill":64,"spawn":25,"status":263},
+      "hooks": [1,31,6000,611,611,2157,2687,5007,18,19,32,30,0,10832,138,12,15,1,1,24,0,15,2],
+      "events": {"atk":960,"cast":63,"deploy":16,"die":18,"dmg":2650,"engage":6,"fx":771,"heal":187,"leak":1,"rate":54,"skill":64,"spawn":25,"status":263},
       "fx": {"appear":1,"bandage":6,"beam":13,"block":1,"burst":15,"disappear":1,"dodge":2,"ember":2,"explode":479,"featherArrow":7,"garrisonGrant":1,"healField":2,"jungleSoul":4,"mote":40,"phase":52,"redistribute":30,"reweave":2,"rockslide":5,"sandChains":2,"sandChainsCharged":1,"shieldBreak":17,"slash":56,"spGift":7,"summon":8,"telegraph":2,"thorns":11,"truesilver":3,"undying":1},
-      "snaps": "76844c8c acd4463b 0cf8cefc 4aa7d051 1c702c77 a8ad0541 0cfdd966 ea40ff62 eecfe7ae 2f27f773 e7d5c730 b920b34f c41e716c f97e7aad 8328f28f 51370280 c95ff1d8 7ee73f53 5e0c16b5 81b19b7d"
+      "snaps": "76844c8c acd4463b bde67064 b3af6390 c8d42982 4533c854 7adb0fdb 75eb8c7b 5eb3b5d7 7cdaac8a aba2a599 e3cd34aa 9cff94b9 91443efb 7a6b3ffc 34ee1b5e 809dc5d6 b3cc5e49 5a8e3cf3 edcb04db"
     },
     "unite-1": {
       "about": "联防 1 helper(s), 11 leaked: chess_char_6_03_b chess_char_6_06_b chess_char_6_07_b chess_char_6_01_b chess_char_6_02_b chess_char_6_04_b chess_char_6_05_b chess_char_6_08_b token_10017_skadi2_dedant",

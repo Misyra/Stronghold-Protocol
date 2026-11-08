@@ -1970,7 +1970,7 @@
           "title": {"id":"comment_2","name":"不朽盟约","picId":"comment_icon_2","text":"激活的盟约层数总和最高"},
           "trophies": 4,
           "reward": 400,
-          "stats": {"activatedLayers":362,"bossDamage":518258,"dmgDealt":3975168,"gold":148,"itemsEquipped":0,"kills":267,"leaks":11,"lpLost":0,"merges":4,"perfectRounds":11,"refreshes":49},
+          "stats": {"activatedLayers":362,"bossDamage":518258,"dmgDealt":3975528,"gold":148,"itemsEquipped":0,"kills":267,"leaks":11,"lpLost":0,"merges":4,"perfectRounds":11,"refreshes":49},
           "lineup": ["6_18_a@12,7","5_10_a@12,8","3_19_b@11,7","5_20_a@11,8","4_10_a@10,5","4_25_b@10,6","3_18_a@10,7","1_08_a@10,8"],
           "bonds": ["deputShip 0/30","emptyShip 1/2","investShip 0/8","kazimierzShip 0/2","kjeragShip 0/8","miraShip 1/27","siracusaShip 2/313","soloShip 1/20","suntShip 1/0","swiftShip 0/46"]
         }

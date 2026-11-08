@@ -62,6 +62,9 @@ function randomIntent(rng, m, ps) {
     // 战斗 2 倍速投票 (server/match/match/speedVote.js): the schema wants a boolean; the match's own checks
     // (phase, bots, left) answer the rest
     case 'g.speedVote': return { t, on: rng() < 0.5 };
+    // 自选候补 (protocol.js g.diyChoose, 13440cbd): tier 1-9 + charIds 0-4 个 id——校验器只查形状，选谁上场的
+    // 规则（盟约禁用、预设顺序）由对局自答，跟这里每个其他 intent 一样
+    case 'g.diyChoose': return { t, tier: 1 + rng.int(9), charIds: Array.from({ length: rng.int(5) }, () => rng.pick(['char_134_ifrit', 'char_112_siege'])) };
     // the plugin interaction windows (PLUGIN API v2, docs/PLUGINS.md §10b): random ids and slots — no window of a
     // vanilla match is ever open, so every one of them is a refusal, which is exactly what the fuzz run checks
     case 'g.offer': case 'g.offerRefresh': return { t, pluginId: 'demo', seq: rng.int(1000), offerId: rng.pick(['early-pick', 'x', 'a'.repeat(64)]), idx: rng.int(6) };

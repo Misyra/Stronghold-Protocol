@@ -43,6 +43,20 @@
 //   --seed S         seed of every client's LCG: same seed + same load ⇒ the same action sequence (default 1).
 //                    The server's own match seeds stay random (lobby seedFn), so bot decisions differ a little
 //                    per run — expect order-of-magnitude stability, not identical bytes
+//   --connect-batch N   clients per connect wave (default 200): all N sockets open, then --connect-gap-ms before the
+//                    next wave. One 2000-socket wave overflows the listen backlog (Node default 511) and the kernel
+//                    RSTs the tail (connect ECONNRESET): the 2026-11-08 wall retest measured that as ~320 lost clients
+//                    / ~95 rooms that never started. Batching keeps every client landed
+//   --connect-gap-ms MS  pause between connect waves (default 40)
+//   --max-connections N  the child server's SP_MAX_CONNECTIONS (unset = the server default). Deliberate override for
+//                    beyond-2000-socket escalation runs — the dev shell's own value is still stripped (CHILD_ENV_DENY)
+//   --max-rooms N     the child server's SP_MAX_ROOMS (unset = the server default; the same override semantics)
+//   --attach PORT    don't spawn a server: storm one already listening on 127.0.0.1:PORT (started by the caller with
+//                    the env under test — sharded runs put several of these against one server). No boot/exit in the
+//                    summary; the caller stops the server
+//   --loop-log F     with --attach: read the server's `[loop]` lines from file F instead of a child's stdout. The file
+//                    is a timestamped tee (every line prefixed `<epoch ms> ` by the caller's tee helper) — bare
+//                    [loop] lines are t-lined at read time, which puts setup noise into the window
 //   --port P         port of the child server (default: a free port; pin it to rule the port out as a variance
 //                    source — a pinned port needs the previous run's server gone)
 //   --workers N      SP_WORKERS of the child server (default 4, the server default; 0 = simulation pool off)
@@ -103,6 +117,12 @@ const O = {
   workers: Math.max(0, Math.floor(num(opt.workers, 4))),
   sampleMs: Math.max(200, Math.floor(num(opt['sample-ms'], 1000))),
   loopWindowMs: Math.max(100, Math.floor(num(opt['loop-window-ms'], 5000))),
+  connectBatch: Math.max(1, Math.floor(num(opt['connect-batch'], 200))),
+  connectGapMs: Math.max(0, Math.floor(num(opt['connect-gap-ms'], 40))),
+  maxConnections: opt['max-connections'] != null && opt['max-connections'] !== true ? Math.max(1, Math.floor(num(opt['max-connections'], 0))) : null,
+  maxRooms: opt['max-rooms'] != null && opt['max-rooms'] !== true ? Math.max(1, Math.floor(num(opt['max-rooms'], 0))) : null,
+  attach: Math.max(0, Math.floor(num(opt.attach, 0))),
+  loopLog: opt['loop-log'] === true ? null : opt['loop-log'],
   rehearsalAnswerMs: Math.max(0, Math.floor(num(opt['rehearsal-answer-ms'], 0))),
   rehearsalWarmAnswerMs: Math.max(0, Math.floor(num(opt['rehearsal-warm-answer-ms'], -1))),
   coldAnswerMs: opt['cold-answer-ms'] != null && opt['cold-answer-ms'] !== true ? Math.max(0, Math.floor(num(opt['cold-answer-ms'], 0))) : null,
@@ -158,6 +178,8 @@ async function startServerChild(port) {
     ...(O.coldAnswerMs != null ? { SP_BOT_REHEARSAL_COLD_ANSWER_MS: String(O.coldAnswerMs) } : {}),
     ...(O.warmAnswerMs != null ? { SP_BOT_REHEARSAL_ANSWER_MS: String(O.warmAnswerMs) } : {}),
     ...(O.planPool != null ? { SP_BOT_PLAN_POOL: String(O.planPool) } : {}),
+    ...(O.maxConnections != null ? { SP_MAX_CONNECTIONS: String(O.maxConnections) } : {}),
+    ...(O.maxRooms != null ? { SP_MAX_ROOMS: String(O.maxRooms) } : {}),
   });
   const child = spawn(process.execPath, [path.join(ROOT, 'server', 'index.js')], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   const lines = [];
@@ -176,8 +198,16 @@ async function startServerChild(port) {
     if (child.exitCode != null) throw new Error(`server exited (${child.exitCode}) during boot:\n${lines.slice(-40).map((l) => l.text).join('\n')}`);
     try {
       const res = await fetch(`http://127.0.0.1:${port}/healthz`);
-      if (res.ok) break;
-    } catch { /* not up yet */ }
+      if (res.ok) {
+        // a parallel agent's loadgen on the same pinned port answers healthz too — never accept a foreign server:
+        // our own child must still be alive when the probe succeeds
+        if (child.exitCode != null) throw new Error(`healthz on :${port} answered but our server child already exited — the port is owned by another server; aborting instead of measuring it`);
+        break;
+      }
+    } catch (e) {
+      if (e instanceof Error && /foreign/.test(e.message)) throw e;
+      /* not up yet */
+    }
     if (Date.now() - t0 > 60000) throw new Error(`server did not become healthy in 60 s:\n${lines.slice(-40).map((l) => l.text).join('\n')}`);
     await new Promise((r) => setTimeout(r, 200));
   }
@@ -607,15 +637,47 @@ async function main() {
   let server = null;
   const clients = [];
   try {
-    const port = O.port > 0 ? O.port : await freePort();
-    server = await startServerChild(port);
+    const port = O.attach > 0 ? O.attach : (O.port > 0 ? O.port : await freePort());
+    let loopLines = [];
+    if (O.attach > 0) {
+      // sharded/attached run: the caller started the server (right env, right caps) and stops it; the [loop] windows
+      // come from the caller's timestamped tee of the server's stdout, read at measurement end (the interesting
+      // windows do not exist yet when the run starts)
+      if (O.loopLog) {
+        for (const line of readFileSync(O.loopLog, 'utf8').split('\n')) {
+          if (!line.trim()) continue;
+          const sp = line.indexOf(' ');
+          const head = sp > 0 ? line.slice(0, sp) : '';
+          const t = /^\d{13,}$/.test(head) ? Number(head) : Date.now();
+          loopLines.push({ t, text: sp > 0 ? line.slice(sp + 1) : line });
+        }
+      }
+      note(`attached to 127.0.0.1:${port}${O.loopLog ? ` (loop log ${O.loopLog}, ${loopLines.length} lines)` : ''}`);
+    } else {
+      server = await startServerChild(port);
+      loopLines = server.lines;
+      summary.boot = { ms: server.bootMs };
+      note(`server up on 127.0.0.1:${port} (boot ${server.bootMs} ms, pid ${server.child.pid})`);
+    }
+    /** [loop] source for loopStats: re-read the tee at call time so it holds the whole run. */
+    const loopSource = () => {
+      if (O.attach <= 0 || !O.loopLog) return loopLines;
+      const out = [];
+      for (const line of readFileSync(O.loopLog, 'utf8').split('\n')) {
+        if (!line.trim()) continue;
+        const sp = line.indexOf(' ');
+        const head = sp > 0 ? line.slice(0, sp) : '';
+        const t = /^\d{13,}$/.test(head) ? Number(head) : Date.now();
+        out.push({ t, text: sp > 0 ? line.slice(sp + 1) : line });
+      }
+      return out;
+    };
     // the rehearsal counters' base, taken before any room exists: the delegated rehearsals of a room's FIRST prep land
     // inside the warmup, so the measurement window's own hz0 sample would miss them — the A/B reads whole-run deltas
     const hzBoot = await healthz(port);
     const startedAt = Date.now();
-    summary.meta = { ...O, port, startedAt: new Date(startedAt).toISOString(), node: process.version, serverPid: server.child.pid };
-    summary.boot = { ms: server.bootMs };
-    note(`server up on 127.0.0.1:${port} (boot ${server.bootMs} ms)`);
+    summary.meta = { ...O, port, startedAt: new Date(startedAt).toISOString(), node: process.version,
+      ...(server ? { serverPid: server.child.pid } : { attached: true }) };
 
     // rooms: sizes as even as possible (12 / 4 → 3 per room); a one-client room plays solo
     const sizes = Array.from({ length: O.rooms }, (_, i) => Math.floor(O.clients / O.rooms) + (i < O.clients % O.rooms ? 1 : 0)).filter((n) => n > 0);
@@ -635,7 +697,11 @@ async function main() {
       room.members.forEach((c, i) => { if (list.length) c.band = list[i % list.length]; });
     }
     note(`connecting ${clients.length} clients into ${rooms.length} room(s): ${sizes.join(', ')} (${rooms.map((r) => r.mode).join(', ')})`);
-    const connectResults = await Promise.allSettled(clients.map((c) => c.connect()));
+    const connectResults = [];
+    for (let i = 0; i < clients.length; i += O.connectBatch) {
+      connectResults.push(...await Promise.allSettled(clients.slice(i, i + O.connectBatch).map((c) => c.connect())));
+      if (i + O.connectBatch < clients.length && O.connectGapMs > 0) await new Promise((r) => setTimeout(r, O.connectGapMs));
+    }
     for (let i = 0; i < connectResults.length; i++) {
       if (connectResults[i].status === 'rejected') {
         clients[i].failed = `connect: ${connectResults[i].reason?.message}`;
@@ -643,6 +709,7 @@ async function main() {
       }
     }
     const alive = clients.filter((c) => !c.failed);
+    const connectFailed = clients.length - alive.length;
     await Promise.allSettled(alive.map((c) => c.hello().catch((e) => { c.failed = String(e.message || e); })));
     const said = alive.filter((c) => !c.failed);
     if (!said.length) throw new Error('no client survived hello');
@@ -661,7 +728,7 @@ async function main() {
     }
     const started = clients.filter((c) => c.inMatch);
     if (!started.length) throw new Error('no room reached its match');
-    summary.phases = { matchesStarted: started.length, clientsInMatch: started.length, setupMs: Date.now() - startedAt };
+    summary.phases = { connectFailed, matchesStarted: started.length, clientsInMatch: started.length, setupMs: Date.now() - startedAt };
 
     // warmup: the opening phases run out; the storm is already armed (it only fires in PREP)
     await new Promise((r) => setTimeout(r, O.warmup * 1000));
@@ -783,7 +850,7 @@ async function main() {
         messagesOut: deltaOf(ws0, ws1, 'messagesOut'), messagesIn: deltaOf(ws0, ws1, 'messagesIn'),
       } : null,
     };
-    summary.loop = loopStats(server.lines, measureStart, measureEnd + 1000);
+    summary.loop = loopStats(loopSource(), measureStart, measureEnd + 1000);
 
     note(`done: in ${summary.clients.inMsgPerSec} msg/s, out ${summary.clients.outMsgPerSec} msg/s, RSS avg ${summary.server.rssMB ? r1(summary.server.rssMB.avg) : '?'} MB, loop p95 max ${summary.loop.p95 ? summary.loop.p95.max : '?'} ms, error replies ${JSON.stringify(errs)}`);
   } catch (e) {
@@ -794,6 +861,8 @@ async function main() {
     if (server) {
       await stopServer(server.child);
       summary.server.exit = { code: server.child.exitCode, signal: server.child.signalCode };
+    } else {
+      summary.server.exit = { attached: true };
     }
     if (summary.problems.length) note(`problems: ${summary.problems.join(' | ')}`);
     if (O.json === '-') console.log(JSON.stringify(summary));

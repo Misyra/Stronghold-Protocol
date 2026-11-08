@@ -38,6 +38,7 @@ import { t } from '../../../shared/i18n.js';
 import { PHONE_QUERY, rosterPools, rosterStartsOpen, teamDensity, teamEmoteMode, teamPanelLayout } from './teamLayout.js';
 import { useMediaQuery } from './device.js';
 import { Danmaku } from './danmaku.js';
+import { OwnerMark } from './ownerName.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -241,7 +242,7 @@ function TeamPanelView({ pub, myId, watching, bubbles, onWatch, compact = false,
           : spMarks?.get(p.playerId) === 'turn' ? html`<span class="team__spmark is-turn" title=${t('正在决策…')}><i></i><i></i><i></i></span>` : null}
       </button>
       <div class="team__info">
-        <span class="team__name">${p.name || t('博士')}</span>
+        <span class="team__name">${p.name || t('博士')}</span><${OwnerMark} player=${p} />
         <div class="team__line">
           <${LpTower} value=${lp.lp} size="sm" tone=${Number.isFinite(lp.lp) && lp.lp - lp.pending <= 5 ? 'danger' : null} pending=${lp.pending}
             tip=${rowLpTip(lp, cap)} />

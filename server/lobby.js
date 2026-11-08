@@ -607,9 +607,11 @@ export class Room {
           } : {}),
           // 干员皮肤 (room.skins, PUBLIC like Match.publicView().players[].skins): the seat card's outfit (header);
           // only a human seat with a non-empty map carries the key
-          ...(!s.isBot && s.skins && Object.keys(s.skins).length ? { skins: s.skins } : {}) }
+          ...(!s.isBot && s.skins && Object.keys(s.skins).length ? { skins: s.skins } : {}),
+          // 服主标记 (server/ownerFile.js, 移植自用户分支): only a verified human seat carries the key (display only)
+          ...(!s.isBot && s.owner ? { owner: true } : {}) }
         : null)),
-      spectators: this.spectators.map((s) => ({ playerId: s.playerId, name: s.name, connected: s.connected, ...(this.needsContent ? { content: /** @type {any} */ (s).content || 'loading' } : {}) })),
+      spectators: this.spectators.map((s) => ({ playerId: s.playerId, name: s.name, connected: s.connected, ...(s.owner ? { owner: true } : {}), ...(this.needsContent ? { content: /** @type {any} */ (s).content || 'loading' } : {}) })),
       ...(this.content ? { content: this.content.trusted ? {...this.content, trusted:{...this.content.trusted, consent:Object.fromEntries(this.seats.filter(x => x && !x.isBot).map(x => [x.seat,x.consentCs === this.content.cs]))}} : this.content } : {}),
       // another official version than 第二期下半, and its open vote (header "Official versions"): omitted otherwise, so a
       // default room's room.state stays identical
@@ -1006,6 +1008,9 @@ export class Lobby {
     let changed = !seat.connected;
     seat.connected = true;
     if (!room.match && seat.name !== session.name) { seat.name = session.name; changed = true; }
+    // 服主标记 (display only): the key decides on every hello (server/net.js session.owner), so a resume without it
+    // unmarks the seat and a repeated hello with it marks it again
+    if (!!seat.owner !== session.owner) { seat.owner = session.owner; changed = true; }
     if (!room.hostId) { this.migrateHost(room); changed = true; }
     if (changed) this.broadcastState(room);
     else this.sendState(room, session);
@@ -1485,7 +1490,7 @@ export class Lobby {
     if (room.spectators.length >= MAX_SPECTATORS) return fail(ERR.ROOM_FULL, 'no free spectator seat');
     this.leaveQueue(session, 'cancelled');
     if (cur) this.removeMember(cur, session.playerId);
-    room.spectators.push({ playerId: session.playerId, name: session.name, connected: session.connected });
+    room.spectators.push({ playerId: session.playerId, name: session.name, connected: session.connected, owner: session.owner === true });
     session.roomCode = room.code;
     session.notice = null;
     session.pendingResult = null;
@@ -3051,6 +3056,9 @@ export class Lobby {
       skins: session.skins || null,
       // 名片干员 (room.card): the operator on this player's seat card (PUBLIC: room.state seats[].card)
       card,
+      // 服主标记 (server/ownerFile.js, 移植自用户分支): this session's latest hello carried the owner key
+      // (server/net.js session.owner — decided again on every hello; Lobby.onHello updates the seat like the name)
+      owner: session.owner === true,
       // the content each was checked for (header "Gameplay plugins": filtered at the match start when it is another)
       loadoutCs: session.loadoutCs ?? null,
       notOwnedCs: session.notOwnedCs ?? null,

@@ -46,6 +46,7 @@ import { setUiPlugin, uiPluginEntries, uiPlugins } from './uiPlugins.js';
 import { UI_LIMITS } from '../../../shared/plugins/ui.js';
 import { toast, describeError } from './toasts.js';
 import { pluginMicro } from './pluginTag.js';
+import { OwnerKeySection } from './ownerName.js';
 // 统一配置导入导出 (参考 Stardust fork 的干员预设语义): 干员预设 / 干员调配 / 干员持有 / 自选编队 / 皮肤配置 / 统计数据
 // 收拢进设置弹窗的一个 section (ui/configTransfer.js), 各类旧的导入导出入口 (干员调配遮罩、统计页) 照常保留。
 import { ConfigTransferSection } from './configTransfer.js';
@@ -699,6 +700,7 @@ export function SettingsModal({ open, onClose }) {
         <${ConfigTransferSection} />
         <${StorageSection} />
         <${DiagSection} />
+        <${OwnerKeySection} />
       </div>
     </div>
   <//>`;

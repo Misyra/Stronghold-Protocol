@@ -50,6 +50,7 @@ import { C2S, validateC2S } from '../shared/protocol.js';
 import { ERR, ERR_TEXT, NAME_MAX_LEN, PROTOCOL_VERSION, MATCHMAKING_VERSION } from '../shared/constants.js';
 import { PLAYER_CAPACITY_VERSION } from '../shared/playerCapacity.js';
 import { CHAT_MUTE_MAX_MS } from './moderation/chatState.js';
+import { NAME_RESERVED } from './ownerFile.js';
 
 /** Tunables (all overridable through the Network / SessionRegistry constructors). */
 export const NET_DEFAULTS = Object.freeze({
@@ -116,6 +117,8 @@ export class Session {
     this.connected = false;
     /** @type {number | null} local first-welcome stamp of the attached client (optional, not authentication) */
     this.claimAt = null;
+    /** @type {boolean} the latest hello carried the owner's key (服主, server/ownerFile.js, 移植自用户分支); decided again on every hello */
+    this.owner = false;
     /** @type {number} ms epoch of the last inbound frame / pong */
     this.lastSeen = now;
     /** @type {number | null} ms epoch when the socket was lost (null while connected) */
@@ -637,13 +640,16 @@ export class Network {
    *   log?: { info: Function, warn: Function, error: Function, debug?: Function },
    *   now?: () => number,
    *   options?: Partial<typeof NET_DEFAULTS>,
+   *   ownerFile?: { verify: (key: unknown) => boolean, reserved: (name: unknown) => boolean } | null,
    * }} opts
    */
-  constructor({ registry, handler, log = noopLog, now = Date.now, options = {} }) {
+  constructor({ registry, handler, log = noopLog, now = Date.now, options = {}, ownerFile = null }) {
     this.registry = registry;
     this.handler = handler;
     this.log = log;
     this.now = now;
+    /** 服主 (server/ownerFile.js, 移植自用户分支): the owner key's verifier and the reserved names; null = off */
+    this.ownerFile = ownerFile;
     this.opts = { ...NET_DEFAULTS, ...options };
     /** @type {Map<import('ws').WebSocket, Connection>} */
     this.conns = new Map();
@@ -829,6 +835,11 @@ export class Network {
     }
     const name = sanitizeName(msg.name);
     if (!name) { this.reply(conn, errorMsg(ERR.BAD_MSG, rid, 'bad field name')); return; }
+    // 服主 (server/ownerFile.js, 移植自用户分支): the key decides on every hello, nothing is kept without it; the
+    // owner's reserved names are refused to anybody else like a rejected name (before the token lookup: the identity
+    // stays intact)
+    const owner = this.isOwnerKey(msg.owner);
+    if (!owner && this.nameReserved(name)) { this.reply(conn, errorMsg(ERR.NAME_REJECTED, rid, NAME_RESERVED)); return; }
     // Check an existing room's capability before replacing its socket or changing any session metadata
     // (server/lobby.js helloAdmission): a legacy resume can neither receive a large room's snapshot nor evict the
     // compatible live socket that owns it.
@@ -880,6 +891,7 @@ export class Network {
       session.disconnectedAt = null;
     }
     session.name = name;
+    session.owner = owner;
     session.lastSeen = now;
     session.addr = conn.ip;
     session.limitKey = conn.key;
@@ -892,6 +904,7 @@ export class Network {
     let extra = null;
     try { extra = this.handler.welcomeInfo?.() ?? null; } catch (e) { this.log.error('[net] welcomeInfo crashed', e); }
     const welcome = { ...(extra && typeof extra === 'object' ? extra : null), t: 'welcome', playerId: session.playerId, token: session.token, name: session.name, serverNow: now, version: PROTOCOL_VERSION, resumed };
+    if (session.owner) welcome.owner = true; // the settings screen's confirmation that the key worked (服主)
     if (session.aiTakeoverFrom) { welcome.takeoverFrom = session.aiTakeoverFrom; session.aiTakeoverFrom = null; }
     if (validRid(rid)) welcome.rid = rid;
     this.reply(conn, welcome);
@@ -959,6 +972,16 @@ export class Network {
       this._heartbeatConn(conn, now);
       if (++seen % 128 === 0) await new Promise((resolve) => setImmediate(resolve));
     }
+  }
+
+  /** Is this hello key the owner's (server/ownerFile.js)? Never throws; no owner file = nobody. */
+  isOwnerKey(key) {
+    try { return this.ownerFile?.verify(key) === true; } catch { return false; }
+  }
+
+  /** A name only the owner may use (server/ownerFile.js)? Never throws. */
+  nameReserved(name) {
+    try { return this.ownerFile?.reserved(name) === true; } catch { return false; }
   }
 
   /** The per-connection step of a heartbeat (unchanged behaviour: hello timeout, dead-socket terminate, ping). */

@@ -532,7 +532,10 @@ export const C2S = {
   hello: { name: (v) => isStr(v, NAME_MAX_LEN) && v.trim().length > 0, token: (v) => v == null || isStr(v, 64), version: (v) => v == null || isInt(v, 0, 1e6),
     noReplace: isBool, claimAt: (v) => isNum(v, 0, Number.MAX_SAFE_INTEGER), delta: (v) => v == null || isInt(v, 0, 1e6),
     matchmakingVersion: isId, playerCapacityVersion: isId,
-    $optional: ['token', 'version', 'noReplace', 'claimAt', 'delta', 'matchmakingVersion', 'playerCapacityVersion'] },
+    // owner: the 服主 key (server/ownerFile.js, 移植自用户分支) — the owner's browser keeps it (public/js/ownerKey.js)
+    // and sends it in every hello; the server compares its SHA-256 with the owner file and marks the session. Never logged.
+    owner: (v) => v == null || isStr(v, 128),
+    $optional: ['token', 'version', 'noReplace', 'claimAt', 'delta', 'matchmakingVersion', 'playerCapacityVersion', 'owner'] },
   ping: { c: (v) => typeof v === 'number' && Number.isFinite(v) },
   // pong may include announcementRevision (24 hex of the public active notice content, server/announcement.js —
   // 合并自用户分支): a hint to refetch HTTP content; the client suppresses unchanged polling without it.

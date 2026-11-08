@@ -189,6 +189,15 @@ describe('7: the detail card shows live stats against the base', () => {
     assert.equal(statTone('res', 10.02, 10), null);
     assert.equal(statTone('blockCnt', 2, 3), 'down');
     assert.equal(statTone('atk', null, 3), null);
+    assert.equal(statTone('respawnTime', 59.5, 70), 'up', 'a shorter redeploy helps (feedback #86)');
+    assert.equal(statTone('respawnTime', 80, 70), 'down');
+    assert.equal(statTone('respawnTime', 70.02, 70), null);
+  });
+
+  test('liveStat respawnTime: the live redeploy time with its difference (feedback #86: 耀骑士临光 / equipment reductions)', () => {
+    const fmt = (v) => `${Math.round(v * 10) / 10}s`;
+    assert.deepEqual(liveStat({ respawnTime: 35.7, base: { respawnTime: 70 } }, 'respawnTime', 70, fmt), { v: '35.7s', tone: 'up', sub: '−34.3', title: '基础 70s' });
+    assert.deepEqual(liveStat({ atk: 1 }, 'respawnTime', 70, fmt), { v: '70s', tone: null, sub: null, title: undefined }, 'no live value: the record');
   });
 
   test('liveStat: the live value with its difference and the base in the title; the record value without live stats', () => {

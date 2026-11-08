@@ -182,6 +182,10 @@
 //                      (default 7000; SP_BOT_REHEARSAL_ANSWER_MS / SP_BOT_REHEARSAL_COLD_ANSWER_MS, 0 = fixed window)
 //   opts.headlessSliceMs  wall-clock ms per callback of a server-run normal / 联防 field (client-side combat: bots,
 //                      takeovers, result verification; default 8 with a real scheduler, at once with a virtual one)
+//   opts.battlePool      SP_BATTLE_POOL (default off): a server-run normal / 联防 field's headless battle runs in a
+//                      simulation-pool worker (the 'battle' task, server/workers/simulation.js) instead of this
+//                      thread's slices; a missing / refusing / failing pool falls back to the slices. boss fields
+//                      (sharedBoss CreditPool) and SP_COMBAT=server's FieldRunner streaming stay on this thread.
 // Seats may be all bots (tools/matchrun.mjs); the lobby always has ≥ 1 human.
 //
 // Diagnostics: m.errors / m.errorCount (engine), m.dispatcher.errors / .errorsByKey (meta handlers), m.simErrors
@@ -266,7 +270,7 @@ import { MatchKickVote } from './match/kickVote.js';
 import { MatchSpDraft } from './match/spDraft.js';
 import { MatchPrep } from './match/prep.js';
 import { MatchCombat } from './match/combat.js';
-import { MatchClientCombat } from './match/clientCombat.js';
+import { MatchClientCombat, battlePoolDefault } from './match/clientCombat.js';
 import { MatchRehearsal, REHEARSAL_ANSWER_MS, REHEARSAL_COLD_ANSWER_MS } from './match/rehearsal.js';
 import { MatchReports } from './match/reports.js';
 import { MatchUnite } from './match/unitePhase.js';
@@ -508,6 +512,10 @@ export class Match {
     this.ds = dataSourceFor(this.data);
     /** client-side combat (DESIGN §14) — see the header */
     this.clientCombat = opts.clientCombat != null ? !!opts.clientCombat : envClientCombat();
+    /** SP_BATTLE_POOL (clientCombat.js): server-run normal / 联防 fields hand their battle to the simulation pool.
+     * The env default never pools a virtual scheduler (tests / tools step those synchronously); opts.battlePool
+     * explicitly opts a match in or out (tests with a stub or real pool). */
+    this.battlePool = opts.battlePool != null ? !!opts.battlePool : (battlePoolDefault() && !this.sched.virtual);
     this.verifyMode = parseVerify(opts.verify ?? env('SP_VERIFY'));
     /** wall-clock ms per slice of a server-run normal / 联防 field (virtual time: at once) */
     this.headlessSliceMs = Number.isFinite(opts.headlessSliceMs) && opts.headlessSliceMs > 0 ? opts.headlessSliceMs : this.sched.virtual ? Infinity : HEADLESS_SLICE_MS;

@@ -133,7 +133,9 @@ export class MatchCombat {
   /** Aggregate a finished field's content/engine errors (battle.errors: unique records) for diagnostics. */
   _collectSimErrors(f, res) {
     this.simErrors += Number(res && res.errors) || 0;
-    const list = f && f.battle && Array.isArray(f.battle.errors) ? f.battle.errors : [];
+    // SP_BATTLE_POOL: a pool-run field holds no battle object — its battle's error records travelled on f.errors
+    // (the worker's return), the same unique records the local run keeps on f.battle.errors.
+    const list = (f && f.battle && Array.isArray(f.battle.errors)) ? f.battle.errors : (f && Array.isArray(f.errors)) ? f.errors : [];
     for (const e of list) {
       if (!e || typeof e !== 'object') continue;
       const key = `${e.label}|${e.who || ''}|${e.message}`;

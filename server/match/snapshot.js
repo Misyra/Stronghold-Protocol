@@ -235,6 +235,7 @@ export function persistVersion(m) {
 export const MATCH_FIELDS = Object.freeze([
   'roomCode', 'mode', 'difficulty', 'modeId', 'seed', 'isSolo', 'aiPicksLast', 'consoleEnabled', 'battlePrefix', 'timerScale', 'gameSpeed',
   'botRehearsal', 'clientCombat', 'verifyMode', 'headlessSliceMs', 'verifyStats', '_battleSeq', 'pausedMs',
+  'battlePool', // SP_BATTLE_POOL：server-run 场的池化开关随档延续，与 clientCombat 同类行为开关（clientCombat.js）
   'stageId', 'factions', 'bossId', 'hiddenBossId', 'disabledBonds', 'staticInactiveBonds', 'bannedChess',
   'round', 'uidSeq', 'loneHuman', 'botBands', 'bandDupes', 'afkRemoveRounds', 'hiddenLayerSum', 'hiddenReached', 'errors', 'errorCount', 'simErrors',
   'simErrorLog', 'draft', 'sp', 'wave', 'bossWaves', 'setupRevision', 'setupVote', '_setupVoteSeq', '_botEmotesSettledRound', '_botEmotesMerges',

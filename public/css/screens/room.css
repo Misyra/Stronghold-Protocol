@@ -701,70 +701,66 @@
 }
 .rs-pill__gear svg { width: 62%; height: 62%; fill: currentColor; }
 .rs-pill__gear.is-on, .rs-pill__gear:hover, .rs-pill__gear:focus-visible { background: #fff; }
-.rs-opts {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + .14rem);
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  gap: .12rem;
-  width: max-content;
-  /* the solo menu's two short switches alone would make a skinny sliver: the co-op width, floored in px like the pill's */
-  min-width: max(2.4rem, 32px, calc(240px * var(--sp-ui, 1)));
-  max-width: 92vw;
-  padding: .16rem .2rem;
-  /* the menu unfolds upward from the ⚙ (its own corner; on a phone it grows rightward, the origin follows) */
-  transform-origin: 100% 100%;
-  animation: rs-opts-in 220ms cubic-bezier(.16, .84, .3, 1) backwards;
-  background: linear-gradient(180deg, #202323, #141616);
-  border: 1px solid rgba(255, 255, 255, .16);
-  box-shadow: 0 .1rem .4rem rgba(0, 0, 0, .7);
-  /* the menu may take only what the screen holds over the pill's top (its bottom is .14rem above the pill, the pill
-     .68rem / 32px tall in a footer with .2rem / 8px of bottom padding): a 6-row menu at 大 / 特大 on a short window
-     scrolls inside instead of being cut by .screen's overflow */
-  max-height: calc(100vh - .14rem - max(.68rem, 32px, calc(40px * var(--sp-ui, 1))) - max(.2rem, calc(8px * var(--sp-ui, 1))));
-  max-height: calc(100svh - .14rem - max(.68rem, 32px, calc(40px * var(--sp-ui, 1))) - max(.2rem, calc(8px * var(--sp-ui, 1))));
-  overflow-y: auto;
-  scrollbar-width: thin;
+
+/* 同盟设置 (ui/roomSettings.js, ported from the Stardust fork's rel24 panel): one dialog of fixed height, so a tab
+   changes the page and not the frame; the tabs and the footer stay, the page scrolls on a short screen. The rows are
+   the fork's experimental-option shape (this repo had none: a title and its note on the left, the switch on the
+   right); the fork's calc(Npx * var(--ui)) floors read var(--sp-ui, 1) here (theme.css 界面大小). */
+.room-settings-modal { width: min(max(10.8rem, 32px, calc(640px * var(--sp-ui, 1))), 96vw); height: min(88vh, max(8.2rem, 32px, calc(520px * var(--sp-ui, 1)))); }
+.room-settings-modal .modal__head { padding-bottom: 0; }
+.room-settings-modal .modal__body { flex: 1; display: flex; flex-direction: column; min-height: 0; padding-bottom: .1rem; overflow: hidden; }
+.room-settings-modal.is-solo { height: auto; }
+.room-settings-modal .modal__actions .btn { height: max(.5rem, 32px); font-size: calc(.18 * var(--t)); }
+.rset__tabs { flex: none; display: flex; gap: .04rem; border-bottom: 1px solid var(--line-2); }
+.rset__tab { position: relative; display: inline-flex; align-items: center; gap: .08rem; min-height: max(.46rem, 30px); padding: 0 .3rem; font: inherit;
+  font-size: calc(.18 * var(--t)); font-weight: 700; color: var(--text-lo); background: none; border: 0; cursor: pointer; }
+.rset__tab::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; }
+.rset__tab:hover { color: var(--text-hi); }
+.rset__tab:focus-visible { outline: 2px solid var(--mint-400); outline-offset: -2px; }
+.rset__tab.is-on { color: var(--mint-400); }
+.rset__tab.is-on::after { background: var(--mint-400); }
+.rset__dot { flex: none; width: max(.07rem, 5px); height: max(.07rem, 5px); background: var(--amber); }
+.rset__page { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: auto; padding-top: .06rem; }
+.rset__rows { flex: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(max(4rem, 32px, calc(260px * var(--sp-ui, 1))), 100%), 1fr)); column-gap: .36rem; }
+.rset__page--rules .rset__rows, .rset__page--sim .rset__rows { grid-template-columns: minmax(0, 1fr); }
+.rset__rows .rset__version { grid-column: 1 / -1; }
+.experimental-option { display: flex; align-items: center; justify-content: space-between; gap: .2rem; padding: .14rem 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.experimental-option > span { display: grid; gap: .07rem; min-width: 0; }
+.experimental-option strong { font-size: calc(.19 * var(--t)); color: var(--text-hi); font-weight: 500; }
+.experimental-option small { color: var(--text-lo); font-size: calc(.14 * var(--t)); line-height: 1.6; }
+.experimental-option input { flex: none; appearance: none; width: .36rem; height: .2rem; border-radius: .1rem; border: 1px solid var(--line-3); background: var(--bg-3); cursor: pointer; }
+.experimental-option input::before { content: ''; display: block; width: .14rem; height: .14rem; margin: .02rem; border-radius: 50%; background: var(--text-lo); transition: transform var(--t-fast); }
+.experimental-option input:checked { border-color: var(--mint-700); background: var(--bg-2); }
+.experimental-option input:checked::before { background: var(--mint-400); transform: translateX(.16rem); }
+.experimental-option input:disabled { opacity: .65; cursor: default; }
+.experimental-capacity { display: flex; align-items: center; justify-content: space-between; gap: .12rem; font-size: calc(.16 * var(--t)); color: var(--text-lo); }
+.experimental-capacity select, .experimental-option select { min-height: .4rem; min-width: 1rem; padding: .08rem .12rem; background: var(--bg-3); color: var(--text-hi); border: 1px solid var(--line-3); font: inherit; cursor: pointer; }
+.experimental-capacity select:focus-visible, .experimental-option select:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
+.rset__rows .experimental-option { gap: .14rem; min-height: 0; padding: .1rem 0; }
+.rset__rows .experimental-option > span { min-width: 0; gap: .03rem; }
+.rset__rows .experimental-option strong { font-size: calc(.17 * var(--t)); }
+.rset__rows .experimental-option small { font-size: calc(.13 * var(--t)); line-height: 1.4; }
+.rset__rows .experimental-capacity { padding: .1rem 0; border-bottom: 1px solid var(--line); }
+.rset__rows .experimental-option select, .rset__rows .experimental-capacity select { min-height: max(.42rem, 30px); min-width: max(1.1rem, 32px, calc(72px * var(--sp-ui, 1))); padding: 0 .08rem; }
+.rset__ver { display: inline-flex; align-items: center; gap: .06rem; min-height: max(.42rem, 30px); padding: 0 .14rem; font: inherit; font-size: calc(.15 * var(--t));
+  font-weight: 700; white-space: nowrap; color: #cfe9ff; background: rgba(0, 0, 0, .3); border: 1px solid var(--line-2); cursor: pointer; }
+.rset__ver .icon { width: 1.1em; height: 1.1em; }
+.rset__ver:hover:not(:disabled), .rset__ver:focus-visible { border-color: #cfe9ff; }
+.rset__ver:disabled { cursor: default; opacity: .6; }
+/* the 模拟难度 row's button keeps the difficulty's colour (the pill's --d-color) */
+.rset__diff { color: var(--d-color); }
+.rset__diff:hover:not(:disabled), .rset__diff:focus-visible { border-color: var(--d-color); }
+.rset__empty { margin: .16rem 0 0; font-size: calc(.14 * var(--t)); line-height: 1.6; color: var(--text-dim); }
+.rset__note { margin: 0 auto 0 0; align-self: center; font-size: calc(.13 * var(--t)); color: var(--text-dim); }
+.sp-coarse .rset__tab { min-height: 36px; }
+@media (pointer: coarse) { .experimental-option { min-height: 44px; } }
+@media (max-height: 500px) {
+  .room-settings-modal { height: 94vh; max-height: 94vh; }
+  .room-settings-modal .modal__head { flex-direction: row; align-items: baseline; gap: .14rem; padding-top: 6px; }
+  .room-settings-modal .modal__actions { padding-block: 4px; }
+  .room-settings-modal .modal__body { padding-top: 2px; padding-bottom: 2px; }
+  .rset__rows .experimental-option small { display: none; }
 }
-/* the footer's own stacking context (z 2) would keep the menu's z 10 under the top bar (z 3) and under the search /
-   found panels' docks (5 / 6) once one is up: with the menu open the footer climbs to the banner tier, under the
-   connection banner, modals and toasts */
-.rs-foot.is-opts { z-index: var(--z-banner); }
-.rs-opts h4 { margin: 0; font-size: calc(.2 * var(--t)); }
-/* the menu's rows cascade in behind the panel (the room entry's staged idiom, rseat's --i) */
-.rs-opts > * { animation: rs-opts-row 200ms cubic-bezier(.16, .84, .3, 1) backwards; }
-.rs-opts > :nth-child(2) { animation-delay: 40ms; }
-.rs-opts > :nth-child(3) { animation-delay: 80ms; }
-.rs-opts > :nth-child(4) { animation-delay: 120ms; }
-.rs-opts > :nth-child(5) { animation-delay: 160ms; }
-.rs-opts > :nth-child(6) { animation-delay: 200ms; }
-.rs-opts > :nth-child(7) { animation-delay: 240ms; }
-/* the rows are hit-testable while their first frames are still transparent (a delayed row especially), so a click
-   right after opening could land on a switch nobody can see. `pointer-events` is inherited and flips with the paint
-   (discrete at 50%); the reduced-motion block's `animation: none` keeps it auto there. The panel itself stays
-   hit-testable: its surface must swallow that early click, or the outside handler closes the menu under the pointer. */
-@keyframes rs-opts-in { from { opacity: 0; transform: translateY(.14rem) scale(.96); } }
-@keyframes rs-opts-row {
-  from { opacity: 0; transform: translateY(.08rem); pointer-events: none; }
-  to { pointer-events: auto; }
-}
-/* 同盟设置's 模拟难度 / 版本 rows: no leading label — each is one full-width bar like the switches below, its
-   selection centred (the host's 更改 / 切换 hint rides along; the others read the same bar disabled, the reason in
-   the tooltip) */
-.rs-opts__row { display: flex; align-items: stretch; font-size: calc(.14 * var(--t)); }
-.rs-opts__row > * { flex: 1 1 auto; min-width: 0; }
-.rs-opts__row .rs-opts__diff { width: 100%; }
-.rs-opts__diff {
-  display: inline-flex; align-items: center; justify-content: center; gap: .06rem; min-height: .36rem; padding: .02rem .14rem;
-  font: inherit; font-size: calc(.15 * var(--t)); font-weight: 700; white-space: nowrap;
-  color: var(--d-color); background: rgba(0, 0, 0, .3); border: 1px solid var(--line-2);
-}
-.rs-opts__diff .icon { width: 1.1em; height: 1.1em; }
-.rs-opts__diff em { margin-left: .06rem; font-style: normal; color: var(--text-hi); text-decoration: underline; text-underline-offset: 2px; }
-.rs-opts__diff:hover:not(:disabled), .rs-opts__diff:focus-visible { border-color: var(--d-color); }
-.rs-opts__diff:disabled { cursor: default; opacity: .6; }
 .room-bar__right { display: flex; align-items: center; justify-content: flex-end; gap: .14rem; }
 .rs-go.proto-start { flex: none; width: min(4.6rem, 40vw); }
 /* the label (§35.18 review: it shared 选择模拟协议's wrapping label by accident, and on a phone a fixed 46 px button then cut
@@ -814,14 +810,6 @@
 }
 .dpick__opt.is-active .icon { opacity: 1; filter: drop-shadow(0 0 5px var(--d-color)); }
 .dpick--ro { border: 0; background: none; gap: .18rem; align-items: center; font-size: calc(.14 * var(--t)); }
-.ailast { display: flex; align-items: center; gap: .12rem; font-size: calc(.14 * var(--t)); }
-/* one full-width bar like the 模拟难度 / 版本 rows above: the switch stretches over the menu's width, its selection
-   centred (the 由创建者设置 note of somebody else's room rides at the end, narrowing the switch only there) */
-.ailast__opt { --d-color: var(--mint-400); flex: 1 1 auto; justify-content: center; min-width: 0; height: auto; min-height: .36rem; padding: .02rem .14rem; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .3); font-size: calc(.15 * var(--t)); letter-spacing: .04em; }
-.ailast__opt:last-child { border-right: 1px solid var(--line-2); }
-.ailast__opt .icon { opacity: .25; }
-.ailast__opt .icon.is-on { opacity: 1; }
-
 
 
 /* under the connection banner (--z-conn) and the modals (a short window's red strip never covers a dialog's head),
@@ -942,16 +930,13 @@
   .rs-foot { grid-template-columns: minmax(0, 1fr) auto; }
   .rs-foot__left { display: none; }
   .rs-foot__center { justify-self: start; max-width: 100%; }
-  /* the pill sits at the footer's left here: ⚙'s menu grows rightward from its left edge instead of being centred, so it
-     cannot hang past the screen's left edge (the unfold's origin follows) */
-  .rs-opts { left: 0; right: auto; transform-origin: 0 100%; }
 }
 @media (max-aspect-ratio: 1/1) {
   .rs-seats { justify-content: flex-start; }
   .rseat { --w: max(1.8rem, 42vw); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rseat, .rs__bg, .rs-top, .rs-brief, .rs-foot, .rs-opts, .rs-opts > * { animation: none; }
+  .rseat, .rs__bg, .rs-top, .rs-brief, .rs-foot { animation: none; }
 }
 
 /* ---- official versions (DESIGN §35.23): the version pill beside the difficulty, ⚙'s 版本 row, the banner; the name ends
@@ -971,7 +956,6 @@
 .rs-pill__ver:disabled { cursor: default; opacity: .7; }
 .rs-pill__ver.is-ro { cursor: help; }
 .rs-pill__ver:hover:not(:disabled), .rs-pill__ver:focus-visible { filter: brightness(1.2); }
-.rs-opts__ver { color: #9fd3ff; }
 .rs-verbanner {
   position: relative; flex: none; display: flex; align-items: center; justify-content: center; gap: .08rem;
   margin: 0 .6rem .1rem; padding: .06rem .16rem; color: var(--text-md); font-size: calc(.14 * var(--t)); text-align: center; overflow-wrap: anywhere;
@@ -1034,10 +1018,3 @@
 .rs--big .rs-seats { justify-content: flex-start; gap: .16rem; }
 .rs--big .rseat { --w: max(1.7rem, 32px, calc(120px * var(--sp-ui, 1))); animation-delay: calc(150ms + var(--i, 0) * 35ms); }
 .rs-clock .room-capacity { color: var(--amber); white-space: nowrap; }
-.rs-capacity { display: flex; align-items: center; gap: .1rem; padding: .04rem 0 .04rem .3rem; font-size: calc(.14 * var(--t)); color: var(--text-md); }
-.rs-capacity span { white-space: nowrap; }
-.rs-capacity select {
-  min-height: .3rem; padding: 0 .12rem; color: var(--text-hi); background: rgba(10, 18, 15, .9);
-  border: 1px solid var(--line-2); font: inherit; cursor: pointer;
-}
-.rs-capacity select:disabled { opacity: .55; cursor: default; }

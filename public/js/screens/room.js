@@ -3,7 +3,7 @@
 // to the host, 添加 AI 队友; the host's 移出 / 移除 AI 队友 at a card's top right), the top bar (leave, mode and ping, 统计 /
 // 设置 / 玩法说明, 干员调配 and the 同盟密钥 with 复制 / the link), the bottom: the ready count and status line, the
 // difficulty pill and ⚙ 同盟设置 (co-op; a timed solo's ⚙ is 模拟设置 and holds 「不限时」, DESIGN §35.23.10; the ⚙ sits where the event's pill has 快速搜寻 — matchmaking is dropped by the
-// maintainer's PR #643 keep / drop list of 2026-10-15), and the big 开始模拟 / 准备就绪 button (its disabled reason in
+// maintainer's PR #643 keep / drop list of 2026-10-15; the gear opens the settings dialog ui/roomSettings.js, the Stardust fork's rel24 panel), and the big 开始模拟 / 准备就绪 button (its disabled reason in
 // the project's Tooltip: hover, or a long press on touch; the status line says it too).
 // Room settings: a co-op room is created at once from the lobby's 创建同盟 (the event's 联合模拟, research 06 §3.2; the
 // maintainer's decision of 2026-10-21), so the difficulty is chosen here — the host's pill (or ⚙'s 模拟难度 row) opens
@@ -49,7 +49,7 @@
 
 import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTY_NAMES, DIFFICULTY_COLORS, MAX_SEATS, MAX_SPECTATORS } from '../../../shared/constants.js';
-import { PLAYER_CAPACITIES, isPlayerCapacity, roomCapacity } from '../../../shared/playerCapacity.js';
+import { isPlayerCapacity, roomCapacity } from '../../../shared/playerCapacity.js';
 import {
   html, Button, Icon, MicroLabel, PingPill, AvatarFrame, DifficultyIcon, Tooltip, Spinner, confirmDialog, doctorNo, Modal,
 } from '../ui/components.js';
@@ -77,6 +77,7 @@ import { NameCardPicker, NameCardLayer } from '../ui/namecards.js';
 import { OwnerBadge } from '../ui/ownerName.js';
 import { skinsStore, SKINS_KEY, ownerSkin } from '../ui/skins.js';
 import { settingsStore } from '../ui/settingsStore.js';
+import { RoomSettings, settingsPage } from '../ui/roomSettings.js';
 import { difficultyInfo, ProtocolSelect } from './lobby.js';
 import { useRise, usePresence } from '../ui/transitions.js';
 // 匹配流程的搜寻/集结面板 (移植自用户分支): SearchPanel — 搜寻中(像素侦察兵+轮换提示+停止搜寻), FoundPanel — 搜寻成功
@@ -324,6 +325,45 @@ export function hitLimitExperimental(on, current = null) {
   return rest;
 }
 
+/**
+ * 队友复活 (room.setExperimental, the fork's ruleRows rel24 — the protocol key shared/experimental.js already carries,
+ * the ⚙ dialog had no switch for it): every rule the room already carries travels, and an ordinary room's payload
+ * keeps its shape (the base flags always travel, revivalEnabled among them).
+ * @param {boolean} on @param {any} [current] room.state experimental
+ * @returns {{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean,
+ *   disableLayerCap?: boolean, disableHitLimit?: boolean, uniteHumansFirst?: boolean }}
+ */
+export function revivalExperimental(on, current = null) {
+  const base = capacityExperimental(roomCapacity('coop', current), current);
+  return on === true ? { ...base, revivalEnabled: true } : base;
+}
+
+/**
+ * 禁用共享卡池 (room.setExperimental, the fork's poolRows rel24): like revivalExperimental — the base flags travel with
+ * every rule the room carries, and an ordinary room's payload keeps its two-flag shape when the switch goes off.
+ * @param {boolean} on @param {any} [current] room.state experimental
+ * @returns {{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean,
+ *   disableLayerCap?: boolean, disableHitLimit?: boolean, uniteHumansFirst?: boolean }}
+ */
+export function sharedPoolExperimental(on, current = null) {
+  const base = capacityExperimental(roomCapacity('coop', current), current);
+  return { ...base, disableSharedPool: on === true };
+}
+
+/**
+ * 开发者控制台 (room.console.enable, server/match/match/intents.js consoleGrant, 移植自用户分支): a private room may
+ * grant itself in-match 干员 / 装备 / 盟约层数, quota-limited and broadcast to the team. A solo room's own seat may
+ * switch it; every other room needs its host, and a matchmaking room can never use it.
+ * @param {any} room room.state payload
+ * @param {any} myId
+ * @returns {{ on: boolean, editable: boolean }}
+ */
+export function consoleOption(room, myId) {
+  if (!room) return { on: false, editable: false };
+  const personal = room.mode === 'solo' && (room.seats || []).some((s) => s && !s.isBot && s.playerId === myId);
+  return { on: room.consoleEnabled === true, editable: room.hostId != null ? (personal || room.hostId === myId) : personal };
+}
+
 /** Spectator handover is available only in original default-version co-op rooms, with a host opt-in. */
 export function aiTakeoverOption(room, myId) {
   if (!room || room.mode === 'solo' || roomVersion(room) !== DEFAULT_VERSION || room.content?.vanilla === false) return null;
@@ -527,228 +567,6 @@ function SpectatorBar({ facts, myId, busy, onRemove, onSit }) {
   </section>`;
 }
 
-/** The 「不限时」 switch (a timed solo): the host toggles it, everybody else sees its state. */
-function SoloUnlimitedToggle({ option, busy, onToggle }) {
-  if (!option) return null;
-  return html`<div class="ailast">
-    <${Tooltip} text=${t('关闭本局休整与机变的计时。官方为休整期每轮 300 秒、机变 150 秒。')}>
-      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-solo-unlimited"
-          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
-          onClick=${() => option.editable && onToggle(!option.on)}>
-        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('不限时')}
-      </button>
-    <//>
-    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
-  </div>`;
-}
-
-/** The 「AI 队友最后选择」 switch (co-op): the host toggles it, everybody else sees its state. */
-function AiLastToggle({ option, busy, onToggle }) {
-  if (!option) return null;
-  return html`<div class="ailast">
-    <${Tooltip} text=${t('策略与机变轮选时，所有博士先于 AI 队友选择')}>
-      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'}
-          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
-          onClick=${() => option.editable && onToggle(!option.on)}>
-        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('AI 队友最后选择')}
-      </button>
-    <//>
-    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
-  </div>`;
-}
-
-/** The 「允许重复策略」 switch (co-op, 本仓新设): the host toggles it, everybody else sees its state. */
-function BandDupesToggle({ option, busy, onToggle }) {
-  if (!option) return null;
-  return html`<div class="ailast">
-    <${Tooltip} text=${t('默认关闭。开启后，策略选人允许多名博士选择同一策略（含自动分配），不再标「队友已选」')}>
-      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-band-dupes"
-          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
-          onClick=${() => option.editable && onToggle(!option.on)}>
-        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('允许重复策略')}
-      </button>
-    <//>
-    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
-  </div>`;
-}
-
-/**
- * 扩展同盟人数 (room.setExperimental, 移植自 Stardust fork 的容量选项): the host's switch, and once expanded the
- * 8/12/16/20 seat picker — an experimental mode, so the picker line says what it costs (bigger rooms wait and settle
- * longer, and every member needs an up-to-date page). The others see the state read-only.
- */
-function CapacityToggle({ option, busy, onCapacity }) {
-  if (!option) return null;
-  return html`<div class="ailast">
-    <${Tooltip} text=${t('实验性选项：同盟扩到 8–20 人。可直接开局，人数较多时等待与演算时间可能增加；所有成员需更新页面。')}>
-      <button type="button" role="switch" aria-checked=${option.expanded ? 'true' : 'false'} data-testid="room-capacity"
-          class=${`dpick__opt ailast__opt${option.expanded ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
-          onClick=${() => option.editable && onCapacity(option.expanded ? MAX_SEATS : 8)}>
-        <${Icon} name="check" class=${option.expanded ? 'is-on' : ''} />${t('扩展同盟人数')}
-      </button>
-    <//>
-    ${option.expanded ? html`<label class="rs-capacity" for="rs-capacity-pick" data-testid="room-capacity-pick">
-      <span>${t('同盟人数模式')}</span>
-      <select id="rs-capacity-pick" value=${option.capacity} disabled=${!option.editable || !!busy}
-        onChange=${(e) => onCapacity(Number(e.currentTarget.value))}>
-        ${PLAYER_CAPACITIES.map((n) => html`<option key=${n} value=${n}>${t('{n} 人', { n })}</option>`)}
-      </select>
-    </label>` : null}
-    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
-  </div>`;
-}
-
-/** The 「禁用鸭爵策略」 switch (expanded rooms only, the fork's duckLordRow): the host toggles it, the others read it. */
-function DuckLordToggle({ option, busy, onToggle }) {
-  if (!option) return null;
-  return html`<div class="ailast">
-    <${Tooltip} text=${t('勾选后，本局无法选择鸭爵策略；不影响其他策略。')}>
-      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-duck-lord"
-          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
-          onClick=${() => option.editable && onToggle(!option.on)}>
-        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('禁用鸭爵策略')}
-      </button>
-    <//>
-    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
-  </div>`;
-}
-
-/** The 「禁用层数上限」 switch (any room, 移植自 Stardust fork): the host toggles it, the others read it. */
-function LayerCapToggle({ option, busy, onToggle }) {
-  if (!option) return null;
-  return html`<div class="ailast">
-    <${Tooltip} text=${t('盟约层数不再停在 999 层。')}>
-      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-layer-cap"
-          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
-          onClick=${() => option.editable && onToggle(!option.on)}>
-        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('禁用层数上限')}
-      </button>
-    <//>
-    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
-  </div>`;
-}
-
-/** The 「禁用单次伤害上限」 switch (any room, 移植自 Stardust fork): the host toggles it, the others read it. */
-function HitLimitToggle({ option, busy, onToggle }) {
-  if (!option) return null;
-  return html`<div class="ailast">
-    <${Tooltip} text=${t('对敌方领袖的单次伤害达到 30 万及以上时不再被取消。')}>
-      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-hit-limit"
-          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
-          onClick=${() => option.editable && onToggle(!option.on)}>
-        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('禁用单次伤害上限')}
-      </button>
-    <//>
-    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
-  </div>`;
-}
-
-/** The 「AI 联防置后」 switch (co-op, 移植自用户分支 rel29): the host toggles it, the others read it. */
-function UniteHumansToggle({ option, busy, onToggle }) {
-  if (!option) return null;
-  return html`<div class="ailast">
-    <${Tooltip} text=${t('联防先按原有排序从真人博士中挑选，AI 队友和 AI 托管中的博士排在所有真人之后。')}>
-      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-unite-humans"
-          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
-          onClick=${() => option.editable && onToggle(!option.on)}>
-        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('AI 联防置后')}
-      </button>
-    <//>
-    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
-  </div>`;
-}
-
-function AiTakeoverToggle({ option, busy, onToggle }) {
-  if (!option) return null;
-  return html`<div class="ailast">
-    <${Tooltip} text=${t('默认关闭。开启后，观战者可在休整期经同房间真人投票接替 AI；继承记录不计个人统计或奖励。')}>
-      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-ai-takeover"
-          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
-          onClick=${() => option.editable && onToggle(!option.on)}>
-        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('允许观战者接替 AI')}
-      </button>
-    <//>
-    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
-  </div>`;
-}
-
-/**
- * 开发者控制台 (room.console.enable, server/match/match/intents.js consoleGrant, 移植自用户分支): a private room may
- * grant itself in-match 干员 / 装备 / 盟约层数, quota-limited and broadcast to the team. A solo room's own seat may
- * switch it; every other room needs its host, and a matchmaking room can never use it.
- * @param {any} room room.state payload
- * @param {any} myId
- * @returns {{ on: boolean, editable: boolean }}
- */
-export function consoleOption(room, myId) {
-  if (!room) return { on: false, editable: false };
-  const personal = room.mode === 'solo' && (room.seats || []).some((s) => s && !s.isBot && s.playerId === myId);
-  return { on: room.consoleEnabled === true, editable: room.hostId != null ? (personal || room.hostId === myId) : personal };
-}
-
-/** The developer console switch: host-only (a solo room's own seat too), disabled while the room is matchmaking. */
-function ConsoleToggle({ option, busy, onToggle, matching }) {
-  return html`<div class="ailast">
-    <${Tooltip} text=${t('对局内可发放干员、装备与盟约层数（每回合 {round} 次，全场 {total} 次），全队可见', { round: 5, total: 50 })}>
-      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-console"
-          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy || (matching && !option.on)}
-          onClick=${() => option.editable && onToggle(!option.on)}>
-        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('开发者控制台')}
-      </button>
-    <//>
-    ${option.on ? html`<span class="t-dim">${t('不能进入匹配队列')}</span>` : null}
-    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
-  </div>`;
-}
-
-/**
- * ⚙ of the bottom pill (co-op): 同盟设置 — the 模拟难度 (opens 选择模拟协议: the host's 确认, the others' read-only view)
- * and the 「AI 队友最后选择」 switch. Closes on a click outside it or Esc.
- */
-function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, room, isHost, busy, onAiLast, dupesOption = null, onBandDupes,
-  capOption = null, onCapacity, duckOption = null, onDuckLord, layerOption = null, onLayerCap, hitOption = null, onHitLimit,
-  uniteOption = null, onUniteHumans, onSoloUnlimited, onConsole, consoleOpt,
-  onDifficulty, onClose, version = null }) {
-  const info = difficultyInfo(room.mode, room.difficulty);
-  const title = soloOption ? t('模拟设置') : t('同盟设置');
-  useEffect(() => {
-    const away = (e) => { if (!e.target.closest?.('.rs-opts, .rs-pill__gear')) onClose(); };
-    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
-    addEventListener('pointerdown', away);
-    addEventListener('keydown', onKey);
-    return () => { removeEventListener('pointerdown', away); removeEventListener('keydown', onKey); };
-  }, []);
-  return html`<div class="rs-opts" role="dialog" aria-label=${title}>
-    <h4>${title}</h4>
-    ${soloOption ? null : html`<div class="rs-opts__row" data-testid="room-opt-difficulty">
-      <button type="button" class="rs-opts__diff" disabled=${isHost && !!busy} onClick=${onDifficulty}
-          title=${isHost ? t('更改模拟难度') : t('由创建者选择')}>
-        <${DifficultyIcon} difficulty=${room.difficulty} />${DIFFICULTY_NAMES[room.difficulty] ? t(DIFFICULTY_NAMES[room.difficulty]) : ''}<span class="num rs-pill__code">${info.code}</span>
-        ${isHost ? html`<em>${t('更改')}</em>` : null}
-      </button>
-    </div>`}
-    ${!soloOption && version ? html`<div class="rs-opts__row" data-testid="room-opt-version">
-      <${Tooltip} text=${version.why}>
-        <button type="button" class="rs-opts__diff rs-opts__ver" disabled=${version.disabled} onClick=${version.onOpen}
-            title=${version.editable ? t('发起切换版本') : t('由创建者发起')}>
-          <${Icon} name="book" />${versionLabel(version.id)}${version.editable ? html`<em>${t('切换')}</em>` : null}
-        </button>
-      <//>
-    </div>` : null}
-    <${AiTakeoverToggle} option=${takeoverOption} busy=${busy} onToggle=${onAiTakeover} />
-    ${soloOption
-      ? html`<${SoloUnlimitedToggle} option=${soloOption} busy=${busy} onToggle=${onSoloUnlimited} />`
-      : html`<${AiLastToggle} option=${option} busy=${busy} onToggle=${onAiLast} />`}
-    <${BandDupesToggle} option=${dupesOption} busy=${busy} onToggle=${onBandDupes} />
-    <${CapacityToggle} option=${capOption} busy=${busy} onCapacity=${onCapacity} />
-    <${DuckLordToggle} option=${duckOption} busy=${busy} onToggle=${onDuckLord} />
-    <${LayerCapToggle} option=${layerOption} busy=${busy} onToggle=${onLayerCap} />
-    <${HitLimitToggle} option=${hitOption} busy=${busy} onToggle=${onHitLimit} />
-    <${UniteHumansToggle} option=${uniteOption} busy=${busy} onToggle=${onUniteHumans} />
-    <${ConsoleToggle} option=${consoleOpt} busy=${busy} matching=${!!room.matchmaking} onToggle=${onConsole} />
-  </div>`;
-}
-
 /** A gear (the pill's ⚙, in the place of the event's 快速搜寻: matchmaking is dropped — the maintainer's PR #643 keep / drop list, 2026-10-15). */
 function GearGlyph() {
   return html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill-rule="evenodd" d="M10.3 2h3.4l.5 2.6 1.9.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.9 2.6.5v3.4l-2.6.5-.8 1.9 1.5 2.2-2.4 2.4-2.2-1.5-1.9.8-.5 2.6h-3.4l-.5-2.6-1.9-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.9L2 13.7v-3.4l2.6-.5.8-1.9-1.5-2.2 2.4-2.4 2.2 1.5 1.9-.8zM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z" /></svg>`;
@@ -824,6 +642,8 @@ export function RoomScreen() {
   const [protoOpen, setProtoOpen] = useState(false);
   const [protoPick, setProtoPick] = useState(null);
   const [opts, setOpts] = useState(false);
+  // the settings dialog's page (ui/roomSettings.js settingsPage): kept across closes, normalized per room at the render
+  const [optsPage, setOptsPage] = useState('alliance');
   // the host's change of difficulty, told to the others (see the header); never on entering a room or switching rooms
   const seenDiff = useRef(room ? `${room.code}|${room.difficulty}` : '');
   useEffect(() => {
@@ -963,6 +783,9 @@ const setLayerCap = (on) => run('layer-cap', () => net.request('room.setExperime
 const setHitLimit = (on) => run('hit-limit', () => net.request('room.setExperimental', { experimental: hitLimitExperimental(on, room.experimental) }));
 // AI 联防置后 (移植自用户分支 rel29): the whole option set goes to the server at once (room.setExperimental), like 扩展同盟人数
 const setUniteHumans = (on) => run('unite-humans', () => net.request('room.setExperimental', { experimental: uniteHumansExperimental(on, room.experimental) }));
+// 队友复活 / 禁用共享卡池 (移植自 Stardust fork rel24): the whole option set goes to the server at once (room.setExperimental), like the other rules
+const setRevival = (on) => run('revival', () => net.request('room.setExperimental', { experimental: revivalExperimental(on, room.experimental) }));
+const setSharedPool = (on) => run('shared-pool', () => net.request('room.setExperimental', { experimental: sharedPoolExperimental(on, room.experimental) }));
 // AI 指定策略 (room.setBotBand, 移植自用户分支): the host names the strategy an AI seat takes in the draft (null = 自动选择)
 const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.request('room.setBotBand', { seat, bandId }); setBandSeat(null); });
   // 开发者控制台 (移植自用户分支): two messages, host-only on the server (a solo room's own seat may toggle it).
@@ -1062,6 +885,9 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
     : facts.humans.length > 1 ? t('更改难度后，其他博士需要重新准备就绪') : '';
   const aiLast = aiLastOption(room, me.playerId);
   const dupesOpt = bandDupesOption(room, me.playerId);
+  // the 模拟难度 row of the settings dialog (the pill's flow): the host's press opens 选择模拟协议, the others' the read-only view
+  const difficultyRow = { id: room.difficulty, name: DIFFICULTY_NAMES[room.difficulty] ? t(DIFFICULTY_NAMES[room.difficulty]) : '', code: info.code,
+    editable: facts.isHost, disabled: facts.isHost && !!busy, onOpen: openProto };
   const consoleOpt = consoleOption(room, me.playerId);
   const soloTimed = soloTimedOf(pageVersion() === roomVersion(room) ? getConfig() : null, roomVersion(room));
   const soloOpt = soloUnlimitedOption(room, me.playerId, soloTimed);
@@ -1080,7 +906,7 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
   // the banner gives its room to the seats, the pill's tooltip says it)
   const bannerText = curVersion !== myLobby && Array.isArray(versions) ? t('本房间为「{room}」，离开后恢复你的大厅版本「{mine}」', { room: versionLabel(curVersion), mine: versionLabel(myLobby) }) : null;
   const versionCtl = showVersion ? {
-    id: curVersion, editable: versionEditable, why: [versionEditable ? versionWhy : t('由创建者发起'), bannerText].filter(Boolean).join(' · ') || null,
+    id: curVersion, label: versionLabel(curVersion), editable: versionEditable, why: [versionEditable ? versionWhy : t('由创建者发起'), bannerText].filter(Boolean).join(' · ') || null,
     disabled: versionEditable ? !!versionWhy || !!busy : !Array.isArray(versions),
     onOpen: () => { setOpts(false); setVersionOpen(true); },
   } : null;
@@ -1172,7 +998,7 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
     <${VersionVote} room=${room} />
     ${bannerText ? html`<p class="rs-verbanner" data-testid="version-banner"><${Icon} name="info" />${bannerText}</p>` : null}
 
-    <footer class=${`room-bar rs-foot${opts ? ' is-opts' : ''}`}>
+    <footer class="room-bar rs-foot">
       <div class="rs-foot__left" aria-hidden="true"></div>
       <div class="rs-foot__center">
         <p class="rs-hint">${coop ? html`<span class="rs-ready num" title=${t('已就绪')}>${facts.humans.map((s) => html`<${Icon} key=${s.playerId} name="user" class=${facts.isReady(s) ? 'is-on' : ''} />`)}<b>${facts.readyHumans}</b>/${facts.humans.length}</span>` : null}<span class="room-bar__status">${statusLine}</span></p>
@@ -1183,13 +1009,6 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
             disabled=${versionCtl.disabled} onClick=${versionCtl.onOpen} aria-label=${t('游戏版本：{name}', { name: versionLabel(curVersion) })}><${Icon} name="book" /><span class="rs-pill__vername">${versionLabel(curVersion)}</span></button><//>` : null}
           <button type="button" class=${`rs-pill__gear${opts ? ' is-on' : ''}`} onClick=${() => setOpts((v) => !v)} title=${aiLast ? t('同盟设置') : t('模拟设置')} aria-label=${aiLast ? t('同盟设置') : t('模拟设置')}
             aria-expanded=${opts ? 'true' : 'false'}><${GearGlyph} /></button>
-          ${opts ? html`<${RoomOptions} takeoverOption=${aiTakeoverOption(room, me.playerId)} onAiTakeover=${setAiTakeover} option=${aiLast} soloOption=${soloOpt} room=${room} isHost=${facts.isHost} busy=${busy} onAiLast=${setAiLast}
-            dupesOption=${dupesOpt} onBandDupes=${setBandDupes}
-            capOption=${capacityOption(room, me.playerId)} onCapacity=${setCapacity} duckOption=${duckLordOption(room, me.playerId)} onDuckLord=${setDuckLord}
-            uniteOption=${uniteHumansOption(room, me.playerId)} onUniteHumans=${setUniteHumans}
-            layerOption=${layerCapOption(room, me.playerId)} onLayerCap=${setLayerCap}
-            hitOption=${hitLimitOption(room, me.playerId)} onHitLimit=${setHitLimit}
-            onConsole=${setConsole} consoleOpt=${consoleOpt} onSoloUnlimited=${setSoloUnlimited} onDifficulty=${openProto} onClose=${() => setOpts(false)} version=${versionCtl} />` : null}
         </div>
       </div>
       <div class="room-bar__right rs-foot__right">
@@ -1237,6 +1056,12 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
           onCreate=${confirmDifficulty} busy=${busy === 'diff' ? 'create' : null} online=${online} action=${t('确认')} hint=${protoHint} difficulties=${protoDifficulties} />`
       : html`<${ProtocolSelect} roomMode=${room.mode} difficulty=${room.difficulty} onDifficulty=${() => {}} onClose=${closeProto}
           online=${online} readOnly=${true} difficulties=${protoDifficulties} />` : null}
+    ${opts ? html`<${RoomSettings} page=${settingsPage(room, optsPage)} onPage=${setOptsPage} room=${room} editable=${facts.isHost && !room.inMatch} busy=${busy}
+      version=${versionCtl} difficulty=${difficultyRow} aiLast=${aiLast} dupes=${dupesOpt} takeover=${aiTakeoverOption(room, me.playerId)} soloOption=${soloOpt}
+      consoleOpt=${consoleOpt} matching=${!!room.matchmaking}
+      onAiLast=${setAiLast} onBandDupes=${setBandDupes} onAiTakeover=${setAiTakeover} onCapacity=${setCapacity} onDuckLord=${setDuckLord}
+      onRevival=${setRevival} onSharedPool=${setSharedPool} onLayerCap=${setLayerCap} onHitLimit=${setHitLimit} onUniteHumans=${setUniteHumans}
+      onConsole=${setConsole} onSoloUnlimited=${setSoloUnlimited} onClose=${() => setOpts(false)} />` : null}
     ${versionOpen && versionCtl ? html`<${VersionPicker} mode="room" versions=${versions || [{ id: curVersion, roomModes: [room.mode] }]} current=${curVersion}
       serverDefault=${serverDefault} roomMode=${room.mode} editable=${versionEditable && !versionWhy} busy=${busy === 'version'}
       note=${versionEditable ? versionWhy || (facts.humans.length > 1 ? t('其他博士同意后才会切换；切换后需要重新准备。') : null) : t('由创建者发起')}

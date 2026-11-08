@@ -8,7 +8,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const SRC = readFileSync(path.join(ROOT, 'public/js/screens/room.js'), 'utf8');
+// the switch's texts moved with the ⚙ dialog (ui/roomSettings.js, the Stardust fork's rel24 panel); the sender stays in the screen
+const SRC = [readFileSync(path.join(ROOT, 'public/js/screens/room.js'), 'utf8'),
+  readFileSync(path.join(ROOT, 'public/js/ui/roomSettings.js'), 'utf8')].join('\n');
 const EN = JSON.parse(readFileSync(path.join(ROOT, 'public/i18n/en.json'), 'utf8'));
 const mod = () => import(pathToFileURL(path.join(ROOT, 'public/js/screens/room.js')).href);
 

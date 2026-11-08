@@ -3781,5 +3781,14 @@
   "每阶选 {k} 名": "Pick {k} per tier",
   "{name} 赞了你": "{name} liked you",
   "为 {name} 点赞": "Like {name}",
-  "获赞": "Likes"
+  "获赞": "Likes",
+  "开局后不可更改": "Cannot be changed after the match starts",
+  "已更改": "Changed",
+  "规则": "Rules",
+  "卡池": "Pools",
+  "队友复活": "Teammate rescue",
+  "队友生命耗尽时，任意存活队友可支付 10 生命抵消这次死亡（自己至少要有 11 生命），每人每局最多被救一次。": "When a teammate runs out of HP, any living teammate with at least 11 HP can pay 10 HP to cancel that elimination. Each player can be rescued at most once per match.",
+  "禁用共享卡池": "Disable shared pool",
+  "每位博士使用独立卡池，不再争用同一干员库存。": "Each Doctor uses an independent pool instead of competing for the same operator stock.",
+  "未开启时按开局人数自动分组。": "Off: pools follow the seats taken at the start."
 }

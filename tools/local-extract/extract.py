@@ -26,6 +26,8 @@ aklz4.py registers a decoder for it. This script pulls the art the web sources l
     placement (mesh/<bundle>/prefab.json); of the 卫戍协议 device bundle (arts/maps/common/trap/trap_110.ab) only the
     射击台 (trap_1106_achplat) and 阻隔工事 (trap_1105_accrate): mesh, texture, material → mesh/trap_110, which the
     board draws in place of the 射击台's slab and of the crate's box (GitHub #663)
+  - the element gauge sprites of the battle HUD (arts/ui/[uc]battlecommon.ab → ui/ep: the official ring the renderer
+    draws, render/textures.js officialRings; feedback #113)
   - the standard gate / objective effects of every battle map (arts/effects/[pack]map.ab → map/fx: the [opt]start_box /
     [opt]end_box / [opt]start_fly meshes, their merged additive textures, materials and prefab), the blower's texture
     (arts/maps/common/res.ab → map/common: TX_wind_device of the s_wind_device mesh) and the shared water / noise
@@ -277,6 +279,11 @@ JOBS = [
     ('arts/effects/[pack]map.ab', 'map/fx', {'Mesh', 'GameObject', 'Material', 'Texture2D'}),
     ('arts/maps/common/res.ab', 'map/common', {'Material', 'Texture2D'}, r'^(TX|MT)_wind_device$'),
     ('arts/maps/effect.ab', 'map/water', {'Texture2D'}, r'water_normal|Caustics|WaterNoise|noise_clouds|Water_Foam|SmoothWaves'),
+    # the element gauge of the battle HUD (feedback #113: the official ring — prefabs char_ep_slider / enemy_ep_slider of
+    # the same bundle, render/textures.js EP_PREFAB): the operator's back / colour disc / fill ring and the four element
+    # icons, the enemy's back / colour disc / fill back / fill ring
+    ('arts/ui/[uc]battlecommon.ab', 'ui/ep', {'Sprite'},
+     r'^(slider_ep_(back|fill|color_enemy|back_enemy|fill_back_enemy|fill_enemy)|sprite_ep_(color|icon|water_icon|fire_icon|dark_icon))$'),
 ]
 
 # JOBS output groups that a full run writes but that setup does NOT expect (expected_local_groups excludes them):

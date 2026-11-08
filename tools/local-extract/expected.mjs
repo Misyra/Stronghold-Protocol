@@ -90,6 +90,7 @@ export const EXPECTED_LOCAL_GROUPS = Object.freeze([
   "spine/token/token_10070_aphris_pc",
   "ui/battle",
   "ui/common",
+  "ui/ep",
   "ui/outer",
 ]);
 

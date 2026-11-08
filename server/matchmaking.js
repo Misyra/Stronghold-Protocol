@@ -64,6 +64,8 @@ export class Matchmaking {
     return { partyId: party.id, partySize: party.entries.length, partyLeaderId: party.leaderId, partyRoomCode: party.roomCode };
   }
 
+  // The required axis reads constant 4 since the maintainer's 2026-11-08 decision (expanded rooms never queue);
+  // it stays in the key so a future reopening cannot mix seat counts within one pool.
   poolKey(e) { return `${e.version}:${e.difficulty}:${e.party.required}`; }
 
   /** Read-only population: no sweep, offer creation, deadline or party mutation. */
@@ -265,6 +267,10 @@ export class Matchmaking {
     catch { return fail(ERR.BAD_MSG, 'invalid party experimental options'); }
     // Room inspection owns the mode; lobby solos remain in the ordinary four-player pool.
     const required = roomCapacity('coop', experimental);
+    // 维护者决定 2026-11-08：扩编房间（playerCapacity 8/12/16/20）不进同盟匹配，同容量组队匹配只保留 4 人
+    // 普通池（有意偏离 Stardust fork 允许 9 人队排 20 人房）。容量轴与 >4 的合并/借房管路保留为 dormant，
+    // 便于将来放开；本闸在 members() 检查之后，未就绪/AI/旧版客户端的既有拒绝先照旧返回。
+    if (required > MAX_SEATS) return fail(ERR.BAD_MSG, '扩编房间不进同盟匹配'); // i18n-ignore: developer detail (players see ERR_TEXT)
     const sessions = group.sessions;
     if (!Array.isArray(sessions) || sessions.length < 1 || sessions.length > required
       || sessions.some(member => !member || typeof member.playerId !== 'string')
@@ -272,6 +278,7 @@ export class Matchmaking {
     for (const member of sessions) {
       if (this.has(member)) return fail(ERR.QUEUED, 'party member already queued');
       if (member.matchmakingVersion !== MATCHMAKING_VERSION
+        // 维护者决定 2026-11-08 起 dormant：上面的容量闸先拒绝 required > MAX_SEATS，这里只兜底将来放开后的旧版客户端。
         || (required > MAX_SEATS && member.playerCapacityVersion !== PLAYER_CAPACITY_VERSION)) {
         return fail(ERR.BAD_MSG, 'all party members must refresh the page');
       }
@@ -414,6 +421,8 @@ export class Matchmaking {
           && e.difficulty === saved.difficulty && e.expiresAt === saved.expiresAt && e.sequence === saved.sequence
           && e.party.required === allocation.required && e.party.experimental === saved.experimental
           && (!e.party.experimental || sameExperimental(e.party.experimental, offer.experimental))
+          // 维护者决定 2026-11-08 起 dormant：扩编房间进不了队列，required > MAX_SEATS 的报价不会再出现；
+          // 容量客户端检查保留，兜底将来放开。
           && (allocation.required <= MAX_SEATS || e.session.playerCapacityVersion === PLAYER_CAPACITY_VERSION)
           && e.accepted === true && e.revivalVote === saved.revivalVote && e.expiresAt > now
           && e.session.matchmakingVersion === saved.version && (e.session.limitKey || null) === (e.key || null)
@@ -608,6 +617,7 @@ export class Matchmaking {
         const entries = parties.flatMap((party) => party.entries);
         // Lone tickets make an ordinary game of the pool's size (a pool past four only fills with a party's room
         // options today; the fallback keeps an offer's options and its required seats consistent regardless).
+        // 维护者决定 2026-11-08 起 dormant：扩编房间进不了队列，>4 的池不会出现；容量房报价的选项构造保留以便将来放开。
         const experimental = parties.find(party => party.experimental)?.experimental
           ?? (leader.required === MAX_SEATS ? EXPERIMENTAL_DEFAULTS : experimentalOptions({ ...EXPERIMENTAL_DEFAULTS, playerCapacity: leader.required }));
         const offer = { id: id(), experimental, required: leader.required,
@@ -621,6 +631,7 @@ export class Matchmaking {
   }
 
   stale(e, now) {
+    // 维护者决定 2026-11-08 起 dormant：扩编房间进不了队列，required > MAX_SEATS 的旧版客户端兜底保留。
     return e.expiresAt <= now || !this.available(e.session, e) || e.session.matchmakingVersion !== e.version
       || (e.party.required > MAX_SEATS && e.session.playerCapacityVersion !== PLAYER_CAPACITY_VERSION)
       || (e.session.limitKey || null) !== (e.key || null);

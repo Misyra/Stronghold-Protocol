@@ -149,8 +149,9 @@ describe('room.js: 开发者控制台 in the client', () => {
     assert.match(src, /\$\{option\.on \? html`<span class="t-dim">\$\{t\('不能进入匹配队列'\)\}<\/span>` : null\}/);
   });
   test('开始搜寻 stays on screen, disabled, with the reason', () => {
-    assert.match(src, /disabled=\$\{!online \|\| busy === 'match' \|\| consoleOn \|\| modded\}/);
-    assert.match(src, /title=\$\{modded \? t\('房间启用了玩法插件，无法进入匹配队列'\) : consoleOn \? t\('房间已开启开发者控制台，无法进入匹配队列'\) : undefined\}/);
+    // 扩编房间 (big) 同样留在原地并说明原因 (维护者决定 2026-11-08：扩编房间不进匹配)
+    assert.match(src, /disabled=\$\{!online \|\| busy === 'match' \|\| consoleOn \|\| modded \|\| big\}/);
+    assert.match(src, /title=\$\{modded \? t\('房间启用了玩法插件，无法进入匹配队列'\) : consoleOn \? t\('房间已开启开发者控制台，无法进入匹配队列'\) : big \? t\('扩编房间不参与同盟匹配，请先把同盟人数调回 4 人'\) : undefined\}/);
     assert.match(src, /const consoleOn = room\?\.consoleEnabled === true;/);
   });
 });

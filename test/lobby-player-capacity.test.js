@@ -1,6 +1,7 @@
 // test/lobby-player-capacity.test.js — 扩编房间 (playerCapacity 4/8/12/16/20, shared/playerCapacity.js) 的房间面:
 // 自建房可开到二十席且座位序号稳定, 缩编拒绝任何高位座位且零副作用, 旧版客户端 (playerCapacityVersion 不符) 守在
-// 普通房间外, 排队房按房间容量进池。移植自用户分支 test/lobby-player-capacity.test.js, 按本仓语义适配:
+// 普通房间外。维护者决定 2026-11-08：扩编房间不进同盟匹配 —— 扩编整队在引擎的容量闸被拒, 排队面只测 4 人池。
+// 移植自用户分支 test/lobby-player-capacity.test.js, 按本仓语义适配:
 // room.* 变更处理器在排队时撤票而不是拒绝 (ERR.QUEUED), 匹配房不带 experimental (private rooms only), 合并
 // 借用最老同盟的房间而不是新建 (mergePartyMatchmaking)。
 
@@ -120,16 +121,17 @@ test('legacy clients keep ordinary/solo room shapes but cannot create, enter, ob
   assert.equal(f.lobby.addBot(legacy).error, ERR.ROOM_FULL);
 });
 
-for (const size of [1, 2, 3, 4]) test(`expanded ${size}-human party enters only its eight-player queue without changing the room`, async t => {
+for (const size of [1, 2, 3, 4]) test(`expanded ${size}-human party is refused at the queue gate without changing the room`, async t => {
   const f = fixture(t), { room, host, members } = await f.room(8, size);
   for (const p of members.slice(1)) f.lobby.ready(p, { ready: true });
   const before = structuredClone(room.toState());
-  assert.deepEqual(f.lobby.queueJoin(host, { difficulty: 'NORMAL', party: true }), { ok: true });
-  assert.equal(f.lobby.matchmaking.size, size); assert.equal(f.lobby.matchmaking.offers.size, 0);
-  // 本仓: 排队房亮 matchmaking 旗 (room.state 唯一的变化), 座位与就绪位不动
-  assert.deepEqual(room.toState().seats, before.seats);
-  assert.equal(room.matchmaking, true);
-  for (const member of members) assert.equal(f.lobby.matchmaking.state(member).required, 8);
+  // 维护者决定 2026-11-08：扩编房间不进同盟匹配 —— 引擎的容量闸在 join() 拒绝 required > MAX_SEATS
+  assert.deepEqual(f.lobby.queueJoin(host, { difficulty: 'NORMAL', party: true }), { error: ERR.BAD_MSG, detail: '扩编房间不进同盟匹配' });
+  assert.equal(f.lobby.matchmaking.size, 0); assert.equal(f.lobby.matchmaking.offers.size, 0);
+  // 本仓: 被拒的房间不亮 matchmaking 旗 (room.state 唯一的变化是没有变化), 座位与就绪位不动
+  assert.deepEqual(room.toState(), before);
+  assert.ok(!room.matchmaking);
+  for (const member of members) assert.equal(f.lobby.matchmaking.state(member).state, 'idle');
 });
 
 test('party matchmaking requires ready nonhosts; room mutations withdraw the ticket instead of refusing', async t => {
@@ -148,6 +150,11 @@ test('party matchmaking requires ready nonhosts; room mutations withdraw the tic
   assert.deepEqual(f.lobby.setExperimental(host, { experimental: options(8) }), { ok: true });
   assert.equal(f.lobby.matchmaking.size, 0);
   // a rule change un-readies the non-hosts, as every room option does
+  f.lobby.ready(members[1], { ready: true });
+  // 维护者决定 2026-11-08：扩编房间不进同盟匹配 —— 扩容后的房间在容量闸被拒, 票已在扩容时撤干净
+  assert.deepEqual(f.lobby.queueJoin(host, { difficulty: 'NORMAL', party: true }), { error: ERR.BAD_MSG, detail: '扩编房间不进同盟匹配' });
+  assert.equal(f.lobby.matchmaking.size, 0);
+  assert.deepEqual(f.lobby.setExperimental(host, { experimental: options(4) }), { ok: true });
   f.lobby.ready(members[1], { ready: true });
   // Admission is checked again, including an internal race bypassing public locks.
   assert.deepEqual(f.lobby.queueJoin(host, { difficulty: 'NORMAL', party: true }), { ok: true });

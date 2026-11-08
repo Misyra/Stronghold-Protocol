@@ -287,7 +287,7 @@ async function main() {
    * an enemy's: cast slot [dur] (b.ev 'cast'), anim n (the snapshot's: ANIM.SKILL opens a single-skill enemy's window,
    * leaving it closes the window), block on|off (UF.BLOCKED: its combat), form name [fx extra] (a sim form fx: a 重生's
    * 'reborn' / 'form2', a 替身's 'doll'); talents (index v3): spawn (an enemy's or a summon's deploy talents), hp n [max]
-   * (an HP-ratio toggle), flags n (the snapshot flags: blocked, 隐匿 …), kitfx kind [extra] (a kit fx naming the unit:
+   * (an HP-ratio toggle), flags n (the snapshot flags: blocked, 隐匿 …), layers n (b.snap `layers`: 护盾 layers), kitfx kind [extra] (a kit fx naming the unit:
    * 'substitute', 'extraAttack' …).
    */
   function skillCmd(cmd, a, b) {
@@ -313,6 +313,7 @@ async function main() {
       case 'spawn': return wiring.spawned(s);
       case 'hp': s.hp = Number(a); s.maxHp = Number(b) || s.maxHp || 100; return true;
       case 'flags': s.flags = a | 0; return true;
+      case 'layers': s.layers = a | 0; return true;
       case 'anim': s.anim = a | 0; return true;
       case 'block': if (a === false || a === 'off') s.flags &= ~UF.BLOCKED; else s.flags |= UF.BLOCKED; return true;
       case 'form': s.form = a || null; return wiring.form(s, a || null, b || {});

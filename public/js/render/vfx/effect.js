@@ -736,7 +736,7 @@ export class Effect {
       if (mr && mr.enabled && mr.mesh && (this.rendOv.get(i)?.enabled ?? true)) {
         const md = this.lib ? this.lib.mesh(mr.mesh) : null;
         if (md && md.submeshes) {
-          const flat = behindUnits(mr.layer, mr.order, def.back) || (isFlatMesh(md, w) && nearGround);
+          const flat = behindUnits(mr.layer, mr.order, def.back) || (isFlatMesh(md, w) && nearGround && !coversBody(w, this));
           for (let k = 0; k < mr.mats.length; k++) {
             if (mr.mats[k] == null || !md.submeshes[k]) continue;
             const mat = def.material(mr.mats[k], lite);
@@ -972,4 +972,20 @@ function isFlatMesh(md, w) {
   if (!flatZ(md)) return false;
   const l = Math.hypot(w[8], w[9], w[10]) || 1;
   return Math.abs(w[10] / l) > 0.82;
+}
+
+/** How far from the feet a plane's centre lies up the board to read as covering the body, not as a decal under it. */
+const COVER_DEEP = 0.3;
+/** How far towards the camera it must be pulled: the client's front halves (`thorns_skill_03_buff_02_front`) use −0.07. */
+const COVER_FRONT = 0.03;
+
+/**
+ * A flat plane of an effect that stands for something in front of the unit, not on the ground: under the tilted camera a
+ * plane lying in XY and centred about half a tile up the board spans the body on screen, and pulled towards the camera
+ * it sorts after the unit's order-0 renderers. 冰冻's ice block (`bingkuai`, feedback #54) and 泥岩's shield cracks
+ * (`liewen`, #59) are such planes, as are about 80 renderers of skill buffs; the back halves of the same overlays sit at
+ * z ≥ 0. Only the world's +y is read: a rotated effect (facing up or down) keeps the ground rule.
+ */
+function coversBody(w, fx) {
+  return w[13] - fx.anchor[1] > COVER_DEEP && w[14] - fx.groundZ < -COVER_FRONT;
 }

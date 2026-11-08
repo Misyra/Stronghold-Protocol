@@ -44,6 +44,30 @@ describe('PauseAnotherEffect (effect.js, system.js)', () => {
     assert.deepEqual(sys.effects.map((f) => f.pausedBy), [false, false, true, false, true, false], 'the stopped top no longer pauses: the middle shows');
   });
 
+  test("a skin's effect is paused by the plain key its prefab stands for (feedback #59: 泥岩's skins)", () => {
+    const fx = (key, base, owner, pauses = []) => ({ def: { key, pauses }, base, owner, state: 'play', time: 1, pausedBy: false });
+    const A = {};
+    const top = fx('lay_01_s', 'lay_01', A, [{ key: 'lay_02', delay: 0 }]);
+    const low = fx('lay_02_s', 'lay_02', A);
+    const sys = { effects: [top, low] };
+    OfficialFx.prototype._pauseOthers.call(sys);
+    assert.equal(low.pausedBy, true);
+    assert.equal(top.pausedBy, false);
+  });
+
+  test('a chained effect plays through the same skin, and the plain key stays its name for pausing', () => {
+    const defs = new Map();
+    const parent = compileEffect(desc('p_s', [{ class: 'OnPlayEmitter', enabled: true, fields: { _effects: ['child'] } }]));
+    const child = compileEffect(desc('child_s'));
+    defs.set('p_s', parent); defs.set('child_s', child);
+    const lib = { available: true, has: (k) => defs.has(k), def: (k) => defs.get(k) || null, defs };
+    const ofx = new OfficialFx({ P: { Container: class {} }, renderer: null, cam: () => null, lib, tier: 'full' });
+    ofx.spawn('p_s', {}, { base: 'p', swap: (k) => (k === 'child' ? 'child_s' : k) });
+    const kids = ofx.effects.filter((f) => f.def === child);
+    assert.equal(kids.length, 1, 'the child played as the skin\'s prefab');
+    assert.equal(kids[0].base, 'child');
+  });
+
   test('a paused effect draws nothing (Effect.gather returns before reading its nodes)', () => {
     const fx = new Effect(compileEffect(desc('plain')), {});
     const trap = new Proxy({}, { get() { throw new Error('read'); } });
@@ -60,6 +84,8 @@ describe('PauseAnotherEffect (effect.js, system.js)', () => {
 const LAYERS = ['lay_01', 'lay_02', 'lay_03'];
 const COND_KEYS = ['billro_skill_01_buff_01', 'billro_skill_01_buff_01_02', 'billro_skill_01_buff_02'];
 const LOOPING = new Set([...LAYERS, ...COND_KEYS, 'bar_01', 'bar_02']);
+const SHIELD = 'archet_buff_01_start';
+LOOPING.add(SHIELD);
 const KEYS = [...LOOPING, 'lay_begin', 'bubble_skill_02_hit', 'g_hit', 'g_die', 'g_birth'];
 const PAUSES = { lay_01: ['lay_02', 'lay_03'], lay_02: ['lay_03'], bar_01: ['bar_02'] };
 
@@ -88,6 +114,10 @@ function makeIndex() {
       char_903_bub: { kind: 'char', modes: [{ name: 'Default', attack: melee() }], talentKeys: { base: {} },
         skills: { skchr_bubble_2: { rootClass: 'CastSkill', uses: [{ role: 'hit', keys: ['bubble_skill_02_hit'], from: 'ActiveBuffAbility._buffs.blackboard', on: 'owner', buff: 'bubble_s_2[inverse]', bb: 'effect', by: 'name', life: { type: 'LIMITED' } }] } } },
       enemy_904_foe: { kind: 'enemy', skills: {}, modes: [{ name: 'Default', attack: null, combat: melee() }] },
+      // 空弦's shape: one passive loop for her one-hit 护盾
+      char_905_arc: { kind: 'char', skills: {}, talentKeys: { base: { 0: ['1'] } }, modes: [{ name: 'Default', attack: melee() }],
+        talents: { 1: { nodes: [{ node: 'Talents/1', class: 'Talent', ability: 'PassiveBuffAbility', when: 'passive' }],
+          uses: [{ role: 'loop', keys: [SHIELD], from: 'PassiveBuffAbility._buffs', node: 'Talents/1', on: 'owner', buff: 't', template: 't', life: { type: 'INFINITY' } }] } } },
     },
     skills: {},
     projectiles: {},
@@ -99,6 +129,7 @@ function makeIndex() {
 
 const RECS = {
   char_900_lay: { charId: 'char_900_lay', talents: [{ index: 0 }] },
+  char_905_arc: { charId: 'char_905_arc', talents: [{ index: 0 }] },
   char_902_cnd: { charId: 'char_902_cnd', talents: [], skills: [{ index: 0, skillId: 'skchr_cnd_1', durationType: 'NONE', duration: 20 }] },
   char_903_bub: { charId: 'char_903_bub', talents: [], skills: [{ index: 0, skillId: 'skchr_bubble_2', durationType: 'NONE', duration: 30 }] },
   enemy_901_bar: { talents: { bb: {} }, skills: [] },
@@ -152,6 +183,15 @@ describe("a talent's per-layer loops (talentfx.js, b.snap `layers`)", () => {
     v.layers = 0; frame();
     assert.deepEqual(liveSet(LAYERS), [], 'every layer broken');
     assert.ok(handles.filter((h) => LAYERS.includes(h.key)).every((h) => h.opts.owner === v), 'each layer effect names its owner (PauseAnotherEffect)');
+  });
+
+  test('a one-prefab shield (空弦) lasts while the sim reports a layer', async () => {
+    const { w, view, frame, live } = await setup();
+    const v = view(1, 'char_905_arc');
+    w.deploy(v); v.layers = 1; frame();
+    assert.equal(live(SHIELD), 1);
+    v.layers = 0; frame();
+    assert.equal(live(SHIELD), 0, 'it broke');
   });
 
   test("an enemy's stack plays whole while its barrier holds, and stops when it breaks", async () => {

@@ -19,6 +19,7 @@ import { t } from '../../../shared/i18n.js';
 import { serverNow } from '../store.js';
 import { data, useData, localAsset } from '../data.js';
 import { uiUrl } from './assetUrls.js';
+import { useImageFailure } from './materialImage.js';
 
 /**
  * h() for htm with its static-subtree cache switched off. htm keeps the vnode it built for a fully static subtree in
@@ -205,10 +206,10 @@ export function tierChipUrl(t) {
 export function TierChip({ tier, golden = false, size = 'md', class: cls }) {
   const n = Math.max(1, Math.min(6, Number(tier) | 0 || 1));
   const src = tierChipUrl(n);
-  const [bad, setBad] = useState(null);
-  const img = !!src && bad !== src;
+  const [bad, fail] = useImageFailure(src);
+  const img = !!src && !bad;
   return html`<span class=${cx('tier', `tier--${n}`, `tier--${size}`, golden && 'tier--golden', img && 'tier--img', cls)} aria-label=${t('{tier}阶', { tier: n })}>
-    ${img ? html`<img src=${src} alt="" draggable=${false} onError=${() => setBad(src)} />` : roman(n)}
+    ${img ? html`<img src=${src} alt="" draggable=${false} onError=${fail} />` : roman(n)}
   </span>`;
 }
 
@@ -222,9 +223,8 @@ export function BondDisc({
   name = '', icon, count, layers, tier = 0, maxTier = 3, active = false, disabled = false, layersDisabled = false,
   size = 'md', showName = true, onClick, class: cls, title,
 }) {
-  // Remember which URL failed (a per-URL flag can't race a reset effect).
-  const [badSrc, setBadSrc] = useState(null);
-  const imgOk = !!icon && badSrc !== icon;
+  const [bad, fail] = useImageFailure(icon);
+  const imgOk = !!icon && !bad;
   const n = Math.max(1, Math.min(8, maxTier | 0 || 3));
   const filled = Math.max(0, Math.min(n, tier | 0));
   const R = 46;
@@ -245,7 +245,7 @@ export function BondDisc({
       </svg>
       <span class="bond__core">
         ${imgOk
-          ? html`<img class="bond__icon" src=${icon} alt="" draggable=${false} onError=${() => setBadSrc(icon)} />`
+          ? html`<img class="bond__icon" src=${icon} alt="" draggable=${false} onError=${fail} />`
           : html`<span class="bond__glyph">${glyph}</span>`}
       </span>
       ${stack != null ? html`<span class="bond__count">${stack}</span>` : null}
@@ -827,15 +827,15 @@ const SEAT_HUES = [162, 196, 38, 280];
  *   self?: boolean, ready?: boolean, offline?: boolean, dead?: boolean, empty?: boolean, class?: string }} props
  */
 export function AvatarFrame({ name = '', src, size = 'md', seat = 0, host, bot, self, ready, offline, dead, empty, class: cls }) {
-  const [badSrc, setBadSrc] = useState(null);
-  const imgOk = !!src && badSrc !== src;
+  const [bad, fail] = useImageFailure(src);
+  const imgOk = !!src && !bad;
   const hue = SEAT_HUES[((seat | 0) % 4 + 4) % 4];
   const glyph = [...(name || '').trim()][0] || '?';
   return html`<div class=${cx('avatar', `avatar--${size}`, 'brackets', host && 'is-host', bot && 'is-bot', self && 'is-self',
       ready && 'is-ready', offline && 'is-offline', dead && 'is-dead', empty && 'is-empty', cls)} style=${`--seat-hue:${hue}`}>
     <div class="avatar__img">
       ${empty ? html`<${Icon} name="plus" class="avatar__empty" />`
-        : imgOk ? html`<img src=${src} alt="" draggable=${false} onError=${() => setBadSrc(src)} />`
+        : imgOk ? html`<img src=${src} alt="" draggable=${false} onError=${fail} />`
         : bot ? html`<${Icon} name="robot" class="avatar__bot" />`
         : html`<span class="avatar__glyph">${glyph}</span>`}
     </div>

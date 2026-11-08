@@ -2087,7 +2087,9 @@ export async function createFieldView(host, options = {}) {
           ofxPrevT = renderT;
           if (justEnded) { wiring.clear(); ofx.finish(); pluginFx.finish(); }
           pluginFx.update(gdt);
-          if (!presentation.ended) { pluginFx.sync(views.values()); wiring.sync(views.values()); }
+          // a scouted board is a prep surface: its pieces stand idle, also on the bench, and start no passive skill loops
+          // (琳琅诗怀雅 S2's range cross around a benched operator, feedback #95)
+          if (!presentation.ended) { pluginFx.sync(views.values()); if (!battleMeta?.prep) wiring.sync(views.values()); }
           // [ASSUMED] Bound long-lived one-shots to two presentation seconds after completion.
           if (presentation.ended && presentation.tail >= 2) { ofx.clear(); pluginFx.clear(); fx.clear(); }
           if (ofx.active) {

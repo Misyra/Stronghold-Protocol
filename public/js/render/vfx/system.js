@@ -248,7 +248,9 @@ export class OfficialFx {
     for (const p of pausers) {
       for (const q of p.def.pauses) {
         if (p.time < q.delay) continue;
-        for (const fx of this.effects) if (fx !== p && fx.owner === p.owner && fx.def.key === q.key) fx.pausedBy = true;
+        // `base` is the key an effect stands for when it did not start under it (a switchable variant's plain key; a
+        // skin's prefabs name the plain keys too): the pause names the plain one
+        for (const fx of this.effects) if (fx !== p && fx.owner === p.owner && (fx.def.key === q.key || fx.base === q.key)) fx.pausedBy = true;
       }
     }
   }
@@ -449,6 +451,7 @@ export class FxHandle {
     fx.place(this.placeArgs);
     fx.track = this.opts.track || null;
     fx.owner = this.opts.owner ?? null;
+    fx.base = this.opts.base ?? null;   // the key it stands for under a skin: a skin's prefabs name the plain keys
     fx.handle = this;
     // a one-shot nobody stops is capped: its authored duration (plus its linger), else ONE_SHOT_TTL; a looping prefab
     // nobody owns (the wiring stops it at its end event) ends after LOOP_TTL at the latest
@@ -459,15 +462,19 @@ export class FxHandle {
     fx.data = this.opts.data ?? null;
     if (this.opts.onFinish) fx.onFinish = this.opts.onFinish;
     // a chained effect of the prefab itself (OnPlayEmitter) starts with the same placement and owner; a looping one
-    // stops with it (OnFinishEmitter's start where it finished)
+    // stops with it (OnFinishEmitter's start where it finished). A chain goes through the spawner's `swap` (a skin's
+    // prefabs name the plain keys: what they name plays through the same skin), and keeps the plain key as its `base`
+    // for the pause matching.
     this.children = [];
-    const own = { track: this.opts.track, data: this.opts.data, loop: this.opts.loop, important: this.opts.important, owner: this.opts.owner };
-    for (const e of def.onPlay) for (const k of e.keys) if (k !== def.key) { const c = s.spawn(k, this.placeArgs, own); if (c) this.children.push(c); }
+    const swap = this.opts.swap;
+    const own = { track: this.opts.track, data: this.opts.data, loop: this.opts.loop, important: this.opts.important, owner: this.opts.owner, swap };
+    const chain = (k) => (swap ? swap(k) : k);
+    for (const e of def.onPlay) for (const k of e.keys) if (chain(k) !== def.key) { const c = s.spawn(chain(k), this.placeArgs, { ...own, base: k }); if (c) this.children.push(c); }
     const prev = fx.onFinish;
     fx.onFinish = (f) => {
       prev?.(f);
       this._stopChildren();
-      for (const k of def.onFinish) if (k !== def.key) s.spawn(k, { pos: f.anchor.slice(), yaw: f.yaw, mirror: f.mirror, groundZ: f.groundZ }, { track: this.opts.track, owner: this.opts.owner });
+      for (const k of def.onFinish) if (chain(k) !== def.key) s.spawn(chain(k), { pos: f.anchor.slice(), yaw: f.yaw, mirror: f.mirror, groundZ: f.groundZ }, { swap, base: k, track: this.opts.track, owner: this.opts.owner });
     };
     this.effect = fx;
     // started late (a cast whose wind-up began past the clip's start): advanced to where it would be

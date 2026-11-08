@@ -1,7 +1,7 @@
 // Shared in-match building blocks (Preact + htm): data hook, images with fallbacks, rich text,
 // unit thumbnails, LP tower, coin badge, official UI sprites. Styles: css/screens/game*.css.
 
-import { useState, useMemo } from '../../vendor/hooks.module.js';
+import { useMemo } from '../../vendor/hooks.module.js';
 import { html, Icon, TierChip, Tooltip } from './components.js';
 import { data, useData, localAsset } from '../data.js';
 import { parseRichText, rtClassName } from './richText.js';
@@ -12,6 +12,7 @@ import { settingsStore } from './settingsStore.js';
 import {
   uiUrl, chessAvatarUrl, chessPortraitUrl, itemIconUrl, tokenAvatarUrl, enemyIconUrl, bondIconUrl, bandIconUrl,
 } from './assetUrls.js';
+import { useImageFailure } from './materialImage.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -63,13 +64,14 @@ export function makeLookups(ready = true) {
 }
 
 /**
- * <img> that swaps to a fallback node when the URL is missing or fails.
+ * <img> that swaps to a fallback node when the URL is missing or fails — and asks for the picture again after a rest
+ * (useImageFailure, feedback #44) before giving up for good.
  * @param {{ src?: string|null, class?: string, alt?: string, fallback?: any, style?: string }} props
  */
 export function Img({ src, class: cls, alt = '', fallback = null, style }) {
-  const [bad, setBad] = useState(null);
-  if (!src || bad === src) return fallback;
-  return html`<img class=${cls} src=${src} alt=${alt} draggable=${false} loading="lazy" style=${style} onError=${() => setBad(src)} />`;
+  const [bad, fail] = useImageFailure(src);
+  if (!src || bad) return fallback;
+  return html`<img class=${cls} src=${src} alt=${alt} draggable=${false} loading="lazy" style=${style} onError=${fail} />`;
 }
 
 /** Owner-aware operator pictures, with live selection / settings updates even on an already open card.

@@ -97,8 +97,9 @@ for (const [capacity, count, sizes, scale] of [[4, 4, [4], 1], [8, 2, [2], 1], [
     assert.equal(m.twentyPlayerMode, false); assert.deepEqual(m.poolGroups.map(g => g.playerIds.length), sizes);
     for (const g of m.poolGroups) for (const [id, e] of g.pool.entries) assert.equal(e.cap, Math.ceil(m.gd.poolCopies(id) * scale));
     enterBand(h); assert.equal(m.publicView().draft.allowRepeat === true, repeat);
-    // 扩编房间的两步草稿都是并发的（concurrentDraft）：turn 为 null，一步一个倒计时
-    assert.equal(m.publicView().draft.concurrent === true, repeat);
+    // 两名真人及以上的 co-op 房都是并发草稿（自由选策略，match/phases.js freeDraft；扩编房间本就 concurrent）：
+    // turn 为 null，一步一个倒计时
+    assert.equal(m.publicView().draft.concurrent, true); assert.equal(m.publicView().draft.free, true);
     const nextBand = () => m.players.get(m.draft.order.find(pid => !m.draft.picks[pid]));
     const nextSp = () => m.players.get(repeat ? m.sp.order.find(pid => m.sp.picks[pid] == null) : m.spTurn());
     const first = nextBand(); assert.deepEqual(m.pickBand(first, 'band_bldsk'), { ok: true });

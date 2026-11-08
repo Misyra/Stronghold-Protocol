@@ -43,16 +43,22 @@ const ok = async (c, msg) => { const r = await c.request(msg); assert.equal(r.t,
 /** Pick from the current public draft, including the AI's choices; never rely on a timeout after a refused pick. */
 async function pickCoopBands(players) {
   const pending = new Map(players.map((c) => [c.id, c]));
+  const picked = new Set();
+  // 自由选策略（维护者决定 2026-11-08，移植自用户分支 rel33）: a turn-based draft names whose turn it is; in the free
+  // draft every seat still deciding may pick — one frame after another, each showing the picks already made
+  const next = (d) => (d?.concurrent ? [...pending.keys()].find((id) => !d.picks?.[id]) : pending.has(d?.turn) ? d.turn : null);
   let frame;
   while (pending.size) {
-    frame = await players[0].waitFor('m.public', (p) => p.phase === 'BAND_DRAFT' && pending.has(p.draft?.turn), 10000);
+    frame = await players[0].waitFor('m.public', (p) => p.phase === 'BAND_DRAFT' && next(p.draft) && [...picked].every((id) => p.draft.picks?.[id]), 10000);
     assert.equal(frame.draft.order.length, frame.players.length);
-    const taken = new Set(Object.values(frame.draft.picks));
+    const taken = new Set([...Object.values(frame.draft.picks), ...Object.values(frame.draft.holds || {})]);
     const band = Object.values(getData().bands).find((b) =>
       (!Array.isArray(b.modeTypeList) || b.modeTypeList.includes('MULTI')) && !taken.has(b.bandId));
     assert.ok(band, 'a co-op strategy is still available');
-    await ok(pending.get(frame.draft.turn), { t: 'g.band', bandId: band.bandId });
-    pending.delete(frame.draft.turn);
+    const id = next(frame.draft);
+    await ok(pending.get(id), { t: 'g.band', bandId: band.bandId });
+    pending.delete(id);
+    picked.add(id);
   }
   return frame;
 }

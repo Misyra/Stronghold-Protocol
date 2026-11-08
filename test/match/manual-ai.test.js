@@ -234,7 +234,11 @@ test('four-seat co-op launcher reaches concurrent prep with live wall-clock dead
       if (s.kind === 'band' && s.state === 'waiting' && !answered.has(s.id)) {
         const d = readJSON(path.join(folder, `obs-${s.n}.json`));
         assert.equal(d.playerId, `manual_${seat}`);
-        writeJSON(path.join(folder, `act-${s.n}.json`), [d.actions.find(a => a.intent.t === 'g.band').id]);
+        // 自由选策略（维护者决定 2026-11-08，移植自用户分支 rel33）: the four seats are asked at once, every observation
+        // showing the same free strategies — each seat answers with its own (else the identical answers collide and the
+        // refused g.band asks the seat again)
+        const bandActs = d.actions.filter(a => a.intent.t === 'g.band');
+        writeJSON(path.join(folder, `act-${s.n}.json`), [bandActs[seat % bandActs.length].id]);
         answered.add(s.id);
       }
     }

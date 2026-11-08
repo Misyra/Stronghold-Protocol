@@ -21,7 +21,7 @@ export const AFK_REMOVE_ROUNDS = 2;
  * do not.
  */
 export const AFK_ACTIONS = new Set(['g.buy', 'g.sell', 'g.move', 'g.refresh', 'g.levelUp', 'g.freeze', 'g.equip', 'g.unequip',
-  'g.destroy', 'g.choice', 'g.reward', 'g.band', 'g.bandSkip']);
+  'g.destroy', 'g.choice', 'g.reward', 'g.band', 'g.bandSkip', 'g.bandHold', 'g.bandCancel', 'g.bandLock']);
 /** Boss clock period (overtime drain, end checks, silence watchdog) in real ms. */
 export const BOSS_CLOCK_MS = 250;
 export const OK = Object.freeze({ ok: true });

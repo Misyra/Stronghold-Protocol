@@ -109,7 +109,8 @@ test('band draft, option on: a human under AI 托管, disconnected or departed i
 });
 
 test('band draft, option on: a skip passes the turn to the other humans, ahead of the AI seats; the last human\'s skip goes to the end [ASSUMED]', () => {
-  const h = toBandDraft({ seats: seatsOf(['p_0', 'ai_0', 'p_1', 'ai_1']), seed: 3, aiPicksLast: true });
+  // (两名真人自 rel33 起自由选策略——match/phases.js freeDraft——轮流制只剩旧检查点；这里强制轮流以钉 skip 语义)
+  const h = toBandDraft({ seats: seatsOf(['p_0', 'ai_0', 'p_1', 'ai_1']), seed: 3, aiPicksLast: true }, (m) => { m.freeDraft = () => false; });
   const m = h.m;
   const [h1, h2, a1, a2] = m.draft.order;
   assert.ok(!isAi(h1) && !isAi(h2) && isAi(a1) && isAi(a2), String(m.draft.order));
@@ -133,7 +134,7 @@ test('band draft, option on: a skip passes the turn to the other humans, ahead o
   h3.m.dispose();
 
   // option off: the skip still goes to the very end (today's rule)
-  const h4 = toBandDraft({ seats: seatsOf(['p_0', 'ai_0', 'p_1', 'ai_1']), seed: 3 });
+  const h4 = toBandDraft({ seats: seatsOf(['p_0', 'ai_0', 'p_1', 'ai_1']), seed: 3 }, (m) => { m.freeDraft = () => false; });
   h4.run(() => !isAi(h4.m.draftTurn() || 'ai_'));
   const o4 = h4.m.draft.order.slice();
   const at = h4.m.draft.idx;

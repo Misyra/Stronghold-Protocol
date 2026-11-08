@@ -28,6 +28,10 @@ export class MatchIntents {
       case 'g.speedVote': return this.speedVote(ps, msg.on === true);
       case 'g.band': return this.pickBand(ps, msg.bandId);
       case 'g.bandSkip': return this.skipBand(ps);
+      // 自由选策略（维护者决定 2026-11-08，移植自用户分支 rel33）: a tentative choice, its cancel and its 锁定
+      case 'g.bandHold': return this.holdBand(ps, msg.bandId);
+      case 'g.bandCancel': return this.cancelBand(ps);
+      case 'g.bandLock': return this.lockBand(ps);
       // the strategy highlighted in the draft screen (what a timed-out turn takes, timeoutBand)
       case 'g.bandFocus': return this.bandFocus(ps, msg.bandId ?? null);
       // 预选盟约(移植自用户分支): the core bond the player means to build (display only; the opening phases)
@@ -123,7 +127,10 @@ export class MatchIntents {
     if (!ps.botControlled || this.ended) return;
     this.offersChanged();
     if (this.phase === PHASE.INFO_CHECK && !ps.infoReady) { ps.infoReady = true; this.markPublic(); this.maybeEndInfo(); }
+    // a concurrent draft (concurrentDraft, 含自由选策略) looks at every seat still deciding again
+    else if (this.phase === PHASE.BAND_DRAFT && this.draft?.concurrent) this._concurrentBandStep();
     else if (this.phase === PHASE.BAND_DRAFT && this.draftTurn() === ps.playerId) this.scheduleBandBot();
+    else if (this.phase === PHASE.SP_DRAFT && this.sp?.concurrent) this._concurrentSpStep();
     else if (this.phase === PHASE.SP_DRAFT && this.spTurn() === ps.playerId) this.scheduleSpBot();
     else if (this.phase === PHASE.PREP && ps.alive && !ps.ready) this.scheduleBotPrep(ps, 0);
   }

@@ -51,7 +51,7 @@ for (const reason of ['eliminated', 'quit']) for (const elites of [0, 2]) {
 test('Touch requires a confirmed selection and does not leak to another match', t => {
   const h = makeMatch({ mode: 'coop', humans: 3, seed: 334405, fake: true }).start();
   t.after(() => h.m.dispose()); h.drive(() => h.m.phase === 'BAND_DRAFT', { ready: false });
-  const holder = h.m.players.get(h.m.draftTurn());
+  const holder = h.m.players.get(h.m.draftTurn() ?? h.m.draft.order[0]); // (自由选策略没有回合，移植自用户分支)
   assert.equal(h.m.bandFocus(holder, 'band_amedic').ok, true);
   assert.equal(h.m.teamMedicGranted(), false);
   assert.equal(h.m.pickBand(holder, 'band_amedic').ok, true);

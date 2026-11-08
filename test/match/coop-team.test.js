@@ -80,10 +80,12 @@ test('the team medic is a co-op 终极 draft rule only', () => {
  * [stardust bc0597bf, 6dc796d1] A co-op match of two humans and two AI seats whose second human (p_1) left during the
  * briefing (unless `stay`), stopped at the start of its strategy draft (every seat still to pick).
  */
-function draftGone(difficulty = 'ABYSS', { stay = false, ...o } = {}) {
+function draftGone(difficulty = 'ABYSS', { stay = false, turns = false, ...o } = {}) {
   const humans = [0, 1].map((i) => ({ seat: i, playerId: `p_${i}`, name: `P${i + 1}`, isBot: false, connected: true }));
   const seats = [...humans, ...bots(2).map((s, i) => ({ ...s, seat: i + 2 }))];
   const h = makeMatch({ mode: 'coop', difficulty, seed: 5, seats, ...o }).start();
+  // turns: 强制轮流制（自由选策略的旧流程，match/phases.js freeDraft）——钉 6dc796d1 的退出席位顺位代选语义
+  if (turns) h.m.freeDraft = () => false;
   if (stay) h.m.handle('p_1', { t: 'g.infoReady' });
   else h.m.onLeave('p_1');
   h.m.handle('p_0', { t: 'g.infoReady' });
@@ -161,7 +163,7 @@ test('a seat leaving during the draft keeps its turn, takes Touch while nobody e
   for (const onTurn of [false, true]) {
     for (const aiPicksLast of [false, true]) {
       for (let seed = 1; seed <= 4; seed++) {
-        const h = draftGone('ABYSS', { stay: true, seed, aiPicksLast });
+        const h = draftGone('ABYSS', { stay: true, seed, aiPicksLast, turns: true });
         try {
           const { m } = h;
           m.handle('p_0', { t: 'g.autoplay', on: true }); // the AI drafts for every other seat
@@ -206,7 +208,7 @@ test('a departed seat drafts by the team\'s rule whatever strategy plays the AI 
   }
   // a strategy that decides for itself (the external AI) never gets the departed seat's turn: a 歌利亚 it highlighted
   // before leaving on its turn is not what a turn running out would then give it
-  const h = draftGone('ABYSS', { stay: true, seed: 2 });
+  const h = draftGone('ABYSS', { stay: true, seed: 2, turns: true });
   try {
     const { m } = h;
     m.bot = { ...m.bot, id: 'stub', decide: () => true };

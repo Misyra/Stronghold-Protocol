@@ -190,6 +190,10 @@ export class MatchViews {
         // the countdown is the step's
         ...(this.capacityExperiment ? { allowRepeat: true } : {}),
         ...(d.concurrent ? { concurrent: true } : {}),
+        // 自由选策略（维护者决定 2026-11-08，移植自用户分支 rel33）: `picks` are the locked choices, `holds` the tentative
+        // ones (playerId → bandId) — g.bandHold / g.bandCancel / g.bandLock. A page without the flow reads only
+        // `concurrent` and `picks`
+        ...(d.free ? { free: true, holds: Object.fromEntries(Object.entries(d.holds || {}).filter(([pid, id]) => typeof id === 'string' && !d.picks[pid])) } : {}),
         // room.setBotBand (移植自用户分支): the designated strategies still held for their AI seats (bandId → playerId);
         // an expanded room holds none (bandTaken/reservedBands stand down under capacityExperiment)
         ...(this.botBands?.size && !this.bandDupes && !this.capacityExperiment ? { reserved: this.reservedBands() } : {}),

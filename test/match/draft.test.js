@@ -1,5 +1,7 @@
 // INFO_CHECK, band draft (order / skip / one turn clock / timeouts / highlighted band / 队友已选) and 机变 SP drafts (order /
 // timers / auto-assign / effects); a single human (solo or co-op with AI teammates) is never timed outside battles.
+// 轮流制 band draft 自由选策略（维护者决定 2026-11-08，移植自用户分支 rel33; match/phases.js freeDraft）后只剩单人局与
+// 旧检查点；下方多处真人 ≥2 的用例用 `turns` 强制轮流以继续钉住其语义（test/match/free-draft.test.js 钉自由制）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ERR, PHASE } from '../../shared/constants.js';
@@ -7,6 +9,8 @@ import { DATA, makeMatch, checkInvariants } from './harness.js';
 import { BAND_TURN_SECONDS } from '../../server/match/Match.js';
 
 const TURN_MS = BAND_TURN_SECONDS * 1000;
+/** makeMatch(...) with the turn-based band draft (see the header), not yet started. */
+const turns = (o) => { const h = makeMatch(o); h.m.freeDraft = () => false; return h; };
 
 test('INFO_CHECK: ends when every human confirmed (bots/departed count as ready) or at the 25 s deadline', () => {
   const h = makeMatch({ mode: 'coop', humans: 2, bots: 1, seed: 1 }).start();
@@ -34,7 +38,7 @@ test('INFO_CHECK: ends when every human confirmed (bots/departed count as ready)
 
 test('band draft (co-op): random order, one pick per turn, NOT_YOUR_TURN, one skip each (moves to the end), 队友已选 refused', () => {
   // find a seed where both humans are not first... just use the order the match chose
-  const h = makeMatch({ mode: 'coop', humans: 3, seed: 5 }).start();
+  const h = turns({ mode: 'coop', humans: 3, seed: 5 }).start();
   const m = h.m;
   for (const id of ['p_0', 'p_1', 'p_2']) m.handle(id, { t: 'g.infoReady' });
   h.sched.advance(1);
@@ -92,7 +96,7 @@ test('finishBandDraft drafts for a seat that departed during INFO_CHECK at its t
 });
 
 test('band draft timers (user playtest #4 item 4): one countdown of BAND_TURN_SECONDS per turn → the highlighted band or 华法琳; AI seats pick at once; no step cap', () => {
-  const h = makeMatch({ mode: 'coop', humans: 2, bots: 2, seed: 9 }).start();
+  const h = turns({ mode: 'coop', humans: 2, bots: 2, seed: 9 }).start();
   const m = h.m;
   m.handle('p_0', { t: 'g.infoReady' });
   m.handle('p_1', { t: 'g.infoReady' });
@@ -125,7 +129,7 @@ test('band draft timers (user playtest #4 item 4): one countdown of BAND_TURN_SE
   assert.equal(new Set(Object.values(m.draft.picks)).size, 4, 'no duplicate strategies');
   m.dispose();
   // 4 humans idle: 4 whole turns (the old 50 s step cap would have cut the last ones short)
-  const h2 = makeMatch({ mode: 'coop', humans: 4, seed: 9 }).start();
+  const h2 = turns({ mode: 'coop', humans: 4, seed: 9 }).start();
   for (const ps of h2.m.players.values()) h2.m.handle(ps.playerId, { t: 'g.infoReady' });
   h2.sched.advance(1);
   const first = h2.m.draft.order[0];

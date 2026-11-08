@@ -659,6 +659,12 @@ export const C2S = {
   'g.speedVote': { on: isBool },
   'g.band': { bandId: isId },
   'g.bandSkip': {},
+  // 自由选策略（维护者决定 2026-11-08，移植自用户分支 rel33; server/match/match/phases.js freeDraft; m.public draft.free）:
+  // a tentative choice (held, 队友已选 for the others), its cancel and its 锁定 — final; WRONG_PHASE outside a free
+  // draft, ALREADY once locked
+  'g.bandHold': { bandId: isId },
+  'g.bandCancel': {},
+  'g.bandLock': {},
   // the strategy highlighted in the draft screen (user playtest #4 item 4): a turn that runs out takes it while it is
   // free (Match.timeoutBand); absent / null clears it
   'g.bandFocus': { bandId: nullable(isId), $optional: ['bandId'] },

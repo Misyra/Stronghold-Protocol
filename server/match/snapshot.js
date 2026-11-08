@@ -577,15 +577,22 @@ function enterPhase(m, doc) {
       break;
     }
     case PHASE.BAND_DRAFT: {
-      // the current turn starts over with a full clock (the header)
+      // the current turn — a concurrent draft's one countdown — starts over with a full clock (the header)
       if (!m.draft || typeof m.draft !== 'object') { m.draft = null; m.phase = PHASE.INFO_CHECK; m.markPublic(); break; }
       m.draft.turnDeadline = 0;
+      // 并发草稿（concurrentDraft，含自由选策略）的整步倒计时重新武装：armed/done/botQueued 是旧进程的瞬态
+      // （移植自用户分支 snapshot.js）
+      if (m.draft.concurrent) { m.draft.armed = false; m.draft.done = false; m.draft.botQueued = new Set(); }
+      // 自由选策略（维护者决定 2026-11-08，移植自用户分支 rel33）：预选与锁定随检查点走；旧轮流制检查点按原样继续轮流
+      if (m.draft.free && (!m.draft.holds || typeof m.draft.holds !== 'object' || Array.isArray(m.draft.holds))) m.draft.holds = {};
       m.startDraftTurn();
       break;
     }
     case PHASE.SP_DRAFT: {
       if (!m.sp || typeof m.sp !== 'object') { m.sp = null; m.enterPrep(); break; }
       m.setDeadline(0);
+      // 并发机变（concurrentSpDraft）的整步倒计时重新武装：armed/done/botQueued 是旧进程的瞬态（移植自用户分支 snapshot.js）
+      if (m.sp.concurrent) { m.sp.armed = false; m.sp.done = false; m.sp.botQueued = new Set(); }
       m.startSpTurn();
       break;
     }
@@ -622,8 +629,9 @@ function enterPhase(m, doc) {
 export function matchState(m) {
   const match = {};
   for (const k of MATCH_FIELDS) match[k] = encodeState(m[k]);
-  // the draft turn clocks are absolute times of the *old* run: the restored match re-arms them from its own clock
-  for (const k of ['draft', 'sp']) if (match[k] && typeof match[k] === 'object') delete match[k].turnDeadline;
+  // the draft turn clocks are absolute times of the *old* run: the restored match re-arms them from its own clock; a
+  // concurrent draft's one countdown (armed/done/botQueued, 自由选策略含于其内) is re-armed the same way (enterPhase)
+  for (const k of ['draft', 'sp']) if (match[k] && typeof match[k] === 'object') for (const x of ['turnDeadline', 'armed', 'done', 'botQueued']) delete match[k][x];
   const pool = {};
   for (const [id, e] of m.pool.entries) pool[id] = e.left;
   const rng = {};

@@ -338,8 +338,10 @@ export class MatchPlatform {
     const d = this.draft;
     // 并发草稿（concurrentDraft）没有「到它的回合由 AI 代选」：退出席位立即落默认策略并重入并发步，否则一步倒计时
     // 之前 draft 挂着不走（移植自用户分支 _quit）。普通房保留 6dc796d1 的顺位代选，见本方法末尾分支。
+    // 自由选策略（维护者决定 2026-11-08，移植自用户分支 rel33）：退出席位还能锁定时保留其预选，否则默认策略
     if (phase === PHASE.BAND_DRAFT && d && d.concurrent && !d.picks[ps.playerId]) {
-      d.picks[ps.playerId] = this.defaultBand(ps.playerId);
+      d.picks[ps.playerId] = this.heldBand(ps) || this.defaultBand(ps.playerId);
+      if (d.holds) delete d.holds[ps.playerId];
       ps.bandId = d.picks[ps.playerId];
       this.startDraftTurn();
     }

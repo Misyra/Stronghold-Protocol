@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { normalizeSeats, roomFacts, capacityOption, duckLordOption, capacityExperimental, duckLordExperimental } from '../../public/js/screens/room.js';
+import { normalizeSeats, roomFacts, capacityOption, duckLordOption, capacityExperimental, duckLordExperimental, poolPlanExperimental } from '../../public/js/screens/room.js';
 import { allowedBands, teammateBands, draftTip, draftInfoStatus, freeBandAction, DEFAULT_TIMEOUT_BAND } from '../../public/js/screens/bandDraft.js';
 import { normalizeDraft, normalizeSp, draftMyTurn } from '../../public/js/ui/gameLogic.js';
 import { MAX_DRAFT_CARDS, isPlayerCapacity } from '../../shared/playerCapacity.js';
@@ -47,6 +47,15 @@ test('the option set for room.setExperimental keeps the shared shape and never m
   assert.deepEqual(duckLordExperimental(true, rules(4)), rules(4));
   assert.deepEqual(duckLordExperimental(true, rules(8)), { ...rules(8), disableDuckLord: true });
   assert.deepEqual(duckLordExperimental(false, { ...rules(8), disableDuckLord: true }), rules(8));
+  // 手动指定卡池编组 (feedback #49) travels with the room's rules; a capacity change re-derives the plan from the
+  // automatic rule (the layout cannot outlive a seat count), the same capacity carries it verbatim
+  assert.deepEqual(capacityExperimental(16, { ...rules(8), poolPlan: [0, 1, 2, 3, 0, 1, 2, 3] }),
+    { ...rules(16), poolPlan: [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3] }, 'the plan follows the new capacity');
+  assert.deepEqual(capacityExperimental(8, { ...rules(8), poolPlan: [0, 1, 0, 1, 0, 1, 0, 1] }),
+    { ...rules(8), poolPlan: [0, 1, 0, 1, 0, 1, 0, 1] }, 'the same capacity carries the plan (the server canonicalizes it)');
+  assert.deepEqual(poolPlanExperimental([0, 0, 1, 1], rules(8)), { ...rules(8), disableSharedPool: false, poolPlan: [0, 0, 1, 1] },
+    'a plan stands in for 禁用共享卡池');
+  assert.deepEqual(poolPlanExperimental(null, { ...rules(8), poolPlan: [0, 0, 1, 1] }), rules(8), 'off removes the key');
   assert.ok(isPlayerCapacity(4) && isPlayerCapacity(20) && !isPlayerCapacity(6));
   assert.equal(MAX_DRAFT_CARDS, 22);
 });
@@ -60,9 +69,11 @@ test('capacity controls are host-only in a private co-op room, and hidden or rea
   assert.deepEqual(duckLordOption(room(4), 'p0'), null, 'an ordinary room has no duck-lord switch');
   assert.deepEqual(duckLordOption(room(8), 'p0'), { on: false, editable: true });
   assert.deepEqual(duckLordOption({ ...room(8), experimental: { ...rules(8), disableDuckLord: true } }, 'p0'), { on: true, editable: true });
-  // the screen sends the whole option set through room.setExperimental
-  assert.match(source('../../public/js/screens/room.js'), /net\.request\('room\.setExperimental', \{ experimental: capacityExperimental\(capacity, room\.experimental\) \}\)/);
+  // the screen sends the whole option set through room.setExperimental (the capacity change passes the taken seats so a
+  // carried pool plan can be re-derived for the new seat count)
+  assert.match(source('../../public/js/screens/room.js'), /net\.request\('room\.setExperimental', \{ experimental: capacityExperimental\(capacity, room\.experimental, /);
   assert.match(source('../../public/js/screens/room.js'), /net\.request\('room\.setExperimental', \{ experimental: duckLordExperimental\(on, room\.experimental\) \}\)/);
+  assert.match(source('../../public/js/screens/room.js'), /net\.request\('room\.setExperimental', \{ experimental: poolPlanExperimental\(plan, room\.experimental\) \}\)/);
 });
 
 test('draft contracts: allowRepeat stands the 队友已选 guard down, 禁用鸭爵策略 drops the strategy from the wall', () => {

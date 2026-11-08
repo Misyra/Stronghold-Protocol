@@ -1,14 +1,16 @@
 // 同盟设置 (a solo room: 模拟设置) — ported from the Stardust fork's ui/roomSettings.js (rel24 d330dbb7 and its
 // follow-ups): every option of the room in one dialog, opened from ⚙ on the pill (screens/room.js). Three pages —
-// 同盟 (who plays: difficulty, version, seats, AI seats), 规则 (the battle), 卡池 (the card pools) — a solo room has its
-// one page 模拟设置, without tabs. A tab with a dot differs from a new room (changedPages). The host edits; everybody
-// else reads the same pages. What changes goes to the server at once: nothing here waits for 完成, which only closes
-// the dialog. Against the fork, the pool plan (PoolEditor), the fork's enemy multipliers and 公开到同盟列表 are not
-// ported (this repo's server has none of them), and the difficulty row joins the version row (this repo's 选择模拟协议
-// flow, screens/lobby.js ProtocolSelect).
+// 同盟 (who plays: difficulty, version, seats, AI seats), 规则 (the battle), 卡池 (the card pools and their manual
+// groups, ui/poolEditor.js) — a solo room has its one page 模拟设置, without tabs. A tab with a dot differs from a new
+// room (changedPages). The host edits; everybody else reads the same pages. What changes goes to the server at once:
+// nothing here waits for 完成, which only closes the dialog. Against the fork, the enemy multipliers and 公开到同盟列表
+// are not ported (this repo's server has none of them), and the difficulty row joins the version row (this repo's
+// 选择模拟协议 flow, screens/lobby.js ProtocolSelect); the pool plan goes through the per-key onPoolPlan sender
+// (screens/room.js poolPlanExperimental) instead of the fork's whole-set onExperimental.
 
 import { html, Button, Icon, Modal, Tooltip, DifficultyIcon } from './components.js';
 import { capacityRows, duckLordRow, poolRows, roomExperimental, ruleRows, switchRow } from './experimental.js';
+import { PoolEditor } from './poolEditor.js';
 import { MAX_SEATS } from '../../../shared/constants.js';
 import { roomCapacity } from '../../../shared/playerCapacity.js';
 import { t, N_ } from '../../../shared/i18n.js';
@@ -35,9 +37,12 @@ export function changedPages(room) {
       || room?.bandDupes === true || room?.aiTakeoverEnabled === true,
     rules: options.revivalEnabled === true || options.disableLayerCap === true || options.disableHitLimit === true
       || options.uniteHumansFirst === true || room?.consoleEnabled === true,
-    pools: options.disableSharedPool === true,
+    pools: options.disableSharedPool === true || !!options.poolPlan,
   };
 }
+
+/** The taken seats of a room, for the automatic rule the pool layouts start from (the fork's takenSeats). */
+const takenSeats = (room) => (room?.seats || []).flatMap((seat, index) => (seat ? [index] : []));
 
 const TABS = { alliance: N_('同盟'), rules: N_('规则'), pools: N_('卡池') };
 
@@ -66,14 +71,14 @@ function VersionRow({ version }) {
  * The room's settings dialog (the fork's RoomSettings, wired to this repo's per-key senders): the screen passes one
  * callback per option, each taking the next state, and the pre-built option objects whose editable rule lives in
  * screens/room.js (aiLastOption / bandDupesOption / aiTakeoverOption / consoleOption / soloUnlimitedOption).
- * @param {{ page: string|null, onPage: (page: string) => void, room: any, editable: boolean, busy: any,
+ * @param {{ page: string|null, onPage: (page: string) => void, room: any, myId?: any, editable: boolean, busy: any,
  *   version?: any, difficulty?: any, aiLast?: any, takeover?: any, dupes?: any, soloOption?: any, consoleOpt?: any,
- *   matching?: boolean, onRevival?: Function, onSharedPool?: Function, onLayerCap?: Function, onHitLimit?: Function,
- *   onUniteHumans?: Function, onConsole?: Function, onAiLast?: Function, onAiTakeover?: Function, onBandDupes?: Function,
- *   onCapacity?: Function, onDuckLord?: Function, onSoloUnlimited?: Function, onClose: Function }} props
+ *   matching?: boolean, onRevival?: Function, onSharedPool?: Function, onPoolPlan?: Function, onLayerCap?: Function,
+ *   onHitLimit?: Function, onUniteHumans?: Function, onConsole?: Function, onAiLast?: Function, onAiTakeover?: Function,
+ *   onBandDupes?: Function, onCapacity?: Function, onDuckLord?: Function, onSoloUnlimited?: Function, onClose: Function }} props
  */
-export function RoomSettings({ page, onPage, room, editable, busy, version = null, difficulty = null, aiLast = null, takeover = null,
-  dupes = null, soloOption = null, consoleOpt = null, matching = false, onRevival, onSharedPool, onLayerCap, onHitLimit,
+export function RoomSettings({ page, onPage, room, myId = null, editable, busy, version = null, difficulty = null, aiLast = null, takeover = null,
+  dupes = null, soloOption = null, consoleOpt = null, matching = false, onRevival, onSharedPool, onPoolPlan, onLayerCap, onHitLimit,
   onUniteHumans, onConsole, onAiLast, onAiTakeover, onBandDupes, onCapacity, onDuckLord, onSoloUnlimited, onClose }) {
   if (!page) return null;
   const solo = room.mode === 'solo';
@@ -81,7 +86,7 @@ export function RoomSettings({ page, onPage, room, editable, busy, version = nul
   const pages = settingsPages(room);
   const changed = changedPages(room);
   const lock = !!busy;
-  const rows = { value: room.experimental, mode: room.mode, source: room.source, editable, busy: lock,
+  const rows = { value: room.experimental, mode: room.mode, source: room.source, seats: takenSeats(room), editable, busy: lock,
     consoleOpt, matching, onRevival, onLayerCap, onHitLimit, onUniteHumans, onConsole };
   const options = roomExperimental(room?.experimental);
   // a screen option ({ on, editable }) as a row: the label lives here, the state and who may change it with the screen
@@ -113,8 +118,9 @@ export function RoomSettings({ page, onPage, room, editable, busy, version = nul
         ${duckLordRow({ ...rows, onDuckLord })}
       </div>` : null}
       ${page === 'rules' ? html`<div class="rset__rows">${ruleRows(rows)}</div>` : null}
-      ${page === 'pools' ? html`<div class="rset__rows">${poolRows({ ...rows, onSharedPool })}</div>
-        ${options.disableSharedPool === true ? null : html`<p class="rset__empty">${t('未开启时按开局人数自动分组。')}</p>`}` : null}
+      ${page === 'pools' ? html`<div class="rset__rows">${poolRows({ ...rows, onSharedPool, onPoolPlan })}</div>
+        ${options.poolPlan ? html`<${PoolEditor} plan=${options.poolPlan} seats=${room.seats} hostId=${room.hostId} myId=${myId} editable=${editable} busy=${lock}
+          onPlan=${(poolPlan) => onPoolPlan(poolPlan)} />` : options.disableSharedPool === true ? null : html`<p class="rset__empty">${t('未开启时按开局人数自动分组。')}</p>`}` : null}
     </div>
   <//>`;
 }

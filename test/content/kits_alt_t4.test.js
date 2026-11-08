@@ -1283,6 +1283,29 @@ test('魔王 鼓舞: strongest source wins (never summed), a bard never receives
   checkInvariants(h.b);
 });
 
+test('魔王 S3 编织重构现世: HP 重新分配的参与池含 不屈者 / 禁疗 单位 (PRTS 备注: 重新分配不是治疗; Stardust fork rel26 feedback #28)', () => {
+  const iv = Math.max(0.5, D('chess_char_4_25_a').skill.bb['attack@cetsyr_s_3[cal_hp_ratio].interval'] || 2);
+  const setup = (units, forbid) => {
+    const h = battle(units);
+    h.step();
+    const m = h.unit('chess_char_4_25_a'), a = h.unit(2);
+    assert.ok(m.skill.activate('test', { free: true }), 'S3 cast');
+    h.run(0.3); // 鼓舞 (max-HP flat) settles
+    if (forbid) h.b.addBuff(a, { key: 'test:noHeal', flags: { noHeal: true }, duration: 999 }); // 禁疗
+    assert.ok(h.b.alliesInGrid(m).includes(a), 'the ally stands in the S3 grid');
+    a.hp = a.s.maxHp * 0.3;
+    // the bard trait regens everyone in range continuously, so snapshot the tick: the redistribute fx and the
+    // post-redistribution HP land in the same step
+    assert.ok(h.runUntil(() => h.eventsOf('fx').some((e) => e[1] === 'redistribute'), iv + 3), 'redistribute fired (the pool has ≥ 2 members)');
+    const ratio = h.eventsOf('fx').find((e) => e[1] === 'redistribute')[4].ratio;
+    approx(m.hp, m.s.maxHp * ratio, 1e-3, '魔王 evens to the pool ratio');
+    approx(a.hp, a.s.maxHp * ratio, 1e-3, 'the noHeal ally shares the pool ratio');
+    checkInvariants(h.b);
+  };
+  setup([U('chess_char_4_25_a', 10, 4), U('chess_char_4_18_a', 10, 5)], false); // 泥岩: 不屈者 (profile.noHeal)
+  setup([U('chess_char_4_25_a', 10, 4), U('chess_char_4_17_a', 10, 5)], true); // 禁疗 flag on 星熊
+});
+
 test('华法琳 S2 不稳定血浆: she and one random ally in range: ATK up, 3 % max HP lost per second for 15 s; no S1 bandage', () => {
   for (const id of pair('chess_char_4_26_a')) {
     const bb = D(id, 1).skill.bb;

@@ -81,7 +81,10 @@ export default withDefaults({
           unit.mem.redist += dt;
           if (unit.mem.redist + 1e-9 < redistIv) return;
           unit.mem.redist -= redistIv;
-          const pool = battle.alliesInGrid(unit).filter((a) => !(a.s.flags.noHeal || a.profile?.noHeal) || a === unit);
+          // "重新分配攻击范围内所有友方单位的生命" (PRTS 备注: every friendly unit's current / max HP sums give one ratio): an HP
+          // reassignment, not a heal — operators that cannot be healed (不屈者 泥岩 / 折桠, 禁疗) share it too, as on the
+          // tier-5 kit (Stardust fork rel26 2d3ec08e, feedback #28)
+          const pool = battle.alliesInGrid(unit).filter((a) => a.alive && a.kind !== 'device');
           let hp = 0, max = 0;
           for (const a of pool) { hp += a.hp; max += a.s.maxHp; }
           if (!(max > 0) || pool.length < 2) return;

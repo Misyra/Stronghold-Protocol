@@ -296,7 +296,8 @@ function onWelcome(msg) {
   const name = typeof msg.name === 'string' && msg.name ? msg.name : prev.me.name;
   identity.saveName(name);
   store.set({
-    me: { playerId: msg.playerId ?? null, name, token: typeof msg.token === 'string' ? msg.token : null },
+    // 服主 (server/ownerFile.js, 移植自用户分支): welcome.owner confirms this hello's key verified (settings.js 服主验证)
+    me: { playerId: msg.playerId ?? null, name, token: typeof msg.token === 'string' ? msg.token : null, owner: msg.owner === true },
     // the server's content identity (DESIGN §32): the diagnostics name it (diag.js contentLine)
     content: msg.content && typeof msg.content.vanilla === 'string' ? { vanilla: msg.content.vanilla } : null,
     // how many unofficial plugins it has (P1a — absent: none; content.js fetches the catalogue only when there are some)

@@ -74,6 +74,7 @@ import { chessAvatarUrl, chessPortraitUrl } from '../ui/assetUrls.js';
 import { CARD_KEY, CARD_LOOK_KEY, CARD_AVATAR_KEY, CARD_FACE_KEY, CARD_BG_KEY, CARD_BG_Y_KEY, cardStore, setCard, setCardLook, setCardAvatar, setCardFace, setCardBackground, setCardBackgroundY, cardOperators, cardContext, seatOperator, seatCardSkin, seatArtSrc, seatCardView, cardAvatarUrl, lookUrl, lookOptions } from '../ui/seatArt.js';
 import { OperatorPicker, CardAvatarPicker } from '../ui/opPicker.js';
 import { NameCardPicker, NameCardLayer } from '../ui/namecards.js';
+import { OwnerBadge } from '../ui/ownerName.js';
 import { skinsStore, SKINS_KEY, ownerSkin } from '../ui/skins.js';
 import { settingsStore } from '../ui/settingsStore.js';
 import { difficultyInfo, ProtocolSelect } from './lobby.js';
@@ -505,7 +506,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
         ? html`<button type="button" class="rseat__ava" data-testid="seat-avatar-pick" onClick=${onPickAvatar} title=${t('更换头像')} aria-label=${t('更换头像')}>
             <${AvatarFrame} size="sm" name=${seat.name} src=${avatar || undefined} seat=${index} bot=${seat.isBot} self=${true} /><span class="rseat__ava-pen" aria-hidden="true"><${Icon} name="edit" /></span></button>`
         : html`<${AvatarFrame} size="sm" name=${seat.name} src=${avatar || undefined} seat=${index} bot=${seat.isBot} self=${isMe} />`}
-      <span class="rseat__who"><b class="seat__name">${botPrefix ? html`<span class="seat__name-pre">${botPrefix[0]}</span>${botPrefix[1]}` : seat.name || t('博士')}</b>${isMe ? html`<span class="seat__you" aria-hidden="true">${t('你')}</span>` : null}</span>
+      <span class="rseat__who"><b class="seat__name">${botPrefix ? html`<span class="seat__name-pre">${botPrefix[0]}</span>${botPrefix[1]}` : seat.name || t('博士')}</b><${OwnerBadge} seat=${seat} />${isMe ? html`<span class="seat__you" aria-hidden="true">${t('你')}</span>` : null}</span>
       <small class="rseat__doc">${seat.isBot ? 'AUTONOMOUS UNIT' : `DOCTOR #${doctorNo(seat.playerId)}`}</small>
       ${isMe && onPickBg ? html`<button type="button" class="rseat__bg" data-testid="seat-bg-pick" onClick=${onPickBg} title=${t('更换名片底图')} aria-label=${t('更换名片底图')}><${Icon} name="image" /></button>` : null}
     </div>
@@ -518,7 +519,7 @@ function SpectatorBar({ facts, myId, busy, onRemove, onSit }) {
   return html`<section class="specbar" aria-label=${t('观战席')}>
     <span class="specbar__label"><${Icon} name="eye" />${t('观战席')}<b class="num">${facts.spectators.length}</b><span class="num t-dim">/${MAX_SPECTATORS}</span></span>
     ${facts.spectators.map((s) => html`<span key=${s.playerId} class=${`specbar__who${s.playerId === myId ? ' is-me' : ''}${s.connected === false ? ' is-offline' : ''}`}>
-      ${s.connected === false ? html`<${Icon} name="wifiOff" />` : null}${s.name || t('博士')}${s.playerId === myId ? html`<span class="seat__you">${t('你')}</span>` : null}
+      ${s.connected === false ? html`<${Icon} name="wifiOff" />` : null}${s.name || t('博士')}<${OwnerBadge} seat=${s} />${s.playerId === myId ? html`<span class="seat__you">${t('你')}</span>` : null}
       ${facts.isHost ? html`<${Button} variant="ghost" size="sm" square=${true} icon="close" loading=${busy === `rs${s.playerId}`}
         onClick=${() => onRemove(s.playerId)} aria-label=${t('移出观战者 {name}', { name: s.name || '' })} title=${t('移出该观战者')} />` : null}
     </span>`)}

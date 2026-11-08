@@ -92,6 +92,7 @@ import { answerClientError } from './http/common.js';
 import { createEventLoopMonitor } from './health/eventLoop.js';
 import { createHealthMetrics } from './healthMetrics.js';
 import { createRoomWorkerPool } from './workers/roomPool.js';
+import { createOwnerFile } from './ownerFile.js';
 import { lanUrls, displayHost, isProcessEntry, runMain } from './http/boot.js';
 
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
@@ -257,6 +258,10 @@ export async function startServer(opts = {}) {
   log.info(simPool
     ? `[workers] simulation pool: ${simPool.stats().size} thread(s) (SP_WORKERS; 0 disables it)`
     : '[workers] simulation pool: off (SP_WORKERS=0)');
+  // 服主标记 (server/ownerFile.js, 移植自用户分支): SP_OWNER_FILE 指向的 JSON（{ names, keySha256 }）——密钥在每次
+  // hello 里验证（server/net.js），names 是服主保留的昵称；未配置 / 文件缺失或非法 = 关闭。运行中随 mtime 重读。
+  const ownerFile = createOwnerFile({ file: opts.ownerFile ?? process.env.SP_OWNER_FILE ?? null, log });
+  await ownerFile.refresh(); // the first read before any hello: reserved names hold from the start (never rejects)
   // SP_BATTLE_POOL 池保温：开关在位（且池存在，SP_WORKERS≠0）时 boot 即把空闲线程生齐——进程首场战斗不再付
   // ~0.5s 的 4 worker 齐生尖峰（server/match/match/clientCombat.js 是消费方）。SP_BATTLE_POOL 关闭（默认）或
   // SP_WORKERS=0 时一个线程都不生，零开销；SP_BATTLE_POOL_WARM=0 显式退回冷首用（A/B 对照与独立回滚面）。
@@ -266,7 +271,7 @@ export async function startServer(opts = {}) {
     const warmed = simPool.warm();
     if (warmed) log.info(`[workers] simulation pool warmed: ${warmed} thread(s) (SP_BATTLE_POOL)`);
   }
-  const { registry, lobby, network } = createSessionStack({ ...opts, chatEnabled: chatEnabledOpt }, { data, log, content, plugins: roomSets, hosts, versions, versionHosts, simPool, chatLog });
+  const { registry, lobby, network } = createSessionStack({ ...opts, chatEnabled: chatEnabledOpt }, { data, log, content, plugins: roomSets, hosts, versions, versionHosts, simPool, chatLog, ownerFile });
 
   // 持久化 (server/persist.js + server/stateFile.js, 移植自用户分支): 会话/房间/运行中对局的检查点落盘, 重启恢复。
   // SP_STATE_FILE(目录 → 分片布局, .json 路径 → 单文件, 'off' → 纯内存, 默认 .state/server-<PORT>); 配了
@@ -442,6 +447,7 @@ export async function startServer(opts = {}) {
     }
   } catch (e) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
+    try { ownerFile?.close(); } catch { /* the poll timer only */ }
     try { healthMetrics?.dispose(); } catch { /* diagnostic only */ }
     hosts.close();
     versionHosts?.close();
@@ -497,6 +503,7 @@ export async function startServer(opts = {}) {
       try { hosts.close(); } catch (e) { log.error('[shutdown] match hosts', e); }
       try { versionHosts?.close(); } catch (e) { log.error('[shutdown] version hosts', e); }
       try { await contents.close(); } catch (e) { log.error('[shutdown] content set build worker', e); }
+      try { ownerFile?.close(); } catch { /* the poll timer only */ }
       // after the lobby: every room is gone, so no rehearsal can still be waiting on a thread
       try { await simPool?.close(); } catch (e) { log.error('[shutdown] simulation pool', e); }
       eventLoop?.close();

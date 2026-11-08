@@ -41,9 +41,26 @@
 //     the shape itself was refused.
 //   * bond count sets the ordinary extra-member bonus (0..99), allowing activation without
 //     pieces. computeBonds still decides the tier; a mode-disabled bond is refused.
+//   * bond layers go up to the room's cap — with the experimental disableLayerCap lifted to
+//     TEST_LAYERS_UNCAPPED_MAX (99 999, shared/testMode.js testLayersMax), detail `layersMax|{max}`
+//     (移植自用户分支 rel32: ~1e8 layers of 维多利亚 held a game node). Every other number is small
+//     already: funds 99 999, LP 999, team LP 9 999, hp an O(1) write, round 99, shop 12 slots, bounty 20
+//     (+20 waiting), extra members 99; a grant is one piece per command at 8 per 10 s.
+//
+// 调控台 (移植自用户分支 rel29; Match.consoleEnabled, room.console.enable): a room with the console switch
+// on whose matches are test matches widens g.test — while an ordinary test match keeps the host-only gate:
+//   * every seated player commands their own seat (no host check); a spectator is refused as above;
+//   * the commands that change the whole match (TEST_SHARED: round, phase, timers, hp, teamLp) only while
+//     the commanding player is the match's only human — solo, or every other seat an AI; else TEST_FORBIDDEN,
+//     detail `shared`;
+//   * the rate bucket is per player and command (8 per 10 s each), not shared by every seat;
+//   * bounty adds `count` (1..TEST_BOUNTY_MAX) of the enemy to the player's next battle, at most
+//     TEST_BOUNTY_BATTLE_MAX of them waiting per player (detail `bounty|{max,left}`); a leader
+//     (data/bosses.json enemyKey) is refused (detail `leader`) [ASSUMED: the other BOSS-rank enemies stay
+//     allowed: they appear in ordinary waves].
 
 import { ERR, PHASE, layerGainRoom } from '../../../shared/constants.js';
-import { parseTestArgs, isTestCommand, TEST_LOG_CAP, TEST_RATE_COUNT, TEST_RATE_WINDOW_MS } from '../../../shared/testMode.js';
+import { parseTestArgs, isTestCommand, testLayersMax, TEST_LOG_CAP, TEST_RATE_COUNT, TEST_RATE_WINDOW_MS, TEST_SHARED, TEST_BOUNTY_BATTLE_MAX } from '../../../shared/testMode.js';
 import { OK, fail } from './common.js';
 
 const BLOCKED = new Set([PHASE.LOBBY, PHASE.COMBAT, PHASE.UNITE, PHASE.FINAL_ASSAULT, PHASE.HIDDEN_CORE, PHASE.RESULT]);
@@ -51,26 +68,34 @@ const BLOCKED = new Set([PHASE.LOBBY, PHASE.COMBAT, PHASE.UNITE, PHASE.FINAL_ASS
 export class MatchTestCommands {
   /**
    * g.test { cmd, args? }. Refused unless this match was created as a test match. Every attempt
-   * is rated first. Spectators and other seats are then refused. Only the current host runs a command.
+   * is rated first. Spectators and other seats are then refused. Only the current host runs a command —
+   * in a console room's match (consoleEnabled) every seated player, a match-wide command only as its only human.
    * @param {import('../PlayerState.js').PlayerState} ps
    * @param {{ cmd?: string, args?: object }} msg
    */
   applyTestCommand(ps, msg) {
     if (this.test !== true) return fail(ERR.TEST_FORBIDDEN);
     if (!ps) return fail(ERR.NOT_HOST);
-    // [ASSUMED] Every seat shares one bucket per command, including a guest or a spectator.
-    // The stamp happens before the refusal audit so those attempts consume a slot.
+    // [ASSUMED] Every seat shares one bucket per command, including a guest or a spectator. A console
+    // room's match rates per player and command instead. The stamp happens before the refusal audit so
+    // those attempts consume a slot.
     const cmd = isTestCommand(msg?.cmd) ? msg.cmd : 'invalid';
-    if (!this._testRateAllows(cmd)) {
+    const bucket = this.consoleEnabled ? `${ps.playerId}\u0000${cmd}` : cmd;
+    if (!this._testRateAllows(bucket)) {
       this._testAudit(ps, cmd, { rejected: true }, ERR.RATE);
       return fail(ERR.RATE);
     }
-    this._testStamp(cmd);
+    this._testStamp(bucket);
     if (ps.spectator) {
       this._testAudit(ps, cmd, { rejected: true }, ERR.SPECTATOR);
       return fail(ERR.SPECTATOR);
     }
-    if (ps.playerId !== this.hostId) {
+    if (this.consoleEnabled) {
+      if (TEST_SHARED.includes(cmd) && !this._testSoleHuman(ps)) {
+        this._testAudit(ps, cmd, { rejected: true }, ERR.TEST_FORBIDDEN, 'shared');
+        return fail(ERR.TEST_FORBIDDEN, 'shared');
+      }
+    } else if (ps.playerId !== this.hostId) {
       this._testAudit(ps, cmd, { rejected: true }, ERR.NOT_HOST);
       return fail(ERR.NOT_HOST);
     }
@@ -104,6 +129,14 @@ export class MatchTestCommands {
       const outcome = this._testOutcome; this._testOutcome = null; this.finish(outcome);
     }
     return code ? res : OK;
+  }
+
+  /**
+   * 调控台: whether `ps` is the match's only human — every other seat an AI (spectators do not play).
+   * @param {import('../PlayerState.js').PlayerState} ps
+   */
+  _testSoleHuman(ps) {
+    return !ps.isBot && this.order.every((p) => p === ps || p.isBot);
   }
 
   _testRateAllows(cmd) {
@@ -154,7 +187,7 @@ export class MatchTestCommands {
       case 'bond': return this._testBond(ps, args.id, args.layers, args.count);
       case 'strategy': return this._testStrategy(ps, args.id, args.resetLp === true);
       case 'level': return ps.levelUp();
-      case 'bounty': return this._testBounty(ps, args.enemyKey);
+      case 'bounty': return this._testBounty(ps, args.enemyKey, args.count ?? 1);
       case 'choice': return this._testChoice(ps, args.idx, args.choiceId);
       default: return fail(ERR.BAD_MSG);
     }
@@ -361,6 +394,10 @@ export class MatchTestCommands {
       if (count !== undefined) ps.recompute();
       return OK;
     }
+    // at most the room's cap, or TEST_LAYERS_UNCAPPED_MAX with the experimental disableLayerCap lifted
+    // (shared/testMode.js testLayersMax)
+    const max = testLayersMax(this.disableLayerCap === true);
+    if (layers > max) return fail(ERR.BAD_TARGET, `layersMax|${JSON.stringify({ max })}`);
     const delta = layers - cur;
     if (layerGainRoom(cur, delta, this.disableLayerCap === true) !== delta) return fail(ERR.BAD_TARGET);
     const add = ps.addLayers(id, delta, { reason: 'test' });
@@ -383,20 +420,32 @@ export class MatchTestCommands {
     return OK;
   }
 
-  _testBounty(ps, enemyKey) {
+  _testBounty(ps, enemyKey, count = 1) {
     const blocked = this._testQuiet();
     if (blocked) return blocked;
     const enemy = this.gd.enemy(enemyKey);
     if (!enemy || this.gd.inactiveEnemies.has(enemyKey)) return fail(ERR.BAD_TARGET);
+    let added = null;
+    if (this.consoleEnabled) {
+      // 调控台: no leader; at most TEST_BOUNTY_BATTLE_MAX of these waiting for the player's next battle
+      const bosses = this.gd.raw && this.gd.raw.bosses && typeof this.gd.raw.bosses === 'object' ? Object.values(this.gd.raw.bosses) : [];
+      if (bosses.some((b) => b && b.enemyKey === enemyKey)) return fail(ERR.BAD_TARGET, 'leader');
+      added = this._testBountyIds ??= new Set();
+      const waiting = ps.bounties.filter((b) => added.has(b.id)).reduce((n, b) => n + (b.card?.count || 0), 0);
+      if (waiting + count > TEST_BOUNTY_BATTLE_MAX) {
+        return fail(ERR.BAD_TARGET, `bounty|${JSON.stringify({ max: TEST_BOUNTY_BATTLE_MAX, left: Math.max(0, TEST_BOUNTY_BATTLE_MAX - waiting) })}`);
+      }
+    }
     const id = this.addBounty(ps, {
       enemyKey,
       name: typeof enemy.name === 'string' && enemy.name ? enemy.name : enemyKey,
       coin: 0,
       payout: 'kill',
-      count: 1,
+      count,
       rounds: 1,
     });
     if (!id) return fail(ERR.BAD_TARGET);
+    if (added) added.add(id);
     return OK;
   }
 

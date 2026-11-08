@@ -36,8 +36,13 @@ export function explainTestDetail(detail) {
     case 'shop': return t('这一级商店要 {chess} 个干员和 {item} 个装备', params);
     case 'round': return t('回合只能是 1 到 {hi}', params);
     case 'layers': return t('层数不能减少');
+    case 'layersMax': return t('层数最多 {max}', params);
     case 'timers': return t('作战进行中不能开关计时');
     case 'bond': return t('这个盟约不能在本模式使用');
+    // 调控台 (移植自用户分支, server/match/match/testCommands.js)
+    case 'shared': return t('有其他博士在场时不能使用影响整局的指令');
+    case 'leader': return t('不能添加敌方领袖');
+    case 'bounty': return t('下一场作战最多添加 {max} 个敌人，还可添加 {left} 个', params);
     default: return '';
   }
 }

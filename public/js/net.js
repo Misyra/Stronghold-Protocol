@@ -35,6 +35,7 @@ import { validateC2S } from '../../shared/protocol.js';
 import { N_ } from '../../shared/i18n.js';
 import { STATE_DELTA_VERSION, StateReceiver } from '../../shared/stateDelta.js';
 import { PeerTransport } from './p2p.js';
+import { ownerKey } from './ownerKey.js';
 
 export const REQUEST_TIMEOUT_MS = 8000;
 export const HELLO_TIMEOUT_MS = 8000;
@@ -61,6 +62,9 @@ export const CLIENT_ERR_TEXT = Object.freeze({
   VERSION: N_('客户端版本与服务器不一致，请刷新页面'),
 });
 
+/** The rejection of a nickname reserved for the server's owner (NAME_REJECTED, detail 'reserved'; 服主标记). */
+export const NAME_RESERVED_TEXT = N_('该代号为服主保留，请换一个昵称。');
+
 /** Server close code: the session was taken over by another socket (server/net.js CLOSE.REPLACED). */
 export const CLOSE_REPLACED = 4001;
 /** Server close code: the socket never sent `hello` (server/net.js CLOSE.HELLO_TIMEOUT, ~30–60 s). */
@@ -83,7 +87,9 @@ export class NetError extends Error {
   /** @param {string} code @param {string} [msg] server text @param {string} [detail] server developer detail */
   constructor(code, msg, detail) {
     const versionMismatch = typeof detail === 'string' && /version/i.test(detail);
-    super(versionMismatch ? CLIENT_ERR_TEXT.VERSION : errorText(code, msg));
+    // a nickname the server keeps for its owner (server/ownerFile.js): NAME_REJECTED with detail 'reserved'
+    super(versionMismatch ? CLIENT_ERR_TEXT.VERSION
+      : code === 'NAME_REJECTED' && detail === 'reserved' ? NAME_RESERVED_TEXT : errorText(code, msg));
     this.name = 'NetError';
     this.code = String(code || 'INTERNAL');
     this.serverMsg = msg ?? null;
@@ -401,6 +407,10 @@ export class Net {
     // Capability versions the queue compares (server/matchmaking.js, 移植自用户分支): a stale tab rejoins instead of mixing pools.
     const msg = { t: 'hello', rid, name: this.name, version: PROTOCOL_VERSION, delta: STATE_DELTA_VERSION,
       matchmakingVersion: MATCHMAKING_VERSION, playerCapacityVersion: PLAYER_CAPACITY_VERSION };
+    // 服主 (server/ownerFile.js, 移植自用户分支): the key this browser keeps (ui/settings.js 服主验证) rides on every
+    // hello; the server decides the mark from it alone. Never logged.
+    const okey = ownerKey();
+    if (okey) msg.owner = okey;
     let token = null;
     try { token = this.getToken(); } catch { token = null; }
     if (typeof token === 'string' && token.length > 0 && token.length <= 64) {
@@ -446,6 +456,7 @@ export class Net {
     this._clearTimer('_helloTimer', 'clearTimeout');
     this._helloRid = null;
     this.lastError = new NetError(msg.code, msg.msg, msg.detail);
+    if (msg.code === 'NAME_REJECTED') this.name = null; // wait for an explicit corrected name, not endless rejected reconnects
     this._setStatus('connected');
     // Queued requests can't be sent without a session.
     this._failPending('OFFLINE', true);

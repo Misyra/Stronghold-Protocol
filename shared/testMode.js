@@ -4,23 +4,44 @@
 //
 // [ASSUMED] No official source settles a test console. Bounds are absolute and strict (a value
 // outside them is an error, never a clamp): funds 0..99999, LP 0..999, team LP 0..9999, bond
-// layers 0..BOND_LAYER_CAP, shop lists of 1..12 slots, round 1..99 (the match rechecks the mode's
-// last / hidden round). A shape the catalogue does not name is BAD_MSG. A present field of the
-// wrong type or out of range is BAD_TARGET. A shape refusal is audited as { rejected: true } so
-// the log does not keep the raw payload.
+// layers 0..BOND_LAYER_SAFE_MAX (the match refuses past testLayersMax: its own cap, TEST_LAYERS_UNCAPPED_MAX
+// with the cap lifted), shop lists of 1..12 slots, round 1..99 (the match rechecks the mode's last / hidden
+// round), bounty count 1..TEST_BOUNTY_MAX (absent = 1). A shape the catalogue does not name is BAD_MSG. A
+// present field of the wrong type or out of range is BAD_TARGET. A shape refusal is audited as
+// { rejected: true } so the log does not keep the raw payload.
 
-import { BOND_LAYER_CAP } from './constants.js';
+import { BOND_LAYER_CAP, BOND_LAYER_SAFE_MAX } from './constants.js';
 
 export const TEST_FUNDS_MAX = 99999;
 export const TEST_LP_MAX = 999;
 export const TEST_TEAM_LP_MAX = 9999;
-export const TEST_LAYERS_MAX = BOND_LAYER_CAP;
+export const TEST_LAYERS_MAX = BOND_LAYER_SAFE_MAX;
+/**
+ * The bond layers a test / 调控台 command may set in a room with the layer cap lifted (移植自用户分支 rel32:
+ * a console room set 维多利亚 to ~1e8 and its hammers held a game node's main thread for good). 100× the
+ * official 999 — far enough past it to see what an uncapped bond does — and the same five digits as funds.
+ * A gain the match earns itself is not bounded here.
+ */
+export const TEST_LAYERS_UNCAPPED_MAX = 99_999;
+/** The most layers a test command may set in a room (`disableLayerCap` experimental); detail `layersMax|{max}`. */
+export const testLayersMax = (uncapped) => (uncapped === true ? TEST_LAYERS_UNCAPPED_MAX
+  : BOND_LAYER_CAP > 0 && Number.isFinite(BOND_LAYER_CAP) ? BOND_LAYER_CAP : TEST_LAYERS_UNCAPPED_MAX);
 export const TEST_SHOP_SLOTS_MAX = 12;
 export const TEST_ROUND_MAX = 99;
 export const TEST_RATE_COUNT = 8;
 export const TEST_RATE_WINDOW_MS = 10_000;
 export const TEST_LOG_CAP = 200;
 export const TEST_PUBLIC_LOG = 12;
+/** bounty's `count` (optional, default 1): the enemies one command adds to the player's next battle. */
+export const TEST_BOUNTY_MAX = 20;
+/**
+ * 调控台 (移植自用户分支 rel29, server/match/match/testCommands.js): at most this many console enemies wait
+ * for one player's next battle, and the commands that change the whole match — allowed there only to the
+ * match's only human.
+ */
+export const TEST_BOUNTY_BATTLE_MAX = 20;
+/** The match-wide commands of a console room's match: only its only human may run them. */
+export const TEST_SHARED = Object.freeze(['round', 'phase', 'timers', 'hp', 'teamLp']);
 
 export const TEST_COMMANDS = Object.freeze([
   'funds', 'chess', 'item', 'token', 'lp', 'hp', 'teamLp', 'round', 'phase',
@@ -130,13 +151,18 @@ export function parseTestArgs(cmd, args) {
       return { args: { amount: r.args.amount } };
     }
     case 'chess':
-    case 'item':
-    case 'bounty': {
-      const key = cmd === 'bounty' ? 'enemyKey' : 'id';
-      const r = exact(args, [key]);
+    case 'item': {
+      const r = exact(args, ['id']);
       if (r.error) return r;
-      if (!isId(r.args[key])) return { error: 'BAD_TARGET' };
-      return { args: { [key]: r.args[key] } };
+      if (!isId(r.args.id)) return { error: 'BAD_TARGET' };
+      return { args: { id: r.args.id } };
+    }
+    case 'bounty': {
+      const r = exact(args, ['enemyKey', 'count']);
+      if (r.error) return r;
+      if (!isId(r.args.enemyKey)) return { error: 'BAD_TARGET' };
+      if (r.args.count !== undefined && !isInt(r.args.count, 1, TEST_BOUNTY_MAX)) return { error: 'BAD_TARGET' };
+      return { args: { enemyKey: r.args.enemyKey, ...(r.args.count === undefined ? {} : { count: r.args.count }) } };
     }
     case 'token': {
       const r = exact(args, ['id', 'ownerUid']);

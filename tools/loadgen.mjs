@@ -198,8 +198,16 @@ async function startServerChild(port) {
     if (child.exitCode != null) throw new Error(`server exited (${child.exitCode}) during boot:\n${lines.slice(-40).map((l) => l.text).join('\n')}`);
     try {
       const res = await fetch(`http://127.0.0.1:${port}/healthz`);
-      if (res.ok) break;
-    } catch { /* not up yet */ }
+      if (res.ok) {
+        // a parallel agent's loadgen on the same pinned port answers healthz too — never accept a foreign server:
+        // our own child must still be alive when the probe succeeds
+        if (child.exitCode != null) throw new Error(`healthz on :${port} answered but our server child already exited — the port is owned by another server; aborting instead of measuring it`);
+        break;
+      }
+    } catch (e) {
+      if (e instanceof Error && /foreign/.test(e.message)) throw e;
+      /* not up yet */
+    }
     if (Date.now() - t0 > 60000) throw new Error(`server did not become healthy in 60 s:\n${lines.slice(-40).map((l) => l.text).join('\n')}`);
     await new Promise((r) => setTimeout(r, 200));
   }

@@ -8,7 +8,7 @@
 //
 // Usage:
 //   node poc/walltest/round.mjs --tag off-r1 --state off [--out /tmp/sp-walltest]
-//        [--clients 2000 --rooms 600 --rate 20 --duration 115 --warmup 105 --seed 1 --port 3999]
+//        [--clients 2000 --rooms 600 --rate 20 --duration 115 --warmup 105 --seed 1 --port 3977]
 //        [--loop-window-ms 1000 --workers 4] [--extra "--plan-pool 1 --max-connections 4200 …"]
 
 import { spawn, execFile } from 'node:child_process';
@@ -37,7 +37,7 @@ const O = {
   duration: num(opt.duration, 115),
   warmup: num(opt.warmup, 105),
   seed: Math.floor(num(opt.seed, 1)),
-  port: Math.floor(num(opt.port, 3999)),
+  port: Math.floor(num(opt.port, 3977)),
   workers: Math.floor(num(opt.workers, 4)),
   loopWindowMs: Math.floor(num(opt['loop-window-ms'], 1000)),
   extra: typeof opt.extra === 'string' && opt.extra.trim() ? opt.extra.trim().split(/\s+/) : [],
@@ -92,8 +92,21 @@ const capture = (buf) => {
     if (!line.trim()) continue;
     logLines.push(line);
     console.log(`[lg] ${line}`);
-    const m = /server up on 127\.0\.0\.1:\d+ \(boot \d+ ms, pid (\d+)\)/.exec(line);
-    if (m && !serverSpy) serverSpy = makeSpy(Number(m[1]), 'server');
+    const m = /server up on 127\.0\.0\.1:(\d+) \(boot \d+ ms, pid (\d+)\)/.exec(line);
+    if (m && !serverSpy) {
+      const pid = Number(m[2]);
+      // 并行子代理都要用 loadgen：healthz 探活可能打到别人同端口的服务器上（2026-11-08 的污染事故）。核对本轮
+      // 端口的 LISTEN 者就是自己 spawn 的 pid，不是则立即失败，绝不把别人的服务器当测台。
+      execFile('lsof', ['-ti', `:${m[1]}`, '-sTCP:LISTEN'], (err, stdout) => {
+        const listener = String(stdout || '').trim().split('\n')[0];
+        if (err || listener !== String(pid)) {
+          console.error(`[round ${O.tag}] FATAL: port ${m[1]} owned by pid ${listener || '?'}, not our server ${pid} — foreign server, aborting`);
+          try { child.kill('SIGKILL'); } catch { /* already gone */ }
+          process.exit(3);
+        }
+      });
+      serverSpy = makeSpy(pid, 'server');
+    }
   }
 };
 child.stdout.on('data', capture);

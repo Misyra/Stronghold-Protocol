@@ -13,10 +13,11 @@ import { mitigate } from './calculation.js';
  * shows no number [ASSUMED]. Every HP-damage kind is checked as the official `modifier.isDamage` (phys, arts, true,
  * 元素伤害 incl. element bursts, DoT ticks — they all come through dealDamage — and losses passed on to a leader through
  * Battle.dealHPLose, except the 胄 drone link's pool share: `noHitLimit`, DESIGN §25.13.4); element 损伤 (gauge fill,
- * 'element') removes no HP and is never checked. Deterministic (Math.ceil of the same double on every engine).
+ * 'element') removes no HP and is never checked. Deterministic (Math.ceil of the same double on every engine). The
+ * room's experimental rule reaches every copy of the battle as `flags.hitLimitOff`: the limit is then not checked at all.
  */
 export function leaderHitCancelled(battle, target, amount) {
-  if (!(BOSS_HIT_LIMIT > 0) || !target || !target.isBoss || (battle.kind !== 'boss' && battle.kind !== 'hidden')) return false;
+  if (!(BOSS_HIT_LIMIT > 0) || battle.flags?.hitLimitOff === true || !target || !target.isBoss || (battle.kind !== 'boss' && battle.kind !== 'hidden')) return false;
   if (!(Math.ceil(amount) >= BOSS_HIT_LIMIT)) return false;
   battle.fx('hitCap', { x: target.x, y: target.y, id: target.id, n: Math.ceil(amount) });
   return true;

@@ -44,6 +44,15 @@ export class MatchCombat {
 
   _normalBattle(ps) { return this.newBattle(this._normalOpts(ps)); }
 
+  /**
+   * The room's experimental battle rules as spec flags (移植自 Stardust fork). A rule a battle reads rides on its spec,
+   * so the Worker, a browser's local replica, a client-run field and the server's check of it all fight the same battle.
+   * Nothing when off.
+   */
+  _ruleFlags() {
+    return { ...(this.disableLayerCap ? { layerCapOff: true } : {}), ...(this.disableHitLimit ? { hitLimitOff: true } : {}) };
+  }
+
   /** Battle options of a player's normal field (after the onBattleStart handlers). */
   _normalOpts(ps, { preview = false, board = ps.board } = {}) {
     const wave = preview ? structuredClone(this.wave) : this.wave;
@@ -70,7 +79,7 @@ export class MatchCombat {
       spawns: this._sanitizeSpawns(Array.isArray(ev.spawns) ? ev.spawns : spawns, ps.playerId),
       routes: wave.routes,
       sharedBoss: null,
-      flags: { layerGainsEnabled: true, ...this.gd.dp },
+      flags: { layerGainsEnabled: true, ...this.gd.dp, ...this._ruleFlags() },
       fieldId: `n:${ps.playerId}`,
       enemyOverrides: wave.overrides,
       waveId: wave.templateId,

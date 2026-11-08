@@ -246,6 +246,8 @@ export const MATCH_FIELDS = Object.freeze([
   'playerCapacity', 'capacityExperiment', 'twentyPlayerMode', 'disableDuckLord', 'finalAliveCount',
   // AI 联防置后（§37.143）：与 disableDuckLord 同类——构造器由 experimental 推导的规则标量，落档保持恢复一致
   'uniteHumansFirst',
+  // 禁用层数上限 / 禁用单次伤害上限（移植自 Stardust fork）：同族规则标量，落档保持按旧存档恢复一致
+  'disableLayerCap', 'disableHitLimit',
 ]);
 
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */

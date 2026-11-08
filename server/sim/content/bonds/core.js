@@ -44,6 +44,7 @@ import * as items from '../items.js';
 import { FORCED_EXIT } from '../../constants.js';
 import { damageAttackType, isHpLoss } from '../../attack.js';
 import { msg } from '../../../../shared/i18n.js';
+import { milestonesDue } from '../../../../shared/constants.js';
 import { bbCap } from '../../../../shared/plugins/officialBounds.js';
 import { textFinite } from '../../../../shared/plugins/textNumber.js';
 
@@ -711,13 +712,14 @@ export function install(battle) {
  * onActiveBonds hook of the recompute that activated it, e.g. placing the third member in prep (the maintainer's report
  * of the official game, 2026-10-15; research 02 §3.3 / §8 Q7: the payout counts layers added while inactive) — and
  * the hooks below catch up anything a capped nested dispatch skipped; same rule as 远见 / 奇迹 (addon/meta.js).
+ * A room with the layer cap lifted pays no more than 999 layers would (shared/constants.js milestonesDue).
  */
 export function payHammers(ctx) {
   if (!ctx.bondActive('victoriaShip')) return 0;
   const p = S.buffParams(ctx.data?.bonds?.victoriaShip ?? S.bondRecord('victoriaShip'), VICTORIA_REWARD_KEY);
   const step = Math.floor(num(p?.layer, 0));
   if (!p || !(step > 0)) return 0;
-  const due = Math.floor(ctx.layers('victoriaShip') / step);
+  const due = milestonesDue(ctx.layers('victoriaShip'), step, ctx.layerCapOff === true);
   // [ASSUMED] DESIGN §32.5: each milestone pays at most the official `count` cap. Official count is 1.
   const count = Math.min(bbCap('count'), Math.max(0, Math.floor(num(p.count, 1))));
   let granted = 0;

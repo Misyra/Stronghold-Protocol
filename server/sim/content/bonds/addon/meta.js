@@ -23,6 +23,7 @@
 // Latched state lives in player counters (prefix `bondaddon:`); onPrice only reads them (pure).
 
 import { msg, dn } from '../../../../../shared/i18n.js';
+import { milestonesDue } from '../../../../../shared/constants.js';
 
 const C_VISI_PAID = 'bondaddon:visi:paid';
 const C_VISI_DISC = 'bondaddon:visi:disc';
@@ -48,7 +49,8 @@ function settleCoins(ctx, bondId, counterKey, label) {
   const p = buff(ctx, bondId, 'bond_layer_gain_coin');
   const step = n(p.layer), count = n(p.count);
   if (!(step > 0) || !(count > 0)) return 0;
-  const due = Math.floor(ctx.layers(bondId) / step);
+  // a room with the cap lifted pays no more than 999 layers would (shared/constants.js milestonesDue)
+  const due = milestonesDue(ctx.layers(bondId), step, ctx.layerCapOff === true);
   const paid = ctx.counter(counterKey);
   if (due <= paid) return 0;
   ctx.setCounter(counterKey, due);

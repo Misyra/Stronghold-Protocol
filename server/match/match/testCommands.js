@@ -362,7 +362,7 @@ export class MatchTestCommands {
       return OK;
     }
     const delta = layers - cur;
-    if (layerGainRoom(cur, delta) !== delta) return fail(ERR.BAD_TARGET);
+    if (layerGainRoom(cur, delta, this.disableLayerCap === true) !== delta) return fail(ERR.BAD_TARGET);
     const add = ps.addLayers(id, delta, { reason: 'test' });
     if (add !== delta) return fail(ERR.BAD_TARGET);
     return OK;

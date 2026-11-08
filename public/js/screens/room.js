@@ -213,12 +213,17 @@ export function capacityOption(room, myId) {
 /**
  * The option set for a `room.setExperimental` that sets the seat `capacity` (capacityOption's sender): the two base
  * flags always travel, `playerCapacity` only above the official four (a standard room's payload stays two-flag), and
- * 禁用鸭爵策略 survives only an expanded room.
+ * 禁用鸭爵策略 survives only an expanded room. The battle rules travel with any capacity (禁用层数上限 / 禁用单次伤害上限 /
+ * AI 联防置后: any room), so toggling one switch never silently drops another.
  * @param {number} capacity @param {any} [current] room.state experimental
- * @returns {{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean }}
+ * @returns {{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean,
+ *   disableLayerCap?: boolean, disableHitLimit?: boolean, uniteHumansFirst?: boolean }}
  */
 export function capacityExperimental(capacity, current = null) {
   const base = { revivalEnabled: current?.revivalEnabled === true, disableSharedPool: current?.disableSharedPool === true };
+  if (current?.uniteHumansFirst === true) base.uniteHumansFirst = true;
+  if (current?.disableLayerCap === true) base.disableLayerCap = true;
+  if (current?.disableHitLimit === true) base.disableHitLimit = true;
   if (!isPlayerCapacity(capacity) || capacity === MAX_SEATS) return base;
   const next = { ...base, playerCapacity: capacity };
   if (current?.disableDuckLord === true) next.disableDuckLord = true;
@@ -276,6 +281,45 @@ export function uniteHumansExperimental(on, current = null) {
   const base = capacityExperimental(roomCapacity('coop', current), current);
   if (on === true) return { ...base, uniteHumansFirst: true };
   const { uniteHumansFirst: _dropped, ...rest } = base;
+  return rest;
+}
+
+/**
+ * 禁用层数上限 / 禁用单次伤害上限 (room.setExperimental, 移植自 Stardust fork): the room's battle-rule switches —
+ * 盟约层数不再停在 999 层 / 对敌方领袖的单次伤害达到 30 万及以上不再作废。Rules of any room (co-op or solo, any capacity),
+ * the host's switch; a room the queue allocated keeps its rules (capacityOption's rule).
+ * @param {any} room room.state payload
+ * @param {any} myId
+ * @returns {{ on: boolean, editable: boolean } | null}
+ */
+export function layerCapOption(room, myId) {
+  if (!room || room.source === 'matchmaking') return null;
+  return { on: room.experimental?.disableLayerCap === true, editable: room.hostId != null && room.hostId === myId && !room.inMatch };
+}
+
+export function hitLimitOption(room, myId) {
+  if (!room || room.source === 'matchmaking') return null;
+  return { on: room.experimental?.disableHitLimit === true, editable: room.hostId != null && room.hostId === myId && !room.inMatch };
+}
+
+/**
+ * The option sets for toggling 禁用层数上限 / 禁用单次伤害上限 (layerCapOption / hitLimitOption's senders): every rule
+ * the room already carries travels, and an ordinary room's payload keeps its shape without the key.
+ * @param {boolean} on @param {any} [current] room.state experimental
+ * @returns {{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean,
+ *   disableLayerCap?: boolean, disableHitLimit?: boolean, uniteHumansFirst?: boolean }}
+ */
+export function layerCapExperimental(on, current = null) {
+  const base = capacityExperimental(roomCapacity('coop', current), current);
+  if (on === true) return { ...base, disableLayerCap: true };
+  const { disableLayerCap: _dropped, ...rest } = base;
+  return rest;
+}
+
+export function hitLimitExperimental(on, current = null) {
+  const base = capacityExperimental(roomCapacity('coop', current), current);
+  if (on === true) return { ...base, disableHitLimit: true };
+  const { disableHitLimit: _dropped, ...rest } = base;
   return rest;
 }
 
@@ -568,6 +612,36 @@ function DuckLordToggle({ option, busy, onToggle }) {
   </div>`;
 }
 
+/** The 「禁用层数上限」 switch (any room, 移植自 Stardust fork): the host toggles it, the others read it. */
+function LayerCapToggle({ option, busy, onToggle }) {
+  if (!option) return null;
+  return html`<div class="ailast">
+    <${Tooltip} text=${t('盟约层数不再停在 999 层。')}>
+      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-layer-cap"
+          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
+          onClick=${() => option.editable && onToggle(!option.on)}>
+        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('禁用层数上限')}
+      </button>
+    <//>
+    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
+  </div>`;
+}
+
+/** The 「禁用单次伤害上限」 switch (any room, 移植自 Stardust fork): the host toggles it, the others read it. */
+function HitLimitToggle({ option, busy, onToggle }) {
+  if (!option) return null;
+  return html`<div class="ailast">
+    <${Tooltip} text=${t('对敌方领袖的单次伤害达到 30 万及以上时不再被取消。')}>
+      <button type="button" role="switch" aria-checked=${option.on ? 'true' : 'false'} data-testid="room-hit-limit"
+          class=${`dpick__opt ailast__opt${option.on ? ' is-active' : ''}`} disabled=${!option.editable || !!busy}
+          onClick=${() => option.editable && onToggle(!option.on)}>
+        <${Icon} name="check" class=${option.on ? 'is-on' : ''} />${t('禁用单次伤害上限')}
+      </button>
+    <//>
+    ${option.editable ? null : html`<span class="t-dim">${t('由创建者设置')}</span>`}
+  </div>`;
+}
+
 /** The 「AI 联防置后」 switch (co-op, 移植自用户分支 rel29): the host toggles it, the others read it. */
 function UniteHumansToggle({ option, busy, onToggle }) {
   if (!option) return null;
@@ -631,7 +705,8 @@ function ConsoleToggle({ option, busy, onToggle, matching }) {
  * and the 「AI 队友最后选择」 switch. Closes on a click outside it or Esc.
  */
 function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, room, isHost, busy, onAiLast, dupesOption = null, onBandDupes,
-  capOption = null, onCapacity, duckOption = null, onDuckLord, uniteOption = null, onUniteHumans, onSoloUnlimited, onConsole, consoleOpt,
+  capOption = null, onCapacity, duckOption = null, onDuckLord, layerOption = null, onLayerCap, hitOption = null, onHitLimit,
+  uniteOption = null, onUniteHumans, onSoloUnlimited, onConsole, consoleOpt,
   onDifficulty, onClose, version = null }) {
   const info = difficultyInfo(room.mode, room.difficulty);
   const title = soloOption ? t('模拟设置') : t('同盟设置');
@@ -666,6 +741,8 @@ function RoomOptions({ option, takeoverOption, onAiTakeover, soloOption = null, 
     <${BandDupesToggle} option=${dupesOption} busy=${busy} onToggle=${onBandDupes} />
     <${CapacityToggle} option=${capOption} busy=${busy} onCapacity=${onCapacity} />
     <${DuckLordToggle} option=${duckOption} busy=${busy} onToggle=${onDuckLord} />
+    <${LayerCapToggle} option=${layerOption} busy=${busy} onToggle=${onLayerCap} />
+    <${HitLimitToggle} option=${hitOption} busy=${busy} onToggle=${onHitLimit} />
     <${UniteHumansToggle} option=${uniteOption} busy=${busy} onToggle=${onUniteHumans} />
     <${ConsoleToggle} option=${consoleOpt} busy=${busy} matching=${!!room.matchmaking} onToggle=${onConsole} />
   </div>`;
@@ -879,6 +956,10 @@ const setBandDupes = (on) => run('dupes', () => net.request('room.setBandDupes',
 // once; the server resets the others' ready when it takes a change (server/lobby.js setExperimental)
 const setCapacity = (capacity) => run('capacity', () => net.request('room.setExperimental', { experimental: capacityExperimental(capacity, room.experimental) }));
 const setDuckLord = (on) => run('ducklord', () => net.request('room.setExperimental', { experimental: duckLordExperimental(on, room.experimental) }));
+// 禁用层数上限 / 禁用单次伤害上限 (移植自 Stardust fork): the whole option set goes to the server at once (room.setExperimental),
+// like 扩展同盟人数; the server resets the others' ready when it takes a change
+const setLayerCap = (on) => run('layer-cap', () => net.request('room.setExperimental', { experimental: layerCapExperimental(on, room.experimental) }));
+const setHitLimit = (on) => run('hit-limit', () => net.request('room.setExperimental', { experimental: hitLimitExperimental(on, room.experimental) }));
 // AI 联防置后 (移植自用户分支 rel29): the whole option set goes to the server at once (room.setExperimental), like 扩展同盟人数
 const setUniteHumans = (on) => run('unite-humans', () => net.request('room.setExperimental', { experimental: uniteHumansExperimental(on, room.experimental) }));
 // AI 指定策略 (room.setBotBand, 移植自用户分支): the host names the strategy an AI seat takes in the draft (null = 自动选择)
@@ -1105,6 +1186,8 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
             dupesOption=${dupesOpt} onBandDupes=${setBandDupes}
             capOption=${capacityOption(room, me.playerId)} onCapacity=${setCapacity} duckOption=${duckLordOption(room, me.playerId)} onDuckLord=${setDuckLord}
             uniteOption=${uniteHumansOption(room, me.playerId)} onUniteHumans=${setUniteHumans}
+            layerOption=${layerCapOption(room, me.playerId)} onLayerCap=${setLayerCap}
+            hitOption=${hitLimitOption(room, me.playerId)} onHitLimit=${setHitLimit}
             onConsole=${setConsole} consoleOpt=${consoleOpt} onSoloUnlimited=${setSoloUnlimited} onDifficulty=${openProto} onClose=${() => setOpts(false)} version=${versionCtl} />` : null}
         </div>
       </div>

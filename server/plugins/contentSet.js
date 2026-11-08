@@ -32,6 +32,10 @@ import { composeRules } from '../../shared/plugins/rules.js';
 import { offerReferenceProblems } from './offerData.js';
 
 const bases = new WeakMap(), buffers = new WeakMap(), caches = new WeakMap();
+/** The main thread's parse memo of the worker-built sets (builtSetFromWorkerFinal): per registry, the last build's
+ * parsed data tables by table name and their body bytes — a later build reuses a table only when its bytes are
+ * identical, so the memo is always exact, whatever the plugins changed in between. */
+const rebases = new WeakMap();
 
 // --- the sliced walk (§37.136) ---------------------------------------------------------------------------------------------
 // The data half and the tail are generators; the caller drives them. driveSliced lets the event loop run whenever the
@@ -534,4 +538,81 @@ export async function buildContentSet(options) {
 export function checkContentSetDataOnly(options) {
   try { return driveSync(composeGen({ ...(options ?? {}), checkDataOnly: true })); }
   catch (e) { return { problems: [problem('PLUGIN_CONTENT_FORMAT', 'content', e.message)] }; }
+}
+
+/** The walk's data half, driven to completion in one synchronous block — the build worker's compose (there the block
+ * cannot starve anything, and the pauses would only add generator turns). Same result as a sliced drive. */
+export function composeSync(options) {
+  try { return driveSync(composeGen(options)); }
+  catch (e) { return { problems: [problem('PLUGIN_CONTENT_FORMAT', 'content', e.message)] }; }
+}
+
+/** The walk's tail, synchronous for the worker the same way. @param {any} pending composeSync's `.pending` */
+export function finalizeSync(pending) { return driveSync(finalizeGen(pending)); }
+
+const yieldTurn = () => new Promise((r) => setImmediate(r));
+
+/**
+ * The main thread's half of a worker build (SP_CONTENT_BUILD_WORKER): the transferred reply becomes the same built set
+ * `buildContentSet` returns — every body re-hashed against the worker's hashes before anything is parsed (the main
+ * thread never serves or adopts bytes it has not hashed itself), the data tables re-parsed from the canonical served
+ * bytes and frozen branch-wise with a setImmediate turn between tables (the same ≤ one-table blocks the sliced build
+ * pauses on), the C1 caches and the served-buffers table seeded so `contentSetFiles` and a same-cs rebuild behave
+ * exactly as a main-thread build's. Throws on anything unexpected — the caller falls back to the main-thread build.
+ * @param {any} registry @param {any} final the worker's `final` reply
+ * @returns {Promise<any>} the built set (the shape of buildContentSet's resolve value)
+ */
+export async function builtSetFromWorkerFinal(registry, final) {
+  if (!final || typeof final !== 'object' || typeof final.cs !== 'string' || !final.index || typeof final.index !== 'object'
+    || !Array.isArray(final.rels) || !Array.isArray(final.bodies) || final.rels.length !== final.bodies.length
+    || !final.hashes || typeof final.hashes !== 'object') throw new Error('malformed build worker reply');
+  const bodies = new Map();
+  for (let i = 0; i < final.rels.length; i++) {
+    const rel = final.rels[i];
+    const view = final.bodies[i];
+    if (typeof rel !== 'string' || !view || !(view.buffer instanceof ArrayBuffer)) throw new Error(`malformed body for ${rel}`);
+    if (typeof final.hashes[rel] !== 'string') throw new Error(`no hash for ${rel}`);
+    bodies.set(rel, Buffer.from(view.buffer, view.byteOffset, view.byteLength));
+  }
+  // the transfer is verified body by body before anything is parsed: the main thread never adopts bytes it has not
+  // hashed itself (the worker hashed the same bytes; a disagreement is a fallback, not a served set)
+  for (const [rel, body] of bodies) if (nodeSha256(body) !== final.hashes[rel]) throw new Error(`body hash mismatch for ${rel}`);
+  const files = {};
+  for (const [rel, body] of bodies) files[rel] = { sha256: final.hashes[rel], bytes: body.length };
+  // the data tables: parse the canonical served bytes, reusing the last build's parsed table when the bytes are
+  // identical (the memo is exact — identical bytes parse to identical values; a table absent here stays absent)
+  const base = rebases.get(registry) ?? { tables: new Map(), bodies: new Map() };
+  const data = {};
+  for (const [rel, body] of bodies) {
+    const m = /^data\/([A-Za-z0-9_-]+)\.json$/.exec(rel);
+    if (!m) continue;
+    const name = m[1];
+    const cached = base.tables.get(name);
+    const cachedBody = base.bodies.get(rel);
+    if (cached && cachedBody && cachedBody.equals(body)) { data[name] = cached; continue; }
+    await yieldTurn();
+    const table = JSON.parse(body.toString('utf8'));
+    deepFreeze(table);
+    data[name] = table;
+  }
+  Object.freeze(data);
+  for (const [rel, body] of bodies) if (/^data\//.test(rel)) { base.tables.set(rel.slice(5, -5), data[rel.slice(5, -5)]); base.bodies.set(rel, body); }
+  rebases.set(registry, base);
+  const set = {
+    cs: final.cs, vanilla: final.vanilla === true, plugins: final.plugins ?? [], data, files,
+    ...(Array.isArray(final.scripts) && final.scripts.length ? { scripts: final.scripts, execution: final.execution } : {}),
+    ...(final.rules && typeof final.rules === 'object' ? { rules: final.rules } : {}),
+    modes: Object.values(data.config?.modes ?? {}), problems: [], warnings: Array.isArray(final.warnings) ? final.warnings : [],
+    index: final.index, settings: final.settings ?? {}, bounds: final.bounds ?? null,
+    kitted: Array.isArray(final.kitted) ? final.kitted : [],
+    ...(Array.isArray(final.offers) && final.offers.length ? { offers: final.offers } : {}),
+  };
+  // the small branches freeze like finalizeGen's tail did (data is already frozen table by table above)
+  for (const k of Object.keys(set)) if (k !== 'data' && set[k] && typeof set[k] === 'object' && !Object.isFrozen(set[k])) deepFreeze(set[k]);
+  Object.freeze(set);
+  buffers.set(set, bodies);
+  const cache = caches.get(registry) ?? new Map(); caches.set(registry, cache);
+  cache.set(final.cs, set);
+  if (cache.size > 32) cache.delete(cache.keys().next().value);
+  return set;
 }

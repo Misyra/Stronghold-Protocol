@@ -222,7 +222,10 @@ export async function startServer(opts = {}) {
   // the server owner's policy (plugins/config.json), the content sets of the gameplay plugins (served at /cs/<cs16>/…),
   // what a room's plugins make of both, and the match hosts a room with gameplay plugins plays in (DESIGN §32.6)
   const policy = createPluginPolicy({ pluginsDir, log });
-  const contents = createContentSets({ registry: packs, vanillaData: data, log, maxSets: () => policy.get().maxSets });
+  const contents = createContentSets({ registry: packs, vanillaData: data, log, maxSets: () => policy.get().maxSets,
+    // the plugin folders, so SP_CONTENT_BUILD_WORKER can run the content walk in its own thread (default off); the
+    // trust inputs ride along so a script plugin's execution — hashed into the cs — cannot depend on which side scanned it
+    dirs: { publicDir, dataDir, packsDir, pluginsDir }, workerScriptHost: host, workerScriptMode: scriptMode });
   const roomSets = createRoomSets({ registry: packs, visual, contents, policy });
   // a child process per content set; SP_MATCH_HOST=worker asks for a worker thread instead (match/host/index.js header:
   // an out-of-memory abort in a worker thread ends the whole server)
@@ -417,6 +420,7 @@ export async function startServer(opts = {}) {
     const actual = server.address();
     const scriptHost = actual && typeof actual === 'object' ? actual.address : '';
     packs.setScriptHost(scriptHost);
+    contents.setWorkerScriptHost(scriptHost); // the build worker's registry re-evaluates the trust gate the same way
     warmupScriptProbes(packs, log); // a script plugin the bind just admitted (trust gate): probed off the message path now
     const testGate = lobby.setTestHost(scriptHost);
     if (testGate.warn) log.warn(`[test-mode] ${testGate.warn}`);
@@ -481,6 +485,7 @@ export async function startServer(opts = {}) {
       try { lobby.shutdown('shutdown'); } catch (e) { log.error('[shutdown] lobby', e); }
       try { hosts.close(); } catch (e) { log.error('[shutdown] match hosts', e); }
       try { versionHosts?.close(); } catch (e) { log.error('[shutdown] version hosts', e); }
+      try { await contents.close(); } catch (e) { log.error('[shutdown] content set build worker', e); }
       // after the lobby: every room is gone, so no rehearsal can still be waiting on a thread
       try { await simPool?.close(); } catch (e) { log.error('[shutdown] simulation pool', e); }
       eventLoop?.close();

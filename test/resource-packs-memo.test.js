@@ -51,8 +51,8 @@ test('the resource pack index is routed once per file identity, 304s without a r
     assert.equal(handler.cacheStats().packsMemoBuilds, 1);
     assert.equal(handler.cacheStats().packsMemoHits, 1);
 
-    // `?v=<release tag>` verified → immutable, same memoized bytes
-    const tagged = await request(`/data/resource-packs.json?v=${handler.version}`);
+    // `?v=<data tag>` verified → immutable, same memoized bytes（/data/ 吃 dataTag，发版热点 #1）
+    const tagged = await request(`/data/resource-packs.json?v=${handler.dataVersion}`);
     assert.match(tagged.headers['cache-control'], /immutable/);
     assert.equal(tagged.body.toString(), second.body.toString());
     assert.equal(handler.cacheStats().packsMemoHits, 2);

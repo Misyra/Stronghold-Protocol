@@ -129,20 +129,29 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
   await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
   const get = (url, init) => fetch(`http://127.0.0.1:${srv.address().port}${url}`, init);
   const prefix = `/_v/${handler.version}`;
+  const probe = (h, url) => new Promise((resolve) => {
+    const res = { writeHead(status, headers) { this.status = status; this.headers = headers; }, end(body) { resolve({ status: this.status, headers: this.headers || {}, body }); } };
+    h({ method: 'GET', headers: {} }, res, url, '');
+  });
   try {
     const html = await (await get('/')).text();
     const artPrefix = `/_v/${JSON.parse(html.match(/__spArtVersion=("[^"]+")/)[1])}`;
     const codePrefix = `/_v/${JSON.parse(html.match(/__spRuntimeVersion=("[^"]+")/)[1])}`;
+    const groups = JSON.parse(html.match(/__spCodeVersion=(\{[^}]+\})/)[1]);
+    const jsPrefix = `/_v/${groups.js}`, vendorPrefix = `/_v/${groups.vendor}`, sharedPrefix = `/_v/${groups.shared}`;
     assert.match(html, /globalThis\.__spAssetVersion=/);
-    assert.ok(html.includes(`src="${codePrefix}/js/main.js"`));
+    assert.ok(html.includes(`src="${jsPrefix}/js/main.js"`), 'the entry script carries its own group tag');
     const imports = JSON.parse(html.match(/type="importmap">(.*?)<\/script>/)[1]).imports;
-    assert.equal(imports.preact, codePrefix + '/vendor/preact.js');
-    assert.equal(imports['/shared/'], codePrefix + '/shared/');
-    assert.equal(imports['/_v/shared/'], codePrefix + '/shared/');
+    assert.equal(imports.preact, vendorPrefix + '/vendor/preact.js');
+    assert.equal(imports['/shared/'], sharedPrefix + '/shared/');
+    assert.equal(imports['/_v/shared/'], sharedPrefix + '/shared/');
+    assert.equal(imports['/data.js'], codePrefix + '/data.js', 'the generated shim stays on the whole-tree runtime tag');
     assert.equal(new URL('../../../shared/a.js', 'http://localhost' + prefix + '/js/render/app.js').pathname, '/_v/shared/a.js');
     const script = await get(prefix + '/js/main.js');
-    assert.match(script.headers.get('cache-control'), /31536000, immutable/);
-    assert.ok((await script.text()).includes(`import '${codePrefix}/js/child.js'`), 'relative imports retain the runtime namespace');
+    assert.match(script.headers.get('cache-control'), /31536000, immutable/, 'the whole-tree tag keeps serving code through the legacy shim');
+    const grouped = await get(jsPrefix + '/js/main.js');
+    assert.match(grouped.headers.get('cache-control'), /31536000, immutable/, 'the group tag is the current immutable URL');
+    assert.ok((await grouped.text()).includes(`import '${jsPrefix}/js/child.js'`), 'relative imports land in the module group namespace');
     const hashedArt = await get('/build/assets/nearl2-Bh3kX2mQ.webp');
     assert.match(hashedArt.headers.get('cache-control'), /31536000, immutable/, 'a Vite-hashed image name pins its bytes (webp included)');
     assert.equal((await get(prefix + '/js/child.js')).status, 200);
@@ -186,6 +195,21 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
     write('shared/a.js', 'export const a = 2;'); // same size; content is hashed
     const next = createStaticHandler(dirs);
     assert.notEqual(next.version, stable);
+    // 组隔离：shared 变了，js 组的 tag 与 URL 原样有效——客户端的 js immutable 缓存跨发版续命（发版热点专项）。
+    const nextHtml = await new Promise((resolve) => {
+      const res = { writeHead() {}, end(body) { resolve(body.toString()); } };
+      next({ method: 'GET', headers: {} }, res, '/', '');
+    });
+    const nextGroups = JSON.parse(nextHtml.match(/__spCodeVersion=(\{[^}]+\})/)[1]);
+    assert.equal(nextGroups.js, groups.js, 'an untouched group keeps its tag across deploys');
+    assert.notEqual(nextGroups.shared, groups.shared);
+    const kept = await probe(next, jsPrefix + '/js/main.js');
+    assert.equal(kept.status, 200, 'the untouched group still answers its old URL on the new release');
+    assert.match(kept.headers['Cache-Control'], /31536000, immutable/);
+    const stale = await probe(next, sharedPrefix + '/shared/a.js');
+    assert.equal(stale.status, 404, 'the changed group retires its stale tag');
+    assert.equal(stale.headers['Clear-Site-Data'], '"cache"');
+    assert.equal((await probe(next, `/_v/${nextGroups.shared}/shared/a.js`)).status, 200);
     const changedHtml = await new Promise((resolve) => {
       const res = { writeHead() {}, end(body) { resolve(body.toString()); } };
       next({ method: 'GET', headers: {} }, res, '/', '');

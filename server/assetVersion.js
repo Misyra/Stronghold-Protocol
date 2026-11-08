@@ -6,6 +6,9 @@ import { assetCdnUrl } from '../shared/assetCdn.js';
 
 const ROOTS = /^\/(?:js|css|fonts|vendor|assets|data|shared|sim|media)\/|^\/data\.js(?:[?#]|$)/;
 export const VERSION_PREFIX = '/_v/';
+/** Executable roots that carry their own content group tag: a release which does not touch a root
+ *  keeps its /_v/<tag>/ URLs, so clients retain that group's immutable cache across deploys. */
+const CODE_GROUP = /^\/(js|vendor|shared|sim)\//;
 
 const CACHE_VERSION = 1;
 const CACHE_DIR = fileURLToPath(new URL('../.cache/asset-version/', import.meta.url));
@@ -37,7 +40,8 @@ function writeDigestCache(file, files) {
 }
 
 /** Content-based namespaces, computed at startup. Transformed data and page
- * releases retain art dependencies; unchanged executable modules keep their URLs.
+ * releases retain art dependencies; executable roots carry per-root group tags, so a release that
+ * does not touch a root keeps that root's URLs (and every client's immutable cache for it).
  * Local file identities only validate the optional digest cache; public tags contain content, never mtimes. */
 export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }, { cacheFile = defaultCacheFile(mounts) } = {}) {
   // A change to URL/response rewriting must also invalidate the bytes it previously generated.
@@ -50,6 +54,10 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
   ]);
   const runtimeHash = createHash('sha256').update(shim).update(transformer).update(fs.readFileSync(new URL('./index.js', import.meta.url)));
   const artHash = createHash('sha256').update(transformer).update(JSON.stringify(cdn));
+  // 每个可执行根一个组 tag：只吃改写器字节 + 本组自己的文件摘要（不吃 index.js/shim，发版必变的
+  // 东西不进组）——组没变，/_v/<组tag>/ 的 URL 就原样有效，客户端的 immutable 缓存跨发版续命
+  // （REVIEW-2026-11-09 §7 发版热点专项）。改写器参与每一个组：改写行为变了，旧 URL 的字节语义就变了。
+  const groupHashers = Object.fromEntries(['js', 'vendor', 'shared', 'sim'].map((root) => [root, createHash('sha256').update(transformer)]));
   const isArt = (url) => /^\/(?:assets|fonts|media)\//.test(url);
   const isCode = (url) => /^\/(?:js|vendor|shared|sim)\//.test(url) || /^\/data\.js(?:[?#]|$)/.test(url);
   const signatures = new Map();
@@ -84,17 +92,24 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
       }
       digests[abs] = [identity, digest];
       hash.update(url + '\0' + digest + '\0');
+      const group = CODE_GROUP.exec(url);
+      if (group) groupHashers[group[1]].update(`${url}\0${digest}\0`);
     }
   }
   for (const m of mounts) walk(m.dir, m.prefix, m);
   if (cacheChanged || Object.keys(cached).length !== Object.keys(digests).length) writeDigestCache(cacheFile, digests);
   const artTag = artHash.digest('hex').slice(0, 16);
   const runtimeTag = runtimeHash.digest('hex').slice(0, 16);
+  const groupTags = Object.fromEntries(Object.entries(groupHashers).map(([root, h]) => [root, h.digest('hex').slice(0, 16)]));
   // JSON/CSS and preload manifests embed art addresses, so their release MUST
   // change with art/CDN inputs. Only untransformed module URLs are independent.
   const tag = createHash('sha256').update(runtimeTag).update(artTag).digest('hex').slice(0, 16);
   const prefix = `${VERSION_PREFIX}${runtimeTag}`;
-  const expectedTag = (s) => isArt(s) ? artTag : isCode(s) ? runtimeTag : tag;
+  const expectedTag = (s) => {
+    const group = CODE_GROUP.exec(s);
+    if (group) return groupTags[group[1]];
+    return isArt(s) ? artTag : isCode(s) ? runtimeTag : tag;
+  };
   const url = (s) => {
     const remote = assetCdnUrl(s, cdn);
     if (remote !== s) return remote;
@@ -114,19 +129,24 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
     html = html.replace(/(<script\s+type=['"]importmap['"]\s*>)([\s\S]*?)(<\/script>)/g, (match, open, body, close) => {
       const map = JSON.parse(body);
       map.imports = Object.fromEntries(Object.entries(map.imports || {}).map(([k, v]) => [k, url(v)]));
-      for (const root of ['/js/', '/vendor/', '/shared/', '/sim/', '/data.js']) {
-        map.imports[root] = prefix + root;
+      for (const root of ['/js/', '/vendor/', '/shared/', '/sim/']) {
+        // 每根挂自己的组 tag：跨根 import 由 importmap 落到目标组的命名空间，未变的组 URL 不动。
+        const target = `${VERSION_PREFIX}${groupTags[root.slice(1, -1)]}${root}`;
+        map.imports[root] = target;
         // Some source imports climb past the original URL root (public/ exists on disk, not in the served URL).
         // With a namespace that extra '..' resolves to /_v/shared/... rather than /shared/....
-        map.imports[VERSION_PREFIX.slice(0, -1) + root] = prefix + root;
+        map.imports[VERSION_PREFIX.slice(0, -1) + root] = target;
       }
+      // `/data.js` is generated, not a walked file: it stays on the whole-tree runtime tag.
+      map.imports['/data.js'] = prefix + '/data.js';
+      map.imports[VERSION_PREFIX.slice(0, -1) + '/data.js'] = prefix + '/data.js';
       return open + JSON.stringify(map).replace(/</g, '\\u003c') + close;
     });
   // 页面只带版本标签；CDN 基址与每文件指纹清单由 /js/asset-cdn.js 这个模块提供（public/js/main.js 读它），
   // 页面里不再重复一份 __spAssetCdn / __spManifestReady。
-  return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spRuntimeVersion=${JSON.stringify(runtimeTag)};globalThis.__spArtVersion=${JSON.stringify(artTag)};</script>`);
+  return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spRuntimeVersion=${JSON.stringify(runtimeTag)};globalThis.__spCodeVersion=${JSON.stringify(groupTags)};globalThis.__spArtVersion=${JSON.stringify(artTag)};</script>`);
   }
-  return { tag, artTag, runtimeTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === fileIdentity(stat) };
+  return { tag, artTag, runtimeTag, groupTags, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === fileIdentity(stat) };
 }
 
 /** The legacy CDN release tag (`.assets-cdn-version`): the `_v/<tag>/` snapshot layout this fork used

@@ -46,8 +46,14 @@ export function dataBasePath() {
   return base ? String(base).replace(/\/+$/, '') + '/data/' : '/data/';
 }
 
+/** Code roots carry per-root group tags (server/assetVersion.js)：同源版本化 URL 按所在根取组 tag，
+ *  未变的组跨发版复用同一 URL。旧全局没有 __spCodeVersion 时退回整树 runtime tag（URL 照样可取，
+ *  只是退化为旧的整树失效语义）。 */
+const codeGroupOf = (url) => /^\/(js|vendor|shared|sim)\//.exec(url)?.[1] ?? null;
+
 export function resourceUrl(url, version = /^\/(?:assets|fonts|media)\//.test(url) ? globalThis.__spArtVersion :
-  /^\/(?:js|vendor|shared|sim)\//.test(url) ? (globalThis.__spRuntimeVersion || globalThis.__spAssetVersion) : globalThis.__spAssetVersion) {
+  codeGroupOf(url) ? (globalThis.__spCodeVersion?.[codeGroupOf(url)] || globalThis.__spRuntimeVersion || globalThis.__spAssetVersion)
+  : globalThis.__spAssetVersion) {
   const remote = assetCdnUrl(url, globalThis.__spAssetCdn);
   if (remote !== url) return remote;
   if (!version || typeof url !== 'string' || !/^\/(?:assets|data|vendor|fonts|js|shared|sim|media)\//.test(url)) return url;

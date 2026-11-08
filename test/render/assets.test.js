@@ -553,6 +553,21 @@ describe('spine unload frees the atlas page images too', () => {
     for (const junk of [null, 1, {}, { textures: [null, 3] }]) assert.deepEqual(spinePages(junk), []);
   });
 
+  test('every operator skin model says how its texture is stored: premultiplied but for the two measured straight ones', () => {
+    const chars = JSON.parse(readFileSync(new URL('../../data/assets.json', import.meta.url), 'utf8')).chars;
+    const straight = new Set();
+    let skinPages = 0;
+    for (const c of Object.values(chars)) for (const sk of Object.values(c.skins || {})) for (const side of ['front', 'back']) {
+      const spine = sk.spine?.[side];
+      if (!spine) continue;
+      skinPages++;
+      assert.equal(typeof spine.pma, 'boolean', `${spine.skel}`);
+      if (!spine.pma) straight.add(/\/([^/]+)\/(?:front|back)\/[^/]+\.skel$/.exec(spine.skel)[1]);
+    }
+    assert.ok(skinPages >= 500, `${skinPages} skin pages present`);
+    assert.deepEqual([...straight].sort(), ['char_344_beewax_summer_11', 'char_4072_ironmn_summer_11']);
+  });
+
   test('unloadSpineData unloads skeleton, atlas and every page (pages straight from the loader), minus kept ones', () => {
     const f = fakePixi();
     try {

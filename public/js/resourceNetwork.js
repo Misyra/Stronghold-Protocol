@@ -183,6 +183,32 @@ export function installArtParsers(PIXI) {
       const blob = await artTransport.blob(url);
       if (/\.skel$/i.test(path)) return blob.arrayBuffer();
       if (/\.atlas$/i.test(path)) return blob.text();
+      // (premultiplied pages: createImageBitmap premultiplies by default, whatever the alphaMode says later; feedback
+      // #48, #55 — a premultiplied page decodes as it is, the manifest entry's `pma` speaks for it through
+      // loadSpineData's imageMetadata, and the alpha mode itself rides the asset data into the BaseTexture)
+      const bitmapDecode = PIXI?.ALPHA_MODES?.PMA != null && options?.data?.alphaMode === PIXI.ALPHA_MODES.PMA
+        && parser.name === 'loadTextures' && PIXI.BaseTexture && PIXI.Texture
+        && typeof createImageBitmap === 'function' && parser.config?.preferCreateImageBitmap;
+      if (bitmapDecode) {
+        const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none' });
+        const data = { ...options?.data };
+        data.resolution ??= PIXI.utils.getResolutionOfUrl(url);
+        data.resourceOptions = { ...data.resourceOptions, ownsImageBitmap: data.resourceOptions?.ownsImageBitmap ?? true };
+        let texture;
+        try {
+          const base = new PIXI.BaseTexture(bitmap, data);
+          base.resource.internal = true;
+          base.resource.src = url;
+          texture = new PIXI.Texture(base);
+        } catch (error) { bitmap.close(); throw error; }
+        const clear = () => {
+          delete loader?.promiseCache?.[url];
+          if (PIXI.Assets.cache?.has?.(url)) PIXI.Assets.cache.remove(url);
+        };
+        texture?.once?.('destroyed', clear);
+        texture?.baseTexture?.once?.('destroyed', clear);
+        return texture;
+      }
       const temporary = URL.createObjectURL(blob);
       try {
         const texture = await original.call(this, temporary, options, loader);

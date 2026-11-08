@@ -29,7 +29,7 @@
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fexliModelDef, alt, skillIndicesByChar, skinPortraitUrl } from './assets/plan.mjs';
+import { fexliModelDef, alt, skillIndicesByChar, skinPortraitUrl, skinModelPma } from './assets/plan.mjs';
 import { processModels } from './assets/spine.mjs';
 import { Downloader } from './assets/downloader.mjs';
 import { contentHash, MANIFEST_VERSION } from './assets/manifest.mjs';
@@ -220,7 +220,8 @@ export async function installSkins(ids, { log = console.log, force = false, onPr
     for (const side of ['front', 'back']) {
       const key = `skin:${skin.stem}:${side}`;
       const def = fexliModelDef(key, 'op', `spine/op/${charId}/${skin.stem}/${side}/`, skin.battleSpine?.[side], skillIdx.get(charId) || [0]);
-      if (def) models.set(key, def);
+      // a premultiplied page set (all but the two measured straight skins, plan.mjs STRAIGHT_ALPHA_SKINS) decodes as it is
+      if (def) models.set(key, { ...def, pma: skinModelPma(skin.stem) });
     }
     if (!models.size) { failed.push({ id, why: '08-skins.json 里缺少模型 URL' }); continue; }
 

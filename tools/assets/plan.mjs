@@ -229,6 +229,14 @@ function skelStem(urlOrName) {
   return safeName(urlBase(urlOrName).replace(/\.skel$/i, ''));
 }
 
+// A skin's model textures are premultiplied (598 model pages measured 2026-10-30, Stardust #48/#55: no semi-transparent
+// pixel brighter than its alpha) except these two skins', which carry straight alpha. A premultiplied model sets
+// `pma: true` — the atlas keeps the flag and the manifest entry hands it to the client, whose parser decodes such pages
+// with `premultiplyAlpha: 'none'` (public/js/resourceNetwork.js) instead of premultiplying them a second time.
+export const STRAIGHT_ALPHA_SKINS = new Set(['char_344_beewax_summer_11', 'char_4072_ironmn_summer_11']);
+/** The `pma` value of a skin's static front / back model (`sk.stem`, the folder name — fork rel27's model id). */
+export const skinModelPma = (stem) => !STRAIGHT_ALPHA_SKINS.has(stem);
+
 /**
  * The `plan.models` definition for one fexli source record (skel + atlas + page PNGs, all under `dir`).
  *
@@ -465,8 +473,9 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
 
   // --- Spine model helpers -------------------------------------------------
   const addModel = (key, def) => { if (!models.has(key)) models.set(key, { key, ...def }); return { model: key }; };
-  const fexliModel = (key, kind, dir, rec, skillIndices) => {
+  const fexliModel = (key, kind, dir, rec, skillIndices, pma) => {
     const def = fexliModelDef(key, kind, dir, rec, skillIndices);
+    if (def && pma !== undefined) def.pma = pma;
     return def ? addModel(def.key, def) : null;
   };
 
@@ -520,10 +529,10 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
         if (!skinsInstalled || !skinsInstalled.has(sk.skinId)) continue;
         const entry = {};
         const dir = `spine/op/${id}/${sk.stem}/`;
-        const sfront = fexliModel(`skin:${sk.stem}:front`, 'op', `${dir}front/`, sk.battleSpine?.front, idx);
+        const sfront = fexliModel(`skin:${sk.stem}:front`, 'op', `${dir}front/`, sk.battleSpine?.front, idx, skinModelPma(sk.stem));
         if (!sfront) { notes.push(`${sk.skinId}: no Front skin Spine in research data`); continue; }
         entry.spine = { front: sfront };
-        const sback = fexliModel(`skin:${sk.stem}:back`, 'op', `${dir}back/`, sk.battleSpine?.back, idx);
+        const sback = fexliModel(`skin:${sk.stem}:back`, 'op', `${dir}back/`, sk.battleSpine?.back, idx, skinModelPma(sk.stem));
         if (sback) entry.spine.back = sback;
         // the 180×180 avatar rather than the full skin art (~2.5 MB each, ~435 MB for the whole set); `stem` is
         // already filename-safe (skinId with @ and # turned into _), so it needs no sanitizing.

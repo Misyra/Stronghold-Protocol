@@ -574,10 +574,15 @@ export async function loadSpineData(entry, opts) {
     // A dual-format release retains the original .atlas next to a .webp.atlas: the skeleton's own name only implies
     // the former, so an explicit atlas has to be named (the per-file CDN adapter resolves its own).
     const inferred = bareAssetUrl(entry.skel).replace(/\.skel$/, '.atlas');
+    // the manifest speaks for the pages: decoded as straight alpha, premultiplied pixels are premultiplied a second
+    // time, which turns a blush or a soft shadow into a dark smear (feedback #48, #55: every operator skin's model).
+    // pixi-spine hands `imageMetadata` to every page load; the parser decodes them as they are (resourceNetwork.js).
+    const pma = entry.pma === true && PIXI.ALPHA_MODES?.PMA != null
+      ? { imageMetadata: { alphaMode: PIXI.ALPHA_MODES.PMA } } : null;
     const source = hashed ? await cdnSpineSource(entry, PIXI)
       : entry.atlas && bareAssetUrl(entry.atlas) !== inferred
-        ? { src: entry.skel, data: { spineAtlasFile: entry.atlas } }
-        : entry.skel;
+        ? { src: entry.skel, data: { spineAtlasFile: entry.atlas, ...(pma || {}) } }
+        : pma ? { src: entry.skel, data: pma } : entry.skel;
     const res = await PIXI.Assets.load(source);
     const data = res && (res.spineData || res);
     if (!data || !Array.isArray(data.animations)) throw new Error(`bad spine data: ${entry.skel}`);

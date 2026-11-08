@@ -17,6 +17,8 @@ const TURN_MS = BAND_TURN_SECONDS * 1000;
 
 function draftOf(o) {
   const h = makeMatch({ mode: 'coop', ...o }).start();
+  // 自由选策略（§37.145）默认开后，本文件钉的仍是旧轮流制语义——逐例以实例覆盖退回轮流制（test/match/draft.test.js 同款）
+  h.m.freeDraft = () => false;
   for (const ps of h.m.players.values()) if (!ps.isBot) h.m.handle(ps.playerId, { t: 'g.infoReady' });
   h.sched.advance(1);
   assert.equal(h.m.phase, PHASE.BAND_DRAFT);

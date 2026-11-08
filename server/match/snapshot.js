@@ -243,6 +243,8 @@ export const MATCH_FIELDS = Object.freeze([
   // 多人同盟容量（移植自用户分支 snapshot.js）：构造器由房间的 experimental 推导这些值，落档一份使得按旧存档
   // 恢复（房间丢了实验开关）时规则与分组保持一致；finalAliveCount 是隐秘核心门槛的 Final Assault 存活数
   'playerCapacity', 'capacityExperiment', 'twentyPlayerMode', 'disableDuckLord', 'finalAliveCount',
+  // AI 联防置后（§37.143）：与 disableDuckLord 同类——构造器由 experimental 推导的规则标量，落档保持恢复一致
+  'uniteHumansFirst',
 ]);
 
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */

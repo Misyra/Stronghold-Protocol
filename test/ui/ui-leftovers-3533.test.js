@@ -20,6 +20,19 @@ const block = (text, head) => {
   return text.slice(i);
 };
 
+// 同名媒体块可以有多个（8fb14586 起首页与简报各有自己的 520px 块）：逐个取出拼接，别只拿第一个
+const blocks = (text, head) => {
+  const out = [];
+  let rest = text;
+  for (let i = rest.indexOf(head); i >= 0; i = rest.indexOf(head)) {
+    const b = block(rest.slice(i), head);
+    out.push(b);
+    rest = rest.slice(i + b.length);
+  }
+  assert.ok(out.length, head);
+  return out;
+};
+
 test('the 机变 overlay leaves the corner\'s buttons uncovered: they wrap within its 2.8rem column, a phone\'s overlay starts past them', () => {
   const panels = css('public/css/screens/game-panels.css');
   assert.match(panels, /\.spov \{ position: absolute; inset: 0 0 0 2\.8rem;/);
@@ -79,7 +92,7 @@ test('the other event screens at a big 文字大小: 成就统计\'s banner, the
   assert.match(stats, /\.achv__title \{[^}]*grid-template-areas: "mark en" "mark name";/);
   assert.doesNotMatch(stats, /margin: 0 0 0 -\.9rem/, 'the name no longer slides under the decorative ALLIANCE');
   const brief = css('public/css/screens/briefing.css');
-  const briefShort = block(brief, '@media (max-height: 520px) {');
+  const briefShort = blocks(brief, '@media (max-height: 520px) {').join('\n');
   for (const r of [/\.stephead__micro \{ display: none; \}/, /\.stephead__guide \.btn__label \{ display: none; \}/]) assert.match(briefShort, r);
   // the review: the bars grow at every height (1024×600 at 特大 too), the micro gives way at 大 / 特大 up to 640 px
   assert.match(brief, /\.brief \.brief-h \{[^}]*height: auto; min-height: \.66rem;/);

@@ -87,6 +87,7 @@ import { installContent, installContentSet } from './content.js';
 import { cosmetics } from './cosmetics.js';
 import { seedAssets } from './assets.js';
 import { sanitizeVersions, roomVersion, isDefaultVersion, matchFrameVersion } from './versions.js';
+import { prediction } from './ui/prediction.js';
 
 // CDN 配置由服务端在请求时生成（/js/asset-cdn.js，取 SP_ASSETS_CDN / SP_DATA_CDN，移植自用户分支）。
 // 这里把它挂到 globalThis.__spAssetCdn 上，resourceUrl / 资源预载 / 渲染层再读；没有该模块（静态托管）时
@@ -419,7 +420,8 @@ function wireNet() {
     toast(known ? t(known) : typeof msg.reason === 'string' && msg.reason.length < 60 ? t('同盟已关闭：{reason}', { reason: msg.reason }) : t('同盟已关闭'), 'warn');
   });
   net.on('m.public', (msg) => { matchAt = Date.now(); store.patch('match', { public: payload(msg) }); maybeFinishRestore(); });
-  net.on('m.private', (msg) => { matchAt = Date.now(); store.patch('match', { private: payload(msg) }); });
+  // the prep intents still pending are replayed over it (ui/prediction.js; the server's own state when none is)
+  net.on('m.private', (msg) => { matchAt = Date.now(); store.patch('match', { private: prediction.authoritative(payload(msg)) }); });
   net.on('m.layer', (msg) => {
     const s = store.get();
     if (selectRoute(s) === 'game' && msg.playerId === s.me?.playerId) audio.layerGain(msg.bondId, msg.add);

@@ -281,6 +281,8 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
   // them belong in a checkpoint. Same reason battleContent, botRehearsalLimit, botSliceMs and _workerTasks are listed.
   'cs', 'vs', 'requireCs', 'hostId', 'botRehearsalDelegate', 'botRehearsalDelegateMs', 'botRehearsalColdMs', '_rehearsalHostAnswers',
   '_rehearsalTasks', '_rehearsalSeq', 'rehearsalStats',
+  // SP_BOT_PLAN_POOL：开关由 opts/env 构造期重读，计数器同 rehearsalPoolStats 一类（重建即清零）
+  'botPlanPoolOn', 'botPlanPoolStats',
   'version', 'test',
   // 多人同盟容量（移植自用户分支 snapshot.js）：分组与路由面由恢复侧按 doc.poolGroups 重建（pool 的 doc.poolLeft 同
   // 一套路），接力档案是本轮战斗的过渡状态

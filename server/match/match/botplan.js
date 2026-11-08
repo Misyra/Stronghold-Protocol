@@ -96,12 +96,11 @@ export class MatchBotPlan {
           : Number.isFinite(budgetMs) && now() - t0 >= budgetMs));
         try {
           let r = null;
-          // loop-cap: generator (the rest generator, sliced by the driver's budget like scheduleBotPrep.drive)
           do {
             r = job._restGen.next();
             if (!r || typeof r.done !== 'boolean') throw new TypeError('Bot prep hooks must return a synchronous iterator');
             if (control) control.note(1);
-          } while (!r.done && !over());
+          } while (!r.done && !over()); // loop-cap: generator (the rest generator, sliced by the driver's budget like scheduleBotPrep.drive)
           if (!r.done) return false;
           const reh = r.value;
           job._phase = 'rehearsal';

@@ -122,12 +122,14 @@ function Stat({ k, v, sub, tone = null, title }) {
 }
 
 /** Tolerance below which a live stat counts as its base (display rounding). */
-const STAT_EPS = { interval: 0.005, res: 0.05, moveSpeed: 0.005 };
+const STAT_EPS = { interval: 0.005, res: 0.05, moveSpeed: 0.005, respawnTime: 0.05 };
+/** Stats where less is better (the official card colours a shorter one green). */
+const LOWER_BETTER = new Set(['interval', 'respawnTime']);
 
 /**
  * How a live stat compares with the unit's base (the official card's colours): 'up' (green) when it helps — higher,
  * or a shorter attack interval —, 'down' (red) when it hurts, null when equal or unknown.
- * @param {string} key maxHp | atk | def | res | interval | blockCnt | moveSpeed
+ * @param {string} key maxHp | atk | def | res | interval | blockCnt | moveSpeed | respawnTime
  * @param {any} cur @param {any} base
  * @returns {'up'|'down'|null}
  */
@@ -135,7 +137,7 @@ export function statTone(key, cur, base) {
   if (!Number.isFinite(cur) || !Number.isFinite(base)) return null;
   const d = cur - base;
   if (Math.abs(d) < (STAT_EPS[key] ?? 0.5)) return null;
-  return (key === 'interval' ? d < 0 : d > 0) ? 'up' : 'down';
+  return (LOWER_BETTER.has(key) ? d < 0 : d > 0) ? 'up' : 'down';
 }
 
 /**
@@ -155,7 +157,7 @@ export function liveStat(live, key, fallback, fmt = fmtNum) {
   let sub = null;
   if (tone) {
     const d = cur - base;
-    sub = key === 'interval' ? `${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}` : `${d > 0 ? '+' : '−'}${key === 'res' || key === 'moveSpeed' ? Math.round(Math.abs(d) * 10) / 10 : fmtNum(Math.abs(d))}`;
+    sub = key === 'interval' ? `${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}` : `${d > 0 ? '+' : '−'}${key === 'res' || key === 'moveSpeed' || key === 'respawnTime' ? Math.round(Math.abs(d) * 10) / 10 : fmtNum(Math.abs(d))}`;
   }
   return { v: fmt(cur), tone, sub, title: base != null ? t('基础 {v}', { v: fmt(base) }) : undefined };
 }
@@ -169,6 +171,7 @@ function LiveTag({ live }) {
 }
 
 const fmtInterval = (v) => (Number.isFinite(v) && v > 0 ? `${v.toFixed(2)}s` : '—');
+const fmtSec = (v) => (Number.isFinite(v) ? `${Math.round(v * 10) / 10}s` : '—');
 const fmtRes = (v) => (Number.isFinite(v) ? String(Math.round(v * 10) / 10) : '0');
 
 /** HP bar of the card header: the live HP in battle, else the snapshot's. */
@@ -359,6 +362,9 @@ export function chessStatsBlock({ rec, chess, live = null }) {
     maxHp: liveStat(live, 'maxHp', s.maxHp), atk: liveStat(live, 'atk', s.atk), def: liveStat(live, 'def', s.def),
     res: liveStat(live, 'res', s.res ?? 0, fmtRes), interval: liveStat(live, 'interval', interval, fmtInterval),
     blockCnt: liveStat(live, 'blockCnt', s.blockCnt, (v) => String(v)),
+    // the redeploy time a knock-out waits now (equipment, 特质, bonds, strategies: the live entry's respawnTime,
+    // feedback #86) — the record's own until shared/protocol.js unitStatsEntry starts sending it
+    respawnTime: liveStat(live, 'respawnTime', s.respawnTime, fmtSec),
   };
   return html`
     <div key="stats" class=${cx('dstats-wrap', live && 'is-live')} data-live=${live ? live.src || 'prep' : undefined}>
@@ -371,7 +377,7 @@ export function chessStatsBlock({ rec, chess, live = null }) {
         <${Stat} k=${t('攻击间隔')} ...${st.interval} />
         <${Stat} k=${t('阻挡数')} ...${st.blockCnt} />
         <${Stat} k=${t('部署费用')} v=${s.cost ?? '—'} />
-        <${Stat} k=${t('再部署')} v=${s.respawnTime != null ? `${s.respawnTime}s` : '—'} />
+        <${Stat} k=${t('再部署')} ...${st.respawnTime} />
       </div>
       <div class="drange"><span class="dstat__k">${t('攻击范围')}</span><${RangeGrid} grid=${cardRangeGrid(live, rec, chess)} /></div>
     </div>`;

@@ -22,6 +22,7 @@ export const THEME_TOKENS = Object.freeze({
   '--mint-700': 'colour', '--mint-800': 'colour', '--mint-900': 'colour',
   '--mint-a10': 'colour', '--mint-a20': 'colour', '--mint-a35': 'colour',
   '--gold': 'colour', '--gold-2': 'colour', '--gold-a20': 'colour',
+  '--sp-own': 'colour', '--sp-own-line': 'colour',
   '--amber': 'colour', '--amber-a20': 'colour',
   '--orange': 'colour', '--orange-hi': 'colour', '--orange-a20': 'colour',
   '--red': 'colour', '--red-abyss': 'colour', '--red-premium': 'colour', '--red-a20': 'colour',

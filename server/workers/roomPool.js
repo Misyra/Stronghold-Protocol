@@ -32,6 +32,9 @@ export class RoomWorkerPool {
   /** Submit through the same object startServer passes to Match. */
   submit(type, payload, options) { return this.pool.submit(type, payload, options); }
 
+  /** Pre-spawn the idle threads (SP_BATTLE_POOL warm, server/index.js): see SimulationPool.warm. */
+  warm() { return this.pool.warm(); }
+
   /** How many keys a room's tasks can be told apart by: the pool itself does not. */
   has(key) { return this.rooms.has(String(key || '')); }
 

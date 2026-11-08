@@ -151,3 +151,23 @@ test('a stuck terminate() cannot make repeated submits overrun the queue', async
   await until(() => pool.terminations.size === 0);
   assert.equal(pool.stats().threads, 1);
 });
+
+test('warm() pre-spawns the idle threads and the first submit reuses one', async (t) => {
+  const pool = fixturePool({ size: 3 });
+  t.after(() => pool.close());
+  assert.equal(pool.stats().threads, 0, 'a cold pool holds no threads');
+  assert.equal(pool.warm(), 3, 'warm spawned the full size');
+  assert.equal(pool.stats().threads, 3);
+  assert.equal(pool.stats().busy, 0, 'the warm threads sit idle (ordinary slots)');
+  assert.equal(pool.warm(), 0, 'warming an already-warm pool spawns nothing');
+  await pool.submit('burn', { ms: 1, value: 'x' }).promise;
+  assert.equal(pool.stats().threads, 3, 'the first submit reused a warm thread — no spawn left to pay');
+  assert.equal(pool.stats().completed, 1);
+});
+
+test('warm() on a closed pool is a no-op', async (t) => {
+  const pool = fixturePool({ size: 2 });
+  await pool.close();
+  assert.equal(pool.warm(), 0);
+  assert.equal(pool.stats().threads, 0, 'close() retired everything; warm adds nothing back');
+});

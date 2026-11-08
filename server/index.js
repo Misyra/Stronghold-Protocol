@@ -46,6 +46,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { loadDataAsync, preloadData, simWorkerData } from './data.js';
 import { getBotStrategy, getBotStrategySeats } from './match/botStrategies.js';
+import { battlePoolDefault } from './match/match/clientCombat.js';
 import { noteLlmIgnored, releaseIgnoresExternalAi, validateExternalConfig } from './match/llmGate.js';
 import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, parseAssetCdn, assetIndexOptionsFrom, versionsFrom, versionPrewarmFrom, parseRoomCode, announcementOptionsFrom } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
@@ -256,6 +257,15 @@ export async function startServer(opts = {}) {
   log.info(simPool
     ? `[workers] simulation pool: ${simPool.stats().size} thread(s) (SP_WORKERS; 0 disables it)`
     : '[workers] simulation pool: off (SP_WORKERS=0)');
+  // SP_BATTLE_POOL 池保温：开关在位（且池存在，SP_WORKERS≠0）时 boot 即把空闲线程生齐——进程首场战斗不再付
+  // ~0.5s 的 4 worker 齐生尖峰（server/match/match/clientCombat.js 是消费方）。SP_BATTLE_POOL 关闭（默认）或
+  // SP_WORKERS=0 时一个线程都不生，零开销；SP_BATTLE_POOL_WARM=0 显式退回冷首用（A/B 对照与独立回滚面）。
+  // 生线程失败按池的惰性首用语义自愈（下个任务重试 spawn），绝不阻断 boot。
+  const poolWarmOn = !['0', 'false', 'off', 'no'].includes(String(process.env.SP_BATTLE_POOL_WARM ?? '').trim().toLowerCase());
+  if (simPool && battlePoolDefault() && poolWarmOn) {
+    const warmed = simPool.warm();
+    if (warmed) log.info(`[workers] simulation pool warmed: ${warmed} thread(s) (SP_BATTLE_POOL)`);
+  }
   const { registry, lobby, network } = createSessionStack({ ...opts, chatEnabled: chatEnabledOpt }, { data, log, content, plugins: roomSets, hosts, versions, versionHosts, simPool, chatLog });
 
   // 持久化 (server/persist.js + server/stateFile.js, 移植自用户分支): 会话/房间/运行中对局的检查点落盘, 重启恢复。

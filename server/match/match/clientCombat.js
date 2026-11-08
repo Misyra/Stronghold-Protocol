@@ -17,9 +17,15 @@ import { morphBattleOpt } from '../../../shared/plugins/rules.js';
 // 的 FieldRunner 流式不池化，留在主线程。
 const POOL_ENV_ON = ['1', 'true', 'on', 'yes'];
 let BATTLE_POOL_DEFAULT = POOL_ENV_ON.includes(String(process.env.SP_BATTLE_POOL ?? '').trim().toLowerCase());
+// 分批让出（SP_BATTLE_POOL_YIELD，默认开）：同窗齐落的多场池结果逐场完整应用、每场之后让出；'0' 退回回调内
+// 同步应用（A/B 对照与独立回滚面）。只在池化落地路径被读到，关闭的池路径一次都不会碰它。
+let BATTLE_POOL_YIELD = !['0', 'false', 'off', 'no'].includes(String(process.env.SP_BATTLE_POOL_YIELD ?? '').trim().toLowerCase());
 
 /** 测试钩子：SP_BATTLE_POOL 在 import 时读一次，测试用它改运行中的默认值。 */
 export function _setBattlePoolForTests(on) { BATTLE_POOL_DEFAULT = on === true; }
+
+/** 测试钩子：SP_BATTLE_POOL_YIELD 在 import 时读一次，测试用它改运行中的默认值。 */
+export function _setBattlePoolYieldForTests(on) { BATTLE_POOL_YIELD = on === true; }
 
 /** SP_BATTLE_POOL 的当前默认值（Match 构造在 opts.battlePool 未显式给出时用它；clientCombat.js 是唯一消费方）。 */
 export function battlePoolDefault() { return BATTLE_POOL_DEFAULT; }
@@ -43,6 +49,7 @@ export class MatchClientCombat {
     for (const k of ['deadlineTimer', 'doneTimer', 'waitTimer', 'sliceTimer', 'verifyTimer']) if (f[k]) { this.cancel(f[k]); f[k] = null; }
     f.job = null;
     f.verifyJob = null;
+    f.poolLanding = null;
     // SP_BATTLE_POOL：在飞任务取消（dispose / phase end / 场已另判）。队列中即弃，运行中到下个 4ms 分片边界停；
     // 池自己的契约收摊那个线程槽（与 rehearsal 取消同款）。回执处理按 _poolTask 已清空判陈旧，不再落任何结果。
     if (f.poolTask) { const task = f.poolTask; f.poolTask = null; try { task.cancel(); } catch { /* the pool settles the promise; the awaiter ignores it */ } }
@@ -76,6 +83,9 @@ export class MatchClientCombat {
       bossReported: null, lpReported: 0, credit: null, demoted: new Set(), heldResult: null, leaksBy: null,
       // SP_BATTLE_POOL: the simulation pool task in flight ({ promise, cancel, attempt }), null otherwise
       poolTask: null,
+      // 分批让出：本场的落地令牌（_poolLand / _poolLandApply 的陈旧性复查），null 之外只在结果与下一个
+      // 事件循环轮次之间短暂持有
+      poolLanding: null,
     };
   }
 
@@ -279,12 +289,7 @@ export class MatchClientCombat {
         this._runHeadlessLocal(f);
         return;
       }
-      f.result = value.result;
-      f.resultSource = 'server';
-      f.timeline = Array.isArray(value.timeline) ? value.timeline : f.timeline;
-      f.endGt = Number(value.time) || 0;
-      if (Array.isArray(value.errors) && value.errors.length) f.errors = value.errors;
-      this._armRelease(f);
+      this._poolLand(f, attempt, value);
     }, (err) => {
       if (stale()) return;
       f.poolTask = null;
@@ -292,6 +297,51 @@ export class MatchClientCombat {
       this._runHeadlessLocal(f); // POOL_FULL / worker failure / timeout: the pre-change path
     });
     return true;
+  }
+
+  /**
+   * SP_BATTLE_POOL 分批让出：同窗齐落的多场池结果逐场完整应用，每场之后让出一个事件循环轮次——promise 回调、
+   * result 克隆、_armRelease 与 m.public 扇出不再全部挤同一个事件循环块（风暴窗）。窗口按完成序（FIFO）落；
+   * 每个窗口的头场仍在回调当拍应用——单场落地与关闭让出时逐字节同时序，让出只改变多场之间的落地交错，
+   * 单场内部不变。门在一个队列已空的轮次关上；同一拍微任务里背靠背排进来的后续结果因此也逐场让出。
+   * SP_BATTLE_POOL_YIELD=0 退回回调内同步应用。虚拟调度器（测试 / 工具）的步进同时挂一个调度器 timer，
+   * 同步的 h.run 循环泵得到它——生产行为只有 setImmediate 一条路。
+   */
+  _poolLand(f, attempt, value) {
+    f.poolLanding = attempt;
+    if (!BATTLE_POOL_YIELD) { this._poolLandApply(f, attempt, value); return; }
+    const q = (this._poolLandQueue ??= []);
+    q.push({ f, attempt, value });
+    if (this._poolLanding || q.length > 1) return; // 窗口已开：排在本场之后，由在飞的步进逐场取用
+    this._poolLanding = true;
+    this._poolLandStep();
+  }
+
+  _poolLandStep() {
+    const q = this._poolLandQueue;
+    const item = q && q.shift();
+    if (!item) { this._poolLanding = false; this._poolLandQueue = null; return; }
+    this._poolLandApply(item.f, item.attempt, item.value);
+    if (this.sched.virtual) this.later(0, () => this._poolLandStep());
+    else setImmediate(() => this._poolLandStep()); // check 阶段：越过送来 worker 消息的 poll 批次再落下一场
+  }
+
+  /**
+   * One landed pool result, applied whole (the pre-yield promise-callback body): the field's result / timeline /
+   * endGt / errors and the natural-end release timer. The landing token re-checks staleness at apply time — a queued
+   * item may wait a few event-loop turns while the field is cancelled (`_clearFieldTimers` nulls the token), re-run
+   * (a newer attempt owns the token; an in-flight newer task fails the `_poolTask` guard) or judged done.
+   */
+  _poolLandApply(f, attempt, value) {
+    if (f.poolLanding !== attempt || f.poolTask) return;
+    f.poolLanding = null;
+    if (f.done || this.disposed || this.ended) return;
+    f.result = value.result;
+    f.resultSource = 'server';
+    f.timeline = Array.isArray(value.timeline) ? value.timeline : f.timeline;
+    f.endGt = Number(value.time) || 0;
+    if (Array.isArray(value.errors) && value.errors.length) f.errors = value.errors;
+    this._armRelease(f);
   }
 
   /**

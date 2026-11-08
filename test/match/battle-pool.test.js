@@ -17,6 +17,7 @@ import { DataSource } from '../../server/sim/simdata.js';
 import { runHeadless, HeadlessJob } from '../../server/match/fields.js';
 import { SimulationPool } from '../../server/workers/pool.js';
 import { simWorkerData } from '../../server/data.js';
+import { _setBattlePoolYieldForTests } from '../../server/match/match/clientCombat.js';
 import { DATA, makeMatch, checkInvariants } from './harness.js';
 
 /** A fresh DataSource over the raw data, like the worker builds one (clientCombat.test.js proves parity with m.ds). */
@@ -126,32 +127,95 @@ test('the switch reproduces the local match round for round (real pool, same see
   assert.equal(pooled.errors, 0);
 });
 
+test('pool results landing in one window apply the first at once and the rest one turn each, in answer order', () => {
+  // 三场 bot 场在同一虚拟拍应答（promise 回调背靠背跑完——生产风暴窗的形状）：窗口头场仍在回调当拍应用，
+  // 排队的两场各占一个让出轮次、按完成序落地；每场 digest 仍与本地跑逐字节一致。
+  const pool = stubPool({ answer: workerShapeValue, delayMs: null });
+  const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 1, bots: 3, seed: 9338, captureFrames: false, clientCombat: true, battlePool: true, simPool: pool });
+  pool.bind(h);
+  h.autoHumans();
+  const landOrder = [];
+  const proto = Object.getPrototypeOf(h.m);
+  const origApply = proto._poolLandApply;
+  h.m._poolLandApply = (f, attempt, value) => { landOrder.push(f.fieldId); return origApply.call(h.m, f, attempt, value); };
+  h.m.start();
+  h.run(() => h.m.simPool.submits.length >= 3, { maxSteps: 2e6 });
+  assert.ok(h.m.simPool.submits.length >= 3, 'three server-run fields submitted');
+  pool.answerAll(2); // one virtual tick answers all three; their callbacks run back to back
+  h.run(() => landOrder.length >= 1, { maxSteps: 2e6 });
+  const answered = pool.submits.slice(0, 3).map((e) => e.payload.spec.fieldId);
+  assert.deepEqual(landOrder, [answered[0]], 'only the window head applied in the answer tick');
+  const held = h.m.fields.filter((f) => f.cc && f.mode === 'server' && f.poolLanding && !f.result);
+  assert.equal(held.length, 2, 'the other two hold their landing token, unapplied');
+  h.run(() => landOrder.length >= 3, { maxSteps: 2e6 });
+  assert.deepEqual(landOrder, answered, 'the queued landings applied one turn each, in completion order');
+  const seen = new Set(), runs = [];
+  serverRuns(h, seen, runs);
+  assert.ok(runs.length >= 3, `the landed fields were captured (${runs.length})`);
+  for (const r of runs) assert.equal(r.digest, localDigest(r), `${r.battleId}: yielded landing keeps the digest byte-identical`);
+  assert.equal(h.m.errorCount, 0, h.m.errors.slice(0, 2).map((e) => `${e.label}: ${e.message}`).join('\n'));
+  h.m.dispose();
+});
+
+test('SP_BATTLE_POOL_YIELD=0 lands every same-window result in the callback tick again (the A/B 对照面)', (t) => {
+  _setBattlePoolYieldForTests(false);
+  t.after(() => _setBattlePoolYieldForTests(true));
+  const pool = stubPool({ answer: workerShapeValue, delayMs: null });
+  const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 1, bots: 3, seed: 9339, captureFrames: false, clientCombat: true, battlePool: true, simPool: pool });
+  pool.bind(h);
+  h.autoHumans();
+  const landOrder = [];
+  const proto = Object.getPrototypeOf(h.m);
+  const origApply = proto._poolLandApply;
+  h.m._poolLandApply = (f, attempt, value) => { landOrder.push(f.fieldId); return origApply.call(h.m, f, attempt, value); };
+  h.m.start();
+  h.run(() => h.m.simPool.submits.length >= 3, { maxSteps: 2e6 });
+  pool.answerAll(2);
+  h.run(() => landOrder.length >= 3, { maxSteps: 2e6 });
+  const answered = pool.submits.slice(0, 3).map((e) => e.payload.spec.fieldId);
+  assert.deepEqual(landOrder, answered, 'yield off: every result applied inside the answer tick, in completion order');
+  const seen = new Set(), runs = [];
+  serverRuns(h, seen, runs);
+  for (const r of runs) assert.equal(r.digest, localDigest(r), `${r.battleId}: digest intact`);
+  h.m.dispose();
+});
+
 /** A stub pool in the rehearsal-pool.test.js shape: the answer is scripted and delivered on the virtual clock, so the
  * synchronous h.run loop observes it. `answer(entry, h)` returns the value; `rejectCode` fails the task instead;
- * `delayMs` null never answers (the cancel test). `sched` is bound after makeMatch (the stub is built first). */
+ * `delayMs` null never answers (the cancel test). `sched` is bound after makeMatch (the stub is built first).
+ * `stub.answerAll(at)` answers every entry collected so far in ONE virtual tick, in submit order — the same-window
+ * storm shape the landing yield (clientCombat.js _poolLand) spreads out. */
 function stubPool({ answer = null, rejectCode = null, delayMs = 1 } = {}) {
-  const stub = { submits: [], cancels: 0, sched: null };
+  const stub = { submits: [], cancels: 0, sched: null, pending: [],
+    answerAll(at) { stub.sched.setTimeout(() => { for (const e of stub.pending.splice(0)) e.settleOk(); }, at); } };
   stub.submit = (type, payload, o = {}) => {
     const entry = { type, payload, onProgress: o && typeof o.onProgress === 'function' ? o.onProgress : null };
     stub.submits.push(entry);
     let settled = false;
     const ok = [], bad = [];
+    entry.settleOk = () => {
+      if (settled) return;
+      entry.value = answer(entry, hOf);
+      settled = 'ok';
+      for (const fn of ok) fn(entry.value);
+    };
+    entry.settleBad = () => {
+      if (settled) return;
+      entry.error = Object.assign(new Error('simulation pool unavailable'), { code: rejectCode });
+      settled = 'bad';
+      for (const fn of bad) fn(entry.error);
+    };
     const handle = {
       promise: { then: (fn, onError) => { if (settled) (settled === 'ok' ? fn(entry.value) : onError(entry.error)); else { ok.push(fn); if (onError) bad.push(onError); } } },
       cancel: () => { stub.cancels++; },
     };
     if (delayMs != null) {
       stub.sched.setTimeout(() => {
-        if (rejectCode) {
-          entry.error = Object.assign(new Error('simulation pool unavailable'), { code: rejectCode });
-          settled = 'bad';
-          for (const fn of bad) fn(entry.error);
-          return;
-        }
-        entry.value = answer(entry, hOf);
-        settled = 'ok';
-        for (const fn of ok) fn(entry.value);
+        if (rejectCode) entry.settleBad();
+        else entry.settleOk();
       }, delayMs);
+    } else {
+      stub.pending.push(entry); // an unanswered entry stays available to stub.answerAll
     }
     return handle;
   };

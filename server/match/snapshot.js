@@ -273,6 +273,8 @@ export const TRANSIENT_MATCH_FIELDS = Object.freeze([
   'workerPool', 'simPool', '_workerTasks', 'battleContent', 'botRehearsalLimit', 'botSliceMs', 'ds', 'paused', '_pausedAt',
   '_bossPubTimer', '_bossPubAt', '_bossClockOn', '_progressTimer', '_bossClock', '_lastPoolAt', '_poolTimer',
   '_lastPoolKey', 'kickVote', '_kickVoteSeq', '_kickFailed', '_kickVoteAt', 'pacer', 'rngSetup', 'rngShop', 'rngWaves', 'rngDraft', 'rngBots', 'rngMeta', 'players', 'order',
+  // SP_BATTLE_POOL 分批让出（clientCombat.js）：池结果落地窗口的队列与在飞步进门，纯瞬态
+  '_poolLandQueue', '_poolLanding',
   'spectators', 'stage', 'pool', 'itemPool', 'phase', 'deadline', 'overtimeAt', 'ended', 'disposed', 'startedAt',
   '_timers', '_phaseTimer', '_infoAdvanceTimer', '_turnTimer', '_pubDirty', '_pubTimer', '_lastPubAt', '_lastPubJson',
   '_flushTimer', '_lastPrivFlushAt',

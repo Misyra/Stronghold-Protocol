@@ -556,6 +556,9 @@ export class Match {
     this._lastPoolAt = -Infinity;
     this._poolTimer = null;
     this._lastPoolKey = '';
+    // SP_BATTLE_POOL 分批让出（clientCombat.js）：同窗齐落的池结果落地窗口（FIFO 队列 + 在飞步进门）
+    this._poolLandQueue = null;
+    this._poolLanding = false;
     this.pacer = null;
 
     const rng = (name) => createRng(deriveSeed(this.seed, name));

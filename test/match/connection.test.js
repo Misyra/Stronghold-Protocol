@@ -119,9 +119,11 @@ test('disconnect: the seat keeps playing; draft turns / prep auto-resolve at dea
   h.m.onDisconnect('p_1');
   assert.equal(m.publicView().players.find((p) => p.playerId === 'p_1').connected, false);
   m.handle('p_0', { t: 'g.infoReady' });
-  // p_1 never confirms: the 25 s deadline moves on; p_1 never picks: 12 s turn → 华法琳
+  // p_1 never confirms: the 25 s deadline moves on; in the free draft (match/phases.js freeDraft) p_0 locks at once
+  // (华法琳) and p_1 never picks: the countdown gives it the default nobody holds — the next free one
   h.drive(() => m.phase === PHASE.PREP && m.round === 1);
-  assert.equal(h.ps('p_1').bandId, 'band_bldsk');
+  assert.equal(h.ps('p_0').bandId, 'band_bldsk');
+  assert.equal(h.ps('p_1').bandId, 'band_amiya');
   const sentBefore = h.sent.length;
   // p_0 readies; p_1 is auto-readied at the prep deadline
   m.handle('p_0', { t: 'g.ready', ready: true });
@@ -233,19 +235,19 @@ test('onLeave: quitting counts as elimination (copies back to the pool at once, 
 });
 
 test('onLeave: a quitter has no place in the Final Assault pairing or the boss pool; its draft turns pass on', () => {
-  // band draft: the player on turn leaves → at once the AI drafts for it like for a seat gone before the draft (Touch
-  // while nobody else holds it, not the default band; stardust 6dc796d1), it keeps its 0 LP and the turn moves on
+  // band draft (自由选策略): a player leaves before choosing → its pick is the default band at once (移植自用户分支
+  // rel33 _quit：预选保留，否则默认), it keeps its 0 LP and the others draft on (轮流制的顺位代选只属于旧检查点)
   const h = makeMatch({ mode: 'coop', difficulty: 'FUNNY', humans: 3, seed: 5, fake: true, script: (b) => (b.kind === 'boss' ? { bossDps: 1e9 } : {}) }).start();
   const m = h.m;
   for (const id of ['p_0', 'p_1', 'p_2']) m.handle(id, { t: 'g.infoReady' });
   h.sched.advance(1);
   assert.equal(m.phase, PHASE.BAND_DRAFT);
-  const first = m.draftTurn();
+  const first = m.draft.order[0];
   m.onLeave(first);
   h.sched.advance(1);
-  assert.equal(m.draft.picks[first], 'band_amedic');
+  assert.equal(m.draft.picks[first], m.gd.bandDraft.timeoutBandId);
   assert.equal(h.ps(first).lp, 0);
-  assert.notEqual(m.draftTurn(), first);
+  assert.equal(m.phase, PHASE.BAND_DRAFT, 'the others still draft');
   h.autoHumans();
   h.drive(() => m.phase === PHASE.PREP && m.round === 14);
   const alive = m.alivePlayers().map((p) => p.playerId);

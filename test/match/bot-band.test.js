@@ -41,6 +41,8 @@ test('the seat band rides into botBands, is held for the AI seat and shows in th
   assert.equal(m.bandTaken(BAND, 'ai_0'), false, 'its own strategy is free for it');
   assert.equal(m.designatedBand(m.players.get('ai_0')), BAND);
   assert.equal(m.designatedBand(m.players.get('p_0')), null);
+  // (两名真人自 rel33 起自由选策略——match/phases.js freeDraft——指定策略的回合代选语义用轮流制钉住)
+  m.freeDraft = () => false;
   m.enterBandDraft();
   const pub = m.publicView();
   assert.equal(pub.draft.reserved[BAND], 'ai_0');

@@ -62,8 +62,10 @@ describe('the AFK rule over the in-process platform', () => {
     const m = FastMatch.last;
     assert.equal(m.afkRemoveRounds, 1, 'the startServer option reaches the Match');
     await ok(host, { t: 'g.infoReady' });
-    const turn = await host.waitFor('m.public', (p) => p.phase === 'BAND_DRAFT' && p.draft?.turn === host.id, 10000);
-    const band = m.gd.bandIds().find((b) => m.gd.bandAllowed(b) && !Object.values(turn.draft.picks).includes(b));
+    // 自由选策略 (match/phases.js freeDraft; ≥2 humans draft freely): no turn — the host picks as soon as the step opens;
+    // the idle guest keeps waiting and its strategy is fixed by the step's countdown
+    const frame = await host.waitFor('m.public', (p) => p.phase === 'BAND_DRAFT' && p.draft?.concurrent && !p.draft.picks[host.id], 10000);
+    const band = m.gd.bandIds().find((b) => m.gd.bandAllowed(b) && !Object.values(frame.draft.picks).includes(b));
     await ok(host, { t: 'g.band', bandId: band });
     await host.waitFor('m.public', (p) => p.phase === 'PREP' && p.round === 1, 10000);
     await ok(host, { t: 'g.freeze' });

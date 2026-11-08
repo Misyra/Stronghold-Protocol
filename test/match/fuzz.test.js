@@ -45,7 +45,8 @@ function randomIntent(rng, m, ps) {
     case 'g.bandFocus': return { t, bandId: rng() < 0.8 ? rng.pick(BANDS) : rng.pick([null, '__proto__', 'a'.repeat(64)]) };
     case 'g.chat': return { t, text: rng.pick(['gg', '打得好', 'a'.repeat(30)]) };
     case 'g.unitStats': return { t, seq: rng.int(100) };
-    case 'g.band': return { t, bandId: rng() < 0.8 ? rng.pick(BANDS) : rng.pick(['constructor', '__proto__', 'band_x', 'a'.repeat(64)]) };
+    // 自由选策略 (match/phases.js freeDraft): g.bandHold 预选的形状与 g.band 相同（g.bandCancel/g.bandLock 无字段，走 default）
+    case 'g.band': case 'g.bandHold': return { t, bandId: rng() < 0.8 ? rng.pick(BANDS) : rng.pick(['constructor', '__proto__', 'band_x', 'a'.repeat(64)]) };
     case 'g.buy': return { t, slot: rng.int(16) };
     case 'g.sell': case 'g.destroy': return { t, uid: uid() };
     case 'g.move': return { t, uid: uid(), to: to() };

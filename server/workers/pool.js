@@ -54,6 +54,28 @@ export class SimulationPool {
       queueMs: 0, computeMs: 0 };
   }
 
+  /**
+   * Pre-spawn the idle threads up front (SP_BATTLE_POOL pool warming, server/index.js): the first battle task of a
+   * cold process otherwise pays the spawn of every worker at once (thread start + the data clone + the sim module
+   * graph, ~0.5 s of CPU across 4 threads). The slots are the ordinary ones — idle and unref'd, _drain hands them
+   * the first submitted task with no spawn left to pay. No-op when the pool is closed or the threads are already
+   * out; a spawn that throws keeps the lazy first-use semantics (the next submit retries it). Returns the number of
+   * threads spawned here.
+   */
+  warm() {
+    if (this.closed) return 0;
+    let spawned = 0;
+    while (this.slots.size < this.size) {
+      try {
+        this._spawn();
+        spawned++;
+      } catch {
+        break;
+      }
+    }
+    return spawned;
+  }
+
   stats() {
     return { size: this.size, threads: this.slots.size, busy: [...this.slots].filter((s) => s.task).length,
       queued: this.queue.length, maxQueue: this.maxQueue, timeoutMs: this.timeoutMs,

@@ -30,8 +30,10 @@ test('rewritten versioned JSON retains immutable caching, encoding validators an
     const config = await request('/js/asset-cdn.js');
     const settings = await import('data:text/javascript,' + encodeURIComponent(config.body.toString()));
     assert.equal(settings.ASSETS_MANIFEST, '/assets-manifest.json?v=0123456789abcdef');
-    const projection = JSON.parse((await request(settings.ASSETS_MANIFEST)).body);
+    const manifestRes = await request(settings.ASSETS_MANIFEST);
+    const projection = JSON.parse(manifestRes.body);
     assert.deepEqual(Object.keys(projection).sort(), ['hashes', 'tag']);
+    assert.equal(manifestRes.headers['access-control-allow-origin'], '*', 'the manifest answers cross-origin (P1-9: the ws/EO entry serves it)');
     const url = `/_v/${handler.dataVersion}/data/assets.json`;
     const queryUrl = `/data/assets.json?v=${handler.dataVersion}`;
     assert.match((await request(queryUrl)).headers['cache-control'], /immutable/);

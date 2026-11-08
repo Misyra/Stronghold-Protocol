@@ -306,7 +306,9 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       const gz = acceptsGzip(req.headers['accept-encoding']);
       const body = gz ? await gzipCache.compressed('/__assets-manifest__' + assetsManifest.tag, () => Promise.resolve(manifestBody), 'gzip', '.json') : manifestBody;
       const etag = `"assets-${assetsManifest.tag}${gz ? '-gz' : ''}"`;
-      const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': IMMUTABLE_CACHE, Vary: 'Accept-Encoding', ETag: etag };
+      // ACAO:*（P1-9）：清单走 ws.rainya.me（EO 前置）等同字节入口时是跨源 fetch——EO 边缘缓存承接它，
+      // 源站零往返。内容只有 tag 决定且无 cookie 语义，* 是安全的。
+      const headers = { 'Content-Type': MIME['.json'], 'Cache-Control': IMMUTABLE_CACHE, Vary: 'Accept-Encoding', ETag: etag, 'Access-Control-Allow-Origin': '*' };
       if (gz) headers['Content-Encoding'] = 'gzip';
       if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); res.end(); return; }
       headers['Content-Length'] = body.length;

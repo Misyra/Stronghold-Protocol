@@ -7,11 +7,15 @@ export async function cdnSpineSource(entry, PIXI) {
   const response = await fetch(atlas, { cache: resourceCache(atlas), signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`atlas failed (${response.status}): ${atlas}`);
   const text = await response.text();
+  // A premultiplied page decodes as it is and its BaseTexture learns the alpha mode (feedback #48, #55): the same
+  // metadata loadSpineData hands the ordinary path, so the per-file CDN loads the pages the same way.
+  const pageData = entry?.pma === true && PIXI.ALPHA_MODES?.PMA != null
+    ? { alphaMode: PIXI.ALPHA_MODES.PMA } : null;
   // PIXI's default path drops page queries. Resolve every actual atlas page's content hash explicitly.
   const spineAtlas = await new Promise((resolve, reject) => {
     new PIXI.spine.TextureAtlas(text, (name, done) => {
       const page = resourceUrl(new URL(name, new URL(atlas, 'http://localhost')).href);
-      PIXI.Assets.loader.load(page).then((texture) => {
+      PIXI.Assets.loader.load(pageData ? { src: page, data: pageData } : page).then((texture) => {
         const base = texture?.baseTexture;
         if (!base || base.destroyed || base.valid === false) { reject(new Error(`invalid atlas texture: ${page}`)); return; }
         try { done(base); } catch (error) { reject(error); }

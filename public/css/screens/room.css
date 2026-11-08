@@ -756,7 +756,7 @@
 /* 手动指定卡池编组 (移植自 Stardust fork, ui/poolEditor.js): one card per pool; the seats move between cards, the cards
    scroll inside the dialog. Size clamps follow this file's dialect (the fork's --ui term is the page's --sp-ui). */
 .rset__page > .pooled { flex: 1; min-height: 0; }
-.pooled { display: flex; flex-direction: column; gap: .1rem; min-height: max(2.4rem, 170px); padding-top: .1rem; }
+.pooled { display: flex; flex-direction: column; gap: .1rem; min-height: max(2.4rem, 32px, calc(170px * var(--sp-ui, 1))); padding-top: .1rem; }
 .pooled__bar { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: .1rem; }
 .pooled__total { font-size: calc(.16 * var(--t)); font-weight: 700; color: var(--text-hi); }
 .pooled__step { display: inline-flex; gap: 1px; }
@@ -764,7 +764,7 @@
 .pooled__hint { margin-left: auto; font-size: calc(.13 * var(--t)); color: var(--text-lo); }
 .pooled__hint--touch, .sp-coarse .pooled__hint--mouse { display: none; }
 .sp-coarse .pooled__hint--touch { display: inline; }
-.pooled__grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(max(2.9rem, 150px), 1fr)); align-content: start; gap: .08rem; overflow: auto; padding-right: 2px; }
+.pooled__grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(max(2.9rem, 32px, calc(150px * var(--sp-ui, 1))), 1fr)); align-content: start; gap: .08rem; overflow: auto; padding-right: 2px; }
 .pooled__card { position: relative; display: flex; flex-direction: column; min-width: 0; background: rgba(255, 255, 255, .025); border: 1px solid var(--line-2); border-top: 2px solid var(--line-3);
   transition: border-color var(--t-fast), background var(--t-fast); }
 .pooled__card.is-wide { grid-column: 1 / -1; }
@@ -775,7 +775,7 @@
 .pooled__head span { flex: 1; min-width: 0; overflow: hidden; font-size: calc(.13 * var(--t)); color: var(--text-lo); text-overflow: ellipsis; white-space: nowrap; }
 .pooled__here { flex: none; min-height: max(.3rem, 22px); padding: 0 .1rem; font: inherit; font-size: calc(.13 * var(--t)); font-weight: 700; color: #08221b; background: var(--mint-400); border: 0; cursor: pointer; }
 .pooled__here:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
-.pooled__seats { display: grid; grid-template-columns: repeat(auto-fill, minmax(max(2.4rem, 130px), 1fr)); gap: 2px; padding: .05rem; }
+.pooled__seats { display: grid; grid-template-columns: repeat(auto-fill, minmax(max(2.4rem, 32px, calc(130px * var(--sp-ui, 1))), 1fr)); gap: 2px; padding: .05rem; }
 .pooled__seat { display: flex; align-items: center; gap: .07rem; min-width: 0; min-height: max(.34rem, 24px); padding: 0 .08rem; font-size: calc(.14 * var(--t));
   color: var(--text-md); background: rgba(0, 0, 0, .28); border: 1px solid transparent; }
 .pooled__seat.is-empty { color: var(--text-dim); background: none; border: 1px dashed var(--line-2); }

@@ -86,3 +86,6 @@ public/dev/simcheck/data/
 .zcode/
 # Local development archives: multi-GB snapshots, never committed
 *.7z
+
+# PoC 台架的再生数据（collect.mjs 可重建），不进库
+poc/**/specimens.json

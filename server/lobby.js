@@ -891,6 +891,21 @@ export class Lobby {
     return out;
   }
 
+  /**
+   * The bot placement-plan counters of every live match, summed (/healthz `botPlan` next to `rehearsal`, same
+   * shape family): how the SP_BOT_PLAN_POOL hand-offs ended (Match.botPlanPoolStats). Read-only aggregate; a room
+   * whose match runs elsewhere (or a stub) contributes nothing.
+   * @returns {{ pooled: number, accepted: number, fallbacks: number }}
+   */
+  botPlanStats() {
+    const out = { pooled: 0, accepted: 0, fallbacks: 0 };
+    for (const r of this.rooms.values()) {
+      const s = r.match?.botPlanPoolStats;
+      if (s) { out.pooled += s.pooled || 0; out.accepted += s.accepted || 0; out.fallbacks += s.fallbacks || 0; }
+    }
+    return out;
+  }
+
   /** 房间回收(移植自用户分支): pressure overrides reconnect grace, but never removes a room with an online player or spectator. */
   reclaimOfflineRooms(options) { return this.roomReclamation.reclaim(options); }
 

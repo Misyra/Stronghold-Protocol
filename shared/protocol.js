@@ -600,6 +600,9 @@ export const C2S = {
   // host confirmed — a seat that changed hands meanwhile is refused. `seat` spans every seat an expanded room admits
   // (playerCapacity up to MAX_PLAYER_CAPACITY); one the room does not admit is refused at the handler (admitsSeat).
   'room.kick': { seat: (v) => isInt(v, 0, MAX_PLAYER_CAPACITY - 1), playerId: isId },
+  // 结算点赞 (Stardust fork rel33 7c99acc1; server/lobby.js Lobby.like): a human player of the room's last match likes
+  // another one — once per pair, from the match's end until the room's next match starts
+  'room.like': { playerId: isId },
   'room.start': {},
   // room.matchmaking (无字段): 房主把整个就绪同盟加入四人匹配 (server/lobby.js queueParty)。与 queue.join 的
   // 区别仅是语义快捷方式——同一引擎,同样的 queue.state 快照。
@@ -780,6 +783,11 @@ export const S2C = [
   'welcome', 'ok', 'error', 'pong',
   'p2p.config', 'p2p.signal', 'p2p.frame',
   'room.state', 'room.closed',
+  // room.likes { match, counts: { [playerId]: likes }, from?, to?, mine? } — the likes of the room's last match
+  // (room.like): to the whole room on each like (`from` liked `to`), and to one player with `mine` (the players it
+  // liked) after its result replay. Nothing is stored: refused while a match runs, replaced when the room's next match
+  // ends
+  'room.likes',
   // queue.state { state: 'idle' | 'queued' | 'offered' | 'matched', ticketId?, difficulty?, party?, offerId?, roomCode?,
   // waitingCount?, reason? } — 一张票的完整快照,不含其他成员的身份
   'queue.state',

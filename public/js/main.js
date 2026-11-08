@@ -46,6 +46,7 @@ import { html, UiHosts, Button, MicroLabel, closeAllDialogs } from './ui/compone
 import { ConnectionBanner } from './ui/connBanner.js';
 import { AnnouncementBanner } from './ui/announcement.js';
 import { ToastHost, toast, toastError, describeError } from './ui/toasts.js';
+import { applyLikes, likedToast } from './ui/likes.js';
 import { net, identity, NetError } from './net.js';
 import { MAX_SEATS } from '../../shared/constants.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating } from './store.js';
@@ -425,7 +426,8 @@ function wireNet() {
   net.on('m.field', (msg) => store.patch('match', { field: payload(msg) }));
   net.on('m.result', (msg) => {
     const res = payload(msg);
-    store.patch('match', { result: res });
+    // a settlement starts without likes (a replay's room.likes follows it)
+    store.patch('match', { result: res, likes: null });
     // 本机统计 (PR #323): every arrival, including the lobby's result replay after a reconnect / reload —
     // replays dedupe by content id inside recordResult (spectator seats' copies build no record at all)
     // (`vs`: the room's cosmetic plugins, recorded — such a match still counts as the original game: ui/stats.js)
@@ -470,6 +472,14 @@ function wireNet() {
     const priority = Number.isFinite(msg.priority) ? msg.priority : 0;
     store.set((s) => ({ ticker: [...s.ticker.slice(-(TICKER_KEEP - 1)), { id: ++seq, text, at: Date.now(), type, playerId,
       round: type === 'ENEMY_DIFFICULTY' && Number.isInteger(msg.round) ? msg.round : s.match?.public?.round ?? null, priority }] }));
+  });
+  // 结算点赞 (Stardust fork rel33 7c99acc1, ui/likes.js): the counts of the settlement on screen, and a toast when the like is mine
+  net.on('room.likes', (msg) => {
+    const s = store.get();
+    const likes = applyLikes(s.match.likes, msg, s.me.playerId);
+    if (likes !== s.match.likes) store.patch('match', { likes });
+    const text = likedToast(s, msg);
+    if (text) toast(text, 'success', { ttl: 3500 });
   });
   net.on('m.emote', (msg) => {
     store.set((s) => ({ emotes: [...s.emotes.slice(-(EMOTE_KEEP - 1)), { seq: ++seq, playerId: msg.playerId, id: msg.id, at: Date.now() }] }));

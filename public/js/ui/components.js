@@ -87,6 +87,8 @@ export const ICONS = {
   // 大厅背景与音乐 (ui/lobbyMedia.js): a framed picture (ridges and a sun) and a beamed pair of notes
   image: { d: 'M3 4h18v16H3zM5 6v9.6l4-4.6 3.5 4 2.5-3 4 4.4V6zM16 7.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z', eo: true },
   music: { d: 'M18 3h2v13h-2zM8 5.4h2V18H8zM8 5.4 20 3v3L8 8.4zM14 16a3 3 0 1 1 6 0 3 3 0 1 1-6 0zM4 18a3 3 0 1 1 6 0 3 3 0 1 1-6 0z' },
+  // 点赞 (the settlement's 同盟 page, ui/likes.js): a raised thumb over its cuff
+  like: { d: 'M2 10h4v11H2zm6 0 3.6-6.6A2 2 0 0 1 15.3 5L14.4 9H20a2 2 0 0 1 2 2.3l-1.3 8A2 2 0 0 1 18.7 21H8z' },
 };
 
 /**

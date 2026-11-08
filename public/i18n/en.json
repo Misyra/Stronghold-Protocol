@@ -3765,5 +3765,8 @@
   "{n} 选 {k}": "Pick {k} of {n}",
   "点选每阶本局上场的自选干员（卡片标出了本局被禁用的盟约）；不选则由排在前面、盟约没有全部被禁用的干员上场。": "Tap who plays this match in each tier (the cards mark the Alliances banned this match); without a choice, the first ones in your order whose Alliances are not all banned play.",
   "已选好本局上场的自选干员；本阶段结束前仍可更改。": "Custom operators set for this match; you can still change them until this step ends.",
-  "每阶选 {k} 名": "Pick {k} per tier"
+  "每阶选 {k} 名": "Pick {k} per tier",
+  "{name} 赞了你": "{name} liked you",
+  "为 {name} 点赞": "Like {name}",
+  "获赞": "Likes"
 }

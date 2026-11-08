@@ -114,6 +114,7 @@ import { ExitModal, AwayOverlay, awayStore } from '../ui/matchChrome.js';
 import { RoundPopup, PhasePopup, phasePopupOf, roundsToBoss, preloadPopupArt } from '../ui/matchPopups.js';
 import { openGuide } from '../ui/guide.js';
 import { actions, onRefreshBusy } from '../ui/gameActions.js';
+import { prediction } from '../ui/prediction.js';
 import { FacingWheel, holdPiece, setPieceDir, syncPieceDirs, showRange, useTileScreen } from '../ui/facingWheel.js';
 import { Underframe, underframeRect, TempRowNotice } from '../ui/underframe.js';
 import { StandInTags } from './game/standInTags.js';
@@ -1168,6 +1169,8 @@ function MatchScreen() {
       if (ok && await actions.destroy(piece.uid)) { closeIt(); return true; }
       return false;
     }
+    // predicted (ui/prediction.js): the piece is gone from the view at once — its card goes with it, not one RTT later
+    if (prediction.enabled) closeIt();
     if (await actions.sell(piece.uid)) { closeIt(); return true; }
     return false;
   }, []);

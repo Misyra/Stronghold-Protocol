@@ -391,7 +391,7 @@ function ShopBarView({ priv, editable, collapsed, refreshBusy = false, onCollaps
   }
 
   const hk = { refresh: hotkeyLabelOf('refresh'), freeze: hotkeyLabelOf('freeze') }; // the player's keys (设置 → 快捷键)
-  return html`<section class=${cx('shopbar', frozen && 'is-frozen', !editable && 'is-locked', showReward && 'has-reward', armed && 'has-armed')} ref=${barRef} aria-label=${t('调度中心')}>
+  return html`<section class=${cx('shopbar', frozen && 'is-frozen', !editable && 'is-locked', showReward && 'has-reward', armed && 'has-armed', shop.rolling && 'is-rolling')} ref=${barRef} aria-label=${t('调度中心')}>
     <div class="shopbar__tools">
       <span class="shopbar__remain">${t('剩余可放置角色：')}<b class=${cx('num', remaining === 0 && 't-orange')}>${remaining}</b></span>
       <button type="button" class=${cx('toolbtn', 'toolbtn--ice', frozen && 'is-on')} disabled=${!!frzReason} onClick=${onFreeze}

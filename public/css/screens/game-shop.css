@@ -162,6 +162,10 @@
 /* a slot the 调度中心's upgrade opened and nothing filled yet (ui/shopBar.js EmptyCard, also .scard--sold): the bare frame — no hatching,
    no SOLD OUT text */
 .scard--sold.scard--empty { background: rgba(8, 11, 10, .4); border-color: var(--line); }
+/* 客户端预测 (移植自 Stardust-minus rel26): a refresh was paid for and its cards (the server's RNG) are on the way (ui/prediction.js) */
+.shopbar.is-rolling .scard--empty { animation: scard-rolling .6s ease-in-out infinite alternate; }
+@keyframes scard-rolling { from { opacity: .45; } to { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) { .shopbar.is-rolling .scard--empty { animation: none; opacity: .7; } }
 
 /* ---- funds card ---- */
 .funds { width: 1.18rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .08rem; padding: .06rem; border-left: 1px solid var(--line); }

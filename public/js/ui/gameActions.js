@@ -1,11 +1,14 @@
 // In-match intents (`g.*`, DESIGN §8.2) with uniform error handling: every request goes through
 // `act()`, which plays a UI sound on success, shows the ERR_TEXT toast on failure and never throws.
-// The UI never mutates state optimistically — it waits for the next m.private / m.public push.
-// `net.request` is looked up at call time so the dev mock harness can stub it.
+// The prep intents the prediction covers (buy, sell, move, refresh, freeze, level-up — ui/prediction.js, 移植自
+// Stardust-minus rel26 2d3ec08e) show their outcome at once and are reconciled by the authoritative m.private: a
+// predicted intent plays its sound immediately, everything else waits for the reply as before. Requests always
+// leave in the order they were made. `net.request` is looked up at call time (ui/prediction.js) so the dev mock
+// harness can stub it.
 
-import { net } from '../net.js';
 import { toastError } from './toasts.js';
 import { audio } from '../audio.js';
+import { prediction } from './prediction.js';
 
 const SUCCESS_SFX = {
   'g.buy': 'buy', 'g.sell': 'sell', 'g.refresh': 'refresh', 'g.freeze': 'freeze', 'g.levelUp': 'levelup',
@@ -49,10 +52,12 @@ export function onRefreshBusy(fn) { refreshBusyListeners.add(fn); try { fn(refre
 export async function act(t, fields = {}, opts = {}) {
   inflight += 1;
   emitBusy();
+  const s = opts.sfx === undefined ? SUCCESS_SFX[t] : opts.sfx;
   try {
-    await net.request(t, fields);
-    const s = opts.sfx === undefined ? SUCCESS_SFX[t] : opts.sfx;
-    if (s) audio.sfx(s);
+    const { promise, predicted } = prediction.submit(t, fields);
+    if (predicted && s) audio.sfx(s);
+    await promise;
+    if (!predicted && s) audio.sfx(s);
     return true;
   } catch (err) {
     if (!opts.quiet) {

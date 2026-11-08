@@ -79,14 +79,13 @@ function makeSpy(pid, label) {
   return { label, pid, samples, stop: () => clearInterval(timer) };
 }
 
-const lgSpy = makeSpy(child.pid, 'loadgen');
-let serverSpy = null;
-
 const child = spawn(process.execPath, args, {
   cwd: ROOT,
   env: { ...process.env, ...STATE_ENV[O.state] },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
+const lgSpy = makeSpy(child.pid, 'loadgen');
+let serverSpy = null;
 const logLines = [];
 const capture = (buf) => {
   for (const line of String(buf).split('\n')) {

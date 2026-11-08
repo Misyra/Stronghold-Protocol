@@ -7,7 +7,11 @@
 // filter keeps samples whose interval endpoint falls inside [--from, --to] (epoch ms; default: the whole profile).
 //
 // Usage:
-//   node poc/walltest/proftop.mjs <file.cpuprofile> [--from <epochMs>] [--to <epochMs>] [--top 15] [--csv F] [--title S]
+//   node poc/walltest/proftop.mjs <file.cpuprofile> [--from <epochMs>] [--to <epochMs>] [--boot <epochS>] [--top 15] [--csv F] [--title S]
+//
+// Node 26.13 writes .cpuprofile startTime/endTime on the MONOTONIC clock (µs since boot, verified 2026-11-08:
+// startTime ≈ `uptime` seconds, not epoch). [--boot S] = `sysctl -n kern.boottime`'s epoch seconds converts the
+// --from/--to wall window into profile µs: profile_t = epoch_t − boot. Without --boot the whole profile is read.
 
 import { readFileSync, appendFileSync } from 'node:fs';
 
@@ -22,8 +26,10 @@ for (let i = 0; i < argv.length; i++) {
   opt[k] = v;
 }
 const TOP = Number(opt.top || 15);
-const fromUs = opt.from != null ? Number(opt.from) * 1000 : -Infinity;
-const toUs = opt.to != null ? Number(opt.to) * 1000 : Infinity;
+const bootS = opt.boot != null ? Number(opt.boot) : null;
+const toProfileUs = (epochMs) => (epochMs / 1000 - bootS) * 1e6;
+const fromUs = opt.from != null ? toProfileUs(Number(opt.from)) : -Infinity;
+const toUs = opt.to != null ? toProfileUs(Number(opt.to)) : Infinity;
 const title = opt.title || file;
 
 const p = JSON.parse(readFileSync(file, 'utf8'));
@@ -97,8 +103,9 @@ rows.sort((a, b) => b.us - a.us);
 
 const totalS = busyUs / 1e6;
 const wallS = (windowEndUs - windowStartUs) / 1e6;
+const toEpoch = (us) => new Date((us + (bootS != null ? bootS * 1e6 : 0)) / 1000).toISOString();
 console.log(`== ${title}`);
-console.log(`window: ${Number.isFinite(windowStartUs) ? new Date(windowStartUs / 1000).toISOString() : '-'} … ${Number.isFinite(windowEndUs) ? new Date(windowEndUs / 1000).toISOString() : '-'} (span ${wallS.toFixed(1)} s wall, busy ${totalS.toFixed(1)} s, ${wallS > 0 ? ((totalS / wallS) * 100).toFixed(0) : '?'}% of wall)`);
+console.log(`window: ${Number.isFinite(windowStartUs) ? toEpoch(windowStartUs) : '-'} … ${Number.isFinite(windowEndUs) ? toEpoch(windowEndUs) : '-'} (span ${wallS.toFixed(1)} s wall, busy ${totalS.toFixed(1)} s, ${wallS > 0 ? ((totalS / wallS) * 100).toFixed(0) : '?'}% of wall)`);
 console.log(`\n-- self-time top ${TOP} (of ${rows.length} sampled functions) --`);
 for (const r of rows.slice(0, TOP)) {
   console.log(`${((r.us / busyUs) * 100).toFixed(1).padStart(5)}%  ${(r.us / 1e6).toFixed(2).padStart(7)}s  ${r.fn}  @ ${r.where}  [${r.cat}]`);

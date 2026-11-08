@@ -258,6 +258,10 @@ export const PLAYER_FIELDS = Object.freeze([
   '_tempDue', 'board', 'layers', 'pendingLayerGains', 'bondCountBonus', 'effects', 'bounties', 'counters', 'round',
   'deployCapBonus', 'deployCapMin', 'deviceOverrides', 'tileOverrides', 'stats', 'eliminatedRound', 'lpAtFinal',
   'lastResult', 'diy', 'diyStock', 'diyBanned',
+  // 自选候补 (Stardust fork rel26 2d3ec08e, feedback #114): the whole preset (slots and bench keys) and the briefing's
+  // choice per tier. The restore re-applies the preset with setDiy and re-fields the checkpoint's exact slots; a
+  // checkpoint without a preset (an older build) still restores by its slots alone.
+  'diyPreset', 'diyChoice',
   // 干员皮肤 (docs/SKINS.md): the per-chess model choice, carried in by the seat and public on the wire. Persisted
   // like the loadout — a restored match would otherwise silently revert every player to the default model.
   'skins',
@@ -539,9 +543,20 @@ export function restoreMatch(m, doc, { createRngFromState, log = console } = {})
       if (k === 'diy') {
         // The seat's picks were checked with the room's own kit list (Match.diyKitted). Re-checking them without it
         // would drop a plugin operator a modded room had accepted (checkDiyPicks is lenient).
-        ps.setDiy(value, m.diyKitted ? { kitted: m.diyKitted } : {});
+        // 自选候补 (feedback #114): with the checkpoint's preset, field it (the seats' picks) and then the checkpoint's
+        // exact slots (a briefing choice may have fielded bench candidates); the choice follows as its own field and
+        // enterInfoCheck's resolveDiyChoices reads it against the restored phase. Without a preset (an older
+        // checkpoint) the slots alone restore exactly as before.
+        const preset = decodeState(p.diyPreset);
+        if (preset && typeof preset === 'object' && Object.keys(preset).length) {
+          ps.setDiy(preset, m.diyKitted ? { kitted: m.diyKitted } : {});
+          ps.applyDiySlots(value && typeof value === 'object' ? value : {});
+        } else {
+          ps.setDiy(value, m.diyKitted ? { kitted: m.diyKitted } : {});
+        }
         continue;
       }
+      if (k === 'diyPreset') continue; // applied with 'diy' (the preset drives setDiy there)
       if (k === 'diyStock') {
         // Keep the DiyStock methods; only its copy counts belong in the checkpoint.
         if (value?.entries instanceof Map) ps.diyStock.entries = value.entries;

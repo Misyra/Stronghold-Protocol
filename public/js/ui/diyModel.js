@@ -15,9 +15,15 @@
 // Per version (DESIGN §35.23, M1): each official version has its own slots and pools, so its picks are kept apart —
 // `sp.pref.diy` for 第二期下半 (unchanged) and `sp.pref.diy.<slug>` for another version (diyPrefKey); the export names its
 // version (`version`, only a non-default one).
+// 自选候补 (Stardust fork rel26 2d3ec08e, feedback #114; the owner's decision of 2026-11-02): each tier takes four equal
+// candidates in the player's order (diyPositions) — positions 1–2 are stored under the tier's slot ids (what a server
+// without this reads as its slots), 3–4 under `diyBench_<tier>_<n>` keys (shared/diy.js DIY_BENCH_SIZE); in the match's
+// briefing the player picks any two of them (ui/diyChoice.js). Every position is drawn and checked as a pick of its
+// tier. In a match, whose bans are known, a card names the bonds of its operator that are off (diyMatchOff / diyBanHint).
 
 import { DIY_LIMITS, checkDiyPicks } from '../../../shared/protocol.js';
-import { diySlotIds, diySlot, diyPool, isPrototypePick, isCollabPick, lockedSelection, isDiyModule, diyRecord } from '../../../shared/diy.js';
+import { diySlotIds, diySlot, diyPool, isPrototypePick, isCollabPick, lockedSelection, isDiyModule, diyRecord, diyTiers,
+  diyTierSlotIds, diyBenchId, diyKeySlotId, diyKeyTier, DIY_BENCH_SIZE } from '../../../shared/diy.js';
 import { unitForm } from '../../../shared/standIn.js';
 import { N_ } from '../../../shared/i18n.js';
 import { DEFAULT_VERSION, versionById, versionSlug } from '../../../shared/versions.js';
@@ -87,13 +93,73 @@ export function sanitizeDiyPicks(picks, data, kitted) {
 }
 
 /**
- * The four slots in data order: [{ slotId, goldenId, tier, shopLevel }].
+ * The four slots in data order: [{ slotId, goldenId, tier, shopLevel, bench: false }].
  * @param {any} data
  */
 export function diySlotList(data) {
   return diySlotIds(data).map((id) => diySlot(id, data)).filter(Boolean)
-    .map((s) => ({ slotId: s.baseId, goldenId: s.goldenId, tier: s.tier, shopLevel: s.shopLevel }));
+    .map((s) => ({ slotId: s.baseId, goldenId: s.goldenId, tier: s.tier, shopLevel: s.shopLevel, bench: false }));
 }
+
+/**
+ * The 候补 of each tier (feedback #114): [{ slotId: the bench key, goldenId / shopLevel of the tier's first slot, tier,
+ * bench: true, n: 1…DIY_BENCH_SIZE }], tier 5's then tier 6's.
+ * @param {any} data
+ */
+export function diyBenchList(data) {
+  const out = [];
+  for (const tier of diyTiers(data)) {
+    const first = diySlot(diyTierSlotIds(tier, data)[0], data);
+    if (!first) continue;
+    for (let n = 1; n <= DIY_BENCH_SIZE; n++) out.push({ slotId: diyBenchId(tier, n), goldenId: first.goldenId, tier, shopLevel: first.shopLevel, bench: true, n });
+  }
+  return out;
+}
+
+/**
+ * The four equal positions of each tier in the player's order (the 自选编队 tab): the tier's slots, then its bench keys —
+ * [{ slotId: the picks-map key, goldenId / shopLevel of the tier's first slot, tier, n: 1…4 }], tier 5's then tier 6's.
+ * @param {any} data
+ */
+export function diyPositions(data) {
+  const slots = diySlotList(data);
+  const bench = diyBenchList(data);
+  const out = [];
+  for (const tier of [...new Set(slots.map((s) => s.tier))]) {
+    [...slots.filter((s) => s.tier === tier), ...bench.filter((s) => s.tier === tier)]
+      .forEach((s, i) => out.push({ slotId: s.slotId, goldenId: s.goldenId, tier, shopLevel: s.shopLevel, n: i + 1 }));
+  }
+  return out;
+}
+
+/**
+ * The bonds a match switched off (its drawn bans and the mode's static ones — what the server reads a 自选 pick against),
+ * or null outside a match (the bans are not known yet).
+ * @param {any} pub m.public @param {any} config data/config.json (the mode's inactiveBondIds)
+ * @returns {Set<string>|null}
+ */
+export function diyMatchOff(pub, config) {
+  if (!isObj(pub) || !pub.phase || pub.phase === 'LOBBY') return null;
+  const drawn = Array.isArray(pub.drawnDisabledBonds) ? pub.drawnDisabledBonds : Array.isArray(pub.disabledBonds) ? pub.disabledBonds : [];
+  const all = Array.isArray(pub.disabledBonds) ? pub.disabledBonds : [];
+  const st = config?.modes?.[pub.modeId]?.inactiveBondIds;
+  return new Set([...drawn, ...all, ...(Array.isArray(st) ? st : [])].filter((b) => typeof b === 'string'));
+}
+
+/**
+ * Which bonds of a 自选 operator are off this match: `{ bonds, all }` (all = every bond — no stock, it never reaches the
+ * shop), or null when none is or the bans are not known. @param {string} charId @param {any} data @param {Set<string>|null} off
+ */
+export function diyBanHint(charId, data, off) {
+  if (!off || !off.size) return null;
+  const bonds = backupsOf(data)?.diy?.operators?.[charId]?.bonds;
+  if (!Array.isArray(bonds) || !bonds.length) return null;
+  const hit = bonds.filter((b) => off.has(b));
+  return hit.length ? { bonds: hit, all: hit.length === bonds.length } : null;
+}
+
+/** How many picks a preset holds at most: four per tier. @param {any} data */
+export const diyCapacity = (data) => diySlotList(data).length + diyBenchList(data).length;
 
 const backupsOf = (data) => (isObj(data?.backups) ? data.backups : null);
 
@@ -104,7 +170,7 @@ const backupsOf = (data) => (isObj(data?.backups) ? data.backups : null);
  * @param {string} charId @param {string} slotId a slot base id @param {any} data
  */
 export function pickChoices(charId, slotId, data) {
-  const slot = diySlot(slotId, data);
+  const slot = diySlot(diyKeySlotId(slotId, data) ?? slotId, data);
   const backups = backupsOf(data);
   if (!slot || !backups || !slot.normal || !slot.golden) return null;
   const normal = unitForm(backups, charId, slot.normal.status);
@@ -138,17 +204,18 @@ export function defaultPick(charId, slotId, data) {
  * @returns {Array<{ charId: string, unit: any, bonds: string[], proto: boolean, collab: boolean, taken: string|null }>}
  */
 export function pickOptions(slotId, picks, data, kitted) {
-  const slot = diySlot(slotId, data);
+  const slot = diySlot(diyKeySlotId(slotId, data) ?? slotId, data);
   const backups = backupsOf(data);
   if (!slot || !backups) return [];
   const kit = kitted ? [...kitted] : [];
-  const tierOf = (id) => diySlot(id, data)?.tier ?? null;
+  // a slot or a 候补 key: its tier
+  const tierOf = (id) => diyKeyTier(id, data);
   const roster = cleanPicks(picks);
   return diyPool(slot.tier, { data, kitted: kit }).map((charId) => {
     const proto = isPrototypePick(data, slot.tier, charId);
     let taken = null;
     for (const [other, p] of Object.entries(roster)) {
-      if (other === slot.baseId || p.charId !== charId) continue;
+      if (other === slotId || p.charId !== charId) continue;
       // the same tier: never twice; another tier: an owned operator only once (a prototype may repeat across tiers)
       if (tierOf(other) === slot.tier || !isPrototypePick(data, tierOf(other), charId)) { taken = other; break; }
     }
@@ -162,7 +229,7 @@ export function pickOptions(slotId, picks, data, kitted) {
  */
 export function slotRecord(slotId, pick, data, { elite = false, potential = null } = {}) {
   if (!isObj(pick)) return null;
-  try { return diyRecord(slotId, pick, { elite, data, potential }); } catch { return null; }
+  try { return diyRecord(diyKeySlotId(slotId, data) ?? slotId, pick, { elite, data, potential }); } catch { return null; }
 }
 
 /** Set (or with null, clear) one slot. Returns a new roster (the input is not changed). */

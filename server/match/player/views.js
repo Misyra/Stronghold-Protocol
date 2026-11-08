@@ -166,6 +166,9 @@ export class PlayerViews {
       // switched off)
       diy: this.diy,
       diyBanned: this.diyBanned,
+      // 自选候补 (Stardust fork rel26 2d3ec08e, feedback #114, player/diy.js diyChoiceView): during the briefing, for a
+      // preset with more candidates than slots, the tiers a g.diyChoose chooses over
+      ...(this.m.phase === PHASE.INFO_CHECK && this.hasDiyChoice?.() ? { diyChoice: this.diyChoiceView(this.m.diyOff?.() ?? new Set()) } : {}),
       // 最终攻势 / 隐秘核心 prep (community report of 2026-10-06, item 51): `{ playerId, side, units }` — the pair partner's
       // board pieces as UnitInfo on its half of the boss field (mirrored on the right half, as the battle places them);
       // the own prep view draws them beside the own half, read-only. Absent otherwise.

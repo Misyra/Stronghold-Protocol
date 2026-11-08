@@ -3,7 +3,7 @@
 
 import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, EMOTES, GEO, REHEARSAL_MAX_CANDIDATES } from './constants.js';
 import { isDroppableChess } from './standIn.js';
-import { diySlotIds, validateDiyPicks, ID_CHARS } from './diy.js';
+import { diySlotIds, diyBenchIds, validateDiyPicks, ID_CHARS } from './diy.js';
 import { cultivatedStats, isPotential, isCultivate, POTENTIAL_DEFAULT, CULTIVATE_DEFAULT, hasPotentialData } from './potential.js';
 import { isContentHash } from './plugins/identity.js';
 import { isPluginId } from './plugins/manifest.js';
@@ -410,7 +410,8 @@ export function checkNotOwned(list, getChess) {
  * (room for more slots in a later season); the semantic check (`checkDiyPicks`) is LENIENT, like checkNotOwned: an
  * illegal pick — not a pick of the slot's tier, an operator without a kit, a prototype off its locked skill, an unknown
  * skill / module, the same operator twice in a tier, an owned operator in a second slot, an unknown slot — is dropped,
- * never the whole roster; only malformed input is BAD_MSG.
+ * never the whole roster; only malformed input is BAD_MSG. The map also carries the 候补 (Stardust fork rel26 2d3ec08e,
+ * feedback #114: `diyBench_<tier>_<n>` keys, shared/diy.js DIY_BENCH_SIZE): four slots + four bench keys fill the limit.
  */
 export const DIY_LIMITS = Object.freeze({ slots: 8 });
 const isDiyPickWire = (p) => p === null || (isPlain(p) && isId(p.charId)
@@ -424,7 +425,8 @@ export const isDiyPicks = (v) => isMap(v, DIY_LIMITS.slots, isId, isDiyPickWire)
  * the slots are taken in data order (tier 5, then tier 6), and each pick is kept when the roster so far plus it still
  * passes shared/diy.js validateDiyPicks — so the result always passes it, and of two picks that clash (one owned operator
  * in two slots, one operator twice in a tier) the first slot keeps it. Kept picks are complete
- * (`{ charId, skillIndex, uniEquipId }`: a prototype's locked selection, uniEquipId null = no module).
+ * (`{ charId, skillIndex, uniEquipId }`: a prototype's locked selection, uniEquipId null = no module). The 候补 keys come
+ * after every slot (tier 5's, then tier 6's), so a slot wins a clash with a bench pick.
  * @param {any} picks `room.diy.picks`
  * @param {{ data: any, kitted?: Iterable<string>|((id: string) => boolean)|null }} opts
  * @returns {{ ok: true, picks: Record<string, { charId: string, skillIndex: number, uniEquipId: string|null }>, dropped: number }
@@ -432,7 +434,7 @@ export const isDiyPicks = (v) => isMap(v, DIY_LIMITS.slots, isId, isDiyPickWire)
  */
 export function checkDiyPicks(picks, { data, kitted = null } = { data: null }) {
   if (!isDiyPicks(picks)) return { error: 'BAD_MSG', detail: 'bad 自选 picks' };
-  const slots = diySlotIds(data);
+  const slots = [...diySlotIds(data), ...diyBenchIds(data)];
   /** @type {Record<string, { charId: string, skillIndex: number, uniEquipId: string|null }>} */
   const kept = {};
   let dropped = 0;
@@ -655,6 +657,10 @@ export const C2S = {
 
   // match
   'g.infoReady': { setupRevision: (v) => isInt(v, 0, 2 ** 31), $optional: ['setupRevision'] },
+  // 自选候补 (Stardust fork rel26 2d3ec08e, feedback #114, shared/diy.js resolveDiySlots): in the briefing (INFO_CHECK)
+  // the candidates of one tier of the player's preset that fill its slots — exactly min(slots, candidates) distinct
+  // charIds of m.private diyChoice
+  'g.diyChoose': { tier: (v) => isInt(v, 1, 9), charIds: (v) => isList(v, 4, isId) },
   'g.rerollVote': { voteId: (v) => isInt(v, 1, 2 ** 31), agree: isBool },
   // 投票移出(移植自用户分支, kickVote.js): a vote of the connected humans to remove a teammate whose seat the AI plays
   // because it stayed offline (掉线由 AI 接管). g.kickVote { targetId } proposes, g.kickBallot { voteId, agree } answers;

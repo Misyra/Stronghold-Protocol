@@ -175,10 +175,11 @@ test('快速配置: the skills, the elite\'s modules (不装备 first) or the �
   assert.equal(textOf(byClass(noElite, 'lo-op__none')[0]), '无精锐');
 });
 
-test('the bottom bar: a tier with nothing is disabled, a jump names its tier, open 自选 slots badge 5 / 6, 确认配置 only in 快速配置', () => {
+test('the bottom bar: a tier with nothing is disabled, a jump names its tier, the 自选 chosen / positions badge 5 / 6, 确认配置 only in 快速配置', () => {
   const jumps = [];
   const counts = { 1: 20, 2: 20, 3: 20, 4: 0, 5: 20, 6: 16 };
-  const bar = DeckBar({ counts, active: 2, onJump: (t) => jumps.push(t), diyOpen: { 5: 2, 6: 0 }, quick: null, onConfirm() {} });
+  // feedback #126 (Stardust fork rel28 94d736da): chosen / positions (it was the open count, read as the number chosen)
+  const bar = DeckBar({ counts, active: 2, onJump: (t) => jumps.push(t), diyFill: { 5: { n: 3, total: 4 }, 6: { n: 4, total: 4 } }, quick: null, onConfirm() {} });
   const tiers = byClass(bar, 'lo-bbar__tier');
   assert.deepEqual(tiers.map((b) => b.props['data-tier']), [1, 2, 3, 4, 5, 6]);
   assert.deepEqual(tiers.map((b) => !!b.props.disabled), [false, false, false, true, false, false]);
@@ -186,11 +187,13 @@ test('the bottom bar: a tier with nothing is disabled, a jump names its tier, op
   tiers[4].props.onClick();
   assert.deepEqual(jumps, [5]);
   const diy = byClass(bar, 'lo-bbar__diy');
-  assert.equal(diy.length, 1, 'only tier 5 has open slots');
-  assert.equal(textOf(diy[0]).trim(), '2');
+  assert.equal(diy.length, 2, 'tiers 5 and 6');
+  assert.deepEqual(diy.map((d) => textOf(d).replace(/\s+/g, '')), ['3/4', '4/4']);
+  assert.deepEqual(diy.map((d) => hasClass(d, 'is-full')), [false, true]);
+  assert.equal(byClass(DeckBar({ counts, active: 1, onJump() {}, diyFill: { 5: { n: 0, total: 0 } }, quick: null, onConfirm() {} }), 'lo-bbar__diy').length, 0, 'no positions: no badge');
   assert.equal(byClass(bar, 'lo-confirm').length, 0);
   const done = [];
-  const quickBar = DeckBar({ counts, active: 1, onJump() {}, diyOpen: {}, quick: 'skill', onConfirm: () => done.push(1) });
+  const quickBar = DeckBar({ counts, active: 1, onJump() {}, diyFill: {}, quick: 'skill', onConfirm: () => done.push(1) });
   byClass(quickBar, 'lo-confirm')[0].props.onClick();
   assert.deepEqual(done, [1]);
 });
@@ -221,7 +224,7 @@ test('the ⓘ sheet has its own name, not the official tutorial chapter\'s 调�
 
 test('the bottom bar says a locked loadout (its full text the title), with or without 快速配置', () => {
   const counts = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 };
-  const base = { counts, active: 1, onJump() {}, diyOpen: {}, onConfirm() {} };
+  const base = { counts, active: 1, onJump() {}, diyFill: {}, onConfirm() {} };
   assert.equal(byClass(DeckBar({ ...base, quick: null }), 'lo-bbar__lock').length, 0, 'not locked: no chip');
   for (const quick of [null, 'cult']) {
     const chip = byClass(DeckBar({ ...base, quick, locked: '本局的调配已锁定' }), 'lo-bbar__lock');

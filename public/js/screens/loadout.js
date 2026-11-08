@@ -70,7 +70,7 @@ import { ModuleGlyph, ModuleInfo, SkillOption, SkillIcon, SkillSection, ModuleSe
 export { ModuleGlyph, ModuleInfo, SkillOption };
 import { LoadoutStats } from '../ui/loadoutStats.js';
 export { LoadoutStats, statsPreview } from '../ui/loadoutStats.js';
-import { diyCount, sanitizeDiyPicks, setPick, serializeDiy, parseDiyImport, DIY_IMPORT_MAX_BYTES, diySlotList, slotRecord } from '../ui/diyModel.js';
+import { diyCount, diyCapacity, diyMatchOff, sanitizeDiyPicks, setPick, serializeDiy, parseDiyImport, DIY_IMPORT_MAX_BYTES, diyPositions, slotRecord } from '../ui/diyModel.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 import { copyText } from '../ui/clipboard.js';
 import { toast } from '../ui/toasts.js';
@@ -396,7 +396,8 @@ export function TierMark({ m, tier, count }) {
 }
 
 /** The 甄选干员 card closing tiers 5 and 6: the 自选编队 slots of that tier, filled / total; opens the 自选编队 tab. */
-function DiyDeckCard({ m, tier, slots, picks, onOpen }) {
+/** The 甄选干员 card of one tier (exported for the tests): the tier's positions and their picks. */
+export function DiyDeckCard({ m, tier, slots, picks, onOpen }) {
   const mine = slots.filter((s) => s.tier === tier);
   if (!mine.length) return null;
   const D = diyData();
@@ -493,12 +494,12 @@ function DeckView({ m, list, getChess, st, selId, quick, onPick, onChange, onOps
 }
 
 /**
- * The deck's bottom bar (移植自用户分支): 干员 / 道具 segments, jump to a tier (the open 自选 slots above 5 / 6),
- * 确认配置 while 快速配置 is on, and — while this match's loadout is locked (`locked`: the full notice, its title) — a
- * 「本局已锁定 · 下一局生效」 chip: the bar is the one strip every width and 快速配置 keep on screen (the top bar's note
- * is cut short or hidden on narrow screens).
+ * The deck's bottom bar (移植自用户分支): 干员 / 道具 segments, jump to a tier (above 5 / 6 the 自选 chosen / positions:
+ * feedback #126, Stardust fork rel28 94d736da), 确认配置 while 快速配置 is on, and — while this match's loadout is locked
+ * (`locked`: the full notice, its title) — a 「本局已锁定 · 下一局生效」 chip: the bar is the one strip every width and
+ * 快速配置 keep on screen (the top bar's note is cut short or hidden on narrow screens).
  */
-export function DeckBar({ deckTab = 'ops', onDeckTab = null, counts, active, onJump, diyOpen, quick, onConfirm, locked = null }) {
+export function DeckBar({ deckTab = 'ops', onDeckTab = null, counts, active, onJump, diyFill, quick, onConfirm, locked = null }) {
   return html`<nav class="lo-bbar" aria-label=${t('物资调配')}>
     ${onDeckTab ? html`<div class="lo-bbar__seg" role="tablist" aria-label=${t('物资调配处')}>
       <button type="button" role="tab" aria-selected=${deckTab === 'ops' ? 'true' : 'false'} class=${cx(deckTab === 'ops' && 'is-on')} onClick=${() => onDeckTab('ops')}>
@@ -509,7 +510,8 @@ export function DeckBar({ deckTab = 'ops', onDeckTab = null, counts, active, onJ
     <div class="lo-bbar__tiers">
       ${DECK_TIERS.map((tier) => html`<button key=${tier} type="button" class=${cx('lo-bbar__tier', active === tier && 'is-on')} disabled=${!counts[tier]}
           data-tier=${tier} onClick=${() => onJump(tier)} title=${t('{tier}阶', { tier })}>
-        ${diyOpen[tier] ? html`<span class="lo-bbar__diy" title=${t('{tier}阶 还有 {n} 个自选名额', { tier, n: diyOpen[tier] })}><${Icon} name="user" /><b class="num">${diyOpen[tier]}</b></span>` : null}
+        ${diyFill[tier]?.total ? html`<span class=${cx('lo-bbar__diy', diyFill[tier].n >= diyFill[tier].total && 'is-full')} data-diy-n=${diyFill[tier].n}
+            title=${t('{tier}阶 已选 {n}/{total} 名自选干员', { tier, n: diyFill[tier].n, total: diyFill[tier].total })}><${Icon} name="user" /><b class="num">${diyFill[tier].n}</b><span class="num">/${diyFill[tier].total}</span></span>` : null}
         <span class="lo-bbar__roman num">${ROMAN[tier]}</span><span>${t('{tier}阶', { tier })}</span>
       </button>`)}
     </div>
@@ -745,7 +747,8 @@ function LoadoutScreen({ st }) {
   const deckRef = useRef(null);
   const ui = useRef({});
   ui.current = { drawer, menu, quick, setDrawer, setMenu, setQuick };
-  const diySlots = ready ? diySlotList(diyData()) : [];
+  // 自选候补 (feedback #114): the tier's four positions (its slots and 候补) — the deck's 甄选干员 card and the bar badge read them
+  const diySlots = ready ? diyPositions(diyData()) : [];
 
   const tab = st.tab === 'ownership' || st.tab === 'diy' ? st.tab : 'loadout';
   // leaving 干员调配 (干员持有, the 甄选干员 card, or openLoadout naming a tab) closes the card view's layers: hidden, they
@@ -757,7 +760,12 @@ function LoadoutScreen({ st }) {
   // 自选编队 (0.2.0 DIY): the stored picks, those the server would keep (the kit list of the last welcome). `null` =
   // the server named no list (an older welcome / no limit): `[]` would mean nobody is kitted and wipe every pick.
   const nDiy = diyCount(st.diy);
+  // the slots and the 候补 (feedback #114): 8 with the official data
+  const diyCap = (ready && diyCapacity(diyData())) || 8;
   const diyLegal = ready ? sanitizeDiyPicks(st.diy, diyData(), st.diyKitted ?? null) : {};
+  // 自选候补 (feedback #114): opened during a match, whose bans are known, the 自选编队 cards name the bonds that are off
+  const matchPub = useStore((s) => (s.room?.inMatch ? s.match?.public ?? null : null));
+  const diyOff = ready ? diyMatchOff(matchPub, data.get('config')) : null;
   // A re-pick to a different operator (or clearing the slot) drops that slot's 皮肤 / 商店立绘 choices: they name a
   // skin of the operator that was picked, and a stale id would quietly fall back to the default model (移植自用户分支).
   const setDiySlot = (slotId, pick) => {
@@ -820,7 +828,7 @@ function LoadoutScreen({ st }) {
   // 立绘 half its screen owned at export time, the 自选 file the slots' choices — and the 皮肤 have a file of their
   // own (ui/skinTransfer.js, io.kind === 'skins'), the one to carry to another server because it names nothing else.
   // The two map splitters keep a file to the half its kind describes.
-  const diySlotIds = new Set(diySlotList(diyData()).map((s) => s.slotId));
+  const diySlotIds = new Set(diyPositions(diyData()).map((s) => s.slotId));
   const rosterSkinMap = (map) => Object.fromEntries(Object.entries(map || {}).filter(([id]) => !diySlotIds.has(id)));
   const slotSkinMap = (map) => Object.fromEntries(Object.entries(map || {}).filter(([id]) => diySlotIds.has(id)));
   const ioText = io?.text ?? '';
@@ -1010,7 +1018,12 @@ function LoadoutScreen({ st }) {
   };
   const nFilters = ['tier', 'prof', 'bond', 'changedOnly'].filter((k) => !!st.filters?.[k]).length + (String(st.filters?.query || '').trim() ? 1 : 0);
   const tierCounts = Object.fromEntries(DECK_TIERS.map((tier) => [tier, list.filter((c) => c.tier === tier).length + (nFilters ? 0 : diySlots.filter((s) => s.tier === tier).length)]));
-  const diyOpen = Object.fromEntries(DECK_TIERS.map((tier) => [tier, diySlots.filter((s) => s.tier === tier && !diyLegal[s.slotId]).length]));
+  // feedback #126: the bar's 自选 badge reads chosen / positions of the tier (it used to count the open positions, read
+  // as the number chosen: 「自选3个显示1」)
+  const diyFill = Object.fromEntries(DECK_TIERS.map((tier) => {
+    const mine = diySlots.filter((s) => s.tier === tier);
+    return [tier, { n: mine.filter((s) => !!diyLegal[s.slotId]).length, total: mine.length }];
+  }));
   const clearFilters = () => loadoutStore.set({ filters: { ...st.filters, tier: null, prof: null, bond: null, query: '', changedOnly: false } });
 
   const [syncText, syncCls] = tab === 'ownership' ? OWN_SYNC_TEXT[st.ownSync] || OWN_SYNC_TEXT.idle
@@ -1062,7 +1075,7 @@ function LoadoutScreen({ st }) {
       </div>`}
       ${tab === 'diy' ? html`<div class="lo-top__right">
         ${syncText ? html`<span class=${cx('lo-sync', syncCls)} role="status" data-testid="diy-sync">${t(syncText)}</span>` : null}
-        <span class="lo-count">${t('已选')} <b class="num">${nDiy}</b><span class="num t-dim">/4</span></span>
+        <span class="lo-count">${t('已选')} <b class="num">${nDiy}</b><span class="num t-dim">/${diyCap}</span></span>
         <${Button} variant="ghost" size="sm" data-testid="diy-export" disabled=${!nDiy} onClick=${openExport} title=${t('导出自选编队（可复制或下载）')}>${t('导出')}<//>
         <${Button} variant="ghost" size="sm" data-testid="diy-import" disabled=${!ready} onClick=${openImport} title=${t('导入自选编队（粘贴或选择文件）')}>${t('导入')}<//>
         <${Button} variant="secondary" size="sm" icon="refresh" data-testid="diy-reset" disabled=${!nDiy} onClick=${clearDiy}>${t('全部清空')}<//>
@@ -1139,7 +1152,7 @@ function LoadoutScreen({ st }) {
       : html`<p class=${cx('lo-note', locked && 'is-locked')}><${Icon} name="info" />${locked ? lockedText : fromText}</p>`}
     ${!ready ? html`<div class="lo-loading"><${Spinner} size="sm" />${t('正在载入干员数据（打开页面后仅载入一次）…')}</div>`
       : lost.length ? html`<${DataMissing} files=${lost} />` : tab === 'diy'
-      ? html`<${DiyPanel} m=${m} picks=${st.diy || {}} legal=${diyLegal} kitted=${st.diyKitted} onSet=${setDiySlot} ops=${st.ops} onOps=${setOpsOf} />`
+      ? html`<${DiyPanel} m=${m} picks=${st.diy || {}} legal=${diyLegal} kitted=${st.diyKitted} onSet=${setDiySlot} ops=${st.ops} onOps=${setOpsOf} off=${diyOff} />`
       : tab === 'ownership'
       ? html`<${OwnershipPanel} m=${m} roster=${ownRoster} notOwned=${st.notOwned} onToggle=${toggleOwned} />`
       : deck ? html`<main class="lo-deckwrap">
@@ -1153,7 +1166,7 @@ function LoadoutScreen({ st }) {
               ${loadoutDetail}
             </div>` : null}`}
       </main>
-      <${DeckBarLive} sink=${tierSink} deckTab=${deckTab} onDeckTab=${switchDeckTab} counts=${tierCounts} onJump=${jumpTier} diyOpen=${diyOpen} quick=${quick} onConfirm=${() => setQuick(null)}
+      <${DeckBarLive} sink=${tierSink} deckTab=${deckTab} onDeckTab=${switchDeckTab} counts=${tierCounts} onJump=${jumpTier} diyFill=${diyFill} quick=${quick} onConfirm=${() => setQuick(null)}
         locked=${locked ? lockedText : null} />`
       : html`<main class=${cx('lo-body', narrowDetail && 'is-detail')}>
       <section class="lo-roster">

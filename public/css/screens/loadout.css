@@ -493,6 +493,15 @@
 .diy-bonds { display: flex; flex-wrap: wrap; gap: .03rem .06rem; }
 .diy-bond { display: inline-flex; align-items: center; gap: .03rem; font-size: max(calc(.12 * var(--t)), 9px); color: var(--text-md); }
 .diy-bond .bglyph, .diy-bond img { width: max(.16rem, 11px); height: max(.16rem, 11px); }
+/* 自选候补 (Stardust fork rel26 2d3ec08e, feedback #114): opened during a match, a card names its operator's bonds that
+   are off — every bond (red, it never reaches the shop) or some (amber); an off bond chip is struck */
+.diy-ban { display: inline-flex; align-items: center; gap: .04rem; margin: .02rem 0; font-size: max(.13rem, 11px); line-height: 1.4; }
+.diy-ban .icon { flex: none; width: 1em; height: 1em; }
+.diy-ban.is-some { color: #ffc966; }
+.diy-ban.is-all { color: #ff7a7a; font-weight: 700; }
+.diy-slot.is-partban { border-color: rgba(255, 201, 102, .45); }
+.diy-slot.is-banned { border-color: rgba(255, 96, 96, .7); background: rgba(80, 18, 18, .35); }
+.diy-bond.is-off { opacity: .55; text-decoration: line-through; text-decoration-color: #ff7a7a; }
 /* the picker covers the tab: the roster's own list on the left and its detail on the right (screens/loadoutSections.js
    draws the sections; below 1000 px the detail slides over the list like the roster's) */
 .diy-pick { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; gap: .08rem; padding: .12rem var(--lo-pad-x) .14rem; background: var(--bg-1, #0d1110); }
@@ -930,6 +939,9 @@
 .lo-bbar__diy { position: absolute; left: 50%; top: max(-.2rem, calc(-14px * var(--sp-ui, 1))); transform: translateX(-50%); display: inline-flex; align-items: center; gap: 1px; padding: 0 4px;
   font-size: max(calc(.12 * var(--t)), 9px); color: var(--text-md); background: rgba(255, 255, 255, .1); border-radius: 999px; }
 .lo-bbar__diy .icon { width: max(.13rem, 9px); height: max(.13rem, 9px); }
+/* feedback #126 (Stardust fork rel28 94d736da): chosen / positions; every position filled in mint */
+.lo-bbar__diy > span { opacity: .7; }
+.lo-bbar__diy.is-full { color: var(--mint-400); }
 .lo-confirm { flex: none; display: inline-flex; align-items: center; gap: .1rem; height: max(.6rem, 32px, calc(38px * var(--sp-ui, 1))); padding: 0 max(.24rem, calc(14px * var(--sp-ui, 1))); font: inherit;
   font-size: max(calc(.2 * var(--t)), 13px); font-weight: 900; color: #111614; background: #eef1ef; border: 0; cursor: pointer; }
 .lo-confirm .icon { width: max(.26rem, 16px); height: max(.26rem, 16px); padding: 2px; color: #eef1ef; background: #1a1f1d; }

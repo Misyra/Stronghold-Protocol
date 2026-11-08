@@ -3748,5 +3748,22 @@
   "难度预设": "Difficulty preset",
   "强化倍率叠加于房间所选的基础难度。数量仅限整数，出怪间隔按数量倍率同步缩短。": "Multipliers apply on top of the room difficulty. Enemy count uses whole numbers; spawn intervals are divided by the count multiplier.",
   "以下为词条上限；×1 不参与抽取。每回合抽取 1 至最多词条数，本回合生效，不累加。": "Set each modifier cap below; ×1 excludes it. Each round draws between one and the maximum number of modifiers. Modifiers last one round and do not stack.",
-  "自定义": "Custom"
+  "自定义": "Custom",
+  "5阶与6阶每局各有两名自选干员上场：可选持有的 6★ 干员（任选技能与模组）或原型干员（技能锁定）。自选干员只出现在你自己的商店里，调度中心达到该阶等级后才会刷新，价格与同阶干员相同；盟约按干员实际所属阵营分配，没有特质。": "In each match two Custom Squad Operators play in tier 5 and two in tier 6: a 6★ Operator you own (any skill and module) or a prototype Operator (skill locked). A Custom Squad Operator appears only in your own shop, once the Dispatch Center reaches its tier, at the price of any Operator of that tier; its Alliances follow its actual factions, and it has no Attribute.",
+  "{tier}阶 自选 · {n}": "Tier {tier} Custom · {n}",
+  "每阶可放四名：开局确认本局信息时（看到本局禁用的盟约后）从中任选两名上场；不选的话，由排在前面、盟约没有全部被禁用的两名上场。": "Each tier takes four: at the match-info step (after this match's banned Alliances are shown) you pick any two of them to play; if you do not, the first two whose Alliances are not all banned play.",
+  "盟约全部禁用，本局不会出现在商店": "Every Alliance banned: not in the shop this match",
+  "本局禁用：{bonds}": "Banned this match: {bonds}",
+  "部分盟约禁用": "Some Alliances banned",
+  "上场": "Fielded",
+  "盟约全部禁用": "All Alliances banned",
+  "自选上场": "Custom Operators This Match",
+  "从你的自选预设中为每阶选出上场的干员（看过禁用盟约后再定）；就绪后、本阶段结束前仍可更改。": "Pick which operators of your custom preset play in each tier (after seeing the banned Alliances); you can still change it after Ready until this step ends.",
+  "再选 {n} 名后生效": "Pick {n} more to apply",
+  "未选择：默认上场": "Not chosen: the default plays",
+  "{tier}阶 已选 {n}/{total} 名自选干员": "Tier {tier}: {n}/{total} custom operators chosen",
+  "{n} 选 {k}": "Pick {k} of {n}",
+  "点选每阶本局上场的自选干员（卡片标出了本局被禁用的盟约）；不选则由排在前面、盟约没有全部被禁用的干员上场。": "Tap who plays this match in each tier (the cards mark the Alliances banned this match); without a choice, the first ones in your order whose Alliances are not all banned play.",
+  "已选好本局上场的自选干员；本阶段结束前仍可更改。": "Custom operators set for this match; you can still change them until this step ends.",
+  "每阶选 {k} 名": "Pick {k} per tier"
 }

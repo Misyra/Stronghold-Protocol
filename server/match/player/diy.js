@@ -37,12 +37,22 @@
 //     operator from the pool draws its stock too — 「自选干员放入后模拟中的补给池随机范围也将被相应扩大」 (bilibili), "调度中心
 //     随机资源的范围将被扩大" (PRTS 新手教程) — under the roll's own tier rules (the effect's tier / maxTier: no 调度中心 gate,
 //     as for a preset chess) and filters (bonds read through the player's data view).
+//   * 自选候补 (Stardust fork rel26 2d3ec08e, feedback #114; the owner's decision of 2026-11-02: four equal candidates per
+//     tier, any two play; shared/diy.js DIY_BENCH_SIZE / resolveDiySlots): the seat's picks may hold more candidates per
+//     tier than the tier has slots (`diyPreset`: every checked pick, slots and bench keys, in the player's order). The
+//     constructor fields the seat's slots as they are; while the briefing (INFO_CHECK) is open the match fields the
+//     candidates the player chose (g.diyChoose → chooseDiy, `diyChoice`), else the default against the drawn bans
+//     (resolveDiy at every INFO_CHECK entry — the start and a 重刷本局 — and after each choice), and rebuilds the stock;
+//     from the strategy draft on the slots are fixed. A checkpoint carries the fielded slots (`diy`) plus the whole
+//     preset (`diyPreset`) and the choice (`diyChoice`), so a restore fields the same slots — and an old checkpoint
+//     without a preset still restores by its slots alone.
 // Installed on PlayerState.prototype by server/match/PlayerState.js (a method container: never instantiated; `this` is
 // the player state).
 
 import { KITTED_CHARS } from '../../sim/content/kits/index.js';
 import { checkDiyPicks } from '../../../shared/protocol.js';
-import { diyRecord, diySlot, diyTokenOwner } from '../../../shared/diy.js';
+import { diyRecord, diySlot, diyTokenOwner, diySlotIds, diyKeySlotId, diyCandidates, diyTierSlotIds, diyBenchId,
+  hasDiyChoice, resolveDiySlots, diyPickOff, diyPickOffBonds } from '../../../shared/diy.js';
 import { atPotential } from '../../../shared/potential.js';
 
 const posIntOr = (v, d) => (Number.isInteger(v) && v > 0 ? v : d);
@@ -142,16 +152,16 @@ export function diyGameData(gd, records) {
 export class PlayerDiy {
   /**
    * Fix the 自选 picks for the match (see the header): the seat's picks re-checked against this match's data and kits;
-   * a slot whose record cannot be composed is left empty. With picks, `this.gd` becomes the player's data view.
-   * @param {any} picks `{ [slotBaseId]: { charId, skillIndex?, uniEquipId? } | null }`
+   * a pick whose records cannot be composed is dropped. The seat's slots are fielded as they are (a 候补 choice changes
+   * them in the briefing: resolveDiy). With picks, `this.gd` becomes the player's data view.
+   * @param {any} picks `{ [slotBaseId | benchKey]: { charId, skillIndex?, uniEquipId? } | null }`
    * @param {{ kitted?: Iterable<string> }} [opts] the operators with a kit (default: the registry's
    *   KITTED_CHARS; tests may widen it to slot an operator whose kit is still being written)
    * @returns {boolean} false when the picks are malformed (nothing changes) or the player is a bot
    */
   setDiy(picks, { kitted = KITTED_CHARS } = {}) {
     if (this.isBot) return false;
-    const gd = this.m.gd;
-    const data = gd.raw;
+    const data = this.m.gd.raw;
     const res = checkDiyPicks(picks, { data, kitted });
     if (!res || !('ok' in res)) {
       this.m.log?.warn?.(`[match ${this.m.roomCode}] 自选 picks of ${this.playerId} ignored: ${res && res.detail}`);
@@ -160,9 +170,31 @@ export class PlayerDiy {
     // A lenient check keeps the legal picks and drops the rest without failing; say so rather than fielding a silently
     // different roster from the one the page showed.
     if (res.dropped > 0) this.m.log?.warn?.(`[match ${this.m.roomCode}] 自选 picks of ${this.playerId}: ${res.dropped} dropped`);
+    const preset = {};
+    for (const [key, pick] of Object.entries(res.picks)) {
+      const at = diyKeySlotId(key, data);
+      let ok;
+      try { ok = !!at && !!diyRecord(at, pick, { elite: false, data }) && !!diyRecord(at, pick, { elite: true, data }); } catch { ok = false; }
+      if (ok) preset[key] = Object.freeze({ charId: pick.charId, skillIndex: pick.skillIndex, uniEquipId: pick.uniEquipId ?? null });
+    }
+    this.diyPreset = Object.freeze(preset);
+    const slotted = {};
+    for (const id of diySlotIds(data)) if (preset[id]) slotted[id] = preset[id];
+    this.applyDiySlots(slotted);
+    return true;
+  }
+
+  /**
+   * Field `slotPicks` (slot base id → checked pick) in the 自选 slots: their composed records (normal and elite), `diy`
+   * and the player's data view. A pick whose records cannot be composed leaves its slot empty.
+   * @param {Record<string, { charId: string, skillIndex: number, uniEquipId: string|null }>} slotPicks
+   */
+  applyDiySlots(slotPicks) {
+    const gd = this.m.gd;
+    const data = gd.raw;
     const kept = {};
     const records = new Map();
-    for (const [slotId, pick] of Object.entries(res.picks)) {
+    for (const [slotId, pick] of Object.entries(slotPicks || {})) {
       const slot = diySlot(slotId, data);
       let normal;
       let golden;
@@ -178,7 +210,89 @@ export class PlayerDiy {
     this.diy = Object.freeze(kept);
     this._diyRecords = records;
     this.gd = records.size ? diyGameData(gd, records) : gd;
+  }
+
+  /** 候补 (see the header): whether this player's preset leaves a choice (a tier with more candidates than slots). */
+  hasDiyChoice() {
+    return !this.isBot && hasDiyChoice(this.diyPreset, this.m.gd.raw);
+  }
+
+  /**
+   * 候补 (see the header): field the candidates the player chose — else the default — against the bans `off` (shared/diy.js
+   * resolveDiySlots). Returns true when the slots changed: the caller rebuilds the stock (initDiyStock).
+   * @param {Set<string>} off the match's drawn and static bans
+   */
+  resolveDiy(off) {
+    if (!this.hasDiyChoice()) return false;
+    const next = resolveDiySlots(this.diyPreset, this.m.gd.raw, { choice: this.diyChoice, off });
+    const cur = this.diy || {};
+    const same = Object.keys(next).length === Object.keys(cur).length
+      && Object.entries(next).every(([id, p]) => cur[id] && cur[id].charId === p.charId && cur[id].skillIndex === p.skillIndex && (cur[id].uniEquipId ?? null) === (p.uniEquipId ?? null));
+    if (same) return false;
+    this.applyDiySlots(next);
+    this.invalidateDeployMap?.();
     return true;
+  }
+
+  /**
+   * g.diyChoose (候补): the candidates of `tier` that fill its slots — exactly min(slots, candidates) distinct charIds of
+   * the tier's candidates. Records the choice only (the match fields it: resolveDiy).
+   * @param {unknown} tier @param {unknown} charIds
+   * @returns {{ ok: true } | { error: string }}
+   */
+  chooseDiy(tier, charIds) {
+    const data = this.m.gd.raw;
+    const list = Number.isInteger(tier) ? diyCandidates(this.diyPreset, data).get(tier) : null;
+    const slots = Number.isInteger(tier) ? diyTierSlotIds(tier, data).length : 0;
+    if (!list || list.length <= slots) return { error: `no 自选 choice at tier ${tier}` }; // i18n-ignore: developer detail
+    const ids = Array.isArray(charIds) ? charIds : [];
+    const n = Math.min(slots, list.length);
+    if (ids.length !== n || new Set(ids).size !== n) return { error: `choose ${n} distinct candidates` }; // i18n-ignore: developer detail
+    if (!ids.every((id) => list.some((c) => c.pick.charId === id))) return { error: 'not a candidate of the tier' }; // i18n-ignore: developer detail
+    this.diyChoice = Object.freeze({ ...(this.diyChoice || {}), [tier]: Object.freeze([...ids]) });
+    return { ok: true };
+  }
+
+  /**
+   * The candidates not slotted now as bench keys in preset order (a checkpoint's seats: server/match/matchRestore.js
+   * seatEntries — so a fresh match built from the checkpoint's players fields the same slots before its state lands).
+   * @returns {Record<string, { charId: string, skillIndex: number, uniEquipId: string|null }>}
+   */
+  diyBenchSeat() {
+    const out = {};
+    if (this.isBot) return out;
+    const data = this.m.gd.raw;
+    for (const [tier, list] of diyCandidates(this.diyPreset, data)) {
+      const slotted = new Set(diyTierSlotIds(tier, data).map((id) => this.diy?.[id]?.charId).filter(Boolean));
+      list.filter((c) => !slotted.has(c.pick.charId)).forEach((c, i) => { out[diyBenchId(tier, i + 1)] = { ...c.pick }; });
+    }
+    return out;
+  }
+
+  /**
+   * m.private `diyChoice` (候补, the briefing only): per tier with a choice, its slot count, the candidates in the player's
+   * order (`banned`: those of its bonds switched off this match, when any; `off`: all of them — no stock), the ones
+   * fielded now and whether the player chose.
+   * @param {Set<string>} off
+   */
+  diyChoiceView(off) {
+    const data = this.m.gd.raw;
+    const tiers = [];
+    for (const [tier, list] of diyCandidates(this.diyPreset, data)) {
+      const slotIds = diyTierSlotIds(tier, data);
+      if (list.length <= slotIds.length) continue;
+      const fielded = new Set(slotIds.map((id) => this.diy?.[id]?.charId).filter(Boolean));
+      tiers.push({
+        tier, slots: slotIds.length,
+        candidates: list.map((c) => {
+          const banned = diyPickOffBonds(data, c.pick.charId, off);
+          return { ...c.pick, ...(banned.length ? { banned } : {}), ...(diyPickOff(data, c.pick.charId, off) ? { off: true } : {}) };
+        }),
+        chosen: list.filter((c) => fielded.has(c.pick.charId)).map((c) => c.pick.charId),
+        picked: Array.isArray(this.diyChoice?.[tier]),
+      });
+    }
+    return { tiers };
   }
 
   /**

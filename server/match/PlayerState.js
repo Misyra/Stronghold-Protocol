@@ -198,6 +198,13 @@ export class PlayerState {
      * started, re-checked; frozen; {} = none (bots always). setDiy makes `this.gd` the player's data view.
      */
     this.diy = Object.freeze({});
+    /**
+     * 自选候补 (player/diy.js, feedback #114): the checked picks of every position — slots and bench keys — in the
+     * player's order; frozen; {} = none (bots, and a preset without bench candidates). resolveDiy fields its slots.
+     */
+    this.diyPreset = Object.freeze({});
+    /** 自选候补: the briefing's choice per tier `{ [tier]: charId[] }` (chooseDiy; g.diyChoose), or undefined. */
+    this.diyChoice = undefined;
     /** @type {Map<string, object>} slot id (normal / elite) → composed 自选 record (setDiy) */
     this._diyRecords = new Map();
     /** the copies of the slotted pieces (initDiyStock, once the match's bans are drawn) */

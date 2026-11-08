@@ -475,17 +475,22 @@ const statView = (x) => ({
  * target-selection grid (the sim's `unit.liveRangeGrid`, Battle._refreshRange; community report E1 after 0.1.0: 烛煌
  * S3's 4-11 never reached the card). `dir`: the unit's facing now (UP / RIGHT / DOWN / LEFT; UnitInfo.dir is the facing
  * at send time and the snapshot tuples carry none) — the detail card's range overlay rotates by it (GitHub PR #281).
- * @param {{ id?: number, uid?: number|null, defId?: string, hp?: number, alive?: boolean, base?: any, liveRangeGrid?: any, dir?: string } | null} u
+ * An ally with a redeploy time carries `respawnTime` (s, one decimal): the time a knock-out now waits — its own
+ * `base.respawnTime` × the redeploy multipliers (`s.redeployMul` × `unit.persist.redeployMul`: equipment, 特质 such as
+ * 耀骑士临光's grant, bonds, strategies), the formula of Battle._remove; `base.respawnTime` its own (feedback #86: the
+ * card showed only the record's 再部署).
+ * @param {{ id?: number, uid?: number|null, defId?: string, hp?: number, alive?: boolean, base?: any, liveRangeGrid?: any, dir?: string, cultMul?: { atk: number, def: number, hp: number }, side?: string } | null} u
  * @param {any} [s] aggregated stats (missing ⇒ the base)
  * @returns {{ id: number|null, uid: number|null, defId: string|null, hp: number, alive: boolean, maxHp: number, atk: number,
  *   def: number, res: number, interval: number|null, blockCnt: number, moveSpeed: number,
  *   base: { maxHp: number, atk: number, def: number, res: number, interval: number|null, blockCnt: number, moveSpeed: number },
- *   range?: Array<[number, number]>, dir?: string }}
+ *   respawnTime?: number, range?: Array<[number, number]>, dir?: string, silenced: boolean }}
  */
 export function unitStatsEntry(u, s = null) {
   const own = u && u.base && typeof u.base === 'object' ? u.base : {};
   const base = u && u.cultMul ? cultivatedStats(own, u.cultMul) : own;
   const cur = s && typeof s === 'object' ? s : base;
+  const rt = u?.side !== 'enemy' ? fin(own.respawnTime, 0) : 0;
   const range = u?.side !== 'enemy' && Array.isArray(u?.liveRangeGrid)
     ? u.liveRangeGrid.filter((p) => Array.isArray(p) && Number.isInteger(p[0]) && Number.isInteger(p[1])).map((p) => [p[0], p[1]])
     : null;
@@ -496,7 +501,8 @@ export function unitStatsEntry(u, s = null) {
     hp: Math.max(0, Math.round(fin(u?.hp))),
     alive: u?.alive !== false,
     ...statView(cur),
-    base: statView(base),
+    ...(rt > 0 ? { respawnTime: round1(rt * fin(cur.redeployMul, 1) * fin(u?.persist?.redeployMul, 1)) } : {}),
+    base: rt > 0 ? { ...statView(base), respawnTime: round1(rt) } : statView(base),
     ...(range ? { range } : {}),
     ...(isDir(u?.dir) ? { dir: u.dir } : {}),
     // the enemy card greys a SILENCE-format line (折射) from this; absent flags ⇒ not silenced

@@ -63,6 +63,14 @@ test('unitStatsEntry: effective stats next to the base, rounded for display; the
   assert.equal(plain.interval, 1.2);
   assert.equal(unitStatsEntry(null).maxHp, 0, 'never throws');
   assert.equal(unitStatsEntry({ base: { bat: 0 } }).interval, null, 'no attack');
+  // feedback #86: an ally's redeploy time now — its own × s.redeployMul × persist.redeployMul (Battle._remove)
+  const ally = { id: 5, side: 'ally', base: { maxHp: 1000, atk: 300, bat: 1.2, respawnTime: 70 }, persist: { redeployMul: 0.6 } };
+  const rd = unitStatsEntry(ally, { maxHp: 1000, atk: 300, bat: 1.2, aspd: 100, redeployMul: 0.85 });
+  assert.equal(rd.respawnTime, 35.7);
+  assert.equal(rd.base.respawnTime, 70);
+  assert.equal(unitStatsEntry(ally).respawnTime, 42, 'no aggregated stats: own × persist');
+  assert.equal(unitStatsEntry({ ...ally, side: 'enemy' }).respawnTime, undefined, 'enemies: none');
+  assert.equal('respawnTime' in unitStatsEntry({ side: 'ally', base: { bat: 1 } }).base, false, 'no redeploy time: no field');
 });
 
 test('g.unitStats: the board\'s start-of-battle stats (equipment in: ATK ×1.4, a slower attack), the same numbers the battle starts with; seq echoed', () => {

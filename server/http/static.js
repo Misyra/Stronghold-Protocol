@@ -283,9 +283,10 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       versioned = current || (legacyCode && match[1] === release.tag);
     }
     // 客户端把发布 tag 挂在 `?v=` 上（public/js/resourceUrl.js:49-56）：/data/… 用 asset tag，
-    // js/vendor/shared/sim 用 runtime tag，assets/fonts/media 用 art tag。这些 tag 是**内容摘要**
-    // （server/assetVersion.js:85-91）：runtime tag 吃进 js/vendor/shared/sim/data/packs 的字节，
-    // art tag 吃进 assets/fonts/media 的字节，所以「URL 上的 tag 等于本次发布算出来的 tag」等价于
+    // js/vendor/shared/sim 用组 tag，assets/fonts/media 用 art tag，/data/ 用数据自己的 dataTag。
+    // 这些 tag 是**内容摘要**（server/assetVersion.js）：组 tag 吃进本组自己的字节，dataTag 吃进
+    // artTag（改写器/cdn/美术树都在里面）与 /data/ 各文件的字节，art tag 吃进 assets/fonts/media 的
+    // 字节，所以「URL 上的 tag 等于本次发布算出来的 tag」等价于
     // 「这份字节以后不会再变」——可以直接 immutable 缓存，连 304 往返都省掉。
     // 不等于的一律照旧 no-cache：旧页面手里的旧 tag 必须重新验证，不能把新字节挂在旧 URL 上长期缓存
     // （和 /_v/ 是同一条规则：宁可让页面重新验证，也不给错字节贴一张永不过期的 URL）。
@@ -657,6 +658,8 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   // 单树布局的树 tag（server/assetVersion.js codeContentTags）：SP_CODE_CDN 配置时 importmap 指向
   // <base>/code/<这个 tag>/…，运维用它核对发布物（tools/studio-publish.mjs 的 plan/verify 输出同值）。
   serveStatic.codeTreeVersion = release.treeTag;
+  // 数据 JSON 的内容 tag（assetVersion.js dataTag）：/data/*（不含 /data.js）的 /_v/ 前缀，运维核对用。
+  serveStatic.dataVersion = release.dataTag;
   serveStatic.close = () => manifestEncoder.close();
   serveStatic.cacheStats = () => ({ gzipBytes: gzipCache.total, gzipEntries: gzipCache.map.size, gzipLimitBytes: gzipCache.maxTotal, gzipInflight: gzipCache.inflight.size,
     transformBytes: transformCache.total, transformEntries: transformCache.map.size, transformLimitBytes: transformCache.maxTotal, transformInflight: transformCache.inflight.size,

@@ -129,7 +129,8 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
   const srv = http.createServer((req, res) => handler(req, res, req.url.split('?')[0], req.url.split('?')[1] || ''));
   await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
   const get = (url, init) => fetch(`http://127.0.0.1:${srv.address().port}${url}`, init);
-  const prefix = `/_v/${handler.version}`;
+    const prefix = `/_v/${handler.version}`;
+    const dataPrefix = `/_v/${handler.dataVersion}`;
   const probe = (h, url) => new Promise((resolve) => {
     const res = { writeHead(status, headers) { this.status = status; this.headers = headers; }, end(body) { resolve({ status: this.status, headers: this.headers || {}, body }); } };
     h({ method: 'GET', headers: {} }, res, url, '');
@@ -159,14 +160,14 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
     const css = await (await get(prefix + '/css/a.css')).text();
     assert.ok(css.includes(`url('${artPrefix}/assets/p.png')`));
     assert.ok(css.includes('url(../assets/p.png)'), 'relative URLs inherit the release path');
-    const manifestRes = await get(prefix + '/data/assets.json');
+    const manifestRes = await get(dataPrefix + '/data/assets.json');
     const manifest = await manifestRes.json();
     assert.ok(validSpine(manifest.spine));
     assert.equal(manifest.spine.skel, artPrefix + '/assets/x.skel');
     assert.equal(manifest.spine.textures[0], artPrefix + '/assets/x.png');
     assert.equal(manifest.remote, 'https://cdn.example/x.png');
     assert.equal(new URL('x.png', 'http://localhost' + manifest.spine.atlas).pathname, artPrefix + '/assets/x.png');
-    const revalidate = await get(prefix + '/data/assets.json', { headers: { 'If-None-Match': manifestRes.headers.get('etag') } });
+    const revalidate = await get(dataPrefix + '/data/assets.json', { headers: { 'If-None-Match': manifestRes.headers.get('etag') } });
     assert.equal(revalidate.status, 304);
     const head = await get(prefix + '/css/a.css', { method: 'HEAD' });
     assert.equal(Number(head.headers.get('content-length')), Buffer.byteLength(css));
@@ -224,6 +225,50 @@ test('release paths cover the module graph, CSS, manifests, Spine dependencies a
     assert.equal(wrong.status, 404); assert.equal(wrong.headers.get('cache-control'), 'no-store');
     write('public/assets/p.png', 'updated picture');
     assert.notEqual(createStaticHandler(dirs).version, next.version);
+  } finally {
+    await new Promise((resolve) => srv.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('data JSONs carry their own content tag: a code-only release keeps data URLs, a data-only release keeps code URLs', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-data-tag-'));
+  const write = (rel, body) => {
+    const file = path.join(root, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, body);
+  };
+  write('public/index.html', '<html><head></head><script type="module" src="/js/main.js"></script></html>');
+  write('public/js/main.js', 'export const x = 1;');
+  write('data/chess.json', '{"a":1}');
+  const dirs = { publicDir: path.join(root, 'public'), dataDir: path.join(root, 'data'), sharedDir: path.join(root, 'shared'), simDir: path.join(root, 'sim') };
+  let handler = createStaticHandler(dirs);
+  const srv = http.createServer((req, res) => handler(req, res, req.url.split('?')[0], req.url.split('?')[1] || ''));
+  const page = (h) => new Promise((resolve) => { const res = { writeHead() {}, end(body) { resolve(body.toString()); } }; h({ method: 'GET', headers: {} }, res, '/', ''); });
+  const groupsOf = async (h) => JSON.parse((await page(h)).match(/__spCodeVersion=(\{[^}]+\})/)[1]);
+  try {
+    await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    const get = (url) => fetch(`http://127.0.0.1:${srv.address().port}${url}`);
+    const firstData = handler.dataVersion, firstGroups = await groupsOf(handler);
+    assert.notEqual(firstData, handler.version, 'the data tag is its own namespace, not the whole-release tag');
+    // 代码-only 发版：js 组 tag 动、__spDataVersion 与数据 URL 原样（客户端 immutable 缓存跨发版续命）。
+    write('public/js/main.js', 'export const x = 2;');
+    handler = createStaticHandler(dirs);
+    const secondGroups = await groupsOf(handler);
+    assert.notEqual(secondGroups.js, firstGroups.js);
+    assert.equal(handler.dataVersion, firstData, 'a code-only release keeps every /data/ URL');
+    // 数据-only 发版：数据 tag 动、js 组不动。
+    write('data/chess.json', '{"a":2}');
+    handler = createStaticHandler(dirs);
+    assert.notEqual(handler.dataVersion, firstData);
+    assert.equal((await groupsOf(handler)).js, secondGroups.js, 'a data-only release keeps code group URLs');
+    const versioned = await get(`/_v/${handler.dataVersion}/data/chess.json`);
+    assert.equal(versioned.status, 200);
+    assert.match(versioned.headers.get('cache-control'), /31536000, immutable/);
+    assert.equal(await versioned.text(), '{"a":2}');
+    const stale = await get(`/_v/${firstData}/data/chess.json`);
+    assert.equal(stale.status, 404, 'the changed data release retires its stale tag');
+    assert.equal(stale.headers.get('clear-site-data'), '"cache"');
+    assert.equal((await get('/data/chess.json')).headers.get('cache-control'), 'no-cache', 'the plain path keeps its revalidation behavior');
   } finally {
     await new Promise((resolve) => srv.close(resolve));
     fs.rmSync(root, { recursive: true, force: true });

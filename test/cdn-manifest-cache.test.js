@@ -32,8 +32,8 @@ test('rewritten versioned JSON retains immutable caching, encoding validators an
     assert.equal(settings.ASSETS_MANIFEST, '/assets-manifest.json?v=0123456789abcdef');
     const projection = JSON.parse((await request(settings.ASSETS_MANIFEST)).body);
     assert.deepEqual(Object.keys(projection).sort(), ['hashes', 'tag']);
-    const url = `/_v/${handler.version}/data/assets.json`;
-    const queryUrl = `/data/assets.json?v=${handler.version}`;
+    const url = `/_v/${handler.dataVersion}/data/assets.json`;
+    const queryUrl = `/data/assets.json?v=${handler.dataVersion}`;
     assert.match((await request(queryUrl)).headers['cache-control'], /immutable/);
     const plain = await request('/data/assets.json');
     assert.equal(plain.headers['cache-control'], 'no-cache');

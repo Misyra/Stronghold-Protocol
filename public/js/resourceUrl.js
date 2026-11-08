@@ -36,9 +36,11 @@ export function dataBasePath() {
  *  只是退化为旧的整树失效语义）。 */
 const codeGroupOf = (url) => /^\/(js|vendor|shared|sim)\//.exec(url)?.[1] ?? null;
 
-// /i18n/ 语句包与 data 一样落整版 release tag（服务端 expectedTag 同分支，语言包喂 runtimeHash）。
+// /i18n/ 语句包落整版 release tag（服务端 expectedTag 同分支，语言包喂 runtimeHash）；
+// /data/ 落数据自己的内容 tag（__spDataVersion，服务端 dataTag）——代码-only 发版不再 re-bust 数据 JSON。
 export function resourceUrl(url, version = /^\/(?:assets|fonts|media)\//.test(url) ? globalThis.__spArtVersion :
   codeGroupOf(url) ? (globalThis.__spCodeVersion?.[codeGroupOf(url)] || globalThis.__spRuntimeVersion || globalThis.__spAssetVersion)
+  : /^\/data\//.test(url) ? (globalThis.__spDataVersion || globalThis.__spAssetVersion)
   : globalThis.__spAssetVersion) {
   const remote = assetCdnUrl(url, globalThis.__spAssetCdn);
   if (remote !== url) return remote;

@@ -367,16 +367,22 @@ export function createDataStore(opts = {}) {
         overlayLoads.delete(key);
         return null;
       }
+      // 版本化 URL（/_v/<dataTag>/data/i18n/…，resourceUrl.js 的 /data/ 分支）immutable 缓存零重验；
+      // 数据 CDN 基址或插件 /packs/ 路径恒等原样，保持 no-cache 语义。
+      const pinned = resourceUrl(url);
+      const cache = pinned === url ? 'no-cache' : 'default';
+      const overlayPinned = overlayUrl ? resourceUrl(overlayUrl) : null;
+      const overlayCache = !overlayUrl || overlayPinned === overlayUrl ? 'no-cache' : 'default';
       for (let attempt = 0; ; attempt++) {
         try {
-          const res = await doFetch(url, { cache: 'no-cache' });
+          const res = await doFetch(pinned, { cache });
           if (!res || !res.ok) throw Object.assign(new Error(`HTTP ${res ? res.status : '???'}`), { status: res ? res.status : null });
           const json = await res.json();
           if (!json || typeof json !== 'object' || !json.files) throw Object.assign(new Error('not an overlay'), { badJson: true });
           let pluginOverlay = null;
           if (overlayUrl) {
             try {
-              const extra = await doFetch(overlayUrl, { cache: 'no-cache' });
+              const extra = await doFetch(overlayPinned, { cache: overlayCache });
               const value = extra?.ok ? await extra.json() : null;
               if (value?.version === 1 && value.lang === lang && value.files) pluginOverlay = value;
             } catch { /* [ASSUMED] A missing overlay leaves built-in text available. */ }

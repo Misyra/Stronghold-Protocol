@@ -106,6 +106,9 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
   // （REVIEW-2026-11-09 §7 发版热点专项）。改写器参与每一个组：改写行为变了，旧 URL 的字节语义就变了。
   // 组/树 tag 的公式提炼在 codeContentTags（上方），tools/studio-publish.mjs 用同一函数发布同一 tag。
   const codeEntries = [];
+  // 数据 JSON 的行（walk 序）单独收集：/data/ 不再喂 runtimeHash，拿到自己的内容 tag（dataTag，
+  // 下方）——代码-only 发版不再 re-bust 全部 /data/*.json（发版热点 #1，此前 2.5GB/天的大头）。
+  const dataEntries = [];
   const isArt = (url) => /^\/(?:assets|fonts|media)\//.test(url);
   const isCode = (url) => /^\/(?:js|vendor|shared|sim)\//.test(url) || /^\/data\.js(?:[?#]|$)/.test(url);
   const signatures = new Map();
@@ -139,7 +142,9 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
         cacheChanged = true;
       }
       digests[abs] = [identity, digest];
-      hash.update(url + '\0' + digest + '\0');
+      if (isArt(url)) hash.update(url + '\0' + digest + '\0');
+      else if (url.startsWith('/data/')) dataEntries.push({ rel: url, hash: digest });
+      else hash.update(url + '\0' + digest + '\0');
       const group = CODE_GROUP.exec(url);
       if (group) codeEntries.push({ rel: url, hash: digest });
     }
@@ -149,6 +154,11 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
   const artTag = artHash.digest('hex').slice(0, 16);
   const runtimeTag = runtimeHash.digest('hex').slice(0, 16);
   const { groupTags, treeTag } = codeContentTags(codeEntries, transformer);
+  // 数据 JSON 的内容 tag：版本化数据字节 = release.transform 的 json() 改写（改写器字节、cdn 配置、
+  // 内嵌美术 URL 的 artTag 前缀都参与）+ 数据文件自身——artTag 已把改写器/cdn/美术树全部吃进，
+  // dataTag = artTag ‖ 数据行即完备。代码-only 发版数据 URL 原样有效，客户端 immutable 缓存跨发版续命。
+  const dataTag = createHash('sha256').update(artTag)
+    .update(dataEntries.map((e) => `${e.rel}\0${e.hash}\0`).join('')).digest('hex').slice(0, 16);
   // JSON/CSS and preload manifests embed art addresses, so their release MUST
   // change with art/CDN inputs. Only untransformed module URLs are independent.
   const tag = createHash('sha256').update(runtimeTag).update(artTag).digest('hex').slice(0, 16);
@@ -156,6 +166,7 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
   const expectedTag = (s) => {
     const group = CODE_GROUP.exec(s);
     if (group) return groupTags[group[1]];
+    if (typeof s === 'string' && s.startsWith('/data/')) return dataTag;
     return isArt(s) ? artTag : isCode(s) ? runtimeTag : tag;
   };
   const url = (s) => {
@@ -206,9 +217,9 @@ export function createAssetVersion(mounts, shim, cdn = { base: '', version: '' }
     });
   // 页面只带版本标签；CDN 基址与每文件指纹清单由 /js/asset-cdn.js 这个模块提供（public/js/main.js 读它），
   // 页面里不再重复一份 __spAssetCdn / __spManifestReady。
-  return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spRuntimeVersion=${JSON.stringify(runtimeTag)};globalThis.__spCodeVersion=${JSON.stringify(groupTags)};globalThis.__spArtVersion=${JSON.stringify(artTag)};</script>`);
+  return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}<script>globalThis.__spAssetVersion=${JSON.stringify(tag)};globalThis.__spRuntimeVersion=${JSON.stringify(runtimeTag)};globalThis.__spCodeVersion=${JSON.stringify(groupTags)};globalThis.__spArtVersion=${JSON.stringify(artTag)};globalThis.__spDataVersion=${JSON.stringify(dataTag)};</script>`);
   }
-  return { tag, artTag, runtimeTag, groupTags, treeTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === fileIdentity(stat) };
+  return { tag, artTag, runtimeTag, groupTags, treeTag, dataTag, expectedTag, url, transform, matchesFile: (abs, stat) => signatures.get(abs) === fileIdentity(stat) };
 }
 
 /** The legacy CDN release tag (`.assets-cdn-version`): the `_v/<tag>/` snapshot layout this fork used

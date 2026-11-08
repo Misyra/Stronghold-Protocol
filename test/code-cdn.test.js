@@ -165,7 +165,7 @@ test('createAssetVersion keeps unconfigured URLs on the origin and computes both
   assert.equal(cdn.url('/sim/x.js'), `https://studio.test/code/${treeTag}/sim/x.js`);
   assert.equal(cdn.url('/data.js'), `/_v/${release.runtimeTag}/data.js`);
   assert.equal(cdn.url('/assets/p.png'), `/_v/${release.artTag}/assets/p.png`);
-  assert.equal(cdn.url('/data/d.json'), `/_v/${release.tag}/data/d.json`);
+  assert.equal(cdn.url('/data/d.json'), `/_v/${release.dataTag}/data/d.json`);
   fs.rmSync(root, { recursive: true, force: true });
 });
 

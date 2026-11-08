@@ -3,15 +3,16 @@
 // set at once; this repo sends room.setExperimental per key through screens/room.js's builders (capacityExperimental /
 // duckLordExperimental / … — test/ui/player-capacity.test.js pins those call shapes), so a row hands its change to the
 // per-key callback the screen passes instead. Only the keys this repo's server knows (shared/experimental.js) are here:
-// revivalEnabled, disableSharedPool, playerCapacity, disableDuckLord, disableLayerCap, disableHitLimit,
-// uniteHumansFirst — the fork's enemy multipliers / plan, collabRow and poolPlan/PoolEditor stay unported (the server
-// has none of them), and 联动干员 does not exist here.
+// revivalEnabled, disableSharedPool, playerCapacity, disableDuckLord, disableLayerCap, disableHitLimit, poolPlan,
+// uniteHumansFirst — the fork's enemy multipliers / plan and collabRow stay unported (the server has none of them), and
+// 联动干员 does not exist here; 手动指定卡池编组 (feedback #49) 编辑器是 ui/poolEditor.js.
 
 import { html } from './components.js';
 import { t } from '../../../shared/i18n.js';
 import { MAX_SEATS } from '../../../shared/constants.js';
 import { PLAYER_CAPACITIES, isPlayerCapacity, roomCapacity } from '../../../shared/playerCapacity.js';
 import { EXPERIMENTAL_DEFAULTS, experimentalOptions } from '../../../shared/experimental.js';
+import { autoPoolPlan } from '../../../shared/poolPlan.js';
 
 /**
  * A room's experimental payload as the panel reads it: the shared normalization (shared/experimental.js
@@ -34,9 +35,10 @@ export function switchRow({ id, title, note, checked, disabled, onChange, testid
 }
 
 /**
- * 扩展同盟人数 and its seat count (the fork's capacityRows, without the pool-plan re-layout this repo has not ported).
- * Hidden in a solo room and in a room the queue allocated, like screens/room.js capacityOption; `onCapacity` takes the
- * seat count (the screen builds the option set with capacityExperimental).
+ * 扩展同盟人数 and its seat count (the fork's capacityRows): a capacity change re-derives the room's pool plan from the
+ * automatic rule (screens/room.js capacityExperimental), the plan cannot outlive a seat count. Hidden in a solo room and
+ * in a room the queue allocated, like screens/room.js capacityOption; `onCapacity` takes the seat count (the screen
+ * builds the option set with capacityExperimental).
  */
 export function capacityRows({ value, mode = 'coop', source = 'private', editable = false, busy = false, onCapacity }) {
   if (mode !== 'coop' || source === 'matchmaking' || !onCapacity) return null;
@@ -99,14 +101,26 @@ export function ruleRows({ value, mode = 'coop', source = 'private', editable = 
   ];
 }
 
-/** 禁用共享卡池 (the fork's poolRows, without 手动指定卡池编组/PoolEditor — the manual groups are not ported). `onSharedPool` takes the next state. */
-export function poolRows({ value, editable = false, busy = false, onSharedPool }) {
-  if (!onSharedPool) return null;
+/**
+ * 禁用共享卡池 and 手动指定卡池编组 (the fork's poolRows, adapted to this repo's per-key senders): the plan states every
+ * seat's pool (shared/poolPlan.js), so it stands in for the first — its switch is disabled and its note says so while a
+ * plan is on; turning the manual switch on starts from the automatic rule (autoPoolPlan, per-seat pools when 禁用共享卡池
+ * is on). `onSharedPool` takes the next switch state; `onPoolPlan` the next plan (null when the manual groups go off).
+ */
+export function poolRows({ value, seats = [], editable = false, busy = false, onSharedPool, onPoolPlan }) {
+  if (!onSharedPool && !onPoolPlan) return null;
   const options = roomExperimental(value);
   const locked = !editable || !!busy;
+  const manual = !!options.poolPlan;
+  const setManual = (on) => {
+    if (locked) return;
+    onPoolPlan(on ? autoPoolPlan(roomCapacity('coop', options), { seats, independent: options.disableSharedPool === true }) : null);
+  };
   return [
-    switchRow({ id: 'experimental-pool', title: t('禁用共享卡池'), note: t('每位博士使用独立卡池，不再争用同一干员库存。'),
-      checked: options.disableSharedPool === true, disabled: locked,
-      onChange: (on) => { if (!locked) onSharedPool(on); } }),
+    onSharedPool ? switchRow({ id: 'experimental-pool', title: t('禁用共享卡池'), note: manual ? t('已由手动编组决定。') : t('每位博士使用独立卡池，不再争用同一干员库存。'),
+      checked: options.disableSharedPool === true, disabled: locked || manual,
+      onChange: (on) => { if (!locked) onSharedPool(on); } }) : null,
+    onPoolPlan ? switchRow({ id: 'experimental-pools-manual', title: t('手动指定卡池编组'), note: t('由创建者决定一共几个卡池、每个卡池包含哪些席位。'),
+      checked: manual, disabled: locked, onChange: (on) => setManual(on) }) : null,
   ];
 }

@@ -422,6 +422,9 @@ export class Match {
     this.disableHitLimit = this.experimental.disableHitLimit === true;
     /** the room's private-pool switch (experimental.disableSharedPool): every seat its own complete pool (poolGroups) */
     this.disableSharedPool = this.experimental.disableSharedPool;
+    /** 手动指定卡池编组 (experimental.poolPlan, 移植自 Stardust fork): one pool per room seat (shared/poolPlan.js),
+     *  else null; a solo room has one seat and no groups */
+    this.poolPlan = this.isSolo ? null : this.experimental.poolPlan ?? null;
     /** AI 联防置后 (experimental.uniteHumansFirst, 移植自用户分支 rel29): 联防 helper 先在真人里挑, AI 队友与 AI 托管垫后 (unite.js helperOrder) */
     this.uniteHumansFirst = this.experimental.uniteHumansFirst === true;
     /** 「AI 队友最后选择」 (opts.aiPicksLast, GitHub #338): humans draft before AI seats (MatchPhases.humansFirst) */

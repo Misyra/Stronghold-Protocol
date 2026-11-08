@@ -3790,5 +3790,20 @@
   "队友生命耗尽时，任意存活队友可支付 10 生命抵消这次死亡（自己至少要有 11 生命），每人每局最多被救一次。": "When a teammate runs out of HP, any living teammate with at least 11 HP can pay 10 HP to cancel that elimination. Each player can be rescued at most once per match.",
   "禁用共享卡池": "Disable shared pool",
   "每位博士使用独立卡池，不再争用同一干员库存。": "Each Doctor uses an independent pool instead of competing for the same operator stock.",
-  "未开启时按开局人数自动分组。": "Off: pools follow the seats taken at the start."
+  "未开启时按开局人数自动分组。": "Off: pools follow the seats taken at the start.",
+  "空席": "Empty seat",
+  "P{n} {name}": "P{n} {name}",
+  "共 {n} 个卡池": "{n} pools",
+  "减少卡池": "One pool fewer",
+  "增加卡池": "One pool more",
+  "均分": "Even out",
+  "点击席位再选择目标卡池，也可直接拖动": "Press a seat, then a pool, or drag it",
+  "点击席位再选择目标卡池": "Press a seat, then a pool",
+  "卡池 {n}，{count} 席": "Pool {n}, {count} seats",
+  "完整牌库": "Full stock",
+  "牌库 ×{n}": "Stock ×{n}",
+  "移到此处": "Move here",
+  "已由手动编组决定。": "Set by the manual groups.",
+  "手动指定卡池编组": "Manual pool groups",
+  "由创建者决定一共几个卡池、每个卡池包含哪些席位。": "The host sets how many pools there are and which seats share each."
 }

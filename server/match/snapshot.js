@@ -248,6 +248,9 @@ export const MATCH_FIELDS = Object.freeze([
   'uniteHumansFirst',
   // 禁用层数上限 / 禁用单次伤害上限（移植自 Stardust fork）：同族规则标量，落档保持按旧存档恢复一致
   'disableLayerCap', 'disableHitLimit',
+  // 手动指定卡池编组（experimental.poolPlan，feedback #49）：同族规则标量——恢复侧 buildPoolGroups 按它重建
+  // 分组（doc.poolGroups 只存各池余量），计划不同口径的存档在组数校验处被拒
+  'poolPlan',
 ]);
 
 /** PlayerState fields of a checkpoint (bonds/deploy map are recomputed on restore). */

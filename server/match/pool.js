@@ -21,8 +21,9 @@
 // the promotion reward and random grants pass diyStockEntries (the roll's own tier, DESIGN §30.23). Weighted by its
 // copies like any chess, drawn by that player only.
 
-// 容量实验（移植自用户分支，shared/poolPlan.js 的自动分组半边；手动卡池编组 poolPlan 不在本仓范围）。
+// 容量实验（移植自用户分支，shared/poolPlan.js）：自动分组与手动指定卡池编组（experimental poolPlan，feedback #49）。
 import { MAX_PLAYER_CAPACITY } from '../../shared/playerCapacity.js';
+import { autoPoolSizes, poolScale } from '../../shared/poolPlan.js';
 
 /**
  * Per-match disabled bond set D and banned chess (research 01 A2): D = uniform sample of `core` core bonds and `addon`
@@ -58,40 +59,35 @@ function sample(arr, n, rng) {
   return a.slice(0, Math.max(0, Math.min(n, a.length)));
 }
 
-/** 一个池相对完整普通池的规模：≤4 席恰好一份，更多席位按人数放大（五席实验房 ×5/4）。 */
-export const poolScale = (n) => (n > 4 ? n / 4 : 1);
-
 /** 最大的房间的每一个席位同池时的规模上限（SharedPool 的 scale 校验界）。 */
 const MAX_POOL_SCALE = poolScale(MAX_PLAYER_CAPACITY);
 
 /**
- * 自动分组的切块大小（`count` 个席位按座位顺序；fork shared/poolPlan.js autoPoolSizes 的容量域子集——
- * independent（不共享池）/ legacySix（旧检查点）随手动编组一起不在本仓范围，但 independent 仍要支持
- * disableSharedPool：每席一组，各自完整份数）。
- * @param {number} count
- * @param {{ experimental?: boolean, independent?: boolean, fixedChunks?: boolean }} [opts]
- * @returns {{ sizes: number[], enlarged: boolean }}
- */
-export function autoPoolSizes(count, { experimental = false, independent = false, fixedChunks = false } = {}) {
-  const chunked = experimental && fixedChunks && !independent;
-  const enlarged = experimental && !independent && !chunked && count === 5;
-  const groups = independent ? count : chunked || (experimental && !enlarged && count >= 6) ? Math.ceil(count / 4) : 1;
-  const sizes = chunked ? Array.from({ length: groups }, (_, i) => Math.min(4, count - i * 4))
-    : Array.from({ length: groups }, (_, i) => Math.floor(count / groups) + (i < count % groups ? 1 : 0));
-  return { sizes, enlarged };
-}
-
-/**
- * 开局时的席位分组（fork pool.js createPoolGroups，去掉 poolPlan 手动编组）：实际座位顺序的连续块，每块自己的
- * 卡池。`experimental`（容量房间）按 autoPoolSizes 切，20 人房（fixedChunks）固定连续 4 人块；普通房一组、原份数，
- * 与旧的单池行为完全一致。分组之后永不因淘汰/离开而重排（Match.buildPoolGroups）。
+ * 开局时的席位分组（fork pool.js createPoolGroups）：实际座位顺序的连续块，每块自己的卡池。`experimental`（容量
+ * 房间）按 autoPoolSizes 切，20 人房（fixedChunks）固定连续 4 人块；普通房一组、原份数，与旧的单池行为完全一致。
+ * 带 `plan`（手动指定卡池编组，experimental poolPlan：每席位一个池号，shared/poolPlan.js）时席位按计划入组：开局
+ * 无人的池不存在，其余按 plan 序从 1 编号，超过四席的池按人数放大（poolScale）。分组之后永不因淘汰/离开而重排
+ * （Match.buildPoolGroups）。
  * @param {import('./gamedata.js').GameData} gd
  * @param {Array<{ seat: number, playerId: string }>} players
- * @param {{ banned?: string[], experimental?: boolean, independent?: boolean, fixedChunks?: boolean }} [opts]
+ * @param {{ banned?: string[], experimental?: boolean, independent?: boolean, fixedChunks?: boolean,
+ *   plan?: readonly number[] | null }} [opts]
  */
-export function createPoolGroups(gd, players, { banned = [], experimental = false, independent = false, fixedChunks = false } = {}) {
+export function createPoolGroups(gd, players, { banned = [], experimental = false, independent = false, fixedChunks = false, plan = null } = {}) {
   if (!Array.isArray(players) || players.length < 1 || players.length > MAX_PLAYER_CAPACITY) throw new RangeError('pool groups require 1..20 players');
   const sorted = players.slice().sort((a, b) => a.seat - b.seat);
+  if (plan) {
+    const pools = new Map();
+    for (const p of sorted) {
+      if (!Number.isInteger(plan[p.seat])) throw new RangeError('pool plan has no such seat');
+      if (!pools.has(plan[p.seat])) pools.set(plan[p.seat], []);
+      pools.get(plan[p.seat]).push(p.playerId);
+    }
+    return [...pools.keys()].sort((a, b) => a - b).map((pool, i) => {
+      const playerIds = pools.get(pool), scale = poolScale(playerIds.length);
+      return { id: i + 1, playerIds, scale, pool: new SharedPool(gd, { banned, scale }) };
+    });
+  }
   const count = sorted.length;
   const { sizes, enlarged } = autoPoolSizes(count, { experimental, independent, fixedChunks });
   let offset = 0;

@@ -50,6 +50,7 @@
 import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
 import { DIFFICULTY_NAMES, DIFFICULTY_COLORS, MAX_SEATS, MAX_SPECTATORS } from '../../../shared/constants.js';
 import { isPlayerCapacity, roomCapacity } from '../../../shared/playerCapacity.js';
+import { autoPoolPlan } from '../../../shared/poolPlan.js';
 import {
   html, Button, Icon, MicroLabel, PingPill, AvatarFrame, DifficultyIcon, Tooltip, Spinner, confirmDialog, doctorNo, Modal,
 } from '../ui/components.js';
@@ -216,16 +217,19 @@ export function capacityOption(room, myId) {
  * The option set for a `room.setExperimental` that sets the seat `capacity` (capacityOption's sender): the two base
  * flags always travel, `playerCapacity` only above the official four (a standard room's payload stays two-flag), and
  * 禁用鸭爵策略 survives only an expanded room. The battle rules travel with any capacity (禁用层数上限 / 禁用单次伤害上限 /
- * AI 联防置后: any room), so toggling one switch never silently drops another.
- * @param {number} capacity @param {any} [current] room.state experimental
+ * AI 联防置后: any room), so toggling one switch never silently drops another. 手动指定卡池编组 travels with the room's
+ * other rules; a *capacity change* re-derives the plan from the automatic rule (the fork's capacityRows — the layout
+ * cannot outlive a seat count; `seats` are the taken seats), the same capacity carries it verbatim.
+ * @param {number} capacity @param {any} [current] room.state experimental @param {number[]} [seats] taken seats
  * @returns {{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean,
- *   disableLayerCap?: boolean, disableHitLimit?: boolean, uniteHumansFirst?: boolean }}
+ *   disableLayerCap?: boolean, disableHitLimit?: boolean, poolPlan?: number[], uniteHumansFirst?: boolean }}
  */
-export function capacityExperimental(capacity, current = null) {
+export function capacityExperimental(capacity, current = null, seats = []) {
   const base = { revivalEnabled: current?.revivalEnabled === true, disableSharedPool: current?.disableSharedPool === true };
   if (current?.uniteHumansFirst === true) base.uniteHumansFirst = true;
   if (current?.disableLayerCap === true) base.disableLayerCap = true;
   if (current?.disableHitLimit === true) base.disableHitLimit = true;
+  if (current?.poolPlan) base.poolPlan = roomCapacity('coop', current) === capacity ? current.poolPlan : autoPoolPlan(capacity, { seats });
   if (!isPlayerCapacity(capacity) || capacity === MAX_SEATS) return base;
   const next = { ...base, playerCapacity: capacity };
   if (current?.disableDuckLord === true) next.disableDuckLord = true;
@@ -351,6 +355,23 @@ export function sharedPoolExperimental(on, current = null) {
 }
 
 /**
+ * 手动指定卡池编组 (room.setExperimental, 移植自 Stardust fork rel31, feedback #49): the room's pool plan — one pool
+ * number per seat (shared/poolPlan.js), edited in ui/poolEditor.js. The plan states every seat's pool, so it stands in
+ * for 禁用共享卡池 (the server canonical drops that flag under a plan); going off removes the key, and the room's other
+ * rules travel with it (capacityExperimental). The plan is already canonical (PoolEditor sends shared/poolPlan.js
+ * output), like the fork's editor.
+ * @param {number[]|null} plan the next plan; null when the manual groups go off
+ * @param {any} [current] room.state experimental
+ * @returns {{ revivalEnabled: boolean, disableSharedPool: boolean, playerCapacity?: number, disableDuckLord?: boolean,
+ *   disableLayerCap?: boolean, disableHitLimit?: boolean, poolPlan?: number[], uniteHumansFirst?: boolean }}
+ */
+export function poolPlanExperimental(plan, current = null) {
+  const base = capacityExperimental(roomCapacity('coop', current), current);
+  if (plan == null) { const { poolPlan: _dropped, ...rest } = base; return rest; }
+  return { ...base, disableSharedPool: false, poolPlan: plan };
+}
+
+/**
  * 开发者控制台 (room.console.enable, server/match/match/intents.js consoleGrant, 移植自用户分支): a private room may
  * grant itself in-match 干员 / 装备 / 盟约层数, quota-limited and broadcast to the team. A solo room's own seat may
  * switch it; every other room needs its host, and a matchmaking room can never use it.
@@ -470,6 +491,12 @@ function BotBandPicker({ open, seat, seats, bands, busy, dupes = false, onClose,
   <//>`;
 }
 
+/** 席位卡条上的「卡池 N」小标 (移植自 Stardust fork rel31, feedback #49): the seat's pool under 手动指定卡池编组. */
+function SeatPool({ room, index }) {
+  const pool = room.experimental?.poolPlan?.[index];
+  return Number.isInteger(pool) ? html`<em class="rseat__pool" data-testid=${`seat-pool-${index}`}>${t('卡池 {n}', { n: pool + 1 })}</em>` : null;
+}
+
 function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot, onKick, onInvite, portrait = null, portraitDefault = null, operator = null, avatar = null, bg = '', bgY = null, onPickCard = null, onPickAvatar = null, onPickBg = null, fresh = false, bands = null, onBotBand = null }) {
   const [badArt, setBadArt] = useState([]);
   const coop = room.mode !== 'solo';
@@ -481,7 +508,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
     const invitable = coop && !facts.spectating;
     return html`<article class="seat seat--empty rseat rseat--empty" style=${`--i:${index}`}>
       <span class="rseat__clip" aria-hidden="true"></span>
-      <header class="rseat__strip"><i></i><span class="num">P${index + 1}</span></header>
+      <header class="rseat__strip"><i></i><${SeatPool} room=${room} index=${index} /><span class="num">P${index + 1}</span></header>
       <div class="rseat__art">
         ${invitable
           ? html`<button type="button" class="rseat__invite" onClick=${onInvite} title=${t('复制同盟密钥以邀请队友')}>
@@ -507,7 +534,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onAddBot, onRemoveBot,
   return html`<article class=${`seat rseat${isMe ? ' is-me' : ''}${isHostSeat ? ' is-host' : ''}${seat.isBot ? ' is-bot' : ''}${art ? ' has-art' : ''}${lit ? ' is-lit' : ''}${flash ? ' is-flash' : ''} is-${state}`}
       style=${`--i:${index}`}>
     <span class="rseat__clip" aria-hidden="true"></span>
-    <header class="rseat__strip"><i></i><span class="num">P${index + 1}</span></header>
+    <header class="rseat__strip"><i></i><${SeatPool} room=${room} index=${index} /><span class="num">P${index + 1}</span></header>
     <div class="seat__art rseat__art">
       ${art
         ? html`<img key=${art} class="seat__portrait" src=${art} alt="" draggable=${false} onError=${() => setBadArt((b) => (b.includes(art) ? b : [...b, art]))} />`
@@ -774,8 +801,9 @@ const setAiLast = (on) => run('ailast', () => net.request('room.setAiPicksLast',
 // 「允许重复策略」 (本仓新设): the host toggles it, the draft's 队友已选 guard stands down
 const setBandDupes = (on) => run('dupes', () => net.request('room.setBandDupes', { on }));
 // 扩展同盟人数 / 禁用鸭爵策略 (room.setExperimental, 移植自 Stardust fork): the whole option set goes to the server at
-// once; the server resets the others' ready when it takes a change (server/lobby.js setExperimental)
-const setCapacity = (capacity) => run('capacity', () => net.request('room.setExperimental', { experimental: capacityExperimental(capacity, room.experimental) }));
+// once; the server resets the others' ready when it takes a change (server/lobby.js setExperimental). A capacity change
+// re-derives the room's pool plan from the automatic rule (capacityExperimental), so it gets the taken seats.
+const setCapacity = (capacity) => run('capacity', () => net.request('room.setExperimental', { experimental: capacityExperimental(capacity, room.experimental, (room.seats || []).flatMap((s, i) => (s ? [i] : []))) }));
 const setDuckLord = (on) => run('ducklord', () => net.request('room.setExperimental', { experimental: duckLordExperimental(on, room.experimental) }));
 // 禁用层数上限 / 禁用单次伤害上限 (移植自 Stardust fork): the whole option set goes to the server at once (room.setExperimental),
 // like 扩展同盟人数; the server resets the others' ready when it takes a change
@@ -786,6 +814,9 @@ const setUniteHumans = (on) => run('unite-humans', () => net.request('room.setEx
 // 队友复活 / 禁用共享卡池 (移植自 Stardust fork rel24): the whole option set goes to the server at once (room.setExperimental), like the other rules
 const setRevival = (on) => run('revival', () => net.request('room.setExperimental', { experimental: revivalExperimental(on, room.experimental) }));
 const setSharedPool = (on) => run('shared-pool', () => net.request('room.setExperimental', { experimental: sharedPoolExperimental(on, room.experimental) }));
+// 手动指定卡池编组 (移植自 Stardust fork rel31, feedback #49): the plan goes through the same channel — the editor's
+// canonical plan, or null when the manual groups go off
+const setPoolPlan = (plan) => run('pool-plan', () => net.request('room.setExperimental', { experimental: poolPlanExperimental(plan, room.experimental) }));
 // AI 指定策略 (room.setBotBand, 移植自用户分支): the host names the strategy an AI seat takes in the draft (null = 自动选择)
 const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.request('room.setBotBand', { seat, bandId }); setBandSeat(null); });
   // 开发者控制台 (移植自用户分支): two messages, host-only on the server (a solo room's own seat may toggle it).
@@ -1056,11 +1087,11 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
           onCreate=${confirmDifficulty} busy=${busy === 'diff' ? 'create' : null} online=${online} action=${t('确认')} hint=${protoHint} difficulties=${protoDifficulties} />`
       : html`<${ProtocolSelect} roomMode=${room.mode} difficulty=${room.difficulty} onDifficulty=${() => {}} onClose=${closeProto}
           online=${online} readOnly=${true} difficulties=${protoDifficulties} />` : null}
-    ${opts ? html`<${RoomSettings} page=${settingsPage(room, optsPage)} onPage=${setOptsPage} room=${room} editable=${facts.isHost && !room.inMatch} busy=${busy}
+    ${opts ? html`<${RoomSettings} page=${settingsPage(room, optsPage)} onPage=${setOptsPage} room=${room} myId=${me.playerId} editable=${facts.isHost && !room.inMatch} busy=${busy}
       version=${versionCtl} difficulty=${difficultyRow} aiLast=${aiLast} dupes=${dupesOpt} takeover=${aiTakeoverOption(room, me.playerId)} soloOption=${soloOpt}
       consoleOpt=${consoleOpt} matching=${!!room.matchmaking}
       onAiLast=${setAiLast} onBandDupes=${setBandDupes} onAiTakeover=${setAiTakeover} onCapacity=${setCapacity} onDuckLord=${setDuckLord}
-      onRevival=${setRevival} onSharedPool=${setSharedPool} onLayerCap=${setLayerCap} onHitLimit=${setHitLimit} onUniteHumans=${setUniteHumans}
+      onRevival=${setRevival} onSharedPool=${setSharedPool} onPoolPlan=${setPoolPlan} onLayerCap=${setLayerCap} onHitLimit=${setHitLimit} onUniteHumans=${setUniteHumans}
       onConsole=${setConsole} onSoloUnlimited=${setSoloUnlimited} onClose=${() => setOpts(false)} />` : null}
     ${versionOpen && versionCtl ? html`<${VersionPicker} mode="room" versions=${versions || [{ id: curVersion, roomModes: [room.mode] }]} current=${curVersion}
       serverDefault=${serverDefault} roomMode=${room.mode} editable=${versionEditable && !versionWhy} busy=${busy === 'version'}

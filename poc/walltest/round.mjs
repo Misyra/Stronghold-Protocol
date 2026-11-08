@@ -22,6 +22,8 @@ const opt = {};
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (!a.startsWith('--')) continue;
+  const eq = a.indexOf('=');
+  if (eq > 2) { opt[a.slice(2, eq)] = a.slice(eq + 1); continue; } // --k=v：值可以以 -- 开头（如 --extra="--plan-pool 1"）
   const k = a.slice(2);
   const v = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true;
   opt[k] = v;

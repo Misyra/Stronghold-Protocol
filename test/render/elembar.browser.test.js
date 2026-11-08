@@ -2,10 +2,12 @@
 // 不对，损伤条远远没扣完但是实际已经爆条"): a real battle (古米 against 底海滑动者) is simulated in Node, its frames are fed
 // to the real field view (public/dev/render-demo.html, real Spine models) the way the client runner does (local feed,
 // one tick per animation frame), and the drawn element gauge is read back every frame:
-//   · the white bar is the sim's remaining 元素值 at the frame shown (within 1 %, never below it, never empty before the
-//     burst), and the burst shows as the bar refilling over the 爆发冷却 in the element's colour (never white);
-//   · a row of five operators with gauges (desktop and a 844×390 phone at DPR 3): each gauge row lies under its own
-//     unit's bars and inside their span (the v2.3 ring sat on the next operator's tier chip and bars).
+//   · the white arc is the sim's remaining 元素值 at the frame shown (within 1 %, never below it, never empty before the
+//     burst), and the burst shows as the arc refilling over the 爆发冷却 in the element's colour (never white);
+//   · a row of five operators and three enemies with gauges (desktop and a 844×390 phone at DPR 3): each ring lies under
+//     its own unit, centred on it and inside its own tile, where the official prefab puts it (feedback #113 「损伤条对齐官方，
+//     位于干员下方，圆形进度条」; the v2.3 ring beside the bars sat on the next operator's tier chip and bars) — drawn with
+//     the official sprites when the local-art manifest lists them (group ui/ep).
 //
 // Opt-in (starts Chrome): RENDER_E2E=1 node --test test/render/elembar.browser.test.js
 // Chrome path: $CHROME_PATH or the macOS default. Screenshots → test/e2e/out/elembar-*.png.
@@ -50,18 +52,18 @@ function recordBattle(seconds = 54) {
 function readGauge(id) {
   const v = window.__demo.view;
   const x = v.debug.views.get(id);
-  const r = x && x._elBar;
+  const r = x && x._elRing;
   if (!r || !r.root.visible) return { el: null, renderT: v.debug.interp.renderT };
-  return { el: x.el, share: r.fill.visible ? r.fill.width / (r.bg.width - 2) : 0, tint: r.fill.tint, renderT: v.debug.interp.renderT };
+  return { el: x.el, share: r.arc.visible ? r.share : 0, tint: r.arc.tint, renderT: v.debug.interp.renderT };
 }
 
-describe('element gauge row in headless Chrome (user playtest #6)', { skip }, () => {
+describe('element gauge ring in headless Chrome (user playtest #6, feedback #113)', { skip }, () => {
   let srv, browser;
   before(async () => {
     const puppeteer = (await import('puppeteer-core')).default;
     const { startServer } = await import('../../server/index.js');
     srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
-    browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-first-run'] });
+    browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox', '--no-first-run'] });
     mkdirSync(OUT, { recursive: true });
   });
   after(async () => {
@@ -81,7 +83,7 @@ describe('element gauge row in headless Chrome (user playtest #6)', { skip }, ()
     return { page, problems };
   };
 
-  test('a real battle: the white bar drawn every frame is the sim\'s remaining 元素值; the burst refills it', async () => {
+  test('a real battle: the white arc drawn every frame is the sim\'s remaining 元素值; the burst refills it', async () => {
     const { meta, frames, opId } = recordBattle();
     const { page, problems } = await open({ width: 1280, height: 720 });
     try {
@@ -141,7 +143,7 @@ describe('element gauge row in headless Chrome (user playtest #6)', { skip }, ()
   });
 
   for (const [name, viewport] of [['desktop', { width: 1280, height: 720 }], ['phone', { width: 844, height: 390, deviceScaleFactor: 3 }]]) {
-    test(`a row of operators (${name}): every gauge row lies under its own unit's bars, inside their span`, async () => {
+    test(`a row of operators (${name}): every ring lies under its own unit, where the official prefab puts it`, async () => {
       const { page, problems } = await open(viewport);
       try {
         await page.evaluate(() => {
@@ -168,23 +170,27 @@ describe('element gauge row in headless Chrome (user playtest #6)', { skip }, ()
         const geo = await page.evaluate(() => {
           const out = {};
           for (const [id, x] of window.__demo.view.debug.views) {
-            const r = x._elBar;
+            const r = x._elRing;
             if (!r || !r.root.visible) continue;
-            const x0 = x.hpBg.position.x + 1, bw = x.hpBg.width - 2;
-            const barsBottom = x.spFill.visible ? x.spFill.position.y + x.spFill.height / 2 : x.hpBg.position.y + x.hpBg.height / 2;
-            out[id] = { x0, bw, barsBottom, discL: r.disc.position.x - r.disc.width * 0.336, discTop: r.disc.position.y - r.disc.height * 0.336,
-              barR: r.bg.position.x + r.bg.width, share: r.fill.visible ? r.fill.width / (r.bg.width - 2) : 0, el: x.el, tint: r.fill.tint };
+            const hpTop = x.hpBg.visible ? x.hpBg.position.y - x.hpBg.height / 2 : null;
+            out[id] = { hpTop, cx: r.root.position.x, cy: r.root.position.y, d: r.d, official: r.official, feetX: x.screen.x, feetY: x.screen.y,
+              s: x.screen.s, enemy: x.isEnemy, share: r.arc.visible ? r.share : 0, el: x.el, tint: r.arc.tint };
           }
           return out;
         });
+        // the official sprites when the local-art manifest lists them (tools/local-extract job ui/ep), else the procedural rings
+        const listed = await page.evaluate(async () => !!(await (await fetch('/data/local-assets.json')).json()).groups?.['ui/ep']);
         const want = { 1: 0.9, 2: 0.5, 3: 0.1, 4: 0.03, 6: 0.75, 7: 0.25 };
         for (const [id, left] of Object.entries(want)) {
           const g = geo[id];
           assert.ok(g, `unit ${id} shows its gauge`);
-          assert.ok(Math.abs(g.share - left) < 1e-6, `unit ${id}: bar ${g.share} = remaining ${left}`);
-          assert.ok(g.discL >= g.x0 - 1 && g.barR <= g.x0 + g.bw + 1.5, `unit ${id}: inside its bars' span`);
-          assert.ok(g.discTop >= g.barsBottom, `unit ${id}: under its bars`);
-          assert.equal(g.tint, 0xffffff, `unit ${id}: 元素值 left is white`);
+          assert.equal(g.official, listed, `unit ${id}: official sprites ${listed}`);
+          assert.ok(g.share >= left - 1e-9 && g.share - left < 0.01 + 1e-9, `unit ${id}: arc ${g.share} = remaining ${left}`);
+          assert.ok(Math.abs(g.cx - g.feetX) < 0.5, `unit ${id}: centred under its model`);
+          assert.ok(g.cy > g.feetY, `unit ${id}: just below its feet`);
+          assert.ok(g.hpTop != null && g.cy + g.d / 2 <= g.hpTop, `unit ${id}: above its HP bar, under the feet too (decision 10)`);
+          assert.ok(g.d <= g.s * 0.5, `unit ${id}: inside its own tile`);
+          assert.equal(g.tint, g.enemy && listed ? 0xd5d5d5 : 0xffffff, `unit ${id}: 元素值 left is white (an enemy's official grey)`);
         }
         assert.ok(geo[5].share > 0.4 && geo[5].share < 0.6, `the 爆发冷却 half refilled (${geo[5].share})`);
         assert.equal(geo[5].tint, NEURAL_TINT, 'the 爆发冷却 refill in the element\'s colour, unlike unit 1\'s white 神经 bar');

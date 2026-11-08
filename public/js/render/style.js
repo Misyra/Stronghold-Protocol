@@ -218,7 +218,9 @@ export const UNIT = Object.freeze({
   modelScale: 1 / 320,
   /** Fallback diamond size in tiles. */
   diamond: 0.78,
-  headroom: 1.18, // tiles above the feet where bars sit (operators; enemies use their bounds)
+  headroom: 1.18, // tiles above the feet where the head is — the status icons (operators; enemies use their bounds); the bars are under the feet
   barWidth: 0.64,
-  bossBarWidth: 2.2,
+  // a leader's bar under its feet as the official enemy_boss_hp_slider (130 × 9 units against an operator's 125 × 7; owner
+  // decision 10, render/units.js HUD_LAYOUT) — it was 2.2 tiles over the head before
+  bossBarWidth: 0.64 * 130 / 125,
 });

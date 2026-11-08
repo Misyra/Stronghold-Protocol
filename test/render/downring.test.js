@@ -179,23 +179,27 @@ describe('knocked-down operator (UnitView.setDown)', () => {
   });
 });
 
-describe('element gauge row (official: element icon + white bar of the remaining 元素值; user playtest #6)', () => {
+describe('element gauge ring (official: element disc + white arc of the remaining 元素值; user playtest #6, feedback #113)', () => {
   const sample = (o = {}) => ({ x: 5, y: 10, hp: 1000, maxHp: 1000, sp: 0, spMax: 0, flags: 0, anim: 0, vx: 0, vy: 0, el: null, elFill: 0, elUntil: 0, elDur: 0, ...o });
-  /** The white bar's drawn share of its track (the track is 2 px wider: its dark outline). */
-  const share = (r) => (r.fill.visible ? r.fill.width / (r.bg.width - 2) : 0);
+  /** The white arc's drawn share of the circle (textures.js ringShare: never short of the 元素值 left). */
+  const share = (r) => (r.arc.visible ? r.share : 0);
 
-  test('operators: the element disc with its glyph and a white bar of the remaining 元素值 (1 − fill)', () => {
+  test('operators: the element disc with its glyph and a white arc of the remaining 元素值 (1 − fill), at the feet', () => {
     const v = view();
     v.sync(sample(), 5);
     frames(v, 2);
-    assert.equal(v._elBar, null, 'nothing built without a gauge');
+    assert.equal(v._elRing, null, 'nothing built without a gauge');
     v.sync(sample({ el: 'burn', elFill: 0.25 }), 5);
     frames(v, 1);
-    const r = v._elBar;
+    const r = v._elRing;
     assert.ok(r.root.visible);
     assert.equal(r.disc.texture, T.hudRings().disc.burn);
+    assert.equal(r.track.texture, T.hudRings().track);
     assert.ok(Math.abs(share(r) - 0.75) < 1e-9, `remaining EP = 1 − fill (${share(r)})`);
-    assert.equal(r.fill.tint, 0xffffff, 'a white bar');
+    assert.equal(r.arc.texture, T.ringArc(0.75, 'ceil'));
+    assert.equal(r.arc.tint, 0xffffff, 'a white arc');
+    assert.equal(r.root.position.x, v.screen.x, 'under the operator');
+    assert.ok(r.root.position.y > v.screen.y && r.root.position.y + r.d / 2 <= v.hpBg.position.y - v.hpBg.height / 2, 'under its feet, above its HP bar (decision 10)');
     v.sync(sample({ el: 'neural', elFill: 0.6 }), 5);
     frames(v, 1);
     assert.equal(r.disc.texture, T.hudRings().disc.neural);
@@ -209,28 +213,30 @@ describe('element gauge row (official: element icon + white bar of the remaining
     assert.equal(r.root.visible, false, 'hidden once the gauges are empty');
   });
 
-  test('enemies: a smaller plain disc; during a 爆发冷却 the bar refills over the cooldown', () => {
+  test('enemies: a smaller plain ring under the model, as the official prefab; during a 爆发冷却 the arc refills over the cooldown', () => {
     const e = view({ id: 3, side: 'enemy', kind: 'enemy', defId: 'enemy_x', dir: undefined });
-    e.sync(sample({ el: 'apoptosis', elFill: 1, elUntil: 25, elDur: 15 }), 10);
+    e.sync(sample({ hp: 500, el: 'apoptosis', elFill: 1, elUntil: 25, elDur: 15 }), 10);
     frames(e, 1);
-    const r = e._elBar;
+    const r = e._elRing;
     assert.equal(r.disc.texture, T.hudRings().discEnemy.apoptosis);
     assert.equal(share(r), 0, 'empty at the burst');
-    e.sync(sample({ el: 'apoptosis', elFill: 1, elUntil: 25, elDur: 15 }), 17.5);
+    e.sync(sample({ hp: 500, el: 'apoptosis', elFill: 1, elUntil: 25, elDur: 15 }), 17.5);
     frames(e, 1);
     assert.ok(Math.abs(share(r) - 0.5) < 1e-9, 'half refilled halfway through');
     const op = view({ id: 4 });
     op.sync(sample({ el: 'apoptosis', elFill: 0.5 }), 1);
     frames(op, 1);
-    assert.ok(r.disc.width < op._elBar.disc.width, 'the enemy icon is smaller');
+    assert.ok(r.d < op._elRing.d, 'the enemy ring is smaller (its coloured disc: 27 of the prefab\'s units, an operator\'s ring 28)');
+    assert.equal(r.root.position.x, e.screen.x, 'centred on the enemy, as the official prefab');
+    assert.ok(r.root.position.y > e.screen.y && r.root.position.y + r.d / 2 <= e.hpBg.position.y - e.hpBg.height / 2, 'under its feet, above its HP bar (decision 10)');
   });
 
   test('the 爆发冷却 refill is not the white 元素值 bar: element colour, pulsing disc; white again after the cooldown', () => {
     const op = view({ id: 6 });
     op.sync(sample({ el: 'neural', elFill: 0.97 }), 30);
     frames(op, 1);
-    const r = op._elBar;
-    assert.equal(r.fill.tint, 0xffffff, 'the 元素值 left: white');
+    const r = op._elRing;
+    assert.equal(r.arc.tint, 0xffffff, 'the 元素值 left: white');
     assert.equal(r.disc.alpha, 1);
     // the burst: 神经 stun + 1000 true damage while the bar refills over the 10 s cooldown
     op.sync(sample({ el: 'neural', elFill: 1, elUntil: 40.5, elDur: 10 }), 34);
@@ -238,19 +244,19 @@ describe('element gauge row (official: element icon + white bar of the remaining
     for (let i = 0; i < 40; i++) { op.update(1 / 60, cam(), 100 + i / 60); alphas.add(Math.round(r.disc.alpha * 100)); }
     assert.ok(op.elementCooling());
     assert.ok(Math.abs(share(r) - 0.35) < 1e-9, `refilled by the cooldown run (${share(r)})`);
-    assert.equal(r.fill.tint, T.ELEMENT_RING.neural.tint, 'the refill is drawn in the element\'s colour');
-    assert.notEqual(r.fill.tint, 0xffffff);
+    assert.equal(r.arc.tint, T.ELEMENT_RING.neural.tint, 'the refill is drawn in the element\'s colour');
+    assert.notEqual(r.arc.tint, 0xffffff);
     assert.ok(alphas.size > 5 && Math.min(...alphas) >= 44 && Math.max(...alphas) <= 100, `the disc pulses (${[...alphas]})`);
     for (const el of ['erosion', 'burn', 'apoptosis']) {
       op.sync(sample({ el, elFill: 1, elUntil: 44, elDur: 10 }), 35);
       frames(op, 1);
-      assert.equal(r.fill.tint, T.ELEMENT_RING[el].tint, el);
+      assert.equal(r.arc.tint, T.ELEMENT_RING[el].tint, el);
     }
     // the cooldown ends: every gauge resets; a new hit shows white again
     op.sync(sample({ el: 'burn', elFill: 0.1 }), 45);
     frames(op, 1);
     assert.equal(op.elementCooling(), false);
-    assert.equal(r.fill.tint, 0xffffff);
+    assert.equal(r.arc.tint, 0xffffff);
     assert.equal(r.disc.alpha, 1);
   });
 

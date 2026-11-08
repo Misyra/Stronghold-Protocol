@@ -93,16 +93,17 @@ test('the energy HUD counts stored/cap in its own violet orb and hides when its 
   } finally { v.destroy(); }
 });
 
-test('the rows stack: the energy count sits under the purse and pushes the element gauge down', () => {
+test('the rows stack: the energy count sits under the purse; the element ring stays at the operator\'s feet (feedback #113)', () => {
   const v = energyOn();
   try {
     const el = { el: 'burn', elFill: 0.5, elUntil: 0, elDur: 0 };
     v.sync(sample({ coins: [2, 10], ...el }), 0); v.update(0.02, cam(), 0);
-    const first = v._elBar.bg.position.y;
+    const first = v._elRing.root.position.y;
     v.sync(sample({ coins: [2, 10], energy: [1, 3], ...el }), 1); v.update(0.02, cam(), 1);
     assert.equal(v.coinHud.root.visible, true, 'the purse keeps its row');
     assert.equal(v.energyHud.root.visible, true);
-    assert.ok(v._elBar.bg.position.y > first, 'the gauge moves down by the energy row\'s height');
+    assert.equal(v._elRing.root.position.y, first, 'the ring is under the model, not in the rows');
+    assert.ok(v._elRing.root.position.y < v.energyHud.root.position.y, 'above every row: the ring between the feet and the bars (decision 10)');
   } finally { v.destroy(); }
 });
 
@@ -113,14 +114,14 @@ test('the energy count is an option, off by default: no row and no gap until 设
   try {
     const el = { el: 'burn', elFill: 0.5, elUntil: 0, elDur: 0 };
     v.sync(sample({ ...el }), 0); v.update(0.02, cam(), 0);
-    const bare = v._elBar.bg.position.y;
+    const bare = v._elRing.root.position.y;
     v.sync(sample({ energy: [2, 3], ...el }), 1); v.update(0.02, cam(), 1);
     assert.ok(!v.energyHud || v.energyHud.root.visible === false, 'off by default');
-    assert.equal(v._elBar.bg.position.y, bare, 'the gauge keeps its place');
+    assert.equal(v._elRing.root.position.y, bare, 'the gauge keeps its place');
     v.ctx.settings.ammoEnergyCount = true;
     v.update(0.02, cam(), 1);
     assert.equal(v.energyHud?.text.text, '2/3');
-    assert.ok(v._elBar.bg.position.y > bare);
+    assert.equal(v._elRing.root.position.y, bare, 'the ring at the feet keeps its place (feedback #113)');
     v.ctx.settings.ammoEnergyCount = false;
     v.update(0.02, cam(), 1);
     assert.equal(v.energyHud.root.visible, false);
@@ -370,7 +371,7 @@ describe('UnitView: 伺夜\'s 狼影 pips', () => {
     e.destroy();
   });
 
-  test('the element gauge row moves down below the pips (and below the SP bar when there is one)', () => {
+  test('the element ring stays under the feet, above the bars, wherever the rows under the bars go (feedback #113, decision 10)', () => {
     const plain = view();
     plain.sync(sample({ el: 'burn', elFill: 0.4, elUntil: 0, elDur: 0 }));
     frames(plain);
@@ -378,8 +379,9 @@ describe('UnitView: 伺夜\'s 狼影 pips', () => {
     v.sync(sample({ wolves: [2, 3], el: 'burn', elFill: 0.4, elUntil: 0, elDur: 0 }));
     frames(v);
     const pipsBottom = v._wolfPips.back[0].position.y + (v._wolfPips.back[0].width * Math.SQRT2) / 2;
-    assert.ok(v._elBar.bg.position.y - v._elBar.bg.height / 2 >= pipsBottom - 1e-6, 'the gauge row starts under the pips');
-    assert.ok(v._elBar.bg.position.y > plain._elBar.bg.position.y + 4, 'and so sits lower than without pips');
+    assert.ok(v._elRing.root.position.y + v._elRing.d / 2 <= v.hpBg.position.y - v.hpBg.height / 2, 'the ring above the HP bar, the pips under the bars (decision 10)');
+    assert.ok(pipsBottom > v.hpBg.position.y, 'the pips stack under the bars');
+    assert.equal(v._elRing.root.position.y, plain._elRing.root.position.y, 'at the same place as without pips: under the feet');
     plain.destroy();
     v.destroy();
   });

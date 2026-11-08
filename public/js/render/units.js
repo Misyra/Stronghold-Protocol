@@ -34,7 +34,7 @@
 // col])` keeps a dead operator on the tile it lies on (row / col: where it fell, or its home — sim Battle._layBody,
 // player report F5 after 0.1.0) in its knocked-down pose — the Spine Die clip played once and held on its last
 // frame (the collapsed / kneeling pose with closed eyes; the Front model's for one facing UP unless its Back skeleton has its own Die clip, see above), slightly
-// greyed — with a redeploy ring above its head:
+// greyed — with a redeploy ring under its feet, where its HUD is (HUD_LAYOUT):
 // a dark disc, a mint arc filling as the respawn timer runs and the seconds left; once the timer is done and it still
 // waits, a full amber ring with "DP" (not enough DP) or a red ring with "!" (its tile is taken). `onDeploy` (the
 // redeploy) plays the deploy clip and restores the normal look; `setDown(null)` on a dead view lets it fade out.
@@ -54,16 +54,17 @@
 // likewise (user report after 0.1.0) — FORMS; an operator's form is a 傀儡师's 替身 (GitHub issue #44). A view built later
 // (`info.form` = UnitInfo `form`, the sim's current form, through render/app.js renderInfo) starts in the mode; a dead
 // view keeps the form it died in (`_dieForm`) for a model built while it lies down.
-// Element gauges (b.snap `elem` → sample `el` / `elFill` / `elUntil` / `elDur`), the official form (PRTS 元素: "模型
-// 下部会显示对应的元素图标，并以白条显示剩余的元素值"; enemies "小尺寸图标（不显示元素图标，仅根据元素种类改变背景色）"): a row
-// right under the unit's own HP / SP bars and inside their span — the element's disc at the left (operators with its
-// glyph, enemies smaller and plain) and a white bar of the remaining 元素值 (1 − fill) that runs out right to left
-// like the HP bar above it; during a 爆发冷却 the bar refills over the cooldown (PRTS: "元素条显示缓慢恢复至上限"), drawn in
-// the element's colour with the disc pulsing [ASSUMED look], so a refill never reads as 元素值 still left while the
-// burst's stun / damage / 凋亡 ticks hit the unit. User playtest #6 (report 11): the v2.3 ring right of the bars sat on
-// the next operator's tier chip and bars (drawn under them) and read as that operator's gauge, a shrinking ring reads
-// like a filling progress ring, and its refill was the same white as the 元素值 left. The disc comes from the hudRings
-// atlas, the bars are tinted Texture.WHITE sprites; built on first use and hidden when idle.
+// Element gauges (b.snap `elem` → sample `el` / `elFill` / `elUntil` / `elDur`), the official form (feedback #113
+// 「损伤条对齐官方，位于干员下方，圆形进度条」 and the owner's word of 2026-11-02: the official sprites and placement — the
+// client's battle HUD prefabs char_ep_slider / enemy_ep_slider, textures.js EP_PREFAB / officialRings): a ring — the
+// element's disc (operators with its icon; enemies a coloured disc round a dark centre) inside a dark track, and the arc
+// of the remaining 元素值 (1 − fill), clockwise from 12 o'clock, that runs out as the gauge fills (white; grey on an
+// enemy). Operators and enemies alike it sits where the prefab puts it: centred on the unit's HUD anchor (its feet), just
+// below the model, above the HP bar (HUD_LAYOUT) — at our HP bar's scale (EL_RING, elementRingGeom). During a 爆发冷却 the arc refills over the cooldown (PRTS: "元素条显示缓慢恢复至
+// 上限") in the element's colour with the disc pulsing [ASSUMED look], so a refill never reads as 元素值 still left while
+// the burst's stun / damage / 凋亡 ticks hit the unit. The official sprites come from the local-art manifest (group
+// ui/ep); without them (an install without the local art, or before they load) the procedural hudRings atlas draws the
+// same ring at the same place. Built on first use and hidden when idle.
 //
 // ItemView renders hand items as a floating icon plate; DeviceView renders battle devices (crates) as 3D boxes
 // with an HP bar once damaged.
@@ -87,7 +88,7 @@ import { UF, ANIM } from '../../../shared/constants.js';
 import { SpineActor } from './spine.js';
 import { skillAttackMode } from './skillAttack.js';
 import { MANIFOLD, isManifold, manifoldCopyForm, manifoldAttackForm } from './manifold.js';
-import { diamondTexture, shadowTexture, fxAtlas, tierChip, statusTexture, itemTexture, hudRings, ringArc, downLabel, HUD_DISC, ELEMENT_RING } from './textures.js';
+import { diamondTexture, shadowTexture, fxAtlas, tierChip, statusTexture, itemTexture, hudRings, ringArc, ringStep, RING_STEPS, officialRings, EP_PREFAB, downLabel, ELEMENT_RING } from './textures.js';
 import { COLORS, TIER_COLORS, ENEMY_FRAME, UNIT, PROJ, statusIconKey, statusIconSuppressed } from './style.js';
 import { drawCrate, rowDepthKey, ROW_KEY, deviceBoxOf, DEVICE_BOX } from './tiles.js';
 import { startAtkInterval, nextAtkInterval, clampAtkInterval } from './attackRate.js';
@@ -241,11 +242,14 @@ export const DIE_CLIP_MAX = 8;
 
 /** b.snap `down` entry states (server/sim/constants.js DOWN_STATE). */
 export const DOWN_STATE = Object.freeze({ COUNTING: 0, WAIT_DP: 1, WAIT_TILE: 2 });
-/** Knocked-down look: model tint and alpha; redeploy ring colours per state; ring size (tiles) and height. */
+/**
+ * Knocked-down look: model tint and alpha; redeploy ring colours per state; ring size (tiles). The ring sits where the
+ * element ring would, under the feet (HUD_LAYOUT, owner decision 10 — it was `1.02` tiles over the feet before).
+ */
 export const DOWN_LOOK = Object.freeze({
   tint: 0xb4b4b4, alpha: 0.92,
   ring: Object.freeze({ [DOWN_STATE.COUNTING]: 0x4ed8af, [DOWN_STATE.WAIT_DP]: 0xffc600, [DOWN_STATE.WAIT_TILE]: 0xff4b3e }),
-  size: 0.42, height: 1.02,
+  size: 0.42,
 });
 /**
  * An enemy drawn with another enemy's web model because its own is only in the local client (manifest `spineAliasOf`
@@ -255,12 +259,51 @@ export const DOWN_LOOK = Object.freeze({
  */
 export const ALIAS_TINT = Object.freeze({ enemy_1305_mhslim: 0xffc48a, enemy_1305_mhslim_2: 0xff9070 });
 /**
- * Element gauge row under the bars (see header): the disc's diameter in tiles and its pixel clamp (enemies × `enemy`),
- * the gap under the bars (px). The white bar is as tall as the SP bar and fills the rest of the bars' width. During a
- * 爆发冷却 the refilling bar takes the element's colour (textures.js ELEMENT_RING `tint`) and the disc's alpha pulses
- * between `pulse` and 1 at `pulseHz` (real time).
+ * Element gauge ring (see header): one prefab unit (textures.js EP_PREFAB) is our HP bar's width over the official
+ * operator bar's (UNIT.barWidth tiles ↔ 125 units), at least `minUnit` px (phones); during a 爆发冷却 the refilling arc
+ * takes the element's colour (textures.js ELEMENT_RING `tint`) and the disc's alpha pulses between `pulse` and 1 at
+ * `pulseHz` (real time). `fallbackRing`: the procedural ring's outer diameter as a share of its atlas cell.
  */
-export const EL_BAR = Object.freeze({ icon: 0.15, min: 8, max: 15, enemy: 0.8, gap: 1, pulse: 0.45, pulseHz: 1.5 });
+export const EL_RING = Object.freeze({ minUnit: 0.42, pulse: 0.45, pulseHz: 1.5, fallbackRing: 58.5 / 64 });
+
+/**
+ * The element ring at a tile of `s` px: `px` per prefab unit; `cell` the official atlas cell on screen (the back's size,
+ * × ep_slider's scale); `ring` the arc's diameter (an enemy's: its coloured disc, what the procedural ring stands for);
+ * `dy` its centre below the unit's anchor (the feet).
+ * @param {number} s @param {boolean} [enemy]
+ */
+export function elementRingGeom(s, enemy = false) {
+  const g = enemy ? EP_PREFAB.enemy : EP_PREFAB.op;
+  const px = Math.max(EL_RING.minUnit, (s * UNIT.barWidth) / EP_PREFAB.op.hpW);
+  return { px, cell: g.cell * g.scale * px, ring: (enemy ? 27 : g.ring) * g.scale * px, dy: g.y * px };
+}
+
+/**
+ * HUD_LAYOUT — the battle HUD under the model, as the official one (owner decision 10, 2026-11-02; the client's prefabs
+ * char_hp_slider / char_sp_slider -54.5, enemy_hp_slider -55.3 / enemy_sp_slider -54.5, enemy_boss_hp_slider -43 /
+ * enemy_boss_sp_slider -46.2, trap_hp_slider -54.5 — arts/ui/[uc]battlecommon.ab): the HP bar's centre `hpY` prefab units
+ * (textures.js EP_PREFAB; elementRingGeom `px`) below the unit's anchor, its feet; the SP bar and the other rows (ammo
+ * count, 狼影 pips, purses, energies, 丰川祥子's Fever) stack under it as before; the element ring sits between the feet
+ * and the bar (EP_PREFAB y), and the bar keeps `ringGap` px clear of it however the sizes clamp (a boss's bar is closer
+ * to the feet than the ring's bottom). Above the head stay the status icons (`iconGap` px over the head; the official
+ * HUD has no such row) and the prep board's tier chip; a knocked-down operator's redeploy ring takes the element ring's
+ * place, its HUD alone. The bars layer sorts by depth: a nearer unit's HUD draws over a farther one's.
+ */
+export const HUD_LAYOUT = Object.freeze({
+  op: Object.freeze({ hpY: 54.5 }), enemy: Object.freeze({ hpY: 55.3 }), boss: Object.freeze({ hpY: 43 }), device: Object.freeze({ hpY: 54.5 }),
+  ringGap: 2, iconGap: 3,
+});
+
+/**
+ * The HP bar's centre below the feet (px) of a unit at a tile of `s` px, its bar `bh` px thick (HUD_LAYOUT): the
+ * official offset, never over the element ring's place (elementRingGeom) — with a shield bar's strip above it.
+ * @param {number} s @param {'op'|'enemy'|'boss'} kind @param {number} bh
+ */
+export function hudBarY(s, kind, bh) {
+  const g = elementRingGeom(s, kind !== 'op');
+  const clear = g.dy + g.ring / 2 + HUD_LAYOUT.ringGap + Math.max(1.5, bh * 0.35) + 1 + bh / 2;
+  return Math.max(HUD_LAYOUT[kind].hpY * g.px, clear);
+}
 
 /** The share of a model's height a bar is placed above (the head is not the very top of the silhouette). */
 export const HEAD_TOP_K = 0.92;
@@ -269,7 +312,7 @@ export const HEAD_TILES_CAP = 2.2;
 export const HEAD_TILES_CAP_BOSS = 3.2;
 
 /**
- * Tiles above the feet where a unit's HP bar / name tag sits.
+ * Tiles above the feet where a unit's head is: its status icons sit there (the HP bar is under the feet: HUD_LAYOUT).
  *
  * Operators and tokens are uniform chibis (UNIT.headroom). Enemies vary: with a known model they use **how far the model
  * reaches above its own origin** (spine.js `top` = `bounds.y + bounds.height`, not the box's raw height — a body whose
@@ -731,7 +774,7 @@ export class UnitView {
     this.down = null;             // knocked out, waiting to redeploy: { until, total, state } (setDown) — no fade meanwhile
     this.gameT = 0;               // battle game time of the frame (render clock), for the redeploy ring's countdown and the element bar's refill
     this.el = null; this.elFill = 0; this.elUntil = 0; this.elDur = 0;   // shown element gauge (sync)
-    this._elBar = null;           // { root, disc, bg, fill } sprites of the element gauge row, built on first use
+    this._elRing = null;          // { root, track, disc, arc, share } of the element gauge ring, built on first use
     this._wolfPips = null;        // { root, back[], lit[] } diamonds of the 狼影 row, built on first use
     this.ammoCuts = [];           // the thin separators between the ammo bar's cells (_updateAmmoCuts)
     this._downRing = null;        // { disc, track, arc, text } sprites (text: the shared label, textures.js downLabel), built on first use
@@ -1897,6 +1940,7 @@ export class UnitView {
     this.root.position.set(bx, by);
     this.root.alpha = alpha;
     this.root.zIndex = unitDepthKey(cam, this.x, this.y, this.lift);
+    this.hud.zIndex = this.root.zIndex;   // a nearer unit's HUD over a farther one's (the bars layer sorts: HUD_LAYOUT)
     // off-screen: nothing to animate or draw (bounds / hit-testing still follow `screen`)
     if (this._cull(bx, by, s, dt)) return;
     const flip = this.modelFlip();
@@ -2045,14 +2089,17 @@ export class UnitView {
     const showBars = !prep && this.alive && this.info.kind !== 'item';
     const damaged = this.hp < this.maxHp - 0.5;
     const showHp = showBars && (!this.isEnemy || damaged || this.isBoss) && !NO_HP_BAR.has(this.info.defId);
-    const bw = clamp(s * (this.isBoss ? UNIT.bossBarWidth : UNIT.barWidth), 24, this.isBoss ? 260 : 96);
-    const bh = clamp(s * (this.isBoss ? 0.12 : 0.075), 3, this.isBoss ? 12 : 7);
+    const bw = clamp(s * (this.isBoss ? UNIT.bossBarWidth : UNIT.barWidth), 24, this.isBoss ? 100 : 96);
+    // a leader's bar 9 units thick against an operator's 7 (the official prefabs: HUD_LAYOUT)
+    const bh = clamp(s * 0.075 * (this.isBoss ? 9 / 7 : 1), 3, this.isBoss ? 9 : 7);
     // a knocked-down operator's HUD is its redeploy ring alone, drawn at full strength over the greyed model
     this.hud.alpha = this.down ? this.fadeIn : this.dying > 0 ? 0 : alpha;
     let sx = this.shake > 0 ? Math.sin(t * 90) * this.shake * 10 : 0;
     this.shake = Math.max(0, this.shake - dt);
     const x0 = x - bw / 2 + sx;
-    let cy = y - 4;
+    // the bars under the feet (HUD_LAYOUT); `y` is the head, where the status icons stay
+    const fy = this.screen.y;
+    let cy = fy + hudBarY(s, this.isBoss ? 'boss' : this.isEnemy ? 'enemy' : 'op', bh);
     // HP
     this.hpBg.visible = this.hpFill.visible = this.hpGhost.visible = showHp;
     if (showHp) {
@@ -2106,10 +2153,10 @@ export class UnitView {
       if (prep) this.chip.position.set(x, y - this.chip.height / 2 + 2);
       else this.chip.position.set(x0 - this.chip.width / 2 - 1, cy + (showSp ? spH / 2 : 0));
     }
-    // status icons row above the bars
+    // status icons row over the head (the bars are under the feet: HUD_LAYOUT)
     const icons = this._iconKeys();
     const isz = clamp(s * 0.26, 12, 26);
-    const iy = cy - bh / 2 - isz / 2 - 3;
+    const iy = y - isz / 2 - HUD_LAYOUT.iconGap;
     for (let i = 0; i < this.icons.length; i++) {
       const ic = this.icons[i];
       const key = icons[i];
@@ -2122,8 +2169,8 @@ export class UnitView {
       ic.position.set(x - ((icons.length - 1) * (isz + 2)) / 2 + i * (isz + 2), iy);
     }
     // 狼影 pips under the bars (b.snap `wolves`), then the purses and — 设置「显示弹药与能量数量」 on (off by default) —
-    // the stored energies (b.snap `coins` / `energy`), then the element gauge row under them (b.snap `elem`); redeploy
-    // ring above a knocked-down operator (b.snap `down`). The same switch first puts the magazine's count right under
+    // the stored energies (b.snap `coins` / `energy`); the element gauge ring (b.snap `elem`) under the model (see the
+    // header); redeploy ring above a knocked-down operator (b.snap `down`). The same switch first puts the magazine's count right under
     // the ammo bar, and the rows below move down by its height.
     let rowsTop = cy + bh / 2 + (showSp ? spH + 1.5 : 0);
     rowsTop += this._updateAmmoCount(showSp && !!ammo && this.ctx.settings?.ammoEnergyCount === true, x0 + bw / 2, rowsTop, s);
@@ -2131,8 +2178,8 @@ export class UnitView {
     const coinH = this._updateCoins(showBars && !this.isEnemy && !!this.coins, x0, rowsTop + wolfH, s);
     const energyH = this._updateEnergy(showBars && !this.isEnemy && !!this.energy && this.ctx.settings?.ammoEnergyCount === true, x0, rowsTop + wolfH + coinH, s);
     const feverH = this._updateFeverBar(showBars && !this.isEnemy && !!this.fever, x0, bw, rowsTop + wolfH + coinH + energyH, Math.max(2, bh * 0.6), t);
-    this._updateElementBar(showBars && !!this.el, x0, bw, rowsTop + wolfH + coinH + energyH + feverH + 1, spH, s, t);
-    this._updateDownRing(!prep && !!this.down && !this.alive, x, this.screen.y - DOWN_LOOK.height * s, s, t);
+    this._updateElementRing(showBars && !!this.el, s, t);
+    this._updateDownRing(!prep && !!this.down && !this.alive, x, fy + elementRingGeom(s).dy, s, t);
     // blocked marker at the feet (enemies held by a blocker)
     const blocked = !prep && this.alive && this.isEnemy && (this.flags & UF.BLOCKED);
     this.blockIcon.visible = !!blocked;
@@ -2332,43 +2379,57 @@ export class UnitView {
   }
 
   /**
-   * Element gauge row (see header) under the bars spanning x0 … x0 + bw, its top at `top`: the element's disc at the
-   * left (operators with its glyph; enemies plain, × EL_BAR.enemy) and, beside it to the bars' right end, a bar of
-   * `elementLeft()` on a dark track `h` px tall — white for the 元素值 left; in the element's colour, the disc pulsing
-   * (clock `t`), while it refills over a 爆发冷却. Built on the first gauge, hidden while there is none.
+   * Element gauge ring (see header) under the model of a tile `s` px (elementRingGeom): the track, the element's disc
+   * and the arc of `elementLeft()` — never drawn short of it (textures.js ringArc 'ceil'; `share` the fraction drawn) —
+   * from the official atlas (textures.js officialRings) once it is there (`official`), else the procedural hudRings at
+   * the official ring's size. White (an enemy's grey) for the 元素值 left; in the element's colour, the disc pulsing
+   * (clock `t`), while it refills over a 爆发冷却. `d` the drawn ring's diameter. Built on the first gauge, hidden while
+   * there is none.
    */
-  _updateElementBar(show, x0, bw, top, h, s, t = 0) {
-    let r = this._elBar;
+  _updateElementRing(show, s, t = 0) {
+    let r = this._elRing;
     if (!show) { if (r) r.root.visible = false; return; }
-    const tex = hudRings();
     if (!r) {
       const P = this.P;
       const root = new P.Container();
-      const bg = bar(P, root, COLORS.hpBack, 0.85);
-      const fill = bar(P, root, 0xffffff);
-      const disc = new P.Sprite(tex.disc.burn);
-      disc.anchor.set(0.5);
-      root.addChild(disc);
-      r = this._elBar = { root, disc, bg, fill };
+      const mk = () => { const sp = new P.Sprite(P.Texture.EMPTY); sp.anchor.set(0.5); root.addChild(sp); return sp; };
+      const track = mk(), disc = mk(), arc = mk();
+      r = this._elRing = { root, track, disc, arc, share: 0, d: 0, official: false };
       this.hud.addChild(root);
     }
-    const d = clamp(s * EL_BAR.icon, EL_BAR.min, EL_BAR.max) * (this.isEnemy ? EL_BAR.enemy : 1);
-    const cy = top + EL_BAR.gap + d / 2;
-    r.disc.texture = (this.isEnemy ? tex.discEnemy : tex.disc)[this.el] || tex.disc.burn;
-    r.disc.width = r.disc.height = d / HUD_DISC;   // the disc fills HUD_DISC of its atlas cell
-    r.disc.position.set(x0 + d / 2, cy);
-    const bx = x0 + d + 2, w = Math.max(4, x0 + bw - bx);
-    r.bg.position.set(bx - 1, cy); r.bg.width = w + 2; r.bg.height = h + 2;
-    const k = this.elementLeft();
-    r.fill.visible = k > 0;
-    r.fill.position.set(bx, cy); r.fill.width = w * k; r.fill.height = h;
-    if (this.elementCooling()) {
-      r.fill.tint = (ELEMENT_RING[this.el] || ELEMENT_RING.burn).tint;
-      r.disc.alpha = EL_BAR.pulse + (1 - EL_BAR.pulse) * (0.5 + 0.5 * Math.cos(t * Math.PI * 2 * EL_BAR.pulseHz));
+    const g = elementRingGeom(s, this.isEnemy);
+    const off = officialRings(this.ctx.assets);
+    const left = this.elementLeft();
+    const step = ringStep(left, 'ceil');
+    let k, white;
+    if (off) {
+      const side = this.isEnemy ? off.enemy : off.op;
+      r.track.texture = side.track;
+      r.disc.texture = side.disc[this.el] || side.disc.burn;
+      r.arc.texture = side.arcs[step];
+      k = g.cell / off.size;
+      white = this.isEnemy ? EP_PREFAB.enemy.fillTint : 0xffffff;
     } else {
-      r.fill.tint = 0xffffff;
+      const tex = hudRings();
+      r.track.texture = tex.track;
+      r.disc.texture = (this.isEnemy ? tex.discEnemy : tex.disc)[this.el] || tex.disc.burn;
+      r.arc.texture = tex.arcs[step];
+      k = g.ring / EL_RING.fallbackRing / tex.size;
+      white = 0xffffff;
+    }
+    r.official = !!off;
+    r.d = g.ring;
+    r.track.scale.set(k); r.disc.scale.set(k); r.arc.scale.set(k);
+    r.share = step / RING_STEPS;
+    r.arc.visible = step > 0;
+    if (this.elementCooling()) {
+      r.arc.tint = (ELEMENT_RING[this.el] || ELEMENT_RING.burn).tint;
+      r.disc.alpha = EL_RING.pulse + (1 - EL_RING.pulse) * (0.5 + 0.5 * Math.cos(t * Math.PI * 2 * EL_RING.pulseHz));
+    } else {
+      r.arc.tint = white;
       r.disc.alpha = 1;
     }
+    r.root.position.set(this.screen.x, this.screen.y + g.dy);
     r.root.visible = true;
   }
 
@@ -2703,6 +2764,7 @@ export class UnitView {
 }
 
 const SH_P = { x: 0, y: 0, s: 0, depth: 0 };
+const DV_P = { x: 0, y: 0, s: 0, depth: 0 };   // a device's base (DeviceView: its HP bar under it)
 const FA_P = { x: 0, y: 0, s: 0, depth: 0 };
 const FA_C = { x: 0, y: 0, s: 0, depth: 0 };
 const LG_P = { x: 0, y: 0, s: 0, depth: 0 };
@@ -2890,10 +2952,13 @@ export class DeviceView {
     this.placed = true;
     const show = this.alive && this.hp < this.maxHp - 0.5;
     this.hud.visible = show;
+    this.hud.zIndex = zKey;
     if (show) {
+      // under the device, as the official trap_hp_slider (HUD_LAYOUT `device`): its base on the ground, the bar below
       const bw = clamp(p.s * 0.7, 24, 90), bh = clamp(p.s * 0.06, 3, 6);
-      this.hpBg.position.set(p.x - bw / 2 - 1, p.y); this.hpBg.width = bw + 2; this.hpBg.height = bh + 2;
-      this.hpFill.position.set(p.x - bw / 2, p.y); this.hpFill.width = bw * clamp(this.hp / this.maxHp, 0, 1); this.hpFill.height = bh;
+      const by = cam.project(this.x, this.y, this.z, DV_P).y + HUD_LAYOUT.device.hpY * elementRingGeom(p.s).px;
+      this.hpBg.position.set(p.x - bw / 2 - 1, by); this.hpBg.width = bw + 2; this.hpBg.height = bh + 2;
+      this.hpFill.position.set(p.x - bw / 2, by); this.hpFill.width = bw * clamp(this.hp / this.maxHp, 0, 1); this.hpFill.height = bh;
     }
     this.screen.top = p.y;
   }

@@ -36,6 +36,7 @@ export function matchmakingAvailable(lobby, session, entry) {
   if (!partyCode) return !room || !room.match;
   if (!room || room.disposed || room.match || room.code !== partyCode) return false;
   if (room.spectatorOf(session.playerId)) return false;
+  // 维护者决定 2026-11-08 起容量轴 dormant：扩编房间进不了队列，party.required 恒为 4；检查保留以便将来放开。
   if (room.mode !== 'coop' || room.capacity !== (party.required ?? MAX_SEATS) || !room.validCapacity()
     || !lobby.capacityClients(room) || room.hostId !== (party.leaderId || null)
     || !sameExperimental(room.experimental, party.experimental ?? EXPERIMENTAL_DEFAULTS)
@@ -90,6 +91,8 @@ export function allocateMatchmakingGroup(lobby, group, difficulty) {
 }
 
 function allocateCohort(lobby, group, difficulty) {
+  // 维护者决定 2026-11-08 起 dormant：扩编房间的整队在 join() 已被拒，这里只收 4 人报价；
+  // MAX_PLAYER_CAPACITY 上限与容量房开局管路保留，以便将来放开。
   if (group.length < MAX_SEATS || group.length > MAX_PLAYER_CAPACITY || group.some((s) => !s.connected)) return fail(ERR.NOT_READY);
   // The queue hands over one confirmed offer at a time: the cohort is exactly that offer, and the room it plays in
   // is the offer's size (roomCapacity) — a mismatched or half-confirmed cohort is refused whole.
@@ -129,7 +132,10 @@ function allocateCohort(lobby, group, difficulty) {
   }
 }
 
-/** The host opts the whole ready alliance into four-human matchmaking (server/matchmaking.js join {party:true}). */
+/**
+ * The host opts the whole ready alliance into matchmaking (server/matchmaking.js join {party:true}).
+ * 扩编房间在引擎的容量闸被拒（维护者决定 2026-11-08：扩编房间不进匹配），只有普通 4 人房能排进来。
+ */
 export function queuePartyMatchmaking(lobby, session) {
   const room = lobby.roomOf(session);
   if (!room) return fail(ERR.NOT_IN_ROOM);
@@ -177,6 +183,7 @@ export function mergePartyMatchmaking(lobby, group, difficulty) {
   const room = parties[0];
   // Every party of one offer queues at one size and one rule set (the pool's capacity and option axes): the room
   // borrowed for the cohort must still be that room — its seats hold the whole offer, its options the ticket's.
+  // 维护者决定 2026-11-08 起借房合并对 >4 dormant：扩编房间进不了队列，capacity 恒为 4；检查保留以便将来放开。
   if (!room.validCapacity() || room.capacity !== group.length
     || parties.some((r) => !sameExperimental(r.experimental, room.experimental))) return fail(ERR.NOT_READY);
   const spectators = parties.flatMap((r) => r.spectators);

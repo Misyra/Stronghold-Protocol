@@ -2892,6 +2892,7 @@
   "正在匹配中，请先取消匹配": "Matchmaking is in progress. Cancel it first.",
   "房间已开启开发者控制台，无法进入匹配队列": "This room has the developer console on; it cannot join matchmaking",
   "房间启用了玩法插件，无法进入匹配队列": "A room with gameplay plugins on cannot join matchmaking",
+  "扩编房间不参与同盟匹配，请先把同盟人数调回 4 人": "Expanded rooms do not join matchmaking; set the alliance size back to 4 first",
   "开发者控制台已开启：本房间不会进入匹配队列": "Developer console on: this room cannot join matchmaking",
   "不能进入匹配队列": "cannot join matchmaking",
   "目前只有你自己看得到；服务器下次更新后，同盟里的其他博士也能看到你的选择": "For now only you can see it; after the server's next update the other Doctors in the Alliance will see your choice too",

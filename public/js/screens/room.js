@@ -1063,8 +1063,8 @@ const setBotBand = (seat, bandId) => run(`band${seat}`, async () => { await net.
       </div>
       <div class="room-bar__right rs-foot__right">
         ${facts.isHost && searchable && facts.emptySeats > 0 && !searching
-          ? html`<button type="button" class="rs-search" disabled=${!online || busy === 'match' || consoleOn || modded} onClick=${queueMatch}
-              title=${modded ? t('房间启用了玩法插件，无法进入匹配队列') : consoleOn ? t('房间已开启开发者控制台，无法进入匹配队列') : undefined}>
+          ? html`<button type="button" class="rs-search" disabled=${!online || busy === 'match' || consoleOn || modded || big} onClick=${queueMatch}
+              title=${modded ? t('房间启用了玩法插件，无法进入匹配队列') : consoleOn ? t('房间已开启开发者控制台，无法进入匹配队列') : big ? t('扩编房间不参与同盟匹配，请先把同盟人数调回 4 人') : undefined}>
               <${Icon} name="search" />${t('开始搜寻')}${busy === 'match' ? html`<${Spinner} size="sm" />` : null}</button>` : null}
         ${facts.isHost
           ? html`<${Tooltip} text=${facts.canStart ? null : vote ? t('切换版本投票进行中，请等投票结束') : !facts.contentReady ? (facts.versionRoom ? t('仍有博士未载入「{version}」的数据', { version: versionLabel(curVersion) }) : t('仍有博士未载入房间的插件内容')) : consentMissing(room, facts) ? t('仍有博士未同意受信任插件') : t('仍有博士未准备就绪')}>

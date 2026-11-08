@@ -141,12 +141,15 @@ describe('room.console (lobby)', () => {
 // holds it is nowhere near the 开始搜寻 button), and the button stays put, disabled, with the reason in its tooltip —
 // a hidden button taught nobody why the queue was gone (feedback on 0.3.1).
 describe('room.js: 开发者控制台 in the client', () => {
-  const src = readFileSync(new URL('../public/js/screens/room.js', import.meta.url), 'utf8');
+  // the switch's own row moved with the ⚙ dialog (ui/roomSettings.js's rows, ui/experimental.js); the toast and the
+  // search button stay in the screen
+  const src = [readFileSync(new URL('../public/js/screens/room.js', import.meta.url), 'utf8'),
+    readFileSync(new URL('../public/js/ui/experimental.js', import.meta.url), 'utf8')].join('\n');
   test('turning it on says so for five seconds', () => {
     assert.match(src, /toast\(t\('开发者控制台已开启：本房间不会进入匹配队列'\), 'warn', \{ ttl: 5000 \}\)/);
   });
   test('the ⚙ sheet says it while it is on', () => {
-    assert.match(src, /\$\{option\.on \? html`<span class="t-dim">\$\{t\('不能进入匹配队列'\)\}<\/span>` : null\}/);
+    assert.match(src, /note: consoleOpt\.on \? t\('不能进入匹配队列'\)/);
   });
   test('开始搜寻 stays on screen, disabled, with the reason', () => {
     // 扩编房间 (big) 同样留在原地并说明原因 (维护者决定 2026-11-08：扩编房间不进匹配)

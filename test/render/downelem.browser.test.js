@@ -43,7 +43,7 @@ function installFeed() {
       const out = {};
       for (const [id, x] of v.debug.views) {
         out[id] = { alive: x.alive, down: x.down ? x.down.state : null, ring: !!x._downRing?.root?.visible, label: x._downRing?.label ?? null,
-          el: x._elBar?.root?.visible ? x.el : null, spine: !!x.spineReady, dieClip: x.actor?.current ?? null, alpha: +(x.alpha ?? 0).toFixed(2) };
+          el: x._elRing?.root?.visible ? x.el : null, spine: !!x.spineReady, dieClip: x.actor?.current ?? null, alpha: +(x.alpha ?? 0).toFixed(2) };
       }
       return out;
     },
@@ -56,7 +56,7 @@ describe('knocked-out operators and element gauges in headless Chrome', { skip }
     const puppeteer = (await import('puppeteer-core')).default;
     const { startServer } = await import('../../server/index.js');
     srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true });
-    browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-first-run'] });
+    browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-first-run', '--no-sandbox'] }); // as root too, like the other browser tests
     mkdirSync(OUT, { recursive: true });
   });
   after(async () => {

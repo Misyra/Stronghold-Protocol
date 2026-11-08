@@ -173,11 +173,12 @@ describe('render engine in headless Chrome', { skip }, () => {
       }, { meta: h.b.fieldMeta(), snap: h.b.snapshot() });
       await page.waitForFunction(id => window.__demo.view.debug.views.get(id)?.coinHud?.root.visible, {}, u.id);
       const bounds = await page.evaluate(id => {
-        const v = window.__demo.view.debug.views.get(id), coins = v.coinHud.root.getBounds(), elem = v._elBar.root.getBounds();
-        return { label: v.coinHud.text.text, coinBottom: coins.bottom, elementTop: elem.top };
+        const v = window.__demo.view.debug.views.get(id), coins = v.coinHud.root.getBounds(), elem = v._elRing.root.getBounds();
+        return { label: v.coinHud.text.text, coinTop: coins.top, coinBottom: coins.bottom, elementTop: elem.top, elementBottom: elem.bottom };
       }, u.id);
       assert.equal(bounds.label, `1/${u.skill.bb.sp}`);
-      assert.ok(bounds.coinBottom <= bounds.elementTop, JSON.stringify(bounds));
+      // owner decision 10: the purse row under the bars, the element ring above them (render/units.js HUD_LAYOUT)
+      assert.ok(bounds.elementBottom <= bounds.coinTop, JSON.stringify(bounds));
       await page.screenshot({ path: path.join(OUT, 'swire-coins-element.png') });
       assert.deepEqual(problems, []);
     } finally { await page.close(); }

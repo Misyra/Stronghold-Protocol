@@ -464,6 +464,7 @@
     "test/render/held-pose.browser.test.js": 1,
     "test/render/held-pose.test.js": 25,
     "test/render/hud-readouts.test.js": 125,
+    "test/render/hud-under-feet.test.js": 9,
     "test/render/impostor-bounds-models.test.js": 15,
     "test/render/impostor-bounds.browser.test.js": 0,
     "test/render/impostor-bounds.test.js": 69,

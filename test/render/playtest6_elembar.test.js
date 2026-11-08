@@ -8,8 +8,9 @@
 //     white of 元素值 left — a white bar growing while the burst's stun / damage hits read as "not used up yet, but it
 //     burst";
 //   · the render clock trails the sim by ≤ 3 ticks;
-//   · the gauge row is the unit's own: under its HP / SP bars and inside their span — the v2.3 ring right of the bars
-//     sat on the next operator's tier chip and bars (drawn under them) and read as that operator's gauge.
+//   · the gauge is the unit's own: since feedback #113 (「损伤条对齐官方，位于干员下方，圆形进度条」) the official ring under
+//     the operator's model, centred on its feet — the v2.3 ring right of the bars sat on the next operator's tier chip
+//     and bars (drawn under them) and read as that operator's gauge.
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,10 +20,10 @@ import { SnapshotBuffer } from '../../public/js/render/interp.js';
 import { makeBattle } from '../helpers/battleHarness.js';
 import { ELEMENT_ORDER, TICK } from '../../server/sim/constants.js';
 
-let fake, UnitView, EL_BAR, ELEMENT_RING;
+let fake, UnitView, elementRingGeom, ELEMENT_RING;
 before(async () => {
   fake = installFakePixi();
-  ({ UnitView, EL_BAR } = await import('../../public/js/render/units.js'));
+  ({ UnitView, elementRingGeom } = await import('../../public/js/render/units.js'));
   ({ ELEMENT_RING } = await import('../../public/js/render/textures.js'));
 });
 after(() => fake.restore());
@@ -68,11 +69,11 @@ function renderRun(keys, { mods = {}, seconds = 70 } = {}) {
     v.sync(s, rt);
     v.update(1 / 60, cam(), now);
     const shownT = buf.snaps[Math.max(0, buf._indexAt(rt))].t;
-    const r = v._elBar;
+    const r = v._elRing;
     rows.push({
       t: snap.t, renderT: rt, sim: truth.get(shownT), el: r && r.root.visible ? v.el : null,
-      share: r && r.root.visible ? (r.fill.visible ? r.fill.width / (r.bg.width - 2) : 0) : null,
-      tint: r ? r.fill.tint : null, v,
+      share: r && r.root.visible ? (r.arc.visible ? r.share : 0) : null,
+      tint: r ? r.arc.tint : null, v,
     });
   }
   return { rows, v };
@@ -119,16 +120,20 @@ test('掠海漂移体 + 骨海漂流体 on 古米 (绝境 R11 ATK ×1.77): chunk
   assert.ok(bursts >= 1);
 });
 
-test('the gauge row belongs to its unit: under its own HP / SP bars and inside their span', () => {
+test('the gauge ring belongs to its unit: where the official prefab puts it — centred under its feet, above its HP bar — never over a neighbour (feedback #113, decision 10)', () => {
   const { rows, v } = renderRun(['enemy_1148_dssbr'], { seconds: 12 });
   assert.ok(rows.at(-1).el, 'a gauge shows');
-  const r = v._elBar;
-  const x0 = v.hpBg.position.x + 1, bw = v.hpBg.width - 2;
-  const spBottom = v.spFill.visible ? v.spFill.position.y + v.spFill.height / 2 : v.hpFill.position.y + v.hpFill.height / 2;
-  const discR = r.disc.width * 0.5 * (43 / 64);  // the drawn disc (textures.js HUD_DISC of the cell)
-  assert.ok(r.disc.position.x - discR >= x0 - 0.5, 'the icon starts at the bars\' left edge');
-  assert.ok(r.bg.position.x + r.bg.width <= x0 + bw + 1.5, 'the bar ends at the bars\' right end (never beyond, over a neighbour)');
-  assert.ok(r.fill.position.x + r.fill.width <= x0 + bw + 0.5);
-  assert.ok(r.disc.position.y - discR >= spBottom + EL_BAR.gap - 0.01, 'the row lies under the SP bar');
-  assert.ok(r.bg.position.y - r.bg.height / 2 > spBottom, 'the white bar too');
+  const r = v._elRing;
+  const s = v.screen.s;
+  const g = elementRingGeom(s);
+  assert.equal(r.d, g.ring);
+  assert.equal(r.official, false, 'Node: the procedural rings stand in for the official sprites');
+  assert.ok(Math.abs(r.root.position.x - v.screen.x) < 1e-9, 'centred on the operator');
+  assert.ok(Math.abs(r.root.position.y - (v.screen.y + g.dy)) < 1e-9, 'the prefab\'s 25.9 units below its anchor');
+  assert.ok(g.dy > 0 && g.dy < r.d * 1.5, 'just below the feet');
+  // owner decision 10: the bars under the feet too (HUD_LAYOUT) — the ring between the feet and the HP bar
+  const hpTop = v.hpBg.position.y - v.hpBg.height / 2;
+  assert.ok(r.root.position.y > v.screen.y, 'below the feet');
+  assert.ok(r.root.position.y + r.d / 2 <= hpTop, 'above its HP bar, clear of it');
+  assert.ok(r.d <= s * 0.5, 'half a tile at most: never over a neighbour');
 });

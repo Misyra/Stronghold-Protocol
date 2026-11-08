@@ -78,7 +78,9 @@ export function aiDigest(m, ps, kind, pub, own, pack = null) {
   const battle = m.externalAI?.battleFor(ps);
   const actions = [];
   const add = (intent, text) => actions.push({ id: `a${actions.length + 1}`, text, intent });
-  if (kind === 'band' && pub.draft?.turn === ps.playerId) {
+  // (a concurrent draft — every co-op draft since 自由选策略（维护者决定 2026-11-08，移植自用户分支 rel33） — has no
+  // turn: every seat still deciding)
+  if (kind === 'band' && (pub.draft?.turn === ps.playerId || (pub.draft?.concurrent === true && pub.draft.order?.includes(ps.playerId) && !pub.draft.picks?.[ps.playerId]))) {
     for (const id of gd.bandIds()) if (!m.bandTaken(id, ps.playerId)) add({ t: 'g.band', bandId: id }, `band ${named(id).nameZh}`);
     if (pub.draft.skipsLeft[ps.playerId] > 0) add({ t: 'g.bandSkip' }, 'skip band turn');
   }

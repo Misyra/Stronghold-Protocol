@@ -1,7 +1,7 @@
 // server/match/match/clientCombat.js — Match methods: client-side combat bookkeeping (DESIGN §14) — field records (the
 // JSON BattleSpec + the authority / result state), spec battles on the server, the field clock, the authority (the
-// lowest connected seat), b.start per recipient, result deadlines and releases, server runs (headless slices,
-// takeovers), field completion → the phase end, and the timers of it all.
+// lowest connected seat), b.start per recipient, result deadlines and releases, server runs (headless slices, the
+// simulation pool under SP_BATTLE_POOL, takeovers), field completion → the phase end, and the timers of it all.
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
 
 import { requiresTraitLayerAuthority } from '../operatorTraits.js';
@@ -10,6 +10,19 @@ import { DeadBattle, syntheticResult, RESULT_GRACE_MS, HARD_CAP_SECONDS, Headles
 import { buildBattleSpec, createBattleFromSpec } from '../../sim/spec.js';
 import { testSlice } from '../testTrace.js';
 import { morphBattleOpt } from '../../../shared/plugins/rules.js';
+
+// —— SP_BATTLE_POOL：server-run normal / 联防场把 headless 步进交给模拟线程池（SP_WORKERS 池的 'battle' 任务，
+// server/workers/simulation.js）。开关关闭（默认）或池缺席时逐字节现状（本地 8ms 切片路径，_runHeadlessLocal）；
+// 池拒绝（POOL_FULL）或任务失败同样回退本地。boss 场（sharedBoss CreditPool 与房池实时联动）与 SP_COMBAT=server
+// 的 FieldRunner 流式不池化，留在主线程。
+const POOL_ENV_ON = ['1', 'true', 'on', 'yes'];
+let BATTLE_POOL_DEFAULT = POOL_ENV_ON.includes(String(process.env.SP_BATTLE_POOL ?? '').trim().toLowerCase());
+
+/** 测试钩子：SP_BATTLE_POOL 在 import 时读一次，测试用它改运行中的默认值。 */
+export function _setBattlePoolForTests(on) { BATTLE_POOL_DEFAULT = on === true; }
+
+/** SP_BATTLE_POOL 的当前默认值（Match 构造在 opts.battlePool 未显式给出时用它；clientCombat.js 是唯一消费方）。 */
+export function battlePoolDefault() { return BATTLE_POOL_DEFAULT; }
 
 export class MatchClientCombat {
   /** Stop every client-combat timer and the headless pacer (phase end, finish, dispose). */
@@ -30,6 +43,9 @@ export class MatchClientCombat {
     for (const k of ['deadlineTimer', 'doneTimer', 'waitTimer', 'sliceTimer', 'verifyTimer']) if (f[k]) { this.cancel(f[k]); f[k] = null; }
     f.job = null;
     f.verifyJob = null;
+    // SP_BATTLE_POOL：在飞任务取消（dispose / phase end / 场已另判）。队列中即弃，运行中到下个 4ms 分片边界停；
+    // 池自己的契约收摊那个线程槽（与 rehearsal 取消同款）。回执处理按 _poolTask 已清空判陈旧，不再落任何结果。
+    if (f.poolTask) { const task = f.poolTask; f.poolTask = null; try { task.cancel(); } catch { /* the pool settles the promise; the awaiter ignores it */ } }
   }
 
   /**
@@ -58,6 +74,8 @@ export class MatchClientCombat {
       // per-player split of the LP its enemy leaks cost (b.progress, the highest value seen; null until one carried it),
       // which a result must not contradict before a perfect-payout bounty pays (_bossLeaksAgree)
       bossReported: null, lpReported: 0, credit: null, demoted: new Set(), heldResult: null, leaksBy: null,
+      // SP_BATTLE_POOL: the simulation pool task in flight ({ promise, cancel, attempt }), null otherwise
+      poolTask: null,
     };
   }
 
@@ -160,7 +178,10 @@ export class MatchClientCombat {
   /**
    * The server simulates a field: normal / 联防 headlessly at once (the result is released at the battle's natural end
    * on the field's clock, so the teammates' progress UI and the round pacing stay as if it ran live); boss fields in
-   * real time on the pacer (they share the pool), fast-forwarded to the field's clock on a takeover.
+   * real time on the pacer (they share the pool), fast-forwarded to the field's clock on a takeover. Under
+   * SP_BATTLE_POOL a normal / 联防 field's battle runs in a simulation-pool worker instead (its result is released the
+   * same way); a missing or refusing pool falls back to the local sliced path — the pre-change behaviour, byte for
+   * byte.
    */
   _runOnServer(f, reason) {
     const prev = f.mode === 'client' ? f.authority : null;
@@ -174,6 +195,19 @@ export class MatchClientCombat {
     // the former authority (still online after a timeout / an invalid result) stops reporting and keeps its view
     if (prev) this.sendTo(prev, { t: 'b.end', battleId: f.battleId, fieldId: f.fieldId, reason: 'takeover' });
     if (f.kind === 'boss' || f.kind === 'hidden') { this._bossServerRun(f); return; }
+    if (this.battlePool && this.simPool && this.test !== true && this._runHeadlessOnPool(f)) {
+      this._armProgressTicker();
+      return;
+    }
+    this._runHeadlessLocal(f);
+    this._armProgressTicker();
+  }
+
+  /**
+   * The pre-pool path: the battle steps on this thread in wall-clock slices (also the pool's fallback, and the
+   * virtual-time / test-match path).
+   */
+  _runHeadlessLocal(f) {
     const job = new HeadlessJob(this._specBattle(f.spec), { onError: (e) => this.reportError(`field ${f.fieldId} step`, e), players: f.players });
     f.job = job;
     f.battle = job.battle;
@@ -205,7 +239,70 @@ export class MatchClientCombat {
       };
       f.sliceTimer = this.later(0, slice);
     }
-    this._armProgressTicker();
+  }
+
+  /**
+   * SP_BATTLE_POOL: submit the field's spec to the simulation pool's 'battle' task (server/workers/simulation.js) and
+   * mirror its real return shape `{ result, timeline, time, errors, crashed }`: the result/timeline/endGt land on the
+   * field exactly as the local run's, the release stays at the battle's natural end on the field clock (_armRelease),
+   * and the timeline grows from the worker's progress messages (reset opens it, the samples append). The pool's
+   * refusal (POOL_FULL / closed) arrives as a rejection, not a throw — the rejection handler falls back to the local
+   * path; so does a value that is not the worker's documented shape (the d3fffd27 lesson: never guess). Returns false
+   * only when the submit itself threw (the caller falls through to the local path at once). `_poolTask` holds the
+   * attempt token: a stale answer (cleared, force-done, superseded by the fallback) applies nothing. Cancel
+   * (dispose / phase end / the field judged otherwise): `_clearFieldTimers` calls handle.cancel() — a queued task is
+   * dropped, a running one stops at its next 4 ms slice boundary (the pool's own contract retires that worker slot).
+   * @returns {boolean} true when the task is in flight
+   */
+  _runHeadlessOnPool(f) {
+    const attempt = {};
+    let handle;
+    try {
+      handle = this.simPool.submit('battle', { spec: f.spec, players: f.players, progress: true }, {
+        onProgress: (p) => this._poolTimeline(f, attempt, p),
+      });
+    } catch (e) {
+      this.reportError(`field ${f.fieldId} pool submit`, e);
+      return false;
+    }
+    f.poolTask = { promise: handle.promise, cancel: handle.cancel, attempt };
+    f.battle = null; // a pool-run field holds no battle object; its errors travel on f.errors (see _collectSimErrors)
+    f.job = null;
+    f.timeline = null; // opens with the worker's first progress message; until then the views read f.progress
+    f.endGt = null;
+    const stale = () => !f.poolTask || f.poolTask.attempt !== attempt || f.done || this.disposed || this.ended;
+    handle.promise.then((value) => {
+      if (stale()) return;
+      f.poolTask = null;
+      if (!value || typeof value !== 'object' || !value.result || typeof value.result !== 'object' || !value.result.perPlayer) {
+        this.reportError(`field ${f.fieldId} pool result`, new Error('unexpected battle task payload'));
+        this._runHeadlessLocal(f);
+        return;
+      }
+      f.result = value.result;
+      f.resultSource = 'server';
+      f.timeline = Array.isArray(value.timeline) ? value.timeline : f.timeline;
+      f.endGt = Number(value.time) || 0;
+      if (Array.isArray(value.errors) && value.errors.length) f.errors = value.errors;
+      this._armRelease(f);
+    }, (err) => {
+      if (stale()) return;
+      f.poolTask = null;
+      this.reportError(`field ${f.fieldId} pool`, err);
+      this._runHeadlessLocal(f); // POOL_FULL / worker failure / timeout: the pre-change path
+    });
+    return true;
+  }
+
+  /**
+   * The pool worker's progress message: `{ reset, samples }` — timeline samples ([[gt, killed, total, resolved(,
+   * left)], …]) of the running battle. `reset` opens a fresh timeline (the first message); the samples append in
+   * order. A stale attempt (task cancelled, field re-run) applies nothing.
+   */
+  _poolTimeline(f, attempt, p) {
+    if (!p || !Array.isArray(p.samples) || !f || !f.poolTask || f.poolTask.attempt !== attempt) return;
+    if (p.reset || !Array.isArray(f.timeline)) f.timeline = p.samples.slice();
+    else f.timeline.push(...p.samples);
   }
 
   /** m.public ~1 Hz while server-run fields progress along their timelines. */

@@ -103,6 +103,9 @@ export function makeMatch(o = {}) {
     // the server's own simulation pool for those rehearsals (server/workers/roomPool.js); absent unless a test passes
     // one, so a harness match keeps every rehearsal on this thread (test/workers-room.test.js covers the pooled path)
     ...(o.simPool !== undefined ? { simPool: o.simPool } : {}),
+    // SP_BATTLE_POOL (server/match/match/clientCombat.js): server-run fields hand their battle to simPool; omitted
+    // unless the test passes one, so a harness match keeps the local sliced path (test/match/battle-pool.test.js)
+    ...(o.battlePool !== undefined ? { battlePool: o.battlePool } : {}),
     // a gameplay-plugin room (DESIGN §32.6): host rehearsal stays off there (match/rehearsal.js requireCs)
     cs: o.cs,
     vs: o.vs,

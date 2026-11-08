@@ -376,6 +376,41 @@ describe('an effect authored behind its unit is drawn under the units at order 0
   });
 });
 
+describe('a flat plane in front of the body is not a ground decal (冰冻, 泥岩\'s shield: feedback #54, #59)', () => {
+  const MAT = {
+    name: 'm', shader: 'Torappu/Particles/AlphaBlend', passes: [{ blend: ['SrcAlpha', 'OneMinusSrcAlpha', 'Zero', 'OneMinusSrcAlpha'], blendOp: 'Add', zTest: 'Disabled', zWrite: false, cull: 'Off' }],
+    queue: 'Transparent', keywords: [], floats: {}, colors: { _TintColor: [1, 1, 1, 1] }, textures: { _MainTex: { tex: 't', st: [1, 1, 0, 0] } },
+  };
+  const PLANE = { positions: [-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0], uv0: [0, 0, 1, 0, 0, 1, 1, 1], submeshes: [[0, 1, 2, 2, 1, 3]] };
+  // buff_frozen's `bingkuai`: an order-0 plane lying in XY at this position under the effect's root
+  const ground = (pos, order = 0) => {
+    const nodes = [
+      { id: 0, name: 'root', parent: null, children: [1], active: true, pos: [0, 0, 0], rot: [0, 0, 0, 1], scale: [1, 1, 1],
+        behaviours: [{ class: 'ParticleEffect', enabled: true, fields: { _delayToPlay: 0, _delayToFinish: 0, _maxLifetime: -1, _isLoop: 1, _rotateType: 0, _spawnLocation: 0 } }] },
+      { id: 1, name: 'plane', parent: 0, children: [], active: true, pos, rot: [0, 0, 0, 1], scale: [1, 1, 1],
+        meshFilter: 'plane', meshRenderer: { m_Enabled: true, materials: [0], m_SortingOrder: order, m_SortingLayer: 0 } },
+    ];
+    const d = { format: 'fx-prefab', version: 1, key: 'overlay', nodes, materials: [MAT], clips: [], textures: ['t'], meshes: [], refs: [], stats: {} };
+    const fx = new Effect(compileEffect(d), { seed: 1, lib: { mesh: (k) => (k === 'plane' ? PLANE : null) } });
+    fx.place({ pos: [3, 4, 0], groundZ: 0 });
+    fx.update(1 / 30);
+    const out = [];
+    fx.gather(cameraBasis(30, [0, -5, -8], 720, 0.7), (e) => out.push(e));
+    return out[0].ground;
+  };
+
+  test('half a tile up the board and pulled towards the camera it is drawn over the unit', () => {
+    assert.equal(ground([-0.043, 0.493, -0.068]), false, 'bingkuai');
+    assert.equal(ground([0, 0.52, -0.07]), false, 'thorns_skill_03_buff_02_front');
+  });
+
+  test('a decal at the feet, the back half of an overlay and a negative order stay under it', () => {
+    assert.equal(ground([0, 0, -0.07]), true, 'a ring under the feet');
+    assert.equal(ground([0, 0.52, 0]), true, 'thorns_skill_03_buff_02 (z 0)');
+    assert.equal(ground([-0.03, 0.424, -0.06], -1), true, 'buff_frozen `andi` at order −1');
+  });
+});
+
 describe('an effect saved with an inactive root plays (the 狼群\'s shadow attacks, 艾雅法拉\'s hit …)', () => {
   test('its systems emit as the root is activated on play; an inactive child stays off', () => {
     const MAT = { name: 'm', shader: 'Torappu/Particles/Additive', passes: [{ blend: ['SrcAlpha', 'One', 'Zero', 'OneMinusSrcAlpha'], blendOp: 'Add', zTest: 'Disabled', zWrite: false, cull: 'Off', colorMask: 15 }],

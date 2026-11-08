@@ -76,9 +76,10 @@ export class MatchViews {
     const v = {
       t: 'm.public',
       // 多人同盟容量（移植自用户分支 views.js）: the opt-in room's seat count and its chess-pool groups — absent on an
-      // ordinary match, whose m.public stays byte-identical
+      // ordinary match, whose m.public stays byte-identical; 手动指定卡池编组（this.poolPlan）也带分组（fork views.js），
+      // 四人房分成几组时名单同样可读
       ...(this.capacityExperiment ? { playerCapacity: this.playerCapacity } : {}),
-      ...(this.capacityExperiment
+      ...(this.capacityExperiment || this.poolPlan
         ? { poolGroups: this.poolGroups.map(({ id, playerIds, scale }) => ({ id, playerIds: playerIds.slice(), scale })) } : {}),
       phase: this.phase,
       round: this.round,

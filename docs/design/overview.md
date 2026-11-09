@@ -63,8 +63,12 @@ server/
     Match.js               match state machine, timers, round loop, co-op orchestration, broadcasting views — the class:
                            the lobby⇄match interface (header), constructor + method install
     match/                 Match's methods by concern (platform, infra, messaging, views, watch, intents, pause, phases,
-                           spDraft, prep, combat, clientCombat, reports, unitePhase, bossRounds, settle; shared constants
-                           in common.js), installed on Match.prototype
+                           spDraft, prep, combat, clientCombat, reports, unitePhase, bossRounds, settle, botplan; shared
+                           constants in common.js), installed on Match.prototype
+    frameEconomy.js        SP_FRAME_ECONOMY: snapshot coalescing / no-change frame skip
+    snapshot.js            public state snapshot
+    matchmaking.js         同盟匹配; the capacity gate keeps 8/12/16/20-seat rooms out of the pool
+    ownerFile.js           the machine-local owner record (SP_OWNER_FILE, §37.150)
     PlayerState.js         per-player economy/shop/hand/board/items/bonds/LP state + all prep-intent handlers — the class:
                            constructor + method install
     player/                PlayerState's methods by concern (basics, pieces, acquire, economy, placement, items, prep,

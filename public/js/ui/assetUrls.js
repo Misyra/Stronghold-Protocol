@@ -200,6 +200,10 @@ const moduleIconIndex = new WeakMap();
  * `groups.module[<type>]`, matched case-insensitively against the module's typeName ('MAR-X' → key 'mar-x', 'PRI-X' →
  * key 'PRI-X' — the client's file names are mixed case). null when the manifest, the group or the entry is missing
  * (callers draw the lettered tile / type text instead).
+ * [ASSUMED] A late module branch introduced after the client's art hub (CSR-X / TAC-D, uniequip_002_svash2 /
+ * uniequip_004_mlyss) has no official type icon in any gamedata table or in the extracted art. No URL is fabricated for
+ * it — the function returns null and the UI keeps the lettered tile / type text. The asset guards whitelist exactly
+ * these types; every other type must still resolve to an icon that exists on disk.
  * @param {any} local the local-art manifest (`data.get('local')`) or null
  * @param {string} typeName e.g. 'MAR-X'
  */

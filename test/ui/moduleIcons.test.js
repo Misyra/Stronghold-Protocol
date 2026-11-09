@@ -58,7 +58,12 @@ describe('module type icons (local-client art, optional)', () => {
     assert.equal(moduleTypeIconUrl(broken, 'MAR-Y'), '/assets/local/module/mar-y.png', 'an empty exact entry falls through to a valid one');
   });
 
-  test('the real manifest (when extracted on this machine) covers every module type of chess.json, with on-disk files', { skip: !existsSync(LOCAL) && 'no data/local-assets.json (optional)' }, () => {
+  // [ASSUMED] These late module branches (5c7316a3) have no official type icon in any gamedata table nor in the
+  // client's art hub (spritepack/ui_equip_type_hub_h2_0.ab). The UI draws the lettered tile; no icon is fabricated.
+  // The whitelist is exact on purpose: a new iconless type must be added here deliberately, never silently absorbed.
+  const NO_OFFICIAL_ICON = new Set(['CSR-X', 'TAC-D']);
+
+  test('the real manifest (when extracted on this machine) covers every module type of chess.json, with on-disk files; iconless late branches fall back', { skip: !existsSync(LOCAL) && 'no data/local-assets.json (optional)' }, () => {
     const local = JSON.parse(readFileSync(LOCAL, 'utf8'));
     if (!local?.groups?.module) return; // an older extraction without the module group: the UI falls back
     const chess = JSON.parse(readFileSync(path.join(ROOT, 'data/chess.json'), 'utf8'));
@@ -71,7 +76,12 @@ describe('module type icons (local-client art, optional)', () => {
       if (!url) { missing.push(t); continue; }
       assert.ok(existsSync(path.join(ROOT, 'public', url)), `${t} → ${url} exists`);
     }
-    assert.deepEqual(missing, [], 'every module type has an official icon');
+    // Only the whitelisted iconless branches may lack a URL; every other type still owes an on-disk icon.
+    assert.deepEqual([...missing].sort(), [...NO_OFFICIAL_ICON].sort(), 'only the iconless late branches have no official icon');
+    for (const t of NO_OFFICIAL_ICON) {
+      assert.ok(types.has(t), `${t} must really occur in chess.json (no stale whitelist entry)`);
+      assert.equal(moduleTypeIconUrl(local, t), null, `${t}: null ⇒ lettered tile / type text fallback, no fabricated URL`);
+    }
   });
 
   test('干员调配 module tile: official icon when listed, lettered tile when the manifest or the entry is missing', async () => {

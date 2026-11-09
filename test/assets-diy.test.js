@@ -14,6 +14,7 @@ import { dataExtras, orphanFiles, parseArgs } from '../tools/fetch-assets.mjs';
 import { patternOperator, buildPlan } from '../tools/assets/plan.mjs';
 import { indexAudio } from '../tools/assets/audio.mjs';
 import { Downloader } from '../tools/assets/downloader.mjs';
+import { moduleTypeIconUrl } from '../public/js/ui/assetUrls.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const load = (f) => JSON.parse(readFileSync(join(ROOT, 'data', `${f}.json`), 'utf8'));
@@ -109,7 +110,22 @@ test('the committed data/assets.json lists every 自选 operator\'s avatar, port
   }
   // 艾拉's TRP-Δ type icon ships with the collab pack's operator set; the normal manifest still names it for the
   // module tiles, so a machine with public/assets must have the file too.
-  for (const t of dataExtras(BACKUPS, CHESS).moduleTypes) {
+  // [ASSUMED] The late module branches csr-x / tac-d (uniequip_002_svash2 / uniequip_004_mlyss, 5c7316a3) have no
+  // official type icon in any gamedata table or in the client's art hub. The asset pipeline does not fabricate one, so
+  // data/assets.json must NOT list them — the UI draws the lettered tile / type text. Every other type still owes a
+  // committed entry and, when public/assets is here, its file on disk. The whitelist is exact on purpose.
+  const NO_OFFICIAL_ICON = new Set(['csr-x', 'tac-d']);
+  const moduleTypes = dataExtras(BACKUPS, CHESS).moduleTypes;
+  for (const t of NO_OFFICIAL_ICON) assert.ok(moduleTypes.includes(t), `${t} must really be a chess module type (no stale whitelist)`);
+  const local = existsSync(join(ROOT, 'data', 'local-assets.json'))
+    ? JSON.parse(readFileSync(join(ROOT, 'data', 'local-assets.json'), 'utf8')) : null;
+  for (const t of moduleTypes) {
+    if (NO_OFFICIAL_ICON.has(t)) {
+      assert.equal(m.modules[t], undefined, `${t}: no official icon ⇒ not fabricated into assets.json`);
+      const typeName = [...new Set(Object.values(CHESS).flatMap((c) => (c.modules || []).filter((mm) => mm.typeIcon === t).map((mm) => mm.typeName)))];
+      for (const n of typeName) assert.equal(moduleTypeIconUrl(local, n), null, `${n} (${t}): null ⇒ lettered tile / type text fallback`);
+      continue;
+    }
     assert.ok(m.modules[t], `module type icon ${t}`);
     assert.ok(onDisk(m.modules[t]), `module type icon ${t} on disk`);
   }

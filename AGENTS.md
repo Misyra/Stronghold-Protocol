@@ -74,7 +74,10 @@ that is why its imports are constrained. Every file is mapped in [docs/ARCHITECT
   publish only the packs built from newly added files, append their entries to `data/resource-packs.json`, and never
   rewrite, renumber, re-pack or delete an existing pack. Every ZIP an older index names must keep resolving — a client
   must never 404 or fail because of a publish. Adding is the only safe operation there. (The Studio's code tree in
-  the bullet above carries the same append-only discipline.)
+  the bullet above carries the same append-only discipline.) The rule governs publishes to a **live** dataset: the
+  2026-11-09 emptying of all 149 ZIPs was the maintainer's own decision while the line is paused
+  (`MODELSCOPE-CLEANUP-2026-11-09.json` archives every pack), so the old index's ZIPs resolve again once revival
+  rebuilds the dataset — revival replaces the index and the dataset together, not by appending to the emptied one.
 - **Interface strings** go through `t('…')`, with entries in every pack under `public/i18n/`
   (`node tools/i18n.mjs check --all --strict`). Developer logs are exempt (`// i18n-ignore`).
 - **The browser client is native ESM.** `public/js/` loads with no bundler and no build step: no Node APIs, no

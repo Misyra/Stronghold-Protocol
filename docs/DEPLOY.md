@@ -763,12 +763,36 @@ stdout（journalctl / NSSM / Docker 的日志按行原样捕获）：
 
 | 变量 | 默认 | 含义 |
 | --- | --- | --- |
-| `SP_RESOURCE_PACK_ROUTES` | ModelScope 的 `Misyra/Arknight_Assets` 数据集模板 | 资源包发布位置：JSON 数组，元素是目录 URL、`….zip` 直链或含 `{file}` 的模板（2.5 节的「前往下载」与客户端分包索引按它取包）。设为空串关闭全部路由 |
+| `SP_RESOURCE_PACK_ROUTES` | （空 = 无远端镜像） | 资源包发布位置：JSON 数组，元素是目录 URL、`….zip` 直链或含 `{file}` 的模板（2.5 节的「前往下载」与客户端分包索引按它取包）。**预载包线 2026-11-09 起暂停**（数据集 `Misyra/Arknight_Assets` 已清空）：默认不再带 ModelScope 模板，未配置的部署剩下的站内/ZIP 兜底即全部；复活重建数据集后在此指回它（JSON 数组字符串，例：`["https://modelscope.cn/datasets/Misyra/Arknight_Assets/resolve/master/{file}"]`） |
 | `SP_ASSETS_CDN` | （空 = 同源） | 素材 CDN 基地址；配置后素材 URL 走 CDN，`static.js` 不再从本机发素材 |
 | `SP_ASSETS_CDN_VERSION` | 逐级回退 | CDN 发布版本：发布机生成的逐文件 `.assets-manifest.json` 优先（每个文件自己的 `?v=`），否则仓库的 `.assets-cdn-version`，再否则问 CDN 的 `/_v/latest`；都没有就发不带版本的 URL |
 | `SP_DATA_CDN` | （空 = 同源 `/data/`） | 游戏数据 JSON 的 CDN 基地址 |
+| `SP_CODE_CDN` | （空 = 源站 `/_v/`） | 浏览器代码树（js / vendor / shared / sim）的创空间基址：配了之后入口 script、相对 import 改写与 importmap 指向 `<base>/code/<树tag>/…`，源站继续持同字节作回退（见下「代码 CDN」）。非法值拒绝启动 |
 | `SP_ANNOUNCEMENT_FILE` | `config/announcements.json` | 公告排程文件（单源，热加载；`announcementFile: null` 关闭公告） |
 | `SP_ANNOUNCEMENT_POLL_MS` | 10000 | 排程文件的热加载轮询间隔（ms） |
+
+### 代码 CDN（`SP_CODE_CDN`，ModelScope 创空间，2026-11-09 起）
+
+浏览器代码（`/js` `/vendor` `/shared` `/sim` 四个根）有第三条交付线：内容寻址单树发布到创空间
+`Misyra/arknight-proto`，由 `tools/studio-publish.mjs` 维护；**不配 `SP_CODE_CDN` 时一切都在源站 `/_v/`，行为与从前完全一致**。
+
+1. **取值**：`https://modelscope.cn/studio/Misyra/arknight-proto/resolve/<commit>`（发布工具打印的 resolve base）。
+   校验照 `SP_ASSETS_CDN`：http(s)、无 credentials/query/fragment，非法或半配置的值**拒绝启动**。
+2. **发布 SOP**：`node tools/studio-publish.mjs plan`（看树 tag 与文件数）→ `publish --apply`（clone/refresh
+   `.cache/studio-publish/`、append-only 冲突即拒绝、commit+push）→ `verify`（逐文件 200 + SHA-256 + ACAO + MIME）。
+   **必须在部署的同一 commit 上发布**——tag 公式吃 `server/assetVersion.js`/`shared/assetCdn.js`/`server/http/static.js`
+   的字节（`codeTransformer`），发布端与服务端 importmap 逐字节一致靠这一点；错 commit 发布 = importmap 指向从未推过的树，整页 404。
+3. **回退**：去掉 `SP_CODE_CDN` 重启即回源站 `/_v/<组tag>/`（零风险回滚，站内始终持同字节）。模块级 CDN 失败回退
+   v1 不做——页面级重载兜底已存在（`main.js` 的可重 import）；死镜像期间源站 `/_v/` 一直可用。
+4. **append-only 与 GC**：`code/<树tag>/` 目录一经发布永不改写、永不删除；首发的散组目录（旧公式）也永久保留可解析。
+   每版约 30–40MB、创空间软上限 ~1.6GB——将来 GC 只按「只留近 N 版」维护者拍板后做，发布工具不自动删。
+5. **CSP**：配置后代码 CDN 的 origin 自动进 `script-src`（只进 script-src，`connect-src`/`img-src` 等不进）。
+   **公网部署不建议开 `SP_CODE_CDN`**——第三方 origin 承载脚本意味着信任 ModelScope 的不变性保证；
+   默认关、内网/自用部署收益（发版字节近零）不受影响。
+6. **边界**：`/data.js`（生成的垫片）与 data/css/art 永远留源站；vite bundle 页（`public/build`，无 importmap）
+   不走代码 CDN；创空间发布物只含代码根，不含美术与数据。
+7. **核对**：启动日志 `[code] code CDN <base> (tree <tag>)` 的 tag 必须等于 `last-publish.json` 的 `treeTag` /
+   `plan` 输出（`serveStatic.codeTreeVersion` 同值）；`/healthz` 的 build 只描述源码，不检验远端发布物。
 
 ### 部署包必须携带的本机文件（2026-11-04 事故后固化）
 

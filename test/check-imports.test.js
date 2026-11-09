@@ -89,22 +89,26 @@ test('sim and match rules on a fixture tree', () => {
   }
 });
 
-test('this repo: only the Node data loader crosses the sim boundary', () => {
+test('this repo: the Node bridge (nodeData.js) is file-exempt; everything else stays clean', () => {
   const { violations, notes } = scan(ROOT);
-  assert.deepEqual(violations.map((v) => `${v.file}:${v.line}: ${v.spec} [${v.code}]`), [
-    'server/sim/nodeData.js:11: node:fs [sim-node]',
-    'server/sim/nodeData.js:12: node:path [sim-node]',
-    'server/sim/nodeData.js:13: node:url [sim-node]',
-  ]);
+  assert.deepEqual(violations, [], 'nodeData.js 的 Node 内建引用按文件豁免（classify），其余仍然零违规');
   assert.ok(notes.some((n) => n.file === 'server/sim/nodeData.js' && n.resolved === 'server/data.js'));
   assert.ok(notes.every((n) => n.resolved === 'server/data.js'));
 });
 
-test('the CLI lists hits and fails only with --strict', () => {
+test('the CLI: the real tree passes both modes; --strict fails on a violating tree', () => {
   const loose = spawnSync(process.execPath, ['tools/check-imports.mjs'], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(loose.status, 0);
-  assert.match(loose.stdout, /server\/sim\/nodeData\.js:11: node:fs \[sim-node\]/);
+  assert.match(loose.stdout, /no import-boundary violations/);
   const strict = spawnSync(process.execPath, ['tools/check-imports.mjs', '--strict'], { cwd: ROOT, encoding: 'utf8' });
-  assert.equal(strict.status, 1);
-  assert.match(strict.stdout, /node:fs/);
+  assert.equal(strict.status, 0, 'nodeData.js 豁免后 --strict 在真实树上也通过');
+  // 违规树：--strict 真的拦截（npm run check:imports 的语义）
+  const root = fixture({ 'server/sim/bad.js': "import fs from 'node:fs';\n" });
+  try {
+    const looseBad = spawnSync(process.execPath, ['tools/check-imports.mjs', '--root', root], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(looseBad.status, 0);
+    assert.match(looseBad.stdout, /sim-node/);
+    const strictBad = spawnSync(process.execPath, ['tools/check-imports.mjs', '--strict', '--root', root], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(strictBad.status, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -15,7 +15,7 @@
 //   guards     the CI guards (npm run test:guards): the shard table and the wiring of ci.yml itself; this is what the
 //              node 24 lane runs instead of the whole suite
 //   lint       eslint .                                   (npm run lint; warnings do not fail it)
-//   imports    node tools/check-imports.mjs               (npm run check:imports)
+//   imports    node tools/check-imports.mjs --strict     (npm run check:imports)
 //   typecheck  tsc --noEmit --checkJs -p jsconfig.json    (npm run typecheck)
 // The job `test` steps get ci.yml's env (SP_E2E=0, SP_REAL_E2E=0, RENDER_E2E=0, NO_COLOR=1) unless already set.
 //
@@ -83,7 +83,7 @@ export const STEPS = [
   { id: 'guards', ci: { job: 'node24', name: 'CI guard tests (sharding and workflow wiring)' }, npm: 'test:guards',
     describe: 'node --test test/ci.test.js test/ci-shards.test.js test/test-run.test.js' },
   { id: 'lint', ci: { job: 'tooling', name: 'Lint (warnings allowed)' }, npm: 'lint', describe: 'eslint .' },
-  { id: 'imports', ci: { job: 'tooling', name: 'Import boundaries' }, npm: 'check:imports', describe: 'node tools/check-imports.mjs' },
+  { id: 'imports', ci: { job: 'tooling', name: 'Import boundaries' }, npm: 'check:imports', describe: 'node tools/check-imports.mjs --strict' },
   { id: 'typecheck', ci: { job: 'tooling', name: 'Typecheck' }, npm: 'typecheck', describe: 'tsc --noEmit --checkJs -p jsconfig.json' },
 ];
 
@@ -407,7 +407,7 @@ export function runStep(step, env, runNode = node) {
     case 'guards': return runNode(['--test', 'test/ci.test.js', 'test/ci-shards.test.js', 'test/test-run.test.js'], env);
     case 'smoke': return smoke(env);
     case 'lint': return runNode([binPath('eslint', 'eslint'), '.'], env);
-    case 'imports': return runNode(['tools/check-imports.mjs'], env);
+    case 'imports': return runNode(['tools/check-imports.mjs', '--strict'], env);
     case 'typecheck': return runNode([binPath('typescript', 'tsc'), '--noEmit', '--checkJs', '-p', 'jsconfig.json'], env);
     default: throw new Error(`no runner for step ${step.id}`);
   }

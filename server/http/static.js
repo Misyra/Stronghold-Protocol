@@ -102,6 +102,20 @@ const IMMUTABLE_JSON = 'public, max-age=31536000, immutable';
 export function clientModeFromEnv(env = process.env) {
   return String(env.SP_CLIENT ?? '').trim().toLowerCase() !== 'source';
 }
+/** Whether the on-disk bundle carries the data-tag-aware resourceUrl (bundle 生成于 f892d870 之后)。
+ *  只读 build/assets/*.js 直到命中标记；目录缺失视为通过（那类部署本来就不服务 bundle）。 */
+function buildCarriesDataTag(publicDir) {
+  const dir = path.join(publicDir, 'build', 'assets');
+  let entries;
+  try { entries = fs.readdirSync(dir); } catch { return true; }
+  for (const name of entries) {
+    if (!name.endsWith('.js')) continue;
+    try {
+      if (fs.readFileSync(path.join(dir, name), 'utf8').includes('__spDataVersion')) return true;
+    } catch { /* unreadable chunk: try the next */ }
+  }
+  return false;
+}
 /** /vs/<vs16>/overlay.json */
 const VISUAL_DOC = new RegExp(`^${VISUAL_SETS_URL}([0-9a-f]{${VS_URL_DIGITS}})/${VISUAL_DOC_FILE.replace('.', '\\.')}$`);
 /** A plugin file URL's hash segment. */
@@ -140,6 +154,12 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
   const cdn = typeof cdnBase === 'string' ? cdnBase : '';
   const builtIndex = path.join(publicDir, 'build', 'index.html');
   const useBuiltClient = clientBuild && fs.existsSync(builtIndex);
+  // 陈旧构建防线（REVIEW-2026-11-09-full P1-3）：bundle 内嵌的 resourceUrl 若还没有 __spDataVersion
+  // 语义（dataTag 独立前的产物），/data/*.json 会被钉上旧 tag 整条 404——源码对、产物旧时表现为静默的
+  // 全量数据载入失败，排查成本极高。启动时扫一遍构建产物；找不到语义就显式告警（部署铁律仍是先 build）。
+  if (useBuiltClient && !buildCarriesDataTag(publicDir)) {
+    log.warn('[build] 客户端构建产物缺少 __spDataVersion 语义（早于数据独立 tag）：/data/ 将全部 404 —— npm run build 后再部署');
+  }
   // the preload manifest (docs/ASSETS.md「Preload」): built on first request, cached until the manifests change
   const resources = createResourceIndex({ dataDir, publicDir, cdnBase: cdn, resourcePackRoutes, rewrite: (v) => (cdn ? rewriteAssetPaths(v, cdn) : v), log });
   /** @type {Map<string, { mtimeMs: number, size: number, ctimeMs: number, ino: number, body: Buffer, hash: string }>} rewritten manifests */

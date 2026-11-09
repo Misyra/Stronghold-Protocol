@@ -22,9 +22,15 @@ export class MatchBotPlan {
   /**
    * Submit one stage-1 plan batch to the simulation pool. Null when the pool cannot take it (the caller runs
    * inline). The task registers in _rehearsalTasks (kind 'plan') so the prep end cancels it like a rehearsal.
+   *
+   * Named `submitBotPlan`, NOT `poolPlan`: Match.js installs an unconditional own property `this.poolPlan`
+   * (手动指定卡池编组, experimental.poolPlan, #49 / e41932f6) on every instance, which shadows any prototype
+   * method of that name — calling `this.poolPlan(...)` would be `TypeError: this.poolPlan is not a function`.
+   * `poolPlan` is read as configuration all over (poolGroups.js / views.js / manual-pools.test.js), so the data
+   * property keeps its name and the method moves out of its way. createBotPlanJob is the only caller.
    * @param {{ ps: any, tasks: object[] }} o
    */
-  poolPlan({ ps, tasks }) {
+  submitBotPlan({ ps, tasks }) {
     const pool = this.simPool;
     if (!pool || this.disposed || this.ended) return null;
     // a gameplay-plugin / other-version room's content set does not reach a worker thread (same rule as poolRehearsal)
@@ -57,7 +63,7 @@ export class MatchBotPlan {
    * @returns {object | null} the job, or null when the pool refused (caller falls back inline)
    */
   createBotPlanJob({ ps, chosen, tasks, rest, nVariants }) {
-    const submitted = this.poolPlan({ ps, tasks });
+    const submitted = this.submitBotPlan({ ps, tasks });
     if (!submitted) return null;
     const m = this;
     const job = {
@@ -120,7 +126,13 @@ export class MatchBotPlan {
         if (submitted.task.dropped) return;
         m._dropRehearsalTask(submitted.task);
         if (m.disposed || m.ended) return;
-        if (!error && value && Array.isArray(value.results) && m.rngBots.state() === tasks[0].rngState) {
+        // 核验 worker 契约：一批任务必须一条不差地回结果（畸形返回直接内联回退，防 d3fffd27 类消费者/返回形状错配），
+        // 且主线程 rngBots 仍停在采集态（期间无人动过这条流）。
+        if (!error && value && Array.isArray(value.results) && value.results.length === tasks.length
+          && m.rngBots.state() === tasks[0].rngState) {
+          // 采集态原件：写回 worker 末态前先留一份。apply 任一步 throw 时原样还原，回退（plans=null 全内联）
+          // 不继承 worker 末态，保持「回退即与 SP_BOT_PLAN_POOL 关闭逐字节同轨」契约。
+          const rngAtCapture = m.rngBots;
           try {
             const variantPlans = value.results.slice(0, nVariants).map((r) => planFromResult(LayoutPlan, r.plan));
             const bodyPlans = value.results.slice(nVariants).map((r) => planFromResult(LayoutPlan, r.plan));
@@ -131,6 +143,7 @@ export class MatchBotPlan {
             job.botPlanApplied = true;
             m.botPlanPoolStats.accepted++;
           } catch (e) {
+            m.rngBots = rngAtCapture;
             m.reportError(`bot ${ps.playerId} plan-pool apply`, e);
             job._plans = null;
           }

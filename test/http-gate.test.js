@@ -94,7 +94,7 @@ describe('gate options and cookie', () => {
     assert.equal(o.localBypass, false, 'SP_GATE_LOCAL=0');
     const d = gateOptionsFrom({}, {}, null);
     assert.equal(d.password, '');
-    assert.equal(d.ttlDays, 7);
+    assert.equal(d.ttlDays, 3, 'the default session is 72 h');
     assert.equal(d.localBypass, true);
     gateOptionsFrom({}, { SP_GATE_TTL_DAYS: 'x' }, { warn: (m) => warns.push(m) });
     assert.equal(warns.length, 1);
@@ -162,10 +162,19 @@ describe('the gate in front of HTTP', () => {
     assert.equal(asset.headers.get('www-authenticate'), 'Gate');
     const wsData = await srv.get('/assets/char/avatar/x.png');
     assert.equal(wsData.status, 401);
-    // the probe and the two public read-only APIs never need the cookie
+    // only the probe stays open without the cookie; the title screen's two read-only APIs moved behind the gate
+    // (the owner's decision of 2026-11-08) and answer 401 like any other gated request
     assert.equal((await srv.get('/healthz')).status, 200);
-    assert.equal((await srv.get('/api/online')).status, 200);
-    assert.equal((await srv.get('/api/announcement')).status, 200);
+    assert.equal((await srv.get('/api/online')).status, 401);
+    assert.equal((await srv.get('/api/announcement')).status, 401);
+  });
+
+  test('the asset manifest is public: no cookie → /assets-manifest.json open, other paths still 401', async () => {
+    // ACAO:* makes the manifest a cross-origin fetch; credentials:'same-origin' cannot be used with ACAO:*, so the
+    // manifest must not need the gate cookie (commit 684bab02 / PLAN-2026-11-09-resource-adaptation.md §5.5).
+    assert.equal((await srv.get('/assets-manifest.json')).status, 200);
+    assert.equal((await srv.get('/data/chess.json')).status, 401);
+    assert.equal((await srv.get('/api/online')).status, 401);
   });
 
   test('the entry page is served without the cookie and offers the password form', async () => {
@@ -179,6 +188,8 @@ describe('the gate in front of HTTP', () => {
     // a plain text field: a password input does not accept an IME composition in every browser (the owner's report)
     assert.match(html, /name="password" type="text"/);
     assert.doesNotMatch(html, /type="password"/);
+    // the owner's decision of 2026-11-08: the page carries no game branding
+    assert.doesNotMatch(html, /卫戍协议|STRONGHOLD|PRTS/i);
     assert.ok(cookieOf(res, 'sp_gate_csrf'), 'CSRF cookie');
   });
 

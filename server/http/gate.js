@@ -8,10 +8,10 @@
 //                               again with an error; throttled per client address
 //   POST /_gate/logout          clears the cookie → 303 to /entry
 //   GET  /healthz               always open (a tunnel / uptime probe)
-//   GET  /api/online            always open (the title screen's 当前在线人数 — a public count, no state)
-//   GET  /api/announcement      always open (the maintenance notice — a public schedule)
 //
-// Every other request from a client that is neither local nor on the private network needs the cookie:
+// Every other request from a client that is neither local nor on the private network needs the cookie — including the
+// title screen's two read-only APIs (/api/online, /api/announcement): public once, behind the gate since the owner's
+// decision of 2026-11-08 (a logged-in page polls them with its cookie, so nothing else had to change):
 //   * an HTML navigation is redirected to /entry?next=<path+query>;
 //   * anything else (assets, /data/*.json, the WebSocket upgrade) is refused with 401.
 // Loopback and private-network clients bypass the gate (SP_GATE_LOCAL=0 turns that off, SP_GATE_LOCAL_BYPASS=off is
@@ -40,9 +40,11 @@ import { isLocalIp, normalizeIp } from '../net.js';
 
 export const GATE_COOKIE = 'sp_gate';
 export const GATE_CSRF_COOKIE = 'sp_gate_csrf';
-/** Paths that stay open without the cookie: the probe and the two public read-only APIs (the title screen's 当前在线人数
- * and the maintenance notice). Nothing else is exempt — the game pages, data, assets and the WebSocket are not. */
-export const GATE_PUBLIC_PATHS = Object.freeze(['/healthz', '/api/online', '/api/announcement']);
+/** Paths that stay open without the cookie: the probe and the asset manifest (/assets-manifest.json, a public
+ * {tag,hashes} body with no sensitive fields, fetched cross-origin by the resource network). The title screen's
+ * 当前在线人数 and the maintenance notice were public read-only APIs until the owner's decision of 2026-11-08 moved them
+ * behind the gate. Nothing else is exempt — the game pages, data, assets and the WebSocket are not. */
+export const GATE_PUBLIC_PATHS = Object.freeze(['/healthz', '/assets-manifest.json']);
 /** Login failures allowed per client address inside GATE_WINDOW_MS. */
 export const GATE_MAX_FAILURES = 5;
 export const GATE_WINDOW_MS = 10 * 60 * 1000;
@@ -67,7 +69,7 @@ function trustProxySetting(value) {
  * The gate's settings from startServer() options and the environment (an option wins):
  * `gatePassword` / SP_GATE_PASSWORD / SP_GATE_PASSWORD_FILE (a UTF-8 file: first line, at most 1 KB, not trimmed;
  * unreadable = the boot fails; empty or absent = no gate), `gateSecret` / SP_GATE_SECRET, `gateTtlDays` /
- * SP_GATE_TTL_DAYS (default 7), `gateLocal` / SP_GATE_LOCAL (default on: loopback and LAN skip it),
+ * SP_GATE_TTL_DAYS (default 3, a 72 h session), `gateLocal` / SP_GATE_LOCAL (default on: loopback and LAN skip it),
  * `gateLocalBypass` / SP_GATE_LOCAL_BYPASS (default on; off = no local bypass at all — the headerless-tunnel opt-out).
  * The file form keeps
  * a non-ASCII password out of a shell whose code page would mangle it (`set SP_GATE_PASSWORD=…` in cmd turns
@@ -95,9 +97,9 @@ export function gateOptionsFrom(opts = {}, env = process.env, log = null) {
   }
   const secret = String(pick('gateSecret', 'SP_GATE_SECRET') ?? '').trim() || null;
   const daysRaw = pick('gateTtlDays', 'SP_GATE_TTL_DAYS');
-  const days = daysRaw === undefined || daysRaw === '' ? 7 : Number(daysRaw);
-  const ttlDays = Number.isFinite(days) ? Math.min(365, Math.max(1, Math.floor(days))) : 7;
-  if (daysRaw !== undefined && daysRaw !== '' && !Number.isFinite(days)) log?.warn?.(`[gate] invalid SP_GATE_TTL_DAYS ${daysRaw}, using 7`);
+  const days = daysRaw === undefined || daysRaw === '' ? 3 : Number(daysRaw);
+  const ttlDays = Number.isFinite(days) ? Math.min(365, Math.max(1, Math.floor(days))) : 3;
+  if (daysRaw !== undefined && daysRaw !== '' && !Number.isFinite(days)) log?.warn?.(`[gate] invalid SP_GATE_TTL_DAYS ${daysRaw}, using 3`);
   const localRaw = pick('gateLocal', 'SP_GATE_LOCAL');
   const localOn = localRaw === undefined ? true : !/^(0|false|off|no)$/i.test(String(localRaw));
   // SP_GATE_LOCAL_BYPASS=off: the loopback/LAN bypass is off entirely. A headerless TCP tunnel (frpc tcp mode,
@@ -200,7 +202,7 @@ export function entryPage({ next = '/', message = '' } = {}, csrf = '') {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="robots" content="noindex,nofollow">
-<title>卫戍协议：盟约 · 访问终端</title>
+<title>访问终端</title>
 <link rel="icon" href="data:,">
 <style>
   :root { --bg: #0b0f0e; --panel: #121a17; --line: #2b3a34; --mint: #6fe3a8; --gold: #d9a441; --text: #d8e3de; --dim: #7d8f88; }
@@ -214,7 +216,6 @@ export function entryPage({ next = '/', message = '' } = {}, csrf = '') {
   .bar b { color: var(--mint); font-weight: 600; }
   main { padding: 26px 22px 22px; }
   h1 { margin: 0 0 4px; font-size: 19px; letter-spacing: .04em; }
-  h1 em { color: var(--mint); font-style: normal; }
   .sub { margin: 0 0 22px; color: var(--dim); font-size: 12px; }
   label { display: block; font-size: 11px; letter-spacing: .1em; color: var(--gold); text-transform: uppercase; margin-bottom: 6px; }
   input#password { width: 100%; padding: 11px 12px; border: 1px solid var(--line); background: #0a100d; color: var(--text);
@@ -230,10 +231,10 @@ export function entryPage({ next = '/', message = '' } = {}, csrf = '') {
 </head>
 <body>
 <div class="frame">
-  <div class="bar"><span>PRTS // PRIVATE TERMINAL</span><b>ACCESS CONTROL</b></div>
+  <div class="bar"><span>PRIVATE TERMINAL</span><b>ACCESS CONTROL</b></div>
   <main>
-    <h1>卫戍协议：盟约 <em>·</em> 访问终端</h1>
-    <p class="sub">本服务器仅向持有访问口令的博士开放。输入口令后进入模拟终端。<br>This server is private. Enter the access password to continue.</p>
+    <h1>访问终端</h1>
+    <p class="sub">本服务器为私有部署，仅限持有访问口令的访客进入。输入口令后继续。<br>This server is private. Enter the access password to continue.</p>
     <form method="post" action="/_gate/login">
       <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
       <input type="hidden" name="next" value="${escapeHtml(next)}">
@@ -244,7 +245,7 @@ export function entryPage({ next = '/', message = '' } = {}, csrf = '') {
       <p class="msg" role="status" aria-live="polite">${escapeHtml(message)}</p>
     </form>
   </main>
-  <div class="foot"><span>STRONGHOLD PROTOCOL</span><span>ACL · ${new Date().getUTCFullYear()}</span></div>
+  <div class="foot"><span>PRIVATE SERVER</span><span>ACL · ${new Date().getUTCFullYear()}</span></div>
 </div>
 </body>
 </html>`;
@@ -272,7 +273,7 @@ const isHtmlRequest = (req) => /\btext\/html\b/i.test(String(req.headers.accept 
  * @param {{ password: string, secret: string, ttlDays?: number, localBypass?: boolean,
  *           trustProxy?: 'auto' | boolean, now?: () => number, log?: { warn?: Function } }} options
  */
-export function createGate({ password, secret, ttlDays = 7, localBypass = true, trustProxy = 'auto', now = Date.now, log = null }) {
+export function createGate({ password, secret, ttlDays = 3, localBypass = true, trustProxy = 'auto', now = Date.now, log = null }) {
   const passwordDigest = createHash('sha256').update(password, 'utf8').digest();
   const ttlMs = ttlDays * 24 * 60 * 60 * 1000;
   /** @type {Map<string, { fails: number, until: number }>} insertion-ordered: the oldest is evicted first */
@@ -313,7 +314,7 @@ export function createGate({ password, secret, ttlDays = 7, localBypass = true, 
    * peer; a forwarded address (CF-Connecting-IP, X-Real-IP, X-Forwarded-For) never grants one. */
   const bypass = (req) => localBypass && !forwardedClient(req) && isLocalIp(peerOf(req));
 
-  /** A path that never needs the cookie (GATE_PUBLIC_PATHS: the probe and the public read-only APIs). */
+  /** A path that never needs the cookie (GATE_PUBLIC_PATHS: the /healthz probe and /assets-manifest.json). */
   const isPublic = (rawPath) => GATE_PUBLIC_PATHS.includes(rawPath);
 
   /** May this request pass? (no cookie needed when the gate bypasses its client) */

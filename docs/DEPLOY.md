@@ -281,8 +281,8 @@ https / wss 说明：页面通过 https 打开时客户端自动连接 `wss://�
 `SP_GATE_PASSWORD` 设置一个访问口令后，公网来的访客先看到 `/entry?next=/` 的终端登录页，输入口令才进入；本机与局域网地址默认不受影响（`SP_GATE_LOCAL=0` 让它们也走门禁）。直接暴露公网 IP 或经 FRP 端口转发时，这一层是「谁能进来」的唯一控制，建议开启。
 
 - **挡什么**：页面、`/data/*.json`、`/shared/`、`/sim/`、素材与插件文件全部需要授权 cookie；没有的话 HTML 导航（`Accept: text/html`）302 到 `/entry`，其余请求（素材、数据、API）401。**WebSocket `/ws` 的 upgrade 也要验同一枚 cookie**，只挡 HTTP 的话脚本可以绕过页面直接连进来。
-- **放行**：`/entry`、`/_gate/login`、`/_gate/logout`，以及公开只读接口 `/healthz`（隧道 / 探活）、`/api/online`（当前在线人数）、`/api/announcement`（维护公告）——它们不含任何玩家状态。其余一律在门禁后面。
-- **cookie**：`sp_gate=<过期毫秒>.<HMAC-SHA256>`，HttpOnly、SameSite=Lax，默认 7 天（`SP_GATE_TTL_DAYS`）；HTTPS 请求自动加 `Secure`。签名输入里带口令摘要，**改口令会让所有旧 cookie 立即失效**。签名密钥取 `SP_GATE_SECRET`，没有就生成 `.cache/gate-secret`（0600），删掉它等于让所有人重新登录；没有可写目录时退化为进程内随机值（重启即全员重登）。
+- **放行**：`/entry`、`/_gate/login`、`/_gate/logout`，以及探活接口 `/healthz`（隧道 / 探活用，不含任何玩家状态）。其余一律在门禁后面——标题页的 `/api/online`（当前在线人数）与 `/api/announcement`（维护公告）也不例外（0.3.4 §37.142 从公开接口收回）：登录后的页面带着 cookie 照常轮询，没通过门禁的访客看不到页面，也就用不到它们。
+- **cookie**：`sp_gate=<过期毫秒>.<HMAC-SHA256>`，HttpOnly、SameSite=Lax，默认 3 天（72 小时，`SP_GATE_TTL_DAYS`，0.3.4 §37.142 从 7 天改短）；HTTPS 请求自动加 `Secure`。签名输入里带口令摘要，**改口令会让所有旧 cookie 立即失效**。签名密钥取 `SP_GATE_SECRET`，没有就生成 `.cache/gate-secret`（0600），删掉它等于让所有人重新登录；没有可写目录时退化为进程内随机值（重启即全员重登）。
 - **本机免门禁只认真实对端**：`SP_GATE_LOCAL` 的旁路只看 TCP 连接的对端地址（`req.socket.remoteAddress`），**不看** `CF-Connecting-IP` / `X-Real-IP` / `X-Forwarded-For`。放在 FRP / 反代后面时这些头永远换不来旁路；确实要从公网进来就保持门禁开着，或按 `TRUST_PROXY` 的语义另行配置。
 - **无头 TCP 隧道要关掉本机旁路**：`frpc` tcp 模式、`ssh -R`、ngrok tcp 这类不转发任何 HTTP 头的隧道跑在本机（或局域网任一台机器）上时，公网访客在本服务眼里就是 loopback / 内网对端、且没有任何转发头——默认旁路会替**整个互联网**放行，门禁形同虚设。这类部署必须设 `SP_GATE_LOCAL_BYPASS=off`（或 `SP_GATE_LOCAL=0`）关掉本机旁路；带转发头的反代（Cloudflare Tunnel、nginx）不在其列，旁路对它们本来就是关的。
 - **口令的编码**：Windows 的 cmd 里 `set SP_GATE_PASSWORD=阿米娅不是驴` 会被代码页弄成乱码。中文（或任何非 ASCII）口令请用 PowerShell 设置 `$env:SP_GATE_PASSWORD = '…'`，或者写成 UTF-8 文件并设 `SP_GATE_PASSWORD_FILE=gate-password.txt`。口令文件读首行、上限 1 KB、不做 trim（口令首尾的空格会被保留）；环境变量仍优先于文件；**文件不可读时服务直接启动失败**，不会静默敞开。
@@ -873,9 +873,13 @@ npm start
 | `SP_GATE_PASSWORD` | （空 = 不启用） | 访问口令（门禁，见 2.7）。非空即启用：公网访客要先在 `/entry` 输入口令；本机 / 局域网默认免。中文口令请用 PowerShell 设置，cmd 的代码页会弄乱 |
 | `SP_GATE_PASSWORD_FILE` | （空） | 从 UTF-8 文件读口令：首行、上限 1 KB、不 trim；文件不可读时**启动失败**（不静默开门）。`SP_GATE_PASSWORD` 优先。非 ASCII 口令推荐用它 |
 | `SP_GATE_SECRET` | `.cache/gate-secret` | 门禁 cookie 的 HMAC 密钥；缺省自动生成 0600 文件，删掉等于让所有人重新登录 |
-| `SP_GATE_TTL_DAYS` | 7 | 授权 cookie 有效期（天，1–365） |
+| `SP_GATE_TTL_DAYS` | 3 | 授权 cookie 有效期（天，1–365；默认 3 天 = 72 小时） |
 | `SP_GATE_LOCAL` | `1` | `0` / `false` / `off` / `no`：本机与局域网也要口令；其余值免门禁 |
 | `SP_GATE_LOCAL_BYPASS` | `1` | `0` / `false` / `off` / `no`：同上，关掉本机 / 局域网旁路——无头 TCP 隧道（frpc tcp、`ssh -R`）部署的专用开关，见 2.7 |
+| `SP_BATTLE_POOL` | `0`（关） | `1` 把服务器代算的战场（AI 队友 / 掉线托管）交给模拟线程池；默认关，失败 / `POOL_FULL` 一律回退主线程（§37.137） |
+| `SP_BOT_PLAN_POOL` | `0`（关） | `1` 把 bot 整备 final-arrange 的 stage-1 布局规划批次交给线程池；默认关，失败回退与关时逐字节同轨（§37.138） |
+| `SP_FRAME_ECONOMY` | `0`（关） | `1` 启用快照合并 / 无变化跳帧 / 单次编码扇出（§37.139）；性能取舍开关，不改玩法结果 |
+| `SP_STEP_PACKET` | `full` | 客户端 simHost 的步进包模式；`full` 为回滚形状（AGENTS.md 回滚旋钮），其它取值见源码 |
 
 锁与备份：状态目录带独占锁（另一个活着的游戏进程拿同一路径会拒绝启动；陈锁按 pid 探活自动回收）。升级流程：
 正常停服（关停时先写终档再关大厅）→ 备份状态目录 → 更新 → 启动。坏了的的单个分片只丢那个房间的对局，

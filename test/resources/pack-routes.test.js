@@ -50,9 +50,14 @@ describe('SP_RESOURCE_PACK_ROUTES 的解析', () => {
 });
 
 describe('清单里的分包地址', () => {
-  test('本部署默认使用 Misyra ModelScope，R2/CDN 始终兜底', () => {
+  test('预载包线暂停：默认无远端镜像、只剩站内兜底；复活由 SP_RESOURCE_PACK_ROUTES 恢复数据集', () => {
     const [routed] = routeResourcePacks([pack], 'https://assets.misyra.com', parseResourcePackRoutes(DEFAULT_RESOURCE_PACK_ROUTES));
-    assert.deepEqual(routed.urls, [
+    assert.equal(routed.urls, undefined, '默认不再对已清空的 ModelScope 数据集烧请求（REVIEW-2026-11-09-full P2-6）');
+    assert.equal(routed.url, 'https://assets.misyra.com/packs/ui-01-0123456789ab.zip', '站内/CDN 兜底照旧');
+    // 复活重建数据集后，部署端以 env 指回它（AGENTS.md 的包线口径）——同一条旧模板
+    const [revived] = routeResourcePacks([pack], 'https://assets.misyra.com',
+      parseResourcePackRoutes('["https://modelscope.cn/datasets/Misyra/Arknight_Assets/resolve/master/{file}"]'));
+    assert.deepEqual(revived.urls, [
       'https://modelscope.cn/datasets/Misyra/Arknight_Assets/resolve/master/ui-01-0123456789ab.zip',
       'https://assets.misyra.com/packs/ui-01-0123456789ab.zip',
     ]);

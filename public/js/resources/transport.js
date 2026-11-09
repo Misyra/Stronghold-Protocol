@@ -50,7 +50,9 @@ async function requestPack(pack, { signal, onProgress, onRoute,
     // a larger retry budget before we fall back to the game host / R2: "prefer
     // ModelScope" means a transient ModelScope error should not immediately become
     // per-file R2. Opt-in only: a caller that does not ask keeps the old behaviour.
-    const routeRetries = route === 0 && preferredRetries != null ? Math.max(retries, preferredRetries) : retries;
+    // 只在确实存在兜底线路（urls.length > 1）时加预算：预载包线暂停后默认无远端镜像，
+    // 单线路重试等于对 404 烧重试（REVIEW-2026-11-09-full P2-6）。
+    const routeRetries = route === 0 && preferredRetries != null && urls.length > 1 ? Math.max(retries, preferredRetries) : retries;
     for (let attempt = 0; attempt <= routeRetries; attempt++) {
       checkAbort(signal);
       const controller = new AbortController();

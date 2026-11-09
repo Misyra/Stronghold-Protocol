@@ -1,7 +1,8 @@
 // ZIP transport locations never change the identities of resources inside a pack.
-export const DEFAULT_RESOURCE_PACK_ROUTES = Object.freeze([
-  'https://modelscope.cn/datasets/Misyra/Arknight_Assets/resolve/master/{file}',
-]);
+// 预载包线 2026-11-09 暂停（数据集 `Misyra/Arknight_Assets` 的 149 包全清，REVIEW-2026-11-09-full P2-6）：
+// 不再默认带 ModelScope 镜像——未配置的部署对保证 404 的地址零重试（transport.js 的 preferredRetries
+// 只在确实存在兜底线路时生效）。复活重建数据集后用 SP_RESOURCE_PACK_ROUTES 指回它（AGENTS.md）。
+export const DEFAULT_RESOURCE_PACK_ROUTES = Object.freeze([]);
 
 export function isResourcePackUrl(value) {
   if (typeof value !== 'string' || !value || value.length > 2048

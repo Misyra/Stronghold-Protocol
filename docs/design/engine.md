@@ -277,9 +277,12 @@ Each domain file `server/sim/content/{tokens,bonds,garrisons,items,bands,enemies
   `gateOf` reads 'lower' — normal fields (9,10), never the (12,10) upper gate; boss / hidden rows 2–4; not the leader, its
   parts, bounties or flyers; on a pair boss field only the player's half) in every teammate's normal / Final Assault /
   Hidden Core battle from R5 into the act2 鸭爵 / 高普尼克 / 流泪小子 / 圆仔 (lpr 1, 1 fund to the killer, 联防 included)
-  (§21.5, §37.108); the count and the units are one draw per round for every player (`duck:<round>` on the wave before each
-  player's bounties), the swapped kind one per player and round (`duck:<round>:<playerId>`) — a player's two swaps are the
-  same enemy while players can differ; the `onBattleStart` event carries the wave's `routes` (normal fields too) and, for
+  (§21.5, §37.108); the count and the units are one judgment per holder per round for every player (judgment 1 from
+  `duck:<round>` on the wave before each player's bounties; the official draft cannot seat two holders, and under the
+  repo's 「允许重复策略」 each held band runs its own judgment from `duck:<round>#n`, so n holders allow up to n·2 swaps
+  — 8 with four — while a colliding pick lands on the action's next still-own unit, §37.135), the swapped kind one per
+  player and judgment (`duck:<round>:<playerId>`) — a judgment's swaps are the same enemy while players and judgments can
+  differ; the `onBattleStart` event carries the wave's `routes` (normal fields too) and, for
   boss / hidden fields, the player's `side` (a pair field's half). The swaps carry the spawn tag `'duck'`, and the swapped
   流泪小子 hides again 1 s after a block ends, not the official 0 s (the owner's decision of 2026-10-07, §25.22.6).
 - **假想敌：镜膜** (#481): 折射 gives +70 RES while not silenced and returns after silence ends. Its +100% max HP bonus is permanently removed by the first silence; current HP keeps its ratio. The fan permanently switches to the stopped B animation set, including for late observers. Source: [PRTS 假想敌：镜膜](https://prts.wiki/w/假想敌：镜膜), which corrects the game text: the HP bonus cannot recover.

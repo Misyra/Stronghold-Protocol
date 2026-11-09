@@ -24,7 +24,8 @@
 //   coin_carry_over {capital,interest,max}             坎诺特   leftover ≥ capital at round start → +min(max, ⌊left/capital⌋×interest) income
 //   round_start_all_player_change_enemy_2              鸭爵     global: every alive player's battle from `round` (own + teammates;
 //                                                                normal, Final Assault, Hidden Core — on the player's half of a
-//                                                                pair field): 0–2 ground enemies → enemylist
+//                                                                pair field): one 0–2 ground-enemy → enemylist judgment per
+//                                                                holder (「允许重复策略」 can seat several)
 //   round_start_activate_char_chess_effect_in_board    铃兰     round start: 获得时 traits of the right-most (then bottom-most) board op with one
 //   first_sell_char_chess_exchange_char_chess_in_shop  巫恋     first sale of a normal op per round: swapped with a random shop chess (no funds)
 //   round_start_gain_char_chess_in_shop_every_n_round  松桐     prep start, round % n = 0: a random shop chess for free (its slot empties)
@@ -410,16 +411,23 @@ K.preparation_start_add_special_goods_every_n_round = (ps) => ({
 // （包括联防阶段）". A global handler rewrites the battle spawn list of every alive player while the band is held by that
 // player or a teammate: from round `round`, in the normal battle, the Final Assault and the Hidden Core (PRTS 卫戍协议：盟约
 // 下半/PRTS盟约记录 鸭爵 备注 "每回合将有0~2名敌人被替换为上述敌人之一…且在最终回合和隐秘核心回合中仍然生效"; the 联防 phase
-// replaces nothing: its enemies are leaks, which keep their bounty). One draw per round for every player (GitHub #839:
-// 「每回合…被替换」, the key's `all_player`): min..max (0–2, uniform [ASSUMED]) ground enemies of the round's own wave
-// (`ev.waveSpawns`: before the player's bounty units, which differ per player) from the `minweight`–`maxweight` share of
-// that wave's units in time order, the leader and its parts left out of the share [ASSUMED reading of the two weights] —
-// any wave enemy but the leader, its parts and uncounted units —, with a stream of its own from the match seed
-// (`ctx.seedFor('duck:<round>')`: no player's meta stream, the same in the previews), so every player has the same count
-// and the same units [ASSUMED: the same units]; each player's list swaps the k-th own unit of the picked action at its own
-// (bounty-re-timed) time and route. Only units of the lower lane are drawn: a route starting at the lower gate
-// (shared/constants.js gateOf — normal fields (9,10), not (12,10)). The swapped-in kind is drawn per player, one per round
-// (a stream of its own, `duck:<round>:<playerId>`), so a player's two swaps are the same kind while players can differ.
+// replaces nothing: its enemies are leaks, which keep their bounty). One judgment per holder per round (GitHub #839:
+// 「每回合…被替换」, the key's `all_player`; the official draft cannot seat two holders — the repo's 「允许重复策略」
+// room option can, and then each held band runs its own judgment): min..max (0–2, uniform [ASSUMED]) ground enemies of
+// the round's own wave (`ev.waveSpawns`: before the player's bounty units, which differ per player) from the
+// `minweight`–`maxweight` share of that wave's units in time order, the leader and its parts left out of the share
+// [ASSUMED reading of the two weights] — any wave enemy but the leader, its parts and uncounted units —. Judgment 1
+// draws from `ctx.seedFor('duck:<round>')`, judgment n from `duck:<round>#n` (n ≥ 2; no player's meta stream, the same
+// in the previews), so every player replays the same judgment sequence — the same count and the same units per judgment
+// [ASSUMED: the same units] — and n holders allow up to n·max (8 with a full duck room). A later judgment draws only
+// from the wave's own units earlier judgments left: those original k's leave the pool and the survivors are renumbered
+// to the compact k applyDuckPicks counts [ASSUMED: multi-holder mapping; the official draft seats one holder, so no
+// official source settles the collision rule — every promised pick lands on a still-own unit, none is lost, no unit is
+// swapped twice]. Each player's list swaps the k-th still-own unit of the picked action at its own (bounty-re-timed) time
+// and route. Only units of the lower lane are
+// drawn: a route starting at the lower gate (shared/constants.js gateOf — normal fields (9,10), not (12,10)). The
+// swapped-in kind is drawn per player, one per judgment (a stream of its own, `duck:<round>:<playerId>`), so a
+// judgment's swaps are the same kind while players and judgments can differ.
 // All three from the reporter's recordings of the official game (GitHub #839, 2026-10-23: four players 2鼠 / 2狗 / 2鼠 /
 // 2鸭 in one wave, all on the lower lane; a 联防 of 6熊 = three teammates' 2熊 each; the maintainer's decision of
 // 2026-11-01; Stardust fork ded5f264). Elites are eligible
@@ -458,19 +466,58 @@ const unitAction = (s, pos) => (Number.isInteger(s.actionIndex) ? s.actionIndex 
 const notOwn = (s) => !s || s.tag === 'bounty' || s.tag === 'duck';
 
 /**
+ * Per action, the wave's original k's that `swapped` (action → Set of original k's already replaced) has not removed,
+ * in ascending order — the compact k `applyDuckPicks` will see after those swaps. The k-space counts every own spec
+ * (a leader / part / wrong-half unit is never drawn but still occupies its k), so it stays aligned with applyDuckPicks.
+ * Private helper of the multi-judgment mapping (duckPicks / duckReplace).
+ */
+function duckSurvivors(base, swapped) {
+  const out = new Map();
+  const seen = new Map();
+  let pos = -1;
+  for (const s of base) {
+    if (notOwn(s)) continue;
+    pos++;
+    const action = unitAction(s, pos);
+    const cnt = Math.max(1, int(s.count, 1));
+    const k0 = seen.get(action) ?? 0;
+    seen.set(action, k0 + cnt);
+    if (!out.has(action)) out.set(action, []);
+    const arr = out.get(action);
+    const gone = swapped?.get(action);
+    for (let k = 0; k < cnt; k++) if (!gone || !gone.has(k0 + k)) arr.push(k0 + k);
+  }
+  return out;
+}
+
+/** The compact (survivor) ordinal of an original k of `action`, given `duckSurvivors`' output. */
+const survivorK = (survivors, action, k) => {
+  const arr = survivors.get(action);
+  if (!arr) return k;
+  const i = arr.indexOf(k);
+  return i < 0 ? k : i;
+};
+
+/**
  * The round's swaps (exported for tests): `{ action, k, enemyKey }` — the k-th unit of a wave action becomes enemyKey.
  * Drawn from `base`, the round's own wave (no bounty units: they differ per player), so every player who uses the same
  * `rng` stream on the same wave gets the same count and the same units (GitHub #839); only units whose route
  * (`routes[routeIndex]`) starts at the lower gate (gateOf; `leader`: a boss / hidden field's rows). The 鸭爵 enemy is one
  * per call, drawn with `typeRng` (the player's own stream; default `rng`). `side` ('L' | 'R', a pair boss field) limits
- * the draw to the units whose route ends on that half.
+ * the draw to the units whose route ends on that half. `swapped` (a later judgment: action → the wave's original k's
+ * already replaced) drops those k's from the pool and renumbers the rest to the compact k applyDuckPicks will see.
  */
-export function duckPicks(gd, rng, base, p, { routes = null, side = null, leader = false, typeRng = rng } = {}) {
+export function duckPicks(gd, rng, base, p, { routes = null, side = null, leader = false, typeRng = rng, swapped = null } = {}) {
   const ducks = list(p.enemylist).filter((k) => gd.enemy(k));
   if (!ducks.length || !Array.isArray(base)) return [];
   const lo = Math.max(0, int(p.min, 0)), hi = Math.max(lo, int(p.max, lo));
   const want = lo + rng.int(hi - lo + 1);
   if (want <= 0) return [];
+  // A judgment after the first draws only from the own units earlier judgments left. Those k's leave the pool and the
+  // survivors are renumbered to the compact k applyDuckPicks will count, so no promised pick is lost to the renumbering.
+  // An empty / absent map (the first judgment, a single holder) takes the unchanged path — byte-for-byte (§37.135, golden).
+  const active = swapped && [...swapped.values()].some((set) => set && set.size);
+  const survivors = active ? duckSurvivors(base, swapped) : null;
   const half = side === 'L' || side === 'R';
   const onHalf = (s) => {
     if (!half) return true;
@@ -505,12 +552,16 @@ export function duckPicks(gd, rng, base, p, { routes = null, side = null, leader
     const frac = n > 1 ? j / (n - 1) : 0;
     const route = Array.isArray(routes) ? routes[s.routeIndex] : null;
     return !s.tag && s.countInTotal !== false && e && e.rank !== 'BOSS' && !e.notCountInTotal && e.stats?.motion !== 'FLY'
-      && frac >= w0 - 1e-9 && frac <= w1 + 1e-9 && gateOf(route?.start, leader) === 'lower';
+      && frac >= w0 - 1e-9 && frac <= w1 + 1e-9 && gateOf(route?.start, leader) === 'lower'
+      // a later judgment cannot draw a unit an earlier one already swapped; the weight share still spans the full wave
+      && (!active || !swapped.get(f.action)?.has(f.k));
   });
   const picked = rng.shuffle(ok).slice(0, want);
   if (!picked.length) return [];
   const enemyKey = typeRng.pick(ducks);
-  return picked.map((f) => ({ action: f.action, k: f.k, enemyKey }));
+  // the wave's original k → the compact k applyDuckPicks counts over the units left (one snapshot for the whole
+  // judgment, never re-derived per pick). The first judgment / a single holder keeps the original k byte-for-byte.
+  return picked.map((f) => ({ action: f.action, k: active ? survivorK(survivors, f.action, f.k) : f.k, enemyKey }));
 }
 
 /**
@@ -551,28 +602,59 @@ export function applyDuckPicks(spawns, picks, ownerPlayerId) {
 
 /**
  * Rewrite `spawns` in place (exported for tests): draw the swaps from `base` (default: `spawns` without its bounty
- * units) with `rng` (default ctx.rng) and apply them. Returns the replaced spawn specs.
+ * units) with `rng` (default ctx.rng) and apply them. Returns the replaced spawn specs. `swapped` (a Map the caller keeps
+ * across judgments: action → the wave's original k's already replaced) makes this a later judgment: duckPicks drops
+ * those k's and renumbers the survivors, and this call records every pick's landing point (the pre-judgment snapshot
+ * `snapshot[action][pick.k]`, resolved once for the whole judgment, never re-derived per pick) for the next one.
  */
-export function duckReplace(ctx, spawns, p, ownerPlayerId, { routes = null, side = null, leader = false, base = null, rng = ctx.rng, typeRng = rng } = {}) {
+export function duckReplace(ctx, spawns, p, ownerPlayerId, { routes = null, side = null, leader = false, base = null, rng = ctx.rng, typeRng = rng, swapped = null } = {}) {
   if (!Array.isArray(spawns)) return [];
-  const picks = duckPicks(ctx.gd, rng, Array.isArray(base) ? base : spawns.filter((s) => !notOwn(s)), p, { routes, side, leader, typeRng });
-  return applyDuckPicks(spawns, picks, ownerPlayerId);
+  const source = Array.isArray(base) ? base : spawns.filter((s) => !notOwn(s));
+  // One snapshot of the wave's original k's still own, taken BEFORE this judgment's picks exist — every pick of the
+  // judgment resolves against it, so two picks of one judgment never shift each other's landing point.
+  const snapshot = swapped ? duckSurvivors(source, swapped) : null;
+  const picks = duckPicks(ctx.gd, rng, source, p, { routes, side, leader, typeRng, swapped });
+  const out = applyDuckPicks(spawns, picks, ownerPlayerId);
+  if (swapped && snapshot) {
+    const added = new Map();
+    for (const pk of picks) {
+      const originalK = snapshot.get(pk.action)?.[pk.k];
+      if (originalK == null) continue;
+      if (!added.has(pk.action)) added.set(pk.action, new Set());
+      added.get(pk.action).add(originalK);
+    }
+    for (const [action, set] of added) {
+      let dst = swapped.get(action);
+      if (!dst) { dst = new Set(); swapped.set(action, dst); }
+      for (const k of set) dst.add(k);
+    }
+  }
+  return out;
 }
 
 const duckGlobal = {
   onBattleStart(ctx, ev) {
     if (!ev || !DUCK_KINDS.has(ev.kind) || !Array.isArray(ev.spawns)) return;
-    const holder = [ctx, ...ctx.teammates()].find(t => (t.gd.band(t.bandId())?.effectRef ?? t.bandId()) === DUCK_BAND);
-    if (!holder) return;
-    const p = duckParams(holder.bandId());
+    const holders = [ctx, ...ctx.teammates()].filter(t => (t.gd.band(t.bandId())?.effectRef ?? t.bandId()) === DUCK_BAND);
+    if (!holders.length) return;
+    const p = duckParams(holders[0].bandId());
     if (!p || ctx.round < int(p.round, 1)) return;
-    // one draw per round for every player (GitHub #839): its own stream from the match seed — no player's meta stream,
-    // the same in the stats preview and the bot rehearsals — on the wave before the player's bounties (ev.waveSpawns);
-    // the kind from the player's own stream
+    // one judgment per holder (「允许重复策略」 can seat several; all holders share the band record, so the first one's
+    // params stand for all): judgment 1 keeps the shared round stream, judgment n draws from `duck:<round>#n` — every
+    // player's battle replays the same sequence, so the picks stay receiver-independent and n holders allow up to n·2
+    // swaps (the swapped map below keeps later judgments off the units already taken, so no unit is swapped twice and
+    // no promised pick is lost to the compact renumbering). The kind still comes from the player's own stream, one per
+    // judgment.
     const seeded = typeof ctx.seedFor === 'function';
-    const rng = seeded ? createRng(ctx.seedFor(`duck:${ctx.round}`)) : ctx.rng;
-    const typeRng = seeded ? createRng(ctx.seedFor(`duck:${ctx.round}:${ctx.playerId}`)) : rng;
-    duckReplace(ctx, ev.spawns, p, ctx.playerId, { routes: ev.routes, side: ev.side, leader: ev.kind !== 'normal', base: ev.waveSpawns, rng, typeRng });
+    const typeRng = seeded ? createRng(ctx.seedFor(`duck:${ctx.round}:${ctx.playerId}`)) : ctx.rng;
+    // The wave's original k's every earlier judgment already swapped, per action. A later judgment draws from the
+    // remaining own units (compact k, see duckPicks / duckReplace), so no promised pick is lost to the renumbering and
+    // no unit is swapped twice; one map for the whole battle, seeded from the same snapshot for every judgment's picks.
+    const swapped = new Map();
+    for (let j = 0; j < holders.length; j++) {
+      const rng = seeded ? createRng(ctx.seedFor(j ? `duck:${ctx.round}#${j + 1}` : `duck:${ctx.round}`)) : ctx.rng;
+      duckReplace(ctx, ev.spawns, p, ctx.playerId, { routes: ev.routes, side: ev.side, leader: ev.kind !== 'normal', base: ev.waveSpawns, rng, typeRng, swapped });
+    }
   },
 };
 

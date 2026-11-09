@@ -4,7 +4,9 @@
 // the net layer, public/, or any Node builtin. server/match must not import public/ or that net layer.
 // server/data.js is allowed (the Node loader reaches it on purpose).
 //
-// Default exit code is 0 even when violations are listed. --strict exits 1 when any are listed.
+// Default exit code is 0 even when violations are listed (ad-hoc listing); --strict exits 1 when any are
+// listed. `npm run check:imports` passes --strict, so CI fails on a real violation — the one exemption is
+// server/sim/nodeData.js (the sim directory's Node-side bridge, never served to browsers; see classify).
 // Usage: node tools/check-imports.mjs [--strict] [--root <dir>]
 
 import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
@@ -213,7 +215,9 @@ export function classify(spec, fromFile, area) {
     if (resolved === 'server/index.js') return { code: 'sim-entry', resolved };
     if (isHttp(spec, resolved)) return { code: 'sim-http', resolved };
     if (resolved === 'public' || resolved.startsWith('public/')) return { code: 'sim-client', resolved };
-    if (escaped || isBuiltin(spec)) return { code: 'sim-node', resolved };
+    // nodeData.js 是 sim 目录里唯一的 Node 侧桥（服务端专用；static.js 的 SIM_PRIVATE 不对外服务它）——
+    // 按文件豁免这一处，其它 sim 文件引 Node 内建依旧违规。npm script 现在带 --strict，CI 真拦截。
+    if (escaped || isBuiltin(spec)) return fromFile.replaceAll('\\', '/').endsWith('sim/nodeData.js') ? null : { code: 'sim-node', resolved };
     if (resolved === 'server/data.js') return { note: true, resolved };
     return null;
   }

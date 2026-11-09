@@ -41,7 +41,7 @@
     "launch": "node scripts/launch.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --checkJs -p jsconfig.json",
-    "check:imports": "node tools/check-imports.mjs",
+    "check:imports": "node tools/check-imports.mjs --strict",
     "build": "vite build",
     "ci": "node tools/ci.mjs",
     "shards": "node tools/ci-shards.mjs",

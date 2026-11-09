@@ -124,6 +124,9 @@ function PlayerCard({ p, myId, titles, best, solo = false, skinOwnerId = null })
  * NOT the local 作战统计 panel (ui/combatMetrics.js): that one reads this device's own battle runner only and counts
  * only the own units — this table is the server's ledger, all seats, dead and departed players included. Absent for a
  * stored-match re-view (no m.public) and before the first field result: the section just does not render.
+ * Rendered INSIDE the players column (after the boss ledger): as a third child of .result__main's two-column grid it
+ * opened a second row whose competition for the bounded height squeezed the players column into a ~450 px scroll box
+ * and clipped the hero's rounds/medals to slivers (2026-11-07 settlement report; .result__main is height-bounded).
  */
 function DamageBoardView({ pub, players, myId }) {
   const board = pub && pub.damage && Array.isArray(pub.damage.players) ? pub.damage : null;
@@ -254,8 +257,8 @@ export function ResultView({ res, pub = null, myId = null, backLabel, onBack, qu
         ${r.players.length ? r.players.map((p) => html`<${PlayerCard} key=${p.playerId} p=${p} skinOwnerId=${pub ? p.playerId : null} myId=${myId} titles=${titles} best=${best} solo=${r.players.length < 2} />`)
           : html`<p class="t-dim">${t('暂无结算数据')}</p>`}
         <${BossDamageLedger} ledger=${res?.bossDamage} gd=${gd} names=${new Map(r.players.map((p) => [p.playerId, p.name]))} myId=${myId} />
+        <${DamageBoardView} pub=${pub} players=${r.players} myId=${myId} />
       </section>
-      <${DamageBoardView} pub=${pub} players=${r.players} myId=${myId} />
       ${slot ? html`<div class="ui-slot" data-ui-slot="result.tab" aria-label=${t('界面插件')} dangerouslySetInnerHTML=${{ __html: '' }}></div>` : null}
     </main>
   </div>`;

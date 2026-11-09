@@ -784,12 +784,12 @@
 .pooled__seat:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 1px; }
 .pooled__seat.is-me { color: var(--text-hi); border-color: var(--mint-a35); }
 .pooled__seat.is-picked { color: #08221b; background: var(--mint-400); border-color: var(--mint-400); }
-.pooled__no { flex: none; min-width: 1.8em; font-size: .86em; color: var(--text-lo); }
+.pooled__no { flex: none; min-width: 1.8em; font-size: calc(.12 * var(--t)); color: var(--text-lo); }
 .pooled__seat.is-empty .pooled__no { color: var(--text-dim); }
 .pooled__seat.is-picked .pooled__no, .pooled__seat.is-picked .pooled__me { color: #08221b; }
 .pooled__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pooled__mark { flex: none; width: 1em; height: 1em; opacity: .75; }
-.pooled__me { flex: none; font-size: .82em; font-style: normal; font-weight: 700; color: var(--mint-400); }
+.pooled__me { flex: none; font-size: calc(.115 * var(--t)); font-style: normal; font-weight: 700; color: var(--mint-400); }
 /* the seat strip's 「卡池 N」 tag (screens/room.js SeatPool): centred between the strip's bar and the P number */
 .rseat__pool { position: absolute; left: 50%; transform: translateX(-50%); font-size: calc(.12 * var(--t)); font-style: normal; font-weight: 700; color: #cfe9ff; white-space: nowrap; }
 .rseat.is-ready .rseat__pool { color: #08221b; }
